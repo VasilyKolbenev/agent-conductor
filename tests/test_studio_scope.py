@@ -278,15 +278,18 @@ def test_the_roster_of_globals_is_one_this_suite_agreed_to():
     assert "eval" not in GLOBALS and "Function" not in GLOBALS
 
 
-#: The three names only the boot module's read door may reach. A roster entry
-#: forgives a name in EVERY module, so this holds these three back to one.
+#: The three names only the boot module and the transport module may reach: the
+#: read door's deadline lives in the transport module, and the boot module
+#: aborts its own reads and paces the quota poll. A roster entry forgives a name
+#: in EVERY module, so this holds these three back to those two.
 DEADLINE = re.compile(r"(?<![.\w$])(AbortController|setTimeout|clearTimeout)\b")
 
 
-def test_the_deadline_globals_are_reached_by_the_boot_module_alone():
+def test_the_deadline_globals_are_reached_by_the_boot_and_transport_modules_alone():
     """The roster admits a timer, its abort and its clearing for one door.
 
-    Only the boot module owns a socket to bound. A second module reaching for
+    Only the transport module owns a socket to bound, and the boot module the
+    reads it aborts. A second module reaching for
     a timer would be a second clock nobody reviewed, and the shared roster
     would let it past the resolver silently -- so the admission is held to the
     module it was made for, in both directions, and calibrated on a planted
@@ -296,7 +299,7 @@ def test_the_deadline_globals_are_reached_by_the_boot_module_alone():
     assert DEADLINE.findall(planted) == ["setTimeout"]
     for name in MODULES:
         reached = sorted(set(DEADLINE.findall(_scannable(_code(PANEL / name)))))
-        if name == "studio.js":
+        if name in ("studio.js", "desk-transport.js"):
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
         else:
             assert reached == [], (name, reached)

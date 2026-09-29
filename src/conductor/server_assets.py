@@ -50,6 +50,8 @@ ENTRY_PAGE = "studio.html"
 #: row must also be a key of `PANEL_ASSETS`, which splices this table in.
 DESK_ASSETS = {
     "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
+    # The wire doors the Studio's boot module and, later, the desk share.
+    "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

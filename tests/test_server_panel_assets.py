@@ -105,6 +105,8 @@ ASSETS = {
     # this route before `GET /` ever switches to it, and `GET /` still answers
     # studio.html, so the two documents are told apart by route alone.
     "/panel/desk.html": "text/html; charset=utf-8",
+    # The wire doors, moved out of the Studio's boot module for the desk to share.
+    "/panel/desk-transport.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.
@@ -194,6 +196,12 @@ REFUSED = (
     # a 404 in the same commit rather than left to be found later.
     "/panel/desk.htm", "/panel/desk.html?v=1", "/panel/DESK.HTML",
     "/panel/Desk.html", "/panel/desk.html/", "/panel/%2e%2e/desk.html",
+    # The wire doors module, given the same nine shapes as the Studio's own.
+    "/panel/desk-transport.json", "/panel/desk-transport.js?v=1",
+    "/panel/desk-transport.js.map", "/panel/../desk-transport.js",
+    "/panel/%2e%2e/desk-transport.js", "/panel/DESK-TRANSPORT.JS",
+    "/panel/Desk-transport.js", "/panel/desk-transport.js/",
+    "/panel/desk-transport.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

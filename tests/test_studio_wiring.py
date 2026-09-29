@@ -8,9 +8,10 @@ the integrator's own files to what only they can be held to:
   quietly become a rule about the browser it is running in;
 * the view writes DOM and never reaches the network, so the one module that can
   write a durable record stays the one module a reader has to audit for it;
-* the boot module is that one module, and it is pinned by COUNT rather than by
-  presence: a second `fetch(` is a second door, and a door nobody counted is a
-  door nobody reviewed;
+* the transport module is that one module (the doors left the boot module for
+  it, and the boot module now holds none), and it is pinned by COUNT rather
+  than by presence: a second `fetch(` is a second door, and a door nobody
+  counted is a door nobody reviewed;
 * the mounting modules and the shell agree about ids, vocabularies and state
   words by construction rather than by three people remembering the same table.
 
@@ -53,6 +54,10 @@ PREFERENCES = PANEL / "studio-preferences.js"
 I18N = PANEL / "studio-i18n.js"
 VIEW_SURFACE = (VIEW, RUNFORM, SHELL, PREFERENCES)
 BOOT = PANEL / "studio.js"
+#: The wire doors -- the read door, the mutation door, the stream and the
+#: session token -- left the boot module for this one, so the desk can be built
+#: on the same doors. What a door's answer MEANS stays in the boot module.
+TRANSPORT_MODULE = PANEL / "desk-transport.js"
 CANVAS = PANEL / "studio-canvas.js"
 INSPECTOR = PANEL / "studio-inspector.js"
 #: The inspector's controls and its copy of the edit vocabulary moved here when
@@ -87,7 +92,8 @@ MOUNTS = PANEL / "studio-mounts.js"
 QUOTAFLOW = PANEL / "studio-quotaflow.js"
 AUTOMATION = PANEL / "studio-automation-flow.js"
 WORKFLOWWRITE = PANEL / "studio-workflowwrite.js"
-MINE = (AUTOMATION, WORKFLOWWRITE, SHELL, PREFERENCES, I18N, STORE, VIEW, RUNFORM, RUNWRITE, FOCUS, BOOT, TASKFLOW, MOUNTS, QUOTAFLOW)
+MINE = (AUTOMATION, WORKFLOWWRITE, SHELL, PREFERENCES, I18N, STORE, VIEW, RUNFORM,
+        RUNWRITE, FOCUS, BOOT, TRANSPORT_MODULE, TASKFLOW, MOUNTS, QUOTAFLOW)
 LINE_CAP = 800
 
 #: The frontend contract's "May import" column for these rows, verbatim. It is
@@ -122,7 +128,7 @@ PERMITTED = {
     #: left this file at the line cap. The boot module builds them, handing
     #: over its own `write` and nothing else; it does not import the step
     #: control itself, which is the screen's business rather than the wire's.
-    "studio.js": frozenset({"./studio-workflowwrite.js", "./studio-automation.js", "./studio-automation-flow.js",
+    "studio.js": frozenset({"./desk-transport.js", "./studio-workflowwrite.js", "./studio-automation.js", "./studio-automation-flow.js",
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
@@ -136,6 +142,8 @@ PERMITTED = {
     #: The focus net imports nothing: it reads the focused control and puts
     #: focus back, and a neighbour it could reach would be a second opinion.
     "studio-focus.js": frozenset(),
+    #: The wire doors translate a refusal and reach no screen, store or copy.
+    "desk-transport.js": frozenset({"./command-projection.js"}),
 }
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
@@ -278,8 +286,8 @@ def test_the_comment_stripper_keeps_this_slice_s_code_and_drops_its_prose():
     from the graph window's, so they are a different input to it.
     """
     boot = _code(BOOT)
-    assert "const stream = new EventSource(\"/events\");" in boot
-    assert "// This is the ONLY module of the Studio" not in boot
+    assert "const stream = openStream();" in boot
+    assert "// Boot and router for the Workflow Studio" not in boot
     assert len(boot.splitlines()) > 300, "the stripper removed running code"
     store = _code(STORE)
     assert "export function reduce(state, event) {" in store
@@ -378,14 +386,23 @@ def test_the_view_writes_dom_through_the_builder_and_never_reaches_the_wire():
         assert 'from "./command-view.js"' in path.read_text(encoding="utf-8")
 
 
-def test_the_wire_door_is_the_boot_module_and_it_carries_exactly_these_doors():
-    """One transport module, and its doors counted rather than merely allowed."""
-    quiet = _expressions(_code(*(path for path in MINE if path != BOOT))).lower()
+def test_the_wire_doors_are_the_transport_module_and_it_carries_exactly_these_doors():
+    """One transport module, and its doors counted rather than merely allowed.
+
+    The doors moved out of the boot module and the counts did not change. The
+    boot module may still carry a word of the list -- a timer of its own, the
+    reader's language -- but it carries no door: everything it sends or
+    receives goes through the transport module, so the count there is the
+    count of every door there is.
+    """
+    homes = (BOOT, TRANSPORT_MODULE)
+    quiet = _expressions(_code(*(path for path in MINE if path not in homes))).lower()
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
-    boot = _code(BOOT)
-    for door, count in DOOR_COUNTS:
-        assert boot.count(door) == count, (door, boot.count(door))
+    door, boot = _code(TRANSPORT_MODULE), _code(BOOT)
+    for name, count in DOOR_COUNTS:
+        assert door.count(name) == count, (name, door.count(name))
+        assert boot.count(name) == 0, (name, boot.count(name))
 
 
 def test_none_of_the_files_the_integrator_owns_reaches_a_sealed_api():
@@ -448,14 +465,20 @@ def test_the_mutation_door_names_exactly_its_reviewed_write_targets():
     the door: the counts above still say two `fetch(` and one `method: "POST"`,
     so the three new roads are three NAMES on one door rather than a second
     door nobody counted.
+
+    The door lives in the transport module now. The boot module names no
+    target list of its own: a second list there would be a second opinion
+    about what may be written.
     """
-    boot = _code(BOOT)
-    named = set(_frozen_list(boot, "WRITE_TARGETS"))
+    door = _code(TRANSPORT_MODULE)
+    named = set(_frozen_list(door, "WRITE_TARGETS"))
     assert named == WRITE_TARGETS, sorted(named ^ WRITE_TARGETS)
     for target in named:
-        assert re.search(rf"^\s+{target}: \(", boot, re.MULTILINE), target
-    assert boot.count("WRITE_TARGETS.includes(") == 1
-    assert boot.count("async function submit(") == 1
+        assert re.search(rf"^\s+{target}: \(", door, re.MULTILINE), target
+    assert door.count("WRITE_TARGETS.includes(") == 1
+    assert door.count("async function submit(") == 1
+    boot = _code(BOOT)
+    assert "WRITE_TARGETS" not in boot and "function submit(" not in boot
 
 
 def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
@@ -472,7 +495,7 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     boot = _code(BOOT)
     scoped = set(_frozen_list(boot, "RUN_SCOPED"))
     assert scoped == RUN_SCOPED, sorted(scoped ^ RUN_SCOPED)
-    assert scoped < set(_frozen_list(boot, "WRITE_TARGETS"))
+    assert scoped < set(_frozen_list(_code(TRANSPORT_MODULE), "WRITE_TARGETS"))
     assert boot.count("RUN_SCOPED.includes(") == 3
     assert ("const ready = RUN_SCOPED.includes(target)\n"
             "      ? streamOpen : state.workflows.writeReady;") in boot, boot
@@ -567,16 +590,22 @@ def test_the_session_token_is_read_in_one_place_and_meets_no_sink():
     checked against the sinks that would put it on screen, in a URL or in
     storage. A line doing both is what this reds on, so writing the token into
     the status region -- or onto a query string -- cannot pass.
+
+    "One place" is now a module: the token, its epoch and the header that
+    carries it live in the transport module, and the boot module names none of
+    them -- it can only ask that the session be dropped.
     """
-    boot = _code(BOOT)
-    lines = [line for line in boot.splitlines()
+    door, boot = _code(TRANSPORT_MODULE), _code(BOOT)
+    lines = [line for line in door.splitlines()
              if any(name in line for name in TOKEN_NAMES)]
-    assert lines, "the boot module never handles a session token"
+    assert lines, "the transport module never handles a session token"
     for line in lines:
         for sink in TOKEN_SINKS:
             assert sink not in line, (sink, line.strip())
-    assert boot.count('"X-Conduct-CSRF": session.token') == 1
-    assert boot.count("let csrfToken") == 1
+    assert door.count('"X-Conduct-CSRF": session.token') == 1
+    assert door.count("let csrfToken") == 1
+    for name in (*TOKEN_NAMES, "sessionEpoch"):
+        assert name not in boot, name
     # The shell's own markup carries no token-shaped attribute either, so a
     # future render cannot inherit one from the document it started in.
     assert "csrf" not in HTML.read_text(encoding="utf-8").lower()

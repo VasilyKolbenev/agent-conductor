@@ -14,7 +14,7 @@ Every claim here is about a SOCKET or a RECORD, never only about a screen:
   the difference acceptance item 1 names, so it is what is asserted;
 - the deadline is driven by ``page.clock``, never waited out: the clock is
   paused once the window has settled and moved by exactly the window's own
-  ``READ_DEADLINE``, read out of ``studio.js`` rather than copied here;
+  ``READ_DEADLINE``, read out of ``desk-transport.js`` rather than copied here;
 - the stream is the lifecycle module's double, so the only reads are the ones a
   test provokes and every count is exact;
 - the late outcome of a retired read is the one place a fetch stub is used. It
@@ -71,8 +71,11 @@ from tests.test_store import good_lane, write_project
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 BOOT = (PANEL / "studio.js").read_text(encoding="utf-8")
-#: The window's own deadline, read out of the window rather than copied.
-DEADLINE = int(re.search(r"^const READ_DEADLINE = (\d+);$", BOOT, re.M).group(1))
+#: The window's own deadline, read out of the module that owns the read door
+#: rather than copied.
+DEADLINE = int(re.search(
+    r"^const READ_DEADLINE = (\d+);$",
+    (PANEL / "desk-transport.js").read_text(encoding="utf-8"), re.M).group(1))
 #: The sentence an unreadable body used to be laundered into (critic U1).
 STORE_ERROR = re.search(
     r'^  store_error: "([^"]*)",$',
