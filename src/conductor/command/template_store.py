@@ -315,6 +315,13 @@ class TemplateStore:
         """
         if type(template) is not GraphTemplate:
             raise StoreError("save takes exactly a GraphTemplate")
+        # Publication temporarily has two names until its staging link is
+        # removed. Another local writer must wait for that whole operation,
+        # rather than mistake our own staging link for an unowned hard link.
+        with self.transaction(template.template_id):
+            return self._save_revision_locked(template)
+
+    def _save_revision_locked(self, template: GraphTemplate) -> Published:
         document = template.as_dict()
         path = self.revision_path(template.template_id, template.revision)
         if path.exists():

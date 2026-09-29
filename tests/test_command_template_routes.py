@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from pathlib import Path
+from queue import Queue
+from threading import Event, local
 
 import pytest
 
@@ -27,6 +31,7 @@ from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
 from conductor.command.http_transport import CommandSession
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.template_store import TemplateStore
+from conductor.command import run_files
 
 from tests.test_command_run_store import CONFIG, a_run
 from tests.test_command_http_api import (
@@ -361,11 +366,50 @@ def _outcome(subject, path, body):
     return call
 
 
-def test_two_identical_publications_leave_one_file_and_one_creator(tmp_path):
-    """`{201, 200}`, and the exclusive create is what decides which is which."""
+def test_two_identical_publications_leave_one_file_and_one_creator(tmp_path, monkeypatch):
+    """A retry during the publisher's staging link still gets `{201, 200}`."""
     subject, _store, events = api(tmp_path)
     body = template_body()
-    results = _race([_outcome(subject, TEMPLATES_PATH, body)] * 2)
+    linked, release = Event(), Event()
+    checkpoints, worker = Queue(), local()
+    target = subject._templates.revision_path(body["template_id"], body["revision"])
+    link = run_files.os.link
+    transaction = subject._templates.transaction
+
+    def held_link(source, destination, *args, **kwargs):
+        link(source, destination, *args, **kwargs)
+        if Path(destination) == target:
+            linked.set()
+            assert release.wait(10), "the staged publication was never released"
+
+    @contextmanager
+    def observed_transaction(template_id):
+        if getattr(worker, "retry", False):
+            checkpoints.put("waiting for publication")
+        with transaction(template_id):
+            yield
+
+    def retry():
+        worker.retry = True
+        try:
+            return _outcome(subject, TEMPLATES_PATH, body)()
+        finally:
+            checkpoints.put("answered")
+
+    monkeypatch.setattr(run_files.os, "link", held_link)
+    monkeypatch.setattr(subject._templates, "transaction", observed_transaction)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(_outcome(subject, TEMPLATES_PATH, body))
+        try:
+            assert linked.wait(10), "the first publication never reached its real link"
+            assert target.stat().st_nlink == 2
+            second = pool.submit(retry)
+            # Wait until the retry either reaches the shared gate or answers;
+            # this reproduces the race without relying on a scheduling delay.
+            assert checkpoints.get(timeout=10) in {"waiting for publication", "answered"}
+        finally:
+            release.set()
+        results = [first.result(timeout=10), second.result(timeout=10)]
     assert sorted(results) == [200, 201]
     store = TemplateStore(tmp_path)
     assert store.revisions("template-dalio") == (1,)

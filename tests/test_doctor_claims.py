@@ -103,13 +103,18 @@ def a_server(served):
 
     Recording is the point: "shows when each lane last reported" is kept by
     serving the panel for this project, and a command that never reached the
-    server kept nothing.
+    server kept nothing. The finite fake serve loop returns normally so the
+    real drain can retire it. Ctrl+C belongs to the real-signal witnesses in
+    test_server_drain.py, not an exception raised on the HTTP worker thread.
     """
     class Bound:
         server_address = ("127.0.0.1", 7777)
 
         def serve_forever(self):
-            raise KeyboardInterrupt          # what Ctrl-C does
+            return None
+
+        def shutdown(self):
+            pass
 
         def server_close(self):
             pass
