@@ -92,6 +92,7 @@ DESK_ASSETS = {
     "/panel/desk-flow-branches.js": ("text/javascript; charset=utf-8", "desk-flow-branches.js"),
     "/panel/desk-flow-edits.js": ("text/javascript; charset=utf-8", "desk-flow-edits.js"),
     "/panel/desk-flowwrite.js": ("text/javascript; charset=utf-8", "desk-flowwrite.js"),
+    "/panel/desk-quickcycle.js": ("text/javascript; charset=utf-8", "desk-quickcycle.js"),
 }
 
 # Exact package resources, never a path derived from the request target.
