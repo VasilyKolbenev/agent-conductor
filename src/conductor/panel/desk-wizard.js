@@ -595,7 +595,7 @@ export function mountWizard(mount, state, handlers) {
   const ctx = context(state, handlers), wizard = ctx.wizard;
   const draw = Object.hasOwn(BODIES, wizard.step) ? BODIES[wizard.step] : () => [];
   mount.replaceChildren(element("section", {className: "desk-wizard", "data-wizard": "",
-    "data-step": wizard.step, "data-mode": modeOf(wizard)}, [
+    "data-wizard-current": wizard.step, "data-mode": modeOf(wizard)}, [
     head(ctx), stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step}, draw(ctx)),
     foot(ctx), ...closing(ctx)]));

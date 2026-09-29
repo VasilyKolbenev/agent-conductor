@@ -284,7 +284,7 @@ def test_git_lost_after_step_two_disables_next_names_that_step_and_the_stepper_r
         "wizard.reason.earlier", step=step, reason=bench.say("wizard.reason.git_stops")))
     assert bench.control("wizard:next").is_disabled()
     bench.control("wizard:step:materials").click()
-    expect(bench.root()).to_have_attribute("data-step", "materials")
+    expect(bench.root()).to_have_attribute("data-wizard-current", "materials")
     assert bench.page.locator("[data-wizard-reason]").inner_text() == bench.say(
         "wizard.reason.git_stops"), "on its own step the reason has no prefix"
     assert bench.problems == []

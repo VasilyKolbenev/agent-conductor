@@ -7,8 +7,9 @@ own files (`test_desk_wizard_materials.py`, `_cycle.py`, `_roles.py`).
 from __future__ import annotations
 
 import pytest
+from playwright.sync_api import expect
 
-from browser_tests.desk_wizard_bench import bench, desk_url  # noqa: F401
+from browser_tests.desk_wizard_bench import bench, desk_url, wizard_reads  # noqa: F401
 
 LANGS = ("ru", "en")
 STEP_NAMES = {"ru": ["Задача", "Материалы", "Цикл", "Роли и указания", "Подготовка", "Запуск"],
@@ -20,7 +21,8 @@ STEP_NAMES = {"ru": ["Задача", "Материалы", "Цикл", "Роли
 def test_the_wizard_opens_on_the_task_step_with_no_field_prefilled(bench, lang):
     bench.open(lang)
     root = bench.root()
-    assert root.get_attribute("data-step") == "task" and root.get_attribute("data-mode") == "normal"
+    assert root.get_attribute("data-wizard-current") == "task"
+    assert root.get_attribute("data-mode") == "normal"
     fields = bench.page.locator('[data-body="task"] input, [data-body="task"] textarea')
     assert fields.count() == 3
     assert fields.evaluate_all("nodes => nodes.map(node => node.value)") == ["", "", ""]
@@ -73,7 +75,7 @@ def test_next_stays_disabled_until_the_title_and_the_brief_are_valid_and_says_wh
     bench.type_into("wizard:brief", "Make the login form accept a plus sign.")
     assert next_button.is_enabled() and reason.inner_text() == ""
     next_button.click()
-    assert bench.root().get_attribute("data-step") == "materials"
+    assert bench.root().get_attribute("data-wizard-current") == "materials"
     assert bench.control("wizard:back").is_enabled()
     assert bench.problems == []
 
@@ -110,6 +112,23 @@ def test_every_control_the_wizard_writes_carries_a_focus_key_and_survives_a_rere
         " document.activeElement.selectionStart]")
     assert after == held, "a redraw in the other language keeps focus, text and caret"
     assert bench.page.locator('[data-field="title"] span').inner_text() != ""
+    assert bench.problems == []
+
+
+FOCUSED = "() => document.activeElement && document.activeElement.dataset.focus || null"
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_pressing_next_from_the_keyboard_leaves_focus_on_the_next_steps_next_button(bench, lang):
+    bench.open(lang, auto=wizard_reads())
+    bench.type_into("wizard:title", "Fix login")
+    bench.type_into("wizard:brief", "Make it work.")
+    next_button = bench.control("wizard:next")
+    next_button.focus()
+    next_button.press("Enter")
+    expect(bench.page.locator('[data-body="materials"]')).to_have_count(1)
+    assert bench.page.evaluate(FOCUSED) == "wizard:next", (
+        "the redraw for the next step must hand focus back to the control that replaced it")
     assert bench.problems == []
 
 

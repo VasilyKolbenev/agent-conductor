@@ -39,7 +39,7 @@ def to_materials(bench, lang, *, git="repo", starter=None, view=False, auto=None
     bench.type_into("wizard:title", "Fix login")
     bench.type_into("wizard:idea" if starter else "wizard:brief", "Make it work.")
     bench.control("wizard:next").click()
-    expect(bench.root()).to_have_attribute("data-step", "materials")
+    expect(bench.root()).to_have_attribute("data-wizard-current", "materials")
 
 
 def on(bench, key):
