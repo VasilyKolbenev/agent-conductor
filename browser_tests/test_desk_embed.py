@@ -210,9 +210,8 @@ def test_a_framed_desk_tells_its_hub_where_it_is_and_only_where_it_is(
         NOWHERE, _where("task-fix", None), _where("task-fix", "run-fix-new")]
     assert all(message["origin"] == rig.desk_origin and message["fromFrame"]
                and message["keys"] == FOUR_KEYS for message in messages)
-    assert window.frame.evaluate("document.documentElement.lang") == language
-    assert window.frame.evaluate("location.hash") == (
-        f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&lang={language}")
+    assert window.frame.evaluate("() => [document.documentElement.lang, location.hash]") == [
+        language, f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&lang={language}"]
     assert window.problems == []
 
 
@@ -246,8 +245,7 @@ def test_a_location_replace_from_the_hub_selects_without_a_reload_and_is_announc
         "() => window.__messages.at(-1).data.run_id === 'run-docs'")
     messages = [message["data"] for message in window.settle()]
     assert messages == [NOWHERE, _where("task-docs", None), _where("task-docs", "run-docs")]
-    assert window.frame.evaluate("window.__marker") == marker
-    assert window.frame.evaluate("window.__hashchanges") == 1
+    assert window.frame.evaluate("() => [window.__marker, window.__hashchanges]") == [marker, 1]
     assert window.problems == []
 
 
@@ -294,9 +292,9 @@ def test_embed_stays_off_and_nothing_is_sent_when_any_one_of_its_conditions_fail
     window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
     assert window.settle() == []
     assert window.claim_reads() == (1 if asked else 0)
-    assert "embed" not in window.frame.evaluate("location.hash")
-    assert window.frame.evaluate(
-        "document.getElementById('deskShell').getAttribute('data-state')") == "ready"
+    address, shell = window.frame.evaluate("""() => [location.hash,
+      document.getElementById('deskShell').getAttribute('data-state')]""")
+    assert "embed" not in address and shell == "ready"
     # A refused read and a missing route are logged by the browser as failed resource loads.
     assert [text for text in window.problems if "Failed to load resource" not in text] == []
 
