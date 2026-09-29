@@ -21,7 +21,8 @@ PURE = {"desk-flow-shape.js": set(),
         "desk-flow-loops.js": {"./desk-flow-shape.js"},
         "desk-flow-branches.js": {"./desk-flow-shape.js"},
         "desk-flow-edits.js": {"./desk-flow-shape.js", "./desk-flow-loops.js",
-                               "./desk-flow-branches.js"}}
+                               "./desk-flow-branches.js"},
+        "desk-flowwrite.js": {"./desk-flow-edits.js", "./desk-flow-shape.js"}}
 #: Modules that draw. None yet: the drawing lands with the panel.
 DRAWN: dict[str, set[str]] = {}
 #: Data only.
@@ -73,6 +74,13 @@ def test_every_flow_function_is_at_most_fifty_lines_and_every_file_under_the_cap
                                  re.MULTILINE | re.DOTALL):
             length = match.group(0).count("\n") + 1
             assert length <= FUNCTION_CAP, (name, match.group(0).splitlines()[0], length)
+
+
+def test_the_write_chains_events_are_one_closed_table_and_the_list_is_its_keys():
+    code = _code(PANEL / "desk-flowwrite.js")
+    assert len(re.findall(r"^const HANDLERS = \{", code, re.MULTILINE)) == 1
+    assert "export const WRITE_EVENTS = Object.freeze(Object.keys(HANDLERS));" in code
+    assert "Object.hasOwn(HANDLERS, event?.type)" in code, "an inherited key must not be an event"
 
 
 def test_the_edits_are_one_closed_table_whose_keys_are_the_edit_words():

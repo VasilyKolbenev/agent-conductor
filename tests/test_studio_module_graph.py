@@ -192,6 +192,9 @@ PERMITTED_IMPORTS = {
     "desk-flow-branches.js": frozenset({"./desk-flow-shape.js"}),
     "desk-flow-edits.js": frozenset({"./desk-flow-shape.js", "./desk-flow-loops.js",
                                      "./desk-flow-branches.js"}),
+    #: The write chain: reads and writes of a cycle through the flow door, one at a time. It applies
+    #: the edits and reaches the shape for an empty flow and the comparison of two; never the wire.
+    "desk-flowwrite.js": frozenset({"./desk-flow-edits.js", "./desk-flow-shape.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

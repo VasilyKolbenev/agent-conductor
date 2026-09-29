@@ -137,6 +137,21 @@ export function nearestAbove(flow, id, wanted) {
 
 export const isLoop = (step) => step?.type === "loop";
 
+/** A flow with nothing in it yet, under a title. */
+export function emptyFlow(title) {
+  return {flow_version: FLOW_VERSION, title, steps: [], links: [], ext: {}};
+}
+
+/** A value as text with its keys in order, so two flows that say the same thing compare equal. */
+export function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:`
+      + `${canonical(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
 //: Every reason an edit gives for changing nothing, each with a message in both languages
 //: (`schema.notice.<name>`); an edit answers `{flow: null, notice}` and never throws.
 export const NOTICE_NAMES = Object.freeze(["step_missing", "link_missing", "connection_invalid",
