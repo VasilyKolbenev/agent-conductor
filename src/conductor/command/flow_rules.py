@@ -70,7 +70,8 @@ def flow_rules(flow: object, doc: Mapping[str, Any] | None = None,
         flow: The flow, as the desk sent it; a flow the form refuses answers one `flow_invalid`.
         doc: `compile_flow` of the flow, when the caller has it already.
         binding: Role to facts of the harness it is given to, for the three binding warnings:
-            `{role_id: {"capabilities": [...], "verifies": bool} | None}`. None asks nothing.
+            `{role_id: {"capabilities": [...], "verifies": [...]} | None}`, where `verifies` names
+            the capabilities the harness can check independently. None asks nothing.
         budget: The `plan_budget` answer for the compiled document, when it was built; it
             supplies the rows of the budget and of the clamped time.
     """
@@ -619,6 +620,6 @@ def _binding_rows(graph: _Graph, binding: Mapping[str, Any]) -> list[dict[str, A
             continue
         if binding.get(checker) is None:
             rows.append(_row("role_unassigned", at, role_id=checker))
-        elif not binding[checker]["verifies"]:
+        elif step["capability"] not in binding[checker]["verifies"]:
             rows.append(_row("checker_cannot_verify", at, role_id=checker))
     return rows

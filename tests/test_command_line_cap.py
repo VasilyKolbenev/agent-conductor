@@ -11,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/flow_routes.py",
     "src/conductor/command/flow_rules.py",
     "src/conductor/command/plan_budget.py",
     "src/conductor/command/product_names.py",
@@ -18,6 +19,7 @@ CAPPED = (
     "src/conductor/command/workflow_flow.py",
     "tests/test_command_line_cap.py",
     "tests/test_command_flow_fixtures.py",
+    "tests/test_command_flow_routes.py",
     "tests/test_command_flow_rules.py",
     "tests/test_command_plan_budget.py",
     "tests/test_command_product_names.py",

@@ -39,6 +39,8 @@ COMMAND_ROUTES = (
     ("GET", "/command/workflows/<workflow_id>/revisions/<revision>"),
     ("POST", "/command/workflows/<workflow_id>/draft"),
     ("POST", "/command/workflows/<workflow_id>/revisions"),
+    ("GET", "/command/workflows/<workflow_id>/flow"),
+    ("POST", "/command/workflows/<workflow_id>/flow"),
     ("GET", "/command/runs"),
     ("POST", "/command/runs"),
     ("GET", "/command/tasks"),
@@ -65,7 +67,7 @@ _WORKFLOW_ROUTE = re.compile(
     # every read of one revision into the route that publishes them. Spelled
     # this way there is nothing to order -- the number is either there or it is
     # not, and the tail it belongs to is decided by name.
-    r"(?:/(?P<tail>draft|revisions)(?:/(?P<revision>[0-9]{1,9}))?)?\Z")
+    r"(?:/(?P<tail>draft|revisions|flow)(?:/(?P<revision>[0-9]{1,9}))?)?\Z")
 #: A task id is bounded at `MAX_TASK_ID`, and this grammar admits exactly the
 #: names the task store can address -- as `_RUN_ROUTE` admits exactly what
 #: `run_path` admits -- so a name past the bound is a path no row names rather
@@ -184,14 +186,20 @@ def _task_route(method: str, path: str) -> Route | None:
 
 
 def _workflow_route(method: str, matched: "re.Match[str]") -> Route:
-    """Name one of the four workflow routes, or refuse the shape outright.
+    """Name one of the five workflow routes, or refuse the shape outright.
 
     A tail that carries a number it has no use for is a path this table does not
     contain, not a path with an ignored suffix: `.../draft/3` would otherwise be
-    answered as `.../draft`, which is a route the allowlist never advertised.
+    answered as `.../draft`, which is a route the allowlist never advertised. The
+    `flow` tail is the second path of this table that both verbs reach, for the
+    run list's reason: reading a cycle and writing it are one noun asked two ways.
     """
     workflow_id = matched.group("workflow_id")
     tail, revision = matched.group("tail"), matched.group("revision")
+    if tail == "flow":
+        if revision is not None:
+            raise ApiRefusal.fixed("route_not_found")
+        return Route("workflow_flow", workflow_id=workflow_id)
     if tail is None:
         expected, name = "GET", "workflow"
     elif tail == "draft":

@@ -272,9 +272,10 @@ def case_return_after_correction():
 
 
 def binding_of(**changes):
-    every = {"role-analyst": {"capabilities": ["review"], "verifies": False},
-             "role-doer": {"capabilities": ["dispatch"], "verifies": False},
-             "role-checker": {"capabilities": ["review"], "verifies": True}}
+    every = {"role-analyst": {"capabilities": ["review"], "verifies": []},
+             "role-doer": {"capabilities": ["dispatch"], "verifies": []},
+             "role-checker": {"capabilities": ["review", "dispatch"],
+                              "verifies": ["review", "dispatch"]}}
     return {**every, **changes}
 
 
@@ -284,12 +285,12 @@ def case_role_unassigned():
 
 
 def case_role_capability_unsupported():
-    unsupported = {"capabilities": ["dispatch"], "verifies": False}
+    unsupported = {"capabilities": ["dispatch"], "verifies": []}
     return rows_of(good(), binding=binding_of(**{"role-analyst": unsupported})), TOP
 
 
 def case_checker_cannot_verify():
-    silent = {"capabilities": ["review"], "verifies": False}
+    silent = {"capabilities": ["review", "dispatch"], "verifies": ["review"]}  # not dispatch
     return rows_of(good(), binding=binding_of(**{"role-checker": silent})), {"step_id": "do"}
 
 
