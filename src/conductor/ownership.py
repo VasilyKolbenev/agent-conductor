@@ -131,6 +131,11 @@ class ProjectOwner:
             self._close_holds()
             raise
 
+    @property
+    def project_id(self):
+        """The activation nonce of the owned project: 32 lowercase hex, kept by every generation."""
+        return self._head["nonce"]
+
     def _pin(self, path, **options):
         from .ownership_native import NativeHold
         try:
