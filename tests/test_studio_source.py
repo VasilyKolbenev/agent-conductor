@@ -68,7 +68,8 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-           "desk-transport.js")
+           "desk-transport.js",
+           "desk-wizard-model.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
@@ -128,6 +129,11 @@ PERMITTED_IMPORTS = {
     #: screen, store or copy module: a door that could reach a screen would be a
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
+    #: The wizard's whole state and every way it changes, as pure functions. It
+    #: reaches the task model for the one rule that judges a task title, and
+    #: nothing else: no DOM builder, no copy, no transport -- an ask it wants
+    #: performed is a value it returns.
+    "desk-wizard-model.js": frozenset({"./studio-tasks-model.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

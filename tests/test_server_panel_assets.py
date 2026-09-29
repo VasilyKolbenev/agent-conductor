@@ -108,6 +108,8 @@ ASSETS = {
     "/panel/desk.html": "text/html; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
+    # The wizard's pure model: the lane that writes the wizard registers its own rows.
+    "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.
