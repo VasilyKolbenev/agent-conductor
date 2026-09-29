@@ -39,7 +39,7 @@ import threading
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 
 from conductor import server
 from conductor.command.graph_template import GraphTemplate
@@ -470,15 +470,62 @@ def test_a_landed_read_moves_the_screens_off_the_word_they_started_in(
     Booting says ``empty``; the reads the window opens with land and the two
     screens they feed say ``ready``. Without this, a shell that hardcoded one
     word would pass every assertion above.
+
+    The overview is waited for on ITS OWN word. Its word is the worst of the
+    workflows read and the runs read, so the workflow screen saying ``ready``
+    says nothing about the runs read, which can still be in flight when it
+    does; and its word and sentence are read in one evaluation.
     """
     page, problems = studio
     # `state="attached"`: four of the five containers are hidden by design, and
     # a wait that insisted on visibility would be asking a different question.
-    page.wait_for_selector('#screenWorkflow[data-state="ready"]',
+    page.wait_for_selector('#screenOverview[data-state="ready"]',
                            state="attached")
-    assert page.locator("#screenOverview").get_attribute("data-state") == "ready"
-    assert page.locator("#stateOverview").inner_text().strip() == "Read."
+    (overview,) = _screen_facts(page, SCREENS[:1])
+    assert (overview["word"], overview["said"]) == ("ready", "Read.")
     assert problems == []
+
+
+def test_the_overview_stays_loading_while_the_runs_read_is_held_and_reads_ready_once_it_lands(
+        chromium: Browser, studio_url: str) -> None:
+    """The overview's word is the worst of two reads, and one landing is not the other.
+
+    With the runs read held, the workflow screen says ``ready`` (its read has
+    landed) while the overview says ``loading``. So a reader that waited on the
+    workflow screen alone and then read the overview got a word from before the
+    runs read: the pair that turned the ubuntu gate red. Released, the overview
+    says ``ready`` and the sentence beside it says ``Read.``, from one evaluation.
+    """
+    context = chromium.new_context(viewport={"width": 1600, "height": 1200})
+    page = context.new_page()
+    problems = _watch(page)
+    held: list[Route] = []
+    gate = {"open": False}
+
+    def hold(route: Route) -> None:
+        if gate["open"]:
+            route.continue_()
+        else:
+            held.append(route)
+
+    page.route("**/command/runs", hold)
+    try:
+        page.goto(studio_url, wait_until="load")
+        _boot(page)
+        page.wait_for_selector('#screenWorkflow[data-state="ready"]',
+                               state="attached")
+        (overview,) = _screen_facts(page, SCREENS[:1])
+        assert (overview["word"], overview["said"]) == ("loading", "Reading.")
+        gate["open"] = True
+        for route in held:
+            route.continue_()
+        page.wait_for_selector('#screenOverview[data-state="ready"]',
+                               state="attached")
+        (overview,) = _screen_facts(page, SCREENS[:1])
+        assert (overview["word"], overview["said"]) == ("ready", "Read.")
+        assert problems == []
+    finally:
+        context.close()
 
 
 def test_the_shell_says_it_is_connected_in_a_machine_word_and_in_english(
