@@ -350,6 +350,16 @@ function timeText(ctx, seconds) {
   return ctx.t("wizard.time.s", {seconds: String(seconds)});
 }
 
+//: Names the cycle the last run went by: the product's own name for a cycle it ships, else the
+//: title the list of cycles gives, else nothing at all. The id is a key, never a word the owner
+//: reads.
+function uncardedLine(ctx, source, at) {
+  const named = Object.hasOwn(CYCLE_NAMES, source.workflowId)
+    ? ctx.t(`wizard.cycle.name_${CYCLE_NAMES[source.workflowId]}`) : source.cycleTitle;
+  return named === null ? ctx.t("wizard.cycle.source_last_run_unlisted", {at})
+    : ctx.t("wizard.cycle.source_last_run_other", {cycle: named, at});
+}
+
 //: Where the preselected card came from, said only while the choice is still the preselection. A
 //: last run whose cycle is not offered chose nothing, and that is said while nothing is chosen.
 function sourceLine(ctx) {
@@ -365,7 +375,7 @@ function sourceLine(ctx) {
     text = source.taskTitle === null ? ctx.t("wizard.cycle.source_last_run_untitled", {at})
       : ctx.t("wizard.cycle.source_last_run", {task: source.taskTitle, at});
   } else if (source.kind === "last_run_uncarded") {
-    text = ctx.t("wizard.cycle.source_last_run_other", {workflow: source.workflowId, at});
+    text = uncardedLine(ctx, source, at);
   }
   return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
 }

@@ -13,7 +13,7 @@ const BUILD_CARD = Object.freeze({id: "build", kind: "build", workflowId: null, 
   pinned: false, published: false, revision: null, locked: false, canPin: false,
   canUnpin: false});
 const NO_SOURCE = Object.freeze({kind: "none", by: null, at: null, task: null, taskTitle: null,
-  workflowId: null});
+  workflowId: null, cycleTitle: null});
 
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -83,11 +83,20 @@ function choiceOf(card) {
   return {kind: card.kind, workflowId: card.workflowId};
 }
 
+//: The title a readable row of the workflows list gives a cycle, or null. The id of a workflow is
+//: the key the desk looks it up by and is never a word it says to the owner, so the source of an
+//: uncarded last run carries this title for the line to name the cycle by.
+function titleOfCycle(reads, workflowId) {
+  const row = rowsOf(reads.workflows, "workflows").find((one) => one.workflow_id === workflowId);
+  return row && row.unreadable !== true && typeof row.title === "string" ? row.title : null;
+}
+
 //: The pinned cycle when it is a card, else the workflow of the project's last run when that is a
 //: card (spec 7.10). It says where the choice came from, and says only what was read: a pinned
 //: cycle that could not be read is reported as unread, never as absent, and a last run whose
-//: workflow is not offered here (`last_run_uncarded`) chooses nothing and names that workflow,
-//: instead of choosing an older run's cycle under the words "the last run". The pin and the last
+//: workflow is not offered here (`last_run_uncarded`) chooses nothing and carries that workflow
+//: (and its title, when the list gives one), instead of choosing an older run's cycle under the
+//: words "the last run". The pin and the last
 //: run are looked up in the list of cycles, so when that list could not be read
 //: (`workflowsUnread`) a cycle missing from it is unknown, not absent: nothing is chosen and no
 //: source is claimed.
@@ -104,7 +113,8 @@ export function preselect(reads) {
   const byPin = pinned === null ? null : cardFor(pinned.workflow_id);
   if (byPin !== null) {
     return {...base, choice: choiceOf(byPin), source: {kind: "pinned", by: pinned.set_by ?? null,
-      at: pinned.set_at ?? null, task: null, taskTitle: null, workflowId: pinned.workflow_id}};
+      at: pinned.set_at ?? null, task: null, taskTitle: null, workflowId: pinned.workflow_id,
+      cycleTitle: null}};
   }
   const run = lastRun(reads);
   if (run === null) return {...base, choice: null, source: NO_SOURCE};
@@ -112,7 +122,8 @@ export function preselect(reads) {
   return {...base, choice: card === null ? null : choiceOf(card), source: {
     kind: card === null ? "last_run_uncarded" : "last_run", by: null, at: run.created_at,
     task: run.task_id ?? null, taskTitle: titleOf(reads, run.task_id),
-    workflowId: run.workflow_id}};
+    workflowId: run.workflow_id,
+    cycleTitle: card === null ? titleOfCycle(reads, run.workflow_id) : null}};
 }
 
 // -- the flow write ----------------------------------------------------------------------
