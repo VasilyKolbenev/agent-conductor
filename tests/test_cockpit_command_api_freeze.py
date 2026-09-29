@@ -143,6 +143,8 @@ EXPECTED_ERRORS = {
     #: The LIFECYCLE of the server itself: nothing about the request, the run or
     #: the plan is at fault, the process is draining toward a stop.
     "server_stopping": (409, "lifecycle"),
+    #: The project's one slot is another run's: the request is fine and the state moves.
+    "slot_busy": (409, "concurrency"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 

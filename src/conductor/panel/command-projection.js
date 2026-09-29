@@ -125,6 +125,7 @@ export const ERROR_LABELS = Object.freeze({
   server_stopping: "This project's server is stopping. Nothing was written; "
     + "start it again to continue.",
   service_refused: "The command service refused the request.",
+  slot_busy: "Another run holds this project's slot. Nothing was started.",
   store_error: "The run store is unavailable.",
 });
 const RECORD_FIELDS = Object.freeze({
