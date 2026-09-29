@@ -1,0 +1,25 @@
+{
+  "project": "Notes app",
+  "workflows": [
+    {"workflow_id": "cycle-7c1e5a90", "title": "Standard with a tester", "latest_revision": 2,
+     "revisions": [1, 2], "has_draft": false, "unreadable": false},
+    {"workflow_id": "cycle-aa11bb22", "title": "Only a draft", "latest_revision": null,
+     "revisions": [], "has_draft": true, "unreadable": false},
+    {"workflow_id": "cycle-ff00ee11", "title": "Damaged", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": true},
+    {"workflow_id": "desk-standard", "title": "Standard", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": false},
+    {"workflow_id": "desk-starter-docs", "title": "Starter documents", "latest_revision": 1,
+     "revisions": [1], "has_draft": false, "unreadable": false},
+    {"workflow_id": "old-cycle", "title": "Old cycle", "latest_revision": 3,
+     "revisions": [1, 2, 3], "has_draft": false, "unreadable": false}
+  ],
+  "providers": [],
+  "starters": [
+    {"starter_id": "desk-standard", "title": "Standard", "revision": 1, "caveats": []},
+    {"starter_id": "desk-short", "title": "Short", "revision": 1, "caveats": []},
+    {"starter_id": "desk-starter-docs", "title": "Starter documents", "revision": 1,
+     "caveats": []},
+    {"starter_id": "dalio-v5", "title": "Dalio five-step cycle", "revision": 5, "caveats": []}
+  ]
+}

@@ -20,19 +20,29 @@
 // State shape (all frozen):
 //   step, mode {starterId, view}, task {taskId, title, brief, hint, idea, written},
 //   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened, closing,
-//   materials {items, counter, picker, refusal, includeInstructions}.
+//   materials {items, counter, picker, refusal, includeInstructions},
+//   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, status, refusal, settled}.
 import {taskTitle, TASK_TITLE_LIMIT, isTaskId} from "./studio-tasks-model.js";
 import {MATERIAL_KINDS, MATERIAL_LIMITS, bodyOf, documentCard, estimateOf, gitFacts,
   instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf, textCard}
   from "./desk-wizard-materials.js";
+import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
+  from "./desk-wizard-cycle.js";
 
 export const STEPS = Object.freeze(["task", "materials", "cycle", "roles", "prepare", "run"]);
 export const BUILT_STEPS = Object.freeze(["task", "materials", "cycle", "roles"]);
-//: The one starter the hash may name (spec 4.5.2), and the two cycles the wizard offers as
-//: cards. The set of cards is the desk's own, never the order `starters()` happens to give.
+//: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
+//: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
-export const WIZARD_STARTERS = Object.freeze(["desk-standard", "desk-short"]);
-export {MATERIAL_KINDS};
+export {MATERIAL_KINDS, WIZARD_STARTERS};
+//: The controls whose door a later slice opens. Each is drawn disabled with its reason and
+//: never as a button that does nothing.
+export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
+  "from_starter_docs", "build_own", "make_project_cycle", "prepare"]);
+
+export function isLater(control) {
+  return LATER.includes(control);
+}
 export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
   documentBytes: MATERIAL_LIMITS.bytes, argvChars: 32767, title: TASK_TITLE_LIMIT});
 
@@ -89,7 +99,11 @@ export function initialWizard(opening) {
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
-      includeInstructions: null}});
+      includeInstructions: null},
+    cycle: {choice: starterId === null ? null : {kind: "starter", workflowId: starterId},
+      chosenBy: starterId === null ? null : "starter", generation: starterId === null ? 0 : 1,
+      flow: null, flowFor: null, flowGeneration: -1, status: "idle", refusal: null,
+      settled: []}});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -176,12 +190,77 @@ function materialsPublication(state, lang) {
     {link: 5, target: "materials", ref: "artifact-materials", body: materialsBody(state, lang)}]};
 }
 
+// -- step 3: the cycle -------------------------------------------------------------------
+
+export function cycleCards(state) {
+  return cardsOf(state.reads, state.mode.starterId);
+}
+
+//: The card picked beforehand, and where the choice came from (spec 7.10).
+export function preselection(reads) {
+  return preselect(reads);
+}
+
+export function cycleFacts(state) {
+  return factsOf(state.cycle);
+}
+
+//: `POST …/flow` for the chosen cycle. Its id carries the generation of the choice, so an
+//: answer for a card the owner has left is told apart from the card they are on.
+export function flowWriteRequest(state, {publish = null, binding = null} = {}) {
+  const {choice, flow, flowFor, generation} = state.cycle;
+  if (choice === null) return null;
+  const held = flow !== null && flowFor === choice.workflowId ? flow : null;
+  const body = flowBody(choice, held, publish, binding);
+  return body === null ? null : {id: `write:flow:${generation}`, name: "flow", door: "write",
+    target: "flow", subject: choice.workflowId, body};
+}
+
+function cycleGate(state) {
+  const cycle = state.cycle;
+  if (cycle.choice === null) return "cycle_none";
+  if (cycle.status !== "idle") return `flow_${cycle.status}`;
+  if (cycle.flow === null || cycle.flowFor !== cycle.choice.workflowId) return "flow_pending";
+  return cycle.flow.publishable === true ? null : "flow_unpublishable";
+}
+
+function cyclePublication(state) {
+  const {choice, flow} = state.cycle;
+  const next = Number.isSafeInteger(flow.next_revision) ? flow.next_revision : null;
+  return {step: "cycle", writes: [{link: 3, target: "flow", workflow_id: choice.workflowId,
+    body: flowWriteRequest(state, {publish: next, binding: null}).body}]};
+}
+
+//: The preselection is applied once, when the three reads it needs have landed and the owner
+//: has not chosen: after that the owner's card, and only theirs, moves the choice.
+function applyPreselection(state) {
+  const cycle = state.cycle;
+  if (cycle.choice !== null || state.mode.starterId !== null) return state;
+  const found = preselect(state.reads);
+  if (!found.ready || found.choice === null) return state;
+  return evolve(state, {cycle: {...cycle, choice: found.choice, chosenBy: "preselection",
+    generation: cycle.generation + 1}});
+}
+
+function chooseCycle(state, event) {
+  if (state.mode.starterId !== null) return state;
+  const card = cycleCards(state).find((one) => one.id === event.id && one.kind !== "build");
+  if (!card) return state;
+  const cycle = state.cycle;
+  const same = cycle.choice?.workflowId === card.workflowId;
+  const left = same ? {} : {flow: null, flowFor: null, flowGeneration: -1};
+  return evolve(state, {cycle: {...cycle, ...left, choice: {kind: card.kind,
+    workflowId: card.workflowId}, chosenBy: "owner", generation: cycle.generation + 1,
+    status: "idle", refusal: null}});
+}
+
 // -- the steps and their gates ---------------------------------------------------------
 
 //: Why a step is not complete yet, as a closed code (null when it is). One entry per built
 //: step; a step with no entry has nothing to refuse.
-const GATES = {task: taskGate, materials: materialsGate};
-const PUBLISHERS = {task: taskPublication, materials: materialsPublication};
+const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate};
+const PUBLISHERS = {task: taskPublication, materials: materialsPublication,
+  cycle: cyclePublication};
 
 function gateOf(state, step) {
   return Object.hasOwn(GATES, step) ? GATES[step](state) : null;
@@ -259,12 +338,37 @@ function materialAsks(state) {
   return asks;
 }
 
+function flowReadAsk(id, workflowId) {
+  return {id, name: "flow_read", door: "read", target: "flowRead", subject: workflowId,
+    body: null};
+}
+
+//: The flow asks step 3 makes due, and only once the owner stands on that step: a conflict is
+//: read again; a saved cycle is read before anything is written for it; a write goes only when
+//: no other write is in flight, so it carries the digest the last answer left.
+function cycleAsks(state) {
+  const cycle = state.cycle;
+  if (cycle.choice === null || BUILT_STEPS.indexOf(state.step) < BUILT_STEPS.indexOf("cycle")) {
+    return [];
+  }
+  const id = cycle.choice.workflowId;
+  if (cycle.status === "conflict") return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
+  const held = cycle.flow !== null && cycle.flowFor === id;
+  if (cycle.choice.kind === "saved") {
+    return held ? [] : [flowReadAsk(`read:flow:${cycle.generation}`, id)];
+  }
+  const ask = flowWriteRequest(state, {publish: null, binding: null});
+  const busy = state.asked.some((sent) => sent.startsWith("write:flow:") && sent !== ask.id
+    && !cycle.settled.includes(sent));
+  return busy ? [] : [ask];
+}
+
 //: Every ask the state calls for, whether or not it went out already; `stepWizard` hands out
 //: only those whose id is not yet in `asked`.
 export function wantedAsks(state) {
   if (!state.opened) return [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)),
-    ...materialAsks(state)];
+    ...materialAsks(state), ...cycleAsks(state)];
 }
 
 function readOf(result) {
@@ -273,8 +377,41 @@ function readOf(result) {
     : {status: "failed", code: result.code ?? result.status, payload: null};
 }
 
+//: The three reads a preselection is made from; when one lands the choice may be made.
+const PRESELECTING = Object.freeze(["workflows", "runs", "cycle_read"]);
+
 function answerRead(name) {
-  return (state, _ask, result) => evolve(state, {reads: {...state.reads, [name]: readOf(result)}});
+  return (state, _ask, result) => {
+    const next = evolve(state, {reads: {...state.reads, [name]: readOf(result)}});
+    return PRESELECTING.includes(name) ? applyPreselection(next) : next;
+  };
+}
+
+function generationOf(id) {
+  return Number(id.split(":")[2]);
+}
+
+//: A flow answer, for a write or for the read that follows a conflict. It lands only on the
+//: card the owner is still on and only if it is not older than the one already held; either
+//: way its ask is settled, which frees the next write. A conflict is read again and told to the
+//: owner, and only their next choice of the card writes again.
+function landFlow(state, ask, result, wasWrite) {
+  const cycle = state.cycle, settled = [...cycle.settled, ask.id];
+  const onIt = cycle.choice !== null && cycle.choice.workflowId === ask.subject;
+  if (!onIt || generationOf(ask.id) < cycle.flowGeneration) {
+    return evolve(state, {cycle: {...cycle, settled}});
+  }
+  if (result.status === "accepted" && isFlowState(result.payload, ask.subject)) {
+    const status = !wasWrite && cycle.status === "conflict" ? "changed_elsewhere" : "idle";
+    return evolve(state, {cycle: {...cycle, settled, flow: structuredClone(result.payload),
+      flowFor: ask.subject, flowGeneration: generationOf(ask.id), status, refusal: null}});
+  }
+  const code = result.status === "accepted" ? "answer_unreadable" : result.code ?? result.status;
+  const status = code === "draft_conflict" ? "conflict"
+    : result.status === "unknown" ? "unknown" : "refused";
+  const rows = result.payload?.diagnostics ?? result.payload?.detail?.diagnostics ?? [];
+  return evolve(state, {cycle: {...cycle, settled, status,
+    refusal: {code, diagnostics: Array.isArray(rows) ? structuredClone(rows) : []}}});
 }
 
 //: A document read for a card taken as a copy. A refusal sends the card back to a link; only
@@ -294,7 +431,9 @@ function answerDocument(state, ask, result) {
 }
 
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
-  .map((name) => [name, answerRead(name)])), document: answerDocument};
+  .map((name) => [name, answerRead(name)])), document: answerDocument,
+  flow: (state, ask, result) => landFlow(state, ask, result, true),
+  flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
 
 function validResult(result) {
   return result !== null && typeof result === "object"
@@ -427,6 +566,7 @@ const HANDLERS = {
   "material-edit": editMaterial,
   "material-remove": removeMaterial,
   "material-mode": setMode,
+  "cycle-choose": chooseCycle,
   "include-instructions": (state, event) => (typeof event.value === "boolean"
     && state.materials.includeInstructions !== event.value
     ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
