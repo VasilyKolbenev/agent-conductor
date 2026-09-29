@@ -186,7 +186,7 @@ def test_the_no_providers_state_shows_the_no_providers_message_and_blocks_the_st
         "wizard.providers.none")
     assert bench.page.locator("[data-role]").count() == 0
     assert reason(bench) == bench.say("wizard.reason.no_providers")
-    assert bench.control("wizard:prepare").is_disabled()
+    assert bench.control("wizard:next").is_disabled()
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -199,7 +199,7 @@ def test_the_row_as_served_today_says_roster_facts_are_not_served_not_that_none_
     assert bench.page.locator("[data-providers-none]").count() == 0, "none is not the same claim"
     assert bench.page.locator("[data-role]").count() == 0
     assert reason(bench) == bench.say("wizard.reason.roster_pending")
-    assert bench.control("wizard:prepare").is_disabled()
+    assert bench.control("wizard:next").is_disabled()
     assert bench.problems == []
 
 
@@ -214,10 +214,8 @@ def test_the_starter_journey_ends_step_four_with_three_review_roles_and_no_instr
     assert bench.page.locator("[data-instructions-none]").inner_text() == bench.say(
         "wizard.instr.none")
     expect(bench.page.locator("[data-wizard-reason]")).to_have_text("")
-    prepare = bench.control("wizard:prepare")
-    assert prepare.is_disabled()
-    assert bench.page.locator('[data-blocked="wizard:prepare"] small').inner_text() == \
-        bench.say("wizard.later.prepare")
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.control("wizard:prepare").count() == 0, "the chain's button is on step 5"
     assert bench.problems == []
 
 

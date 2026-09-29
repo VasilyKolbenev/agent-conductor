@@ -591,7 +591,7 @@ def test_every_control_whose_door_is_not_wired_is_named_and_none_is_a_silent_no_
         wired: ["edit-title", "next", "material-add", "cycle-choose"].map(wiz.isLater)});
     """, DATA)
     assert out["later"] == ["connect_git", "first_commit", "run_without_git", "from_starter_docs",
-                            "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]
+                            "build_own", "make_project_cycle", "unpin_project_cycle"]
     assert out["frozen"] is True and out["wired"] == [False] * 4
 
 
@@ -667,7 +667,7 @@ def test_a_passed_step_whose_gate_fails_again_is_shown_as_needing_attention():
                                 ["cycle", "current", None], ["roles", "ready", None]]
     assert out["lost"] == [["task", "done", None], ["materials", "attention", "git_reading"],
                            ["cycle", "current", None], ["roles", "blocked", "git_reading"],
-                           ["prepare", "later", None], ["run", "later", None]]
+                           ["prepare", "blocked", "git_reading"], ["run", "later", None]]
 
 
 def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next_revision():

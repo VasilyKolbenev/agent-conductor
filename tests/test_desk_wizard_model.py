@@ -15,16 +15,16 @@ EN_BRIEF = ("# Fix login\n\n## What needs to be done\nMake it work.\n\n"
             "## How to tell it is done (hint)\nTests pass\n")
 
 
-def test_the_wizard_has_six_steps_in_the_owner_order_and_this_build_covers_the_first_four():
+def test_the_wizard_has_six_steps_in_the_owner_order_and_this_build_covers_the_first_five():
     out = run_js(PRELUDE + """
       show({steps: wiz.STEPS, built: wiz.BUILT_STEPS,
         status: wiz.stepStates(open()).map((row) => [row.step, row.status]),
         frozen: [Object.isFrozen(wiz.STEPS), Object.isFrozen(wiz.BUILT_STEPS)]});
     """)
     assert out["steps"] == ["task", "materials", "cycle", "roles", "prepare", "run"]
-    assert out["built"] == out["steps"][:4]
+    assert out["built"] == out["steps"][:5]
     assert out["status"] == [["task", "current"], ["materials", "blocked"], ["cycle", "blocked"],
-                             ["roles", "blocked"], ["prepare", "later"], ["run", "later"]]
+                             ["roles", "blocked"], ["prepare", "blocked"], ["run", "later"]]
     assert out["frozen"] == [True, True]
 
 

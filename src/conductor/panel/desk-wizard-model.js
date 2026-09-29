@@ -46,8 +46,9 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
 import {flowWriteRequest} from "./desk-wizard-input.js";
 import {chainLinks, landRun, resumeEdit, resumeGate as judgeResume, resumeOpening, resumeRestart,
   resumeView, runAdopt, runBump, runRetry, runStart, runWanted, wizardExit, wizardHash,
-  prepareGate as judgePrepare} from "./desk-wizard-run.js";
-import {initialRun} from "./desk-wizard-prep.js";
+  prepareFacts as judgeFacts, prepareGate as judgePrepare} from "./desk-wizard-run.js";
+import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
+  from "./desk-wizard-prep.js";
 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
@@ -57,6 +58,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   taskText, utf8Bytes,
   assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
+  CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS,
   chainLinks, flowWriteRequest, resumeView, wizardExit, wizardHash};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
@@ -74,7 +76,7 @@ export const REASONS = Object.freeze([
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
-  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]);
+  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle"]);
 
 export function isLater(control) {
   return LATER.includes(control);
@@ -349,6 +351,11 @@ export function prepareGate(state) {
 
 export function resumeGate(state) {
   return judgeResume(state, gateOf);
+}
+
+//: What step 5 draws (see `desk-wizard-run.js`).
+export function prepareFacts(state) {
+  return judgeFacts(state, gateOf);
 }
 
 //: What each step would publish once the chain of later slices sends it. The chain runs in

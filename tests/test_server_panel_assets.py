@@ -130,6 +130,8 @@ ASSETS = {
     "/panel/desk-wizard-input.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-prep.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-run.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-draw.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-prepare-view.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-copy.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a

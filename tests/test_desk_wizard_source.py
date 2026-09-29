@@ -39,8 +39,19 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
 #: The renderer: it builds elements, so it reaches the view's helper and the words, and no store,
 #: no transport and no other screen.
 RENDERER = "desk-wizard.js"
+#: Every module that draws, with the one set of siblings it may import. The renderer mounts and
+#: the two others hold what it draws from: the controls every step is made of, and step 5.
 DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
-                    "./desk-wizard-copy.js"}}
+                    "./desk-wizard-copy.js", "./desk-wizard-draw.js",
+                    "./desk-wizard-prepare-view.js"},
+         "desk-wizard-draw.js": {"./command-view.js"},
+         "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                         "./desk-wizard-model.js"}}
+#: What each drawing module hands the ones above it, and nothing else.
+DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
+                 "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
+                                         "timeText"],
+                 "desk-wizard-prepare-view.js": ["prepareBody"]}
 #: Data only: the catalogue holds strings and nothing else.
 DATA = ("desk-wizard-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
@@ -57,14 +68,15 @@ VENDOR_WORDS = ("claude", "codex", "grok", "kimi", "qwen", "deepseek", "anthropi
                 "gemini", "dsh")
 #: The events only the host sends: the wizard never emits them from a control.
 HOST_EVENTS = {"open", "answered"}
-#: Events the model takes whose controls the view of step 5 draws in a commit of its own; until
-#: then no control sends them. That commit empties this set, and the guard below is whole again.
-UNDRAWN = {"prepare-start", "prepare-retry", "prepare-adopt", "prepare-bump", "resume-edit",
-           "resume-restart"}
 
 
 def _source(name: str) -> str:
     return (PANEL / name).read_text(encoding="utf-8")
+
+
+def _drawn_code() -> str:
+    """The code of every drawing module, together: a control may be built in any of them."""
+    return "\n".join(_code(PANEL / name) for name in DRAWN)
 
 
 def test_the_wizard_modules_import_only_the_siblings_each_is_granted():
@@ -110,6 +122,12 @@ def test_the_renderer_exports_mount_wizard_and_nothing_else():
     assert exported_names(_code(PANEL / RENDERER)) == ["mountWizard"]
 
 
+def test_each_drawing_module_exports_exactly_what_the_ones_above_it_take():
+    for name, expected in DRAWN_EXPORTS.items():
+        assert exported_names(_code(PANEL / name)) == expected, name
+    assert set(DRAWN_EXPORTS) == set(DRAWN)
+
+
 def _emitted(code: str, events: list[str]) -> set[str]:
     """Every event type the renderer's source names, a template `x-${..}` as its whole family."""
     found = set(re.findall(r'send\(\{type: "([a-z-]+)"', code))
@@ -120,7 +138,7 @@ def _emitted(code: str, events: list[str]) -> set[str]:
 
 def test_the_renderer_hands_its_host_only_events_of_the_models_closed_table():
     events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
-    emitted = _emitted(_code(PANEL / RENDERER), events)
+    emitted = _emitted(_drawn_code(), events)
     assert emitted and emitted <= set(events), emitted - set(events)
     assert not emitted & HOST_EVENTS, "the host opens the wizard and answers its asks"
 
@@ -128,8 +146,8 @@ def test_the_renderer_hands_its_host_only_events_of_the_models_closed_table():
 def test_the_renderer_can_cause_every_event_the_model_takes_but_the_hosts_own():
     """An event no control sends is a way to change the wizard that nobody can reach."""
     events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
-    emitted = _emitted(_code(PANEL / RENDERER), events)
-    left = set(events) - HOST_EVENTS - UNDRAWN - emitted
+    emitted = _emitted(_drawn_code(), events)
+    left = set(events) - HOST_EVENTS - emitted
     assert left == set(), left
 
 
@@ -154,7 +172,7 @@ def test_the_renderer_draws_no_radio_or_checkbox_input_the_focus_net_cannot_rest
     A keyed one throws inside the host's redraw and drops the asks the same event made, so a
     choice is a button that says whether it is on (`role` radio or switch, `aria-checked`).
     """
-    code = _code(PANEL / RENDERER)
+    code = _drawn_code()
     assert not re.search(r'type: "(?:radio|checkbox)"', code)
     assert "aria-checked" in code
 
@@ -173,7 +191,7 @@ def test_no_wizard_module_writes_the_focus_nets_scope_attribute():
 
 
 def test_every_control_the_renderer_builds_carries_a_focus_key():
-    blocks = _blocks(_code(PANEL / RENDERER), ("button", "input", "textarea", "select"))
+    blocks = _blocks(_drawn_code(), ("button", "input", "textarea", "select"))
     assert len(blocks) >= 5
     assert all('"data-focus"' in block for block in blocks), [
         block[:60] for block in blocks if '"data-focus"' not in block]

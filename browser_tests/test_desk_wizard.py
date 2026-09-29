@@ -45,7 +45,7 @@ def test_the_starter_mode_shows_a_title_and_an_idea_and_no_hint(bench, lang):
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_the_stepper_lists_six_steps_and_marks_the_last_two_as_not_yet_built(bench, lang):
+def test_the_stepper_lists_six_steps_and_marks_the_last_one_as_not_yet_built(bench, lang):
     bench.open(lang)
     rows = bench.page.locator("[data-wizard-step]")
     assert rows.count() == 6
@@ -55,7 +55,7 @@ def test_the_stepper_lists_six_steps_and_marks_the_last_two_as_not_yet_built(ben
         "nodes => nodes.map(node => node.querySelector(':scope > :first-child').innerText)")
     assert names == [f"{at + 1}. {name}" for at, name in enumerate(STEP_NAMES[lang])]
     status = rows.evaluate_all("nodes => nodes.map(node => node.dataset.status)")
-    assert status == ["current", "blocked", "blocked", "blocked", "later", "later"]
+    assert status == ["current", "blocked", "blocked", "blocked", "blocked", "later"]
     later = bench.page.locator('[data-status="later"]')
     assert later.locator("button").count() == 0, "a step that is not built is not a control"
     assert all(bench.say("wizard.step_later") in text for text in later.all_inner_texts())

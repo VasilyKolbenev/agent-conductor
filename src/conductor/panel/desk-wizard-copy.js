@@ -88,8 +88,6 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.later.unpin_project_cycle": ["Unpinning the project cycle comes in a later step: its "
     + "door is not open yet.", "Открепление цикла проекта появится позже: его дверь ещё не "
     + "открыта."],
-  "wizard.later.prepare": ["Preparing the run comes in a later step.",
-    "Подготовка запуска появится позже."],
   "wizard.reason.git_stops": ["This project cannot be used; see the note at the top of the step.",
     "Этот проект использовать нельзя: см. пояснение вверху шага."],
   "wizard.reason.earlier": ["Step “{step}” is not complete: {reason}",
@@ -392,6 +390,60 @@ export const WIZARD_COPY = Object.freeze({
     + "and this project has none the wizard can read: connect git or run without git (both "
     + "come in a later step).", "Агенты работают над копией git-репозитория проекта, а "
     + "здесь его нет: подключите git или запустите без git (обе кнопки появятся позже)."],
+  // -- step 5: the chain «Подготовить запуск» and a reloaded page --------------------------
+  "wizard.prepare.heading": ["Preparing the run", "Подготовка запуска"],
+  "wizard.prepare.continue": ["Continue preparation", "Продолжить подготовку"],
+  "wizard.chain.link.task": ["Task", "Задача"],
+  "wizard.chain.link.seed": ["Seed", "Засев"],
+  "wizard.chain.link.flow": ["Cycle", "Цикл"],
+  "wizard.chain.link.run": ["Run", "Запуск"],
+  "wizard.chain.link.documents": ["Documents", "Документы"],
+  "wizard.chain.link.preview": ["Preview", "Предпросмотр"],
+  "wizard.chain.status.done": ["done", "сделано"],
+  "wizard.chain.status.skipped": ["not needed", "не нужно"],
+  "wizard.chain.status.running": ["writing…", "записываем…"],
+  "wizard.chain.status.unknown": ["the answer was lost", "ответ потерян"],
+  "wizard.chain.status.refused": ["refused", "отказ"],
+  "wizard.chain.status.todo": ["not started yet", "ещё не начато"],
+  "wizard.chain.status.needed": ["needed", "нужно"],
+  "wizard.chain.refused": ["The server refused this link: {code}.",
+    "Сервер отказал на этом звене: {code}."],
+  "wizard.chain.conflict_run": ["A run with this number is already open with another "
+    + "arrangement of the roles: they were changed after an answer was lost.",
+    "Запуск с этим номером уже открыт с другой расстановкой: роли меняли после потерянного "
+    + "ответа."],
+  "wizard.chain.adopt": ["Continue with the recorded arrangement",
+    "Продолжить с записанной расстановкой"],
+  "wizard.chain.bump": ["Open run r{number}", "Открыть запуск r{number}"],
+  "wizard.chain.retry": ["Try again", "Повторить"],
+  "wizard.chain.unknown": ["The answer was lost, so nothing is sent again until what the server "
+    + "holds has been read.", "Ответ потерян, поэтому ничего не отправляется повторно, пока не "
+    + "прочитано, что записал сервер."],
+  "wizard.chain.read_failed": ["What the server holds could not be read ({code}).",
+    "Не удалось прочитать, что записал сервер ({code})."],
+  "wizard.chain.ready": ["The run is prepared: its terms are read.",
+    "Запуск подготовлен: условия прочитаны."],
+  "wizard.resume.reading": ["Reading where this task stands…",
+    "Читаем, на чём остановилась эта задача…"],
+  "wizard.resume.failed": ["Where this task stands could not be read ({code}).",
+    "Не удалось прочитать, на чём остановилась задача ({code})."],
+  "wizard.resume.no_run": ["The task “{title}” is written, but the text you typed and the roles "
+    + "you chose were not saved before the page was reloaded.",
+    "Задача «{title}» записана, но введённый текст и выбранные роли не были сохранены до "
+    + "перезагрузки страницы."],
+  "wizard.resume.restart": ["Fill in again", "Заполнить заново"],
+  "wizard.resume.retype": ["The text of these fields was not written before the reload: type it "
+    + "again", "Текст этих полей не был записан до перезагрузки — введите его заново"],
+  "wizard.resume.preview": ["Everything is written: only the terms are left to read.",
+    "Всё записано: осталось прочитать условия."],
+  "wizard.resume.materials": ["Materials (may stay empty)",
+    "Материалы (можно оставить пустыми)"],
+  "wizard.resume.exit_queued": ["This run is already in the queue.",
+    "Этот запуск уже стоит в очереди."],
+  "wizard.resume.exit_authorized": ["This run is already authorized.",
+    "Этот запуск уже разрешён."],
+  "wizard.resume.exit_ended": ["This run has ended.", "Этот запуск завершён."],
+  "wizard.resume.open": ["Open the run", "Открыть запуск"],
   "wizard.reason.resume_pending": ["Waiting for the server to say where this task stands.",
     "Ждём, пока сервер скажет, на чём остановилась эта задача."],
   "wizard.reason.binding_rows": ["The server says a harness cannot carry out its role: see the "

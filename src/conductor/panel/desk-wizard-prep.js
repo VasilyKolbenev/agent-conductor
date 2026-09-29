@@ -21,6 +21,9 @@
 import {documentId, sha256Hex} from "./desk-wizard-digest.js";
 
 export const LINKS = Object.freeze(["task", "seed", "flow", "run", "documents", "preview"]);
+//: Where a link can stand (`linkStates`); each has its word in the catalogue.
+export const STATUSES = Object.freeze(["done", "skipped", "running", "unknown", "refused", "todo",
+  "needed"]);
 const MEDIA = "text/markdown";
 const WORK_ITEM = "work-001";
 const STARTS = Object.freeze(["idle", "review"]);
@@ -43,13 +46,20 @@ export function openResume(run, resume) {
     texts: {}, lost: false}};
 }
 
+/** The number the next run would have if the run the wizard holds is set aside (`r<n+1>`). */
+export function followingRunNumber(run) {
+  const found = /-r([0-9]+)$/.exec(run.runId ?? "");
+  return found === null ? null : Number(found[1]) + 1;
+}
+
 /** The run of the task the hash names, as the read lists it, or null. */
 export function resumeRow(run) {
   if (run.resume === null || run.prep === null || run.resume.runId === null) return null;
   return run.prep.runs.find((row) => row.run_id === run.resume.runId) ?? null;
 }
 
-const EXITS = Object.freeze(["queued", "authorized", "ended"]);
+//: The stages of a run that is past preparation: the desk opens it instead.
+export const EXITS = Object.freeze(["queued", "authorized", "ended"]);
 
 /**
  * What stands after a reload, from the read alone: `reading`, `failed`, `no_run` (the task stands
@@ -212,9 +222,14 @@ function hashResumed(run, input) {
 export function hashNow(run, input) {
   if (run.resume !== null && !run.pressed) return hashResumed(run, input);
   if (!run.pressed) return null;
+  return hashAt(currentLink(run, input), input, run);
+}
+
+//: The first link that is not done: the one the chain is at, and so the one whose keys stand.
+function currentLink(run, input) {
   const open = linkStates(run, input).find((row) => row.status !== "done"
     && row.status !== "skipped");
-  return hashAt(open === undefined ? "preview" : open.link, input, run);
+  return open === undefined ? "preview" : open.link;
 }
 
 function writeAsk(run, input, spec) {
@@ -224,9 +239,9 @@ function writeAsk(run, input, spec) {
     hash: hashAt(spec.link, input, run)};
 }
 
-function readAsk(run, input, name, id, target, subject, link) {
+function readAsk(run, input, name, id, target, subject) {
   return {id, name, door: "read", target, subject, body: null, job: null,
-    hash: hashAt(link, input, run)};
+    hash: hashAt(currentLink(run, input), input, run)};
 }
 
 /**
@@ -239,14 +254,14 @@ function readAsk(run, input, name, id, target, subject, link) {
 export function chainAsks(run, input) {
   if (!run.pressed || (run.phase !== "preparing" && run.phase !== "unknown")) return [];
   const read = () => readAsk(run, input, "prep_read", `read:prep:${run.seq}`, "preparation",
-    input.taskId, "task");
+    input.taskId);
   if (run.phase === "unknown") return run.readFailed === null ? [read()] : [];
   const task = taskSpec(input);
   if (!input.resumed && !run.done.includes(task.key)) return [writeAsk(run, input, task)];
   if (run.prep === null) return [read()];
   if (run.flowCheck) {
     return [readAsk(run, input, "prep_flow_read", `read:prep:flow:${run.seq}`, "flowRead",
-      input.workflowId, "flow")];
+      input.workflowId)];
   }
   const next = pendingSpecs(run, input)[0];
   return next === undefined ? [] : [writeAsk(run, input, next)];
@@ -418,12 +433,17 @@ export function landChain(run, input, ask, result) {
 
 // -- what the step says ------------------------------------------------------------------
 
-//: After a reload the four first links stand, since a run stands; the documents are done when
-//: everything the read said was missing has been written, and the preview when it was made.
+//: After a reload each link is what the read says: the task stands once the read answered, the
+//: seed when the read holds one (or a run stands, which the seed came before), the cycle and the
+//: run when the run named by the hash is listed; the documents are done when everything the read
+//: said was missing has been written, and the preview when it was made.
 function resumedDone(run, input, link) {
-  if (link !== "documents" && link !== "preview") return true;
+  if (run.prep === null) return false;
   const row = resumeRow(run);
+  if (link === "task") return true;
+  if (link === "seed") return run.prep.seed !== null || row !== null;
   if (row === null) return false;
+  if (link === "flow" || link === "run") return true;
   const held = {...run, runId: row.run_id};
   const specs = input.documents.map((paper) => documentSpec(held, paper));
   if (input.materials !== null) specs.push(materialsSpec(input, held));
@@ -452,7 +472,8 @@ function linkDone(run, input, link) {
 
 /**
  * The state of each link, in order: `done`, `skipped` (a cycle with no step that works in a
- * folder has no seed), `running`, `unknown` (an answer was lost), `refused`, or `todo`.
+ * folder has no seed), `running`, `unknown` (an answer was lost), `refused`, `todo`, or, on a
+ * reloaded page that has read its task, `needed`.
  */
 export function linkStates(run, input) {
   let current = null;
@@ -461,7 +482,8 @@ export function linkStates(run, input) {
     const noSeed = input.resumed ? run.prep === null || run.prep.seed === null : !input.dispatch;
     if (done) return {link, status: link === "seed" && noSeed ? "skipped" : "done"};
     current = current ?? link;
-    if (link !== current || !run.pressed) return {link, status: "todo"};
+    if (!run.pressed) return {link, status: input.resumed && run.prep !== null ? "needed" : "todo"};
+    if (link !== current) return {link, status: "todo"};
     if (run.phase === "refused") return {link, status: "refused"};
     return {link, status: run.phase === "unknown" ? "unknown" : "running"};
   });

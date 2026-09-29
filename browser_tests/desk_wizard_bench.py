@@ -33,18 +33,28 @@ async () => {
   const {mountWizard} = await import("/panel/desk-wizard.js");
   const focus = await import("/panel/studio-focus.js");
   const i18n = await import("/panel/studio-i18n.js");
-  const host = {log: [], auto: {}, fake: null, closed: 0, renders: 0, state: null, mount: null,
-    wiz, i18n};
+  const host = {log: [], auto: {}, fake: null, closed: 0, outcome: null, exit: null, renders: 0,
+    state: null, mount: null, wiz, i18n};
   const settle = async () => { for (let at = 0; at < 8; at += 1) await Promise.resolve(); };
+  //: The wizard's own keys of the desk's hash, the whole set at once (a key it does not name is
+  //: removed), written with `replaceState` as the desk will write it: before an ask is sent.
+  const applyHash = (keys) => {
+    const params = new URLSearchParams(location.hash.slice(1));
+    for (const key of ["task", "prepare", "workflow", "run", "starter"]) params.delete(key);
+    for (const [key, value] of Object.entries(keys ?? {})) params.set(key, value);
+    history.replaceState(null, "", `${location.pathname}${location.search}#${params}`);
+  };
+  host.applyHash = applyHash;
   const render = () => {
     const held = focus.focusTarget();
     host.renders += 1;
     mountWizard(host.mount, host.state, {onWizard: (event) => dispatch(event),
-      onWizardClose: () => { host.closed += 1; }});
+      onWizardClose: (outcome) => { host.closed += 1; host.outcome = outcome ?? null; }});
     focus.restoreFocus(host.mount, held);
   };
   const perform = (ask) => {
     host.log.push(ask);
+    if (ask.hash) applyHash(ask.hash);
     const rules = host.auto[ask.name];
     const result = host.fake?.(ask) ?? (rules && (rules[ask.subject] ?? rules["*"]));
     if (result) Promise.resolve().then(() => dispatch({type: "answered", ask, result}));
@@ -52,6 +62,8 @@ async () => {
   const dispatch = (event) => {
     const step = wiz.stepWizard(host.state.wizard, event);
     host.state = {...host.state, wizard: step.state};
+    if (typeof wiz.wizardHash === "function") applyHash(wiz.wizardHash(step.state));
+    host.exit = typeof wiz.wizardExit === "function" ? wiz.wizardExit(step.state) : null;
     render();
     step.asks.forEach(perform);
     return settle();
@@ -62,7 +74,8 @@ async () => {
     host.mount = document.createElement("div");
     host.mount.id = "wizardBench";
     document.body.append(host.mount);
-    Object.assign(host, {log: [], auto: auto || {}, closed: 0, renders: 0});
+    Object.assign(host, {log: [], auto: auto || {}, closed: 0, outcome: null, exit: null,
+      renders: 0});
     host.state = {locale, wizard: wiz.initialWizard({starterId: null, viewMode: false,
       newTaskId: "task-bench", ...opening})};
     return dispatch({type: "open"});
@@ -240,9 +253,19 @@ def to_step(bench: Bench, lang: str, step: str, *, starter: str | None = None,
     preselected card, for the roles step the harness roster and the quotas.
     """
     bench.open(lang, starter=starter, view=view, auto=reads or wizard_reads())
+    fill_task(bench, starter=starter)
+    advance(bench, step)
+
+
+def fill_task(bench: Bench, *, starter: str | None = None) -> None:
+    """Type the two texts step 1 asks for."""
     bench.type_into("wizard:title", "Fix login")
     bench.type_into("wizard:idea" if starter else "wizard:brief", "Make it work.")
-    for following in ("materials", "cycle", "roles"):
+
+
+def advance(bench: Bench, step: str) -> None:
+    """Press Next, step by step, until `step` is on screen."""
+    for following in ("materials", "cycle", "roles", "prepare"):
         if bench.root().get_attribute("data-wizard-current") == step:
             break
         expect(bench.control("wizard:next")).to_be_enabled()

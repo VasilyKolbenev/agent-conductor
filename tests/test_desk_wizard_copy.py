@@ -45,12 +45,19 @@ SPEC_WORDS = {
     "wizard.git.unborn": "В репозитории нет ни одного коммита",
     "wizard.git.unsafe_directory": "git не доверяет этой папке (другой владелец)",
     "wizard.git.unavailable": "git не закреплён",
+    "wizard.prepare": "Подготовить запуск", "wizard.prepare.continue": "Продолжить подготовку",
+    "wizard.resume.retype": "Текст этих полей не был записан до перезагрузки — введите его заново",
+    "wizard.chain.adopt": "Продолжить с записанной расстановкой",
+    "wizard.chain.status.done": "сделано", "wizard.chain.status.needed": "нужно",
+    "wizard.chain.status.todo": "ещё не начато",
 }
 FAMILIES = {
     "reasons": "wizard.reason.{}", "git": "wizard.git.{}", "refusals": "wizard.refusal.{}",
     "notes": "wizard.note.{}", "quota": "wizard.quota.{}", "exits": "wizard.exit.{}",
     "later": "wizard.later.{}", "steps": "wizard.step.{}", "kinds": "wizard.role.{}",
     "adds": "wizard.add.{}", "cards": "wizard.card.kind.{}",
+    "links": "wizard.chain.link.{}", "statuses": "wizard.chain.status.{}",
+    "stages": "wizard.resume.exit_{}",
 }
 
 
@@ -86,7 +93,8 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
       const words = {reasons: wiz.REASONS, git: wiz.GIT_SENTENCES, refusals: wiz.REFUSALS,
         notes: wiz.NOTES, quota: wiz.QUOTA_REASONS, exits: wiz.GIT_EXITS,
         later: wiz.LATER, steps: wiz.STEPS, adds: wiz.MATERIAL_KINDS, cards: wiz.MATERIAL_KINDS,
-        kinds: [...wiz.ROLE_KINDS, "custom"]};
+        kinds: [...wiz.ROLE_KINDS, "custom"], links: wiz.CHAIN_LINKS,
+        statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {

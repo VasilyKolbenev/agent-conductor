@@ -9,8 +9,9 @@
 // four filling steps is the model's (`gateOf`), so it is handed in; the model is not imported.
 import {FILL_STEPS, LIMITS, evolve, isLanguage, utf8Bytes} from "./desk-wizard-base.js";
 import {resumeInput, runInput} from "./desk-wizard-input.js";
-import {adoptRun, bumpRun, chainAsks, hashNow, initialRun, landChain, linkStates, openResume,
-  resumeAsks, resumeFields, resumeSituation, retryChain, startChain} from "./desk-wizard-prep.js";
+import {adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
+  linkStates, openResume, resumeAsks, resumeFields, resumeSituation, retryChain, startChain}
+  from "./desk-wizard-prep.js";
 
 //: The plain facts the chain is built from, in the language the owner pressed the button in.
 export function chainInput(state, lang = state.run.lang) {
@@ -63,7 +64,13 @@ export function landRun(state, ask, result) {
   if (run === state.run) return state;
   const next = evolve(state, {run});
   if (run.resume !== null && run.resume.lost) return startOver(next);
-  if (run.resume === null || run.prep === null || state.task.written) return next;
+  if (state.task.written) return next;
+  if (run.resume === null) {
+    //: The title is fixed once the task is written: the same id with another title would clash.
+    return run.done.some((key) => key.startsWith("task:"))
+      ? evolve(next, {task: {...next.task, written: true}}) : next;
+  }
+  if (run.prep === null) return next;
   return evolve(next, {task: {...next.task, title: run.prep.task.title, written: true}});
 }
 
@@ -132,6 +139,20 @@ export function resumeEdit(state, event) {
   if (!field || typeof event.value !== "string" || field.value === event.value) return state;
   const texts = {...state.run.resume.texts, [event.name]: event.value};
   return withRun(state, {...state.run, resume: {...state.run.resume, texts}});
+}
+
+/**
+ * What step 5 draws: where each link stands, what may be pressed (`gate`), what a reloaded page
+ * found (`resume`), a refusal or a failed read, the two run numbers a `record_conflict` offers,
+ * and whether the run is prepared (the preview made and nothing written since).
+ */
+export function prepareFacts(state, gateOf) {
+  const {run} = state, links = chainLinks(state);
+  const gate = run.resume === null ? prepareGate(state, gateOf) : resumeGate(state, gateOf);
+  const settled = links.every((row) => row.status === "done" || row.status === "skipped");
+  return Object.freeze({phase: run.phase, pressed: run.pressed, links, gate,
+    resume: resumeView(state), refusal: run.refusal, readFailed: run.readFailed,
+    prepared: run.phase === "review" && settled, following: followingRunNumber(run)});
 }
 
 /** When a reloaded page finds its run past preparation: the run to open, and where it stands. */

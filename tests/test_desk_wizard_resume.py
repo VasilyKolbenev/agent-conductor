@@ -268,6 +268,26 @@ def test_a_starter_resume_keeps_its_key_in_the_hash_until_the_run_stands():
     assert out["mode"]["starterId"] == "desk-starter-docs"
 
 
+def test_the_links_of_a_reloaded_page_are_said_from_the_read_done_or_needed():
+    """Spec 6.4.3: each link is marked from the read, done or needed, never guessed."""
+    out = run_js(RESUME + """
+      show({reading: links(begin(resumed()).state),
+        no_run: links(landed("seeded").state), unseeded: links(landed("new").state),
+        created: links(landed("run_created").state),
+        missing: links(landed("documents_missing").state),
+        ready: links(landed("ready").state),
+        pressed: links(wiz.stepWizard(landed("ready").state,
+          {type: "prepare-start", lang: "en"}).state)});
+    """, DATA, modules=MODULES)
+    assert out["reading"] == ["todo"] * 6
+    assert out["unseeded"] == ["done", "needed", "needed", "needed", "needed", "needed"]
+    assert out["no_run"] == ["done", "done", "needed", "needed", "needed", "needed"]
+    assert out["created"] == ["done", "done", "done", "done", "needed", "needed"]
+    assert out["missing"] == ["done", "skipped", "done", "done", "needed", "needed"]
+    assert out["ready"] == ["done", "done", "done", "done", "done", "needed"]
+    assert out["pressed"] == ["done", "done", "done", "done", "done", "running"]
+
+
 def test_the_resume_text_events_are_taken_only_in_a_resumed_wizard_and_name_a_known_field():
     out = run_js(RESUME + """
       const fresh = open();

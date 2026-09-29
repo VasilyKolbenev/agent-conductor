@@ -233,6 +233,26 @@ def test_a_saved_cycle_with_a_shared_instruction_is_written_with_instruction_fro
     assert out["docs"] == ["artifact-brief", "instruction-do"]
 
 
+def test_the_hash_an_ask_names_is_the_hash_the_state_wants_when_the_ask_is_made():
+    """The host may write `ask.hash` or `wizardHash(state)`: they are the same set."""
+    out = run_js(CHAIN + """
+      const lostRun = (ask, _state, log) => (log.filter((one) => one.name === "prep_run")
+        .length === 1 ? lost : ok({}));
+      const same = [];
+      for (const over of [{}, {prep_run: lostRun}]) {
+        let step = press(ready());
+        for (let at = 0; at < 40 && step.asks.length > 0; at += 1) {
+          const [ask] = step.asks;
+          same.push([ask.name, JSON.stringify(ask.hash) === JSON.stringify(
+            wiz.wizardHash(step.state))]);
+          step = answer(step, ({...table, ...over})[ask.name](ask, step.state, same));
+        }
+      }
+      show(same);
+    """, DATA, modules=MODULES)
+    assert len(out) > 15 and all(same for _, same in out), [name for name, same in out if not same]
+
+
 def test_an_edited_text_after_the_write_landed_is_a_new_document_sent_again_with_a_new_preview():
     out = run_js(CHAIN + """
       const first = drive(press(ready()));
