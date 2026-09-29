@@ -108,12 +108,14 @@ function firstReason(attention) {
 
 //: The two facts a word may carry beside its key, each a named value and never a sentence:
 //: the reason a person is asked to look (when the wait was read with the row), and the moment
-//: of the snapshot the row was read from (the key stays the same; the caption is added).
+//: of the snapshot the row was read from (the key stays the same; the caption is added). A live
+//: row carries no `snapshot_at` at all, and a snapshot that names no moment carries an empty
+//: text: the key being there is what says "snapshot".
 function decorated(word, {attention, data, takenAt}) {
   const extra = {};
   const reason = word.key === "waiting_you" ? firstReason(attention) : null;
   if (reason !== null) extra.reason = reason;
-  if (data === "snapshot") extra.snapshot_at = text(takenAt);
+  if (data === "snapshot") extra.snapshot_at = text(takenAt) ?? "";
   return Object.keys(extra).length === 0 ? word : say(word.key, {...word.params, ...extra});
 }
 
@@ -222,7 +224,7 @@ export function waitingSince(input) {
 
 //: One item. A key is the copy's word for the reason; a `since` is when the wait began or, when
 //: that is not known, when it was first noticed; `snapshot_at` is the moment of the snapshot the
-//: project was read from, and null for a live read.
+//: project was read from (an empty text when it names none) and null for a live read.
 function makeItem(context, reason, ids, since) {
   return Object.freeze({reason, key: `attention_${reason}`, project_id: context.project_id,
     task_id: ids.task_id ?? null, run_id: ids.run_id ?? null, gate_id: ids.gate_id ?? null,
@@ -318,7 +320,7 @@ export function attentionItems(input) {
   const project = isObject(input) ? input : {};
   const rows = Array.isArray(project.tasks) ? project.tasks.filter(isObject) : [];
   const context = {project_id: text(project.project_id), mode: project.mode,
-    snapshot_at: project.data === "snapshot" ? text(project.snapshot_at) : null,
+    snapshot_at: project.data === "snapshot" ? text(project.snapshot_at) ?? "" : null,
     observed: text(project.observed_at)};
   return Object.freeze([
     ...rows.flatMap((row) => humanItems(context, row)),

@@ -247,6 +247,7 @@ def test_a_project_that_needs_a_restart_of_the_os_and_a_login_that_needs_recover
 
 # -- a snapshot, and what the list looks like whole ---------------------------------------
 def test_every_item_of_a_snapshot_carries_the_moment_of_the_snapshot_and_a_live_one_carries_none():
+    """A snapshot that names no moment is an EMPTY text, never null: null says "not a snapshot"."""
     stalled = row(human="not_required", grant=automation("stalled", "plan_stalled"))
     snap, blank, live, other = items_of(
         project(row(seen=FIVE), stalled, data="snapshot", snapshot_at="2026-09-29T08:40:00Z"),
@@ -254,7 +255,7 @@ def test_every_item_of_a_snapshot_carries_the_moment_of_the_snapshot_and_a_live_
         project(row(seen=FIVE), stalled, snapshot_at="2026-09-29T08:40:00Z"),
         project(stalled, data="none", snapshot_at="2026-09-29T08:40:00Z"))
     assert len(snap) == 6 and {x["snapshot_at"] for x in snap} == {"2026-09-29T08:40:00Z"}
-    assert [x["snapshot_at"] for x in blank] == [None]
+    assert [x["snapshot_at"] for x in blank] == [""]
     assert {x["snapshot_at"] for x in live} == {None}
     assert {x["snapshot_at"] for x in other} == {None}
 
@@ -345,7 +346,7 @@ def test_a_snapshot_adds_its_moment_to_the_params_of_every_word_and_changes_no_k
         assert snap == {"key": expected["key"], "params": {**expected["params"],
                                                             "snapshot_at": stamp}}
         assert blank == {"key": expected["key"], "params": {**expected["params"],
-                                                             "snapshot_at": None}}
+                                                             "snapshot_at": ""}}
         assert alive == expected
 
 
