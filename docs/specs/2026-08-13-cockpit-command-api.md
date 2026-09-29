@@ -1089,37 +1089,6 @@ every other part of this contract is built on. Publishing goes through
 next revision number so two editors cannot silently overwrite each other's
 intent; `POST /command/templates` is unchanged.
 
-A workflow can also be read and written as a **flow**, the desk's own model of
-steps, roads and loops: `GET /command/workflows/<workflow_id>/flow` answers the
-flow being edited (or the latest revision's) with the diagnostics, the
-publishability and the budget the server computed, and `POST` of the same path
-saves it as a draft under the draft route's own expectation
-(`expected_digest` or `expected_absent`) and, when `publish_revision` is given,
-publishes a revision under the revision route's own lock. A document equal to
-the latest revision answers 200 and creates nothing. Both verbs are on one path,
-and no other frozen route changes. The shapes are in the desk redesign
-specification, section 7.1.
-
-Three more routes serve the desk's preparation and its project cycle, each with
-one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
-task, its runs and what each still lacks before it may start (its stage, the
-documents it misses, its grant and its queue entry) and only reads;
-`GET /command/project/cycle` answers which workflow the human pinned as the
-project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
-that has a published revision, or unpins with `null`, under a human identity.
-The same pin by the same person writes nothing. The shapes are in the desk
-redesign specification, sections 6.4.2 and 7.10.
-
-`GET /command/project` answers which project this server serves, in exactly four
-keys (`project_id`, the activation's nonce or `null`; `hub_origin`; `demo`; and
-`mode`, `active` or `view`), and only reads. Every `/command/*` request may carry
-the header `X-Conduct-Project` naming the project it means to reach: a request
-that names another project, names one of a server that has none, or names it
-twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
-checks and before its route is handled, and a request without the header is
-answered as before. The shapes are in the desk redesign specification, section
-4.5.1.
-
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and
 `edges`. Any other field is `contract_invalid` (422), `run_id` and `created_at`
@@ -1175,6 +1144,37 @@ write, judged with `lstat` and following nothing, over every directory it writes
 through and the leaf it writes at. A portal or a second hard link answers
 `route_unsafe` (409) and the refusal names the KIND and never the path — the
 location is this server's directory layout, which is not the caller's to learn.
+
+A workflow can also be read and written as a **flow**, the desk's own model of
+steps, roads and loops: `GET /command/workflows/<workflow_id>/flow` answers the
+flow being edited (or the latest revision's) with the diagnostics, the
+publishability and the budget the server computed, and `POST` of the same path
+saves it as a draft under the draft route's own expectation
+(`expected_digest` or `expected_absent`) and, when `publish_revision` is given,
+publishes a revision under the revision route's own lock. A document equal to
+the latest revision answers 200 and creates nothing. Both verbs are on one path,
+and no other frozen route changes. The shapes are in the desk redesign
+specification, section 7.1.
+
+Three more routes serve the desk's preparation and its project cycle, each with
+one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
+task, its runs and what each still lacks before it may start (its stage, the
+documents it misses, its grant and its queue entry) and only reads;
+`GET /command/project/cycle` answers which workflow the human pinned as the
+project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
+that has a published revision, or unpins with `null`, under a human identity.
+The same pin by the same person writes nothing. The shapes are in the desk
+redesign specification, sections 6.4.2 and 7.10.
+
+`GET /command/project` answers which project this server serves, in exactly four
+keys (`project_id`, the activation's nonce or `null`; `hub_origin`; `demo`; and
+`mode`, `active` or `view`), and only reads. Every `/command/*` request may carry
+the header `X-Conduct-Project` naming the project it means to reach: a request
+that names another project, names one of a server that has none, or names it
+twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
+checks and before its route is handled, and a request without the header is
+answered as before. The shapes are in the desk redesign specification, section
+4.5.1.
 
 ### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
 
