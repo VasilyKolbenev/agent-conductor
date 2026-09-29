@@ -2,23 +2,11 @@
 // Preferences never enter a frozen run, a draft, a request or a read epoch.
 import {element} from "./command-view.js";
 import {message} from "./studio-i18n.js";
+import {readPreferences} from "./desk-hash.js";
 
-export function readPreferences(hash, language) {
-  const fields = new URLSearchParams(hash.replace(/^#/, ""));
-  const one = (key, allowed) => fields.getAll(key).length === 1
-    && allowed.includes(fields.get(key)) ? fields.get(key) : null;
-  return Object.freeze({locale: one("lang", ["en", "ru"])
-    || (/^ru(?:-|$)/i.test(language || "") ? "ru" : "en"),
-  theme: one("theme", ["dark", "light"])});
-}
-
-export function preferenceHash(hash, value) {
-  const fields = new URLSearchParams(hash.replace(/^#/, ""));
-  fields.set("lang", value.locale);
-  if (value.theme === null) fields.delete("theme");
-  else fields.set("theme", value.theme);
-  return `#${fields}`;
-}
+// The two functions that read and write `lang` and `theme` of the address moved to the desk's
+// hash module, which the hub's page shares; they are re-exported here until the Studio is removed.
+export {readPreferences, preferenceHash} from "./desk-hash.js";
 
 function select(name, values, label, change) {
   const control = element("select", {"data-focus": `preference-${name}`, name});

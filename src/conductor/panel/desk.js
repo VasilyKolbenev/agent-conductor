@@ -18,7 +18,7 @@
 // not faked here.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
-import {readPreferences} from "./studio-preferences.js";
+import {readPreferences} from "./desk-hash.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
 import {newestRun} from "./studio-taskruns.js";
@@ -245,8 +245,9 @@ async function chooseTask(taskId) {
 const handlers = Object.freeze({chooseTask});
 
 //: The page's language is the address's (`#lang=ru`), and without a choice the page's own
-//: `lang` stands; the browser's language as a default arrives with the hash module, which
-//: is the one place allowed to ask the platform for it.
+//: `lang` stands. The platform's language is not asked for here or in the hash module: the
+//: source guards keep that question in the transport and the Studio's boot module, and the
+//: hub always says `lang` when it mounts a desk.
 function boot() {
   document.documentElement.lang = readPreferences(location.hash,
     document.documentElement.lang).locale;

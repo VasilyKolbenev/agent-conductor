@@ -118,6 +118,8 @@ BOOT_ASSETS = {
     "desk-transport.js": 200,
     # The five-screen shell and its mounts, preferences and the scene lenses.
     "studio-shell.js": 200, "studio-runhead.js": 200, "studio-mounts.js": 200, "studio-preferences.js": 200,
+    # The address grammar `studio-preferences.js` re-exports (the desk shares it with the hub).
+    "desk-hash.js": 200,
     "studio-bridge.js": 200, "studio-situation.js": 200, "studio-taskruns.js": 200,
     "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-draft.js": 200,
     "studio-workflowwrite.js": 200,

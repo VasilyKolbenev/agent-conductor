@@ -45,13 +45,13 @@ from tests.test_store import good_lane, write_project
 
 #: Every file the desk page's module graph fetches, with the answer each owes:
 #: the page, its sheet and boot module, the transport and the refusal vocabulary
-#: it translates with, the reader of the address's language (and the element
-#: helper that reader draws its controls with), and the catalogue (with its
+#: it translates with, the grammar of the address (the reader of its language),
+#: the element helper the region modules draw with, and the catalogue (with its
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
-    "studio-preferences.js": 200, "command-view.js": 200, "desk-copy.js": 200,
+    "desk-hash.js": 200, "command-view.js": 200, "desk-copy.js": 200,
     "desk-status-copy.js": 200,
     # What the boot module judges a read with, and the rail it draws from it.
     "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,

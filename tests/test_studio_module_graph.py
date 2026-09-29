@@ -47,7 +47,8 @@ PERMITTED_IMPORTS = {
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
     "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js"}),
-    "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                        "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
     #: The Runs header of one read run: its situation line and main action. It asks the step control
     #: which form a row draws (`offeredControl`) instead of keeping a second copy of that rule.
@@ -65,14 +66,14 @@ PERMITTED_IMPORTS = {
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
     #: The desk's boot module: the doors, the catalogue that says a word in the reader's
-    #: language, the reader of the address's `lang` (the one place the Studio keeps it
-    #: until the desk's hash module takes it over), the boundaries that judge what a
-    #: read brought (the task list, the run list, the newest-run rule, and the frozen copy
-    #: a landed read is kept in), the focus net a redraw carries a keypress across, and the
-    #: regions it mounts. It reaches no Studio screen and no store, and the wire only
-    #: through the transport -- it holds no door of its own.
+    #: language, the desk's hash module (the reader and writer of the address), the
+    #: boundaries that judge what a read brought (the task list, the run list, the
+    #: newest-run rule, and the frozen copy a landed read is kept in), the focus net a
+    #: redraw carries a keypress across, and the regions it mounts. It reaches no Studio
+    #: screen and no store, and the wire only through the transport -- it holds no door of
+    #: its own.
     "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js",
-                          "./studio-preferences.js", "./studio-tasks-model.js",
+                          "./desk-hash.js", "./studio-tasks-model.js",
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js"}),
@@ -95,6 +96,9 @@ PERMITTED_IMPORTS = {
     #: hub's page takes them whole and may only find the shared modules importing each other.
     "desk-status.js": frozenset(),
     "desk-status-copy.js": frozenset(),
+    #: The grammar of the desk's hash, shared with the hub's page for the same reason: it
+    #: imports nothing, and `studio-preferences.js` re-exports its two preference functions.
+    "desk-hash.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
