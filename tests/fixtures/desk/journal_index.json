@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "about": "Lane D1's own fixture of the journal projection of spec 4.5.6, laid out so lane H's Python test can read it too. Each case is one run: `records` are the rows of a run read (`GET /command/runs/<run_id>`, `records[]`), `journal` is what `journalIndex(records)` must answer (the hub's `attention.journal`: the last 256 rows as {record_type, instant, action_id, node_id, proposal_id}), `runtime` is `graph.runtime.nodes` cut to {node_id, opened_by}, and `waiting` lists what `waitingSince` must answer for a reason and its sources (`at` is null when the step's opening record is not found). Lane H's shared file, tests/fixtures/journal_index.json, did not exist when this was written.",
+  "cases": [
+    {
+      "name": "every kind of human step, found and not found",
+      "records": [
+        {"record_type": "graph_definition", "record": {"graph_id": "graph-1", "schema_version": 1, "created_at": "2026-09-29T09:00:00Z"}},
+        {"record_type": "action_proposal", "record": {"proposal_id": "proposal-1", "attempt_id": "att-1", "node_id": "do", "proposed_at": "2026-09-29T09:05:00Z"}},
+        {"record_type": "action_proposal", "record": {"proposal_id": "proposal-2", "attempt_id": "att-2", "node_id": "review", "proposed_at": "2026-09-29T09:07:00Z"}},
+        {"record_type": "action_request", "record": {"action_id": "action-1", "attempt_id": "att-1", "node_id": "do", "requested_at": "2026-09-29T09:10:00Z"}},
+        {"record_type": "attempt_event", "record": {"event_id": "event-1", "action_id": "action-1", "phase": "started", "recorded_at": "2026-09-29T09:11:00Z"}},
+        {"record_type": "action_result", "record": {"receipt_id": "receipt-1", "action_id": "action-1", "outcome": "failed", "observed_at": "2026-09-29T09:12:00Z"}},
+        {"record_type": "action_request", "record": {"action_id": "action-2", "attempt_id": "att-3", "node_id": "do", "requested_at": "2026-09-29T09:13:00Z"}},
+        {"record_type": "action_result", "record": {"receipt_id": "receipt-2", "action_id": "action-2", "outcome": "failed", "observed_at": "2026-09-29T09:15:00Z"}},
+        {"record_type": "action_request", "record": {"action_id": "action-3", "attempt_id": "att-4", "node_id": "check", "requested_at": "2026-09-29T09:16:00Z"}},
+        {"record_type": "action_result", "record": {"receipt_id": "receipt-3", "action_id": "action-3", "outcome": "succeeded", "observed_at": "2026-09-29T09:20:00Z"}},
+        {"record_type": "action_request", "record": {"action_id": "action-4", "attempt_id": "att-5", "node_id": "wait", "requested_at": "2026-09-29T09:21:00Z"}},
+        {"record_type": "decision", "record": {"receipt_id": "receipt-4", "gate_id": "gate-1", "action": "accept", "actor": "vasya", "decided_at": "2026-09-29T09:25:00Z"}},
+        {"record_type": "artifact", "record": {"artifact_id": "artifact-1", "source_action_id": "action-3", "created_at": "2026-09-29T09:26:00Z"}},
+        {"record_type": "future_kind", "record": {"created_at": "2026-09-29T09:27:00Z"}}
+      ],
+      "journal": [
+        {"record_type": "graph_definition", "instant": "2026-09-29T09:00:00Z", "action_id": null, "node_id": null, "proposal_id": null},
+        {"record_type": "action_proposal", "instant": "2026-09-29T09:05:00Z", "action_id": null, "node_id": "do", "proposal_id": "proposal-1"},
+        {"record_type": "action_proposal", "instant": "2026-09-29T09:07:00Z", "action_id": null, "node_id": "review", "proposal_id": "proposal-2"},
+        {"record_type": "action_request", "instant": "2026-09-29T09:10:00Z", "action_id": "action-1", "node_id": "do", "proposal_id": null},
+        {"record_type": "attempt_event", "instant": "2026-09-29T09:11:00Z", "action_id": "action-1", "node_id": null, "proposal_id": null},
+        {"record_type": "action_result", "instant": "2026-09-29T09:12:00Z", "action_id": "action-1", "node_id": null, "proposal_id": null},
+        {"record_type": "action_request", "instant": "2026-09-29T09:13:00Z", "action_id": "action-2", "node_id": "do", "proposal_id": null},
+        {"record_type": "action_result", "instant": "2026-09-29T09:15:00Z", "action_id": "action-2", "node_id": null, "proposal_id": null},
+        {"record_type": "action_request", "instant": "2026-09-29T09:16:00Z", "action_id": "action-3", "node_id": "check", "proposal_id": null},
+        {"record_type": "action_result", "instant": "2026-09-29T09:20:00Z", "action_id": "action-3", "node_id": null, "proposal_id": null},
+        {"record_type": "action_request", "instant": "2026-09-29T09:21:00Z", "action_id": "action-4", "node_id": "wait", "proposal_id": null},
+        {"record_type": "decision", "instant": "2026-09-29T09:25:00Z", "action_id": null, "node_id": null, "proposal_id": null},
+        {"record_type": "artifact", "instant": "2026-09-29T09:26:00Z", "action_id": null, "node_id": null, "proposal_id": null},
+        {"record_type": "future_kind", "instant": null, "action_id": null, "node_id": null, "proposal_id": null}
+      ],
+      "runtime": [
+        {"node_id": "intake", "opened_by": []},
+        {"node_id": "do", "opened_by": ["intake"]},
+        {"node_id": "check", "opened_by": ["do"]},
+        {"node_id": "review", "opened_by": ["do", "check"]},
+        {"node_id": "orphan", "opened_by": ["silent"]}
+      ],
+      "waiting": [
+        {"name": "a confirmation is waiting since its proposal", "reason": "confirmation", "sources": ["proposal-1"], "at": "2026-09-29T09:05:00Z"},
+        {"name": "several proposals: the earliest is the wait", "reason": "confirmation", "sources": ["proposal-2", "proposal-1"], "at": "2026-09-29T09:05:00Z"},
+        {"name": "a proposal that is not in the journal", "reason": "confirmation", "sources": ["proposal-9"], "at": null},
+        {"name": "no source at all", "reason": "confirmation", "sources": [], "at": null},
+        {"name": "attempts spent: since the step's last result", "reason": "attempt_bound", "sources": ["do"], "at": "2026-09-29T09:15:00Z"},
+        {"name": "two steps out of attempts: the earliest of the two", "reason": "attempt_bound", "sources": ["do", "check"], "at": "2026-09-29T09:15:00Z"},
+        {"name": "a step with a request and no result", "reason": "attempt_bound", "sources": ["wait"], "at": null},
+        {"name": "a step the journal never names", "reason": "attempt_bound", "sources": ["ghost"], "at": null},
+        {"name": "a gate: since the latest result among the steps that opened it", "reason": "gate_decision", "sources": ["review"], "at": "2026-09-29T09:20:00Z"},
+        {"name": "a gate opened by one step", "reason": "gate_decision", "sources": ["check"], "at": "2026-09-29T09:15:00Z"},
+        {"name": "two gates: the earliest of the two", "reason": "gate_decision", "sources": ["review", "check"], "at": "2026-09-29T09:15:00Z"},
+        {"name": "a gate whose openers have no result", "reason": "gate_decision", "sources": ["orphan"], "at": null},
+        {"name": "a gate the runtime does not list", "reason": "gate_decision", "sources": ["nowhere"], "at": null},
+        {"name": "an input step nothing opened: since the graph was defined", "reason": "input_document", "sources": ["intake"], "at": "2026-09-29T09:00:00Z"},
+        {"name": "an input step opened by a step with a result", "reason": "input_document", "sources": ["check"], "at": "2026-09-29T09:15:00Z"},
+        {"name": "an input step opened by a step with no result", "reason": "input_document", "sources": ["do"], "at": null},
+        {"name": "reconcile has no source the server gives", "reason": "reconcile", "sources": ["do"], "at": null},
+        {"name": "reconcile with nothing", "reason": "reconcile", "sources": [], "at": null},
+        {"name": "reconcile even when the source names a proposal that is there", "reason": "reconcile", "sources": ["proposal-1"], "at": null},
+        {"name": "reconcile even when the source names a gate the runtime lists", "reason": "reconcile", "sources": ["review", "intake"], "at": null},
+        {"name": "a reason that is not a human step", "reason": "run_ended", "sources": ["do"], "at": null}
+      ]
+    },
+    {
+      "name": "an empty journal finds nothing",
+      "records": [],
+      "journal": [],
+      "runtime": [{"node_id": "intake", "opened_by": []}],
+      "waiting": [
+        {"name": "an input step with no graph record", "reason": "input_document", "sources": ["intake"], "at": null},
+        {"name": "a confirmation with no proposal", "reason": "confirmation", "sources": ["proposal-1"], "at": null}
+      ]
+    }
+  ]
+}
