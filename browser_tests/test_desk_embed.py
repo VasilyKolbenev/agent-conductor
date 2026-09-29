@@ -21,7 +21,8 @@ What this module holds, each as a measurement of the page and not a reading of s
   framed -- and when the hash could not ask for embed the claim is not read;
 - a claim that names another project (or none) is not one more reason for embed to stay off: it
   is the terminal state "open for another project" (spec 4.5.1), which the desk enters once,
-  asks and says nothing after, and never leaves;
+  asks and says nothing after, and never leaves; when the claim lands while the lists are still
+  out, the desk that is foreign by then asks for no automation read either;
 - the desk listens for nothing the host posts, and a desk that has gone foreign sends nothing.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -163,11 +164,14 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
     """A factory of framed desks, each closed when the test is over."""
     opened: list[Embedded] = []
 
-    def make(fragment: str, claim: Callable[[Route], None] | None = None) -> Embedded:
+    def make(fragment: str, claim: Callable[[Route], None] | None = None, *,
+             before: Callable[[Page], None] | None = None) -> Embedded:
         context = chromium.new_context(viewport={"width": 1400, "height": 1000})
         page = context.new_page()
         problems, asked = _listen(page, rig)
         page.add_init_script(INIT)
+        if before is not None:
+            before(page)
         if claim is not None:
             page.route("**/command/project", claim)
         page.goto(f"{rig.host_url}#{quote(rig.desk_url + fragment, safe='')}",
@@ -332,6 +336,28 @@ def test_a_claim_naming_another_project_leaves_a_framed_desk_foreign_with_no_mes
     _foreign(window.frame.evaluate(FACTS), language)
     assert window.settle() == [] and len(window.asked) == asked
     assert window.claim_reads() == 1 and window.problems == []
+
+
+@pytest.mark.parametrize("named", [PROJECT_B, None], ids=["another-project", "no-project"])
+def test_a_claim_that_ends_the_desk_while_its_lists_are_in_flight_costs_no_automation_read(
+        embed, rig, named):
+    """The claim lands first and names another project, while the runs list is still out. The
+    desk is then foreign; when the list lands, the newest run of each task is NOT asked about."""
+    held: list[Route] = []
+    window = embed(
+        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
+        _answering(_claim(project_id=named, hub_origin=rig.host_origin)),
+        before=lambda page: page.route("**/command/runs", lambda route: held.append(route)))
+    window.frame.wait_for_function(REFUSED)
+    assert len(held) == 1
+    with window.page.expect_response(
+            lambda response: response.url.endswith("/command/runs")):
+        held[0].continue_()
+    window.frame.evaluate(QUIET)
+    window.frame.evaluate(QUIET)
+    asked = [path for _method, path, _header in window.asked if path.startswith("/command/runs/")]
+    assert asked == []
+    assert window.settle() == [] and window.problems == []
 
 
 def test_a_desk_that_is_not_framed_never_asks_for_the_claim_and_drops_embed(

@@ -255,10 +255,11 @@ async function readOneAutomation(found, taskId, latest) {
   }
 }
 
-//: The automation of the newest run of each readable task.
+//: The automation of the newest run of each readable task. A desk that went foreign while its
+//: lists were out asks for none: there is nothing left for the answers to be kept in.
 async function readAutomation(tasks, runs) {
   const found = new Map();
-  if (tasks.phase !== "ready" || runs.phase !== "ready") return found;
+  if (state.foreign || tasks.phase !== "ready" || runs.phase !== "ready") return found;
   const newest = tasks.list.filter((task) => !task.unreadable)
     .map((task) => [task.task_id, newestRun(runs, task.task_id)])
     .filter(([, latest]) => latest.state === "known");
