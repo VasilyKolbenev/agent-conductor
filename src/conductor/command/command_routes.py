@@ -54,6 +54,7 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/preview"),
     ("POST", "/command/runs/<run_id>/automation/authorize"),
     ("POST", "/command/runs/<run_id>/automation/control"),
+    ("GET", "/command/project"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -78,11 +79,13 @@ _WORKFLOW_ROUTE = re.compile(
 _TASK_ROUTE = re.compile(
     rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
-#: pinned, and the write that pins or unpins. The bare `project` path and the flag of "continue
-#: after" are other lanes' rows and join this pattern with their own canon commit.
+#: pinned, and the write that pins or unpins. The bare `project` path is `_PROJECT_PATH` below; the
+#: flag of "continue after" is another lane's row and joins this pattern with its own canon commit.
 _PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
 _SESSION_PATH = "/command/session"
 _QUOTAS_PATH = "/command/quotas"
+#: The identity of the project this server serves (spec 4.5.1): GET only, and lane H's handler.
+_PROJECT_PATH = "/command/project"
 _WORKFLOWS_PATH = "/command/workflows"
 #: The one run route that names no run: the list, and the door that opens one.
 _RUNS_PATH = "/command/runs"
@@ -93,6 +96,15 @@ _TASKS_PATH = "/command/tasks"
 #: that first materialized it, so a run id in its path would be a lie about
 #: what it is.
 _TEMPLATES_PATH = "/command/templates"
+#: The routes whose path names no identity and that have ONE verb: the path, the verb its row
+#: allows, and the name the handlers dispatch on.
+_FIXED_ROUTES = {
+    _SESSION_PATH: ("GET", "session"),
+    _QUOTAS_PATH: ("GET", "quotas"),
+    _PROJECT_PATH: ("GET", "project"),
+    _TEMPLATES_PATH: ("POST", "templates"),
+    _WORKFLOWS_PATH: ("GET", "workflows"),
+}
 
 
 @dataclass(frozen=True)
@@ -133,22 +145,9 @@ def match_route(method: str, path: str) -> Route:
     if method not in {"GET", "POST"}:
         raise ApiRefusal.fixed(
             "method_not_allowed" if _known(path) else "route_not_found")
-    if path in {_SESSION_PATH, _QUOTAS_PATH}:
-        if method != "GET":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("session" if path == _SESSION_PATH else "quotas")
-    if path == _TEMPLATES_PATH:
-        if method != "POST":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("templates")
-    if path == _WORKFLOWS_PATH:
-        if method != "GET":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("workflows")
-    if path == _RUNS_PATH:
-        # The one path this table admits under BOTH methods, because listing
-        # runs and opening one are the same noun asked two ways.
-        return Route("runs")
+    fixed = _fixed_route(method, path)
+    if fixed is not None:
+        return fixed
     task = _task_route(method, path)
     if task is not None:
         return task
@@ -169,10 +168,27 @@ def match_route(method: str, path: str) -> Route:
     return Route(name, run_id)
 
 
+def _fixed_route(method: str, path: str) -> Route | None:
+    """Name a route whose path carries no identity, or ``None`` for a path that carries one.
+
+    ``/command/runs`` is the one of these the table admits under BOTH methods, because listing
+    runs and opening one are the same noun asked two ways; every other row is one verb, and the
+    other verb is ``method_not_allowed``.
+    """
+    if path == _RUNS_PATH:
+        return Route("runs")
+    fixed = _FIXED_ROUTES.get(path)
+    if fixed is None:
+        return None
+    verb, name = fixed
+    if method != verb:
+        raise ApiRefusal.fixed("method_not_allowed")
+    return Route(name)
+
+
 def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
-    return (path in {_SESSION_PATH, _QUOTAS_PATH, _TEMPLATES_PATH, _WORKFLOWS_PATH,
-                     _RUNS_PATH, _TASKS_PATH}
+    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
             or _TASK_ROUTE.fullmatch(path) is not None

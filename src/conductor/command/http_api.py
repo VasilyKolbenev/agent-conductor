@@ -71,6 +71,7 @@ from .http_transport import (
 )
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
+from .project_claim import UNCLAIMED, ProjectIdentity
 from .project_cycle import ProjectCycleStore
 from .task_store import TaskStore
 from .template_store import TemplateStore
@@ -105,6 +106,24 @@ class CommandResponse:
     payload: Mapping[str, Any]
 
 
+def _admit_parts(
+        store: object, registry: object, templates: object, tasks: object, identity: object,
+        session: object, budget: object, calls: Iterable[object]) -> None:
+    """The type of every collaborator, judged before the API keeps one of them."""
+    if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
+        raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
+    if templates is not None and not isinstance(templates, TemplateStore):
+        raise TypeError("CommandApi templates must be a TemplateStore")
+    if tasks is not None and not isinstance(tasks, TaskStore):
+        raise TypeError("CommandApi tasks must be a TaskStore")
+    if not isinstance(identity, ProjectIdentity):
+        raise TypeError("CommandApi identity must be a ProjectIdentity")
+    if not isinstance(session, CommandSession) or type(budget) is not Budget:
+        raise TypeError("CommandApi requires a CommandSession and Budget")
+    if not all(callable(value) for value in calls):
+        raise TypeError("CommandApi providers must be callable")
+
+
 class CommandApi:
     """Bind transport, typed route authority, store, service, and authorization."""
 
@@ -119,18 +138,10 @@ class CommandApi:
             quota_max_age: timedelta = DEFAULT_QUOTA_MAX_AGE,
             templates: TemplateStore | None = None,
             tasks: TaskStore | None = None,
-            project: Callable[[], str | None] = lambda: None) -> None:
-        if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
-            raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
-        if templates is not None and not isinstance(templates, TemplateStore):
-            raise TypeError("CommandApi templates must be a TemplateStore")
-        if tasks is not None and not isinstance(tasks, TaskStore):
-            raise TypeError("CommandApi tasks must be a TaskStore")
-        if not isinstance(session, CommandSession) or type(budget) is not Budget:
-            raise TypeError("CommandApi requires a CommandSession and Budget")
-        if not all(callable(value)
-                   for value in (clock, ids, publish_run, project)):
-            raise TypeError("CommandApi providers must be callable")
+            project: Callable[[], str | None] = lambda: None,
+            identity: ProjectIdentity = UNCLAIMED) -> None:
+        _admit_parts(store, registry, templates, tasks, identity, session, budget,
+                     (clock, ids, publish_run, project))
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
@@ -138,6 +149,8 @@ class CommandApi:
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
         self._project = project
+        # What this server is, and the claim a request may make on it (spec 4.5.1).
+        self._identity = identity
         self._store = store
         # Rooted at the same project as the run store, because one project owns
         # one set of reusable plans; a caller may hand in its own for a test.
@@ -200,10 +213,12 @@ class CommandApi:
             pairs = tuple(raw_headers)
             if method == "GET":
                 host = validate_command_host(pairs, self._session.allowed_hosts)
+                self._identity.check(pairs)
                 if route.name == "quotas":
                     _quota_get(target, pairs, raw_body)
                 return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
+            self._identity.check(pairs)
             return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())

@@ -214,7 +214,8 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/runs/<run_id>/automation", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
-  {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true}
+  {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false}
 ]
 ```
 3. Every **mutating** request (any method other than GET/HEAD on a `/command/*`
@@ -1108,6 +1109,16 @@ project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
 that has a published revision, or unpins with `null`, under a human identity.
 The same pin by the same person writes nothing. The shapes are in the desk
 redesign specification, sections 6.4.2 and 7.10.
+
+`GET /command/project` answers which project this server serves, in exactly four
+keys (`project_id`, the activation's nonce or `null`; `hub_origin`; `demo`; and
+`mode`, `active` or `view`), and only reads. Every `/command/*` request may carry
+the header `X-Conduct-Project` naming the project it means to reach: a request
+that names another project, names one of a server that has none, or names it
+twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
+checks and before its route is handled, and a request without the header is
+answered as before. The shapes are in the desk redesign specification, section
+4.5.1.
 
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and

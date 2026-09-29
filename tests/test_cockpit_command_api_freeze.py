@@ -185,6 +185,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/preview", False, True),
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),
     ("POST", "/command/runs/<run_id>/automation/control", True, True),
+    ("GET", "/command/project", False, False),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly

@@ -152,6 +152,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/runs/<run_id>/automation/preview"),
         ("POST", "/command/runs/<run_id>/automation/authorize"),
         ("POST", "/command/runs/<run_id>/automation/control"),
+        ("GET", "/command/project"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")
