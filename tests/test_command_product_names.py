@@ -19,6 +19,9 @@ from conductor.command import product_names as names
 from conductor.command import work_layout
 from conductor.command.adapters import agent_instructions, harness_workspace
 from conductor.command.providers import PROVIDER_CATALOG
+#: The words that name a provider's family are the provider-breadth guard's own derivation, read
+#: from it and not copied: a copy would go on judging with yesterday's list.
+from tests.test_alpha1_gate_g_provider_breadth import _family_tokens
 
 SOURCE = Path(names.__file__).resolve().parent
 ADAPTERS = SOURCE / "adapters"
@@ -87,13 +90,6 @@ def test_agent_instruction_names_live_beside_the_adapters_and_product_names_hand
         "the request path names no vendor: the names are the adapters' to spell")
 
 
-def vendor_words():
-    """The words that name a catalogued provider's family, as the provider-breadth guard derives
-    them: the parts of every provider id, less the words every id shares."""
-    generic = {"code", "harness", "preview", "cli", "agent", "build"}
-    return {part for provider_id in PROVIDER_CATALOG for part in provider_id.split("-")} - generic
-
-
 def test_five_of_the_six_instruction_names_carry_a_vendor_word_which_keeps_them_out_of_here():
     """Why `AGENT_INSTRUCTION_NAMES` is not spelled in `product_names` although spec 9.2 puts it
     there: `product_names` is a module of the request path, and the provider-breadth guard
@@ -102,7 +98,7 @@ def test_five_of_the_six_instruction_names_carry_a_vendor_word_which_keeps_them_
     and handed on under the same name. When they stop carrying a vendor word, this test says the
     split can be dissolved.
     """
-    words = vendor_words()
+    words = _family_tokens()
     carrying = [name for name in agent_instructions.AGENT_INSTRUCTION_NAMES
                 if any(word in name.lower() for word in words)]
     assert carrying == ["CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/"]
