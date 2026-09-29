@@ -514,6 +514,24 @@ def test_one_press_puts_the_new_run_first_and_the_paused_holder_last_in_four_ord
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_a_card_replaced_behind_the_dialog_closes_it_and_the_owner_looks_before_pressing_again(
+        bench, lang):
+    change = {"preview_digest": "sha256:" + "5ca1ab1e" * 8, "terms": {"max_actions": 3}}
+    to_card(bench, lang, queue="queue_busy_waiting", overrides=[change])
+    bench.control(SKIP).click()
+    expect(bench.page.locator("[data-skip-dialog]")).to_be_visible()
+    bench.tick(at(5))
+    repeats(bench, 1)
+    expect(bench.page.locator("[data-skip-dialog]")).to_have_count(0)
+    assert bench.control(SKIP).is_disabled()
+    assert why(bench, SKIP) == bench.say("wizard.launch.why.card_changed")
+    bench.control("wizard:launch:seen").click()
+    assert bench.control(SKIP).is_enabled()
+    assert sum(skips(bench).values()) == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_a_pause_that_is_refused_leaves_the_new_run_first_and_the_next_press_starts_at_the_pause(
         bench, lang):
     refuse = {"launch_skip_pause": {"code": "contract_invalid", "count": 1}}

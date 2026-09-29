@@ -384,3 +384,57 @@ def test_the_owners_name_cannot_change_while_the_press_is_writing():
     assert out["before"] == "ann", "a name may change while only the dialog is open"
     assert out["during"] == "vasily" and out["same"] is True
     assert out["bodies"] == ["vasily"] and out["phase"] == "queued"
+
+
+NEXT_CARD = """
+const DUE = "2026-09-29T10:05:00Z";
+const another = () => {
+  const next = fresh(d.preview);
+  next.preview_digest = "sha256:" + "5ca1ab1e".repeat(8);
+  next.terms.max_actions = 5;
+  next.previewed_at = DUE;
+  next.valid_until = "2026-09-29T10:10:00Z";
+  return next;
+};
+const dueOf = (state) => asksOf(state).find((ask) => ask.name === "launch_preview");
+"""
+
+
+def test_a_card_replaced_while_the_dialog_is_open_closes_it_and_confirming_writes_nothing():
+    out = run_js(SKIP + NEXT_CARD + """
+      const w = skipWorld(), base = offered(w, {clock: DUE});
+      const dialog = tap(base, "launch-skip").state;
+      const same = fresh(d.preview);
+      same.previewed_at = DUE;
+      same.valid_until = "2026-09-29T10:10:00Z";
+      const kept = wiz.stepWizard(dialog, {type: "answered", ask: dueOf(base), result: ok(same)});
+      const replaced = wiz.stepWizard(dialog, {type: "answered", ask: dueOf(base),
+        result: ok(another())}).state;
+      const confirm = tap(replaced, "launch-skip-confirm");
+      show({kept: kept.state.launch.skip && kept.state.launch.skip.phase,
+        dialog: replaced.launch.skip, seen: replaced.launch.seen, card: replaced.launch.card,
+        writes: confirm.asks.map((ask) => ask.name), phase: confirm.state.launch.phase,
+        again: wiz.launchFacts(replaced).controls.skip});
+    """, DATA, modules=MODULES)
+    assert out["kept"] == "confirm", "the same digest keeps the card, and the dialog with it"
+    assert out["dialog"] is None and out["seen"] is False and out["card"] == 2
+    assert out["writes"] == [] and out["phase"] == "review"
+    assert out["again"]["blocked"] == "card_changed", "the owner must look at the new terms first"
+
+
+def test_a_preview_answer_that_lands_while_the_press_is_writing_changes_nothing():
+    out = run_js(SKIP + NEXT_CARD + """
+      const w = skipWorld(), base = offered(w, {clock: DUE});
+      const begun = tap(tap(base, "launch-skip").state, "launch-skip-confirm");
+      const late = wiz.stepWizard(begun.state, {type: "answered", ask: dueOf(base),
+        result: ok(another())});
+      const done = settle({state: late.state, asks: [...begun.asks, ...late.asks]}, w);
+      const grants = w.asked.filter((ask) => ask.name === "launch_skip_enqueue")
+        .map((ask) => [ask.body.start.authorization_id, ask.body.start.preview_digest]);
+      show({landed: [late.state.launch.card, late.state.launch.phase],
+        card: done.state.launch.card, seen: done.state.launch.seen,
+        phase: done.state.launch.phase, grants, digest: base.launch.digest});
+    """, DATA, modules=MODULES)
+    assert out["landed"] == [1, "skipping"], "the press keeps its card and its phase"
+    assert out["card"] == 1 and out["seen"] is True and out["phase"] == "queued"
+    assert out["grants"] == [["auth-n0nce0001-1", out["digest"]]]

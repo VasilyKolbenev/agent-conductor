@@ -157,7 +157,8 @@ function changedLines(before, after) {
 /**
  * A preview taken in. The same digest keeps the card and restarts its countdown (an automatic
  * repeat is counted); another digest replaces it, marks the lines that changed and waits until the
- * owner has looked (`seen`); an answer that is not the server's shape is said so and draws nothing.
+ * owner has looked (`seen`), and closes the dialog of «Пропустить вперёд» that was open for the
+ * card it replaced; an answer that is not the server's shape is said so and draws nothing.
  */
 export function takePreview(launch, payload, runId, auto) {
   const preview = projectPreview(payload, runId);
@@ -167,8 +168,9 @@ export function takePreview(launch, payload, runId, auto) {
     return {...base, repeats: auto ? launch.repeats + 1 : 0};
   }
   const changed = launch.preview === null ? [] : changedLines(launch.preview, preview);
+  const asked = launch.skip !== null && launch.skip.phase === "confirm";
   return {...base, digest: preview.preview_digest, card: launch.card + 1, changed,
-    seen: launch.preview === null, repeats: 0};
+    seen: launch.preview === null, repeats: 0, skip: asked ? null : launch.skip};
 }
 
 /**
@@ -417,7 +419,10 @@ function landRead(launch, ctx, ask, result) {
   return launch.phase === "unknown" && both ? settleUnknown(next, ctx) : next;
 }
 
+//: A press writes for the card the owner confirmed, so an answer that comes late changes nothing;
+//: a dialog that is still open is for a card that another digest replaces, and closes with it.
 function landPreview(launch, ctx, result) {
+  if (launch.skip !== null && launch.skip.phase === "running") return launch;
   const base = {...launch, previews: launch.previews + 1, refreshWanted: false};
   if (result.status === "accepted") {
     const owned = launch.refreshWanted;
