@@ -122,6 +122,8 @@ ASSETS = {
     "/panel/desk-embed.js": "text/javascript; charset=utf-8",
     # The time of an instant, short and exact: shared with the hub's page.
     "/panel/desk-time.js": "text/javascript; charset=utf-8",
+    # The task-queue read judged against its shape.
+    "/panel/desk-queue-model.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
@@ -271,6 +273,12 @@ REFUSED = (
     "/panel/desk-time.json", "/panel/desk-time.js?v=1", "/panel/desk-time.js.map",
     "/panel/../desk-time.js", "/panel/%2e%2e/desk-time.js", "/panel/DESK-TIME.JS",
     "/panel/Desk-time.js", "/panel/desk-time.js/", "/panel/desk-time.js%00.txt",
+    # The queue model, the same nine shapes.
+    "/panel/desk-queue-model.json", "/panel/desk-queue-model.js?v=1",
+    "/panel/desk-queue-model.js.map", "/panel/../desk-queue-model.js",
+    "/panel/%2e%2e/desk-queue-model.js", "/panel/DESK-QUEUE-MODEL.JS",
+    "/panel/Desk-queue-model.js", "/panel/desk-queue-model.js/",
+    "/panel/desk-queue-model.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",

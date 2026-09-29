@@ -105,6 +105,9 @@ PERMITTED_IMPORTS = {
     #: The time of an instant, short and exact, shared with the hub's page: it imports
     #: nothing and reads no clock -- the caller hands it the string the server wrote.
     "desk-time.js": frozenset(),
+    #: The task-queue read judged against its shape: values in, a frozen cut or null out. The
+    #: boot module reads the queue and hands the answer here, so it imports nothing.
+    "desk-queue-model.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
