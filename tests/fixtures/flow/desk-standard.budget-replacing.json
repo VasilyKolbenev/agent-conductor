@@ -1,0 +1,76 @@
+{
+  "limits": {
+    "max_actions": 8,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 28800
+  },
+  "clean": {
+    "actions": 2,
+    "seconds": 5400
+  },
+  "worst": {
+    "actions": 4,
+    "seconds": 12600
+  },
+  "steps": [
+    {
+      "step_id": "analyst",
+      "attempts": 1,
+      "timeout_seconds": 1800,
+      "reserve_seconds": 1800,
+      "clamped": false
+    },
+    {
+      "step_id": "do",
+      "attempts": 3,
+      "timeout_seconds": 1800,
+      "reserve_seconds": 3600,
+      "clamped": false
+    }
+  ],
+  "terms_draft": {
+    "node_limits": [
+      {
+        "node_id": "analyst",
+        "timeout_seconds": 1800,
+        "max_attempts": 1
+      },
+      {
+        "node_id": "do",
+        "timeout_seconds": 1800,
+        "max_attempts": 3
+      }
+    ],
+    "max_actions": 4,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 12600,
+    "duration_seconds": 10800
+  },
+  "spent": {
+    "actions": 2,
+    "seconds": 5400,
+    "attempts": [
+      {
+        "step_id": "analyst",
+        "attempts": 1
+      },
+      {
+        "step_id": "do",
+        "attempts": 1
+      }
+    ]
+  },
+  "exhausted": false,
+  "inputs": {
+    "instructions": [
+      {
+        "step_id": "do",
+        "instruction_ref": "instruction-do"
+      }
+    ],
+    "documents": [
+      "artifact-brief",
+      "artifact-materials"
+    ]
+  }
+}

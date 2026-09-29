@@ -1,0 +1,60 @@
+{
+  "limits": {
+    "max_actions": 8,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 28800
+  },
+  "clean": {
+    "actions": 1,
+    "seconds": 3600
+  },
+  "worst": {
+    "actions": 2,
+    "seconds": 7200
+  },
+  "steps": [
+    {
+      "step_id": "do",
+      "attempts": 2,
+      "timeout_seconds": 1800,
+      "reserve_seconds": 3600,
+      "clamped": false
+    }
+  ],
+  "terms_draft": {
+    "node_limits": [
+      {
+        "node_id": "do",
+        "timeout_seconds": 1800,
+        "max_attempts": 2
+      }
+    ],
+    "max_actions": 2,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 7200,
+    "duration_seconds": 3600
+  },
+  "spent": {
+    "actions": 2,
+    "seconds": 7200,
+    "attempts": [
+      {
+        "step_id": "do",
+        "attempts": 2
+      }
+    ]
+  },
+  "exhausted": true,
+  "inputs": {
+    "instructions": [
+      {
+        "step_id": "do",
+        "instruction_ref": "instruction-do"
+      }
+    ],
+    "documents": [
+      "artifact-brief",
+      "artifact-materials"
+    ]
+  }
+}
