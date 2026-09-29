@@ -9,7 +9,8 @@ the owner's to fix. The version of a tool is read by running it in the environme
 
 Lane L reads pins with `read_pin(tool)`. `pin_tool` is what `conduct tools pin` (and,
 later, the hub's pin route) calls; `verify_pin` is the check a hub makes at start and a
-child once per process. Every refusal is a `ToolPinError` whose `code` is one of 8.8.
+child once per process. Every refusal is a `ToolPinError` whose `code` is a code the spec
+names (`SPEC_CODES`) or one of the two proposals (`PROPOSED_CODES`); no other can be built.
 """
 from __future__ import annotations
 
@@ -39,10 +40,26 @@ _FIRST_LINE = re.compile(r"(git|gh) version (\d+)\.(\d+)\.(\d+)")
 Runner = Callable[[list[str], Mapping[str, str]], str]
 
 
+#: The codes this library raises that the spec already names (8.8, 4.6.3, 4.6.5).
+SPEC_CODES = frozenset({"git_not_pinned", "gh_not_pinned", "git_changed", "gh_changed",
+                        "git_too_old", "tool_version_unreadable"})
+#: Proposals: the spec has no name for a `tools.json` that is not the schema, nor for one that
+#: cannot be written (the lock that is not taken counts as that). `registry_invalid` and
+#: `profile_invalid` are the analogues for other files. They stay until the tech lead rules.
+PROPOSED_CODES = frozenset({"tools_file_invalid", "tools_file_unwritable"})
+
+
 class ToolPinError(Exception):
-    """A pin that cannot be read, made or trusted: a code of 8.8 and one line of detail."""
+    """A pin that cannot be read, made or trusted: a code and one line of detail.
+
+    Raises:
+        ValueError: `code` is neither in `SPEC_CODES` nor in `PROPOSED_CODES`; a new code is
+            a decision for the spec, not something a raise site may introduce.
+    """
 
     def __init__(self, code: str, detail: str) -> None:
+        if code not in SPEC_CODES | PROPOSED_CODES:
+            raise ValueError(f"{code!r} is neither a code of the spec nor a proposed one")
         self.code, self.detail = code, detail
         super().__init__(f"{code}: {detail}")
 
@@ -233,12 +250,13 @@ def pin_tool(tool: str, path: str, *, folder: Path | str | None = None,
         source: The owner's environment for `tool_env`; `os.environ` by default.
 
     Raises:
-        ToolPinError: `tool_path_invalid`, `tools_file_invalid` (the file is left as
-            it is), `tool_version_unreadable`, `git_too_old`, `tools_file_unwritable`.
+        ToolPinError: `tool_version_unreadable` (also for a relative path), `tools_file_invalid`
+            (the file is left as it is), `git_too_old`, `tools_file_unwritable`.
     """
     _checked(tool)
     if not (isinstance(path, str) and path and os.path.isabs(path)):
-        raise ToolPinError("tool_path_invalid", "the path of the tool must be absolute")
+        raise ToolPinError("tool_version_unreadable",
+                           "the path of the tool must be absolute, so no version can be read")
     where = _folder(folder)
     current = load_pins(where)
     version = _read_version(tool, path, where, source, run)

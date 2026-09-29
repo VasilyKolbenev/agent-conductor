@@ -9,6 +9,7 @@ the default runner is not left unproven.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import subprocess
@@ -200,11 +201,55 @@ def test_output_naming_the_other_tool_is_refused_and_nothing_is_written(tmp_path
     assert not (tmp_path / "tools.json").exists()
 
 
-def test_a_relative_path_is_refused_tool_path_invalid_before_anything_runs(tmp_path):
+def test_a_relative_path_is_tool_version_unreadable_and_says_why_before_anything_runs(tmp_path):
     def pin():
         tool_pins.pin_tool("git", "git", folder=tmp_path, run=_raises(AssertionError("ran")),
                            source={})
-    assert _code(pin) == "tool_path_invalid"
+    with pytest.raises(ToolPinError) as caught:
+        pin()
+    assert caught.value.code == "tool_version_unreadable"
+    assert "absolute" in caught.value.detail
+
+
+# -- the closed list of codes: the spec's names, and the two proposals --------------
+
+SPEC_NAMES = {"git_not_pinned", "gh_not_pinned", "git_changed", "gh_changed", "git_too_old",
+              "tool_version_unreadable"}
+PROPOSED_NAMES = {"tools_file_invalid", "tools_file_unwritable"}
+
+
+def test_the_spec_codes_and_the_two_proposals_are_the_whole_list():
+    assert tool_pins.SPEC_CODES == frozenset(SPEC_NAMES)
+    assert tool_pins.PROPOSED_CODES == frozenset(PROPOSED_NAMES)
+
+
+@pytest.mark.parametrize("code", ["tool_path_invalid", "tool_changed", "gh_unpinned", "", "x"])
+def test_a_tool_pin_error_refuses_a_code_that_is_neither_in_the_spec_nor_proposed(code):
+    with pytest.raises(ValueError):
+        ToolPinError(code, "detail")
+
+
+@pytest.mark.parametrize("code", sorted(SPEC_NAMES | PROPOSED_NAMES))
+def test_a_tool_pin_error_carries_every_listed_code(code):
+    assert ToolPinError(code, "detail").code == code
+
+
+def test_every_code_a_raise_site_of_the_library_names_is_on_the_list():
+    tree = ast.parse(Path(tool_pins.__file__).read_text(encoding="utf-8"))
+    listed = SPEC_NAMES | PROPOSED_NAMES
+    named = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "ToolPinError" and node.args):
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant):
+            named.append(first.value)
+        elif isinstance(first, ast.JoinedStr):     # f"{tool}_not_pinned": one name per tool
+            tail = "".join(part.value for part in first.values if isinstance(part, ast.Constant))
+            named.extend(f"{tool}{tail}" for tool in tool_pins.TOOLS)
+    assert named, "the scan found no raise site, so it proves nothing"
+    assert set(named) <= listed, sorted(set(named) - listed)
 
 
 def test_a_write_that_fails_is_tools_file_unwritable(tmp_path, monkeypatch):

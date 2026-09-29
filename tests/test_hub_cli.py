@@ -61,8 +61,10 @@ def test_a_path_that_runs_nothing_is_refused_tool_version_unreadable(tmp_path, h
                  "tool_version_unreadable")
 
 
-def test_a_relative_path_is_refused_tool_path_invalid(home, capsys):
-    _one_refusal(*_cli(["tools", "pin", "git", "--path", "git"], capsys), "tool_path_invalid")
+def test_a_relative_path_is_refused_tool_version_unreadable_with_the_reason(home, capsys):
+    result = _cli(["tools", "pin", "git", "--path", "git"], capsys)
+    _one_refusal(*result, "tool_version_unreadable")
+    assert "absolute" in result[2]
 
 
 def test_an_invalid_tools_file_is_refused_and_left_as_the_owner_wrote_it(
