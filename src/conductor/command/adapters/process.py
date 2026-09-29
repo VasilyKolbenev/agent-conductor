@@ -502,9 +502,10 @@ class ProcessRunner:
                             lambda: cls.ownership_scopes.find(root), auth_home)
 
     def __init__(self, project_root: str | os.PathLike[str], *,
-                 environ: Mapping[str, str] | None = None) -> None:
+                 environ: Mapping[str, str] | None = None, spawns_allowed: bool = True) -> None:
         self._root = Path(project_root).resolve()
         self._environ = dict(os.environ if environ is None else environ)
+        self._spawns_allowed = spawns_allowed        # False: a project opened for viewing
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
 
@@ -569,6 +570,8 @@ class ProcessRunner:
             return tuple(sorted(self._owned))
 
     def _spawn(self, spec: CommandSpec) -> _Owned:
+        if not self._spawns_allowed:      # first, so no loan or working folder is touched
+            raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         env = self._child_env(spec)
         sensitive_values = self.allowed_environment_values(
