@@ -175,3 +175,65 @@ def test_project_mismatch_stands_in_the_canon_the_labels_and_both_languages_of_t
     notice = (PANEL / "studio-notice-copy.js").read_text(encoding="utf-8")
     found = re.search(rf'"error\.{CODE}": \["([^"]+)", "([^"]+)"\]', notice)               # 8
     assert found and all(found.groups()) and found.group(1) != found.group(2)
+
+
+# -- the identity a real server builds at start, from its owner ----------------------
+
+TRANSITION = "b71e4d09-c2a8-4f35-a6d8-1c0e9f3b5274"
+FLAG = "6d0f2c1a-3b4e-4f5a-8b9c-0d1e2f3a4b5c@3"
+
+
+def _identity_of_a_server(root, **options) -> ProjectIdentity:
+    from conductor import server
+    from conductor.command.adapters import AdapterRegistry
+    subject = server.build(root, 0, registry=AdapterRegistry(), **options)
+    try:
+        return subject.project_identity
+    finally:
+        subject.server_close()
+
+
+def test_a_hub_child_of_an_activated_root_holds_the_nonce_the_hub_origin_and_the_launch(
+        tmp_path):
+    root, nonce = _activated(tmp_path)
+    launch = project_claim.Launch(mode="active", transition_id=TRANSITION, auto_continue=FLAG)
+    assert _identity_of_a_server(root, hub_origin=HUB, launch=launch) == ProjectIdentity(
+        nonce, HUB, False, "active", TRANSITION, FLAG)
+
+
+def test_a_standalone_activated_root_holds_its_nonce_and_no_hub(tmp_path):
+    root, nonce = _activated(tmp_path)
+    assert _identity_of_a_server(root) == ProjectIdentity(
+        nonce, None, False, "active", None, None)
+
+
+def test_a_root_that_was_never_activated_holds_no_project_id(tmp_path):
+    from tests.test_store import good_lane, write_project
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert _identity_of_a_server(root).payload() == {
+        "project_id": None, "hub_origin": None, "demo": False, "mode": "active"}
+
+
+def test_the_demo_launch_says_demo_and_holds_no_project_id(tmp_path):
+    from tests.test_store import good_lane, write_project
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    identity = _identity_of_a_server(root, launch=project_claim.Launch(demo=True))
+    assert identity.payload() == {
+        "project_id": None, "hub_origin": None, "demo": True, "mode": "active"}
+
+
+def test_the_nonce_comes_from_the_owner_and_not_from_a_value_read_before_it(
+        tmp_path, monkeypatch):
+    root, nonce = _activated(tmp_path)
+    monkeypatch.setattr(ownership.ProjectOwner, "project_id", property(lambda self: OTHER))
+    assert _identity_of_a_server(root).project_id == OTHER != nonce
+
+
+def test_a_launch_that_says_nothing_is_active_with_no_demo_and_no_handover():
+    assert project_claim.Launch() == project_claim.Launch("active", False, None, None)
+
+
+def test_the_demo_plan_differs_from_the_standalone_plan_only_by_demo():
+    import dataclasses
+    assert up_flags.DEMO == dataclasses.replace(up_flags.STANDALONE, demo=True)
+    assert up_flags.STANDALONE.demo is False and up_flags.DEMO.hub is False

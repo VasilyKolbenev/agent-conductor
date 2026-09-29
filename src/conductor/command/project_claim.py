@@ -31,6 +31,20 @@ _PROJECT_ID = re.compile(r"[0-9a-f]{32}")
 
 
 @dataclass(frozen=True)
+class Launch:
+    """How a process was started, apart from the project it owns: what `conduct up` passes on.
+
+    The nonce is not here on purpose: the server takes it from its owner at start, so it can
+    never be a value read before the root was held.
+    """
+
+    mode: str = "active"
+    demo: bool = False
+    transition_id: str | None = None
+    auto_continue: str | None = None
+
+
+@dataclass(frozen=True)
 class ProjectIdentity:
     """What this server is: see the module text for each field."""
 

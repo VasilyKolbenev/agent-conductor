@@ -369,6 +369,25 @@ def test_the_settled_hub_origin_reaches_build_and_a_standalone_up_passes_none(
     assert [call["hub_origin"] for call in seen] == [ORIGIN, None]
 
 
+def test_the_launch_facts_of_the_plan_reach_build_and_a_standalone_up_launches_plain(
+        tmp_path, monkeypatch):
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    seen: list[dict] = []
+    monkeypatch.setattr("conductor.server.build", _spying_build(seen))
+    handover = ["--mode", "active", "--transition", TRANSITION,
+                "--auto-continue", "6d0f2c1a-3b4e-4f5a-8b9c-0d1e2f3a4b5c@3"]
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0",
+              *_hub(project.home, project.project_id), *handover])
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0"])
+    from conductor.command.project_claim import Launch
+    assert [call["launch"] for call in seen] == [
+        Launch("active", False, TRANSITION, "6d0f2c1a-3b4e-4f5a-8b9c-0d1e2f3a4b5c@3"),
+        Launch("active", False, None, None)]
+
+
 def test_the_matching_nonce_passes_the_identity_check_and_reaches_build(
         tmp_path, monkeypatch):
     project = DrainProject.build(tmp_path)

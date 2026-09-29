@@ -262,14 +262,16 @@ def test_conduct_demo_writes_the_story_and_not_only_the_fixture(
 
     served: dict = {}
 
-    def stop_at_the_socket(root, port):
-        served.update(root=root, port=port)
+    def stop_at_the_socket(root, port, providers=None, plan=None):
+        served.update(root=root, port=port, plan=plan)
         return 0
 
     monkeypatch.setattr(cli, "_serve", stop_at_the_socket)
 
     assert cli.main(["demo", "--port", "0"]) == 0
 
+    from conductor import up_flags
+    assert served["plan"] == up_flags.DEMO      # the demo says so to the serving function
     root = served["root"]
     assert TemplateStore(root).revisions(demo_scenario.WORKFLOW_ID) == (
         demo_scenario.REVISION,)

@@ -58,6 +58,7 @@ from conductor.command.http_api import (
 )
 from conductor.command.http_transport import (
     CommandSession, HttpRefusal, validate_command_host)
+from conductor.command.project_claim import Launch, ProjectIdentity
 #: Re-exported deliberately: `IDLE_CONNECTION_SECONDS` is a fact about THIS
 #: server that callers and guards read off it, and moving where it is
 #: written did not move what it is about.
@@ -552,10 +553,13 @@ class ConductServer(ThreadingHTTPServer):
             clock: Callable[[], str] = _command_clock,
             ids: Callable[[str], str] = _command_id,
             token_factory: Callable[[int], str] = secrets.token_urlsafe,
-            hub_origin: str | None = None) -> None:
+            hub_origin: str | None = None, launch: Launch | None = None) -> None:
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
         self._content_security_policy = frame_policy(hub_origin)   # refuses a bad origin
+        self.hub_origin = hub_origin
+        self.launch = Launch() if launch is None else launch
+        self.project_identity: ProjectIdentity | None = None      # built by `start_command`
         self.shutting_down = False
         self._command_admission = threading.Condition()
         self._command_posts = 0
@@ -661,6 +665,7 @@ def build(
         ids: Callable[[str], str] = _command_id,
         token_factory: Callable[[int], str] = secrets.token_urlsafe,
         hub_origin: str | None = None,
+        launch: Launch | None = None,
 ) -> ConductServer:
     """Build the loopback panel server (fail-closed startup).
 
@@ -669,6 +674,9 @@ def build(
         port: TCP port to bind on 127.0.0.1; 0 lets the OS assign one.
         hub_origin: The origin of the hub that started this child, validated by
             `--hub-origin`; it is added to the frame policy of every answer (4.6.6).
+        launch: What `conduct up` passes on beyond the project: mode, demo, and the
+            transition and continue-after flag of a hub (4.5.1). The project id is
+            never passed in: the server reads it from its owner.
 
     Returns:
         A `ConductServer` ready for `serve_forever()`; its watcher thread
@@ -689,4 +697,4 @@ def build(
     return ConductServer(
         ("127.0.0.1", port), Path(root), cdir, registry=registry,
         providers=providers, budget=budget, clock=clock, ids=ids,
-        token_factory=token_factory, hub_origin=hub_origin)
+        token_factory=token_factory, hub_origin=hub_origin, launch=launch)

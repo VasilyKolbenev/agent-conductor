@@ -60,6 +60,7 @@ class UpPlan:
     stop_on_stdin_eof: bool
     transition: str | None
     auto_continue: str | None
+    demo: bool = False
 
     @property
     def hub(self) -> bool:
@@ -68,6 +69,8 @@ class UpPlan:
 
 
 STANDALONE = UpPlan(None, "active", None, None, False, None, None)
+#: `conduct demo`: no hub flags, and the plan says it is the demo (4.5.1).
+DEMO = UpPlan(None, "active", None, None, False, None, None, demo=True)
 
 
 def refusal_line(code: str, detail: str) -> str:
