@@ -232,21 +232,28 @@ def open_attempt_ends(values: tuple[object, ...]) -> list[datetime]:
     node reserves its own timeout.
     """
     from conductor.command.contracts import ActionRequest, ActionResultReceipt
-    from conductor.command.policy_history import request_reservation
-    from conductor.command.contract_values import ContractError
+    from conductor.command.graph_definition import GraphDefinition
     settled = {v.action_id for v in values if type(v) is ActionResultReceipt}
-    definition = next((v for v in values if type(v).__name__ == "GraphDefinition"), None)
+    definition = next((v for v in values if type(v) is GraphDefinition), None)
     ends = []
     for request in values:
         if type(request) is not ActionRequest or request.action_id in settled:
             continue
-        try:
-            reserved = request_reservation(request, definition)
-        except (ContractError, AttributeError):
-            reserved = request.timeout_seconds
         started = datetime.fromisoformat(request.requested_at.replace("Z", "+00:00"))
-        ends.append(started + timedelta(seconds=reserved))
+        ends.append(started + timedelta(seconds=_reservation(request, definition)))
     return ends
+
+
+def _reservation(request, definition) -> int:
+    """Seconds an attempt reserved: the plan's figure (a checker doubles it), else its timeout."""
+    from conductor.command.contract_values import ContractError
+    from conductor.command.policy_history import request_reservation
+    if definition is None or request.node_id is None:
+        return request.timeout_seconds
+    try:
+        return request_reservation(request, definition)
+    except ContractError:                    # the plan holds no such node
+        return request.timeout_seconds
 
 
 def enable_ctrl_c(*, set_handler: Callable[[object, bool], object] | None = None,

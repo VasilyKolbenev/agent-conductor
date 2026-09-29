@@ -287,6 +287,13 @@ def test_a_request_that_names_no_plan_node_reserves_its_own_timeout(tmp_path):
     assert ends == [RUN_NOW + timedelta(seconds=request.timeout_seconds)]
 
 
+def test_a_request_whose_node_the_plan_does_not_hold_reserves_its_own_timeout(tmp_path):
+    fixture, authority = _open_attempt(tmp_path, checker=True)
+    request = replace(authority.request, node_id="ghost")
+    ends = server_drain.open_attempt_ends((fixture.graph, request))
+    assert ends == [RUN_NOW + timedelta(seconds=request.timeout_seconds)]
+
+
 def test_a_store_with_no_runs_gets_the_idle_deadline(tmp_path):
     (tmp_path / "conductor").mkdir()
     assert server_drain.drain_deadline(RunStore(tmp_path), NOON) == NOON + timedelta(seconds=10)
