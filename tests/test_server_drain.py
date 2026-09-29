@@ -81,17 +81,26 @@ def _instant(text: str) -> datetime:
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
-def test_the_drain_harness_runs_two_steps_and_a_real_ctrl_c_closes_the_idle_project(project):
-    project.require_ctrl_c()
-    child = project.start(hub=False, auto_release=True, ctrl_c="enabled", settle_delay=0)
+def test_the_drain_harness_runs_two_steps_under_fake_dispatch_and_closes_both_login_leases(
+        project):
+    """The instrument control that needs no signal, so it runs wherever the suite runs."""
+    child = project.start(hub=False, auto_release=True, settle_delay=0)
     child.wait_serving()
     child.authorize()
     project.wait_run_terminal(child)
     assert project.results() == ["succeeded", "succeeded"]
+    assert len(project.closed_leases()) == 2 and not project.lease_standing()
+    assert project.head_phase() == "opened", "nothing has stopped the server yet"
+
+
+def test_the_drain_harness_delivers_a_real_ctrl_c_that_closes_the_idle_project(project):
+    """The other half of the control: skipped, with the measured reason, where the OS cannot."""
+    project.require_ctrl_c()
+    child = project.start(hub=False, auto_release=True, ctrl_c="enabled", settle_delay=0)
+    child.wait_serving()
     child.send_ctrl_c()
     assert child.wait_exit(WAIT) == 0
-    assert project.head_phase() == "closed"
-    assert len(project.closed_leases()) == 2 and not project.lease_standing()
+    assert project.head_phase() == "closed" and not project.lease_standing()
 
 
 def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
