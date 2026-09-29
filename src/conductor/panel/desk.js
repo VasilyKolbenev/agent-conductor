@@ -6,9 +6,15 @@
 // seven a state may hold, and the top bar says the whole of it in one plain sentence. The
 // rail is drawn from the project's task list and the runs list, and from the automation of
 // the newest run of each task, because the word of a task is a fact of all three (spec
-// 5.2.1). The scene is drawn from the newest run of the task a person chose: choosing is a
-// press, and the run is a read. The feed, the summary's numbers and the pult still have no
-// module: they stay `empty` until one is written.
+// 5.2.1). The scene is drawn from the newest run of the task a person chose, or from the run
+// the address names: choosing is a press or a hash, and the run is a read. The feed, the
+// summary's numbers and the pult still have no module: they stay `empty` until one is written.
+//
+// The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
+// `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
+// A hash the desk did not write is read by ONE listener, the router, which selects, reads and
+// sets the appearance and nothing else. A hash that claims another project than the one the
+// desk bound to puts it in a terminal state, and it then reads and applies nothing.
 //
 // It reaches the wire only through `desk-transport.js`, the ONLY module of the Studio and
 // the desk that touches the network (`graph.js` and the classic `command.js` keep doors of
@@ -18,7 +24,8 @@
 // not faked here.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
-import {readPreferences} from "./desk-hash.js";
+import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
+  readPreferences} from "./desk-hash.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
 import {newestRun} from "./studio-taskruns.js";
@@ -63,13 +70,23 @@ const NO_STREAM = "closed";
 const UNANSWERED = Object.freeze([LATE, "store_error"]);
 
 //: What a landed read is kept in: the two lists, the automation read for the newest run of
-//: each task (a map that is built once and never changed), the task chosen, and the newest
-//: run of that task. `choice` counts the choices made, so an answer that lands for a task a
-//: person has since left is dropped. `door` is this window's transport, made at boot.
+//: each task (a map that is built once and never changed), the task chosen, and the run drawn
+//: for it; `foreign` is the terminal state of a desk open for another project. `choice`
+//: counts the choices made, so an answer that lands for a task a person has since left is
+//: dropped. `door` is this window's transport, made at boot.
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
-  taskId: null, run: NO_RUN});
+  taskId: null, run: NO_RUN, foreign: false});
 let choice = 0;
 let door = null;
+//: The project this desk bound to, from its first hash (null when that named none); the last
+//: address the desk wrote, which a new hash is compared with; the hash it last wrote or read;
+//: what was last remembered; and the promise that the lists have landed and the first hash
+//: has been applied.
+let bound = null;
+let lastWritten = readDeskHash("");
+let seen = "";
+let shown = Object.freeze({task: null, run: null});
+let booted = Promise.resolve();
 
 const byId = (id) => document.getElementById(id);
 //: The page's own language is the language of record: `<html lang>` says it, and anything
@@ -107,14 +124,19 @@ function translate() {
   document.title = message(locale(), "desk.title");
 }
 
+//: The one sentence of the top bar: the phase of the shell, or, in the terminal state, the
+//: sentence that says the desk is open for another project.
 function say(phase) {
-  byId("deskStatus").textContent = message(locale(), `phase.${phase}`);
+  const key = state.foreign ? "desk.foreign" : `phase.${phase}`;
+  byId("deskStatus").textContent = message(locale(), key);
 }
 
 //: The word of each region a read feeds, and the shell's, which is the worst of them. The
 //: rail needs both lists, the summary needs the runs, and the scene needs the run of the
-//: chosen task -- and counts toward the shell only once a read of it has been asked.
+//: chosen task -- and counts toward the shell only once a read of it has been asked. A desk
+//: open for another project draws no region and refuses as a whole.
 function words() {
+  if (state.foreign) return {rail: "empty", scene: "empty", summary: "empty", shell: "refused"};
   const rail = worst([state.tasks.phase, state.runs.phase]);
   const scene = state.run.phase;
   const fed = scene === "empty" ? [] : [scene];
@@ -138,9 +160,41 @@ function render() {
   restoreFocus(byId("deskShell"), held);
 }
 
+//: Where the desk stands: the task chosen and the run drawn for it. The run is what is on
+//: the scene, so an address never names a run the desk has not drawn.
+function where() {
+  return Object.freeze({task: state.taskId, run: state.run.detail?.run.run_id ?? null});
+}
+
+//: The one place the desk moves its own address (spec 4.5.3, point 4): the selection it
+//: draws, then the appearance, in the canonical order of `deskHash`. A terminal desk writes
+//: nothing. `replaceState` adds no history entry and fires no `hashchange`, so this can
+//: never start a loop, and the address it leaves is the one a new hash is compared with.
+//: A hash the router has not read yet is a request, and is not overwritten: the router
+//: that reads it normalises it.
+function remember() {
+  if (state.foreign || location.hash !== seen) return;
+  const at = where();
+  const address = preferenceHash(deskHash({project: bound, task: at.task, run: at.run}),
+    {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
+  history.replaceState(null, "", address);
+  seen = location.hash;
+  lastWritten = readDeskHash(address);
+  shown = at;
+}
+
+//: A change of what is drawn is remembered in the address; a redraw of the same is not.
+function follow() {
+  const at = where();
+  if (at.task !== shown.task || at.run !== shown.run) remember();
+}
+
+//: A terminal desk keeps nothing a late answer brings.
 function move(patch) {
+  if (state.foreign) return;
   state = Object.freeze({...state, ...patch});
   render();
+  follow();
 }
 
 //: One list read, judged by the boundary that owns the list's shape. A body the boundary
@@ -213,9 +267,11 @@ async function readRun(runId, taskId) {
   }
 }
 
-//: Why a chosen task has no run to show, or null when it has one to read.
-function absence(task, newest) {
+//: Why a chosen task has no run to show, or null when it has one to read. A run the address
+//: names is judged by its own read, so the newest run need not be known for it.
+function absence(task, newest, named) {
   if (!task || task.unreadable) return "unreadable";
+  if (named) return null;
   return newest.state === "known" ? null : newest.state;
 }
 
@@ -227,33 +283,114 @@ function whileReading(taskId) {
     : Object.freeze({phase: "stale", detail: shown, absent: null});
 }
 
-//: What a press MEANS. Choosing a task remembers which one and reads its newest run; it
-//: writes nothing. Only the answer to the current choice is kept.
-async function chooseTask(taskId) {
+//: What a press or a hash MEANS. Choosing a task remembers which one and reads its newest
+//: run, or the run named with it; it writes nothing. Only the answer to the current choice
+//: is kept.
+async function chooseTask(taskId, runId = null) {
+  if (state.foreign) return;
   const asked = ++choice;
   const newest = newestRun(state.runs, taskId);
-  const absent = absence(state.tasks.list.find((row) => row.task_id === taskId), newest);
+  const absent = absence(state.tasks.list.find((row) => row.task_id === taskId), newest,
+    runId !== null);
   if (absent !== null) {
     move({taskId, run: Object.freeze({phase: "empty", detail: null, absent})});
     return;
   }
   move({taskId, run: whileReading(taskId)});
-  const landed = await readRun(newest.row.run_id, taskId);
+  const landed = await readRun(runId ?? newest.row.run_id, taskId);
   if (asked === choice) move({run: landed});
 }
 
 const handlers = Object.freeze({chooseTask});
+
+// -- the address ------------------------------------------------------------------------
+
+//: The page's language and theme, written on the document and said in words: the language
+//: is `<html lang>`, the theme is the root's `data-theme` (none is the system's).
+function paintAppearance(next) {
+  const root = document.documentElement;
+  root.lang = next.locale;
+  if (next.theme === null) root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", next.theme);
+  translate();
+}
+
+//: A language or theme a new hash asks for. Nothing is done when it is the one already set;
+//: otherwise the page is repainted and drawn again. Says whether the language changed.
+function setAppearance(next) {
+  const root = document.documentElement;
+  const language = locale() !== next.locale;
+  if (!language && (root.getAttribute("data-theme") ?? null) === next.theme) return false;
+  paintAppearance(next);
+  render();
+  return language;
+}
+
+//: The terminal state of a desk open for another project (spec 4.5.1): everything it holds is
+//: dropped, one sentence says so, and `move` keeps nothing from then on.
+function enterForeign() {
+  state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
+    taskId: null, run: NO_RUN, foreign: true});
+  render();
+}
+
+//: Apply the steps of a hash the desk did not write, top to bottom. The task and its run are
+//: the only navigation the desk has a surface for today (the pult, the panels and the wizard
+//: come with their modules), so no other step has a row here. A task the lists do not hold,
+//: or a run with no task to belong to, is dropped. Says whether it opened a run.
+async function navigate(change, address) {
+  const keys = change.steps.map((step) => step.key);
+  if (!keys.includes("task") && !keys.includes("run")) return false;
+  const taskId = keys.includes("task") ? address.task : state.taskId;
+  if (taskId === null || !state.tasks.list.some((row) => row.task_id === taskId)) return false;
+  await chooseTask(taskId, keys.includes("run") ? address.run : null);
+  return true;
+}
+
+//: The run on the scene, read again -- for a language that changed under it.
+async function reread() {
+  const run = where().run;
+  if (state.taskId !== null && run !== null) await chooseTask(state.taskId, run);
+}
+
+//: The one listener (spec 4.5.3). A new hash is read against the last one the desk wrote: a
+//: project that is not the bound one ends the desk; a language or theme is set; a navigation
+//: key that moved is applied; a hash with none moves nothing, so the hub can send the language
+//: alone. It selects, reads and sets the appearance, and writes nothing.
+async function onHashChange() {
+  await booted;
+  if (state.foreign) return;
+  seen = location.hash;
+  const address = readDeskHash(seen);
+  if (foreignProject(bound, address)) {
+    enterForeign();
+    return;
+  }
+  const language = setAppearance(readPreferences(seen, locale()));
+  const opened = await navigate(navigationChange(lastWritten, address), address);
+  if (language && !opened) await reread();
+  remember();
+}
+
+//: The first hash is applied like any other, against a desk that has written none.
+async function start(address) {
+  await navigate(navigationChange(readDeskHash(""), address), address);
+  remember();
+}
 
 //: The page's language is the address's (`#lang=ru`), and without a choice the page's own
 //: `lang` stands. The platform's language is not asked for here or in the hash module: the
 //: source guards keep that question in the transport and the Studio's boot module, and the
 //: hub always says `lang` when it mounts a desk.
 function boot() {
-  document.documentElement.lang = readPreferences(location.hash,
-    document.documentElement.lang).locale;
+  seen = location.hash;
+  const address = readDeskHash(seen);
+  paintAppearance(readPreferences(seen, document.documentElement.lang));
   door = createTransport(locale);
-  translate();
-  load();
+  bound = address.project;
+  window.addEventListener("hashchange", onHashChange);
+  if (address.projectRepeated) enterForeign();
+  else booted = load().then(() => start(address));
 }
 
 if (byId("deskShell") && MOUNTS.every((id) => byId(id))) boot();
