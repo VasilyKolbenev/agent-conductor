@@ -387,6 +387,33 @@ def _create(command_line, cwd, env, info, suspended, read) -> ConfinedProcess:
     return ConfinedProcess(created.hProcess, created.dwProcessId, out_fd)
 
 
+_declare(_k32.OpenProcess, wintypes.HANDLE, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+_INVALID_HANDLES = (None, 0, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF)
+
+
+def open_inheritable_file(path) -> int:
+    """A write handle to ``path`` (created if absent) that a child may inherit."""
+    handle = _k32.CreateFileW(str(path), 0x40000000, 3, ctypes.byref(_inheritable()), 4, 0, None)
+    if handle in _INVALID_HANDLES:
+        raise _fail(f"CreateFileW({path})")
+    return handle
+
+
+def close_handle(handle: int) -> None:
+    _k32.CloseHandle(handle)
+
+
+def process_is_gone(pid: int) -> bool:
+    """True when no process with this id is left running (the wait is signalled or it is gone)."""
+    handle = _k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+    if handle in _INVALID_HANDLES:
+        return True
+    try:
+        return _k32.WaitForSingleObject(handle, 0) == _WAIT_OBJECT_0
+    finally:
+        _k32.CloseHandle(handle)
+
+
 def popen_with_ignored_security_capabilities(sid: str) -> "subprocess.Popen[bytes]":
     """Popen given a container entry it cannot honour: it starts suspended and unconfined."""
     info = subprocess.STARTUPINFO()
