@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -342,3 +343,82 @@ def test_a_path_that_holds_no_executable_is_tool_version_unreadable_through_the_
         tool_pins.pin_tool("git", missing, folder=tmp_path, source=dict(os.environ))
 
     assert _code(pin) == "tool_version_unreadable"
+
+
+# -- a pin is read-modify-write under one lock ---------------------------------------
+
+
+def _pin_in_a_thread(tmp_path, tool, path, text, gate, failures):
+    def probe(argv, env):
+        gate.wait()                # both pins are past their probe before either writes
+        return text
+
+    def go():
+        try:
+            tool_pins.pin_tool(tool, path, folder=tmp_path, run=probe, source={})
+        except BaseException as error:                          # noqa: BLE001 -- reported below
+            failures.append(error)
+
+    return threading.Thread(target=go)
+
+
+def test_two_pins_of_different_tools_at_once_both_survive(tmp_path):
+    gate, failures = threading.Barrier(2, timeout=15), []
+    threads = [
+        _pin_in_a_thread(tmp_path, "git", ABS_GIT, "git version 2.47.1\n", gate, failures),
+        _pin_in_a_thread(tmp_path, "gh", ABS_GH, "gh version 2.62.0\n", gate, failures)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert not any(thread.is_alive() for thread in threads) and failures == []
+    assert tool_pins.load_pins(tmp_path) == ToolPins(ToolPin("git", ABS_GIT, "2.47.1"),
+                                                     ToolPin("gh", ABS_GH, "2.62.0"))
+
+
+def test_a_file_that_becomes_invalid_while_the_tool_answers_is_refused_and_left_alone(tmp_path):
+    def probe(argv, env):
+        _put(tmp_path, b"{ edited by the owner meanwhile")
+        return "git version 2.47.1\n"
+
+    def pin():
+        tool_pins.pin_tool("git", ABS_GIT, folder=tmp_path, run=probe, source={})
+
+    assert _code(pin) == "tools_file_invalid"
+    assert (tmp_path / "tools.json").read_bytes() == b"{ edited by the owner meanwhile"
+
+
+def test_a_pin_that_cannot_take_the_lock_refuses_tools_file_unwritable_and_writes_nothing(
+        tmp_path, monkeypatch):
+    from conductor.ownership_native import NativeHold
+    monkeypatch.setattr(tool_pins, "LOCK_ATTEMPTS", 3)
+    monkeypatch.setattr(tool_pins, "LOCK_PAUSE_SECONDS", 0.001)
+    (tmp_path / "tools.lock").write_bytes(b"")
+    holder = NativeHold(tmp_path / "tools.lock", exclusive=True)
+    try:
+        assert _code(lambda: _pin(tmp_path)) == "tools_file_unwritable"
+    finally:
+        holder.close()
+    assert not (tmp_path / "tools.json").exists()
+    assert _pin(tmp_path).version == "2.47.1"          # the same pin goes through once it is free
+
+
+def test_a_pin_creates_the_lock_file_once_and_leaves_it_in_place(tmp_path):
+    folder = tmp_path / "not-there-yet"
+    tool_pins.pin_tool("git", ABS_GIT, folder=folder, run=_says("git version 2.47.1\n"), source={})
+    lock = folder / "tools.lock"
+    assert lock.is_file()
+    identity = lock.stat().st_ino
+    tool_pins.pin_tool("gh", ABS_GH, folder=folder, run=_says("gh version 2.62.0\n"), source={})
+    assert lock.stat().st_ino == identity
+
+
+def test_a_write_that_fails_lets_go_of_the_lock(tmp_path, monkeypatch):
+    def refuse(path, payload, **options):
+        raise PermissionError(13, "read-only")
+
+    with monkeypatch.context() as patched:
+        patched.setattr("conductor.atomic_replace.replace_bytes", refuse)
+        assert _code(lambda: _pin(tmp_path)) == "tools_file_unwritable"
+    monkeypatch.setattr(tool_pins, "LOCK_ATTEMPTS", 1)   # a lock still held would refuse at once
+    assert _pin(tmp_path).version == "2.47.1"

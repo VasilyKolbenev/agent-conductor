@@ -18,15 +18,22 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Callable, Mapping
+import time
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from conductor import atomic_replace, tool_env
 from conductor.hub import home
+from conductor.ownership_native import NativeHold
 
 TOOLS = ("git", "gh")
 FILE_NAME = "tools.json"
+LOCK_NAME = "tools.lock"
+#: Tries of the non-blocking lock, and the pause between two: about two seconds, as 4.1.3.
+LOCK_ATTEMPTS = 100
+LOCK_PAUSE_SECONDS = 0.02
 SCHEMA_VERSION = 1
 #: Below this git has no `GIT_CONFIG_COUNT`, which is how `tool_env` silences hooks.
 MIN_GIT = (2, 31)
@@ -186,11 +193,55 @@ def _canonical(pins: ToolPins) -> bytes:
 def _store(pins: ToolPins, folder: Path) -> None:
     target = tools_file(folder)
     try:
-        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         atomic_replace.replace_bytes(target, _canonical(pins))
     except OSError as error:
         raise ToolPinError("tools_file_unwritable",
                            f"{target.name} could not be written: {error}") from error
+
+
+# -- the lock: a pin reads, changes and writes the file, so two pins take turns ------
+
+
+@contextmanager
+def _locked(folder: Path) -> Iterator[None]:
+    """Hold `tools.lock` exclusively for the read-modify-write of `tools.json`.
+
+    The lock is the registry's kind (4.1.3): the file is created when it is absent, taken
+    without waiting, retried a bounded number of times, and freed by the OS if its holder
+    dies. Readers take no lock: the file is swapped whole.
+
+    Raises:
+        ToolPinError: `tools_file_unwritable`: the folder or the lock file cannot be made,
+            or another pin held the lock for every try.
+    """
+    lock = folder / LOCK_NAME
+    try:
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+        except FileExistsError:
+            pass
+    except OSError as error:
+        raise ToolPinError("tools_file_unwritable",
+                           f"{LOCK_NAME} could not be made: {error}") from error
+    hold = _take(lock)
+    try:
+        yield
+    finally:
+        hold.close()
+
+
+def _take(lock: Path) -> NativeHold:
+    refused: OSError | None = None
+    for attempt in range(LOCK_ATTEMPTS):
+        try:
+            return NativeHold(lock, exclusive=True)
+        except OSError as error:
+            refused = error
+            if attempt < LOCK_ATTEMPTS - 1:
+                time.sleep(LOCK_PAUSE_SECONDS)
+    raise ToolPinError("tools_file_unwritable",
+                       f"{LOCK_NAME} is held by another pin: {refused}") from refused
 
 
 # -- versions: run the tool in the built environment ---------------------------------
@@ -258,13 +309,16 @@ def pin_tool(tool: str, path: str, *, folder: Path | str | None = None,
         raise ToolPinError("tool_version_unreadable",
                            "the path of the tool must be absolute, so no version can be read")
     where = _folder(folder)
-    current = load_pins(where)
+    load_pins(where)              # an invalid file refuses before anything runs; read again below
     version = _read_version(tool, path, where, source, run)
     if tool == "git" and _too_old(version):
         raise ToolPinError("git_too_old", f"git {version} is older than "
                            f"{MIN_GIT[0]}.{MIN_GIT[1]}, which the hooks-off environment needs")
     pin = ToolPin(tool, path, version)
-    _store(current.with_pin(pin), where)
+    # The probe ran outside the lock (it may take seconds). The read that counts is this one:
+    # a pin of the other tool, or an edit of the owner, may have landed meanwhile.
+    with _locked(where):
+        _store(load_pins(where).with_pin(pin), where)
     return pin
 
 
