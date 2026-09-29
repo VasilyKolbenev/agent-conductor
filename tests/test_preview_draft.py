@@ -167,7 +167,7 @@ def test_a_run_that_follows_no_plan_cannot_be_drafted():
         preview_draft.drafted_preview([], LIMITS)
 
 
-def test_the_limits_are_the_deployments_own(project):
+def test_the_limits_take_their_total_from_the_actions_times_the_longest_action(project):
     assert product_limits(project.policy.budget) == LIMITS
 
 

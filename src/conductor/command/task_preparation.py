@@ -53,11 +53,9 @@ NO_QUEUE = QueueView()
 
 
 def first_stage(ended: bool, queued: bool, granted: bool, missing: bool) -> str:
-    """The stage of a run from the four facts, in the order of `STAGES`."""
-    for name, holds in zip(STAGES, (ended, queued, granted, missing, True)):
-        if holds:
-            return name
-    raise AssertionError("the last stage always holds")
+    """The stage of a run from the four facts, in the order of `STAGES`; the last always holds."""
+    return next(name for name, holds in zip(STAGES, (ended, queued, granted, missing, True))
+                if holds)
 
 
 def read_preparation(tasks: "TaskStore", store: "RunStore", task_id: str,

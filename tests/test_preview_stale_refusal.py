@@ -107,7 +107,7 @@ def test_reviewed_facts_that_moved_before_the_grant_are_409_preview_stale(tmp_pa
     refused_and_wrote_nothing(f, body_for(preview))
 
 
-def test_a_valid_preview_still_authorizes_and_a_stale_word_never_leaks_into_success(tmp_path):
+def test_a_preview_that_still_stands_authorizes_with_a_201(tmp_path):
     f = setup(tmp_path)
     granted = post(door(f), PATH, body_for(f.policy.preview("run", ASK)))
     assert granted.status == 201

@@ -16,7 +16,7 @@ import pytest
 
 from conductor.command import policy_driver
 from conductor.command.api_contracts import (
-    ERROR_STATUS, _FIXED_MESSAGES, ApiRefusal, refusal_from_exception)
+    ERROR_STATUS, _FIXED_MESSAGES, _REFUSAL_BUILD, ApiRefusal, refusal_from_exception)
 from conductor.command.api_refusals import _REVIEWED_FACTS
 from conductor.command.contract_values import ContractError
 from conductor.command.http_api import CommandApi
@@ -142,8 +142,7 @@ def test_the_reviewed_fact_of_the_code_is_its_holder_and_no_other_shape_passes()
     with pytest.raises(ValueError):
         ApiRefusal.slot_busy("not a safe id!")
     with pytest.raises(ValueError):
-        ApiRefusal(ApiRefusal.fixed.__globals__["_REFUSAL_BUILD"], CODE, "some other words",
-                   {"run_id": HOLDER})
+        ApiRefusal(_REFUSAL_BUILD, CODE, "some other words", {"run_id": HOLDER})
 
 
 # --- 11.1: the code stands in every place of the vocabulary ---------------------------------------
