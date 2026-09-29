@@ -419,10 +419,13 @@ function landRead(launch, ctx, ask, result) {
   return launch.phase === "unknown" && both ? settleUnknown(next, ctx) : next;
 }
 
-//: A press writes for the card the owner confirmed, so an answer that comes late changes nothing;
-//: a dialog that is still open is for a card that another digest replaces, and closes with it.
+//: A press writes for the card the owner confirmed, so an answer that comes late changes nothing
+//: but its count: the id of the next preview ask is made from it, and the model hands an id out
+//: once. A dialog that is still open is for a card that another digest replaces, and closes with it.
 function landPreview(launch, ctx, result) {
-  if (launch.skip !== null && launch.skip.phase === "running") return launch;
+  if (launch.skip !== null && launch.skip.phase === "running") {
+    return {...launch, previews: launch.previews + 1};
+  }
   const base = {...launch, previews: launch.previews + 1, refreshWanted: false};
   if (result.status === "accepted") {
     const owned = launch.refreshWanted;

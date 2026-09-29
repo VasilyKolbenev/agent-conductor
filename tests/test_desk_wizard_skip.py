@@ -438,3 +438,32 @@ def test_a_preview_answer_that_lands_while_the_press_is_writing_changes_nothing(
     assert out["landed"] == [1, "skipping"], "the press keeps its card and its phase"
     assert out["card"] == 1 and out["seen"] is True and out["phase"] == "queued"
     assert out["grants"] == [["auth-n0nce0001-1", out["digest"]]]
+
+
+def test_a_preview_answer_that_lands_during_a_press_does_not_spend_the_next_asks_id():
+    out = run_js(SKIP + NEXT_CARD + """
+      //: The terms ran out while the dialog was open and their ask is out; the owner confirms
+      //: before it answers; the answer lands during the press; the press then stops. The store
+      //: refuses the repeat so that one ask, not a run of them, is what the model makes.
+      const attempt = (code) => {
+        const w = skipWorld({refuse: {launch_skip_enqueue: code, launch_preview: "store_error"}});
+        const base = offered(w, {clock: DUE}), due = dueOf(base);
+        const begun = tap(tap(base, "launch-skip").state, "launch-skip-confirm");
+        const same = fresh(d.preview);
+        same.previewed_at = DUE;
+        same.valid_until = "2026-09-29T10:10:00Z";
+        const late = wiz.stepWizard(begun.state, {type: "answered", ask: due, result: ok(same)});
+        const stopped = settle({state: late.state, asks: [...begun.asks, ...late.asks]}, w);
+        const refresh = tap(stopped.state, "launch-refresh");
+        return {stop: wiz.launchFacts(stopped.state).skip.stop.code, due: due.id,
+          asked: w.asked.filter((ask) => ask.name === "launch_preview").map((ask) => ask.id),
+          refresh: refresh.asks.map((ask) => [ask.name, ask.id])};
+      };
+      show({stale: attempt("preview_stale"), full: attempt("queue_full")});
+    """, DATA, modules=MODULES)
+    assert out["stale"]["stop"] == "preview_stale" and out["full"]["stop"] == "queue_full"
+    for name in ("stale", "full"):
+        row = out[name]
+        assert row["due"] == "write:launch:preview:0"
+        assert row["asked"] == ["write:launch:preview:1"], f"{name}: a new id, and it was sent"
+        assert row["refresh"] == [["launch_preview", "write:launch:preview:2"]], name
