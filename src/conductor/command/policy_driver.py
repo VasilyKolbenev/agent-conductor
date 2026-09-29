@@ -1,6 +1,7 @@
 """One coalesced wake, one selected run, and existing execution admission."""
 import hashlib
-from threading import Condition, Thread
+from dataclasses import dataclass
+from threading import Condition, Lock, Thread
 
 from .contracts import ActionProposal, ActionRequest, ActionResultReceipt, PROPOSAL_INPUT_BINDING, ABSENT, _thaw_json
 from .contract_values import ContractError
@@ -11,14 +12,28 @@ from .service import CommandService
 from .work_layout import work_route
 
 
+class NewWorkHeld(ContractError):
+    """The driver is draining: what is in flight settles, nothing new is activated or started."""
+
+
+@dataclass(frozen=True)
+class SlotSnapshot:
+    """What the driver holds at one instant: a copy, never a live view."""
+    active_run_id: str | None
+    inflight_run_id: str | None
+    holding_new_work: bool
+
+
 class PolicyDriver:
     def __init__(self, policy, runtime, execution, *, clock, ids):
         self.policy, self.runtime, self.execution = policy, runtime, execution
         self.service = CommandService(policy.store, policy.registry, clock=clock, ids=ids)
         self._condition = Condition()
+        self._admission = Lock()  # held by a tick from its flag check to the end of its admission
         self._active = None
         self._pending = False
         self._stopping = False
+        self._holding_new_work = False
         self._thread = None
         self._inflight = None
         self._reason = "restart_required"
@@ -40,9 +55,36 @@ class PolicyDriver:
             if self._thread.is_alive():
                 raise RuntimeError("policy driver did not retire")
 
+    def hold_new_work(self) -> None:
+        """Start nothing new from now on; an action already in flight still settles.
+
+        In memory and one-way for the life of the process. It writes nothing to any run journal:
+        a pause or any other control record written here would forge a human decision. It returns
+        only after a tick that had already passed the flag check has finished admitting its
+        action, so the open attempts a drain counts next include that action.
+        """
+        with self._condition:
+            self._holding_new_work = True
+        with self._admission:
+            pass
+
+    def slot(self) -> SlotSnapshot:
+        """A frozen copy of the active run, the run with an action in flight, and the hold flag.
+
+        It reads no journal, so `_inflight` can lag one tick behind a written result; the state of
+        the holder comes from `automation_view` (spec 4.4.6).
+        """
+        with self._condition:
+            return SlotSnapshot(
+                active_run_id=self._active[0] if self._active is not None else None,
+                inflight_run_id=self._inflight[0] if self._inflight is not None else None,
+                holding_new_work=self._holding_new_work)
+
     def hold_activation(self, run_id):
         self._settle_inflight()
         with self._condition:
+            if self._holding_new_work:
+                raise NewWorkHeld("policy driver is holding new work")
             if self._stopping or self._thread is None or not self._thread.is_alive():
                 raise ContractError("policy driver is not running")
             if (self._active is not None and self._active[0] != run_id
@@ -108,6 +150,13 @@ class PolicyDriver:
 
     def _tick(self, run_id, grant_id):
         self._settle_inflight()
+        with self._admission:
+            with self._condition:
+                if self._holding_new_work:
+                    return
+            self._admit_next(run_id, grant_id)
+
+    def _admit_next(self, run_id, grant_id):
         with self.policy.store.transaction():
             if not self.is_active(run_id, grant_id):
                 return

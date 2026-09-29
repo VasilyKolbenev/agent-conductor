@@ -1,0 +1,240 @@
+{
+  "workflow_id": "desk-starter-docs",
+  "source": "published",
+  "draft_digest": null,
+  "flow": {
+    "flow_version": 1,
+    "title": "Starter documents",
+    "steps": [
+      {
+        "step_id": "plan",
+        "type": "agent",
+        "title": null,
+        "purpose": "Turn the idea into a project plan: goal, scope, stages and open questions. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-analyst",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "ideas",
+        "type": "agent",
+        "title": null,
+        "purpose": "List ideas and risks for the plan, each with a short reason. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-reviewer",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "quality",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "scheme",
+        "type": "agent",
+        "title": null,
+        "purpose": "Draw the project scheme as Mermaid text from the plan and the ideas. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-designer",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [
+          "plan"
+        ],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "result",
+        "type": "human",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "plan",
+        "to": "ideas",
+        "when": "success"
+      },
+      {
+        "from": "ideas",
+        "to": "scheme",
+        "when": "success"
+      },
+      {
+        "from": "scheme",
+        "to": "result",
+        "when": "success"
+      }
+    ],
+    "ext": {}
+  },
+  "revision_flow": {
+    "flow_version": 1,
+    "title": "Starter documents",
+    "steps": [
+      {
+        "step_id": "plan",
+        "type": "agent",
+        "title": null,
+        "purpose": "Turn the idea into a project plan: goal, scope, stages and open questions. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-analyst",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "ideas",
+        "type": "agent",
+        "title": null,
+        "purpose": "List ideas and risks for the plan, each with a short reason. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-reviewer",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "quality",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "scheme",
+        "type": "agent",
+        "title": null,
+        "purpose": "Draw the project scheme as Mermaid text from the plan and the ideas. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-designer",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [
+          "plan"
+        ],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "result",
+        "type": "human",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "plan",
+        "to": "ideas",
+        "when": "success"
+      },
+      {
+        "from": "ideas",
+        "to": "scheme",
+        "when": "success"
+      },
+      {
+        "from": "scheme",
+        "to": "result",
+        "when": "success"
+      }
+    ],
+    "ext": {}
+  },
+  "diagnostics": [],
+  "publishable": true,
+  "budget": {
+    "limits": {
+      "max_actions": 8,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 28800
+    },
+    "clean": {
+      "actions": 3,
+      "seconds": 5400
+    },
+    "worst": {
+      "actions": 3,
+      "seconds": 5400
+    },
+    "steps": [
+      {
+        "step_id": "plan",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "ideas",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "scheme",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      }
+    ],
+    "terms_draft": {
+      "node_limits": [
+        {
+          "node_id": "plan",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        },
+        {
+          "node_id": "ideas",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        },
+        {
+          "node_id": "scheme",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        }
+      ],
+      "max_actions": 3,
+      "max_action_seconds": 1800,
+      "max_total_task_seconds": 5400,
+      "duration_seconds": 9000
+    },
+    "spent": null,
+    "exhausted": false,
+    "inputs": {
+      "instructions": [],
+      "documents": [
+        "artifact-brief",
+        "artifact-materials"
+      ]
+    }
+  },
+  "latest_revision": 1,
+  "next_revision": 2,
+  "published": null
+}

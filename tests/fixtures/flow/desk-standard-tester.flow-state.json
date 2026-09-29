@@ -1,0 +1,209 @@
+{
+  "workflow_id": "cycle-7c1e5a90",
+  "source": "draft",
+  "draft_digest": "sha256:cd5a8e269fd29bbecc11417ef248267018919aa2d322e0f7ae1978f39512ff7b",
+  "flow": {
+    "flow_version": 1,
+    "title": "Standard with a tester",
+    "steps": [
+      {
+        "step_id": "analyst",
+        "type": "agent",
+        "title": null,
+        "purpose": "Read the brief and the materials, then write down the goal, the constraints and how the result will be checked. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-analyst",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do",
+        "type": "agent",
+        "title": null,
+        "purpose": "Carry out the task in the project folder following the instruction and the analysis. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-doer",
+        "capability": "dispatch",
+        "verifier_role_id": "role-checker",
+        "review_profile": null,
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "tester",
+        "type": "agent",
+        "title": null,
+        "purpose": "Test the result of the doer in the project folder against the task and report every failure you find. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-tester",
+        "capability": "dispatch",
+        "verifier_role_id": "role-checker",
+        "review_profile": null,
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "result",
+        "type": "human",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do-fix",
+        "type": "loop",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "do",
+        "bound": 3,
+        "ext": {}
+      },
+      {
+        "step_id": "tester-fix",
+        "type": "loop",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "do",
+        "bound": 2,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "analyst",
+        "to": "do",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "tester",
+        "when": "success"
+      },
+      {
+        "from": "tester",
+        "to": "result",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "do-fix",
+        "when": "failed"
+      },
+      {
+        "from": "tester",
+        "to": "tester-fix",
+        "when": "failed"
+      }
+    ],
+    "ext": {}
+  },
+  "revision_flow": null,
+  "diagnostics": [
+    {
+      "code": "return_after_correction",
+      "severity": "warning",
+      "at": {
+        "step_id": "do"
+      },
+      "params": {}
+    }
+  ],
+  "publishable": true,
+  "budget": {
+    "limits": {
+      "max_actions": 8,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 28800
+    },
+    "clean": {
+      "actions": 3,
+      "seconds": 9000
+    },
+    "worst": {
+      "actions": 6,
+      "seconds": 19800
+    },
+    "steps": [
+      {
+        "step_id": "analyst",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "do",
+        "attempts": 3,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 3600,
+        "clamped": false
+      },
+      {
+        "step_id": "tester",
+        "attempts": 2,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 3600,
+        "clamped": false
+      }
+    ],
+    "terms_draft": {
+      "node_limits": [
+        {
+          "node_id": "analyst",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        },
+        {
+          "node_id": "do",
+          "timeout_seconds": 1800,
+          "max_attempts": 3
+        },
+        {
+          "node_id": "tester",
+          "timeout_seconds": 1800,
+          "max_attempts": 2
+        }
+      ],
+      "max_actions": 6,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 19800,
+      "duration_seconds": 23400
+    },
+    "spent": null,
+    "exhausted": false,
+    "inputs": {
+      "instructions": [
+        {
+          "step_id": "do",
+          "instruction_ref": "instruction-do"
+        },
+        {
+          "step_id": "tester",
+          "instruction_ref": "instruction-tester"
+        }
+      ],
+      "documents": [
+        "artifact-brief",
+        "artifact-materials"
+      ]
+    }
+  },
+  "latest_revision": null,
+  "next_revision": 1,
+  "published": null
+}
