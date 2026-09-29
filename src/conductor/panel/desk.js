@@ -160,10 +160,14 @@ async function readRuns() {
 }
 
 //: One task's automation, as the hub reads it, so a task is never named two ways. A read
-//: that fails is `null`, which the rules take as "not read" and skip the rows that need it.
+//: that fails is `null`, which the rules take as "not read" and skip the rows that need it,
+//: and so is an answer that names a run other than the one asked about: it is not this
+//: run's automation, whatever it says.
 async function readOneAutomation(found, taskId, latest) {
+  const runId = latest.row.run_id;
   try {
-    found.set(taskId, await readJson(READS.automation(latest.row.run_id)));
+    const answer = await readJson(READS.automation(runId));
+    found.set(taskId, answer?.run_id === runId ? answer : null);
   } catch (_error) {
     found.set(taskId, null);
   }

@@ -290,6 +290,27 @@ def test_an_automation_read_that_fails_changes_only_the_row_it_belongs_to(
     assert uncaught == []
 
 
+def _name_another_run(body: dict) -> None:
+    body["run_id"] = "run-other"
+
+
+def test_an_automation_answer_that_names_another_run_is_dropped(desk_in):
+    """A body for a run the desk did not ask about is not the automation of the row's run.
+
+    Only `run_id` is rewritten, so the answer is otherwise the real one, which earns the row
+    "Not started"; dropped, the row falls to the word an unread automation gives (the same
+    fall as a lost read) and no other row changes.
+    """
+    window = desk_in("en", rewrite={"**/command/runs/run-docs/automation": _name_another_run})
+    facts = window.page.evaluate(RAIL_FACTS)
+    rows = _rows(facts)
+    assert rows["task-docs"] == ("Write the docs", "No result yet", None)
+    assert {key: value for key, value in rows.items() if key != "task-docs"} == {
+        key: value for key, value in ROWS["en"].items() if key != "task-docs"}
+    assert (facts["rail"], facts["shell"]) == ("ready", "ready")
+    assert window.problems == []
+
+
 def test_a_finished_but_unverified_run_is_never_drawn_without_its_sentence(
         chromium: Browser, seeded_url: str):
     """The one word a test cannot seed through the journal: the run row is made to say it.
