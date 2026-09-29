@@ -42,11 +42,13 @@ from tests.test_store import good_lane, write_project
 
 #: Every file the desk page's module graph fetches, with the answer each owes:
 #: the page, its sheet and boot module, the transport and the refusal vocabulary
-#: it translates with, and the catalogue (with its thirteen copy modules) that says
-#: a phase in the reader's language.
+#: it translates with, the reader of the address's language (and the element
+#: helper that reader draws its controls with), and the catalogue (with its
+#: fourteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
+    "studio-preferences.js": 200, "command-view.js": 200, "desk-copy.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
@@ -63,6 +65,34 @@ REGION_WORDS = (
     ("deskSummary", "ready"),  # fed by the runs read
     ("deskPult", "empty"),     # follows the gates of a run
 )
+#: Every word the page carries itself, read in ONE evaluation: the document's language and
+#: title, the note and the link in the top bar, the accessible name of each region and the
+#: sentence the top bar says once the reads have landed.
+PAGE_WORDS = """() => ({
+  lang: document.documentElement.lang, title: document.title,
+  note: document.querySelector(".desk-note").innerText.trim(),
+  link: document.querySelector(".desk-classic").innerText.trim(),
+  labels: ["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"].map(
+    (id) => document.getElementById(id).getAttribute("aria-label")),
+  said: document.getElementById("deskStatus").innerText.trim()})"""
+#: What the page says in each language the address can choose, spelled out here and not
+#: read back from the catalogue the page loads.
+PAGE_LANGUAGES = {
+    "en": {
+        "lang": "en", "title": "December Command — Desk",
+        "note": "The desk is being built: its regions are mounted and stay empty until "
+                "their modules land.",
+        "link": "Classic panel",
+        "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
+        "said": "Read."},
+    "ru": {
+        "lang": "ru", "title": "December Command — Стол",
+        "note": "Стол в разработке: его области размещены и остаются пустыми, пока не "
+                "появятся их модули.",
+        "link": "Прежняя панель",
+        "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
+        "said": "Данные прочитаны."},
+}
 #: One evaluation for everything a region test asks: word, children and words.
 REGION_FACTS = """(ids) => ({
   shell: document.getElementById("deskShell").getAttribute("data-state"),
@@ -232,6 +262,32 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
     assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"])
     assert (facts["shell"], facts["said"]) == (shell, said)
     assert uncaught == []
+
+
+@pytest.mark.parametrize("language", list(PAGE_LANGUAGES))
+def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses(
+        chromium: Browser, desk_url: str, language: str) -> None:
+    """The page's HTML holds no English: what a reader sees arrives from the catalogue.
+
+    `#lang=en` and `#lang=ru` choose the language, and the document, its title, its note,
+    its link and the name of every region follow, together with the sentence the top bar
+    says. The English row is what the page said before it had a catalogue, so a page that
+    kept its literals would pass it and fail the Russian one.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    problems: list[str] = []
+    page.on("console", lambda message: problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: problems.append(str(error)))
+    try:
+        page.goto(f"{desk_url}#lang={language}", wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        words = page.evaluate(PAGE_WORDS)
+    finally:
+        context.close()
+    assert words == PAGE_LANGUAGES[language]
+    assert problems == []
 
 
 def test_the_shell_reads_the_two_routes_that_exist_and_writes_nothing(desk: Desk) -> None:

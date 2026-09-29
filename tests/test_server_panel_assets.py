@@ -111,6 +111,8 @@ ASSETS = {
     "/panel/desk.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
+    # The desk's own words, RU and EN.
+    "/panel/desk-copy.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",
@@ -223,6 +225,10 @@ REFUSED = (
     "/panel/%2e%2e/desk-transport.js", "/panel/DESK-TRANSPORT.JS",
     "/panel/Desk-transport.js", "/panel/desk-transport.js/",
     "/panel/desk-transport.js%00.txt",
+    # The desk's catalogue, the same nine shapes again.
+    "/panel/desk-copy.json", "/panel/desk-copy.js?v=1", "/panel/desk-copy.js.map",
+    "/panel/../desk-copy.js", "/panel/%2e%2e/desk-copy.js", "/panel/DESK-COPY.JS",
+    "/panel/Desk-copy.js", "/panel/desk-copy.js/", "/panel/desk-copy.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

@@ -1,0 +1,21 @@
+"use strict";
+// The desk's own strings, English first and Russian second, like every other copy module of
+// the panel: `studio-i18n.js` spreads this catalogue into the one table. The words of the
+// page itself (its title, its note, its link and the name of each region) live here and are
+// written into `desk.html` by `data-i18n` and `data-i18n-label`; the page carries no other
+// word than the product's own name. Where a message carries a number or a name it is a
+// named parameter, never a joined string, and no message depends on a plural form.
+export const DESK_COPY = Object.freeze({
+  // -- the page ------------------------------------------------------------------------
+  "desk.title": ["December Command — Desk", "December Command — Стол"],
+  "desk.note": [
+    "The desk is being built: its regions are mounted and stay empty until their modules land.",
+    "Стол в разработке: его области размещены и остаются пустыми, пока не появятся их модули."],
+  "desk.classic": ["Classic panel", "Прежняя панель"],
+  // -- the names of the five regions, as a screen reader hears them --------------------
+  "desk.rail.label": ["Tasks", "Задачи"],
+  "desk.scene.label": ["Scene", "Сцена"],
+  "desk.feed.label": ["Progress", "Ход работы"],
+  "desk.summary.label": ["Summary", "Выжимка"],
+  "desk.pult.label": ["Your console", "Ваш пульт"],
+});

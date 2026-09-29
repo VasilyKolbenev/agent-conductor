@@ -68,7 +68,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-           "desk-transport.js", "desk.js",
+           "desk-transport.js", "desk.js", "desk-copy.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-copy.js", "desk-wizard.js")
@@ -113,7 +113,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
     #: The Runs header of one read run: its situation line and main action. It asks the step control
@@ -131,10 +131,16 @@ PERMITTED_IMPORTS = {
     #: screen, store or copy module: a door that could reach a screen would be a
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
-    #: The desk's boot module: the doors, and the catalogue that says a phase in the
-    #: reader's language. It reaches no screen, no store and no model of the Studio's,
-    #: and the wire only through the transport -- it holds no door of its own.
-    "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js"}),
+    #: The desk's boot module: the doors, the catalogue that says a phase in the
+    #: reader's language, and the reader of the address's `lang` (the one place the
+    #: Studio keeps it until the desk's hash module takes it over). It reaches no
+    #: screen, no store and no model of the Studio's, and the wire only through the
+    #: transport -- it holds no door of its own.
+    "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js",
+                          "./studio-preferences.js"}),
+    #: The desk's own words: a frozen catalogue that imports nothing, spread into the one
+    #: table by `studio-i18n.js`.
+    "desk-copy.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,

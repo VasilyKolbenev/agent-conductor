@@ -15,6 +15,7 @@ text and says nothing about what a browser renders.
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -66,6 +67,50 @@ def _inline_faults(html: str, expected_scripts: tuple[str, ...]) -> list[str]:
     return faults
 
 
+#: The one literal a person may read on the page: the product's own name, which is the
+#: same word in both languages. Every other word comes from the catalogue.
+PRODUCT_NAME = "December Command"
+#: The attributes that hold words a person hears or sees: a screen reader's name for a
+#: control, a tooltip, an image's text and a field's hint.
+LABEL_ATTRIBUTES = ("aria-label", "title", "alt", "placeholder")
+
+
+class _Words(HTMLParser):
+    """The text nodes and the labelling attributes of a page, as the tokenizer reads them.
+
+    A comment and the body of a script or a style are not words a person reads, so they
+    are left out; everything else, the `<title>` included, is.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.texts: list[str] = []
+        self.labels: list[tuple[str, str, str]] = []
+        self._raw = 0
+
+    def handle_starttag(self, tag, attrs):
+        self.labels += [(tag, name, value or "") for name, value in attrs
+                        if name in LABEL_ATTRIBUTES]
+        self._raw += tag in ("script", "style")
+
+    def handle_endtag(self, tag):
+        self._raw -= bool(self._raw) and tag in ("script", "style")
+
+    def handle_data(self, data):
+        if not self._raw and data.strip():
+            self.texts.append(data.strip())
+
+
+def _text_faults(html: str) -> list[str]:
+    words = _Words()
+    words.feed(html)
+    words.close()
+    faults = [f"person-facing text written as a literal: {text!r}"
+              for text in words.texts if text != PRODUCT_NAME]
+    return faults + [f"person-facing {name} written as a literal on <{tag}>: {value!r}"
+                     for tag, name, value in words.labels]
+
+
 def _reference_faults(html: str) -> list[str]:
     refs = re.findall(QUOTED_REFERENCE, html)
     faults = []
@@ -91,13 +136,13 @@ def desk_page_faults(
         One sentence per fault; empty when the page is sound.
     """
     return (_document_faults(html) + _inline_faults(html, expected_scripts)
-            + _reference_faults(html))
+            + _reference_faults(html) + _text_faults(html))
 
 
 CLEAN = (
     '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
-    f"<title>Desk</title>\n{DESK_TAG}</script>\n</head>\n<body>\n"
-    '<a href="/panel/index.html">Classic panel</a>\n</body>\n</html>\n')
+    f"<title>{PRODUCT_NAME}</title>\n{DESK_TAG}</script>\n</head>\n<body>\n"
+    '<a href="/panel/index.html" data-i18n="desk.classic"></a>\n</body>\n</html>\n')
 OTHER_TAG = '<script src="/panel/other.js" type="module">'
 LINK = 'href="/panel/index.html"'
 #: Each defect the checker claims to refuse, the page that carries it, and a
@@ -134,9 +179,22 @@ BROKEN = {
         CLEAN.replace("<a ", '<a STYLE="color:red" '), "style attribute"),
     "an inline handler": (CLEAN.replace("<a ", '<a onclick="run()" '), "handler"),
     "no language": (CLEAN.replace(' lang="en"', ""), "lang"),
-    "an empty title": (CLEAN.replace("<title>Desk</title>", "<title> </title>"), "title"),
-    "no title": (CLEAN.replace("<title>Desk</title>\n", ""), "title"),
+    "an empty title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title> </title>"),
+                       "title"),
+    "no title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>\n", ""), "title"),
     "no doctype": (CLEAN.replace("<!doctype html>\n", ""), "doctype"),
+    "a sentence written as a literal": (
+        CLEAN.replace("</body>", "<p>The desk is being built.</p>\n</body>"), "literal"),
+    "a link text written as a literal": (
+        CLEAN.replace(' data-i18n="desk.classic"></a>', ">Classic panel</a>"), "literal"),
+    "a title written as a literal": (
+        CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title>Desk</title>"), "literal"),
+    "an aria-label written as a literal": (
+        CLEAN.replace("<a ", '<a aria-label="Tasks" '), "aria-label"),
+    "a tooltip written as a literal": (
+        CLEAN.replace("<a ", '<a title="Open the classic panel" '), "title"),
+    "a placeholder written as a literal": (
+        CLEAN.replace("</body>", '<input placeholder="Name">\n</body>'), "placeholder"),
 }
 
 
@@ -193,6 +251,8 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
         assert html.count(f'id="{ident}"') == 1, ident
         tag = re.search(rf'<[a-z]+ [^>]*id="{ident}"[^>]*>', html)
         assert tag and f'data-region="{region}"' in tag[0], ident
+        # Each mount is named to a screen reader from the catalogue, never by a literal.
+        assert f'data-i18n-label="desk.{region}.label"' in tag[0], ident
         assert 'data-state="empty"' in tag[0] and "empty" in SCREEN_STATES, ident
         assert re.search(rf'id="{ident}"[^>]*></[a-z]+>', html), f"{ident} is not empty"
     assert re.findall(r'data-region="([a-z]+)"', html) == [name for name, _ in REGIONS]

@@ -16,6 +16,7 @@
 // project route and its header are lane H's and are not faked here.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
+import {readPreferences} from "./studio-preferences.js";
 
 //: The two reads the shell makes on load, each named for the route it asks. A
 //: route is only ever `path.<name>` of the transport module.
@@ -56,12 +57,29 @@ function worst(phases) {
   if (!shell) return;
   const byId = (id) => document.getElementById(id);
   //: The page's own language is the language of record: `<html lang>` says it,
-  //: and anything but Russian is read as English.
+  //: and anything but Russian is read as English. The address may choose one
+  //: (`#lang=ru`), and without a choice the page's own `lang` stands; the
+  //: browser's language as a default arrives with the hash module, which is the
+  //: one place allowed to ask the platform for it.
+  document.documentElement.lang = readPreferences(location.hash,
+    document.documentElement.lang).locale;
   const locale = () => (document.documentElement.lang === "ru" ? "ru" : "en");
   const {readJson} = createTransport(locale);
 
   function mark(node, phase) {
     node.setAttribute("data-state", phase);
+  }
+
+  //: Every word the page itself carries is a catalogue key: `data-i18n` is the
+  //: text of a node and `data-i18n-label` its accessible name.
+  function translate() {
+    for (const node of document.querySelectorAll("[data-i18n]")) {
+      node.textContent = message(locale(), node.dataset.i18n);
+    }
+    for (const node of document.querySelectorAll("[data-i18n-label]")) {
+      node.setAttribute("aria-label", message(locale(), node.dataset.i18nLabel));
+    }
+    document.title = message(locale(), "desk.title");
   }
 
   function say(phase) {
@@ -91,5 +109,6 @@ function worst(phases) {
     say(worst(phases));
   }
 
+  translate();
   load();
 })();
