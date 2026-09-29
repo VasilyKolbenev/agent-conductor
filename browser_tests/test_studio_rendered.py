@@ -211,6 +211,59 @@ def _phase_sentences(page: Page) -> dict[str, str]:
              })""")
 
 
+def _screen_facts(page: Page, rows: tuple) -> list[dict[str, str]]:
+    """Each container's machine word and the sentence beside it, in ONE evaluation.
+
+    Two locator reads are two round trips, and a read that lands between them
+    hands back a word from before it and a sentence from after it. One
+    evaluation is one synchronous turn of the page, so the pair is one moment's.
+    """
+    return page.evaluate(
+        """(pairs) => pairs.map(([container, state]) => ({
+             container,
+             word: document.getElementById(container).getAttribute("data-state"),
+             said: document.getElementById(state).innerText.trim()}))""",
+        [[container, state] for _screen, _tab, container, state in rows])
+
+
+#: A page whose one word and one sentence change TOGETHER, on every turn of the
+#: event loop it can get. Whatever a reader sees of it is one of the two pairs
+#: below; a reading that mixes them read the page at two different moments.
+FLIP_PAIRS = {"a": "said a", "b": "said b"}
+FLIPPING = """<!doctype html><p id="w" data-state="a"></p><p id="s">said a</p>
+<script>
+  const pairs = [["a", "said a"], ["b", "said b"]];
+  let at = 0;
+  setInterval(() => {
+    at = 1 - at;
+    document.getElementById("w").setAttribute("data-state", pairs[at][0]);
+    document.getElementById("s").textContent = pairs[at][1];
+  }, 0);
+</script>"""
+
+
+def test_a_state_word_and_its_sentence_are_never_read_from_two_moments(
+        chromium: Browser) -> None:
+    """The instrument, driven on a page that changes under it.
+
+    The first version of the screen-word check read `data-state` and then the
+    sentence in two round trips, and CI saw ``('screenWorkflow', 'loading',
+    'Read.')``: the word from before a read landed and the sentence from after
+    it. Nothing on the real Studio can be made to tear on demand, so the
+    property is held here on a page that flips every turn: three hundred
+    readings, each of them one page's pair or the reader is wrong.
+    """
+    context = chromium.new_context()
+    page = context.new_page()
+    try:
+        page.set_content(FLIPPING)
+        for _ in range(300):
+            (fact,) = _screen_facts(page, (("flip", "tab", "w", "s"),))
+            assert FLIP_PAIRS[fact["word"]] == fact["said"], fact
+    finally:
+        context.close()
+
+
 def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
         chromium: Browser, studio_url: str) -> None:
     """Chromium resolves the shipped module graph and every file answers 200.
@@ -396,10 +449,12 @@ def test_every_screen_carries_a_machine_word_and_the_sentence_beside_it(
     page, problems = studio
     sentences = _phase_sentences(page)
     assert set(sentences) == set(PHASES)
-    for _screen, _tab, container, state in SCREENS:
-        word = page.locator(f"#{container}").get_attribute("data-state")
+    # One evaluation for all five: a word and its sentence are read from the
+    # same moment, or a read landing between two round trips tears the pair.
+    for fact, (_screen, _tab, container, state) in zip(
+            _screen_facts(page, SCREENS), SCREENS, strict=True):
+        word, said = fact["word"], fact["said"]
         assert word in PHASES, f"{container} stands in {word!r}"
-        said = page.locator(f"#{state}").inner_text().strip()
         assert said == sentences[word], (container, word, said)
         # A sentence, not a second copy of the machine word: `data-state` is
         # what a test reads and this is what a person reads, and a screen that
