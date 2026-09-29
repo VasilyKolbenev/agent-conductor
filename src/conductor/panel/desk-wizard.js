@@ -350,16 +350,22 @@ function timeText(ctx, seconds) {
   return ctx.t("wizard.time.s", {seconds: String(seconds)});
 }
 
-//: Where the preselected card came from, said only while the choice is still the preselection.
+//: Where the preselected card came from, said only while the choice is still the preselection. A
+//: last run whose cycle is not offered chose nothing, and that is said while nothing is chosen.
 function sourceLine(ctx) {
-  if (ctx.wizard.cycle.chosenBy !== "preselection") return [];
-  const source = preselection(ctx.wizard.reads).source, at = instantText(source.at);
+  const cycle = ctx.wizard.cycle, source = preselection(ctx.wizard.reads).source;
+  const shown = cycle.chosenBy === "preselection"
+    || (cycle.choice === null && source.kind === "last_run_uncarded");
+  if (!shown) return [];
+  const at = instantText(source.at);
   let text = null;
   if (source.kind === "pinned") {
     text = ctx.t("wizard.cycle.source_pinned", {by: source.by ?? "—", at});
   } else if (source.kind === "last_run") {
     text = source.taskTitle === null ? ctx.t("wizard.cycle.source_last_run_untitled", {at})
       : ctx.t("wizard.cycle.source_last_run", {task: source.taskTitle, at});
+  } else if (source.kind === "last_run_uncarded") {
+    text = ctx.t("wizard.cycle.source_last_run_other", {workflow: source.workflowId, at});
   }
   return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
 }

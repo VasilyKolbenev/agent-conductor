@@ -81,6 +81,25 @@ def test_cycle_cards_carry_their_source_label_and_a_last_run_names_its_task_and_
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_a_last_run_on_a_cycle_that_is_not_a_card_is_said_and_no_older_cycle_stands_in(
+        bench, lang):
+    runs = fixture("wizard", "runs.json")
+    runs["runs"][1]["workflow_id"] = "desk-starter-docs"
+    to_step(bench, lang, "cycle", reads=reads(runs=ok(runs)))
+    label = bench.page.locator("[data-cycle-source]")
+    assert label.get_attribute("data-cycle-source") == "last_run_uncarded"
+    assert label.inner_text() == bench.say("wizard.cycle.source_last_run_other",
+                                           workflow="desk-starter-docs", at="2026-09-28 13:50 UTC")
+    assert bench.page.locator('[data-card-id][data-chosen="true"]').count() == 0
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.cycle_none")
+    bench.control("wizard:cycle:choose:desk-short").click()
+    expect(label).to_have_count(0)
+    assert bench.page.locator('[data-card-id="desk-short"]').get_attribute("data-chosen") == "true"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_an_unread_pinned_cycle_says_it_could_not_be_read_and_claims_nothing_more(bench, lang):
     refused = {"status": "refused", "code": "store_error", "payload": None}
     to_step(bench, lang, "cycle", reads=reads(cycle_read=refused))

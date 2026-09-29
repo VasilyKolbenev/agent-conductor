@@ -187,6 +187,10 @@ export const WIZARD_COPY = Object.freeze({
     "как в прошлом запуске: {task} · {at}"],
   "wizard.cycle.source_last_run_untitled": ["as in the last run · {at}",
     "как в прошлом запуске · {at}"],
+  "wizard.cycle.source_last_run_other": ["The last run went by a cycle that is not offered "
+    + "here: {workflow} · {at}. Choose a cycle.",
+    "Прошлый запуск шёл по циклу, которого нет среди карточек: {workflow} · {at}. "
+    + "Выберите цикл."],
   "wizard.cycle.pinned_unread": ["The project cycle could not be read, so nothing is said about it.",
     "Цикл проекта не удалось прочитать, поэтому о нём ничего не сказано."],
   "wizard.flow.pending": ["Asking the server about this cycle…",

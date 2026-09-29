@@ -95,7 +95,7 @@ def test_desk_prefixed_workflows_are_never_saved_cycles_and_starter_docs_is_neve
         pinned_starter_docs: wiz.preselection(settled(pinnedStarter).reads).choice});
     """, DATA)
     assert out["ids"] == ["desk-standard", "desk-short", "cycle-7c1e5a90", "old-cycle", "build"]
-    assert out["last_run_on_starter_docs"] == {"kind": "saved", "workflowId": "cycle-7c1e5a90"}
+    assert out["last_run_on_starter_docs"] is None, "and no older run's cycle stands in for it"
     assert out["pinned_starter_docs"]["workflowId"] == "desk-standard"
 
 
@@ -143,18 +143,51 @@ def test_preselection_takes_the_pinned_cycle_then_the_last_runs_workflow_and_nam
                              "choice": {"kind": "saved", "workflowId": "cycle-7c1e5a90"},
                              "source": {"kind": "pinned", "by": "Вы: Василий",
                                         "at": "2026-09-28T13:50:00Z", "task": None,
-                                        "taskTitle": None}}
+                                        "taskTitle": None, "workflowId": "cycle-7c1e5a90"}}
     assert out["last_run"] == {"ready": True, "pinnedUnread": False,
                                "choice": {"kind": "starter", "workflowId": "desk-standard"},
                                "source": {"kind": "last_run", "by": None,
                                           "at": "2026-09-28T13:50:00Z", "task": "task-b",
-                                          "taskTitle": "Fix the login form"}}
+                                          "taskTitle": "Fix the login form",
+                                          "workflowId": "desk-standard"}}
     assert out["nothing"]["choice"] is None and out["nothing"]["source"]["kind"] == "none"
-    assert out["deleted"]["choice"] == {"kind": "saved", "workflowId": "cycle-7c1e5a90"}
+    assert out["deleted"]["choice"] is None, "the newest run's cycle is gone: no stand-in"
+    assert out["deleted"]["source"]["kind"] == "last_run_uncarded"
     assert out["early"] == [False, None]
     assert out["applied"] == [{"kind": "saved", "workflowId": "cycle-7c1e5a90"}, "preselection"]
     assert out["applied_last"] == [{"kind": "starter", "workflowId": "desk-standard"},
                                    "preselection"]
+
+
+def test_the_newest_run_stays_the_last_run_when_its_cycle_is_not_a_card():
+    """An older run's cycle must not stand in for the newest run's under the words "last run"."""
+    out = run_js(CYCLE + """
+      const newestOn = (workflowId) => {
+        const runs = structuredClone(d.runs);
+        runs.runs[1].workflow_id = workflowId;
+        return runs;
+      };
+      const found = (workflowId, pin = d.unpinned) => wiz.preselection(
+        settled(pin, newestOn(workflowId)).reads);
+      const state = settled(d.unpinned, newestOn("desk-starter-docs"));
+      show({docs: found("desk-starter-docs"), gone: found("gone-cycle"),
+        pinned_still_wins: found("desk-starter-docs", d.pinned).source.kind,
+        card_still_chosen: found("desk-short").choice,
+        applied: [state.cycle.choice, state.cycle.chosenBy],
+        gate: wiz.canAdvance(state).reason});
+    """, DATA)
+    stood_for = {"by": None, "at": "2026-09-28T13:50:00Z", "task": "task-b",
+                 "taskTitle": "Fix the login form"}
+    assert out["docs"]["choice"] is None and out["docs"]["ready"] is True
+    assert out["docs"]["source"] == {"kind": "last_run_uncarded", "workflowId": "desk-starter-docs",
+                                     **stood_for}
+    assert out["gone"]["choice"] is None
+    assert out["gone"]["source"] == {"kind": "last_run_uncarded", "workflowId": "gone-cycle",
+                                     **stood_for}
+    assert out["pinned_still_wins"] == "pinned"
+    assert out["card_still_chosen"] == {"kind": "starter", "workflowId": "desk-short"}
+    assert out["applied"] == [None, None], "nothing is chosen for the owner"
+    assert out["gate"] == "cycle_none"
 
 
 def test_an_unread_pinned_cycle_falls_back_to_the_last_run_and_says_nothing_false():
