@@ -28,7 +28,67 @@ const STARTS = Object.freeze(["idle", "review"]);
 export function initialRun() {
   return {phase: "idle", pressed: false, lang: "en", settled: [], done: [], attempts: {}, seq: 0,
     prep: null, readFailed: null, flowCheck: false, runId: null, revision: null, adopted: null,
-    refusal: null, preview: null};
+    refusal: null, preview: null, resume: null};
+}
+
+// -- after a reload ----------------------------------------------------------------------
+
+/**
+ * A reloaded page: the hash names the task, and maybe the run and the cycle; nothing else is
+ * known until the preparation read answers. `texts` holds what the owner types again for the
+ * documents the read says are missing, and `lost` is set when the server has no such task.
+ */
+export function openResume(run, resume) {
+  return {...run, resume: {runId: resume.runId ?? null, workflowId: resume.workflowId ?? null,
+    texts: {}, lost: false}};
+}
+
+/** The run of the task the hash names, as the read lists it, or null. */
+export function resumeRow(run) {
+  if (run.resume === null || run.prep === null || run.resume.runId === null) return null;
+  return run.prep.runs.find((row) => row.run_id === run.resume.runId) ?? null;
+}
+
+const EXITS = Object.freeze(["queued", "authorized", "ended"]);
+
+/**
+ * What stands after a reload, from the read alone: `reading`, `failed`, `no_run` (the task stands
+ * and nothing after it: what was typed and chosen is gone), `exit` (the run is past preparation),
+ * `documents` (some are missing) or `preview` (nothing is). An older run of the task never stands
+ * in for the one the hash names.
+ */
+export function resumeSituation(run) {
+  if (run.resume === null) return null;
+  if (run.readFailed !== null) return {kind: "failed", code: run.readFailed.code};
+  if (run.prep === null) return {kind: "reading"};
+  const row = resumeRow(run);
+  if (row === null) return {kind: "no_run", title: run.prep.task.title};
+  if (EXITS.includes(row.stage)) return {kind: "exit", runId: row.run_id, stage: row.stage};
+  return {kind: row.stage === "documents_missing" ? "documents" : "preview", runId: row.run_id,
+    revision: row.revision, workflowId: row.workflow_id, missing: row.missing};
+}
+
+/** The fields the missing documents need typed again, in the order of the read. */
+export function resumeFields(missing, starter) {
+  const fields = [];
+  if (missing.inputs.includes("artifact-brief")) {
+    fields.push(...(starter ? [{name: "idea", required: true, kept: "task"}]
+      : [{name: "brief", required: true, kept: "task"}, {name: "hint", required: false,
+        kept: "task"}]));
+  }
+  if (missing.inputs.includes("artifact-materials")) {
+    fields.push({name: "materials", required: false, kept: "resume"});
+  }
+  return [...fields, ...missing.instructions.map((row) => ({name: `instruction:${row.node_id}`,
+    required: true, kept: "resume"}))];
+}
+
+/** The one read a reloaded page makes before it says anything. */
+export function resumeAsks(run, input) {
+  if (run.resume === null || run.pressed || run.prep !== null || run.readFailed !== null
+      || run.resume.lost) return [];
+  return [{id: `read:prep:${run.seq}`, name: "prep_read", door: "read", target: "preparation",
+    subject: input.taskId, body: null, job: null, hash: hashResumed(run, input)}];
 }
 
 function record(value) {
@@ -39,7 +99,8 @@ function record(value) {
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (record(value)) {
-    const facts = Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stable(value[key])}`);
+    const facts = Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${stable(value[key])}`);
     return `{${facts.join(",")}}`;
   }
   return JSON.stringify(value);
@@ -97,9 +158,18 @@ function previewSpec(run) {
     `preview:${run.runId}:${writes}`, {});
 }
 
+//: After a reload the task, the seed, the cycle and the run stand; what is left is the documents
+//: the read says are missing, from the text typed again, and the preview.
+function resumedSpecs(run, input) {
+  const list = input.documents.map((paper) => documentSpec(run, paper));
+  if (input.materials !== null) list.push(materialsSpec(input, run));
+  return [...list, previewSpec(run)];
+}
+
 //: The writes still to make, in the order of the chain. The run and what follows it can be
 //: spelled only once the cycle is published and the run's number is fixed.
 function pendingSpecs(run, input) {
+  if (input.resumed) return resumedSpecs(run, input).filter((spec) => !run.done.includes(spec.key));
   if (input.flowBody === null || run.prep === null) return [];
   const list = [];
   if (input.dispatch && run.prep.seed === null) list.push(seedSpec(input));
@@ -119,10 +189,32 @@ function pendingSpecs(run, input) {
 function hashAt(link, input, run) {
   const at = LINKS.indexOf(link);
   const keys = {task: input.taskId, prepare: "1"};
-  if (at >= LINKS.indexOf("flow")) keys.workflow = input.workflowId;
-  if (at >= LINKS.indexOf("run")) keys.run = run.runId;
+  if (at >= LINKS.indexOf("flow") && input.workflowId !== null) keys.workflow = input.workflowId;
+  if (at >= LINKS.indexOf("run") && run.runId !== null) keys.run = run.runId;
   if (input.starterId !== null && at <= LINKS.indexOf("run")) keys.starter = input.starterId;
   return keys;
+}
+
+//: The keys a reloaded page opened with, which stand until the owner presses the button.
+function hashResumed(run, input) {
+  const keys = {task: input.taskId, prepare: "1"};
+  if (run.resume.workflowId !== null) keys.workflow = run.resume.workflowId;
+  if (run.resume.runId !== null) keys.run = run.resume.runId;
+  if (input.starterId !== null) keys.starter = input.starterId;
+  return keys;
+}
+
+/**
+ * The wizard's keys of the desk's hash as they stand now, or null when it wants none: a wizard
+ * that has not begun writing, or one that started over. Before a write the ask itself says them
+ * (`ask.hash`); this is the same set for the moments no ask is made.
+ */
+export function hashNow(run, input) {
+  if (run.resume !== null && !run.pressed) return hashResumed(run, input);
+  if (!run.pressed) return null;
+  const open = linkStates(run, input).find((row) => row.status !== "done"
+    && row.status !== "skipped");
+  return hashAt(open === undefined ? "preview" : open.link, input, run);
 }
 
 function writeAsk(run, input, spec) {
@@ -150,7 +242,7 @@ export function chainAsks(run, input) {
     input.taskId, "task");
   if (run.phase === "unknown") return run.readFailed === null ? [read()] : [];
   const task = taskSpec(input);
-  if (!run.done.includes(task.key)) return [writeAsk(run, input, task)];
+  if (!input.resumed && !run.done.includes(task.key)) return [writeAsk(run, input, task)];
   if (run.prep === null) return [read()];
   if (run.flowCheck) {
     return [readAsk(run, input, "prep_flow_read", `read:prep:flow:${run.seq}`, "flowRead",
@@ -168,6 +260,11 @@ export function chainAsks(run, input) {
  */
 export function startChain(run, input, lang) {
   if (!STARTS.includes(run.phase)) return run;
+  if (input.resumed) {
+    const row = resumeRow(run);
+    return row === null ? run : {...run, pressed: true, lang, phase: "preparing", refusal: null,
+      runId: row.run_id, revision: row.revision, adopted: row.run_id};
+  }
   const task = taskSpec(input);
   const done = input.taskWritten && !run.done.includes(task.key) ? [...run.done, task.key]
     : run.done;
@@ -176,10 +273,11 @@ export function startChain(run, input, lang) {
     ? run : next;
 }
 
-/** «Повторить»: a refusal is tried again (its ask has a new id), a read that failed is asked again. */
+/** «Повторить»: a refusal is tried again (its ask has a new id); a failed read is asked again. */
 export function retryChain(run) {
   if (run.phase === "refused") return {...run, phase: "preparing", refusal: null};
-  if (run.phase === "unknown" && run.readFailed !== null) return {...run, readFailed: null};
+  const reading = run.phase === "unknown" || (run.resume !== null && !run.pressed);
+  if (reading && run.readFailed !== null) return {...run, readFailed: null};
   return run;
 }
 
@@ -227,16 +325,26 @@ function reconcile(run, input) {
 }
 
 function landRead(run, input, result) {
-  const seq = run.seq + 1;
-  if (result.status === "accepted" && isPreparation(result.payload, input.taskId)) {
-    const read = {...run, seq, prep: result.payload, readFailed: null, phase: "preparing"};
-    return reconcile(fixRun(read, input), input);
+  const seq = run.seq + 1, failed = {code: result.code ?? result.status};
+  const accepted = result.status === "accepted" && isPreparation(result.payload, input.taskId);
+  const unknownTask = result.status === "refused" && result.code === "service_refused";
+  if (run.resume !== null && !run.pressed) {
+    if (accepted) return {...run, seq, prep: result.payload, readFailed: null};
+    if (unknownTask) return {...run, seq, readFailed: null, resume: {...run.resume, lost: true}};
+    return {...run, seq, readFailed: failed};
   }
-  if (result.status === "refused" && result.code === "service_refused") {
+  if (accepted) {
+    const read = {...run, seq, prep: result.payload, readFailed: null, phase: "preparing"};
+    return input.resumed ? read : reconcile(fixRun(read, input), input);
+  }
+  if (unknownTask && input.resumed) {
+    return refusedAt({...run, seq}, "task", "service_refused", null);
+  }
+  if (unknownTask) {
     return {...run, seq, prep: null, readFailed: null, phase: "preparing",
       done: run.done.filter((key) => !key.startsWith("task:"))};
   }
-  return {...run, seq, phase: "unknown", readFailed: {code: result.code ?? result.status}};
+  return {...run, seq, phase: "unknown", readFailed: failed};
 }
 
 function refusedAt(run, name, code, reason) {
@@ -301,7 +409,7 @@ function landWrite(run, input, ask, result) {
  * @returns {object} The next `run` slice.
  */
 export function landChain(run, input, ask, result) {
-  if (!run.pressed || run.settled.includes(ask.id)) return run;
+  if ((!run.pressed && run.resume === null) || run.settled.includes(ask.id)) return run;
   const base = {...run, settled: [...run.settled, ask.id]};
   if (ask.name === "prep_read") return landRead(base, input, result);
   if (ask.name === "prep_flow_read") return landFlowRead(base, input, result);
@@ -310,7 +418,21 @@ export function landChain(run, input, ask, result) {
 
 // -- what the step says ------------------------------------------------------------------
 
+//: After a reload the four first links stand, since a run stands; the documents are done when
+//: everything the read said was missing has been written, and the preview when it was made.
+function resumedDone(run, input, link) {
+  if (link !== "documents" && link !== "preview") return true;
+  const row = resumeRow(run);
+  if (row === null) return false;
+  const held = {...run, runId: row.run_id};
+  const specs = input.documents.map((paper) => documentSpec(held, paper));
+  if (input.materials !== null) specs.push(materialsSpec(input, held));
+  return link === "documents" ? specs.every((spec) => run.done.includes(spec.key))
+    : run.done.includes(previewSpec(held).key);
+}
+
 function linkDone(run, input, link) {
+  if (input.resumed) return resumedDone(run, input, link);
   if (link === "task") return run.done.includes(taskSpec(input).key);
   if (link === "seed") {
     return !input.dispatch || run.done.includes(seedSpec(input).key)
@@ -336,7 +458,8 @@ export function linkStates(run, input) {
   let current = null;
   return LINKS.map((link) => {
     const done = linkDone(run, input, link);
-    if (done) return {link, status: link === "seed" && !input.dispatch ? "skipped" : "done"};
+    const noSeed = input.resumed ? run.prep === null || run.prep.seed === null : !input.dispatch;
+    if (done) return {link, status: link === "seed" && noSeed ? "skipped" : "done"};
     current = current ?? link;
     if (link !== current || !run.pressed) return {link, status: "todo"};
     if (run.phase === "refused") return {link, status: "refused"};

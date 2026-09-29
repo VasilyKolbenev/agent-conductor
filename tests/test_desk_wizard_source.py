@@ -22,10 +22,14 @@ PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                  "./desk-wizard-cycle.js", "./desk-wizard-roles.js",
                                  "./desk-wizard-base.js", "./desk-wizard-team.js",
-                                 "./desk-wizard-input.js", "./desk-wizard-prep.js"},
-        "desk-wizard-input.js": {"./desk-wizard-base.js", "./desk-wizard-materials.js",
-                                 "./desk-wizard-team.js"},
+                                 "./desk-wizard-input.js", "./desk-wizard-prep.js",
+                                 "./desk-wizard-run.js"},
+        "desk-wizard-input.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                 "./desk-wizard-materials.js", "./desk-wizard-team.js",
+                                 "./desk-wizard-prep.js"},
         "desk-wizard-prep.js": {"./desk-wizard-digest.js"},
+        "desk-wizard-run.js": {"./desk-wizard-base.js", "./desk-wizard-input.js",
+                               "./desk-wizard-prep.js"},
         "desk-wizard-base.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                 "./desk-wizard-roles.js"},
         "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
@@ -55,7 +59,8 @@ VENDOR_WORDS = ("claude", "codex", "grok", "kimi", "qwen", "deepseek", "anthropi
 HOST_EVENTS = {"open", "answered"}
 #: Events the model takes whose controls the view of step 5 draws in a commit of its own; until
 #: then no control sends them. That commit empties this set, and the guard below is whole again.
-UNDRAWN = {"prepare-start", "prepare-retry", "prepare-adopt", "prepare-bump"}
+UNDRAWN = {"prepare-start", "prepare-retry", "prepare-adopt", "prepare-bump", "resume-edit",
+           "resume-restart"}
 
 
 def _source(name: str) -> str:

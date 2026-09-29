@@ -320,8 +320,10 @@ def test_a_record_conflict_on_the_run_offers_the_recorded_arrangement_or_the_nex
       const idle = wiz.stepWizard(ready(), {type: "prepare-adopt"});
       show({phase: stopped.state.run.phase, code: stopped.state.run.refusal.code,
         asks_left: stopped.last.asks.length, adopted: names(adopted.log),
-        adopted_docs: adopted.log.filter((ask) => ask.name === "prep_doc").map((ask) => ask.subject),
-        bumped: bumped.log.map((ask) => [ask.name, ask.name === "prep_run" ? ask.body.run_id : null]),
+        adopted_docs: adopted.log.filter((ask) => ask.name === "prep_doc")
+          .map((ask) => ask.subject),
+        bumped: bumped.log.map((ask) => [ask.name,
+          ask.name === "prep_run" ? ask.body.run_id : null]),
         idle_ignored: idle.asks.length === 0 && idle.state.run.phase === "idle"});
     """, DATA, modules=MODULES)
     assert out["phase"] == "refused" and out["code"] == "record_conflict"

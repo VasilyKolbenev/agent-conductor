@@ -106,7 +106,8 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-base.js",
                                        "./desk-wizard-team.js",
                                        "./desk-wizard-input.js",
-                                       "./desk-wizard-prep.js"}),
+                                       "./desk-wizard-prep.js",
+                                       "./desk-wizard-run.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.
@@ -137,14 +138,19 @@ PERMITTED_IMPORTS = {
     #: SHA-256 and the id of a document the chain publishes, as a fixed pure function. It imports
     #: nothing, so nothing above it can be reached back.
     "desk-wizard-digest.js": frozenset(),
-    #: The wizard's state read once, as the plain facts the chain of step 5 is built from. It
-    #: reaches the base, the materials step and the roles step (through the team adapter), and
-    #: never the model that imports it.
-    "desk-wizard-input.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-materials.js",
-                                       "./desk-wizard-team.js"}),
+    #: The wizard's state read once, as the plain facts the chain of step 5 is built from, and
+    #: the flow write. It reaches the base, the cycle, the materials and the roles (through the
+    #: team adapter) and the chain's own reader of a reloaded page, never the model.
+    "desk-wizard-input.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                       "./desk-wizard-materials.js", "./desk-wizard-team.js",
+                                       "./desk-wizard-prep.js"}),
     #: Step 5's chain as pure functions over those facts and its own slice. It reaches only the
     #: digest that names a document by its bytes.
     "desk-wizard-prep.js": frozenset({"./desk-wizard-digest.js"}),
+    #: The chain applied to the wizard's state, and the same after a reload: the seam the model
+    #: calls. It is handed the model's judgement of the four steps and never imports the model.
+    "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-input.js",
+                                     "./desk-wizard-prep.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
