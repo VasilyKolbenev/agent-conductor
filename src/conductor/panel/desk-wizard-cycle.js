@@ -10,7 +10,8 @@
 //: is the desk's own; it is never the order the server's `starters()` happens to give.
 export const WIZARD_STARTERS = Object.freeze(["desk-standard", "desk-short"]);
 const BUILD_CARD = Object.freeze({id: "build", kind: "build", workflowId: null, title: null,
-  pinned: false, published: false, revision: null, locked: false, canPin: false});
+  pinned: false, published: false, revision: null, locked: false, canPin: false,
+  canUnpin: false});
 const NO_SOURCE = Object.freeze({kind: "none", by: null, at: null, task: null, taskTitle: null,
   workflowId: null});
 
@@ -41,14 +42,14 @@ function starterCard(reads, id, pinnedId, locked) {
   const pinned = id === pinnedId;
   return {id, kind: "starter", workflowId: id, title: null, pinned, published,
     revision: published ? row.latest_revision : null, locked, canPin: published && !pinned
-      && !locked};
+      && !locked, canUnpin: pinned && !locked};
 }
 
 function savedCard(row, pinnedId) {
   const pinned = row.workflow_id === pinnedId;
   return {id: row.workflow_id, kind: "saved", workflowId: row.workflow_id,
     title: typeof row.title === "string" ? row.title : row.workflow_id, pinned, published: true,
-    revision: row.latest_revision, locked: false, canPin: !pinned};
+    revision: row.latest_revision, locked: false, canPin: !pinned, canUnpin: pinned};
 }
 
 //: The cards, in order: the pinned cycle first, the two ready cycles, the saved ones, and last

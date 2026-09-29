@@ -394,10 +394,13 @@ function cycleCard(ctx, card) {
   pick.setAttribute("aria-pressed", chosen ? "true" : "false");
   const pin = card.canPin ? [later(ctx, "make_project_cycle", `wizard:cycle:pin:${card.id}`,
     ctx.t("wizard.cycle.make_project"))] : [];
+  const unpin = card.canUnpin ? [later(ctx, "unpin_project_cycle",
+    `wizard:cycle:unpin:${card.id}`, ctx.t("wizard.cycle.unpin"))] : [];
   return element("li", {className: "desk-wizard__card", "data-card-id": card.id,
     "data-chosen": chosen ? "true" : "false", "data-pinned": card.pinned ? "true" : "false",
     "data-locked": card.locked ? "true" : null},
-  [element("h4", {text: cardName(ctx, card)}), ...notes, ...(card.locked ? [] : [pick, ...pin])]);
+  [element("h4", {text: cardName(ctx, card)}), ...notes,
+    ...(card.locked ? [] : [pick, ...pin, ...unpin])]);
 }
 
 function cardItems(ctx) {

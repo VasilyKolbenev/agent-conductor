@@ -521,13 +521,27 @@ def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_until_the
                    "pinned_card": False, "later": True}
 
 
+def test_only_the_pinned_card_offers_unpin_and_it_is_disabled_until_the_door_is_wired():
+    out = run_js(CYCLE + """
+      const unpin = (state) => Object.fromEntries(wiz.cycleCards(state).map(
+        (card) => [card.id, card.canUnpin]));
+      show({pinned: unpin(settled()), unpinned: unpin(settled(d.unpinned)),
+        starter: unpin(inStarterMode()), later: wiz.isLater("unpin_project_cycle")});
+    """, DATA)
+    assert out["pinned"] == {"cycle-7c1e5a90": True, "desk-standard": False, "desk-short": False,
+                             "old-cycle": False, "build": False}
+    assert not any(out["unpinned"].values()), "nothing is pinned, so nothing can be unpinned"
+    assert out["starter"] == {"desk-starter-docs": False}, "a locked card offers nothing"
+    assert out["later"] is True
+
+
 def test_every_control_whose_door_is_not_wired_is_named_and_none_is_a_silent_no_op():
     out = run_js(CYCLE + """
       show({later: wiz.LATER, frozen: Object.isFrozen(wiz.LATER),
         wired: ["edit-title", "next", "material-add", "cycle-choose"].map(wiz.isLater)});
     """, DATA)
     assert out["later"] == ["connect_git", "first_commit", "run_without_git", "from_starter_docs",
-                            "build_own", "make_project_cycle", "prepare"]
+                            "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]
     assert out["frozen"] is True and out["wired"] == [False] * 4
 
 

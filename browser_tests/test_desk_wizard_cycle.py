@@ -306,6 +306,24 @@ def test_a_failed_git_read_holds_step_two_and_reading_it_again_lets_the_owner_go
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_the_pinned_card_offers_unpin_as_a_disabled_control_with_its_reason(bench, lang):
+    to_step(bench, lang, "cycle", reads=reads(cycle_read=ok(PINNED)))
+    unpin = bench.control("wizard:cycle:unpin:cycle-7c1e5a90")
+    assert unpin.is_disabled()
+    assert unpin.inner_text() == bench.say("wizard.cycle.unpin")
+    why = bench.page.locator('[data-blocked="wizard:cycle:unpin:cycle-7c1e5a90"] small')
+    assert why.inner_text() == bench.say("wizard.later.unpin_project_cycle")
+    pinned = bench.page.locator('[data-card-id="cycle-7c1e5a90"]')
+    assert bench.say("wizard.cycle.pinned") in pinned.inner_text()
+    assert pinned.locator('[data-focus^="wizard:cycle:pin:"]').count() == 0
+    assert bench.page.locator('[data-focus^="wizard:cycle:unpin:"]').count() == 1
+    before = bench.wizard()
+    unpin.click(force=True)
+    assert bench.wizard() == before
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_with_its_reason(bench, lang):
     to_step(bench, lang, "cycle", reads=reads())
     pin = bench.control("wizard:cycle:pin:desk-standard")
