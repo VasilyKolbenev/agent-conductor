@@ -61,6 +61,7 @@ ERROR_STATUS = MappingProxyType({
     "project_mismatch": 409,
     "slot_busy": 409,
     "preview_stale": 409,
+    "project_not_active": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -147,6 +148,12 @@ _FIXED_MESSAGES = MappingProxyType({
     #: resends the same body; told this, it repeats the preview and shows what moved. It
     #: carries no detail, so it needs no `_REVIEWED_FACTS` row.
     "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
+    #: Its own code because the request is well formed and nothing about it needs changing:
+    #: this process was opened for viewing, and a view process starts no agent and runs no
+    #: git, whichever write asks for one. It carries no detail, so it needs no
+    #: `_REVIEWED_FACTS` row; the desk knows the mode from `GET /command/project` and shows
+    #: this as a safety net, not as the way to learn it.
+    "project_not_active": "the project is open for viewing and starts no agent",
 })
 
 

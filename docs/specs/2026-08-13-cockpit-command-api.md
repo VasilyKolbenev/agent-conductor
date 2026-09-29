@@ -429,7 +429,8 @@ choose a code.
   { "code": "server_stopping",       "status": 409, "source": "lifecycle" },
   { "code": "project_mismatch",      "status": 409, "source": "identity" },
   { "code": "slot_busy",             "status": 409, "source": "concurrency" },
-  { "code": "preview_stale",         "status": 409, "source": "authorization" }
+  { "code": "preview_stale",         "status": 409, "source": "authorization" },
+  { "code": "project_not_active",    "status": 409, "source": "lifecycle" }
 ]
 ```
 
