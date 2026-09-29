@@ -27,12 +27,20 @@ desk can draw the editor, the diagnostics and the counter before the routes exis
 - `inputs.documents` is not read off the flow: it is the pair the wizard publishes for every run
   (6.2.3, 6.4.1 link 5), so the `dalio-v5` copy keeps both although its `goal` reads only
   `artifact-brief`. What the flow does read from outside stays inside that pair.
-- Derived, not yet produced by code: the flows of the four `desk-*` and tester cycles come from 7.9
-  and 7.6; the `dalio-v5` flow applies the 7.3 import rules by hand (every review and `do` carries
-  its whole `arguments` and its `stage` in `ext`, both gates carry `gate_id` and a null
-  `success_requires`, the cycle carries a null `execution_contract`). `diagnostics` rows carry the
-  codes and addresses of 7.4 with empty `params`; the spec fixes no `params` shape yet.
+- The `dalio-v5` flow is what `import_template` makes of the shipped template
+  (`test_import_of_dalio_v5_equals_the_fixture_flow`): every review and `do` carries its whole
+  `arguments` and its `stage` in `ext`, while the typed `review_profile` still says what those
+  arguments spell; both gates carry `gate_id` and a null `success_requires`; the cycle carries a
+  null `execution_contract`. The first hand-made copy left the four profiles null, and the module
+  won: an inspector should show the profile the arguments name, not an empty control.
+- The flows of the four `desk-*` and tester cycles come from 7.9 and 7.6, and each compiles to a
+  template that builds (`test_every_compiled_fixture_cycle_builds_a_template`). `diagnostics` rows
+  carry the codes and addresses of 7.4 with empty `params`; the spec fixes no `params` shape yet.
 - `draft_digest` is the sha256 of the canonical flow JSON, a stand-in: the real one digests the
   compiled document. Treat it as an opaque `expected_digest` to send back.
-- When `import_template`, `flow_rules` and `plan_budget` land (days 3-5) they must reproduce these
-  files from the flows; a difference is settled in the fixture or in the module, on the record.
+- The modules now reproduce these files from the flows, and a difference is settled in the fixture
+  or in the module, on the record. `plan_budget` gives every `budget` and both replacement budgets
+  (`tests/test_command_plan_budget.py`), `flow_rules` gives every `diagnostics` and `publishable`
+  (`tests/test_command_flow_rules.py`), and `import_template` gives the `dalio-v5` flow. What is
+  still only derived from the spec is the `draft_digest` stand-in and the flows of the four
+  `desk-*` and tester cycles, which wait for the shipped `desk-*` files.

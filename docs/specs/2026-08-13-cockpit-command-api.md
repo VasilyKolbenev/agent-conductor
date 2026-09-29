@@ -173,6 +173,14 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "mutation": true, "csrf": true
   },
   {
+    "method": "GET", "path": "/command/workflows/<workflow_id>/flow",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/workflows/<workflow_id>/flow",
+    "mutation": true, "csrf": true
+  },
+  {
     "method": "GET", "path": "/command/runs", "mutation": false, "csrf": false
   },
   {
@@ -1063,6 +1071,17 @@ every other part of this contract is built on. Publishing goes through
 `POST /command/workflows/<workflow_id>/revisions`, which carries the expected
 next revision number so two editors cannot silently overwrite each other's
 intent; `POST /command/templates` is unchanged.
+
+A workflow can also be read and written as a **flow**, the desk's own model of
+steps, roads and loops: `GET /command/workflows/<workflow_id>/flow` answers the
+flow being edited (or the latest revision's) with the diagnostics, the
+publishability and the budget the server computed, and `POST` of the same path
+saves it as a draft under the draft route's own expectation
+(`expected_digest` or `expected_absent`) and, when `publish_revision` is given,
+publishes a revision under the revision route's own lock. A document equal to
+the latest revision answers 200 and creates nothing. Both verbs are on one path,
+and no other frozen route changes. The shapes are in the desk redesign
+specification, section 7.1.
 
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and

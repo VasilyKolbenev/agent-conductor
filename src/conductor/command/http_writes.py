@@ -41,7 +41,7 @@ from .http_holds import (
 from .plan_admission import _gated, _plan, _servable_pair, _task, work_scope_admits
 from .run_closing import close_if_terminal
 from .run_store import RecordConflict
-from . import studio_routes, task_routes
+from . import flow_routes, studio_routes, task_routes
 from .studio_routes import standing_graph as _standing_graph
 
 if TYPE_CHECKING:
@@ -72,6 +72,9 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
         return _open_run(api, body)
     if route.name == "tasks":
         return task_routes.create_task(api._tasks, body, clock=api._clock)
+    if route.name == "workflow_flow":
+        assert route.workflow_id is not None
+        return _write_flow(api, route.workflow_id, body)
     if route.name in {"workflow_draft", "workflow_revisions"}:
         assert route.workflow_id is not None
         if route.name == "workflow_draft":
@@ -100,6 +103,13 @@ def _save_draft(
 def _publish_revision(
         api: CommandApi, workflow_id: str, body: Mapping[str, Any]) -> _Reply:
     return studio_routes.publish_revision(api._templates, workflow_id, body)
+
+
+def _write_flow(
+        api: CommandApi, workflow_id: str, body: Mapping[str, Any]) -> _Reply:
+    return flow_routes.write_flow(
+        api._templates, workflow_id, body, api._clock, flow_routes.product_limits(api._budget),
+        lambda binding: flow_routes.binding_facts(api._registry, binding))
 
 
 def _write_artifact(

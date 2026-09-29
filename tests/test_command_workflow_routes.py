@@ -83,11 +83,13 @@ FROZEN_TEN = (
 NEW_ROUTES = tuple(row for row in COMMAND_ROUTES if row not in FROZEN_TEN)
 NEW_GETS = tuple(row for row in NEW_ROUTES if row[0] == "GET")
 NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
-#: The two paths the table admits under BOTH verbs, because listing runs and
-#: opening one -- and listing tasks and creating one -- are the same noun asked
-#: two ways. They are excluded from the verb-swap claim by NAME rather than by
-#: silence.
-BOTH_VERBS = frozenset({"/command/runs", "/command/tasks"})
+#: The paths the table admits under BOTH verbs, because listing runs and opening
+#: one -- listing tasks and creating one -- and reading a cycle as a flow and
+#: writing it are the same noun asked two ways. They are excluded from the
+#: verb-swap claim by NAME rather than by silence. The values are filled paths, as
+#: `target()` gives them, because that is what the parametrized claims compare.
+BOTH_VERBS = frozenset({
+    "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow"})
 #: The task every route pattern carrying ``<task_id>`` is filled with.
 TASK = "task-studio-1"
 #: The two shipped files this module publishes documents derived from. Nothing

@@ -137,6 +137,8 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("GET", "/command/workflows/<workflow_id>/revisions/<revision>"),
         ("POST", "/command/workflows/<workflow_id>/draft"),
         ("POST", "/command/workflows/<workflow_id>/revisions"),
+        ("GET", "/command/workflows/<workflow_id>/flow"),
+        ("POST", "/command/workflows/<workflow_id>/flow"),
         ("GET", "/command/runs"),
         ("POST", "/command/runs"),
         ("GET", "/command/tasks"),

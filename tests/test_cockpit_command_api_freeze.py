@@ -159,6 +159,8 @@ EXPECTED_ROUTES = (
     ("GET", "/command/workflows/<workflow_id>/revisions/<revision>", False, False),
     ("POST", "/command/workflows/<workflow_id>/draft", True, True),
     ("POST", "/command/workflows/<workflow_id>/revisions", True, True),
+    ("GET", "/command/workflows/<workflow_id>/flow", False, False),
+    ("POST", "/command/workflows/<workflow_id>/flow", True, True),
     ("GET", "/command/runs", False, False),
     ("POST", "/command/runs", True, True),
     ("GET", "/command/tasks", False, False),
