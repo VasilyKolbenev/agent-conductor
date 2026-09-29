@@ -170,6 +170,9 @@ class _StubServer:
     def serve_forever(self) -> None:
         return None
 
+    def shutdown(self) -> None:
+        return None
+
     def server_close(self) -> None:
         return None
 

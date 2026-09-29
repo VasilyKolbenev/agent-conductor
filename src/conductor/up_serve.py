@@ -50,11 +50,15 @@ def serve(root: Path | str, port: int, providers: str | None = None,
     Returns:
         0 after a normal stop, 1 for a refused start.
     """
+    from conductor import server_drain            # deferred: see `__main__`'s import block
     plan = plan or up_flags.STANDALONE
     status = up_status.NullStatus() if plan.status_file is None else up_status.StatusFile(
         plan.status_file, plan.project_id, plan.mode, port)
+    if not plan.hub:
+        server_drain.enable_ctrl_c()              # a hub child has no console to clear
+    stopper = server_drain.Stopper()
     try:
-        srv = _start(root, port, providers, plan, status)
+        srv = _start(root, port, providers, plan, status, stopper)
     except up_flags.UpRefusal as refusal:
         return refuse(refusal, status)
     host, bound = srv.server_address[:2]
@@ -68,13 +72,7 @@ def serve(root: Path | str, port: int, providers: str | None = None,
     # line-buffered whether or not it is a terminal.
     print(f"http://{host}:{bound}/", flush=True)
     print(f"serving {root} — Ctrl+C to stop", file=sys.stderr)
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        srv.server_close()
-    return 0
+    return server_drain.serve_until_stopped(srv, status, stopper)
 
 
 def refuse(refusal: up_flags.UpRefusal, status) -> int:
@@ -102,7 +100,7 @@ def _status_of_refused_flags(args):
     return up_status.StatusFile(path, args.project_id, mode, args.port)
 
 
-def _start(root, port, providers, plan: up_flags.UpPlan, status):
+def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     """Everything between the settled flags and a bound, owned server."""
     from conductor import server                  # deferred: see `__main__`'s import block
     if plan.mode == "view":                       # day 8 builds it; see the slice plan
@@ -113,6 +111,8 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status):
     except OSError as error:
         raise up_flags.UpRefusal("start_failed",
                                  f"the status file could not be written: {error}") from error
+    if plan.stop_on_stdin_eof:                    # EOF while still starting drains the same way
+        stopper.watch_stdin(_stdin_descriptor())
     try:
         if plan.project_id is not None:
             _check_identity(root, plan.project_id)
@@ -130,6 +130,14 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status):
         raise up_flags.UpRefusal("start_failed",
                                  f"the status file could not be written: {error}") from error
     return srv
+
+
+def _stdin_descriptor() -> int:
+    """The descriptor of stdin, or -1 when there is none: a hub that is gone is end of file."""
+    try:
+        return sys.stdin.fileno()
+    except (OSError, ValueError, AttributeError):
+        return -1
 
 
 def _check_identity(root, project_id: str) -> None:

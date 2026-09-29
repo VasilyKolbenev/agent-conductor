@@ -171,12 +171,15 @@ def needs_quoting(token):
 
 
 class _FakeServer:
-    """A bound server that returns from `serve_forever` at once, as Ctrl-C does."""
+    """A bound server that returns from `serve_forever` at once, as a stopped one does."""
 
     server_address = ("127.0.0.1", 7777)
 
     def serve_forever(self):
-        raise KeyboardInterrupt
+        return None
+
+    def shutdown(self):
+        pass
 
     def server_close(self):
         pass

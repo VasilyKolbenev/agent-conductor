@@ -6,13 +6,11 @@ around every attempt. What they assert is the FINAL behavior: the `stopping`,
 `stop_overdue`, `stop_uncertain` and `stopped` states of the status file, the
 409 `server_stopping` refusal, the ownership head `closed` published only after
 the attempt and its login lease retired, and the exit codes. None of them names a
-function of the drain module, so they turn green unchanged when drain lands.
+function of the drain module: they were written, and shown red with `--runxfail`,
+before it existed, and they passed unchanged when it landed.
 
-The seven claims are marked `xfail(strict=True)`: the suite stays green today and
-turns red the day a claim starts to hold, which is the day the marker must go.
-The one unmarked test is the instrument control: it proves the harness itself
-(fake dispatch, lease, ownership close, Ctrl+C delivery) on code that needs no
-drain, so a red witness cannot be blamed on the harness.
+The instrument control needs no drain: it proves the harness itself (fake dispatch,
+lease, ownership close, Ctrl+C delivery) so a red witness cannot be blamed on it.
 """
 from __future__ import annotations
 
@@ -24,8 +22,6 @@ from tests._drain_harness import (
     PAST_THE_OLD_JOIN, PROBE, RUN_ID, WAIT, DrainChild, DrainProject, post_paths,
     stays_true, wait_until)
 
-NOT_YET = pytest.mark.xfail(
-    strict=True, reason="drain is not implemented yet (spec §4.1.6)")
 #: A drain begins at once; this bounds how long a witness waits to SEE it begin.
 DRAIN_BEGINS = 10.0
 
@@ -96,7 +92,6 @@ def test_the_drain_harness_runs_two_steps_and_a_real_ctrl_c_closes_the_idle_proj
     assert len(project.closed_leases()) == 2 and not project.lease_standing()
 
 
-@NOT_YET
 def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
@@ -111,7 +106,6 @@ def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
     assert child.state() == "stopped"
 
 
-@NOT_YET
 def test_closed_is_published_only_after_workers_and_the_login_lease_retire(project):
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
@@ -133,7 +127,6 @@ def test_closed_is_published_only_after_workers_and_the_login_lease_retire(proje
     assert child.state() == "stopped"
 
 
-@NOT_YET
 def test_ctrl_c_in_standalone_up_takes_the_same_drain_path(project):
     project.require_ctrl_c()
     child = _holding_one_attempt(project, hub=False, ctrl_c="ignored")
@@ -148,7 +141,6 @@ def test_ctrl_c_in_standalone_up_takes_the_same_drain_path(project):
     assert project.head_phase() == "closed" and len(project.closed_leases()) == 1
 
 
-@NOT_YET
 def test_attempt_past_the_deadline_leaves_stop_overdue_and_no_closed_record(project):
     child = _draining_by_eof(project, node_timeout=1, margin=0)
     child.wait_state("stop_overdue", WAIT)
@@ -156,11 +148,10 @@ def test_attempt_past_the_deadline_leaves_stop_overdue_and_no_closed_record(proj
     assert deadline <= datetime.now(timezone.utc)
     stays_true(lambda: child.alive() and child.state() == "stop_overdue"
                and project.head_phase() == "opened" and project.lease_standing()
-               and not project.closed_leases(), PROBE,
+               and not project.closed_leases(), PAST_THE_OLD_JOIN,
                "an overdue drain keeps waiting and publishes no closed record")
 
 
-@NOT_YET
 def test_every_post_during_drain_is_refused_server_stopping(project):
     child = _draining_by_eof(project)
     child.wait_state("stopping", DRAIN_BEGINS)
@@ -172,7 +163,6 @@ def test_every_post_during_drain_is_refused_server_stopping(project):
     assert child.http("GET", "/command/session")[0] == 200
 
 
-@NOT_YET
 def test_second_ctrl_c_does_not_interrupt_drain(project):
     project.require_ctrl_c()
     child = _holding_one_attempt(project, hub=False, ctrl_c="ignored")
@@ -188,7 +178,6 @@ def test_second_ctrl_c_does_not_interrupt_drain(project):
     assert project.head_phase() == "closed"
 
 
-@NOT_YET
 def test_unproven_retirement_ends_in_stop_uncertain_with_exit_1(project):
     child = project.start(hub=True, fault="quota_uncertain")
     child.wait_serving()
