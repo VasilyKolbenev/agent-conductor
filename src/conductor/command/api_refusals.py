@@ -259,6 +259,11 @@ _REVIEWED_FACTS = (
     # is the one fact a person can act on, and the driver's memory holds no more.
     ("slot_busy", ("run_id",),
      lambda facts: f"another bounded run '{facts['run_id']}' holds this project's slot"),
+    # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
+    # it is is the one fact a person can act on (spec 4.3.4).
+    ("contract_invalid", ("run_id",),
+     lambda facts: (f"run '{facts['run_id']}' cannot be carried on: it needs a standing "
+                    "grant and no open action")),
 )
 
 
@@ -454,6 +459,15 @@ class ApiRefusal(Exception):
             raise ValueError("slot refusal identifiers must be safe IDs") from None
         message = f"another bounded run '{run_id}' holds this project's slot"
         return cls(_REFUSAL_BUILD, "slot_busy", message, {"run_id": run_id})
+
+    @classmethod
+    def run_cannot_continue(cls, run_id: str) -> "ApiRefusal":
+        """Name the run a continue-after flag cannot carry on, and nothing about why."""
+        if not _safe_id(run_id):
+            raise ValueError("run refusal identifiers must be safe IDs") from None
+        message = (f"run '{run_id}' cannot be carried on: it needs a standing grant and "
+                   "no open action")
+        return cls(_REFUSAL_BUILD, "contract_invalid", message, {"run_id": run_id})
 
     @classmethod
     def plan_sandbox_unprovidable(
