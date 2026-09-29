@@ -9,9 +9,12 @@ operation's steps with a launch built one way for the confined run and, with
 """
 from __future__ import annotations
 
+import http.server
 import os
 import subprocess
-from dataclasses import dataclass
+import threading
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -137,6 +140,40 @@ class Box:
         script = _MOVE_REPLACE.replace("@SRC_FILE@", source_file)
         script = script.replace("@DST_FILE@", destination_file)
         return self.run_script(script)
+
+
+@dataclass
+class Served:
+    """A loopback server the parent owns: its address and every path requested of it."""
+
+    url: str = ""
+    hits: list[str] = field(default_factory=list)
+
+
+@contextmanager
+def serve_loopback():
+    """A tiny HTTP server on 127.0.0.1 that answers ``served-by-parent`` and counts requests."""
+    served = Served()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            served.hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"served-by-parent")
+
+        def log_message(self, *args):
+            return None
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    served.url = "http://127.0.0.1:" + str(server.server_address[1]) + "/"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield served
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 @pytest.fixture(scope="module")

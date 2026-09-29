@@ -15,19 +15,19 @@ carry a handle list only and silently ignores any other attribute.
 """
 from __future__ import annotations
 
-import ctypes
-import msvcrt
 import os
 import secrets
 import subprocess
 import threading
-from ctypes import wintypes
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
 if os.name != "nt":
     raise ImportError("os_boundary_windows is the Windows AppContainer probe")
+
+import ctypes  # noqa: E402  (Windows only, so after the guard above)
+import msvcrt  # noqa: E402
+from ctypes import wintypes  # noqa: E402
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _adv = ctypes.WinDLL("advapi32", use_last_error=True)
@@ -403,15 +403,24 @@ def close_handle(handle: int) -> None:
     _k32.CloseHandle(handle)
 
 
-def process_is_gone(pid: int) -> bool:
-    """True when no process with this id is left running (the wait is signalled or it is gone)."""
-    handle = _k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
-    if handle in _INVALID_HANDLES:
-        return True
-    try:
-        return _k32.WaitForSingleObject(handle, 0) == _WAIT_OBJECT_0
-    finally:
-        _k32.CloseHandle(handle)
+class ProcessWatch:
+    """A handle to a process taken while it is alive: asks the process, never its number.
+
+    A process id is recycled within moments on Windows, so "is pid N gone" can answer for
+    a different process. The handle keeps the process object, and its wait is signalled
+    only when THAT process has ended.
+    """
+
+    def __init__(self, pid: int) -> None:
+        self._handle = _k32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if self._handle in _INVALID_HANDLES:
+            raise _fail(f"OpenProcess({pid})")
+
+    def is_gone(self) -> bool:
+        return _k32.WaitForSingleObject(self._handle, 0) == _WAIT_OBJECT_0
+
+    def close(self) -> None:
+        _k32.CloseHandle(self._handle)
 
 
 def popen_with_ignored_security_capabilities(sid: str) -> "subprocess.Popen[bytes]":

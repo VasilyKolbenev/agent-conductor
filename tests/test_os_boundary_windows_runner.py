@@ -63,26 +63,27 @@ def test_a_confined_child_that_outlives_its_timeout_dies_with_the_process_it_sta
         runner_box):
     rb = runner_box
     started = time.monotonic()
-    outcome = rb.run_until_pid_file(_WITH_GRANDCHILD, timeout=12.0)
+    outcome, grandchild = rb.run_until_pid_file(_WITH_GRANDCHILD, timeout=12.0)
     assert time.monotonic() - started < _PROMPTLY, "the runner waited out an orphan"
     assert outcome.status == "timed_out", outcome
     assert rb.runner.active_tokens() == ()
     assert rb.scope.retired == [True]
-    assert ac.process_is_gone(rb.grandchild_pid()), "the grandchild outlived the Job"
+    assert grandchild.is_gone(), "the grandchild outlived the Job"
 
 
 def test_a_confined_child_started_and_stopped_by_token_leaves_no_live_process(runner_box):
     rb = runner_box
     owned = rb.runner.start(rb.spec(_WITH_GRANDCHILD))
+    leader = rb.watch(owned.pid)
     grandchild = rb.wait_for_pid_file()
-    assert not ac.process_is_gone(grandchild), "the grandchild never started"
+    assert not grandchild.is_gone(), "the grandchild never started"
     started = time.monotonic()
     outcome = rb.runner.stop(owned.token)
     assert time.monotonic() - started < _PROMPTLY, "stop waited out an orphan"
     assert outcome.status == "stopped"
     assert rb.runner.active_tokens() == ()
     assert rb.scope.retired == [True]
-    assert ac.process_is_gone(grandchild) and ac.process_is_gone(owned.pid)
+    assert grandchild.is_gone() and leader.is_gone()
 
 
 def test_a_launch_for_a_container_that_does_not_exist_is_refused_with_no_token(runner_box):

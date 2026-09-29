@@ -66,6 +66,7 @@ class RunnerBox:
         self.layout, self.container, self.runner, self.scope = layout, container, runner, scope
         self.created: list[ac.ConfinedProcess] = []
         self.confinement_seen: list[str | None] = []
+        self.watches: list[ac.ProcessWatch] = []
         self._sid: str | None = container.sid
         self._tokens = {**layout.tokens(), "POWERSHELL": str(ac.POWERSHELL)}
 
@@ -107,17 +108,21 @@ class RunnerBox:
         monkeypatch.setattr(_procgroup, "make_group",
                             self._checked_make_group(_procgroup.make_group))
 
-    def wait_for_pid_file(self, timeout: float = _WAIT) -> int:
+    def watch(self, pid: int) -> ac.ProcessWatch:
+        """A handle to a process that is alive now; closed with the box."""
+        watch = ac.ProcessWatch(pid)
+        self.watches.append(watch)
+        return watch
+
+    def wait_for_pid_file(self, timeout: float = _WAIT) -> ac.ProcessWatch:
+        """Wait for the grandchild's id and take a handle to it at once, while it is alive."""
         pid_file = self.layout.tmp / "gc.pid"
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if pid_file.exists():
-                return int(pid_file.read_text().strip())
+                return self.watch(int(pid_file.read_text().strip()))
             time.sleep(0.05)
         raise AssertionError("the confined child never published the grandchild's id")
-
-    def grandchild_pid(self) -> int:
-        return int((self.layout.tmp / "gc.pid").read_text().strip())
 
     def run_until_pid_file(self, script: str, *, timeout: float):
         """``run`` on a thread, so the test can see the grandchild live before the timeout."""
@@ -125,10 +130,10 @@ class RunnerBox:
         worker = threading.Thread(
             target=lambda: result.append(self.runner.run(self.spec(script, timeout=timeout))))
         worker.start()
-        self.wait_for_pid_file()
+        grandchild = self.wait_for_pid_file()
         worker.join(timeout + _WAIT)
         assert result, "the runner did not return"
-        return result[0]
+        return result[0], grandchild
 
 
 @pytest.fixture
@@ -147,6 +152,8 @@ def runner_box(tmp_path, container, monkeypatch):
     try:
         yield box
     finally:
+        for watch in box.watches:
+            watch.close()
         for token in runner.active_tokens():
             try:
                 runner.stop(token)
