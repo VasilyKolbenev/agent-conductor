@@ -85,6 +85,11 @@ class ProjectIdentity:
         raise ApiRefusal.fixed("project_mismatch")
 
 
+#: The identity of a `CommandApi` that was given none (tests, embedders): it serves no
+#: identified project, so no request may claim one.
+UNCLAIMED = ProjectIdentity(None, None, False, "active", None, None)
+
+
 def read_project(identity: ProjectIdentity) -> tuple[int, dict[str, Any]]:
     """The handler of `GET /command/project`: status 200 and the four keys of the identity."""
     return 200, identity.payload()

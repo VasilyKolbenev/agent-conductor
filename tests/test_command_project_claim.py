@@ -237,3 +237,14 @@ def test_the_demo_plan_differs_from_the_standalone_plan_only_by_demo():
     import dataclasses
     assert up_flags.DEMO == dataclasses.replace(up_flags.STANDALONE, demo=True)
     assert up_flags.STANDALONE.demo is False and up_flags.DEMO.hub is False
+
+
+# -- the identity of an API that was given none --------------------------------------
+
+
+def test_an_api_given_no_identity_serves_no_project_and_refuses_any_claim_on_it():
+    unclaimed = project_claim.UNCLAIMED
+    assert unclaimed.payload() == {
+        "project_id": None, "hub_origin": None, "demo": False, "mode": "active"}
+    assert unclaimed.check([HOST]) is None
+    assert _refusal_of(unclaimed, [("X-Conduct-Project", NONCE)]).code == CODE
