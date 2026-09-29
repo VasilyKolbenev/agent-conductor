@@ -497,8 +497,8 @@ def _add_ownership(sub):
 
 def _cmd_tools(args: argparse.Namespace) -> int:
     # Deferred like the server: it runs a subprocess, and `conduct init` must not import that.
-    from conductor import tool_pins
-    return tool_pins.pin_command(args.tool, args.path)
+    from conductor.hub import cli
+    return cli.tools_pin(args.tool, args.path)
 
 
 def _add_tools(sub) -> None:

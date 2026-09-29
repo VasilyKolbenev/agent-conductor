@@ -17,7 +17,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -269,25 +268,3 @@ def verify_pin(tool: str, *, folder: Path | str | None = None, run: Runner | Non
         raise ToolPinError(f"{tool}_changed", f"{tool} at the pinned path now says {version}, "
                            f"and {pin.version} was pinned; pin it again to confirm")
     return pin
-
-
-def pin_command(tool: str, path: str) -> int:
-    """`conduct tools pin <tool> --path <abs>`: one JSON line on stdout, or one refusal line.
-
-    Returns:
-        0 after a pin was written, 1 for any refusal.
-    """
-    try:
-        pin = pin_tool(tool, path)
-    except ToolPinError as error:
-        return _refused(error.code, error.detail)
-    except home.ConductHomeInvalid as error:
-        return _refused(error.code, str(error))
-    print(json.dumps({"tool": pin.tool, "path": pin.path, "version": pin.version},
-                     sort_keys=True, ensure_ascii=False))
-    return 0
-
-
-def _refused(code: str, detail: str) -> int:
-    print(f"conduct tools pin: refused {code}: {' '.join(str(detail).split())}", file=sys.stderr)
-    return 1
