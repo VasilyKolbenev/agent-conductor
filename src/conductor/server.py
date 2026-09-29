@@ -34,7 +34,6 @@ import copy
 import importlib.resources
 import json
 import os
-import re
 import secrets
 import socketserver
 import sys
@@ -67,6 +66,16 @@ from conductor.command.run_store import RunStore
 from conductor.command.runtime import Budget
 from conductor.command.quota_service import QuotaService
 from conductor.quota_collectors import QuotaCollector
+#: Re-exported deliberately: tests and `scripts/installed_probe.py` read
+#: `PANEL_ASSETS` off `server`, and moving where the table is written did not
+#: move what it is about.
+from conductor.server_assets import ENTRY_PAGE, PANEL_ASSETS
+#: Re-exported deliberately: `_Mailbox`, `_run_frame` and `MAX_PENDING_RUNS` are
+#: read off `server` by the run-event tests, and `SSE_WAIT` is the stream's wait
+#: that callers of this server have always found here. `_Clients` and
+#: `serve_events` are used below.
+from conductor.server_events import (
+    MAX_PENDING_RUNS, SSE_WAIT, _Clients, _Mailbox, _run_frame, serve_events)
 from conductor.server_retirement import retire_resources, retire_workers
 
 #: The `/harnesses.json` body, serialized once. The registry is frozen data
@@ -76,91 +85,12 @@ from conductor.server_retirement import retire_resources, retire_workers
 HARNESSES_JSON = json.dumps(harnesses.as_payload(),
                             ensure_ascii=False).encode("utf-8")
 
-#: Every packaged Studio file that is SERVED. `studio.html` is deliberately
-#: absent: `GET /` answers with it, and a second route would give one document
-#: two. A module that is packaged and missing here fails the packaged-resource
-#: partition test in tests/test_server_panel_assets.py.
-_STUDIO_FILES = (
-    "studio.css", "studio.js", "studio-model.js", "studio-layout.js", "studio-review.js",
-    "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
-    "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",
-    "studio-runform.js", "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-    "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js", "studio-people.js",
-    "studio-rundocs.js", "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
-    "studio-controls.js", "studio-isolation.js", "studio-focus.js", "studio-participants.js",
-    "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
-    "studio-mounts.js", "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-    "studio-orbit.js", "studio-ceilings.js", "studio-situation.js",
-    "studio-i18n.js", "studio-preferences.js", "studio-shell.js", "studio-runhead.js",
-    "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
-    "studio-automation.js", "studio-automation-model.js", "studio-automation-providers.js",
-    "studio-workflow-copy.js",
-    "studio-workflow-detail-copy.js",
-    "studio-view-copy.js",
-    "studio-runform-copy.js",
-    "studio-runs-copy.js",
-    "studio-run-docs-copy.js",
-    "studio-participant-copy.js",
-    "studio-runstep-copy.js",
-    "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js",
-    "studio-agents-copy.js", "studio-automation-flow.js", "studio-automation-copy.js", "studio-workflowwrite.js", "studio-draft.js")
-_STUDIO_TYPES = {"css": "text/css; charset=utf-8",
-                 "js": "text/javascript; charset=utf-8"}
-
-# Exact package resources, never a path derived from the request target.
-PANEL_ASSETS = {
-    "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
-    "/panel/command.js": ("text/javascript; charset=utf-8", "command.js"),
-    "/panel/command-projection.js": (
-        "text/javascript; charset=utf-8", "command-projection.js"),
-    "/panel/command-view.js": (
-        "text/javascript; charset=utf-8", "command-view.js"),
-    # The Graph window, entry included. Seven literal names, each spelling
-    # its own packaged file: the route is the key, never a fragment of the
-    # request target, so a sibling, a query, a traversal or a source-map URL
-    # is simply not in this mapping and falls to the 404 arm like any other
-    # unknown path.
-    "/panel/graph.html": ("text/html; charset=utf-8", "graph.html"),
-    "/panel/graph.css": ("text/css; charset=utf-8", "graph.css"),
-    "/panel/graph.js": ("text/javascript; charset=utf-8", "graph.js"),
-    "/panel/graph-payload.js": (
-        "text/javascript; charset=utf-8", "graph-payload.js"),
-    "/panel/graph-store.js": (
-        "text/javascript; charset=utf-8", "graph-store.js"),
-    "/panel/graph-view.js": ("text/javascript; charset=utf-8", "graph-view.js"),
-    "/panel/graph-adapter.js": (
-        "text/javascript; charset=utf-8", "graph-adapter.js"),
-    "/panel/graph-default.js": (
-        "text/javascript; charset=utf-8", "graph-default.js"),
-    # The Workflow Studio. Its shell is what `GET /` answers with, so — unlike
-    # graph.html — studio.html is NOT on this list: it is the panel route's own
-    # entry, and putting it here as well would give one document two routes.
-    # Its stylesheet and its modules are ordinary allowlisted assets, and they
-    # are BUILT from `_STUDIO_FILES` rather than written out twice each: the
-    # route is `/panel/<name>` and the packaged file is `<name>`, which is a
-    # naming rule and not a table. Written out, every module cost two lines
-    # here and pushed this file over its own line cap the day the inspector was
-    # split. The keys are still literals derived from literals — nothing in
-    # them comes from a request — so the allowlist is exactly as closed as it
-    # was when it was typed out.
-    **{f"/panel/{name}": (_STUDIO_TYPES[name.rsplit(".", 1)[1]], name)
-       for name in _STUDIO_FILES},
-    # The classic panel. It kept its file name when the Studio took the front
-    # door, and this is the route that now reaches it. It was a deliberate 404
-    # until this line existed, which is exactly why its near-misses in
-    # tests/test_server_panel_assets.py had to be re-decided in the same commit.
-    "/panel/index.html": ("text/html; charset=utf-8", "index.html"),
-}
-
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
-SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
-MAX_PENDING_RUNS = 256
 #: Worker threads the server-owned coordinator mints. More than one so two runs
 #: bound to two different provider instances really do execute at the same time;
 #: bounded, because the coordinator's own queue capacity is what caps admission.
 EXECUTION_WORKERS = 4
-_COMMAND_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
 def _command_clock() -> str:
@@ -283,93 +213,6 @@ def _fingerprint(cdir: Path) -> tuple[tuple[str, int, int], ...]:
             continue
         entries.append((str(path.relative_to(cdir)), stat.st_mtime_ns, stat.st_size))
     return tuple(entries)
-
-
-def _run_frame(run_id: str) -> bytes:
-    """Serialize the sole additive command SSE signal shape."""
-    if type(run_id) is not str or _COMMAND_RUN_ID.fullmatch(run_id) is None:
-        raise ValueError("run signal requires a validated run id")
-    return b"data: " + canonical_json(
-        {"kind": "run", "run_id": run_id}).encode("utf-8") + b"\n\n"
-
-
-class _Mailbox:
-    """One bounded, lossless-between-drains SSE signal queue."""
-
-    def __init__(self) -> None:
-        self._event = threading.Event()
-        self._lock = threading.Lock()
-        self._state = False
-        self._runs: dict[str, None] = {}
-
-    def publish_state(self) -> None:
-        with self._lock:
-            self._state = True
-            self._event.set()
-
-    def publish_run(self, run_id: str) -> None:
-        with self._lock:
-            if len(self._runs) < MAX_PENDING_RUNS or run_id in self._runs:
-                self._runs[run_id] = None
-            else:
-                self._state = True
-            self._event.set()
-
-    def wake(self) -> None:
-        self._event.set()
-
-    def wait(self, timeout: float) -> bool:
-        return self._event.wait(timeout)
-
-    def drain(self) -> tuple[bytes, ...]:
-        with self._lock:
-            frames = ([b'data: {"kind":"state"}\n\n'] if self._state else [])
-            frames.extend(_run_frame(run_id) for run_id in self._runs)
-            self._state = False
-            self._runs.clear()
-            self._event.clear()
-            return tuple(frames)
-
-
-class _Clients:
-    """Registry of independent per-SSE-client bounded mailboxes."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._mailboxes: set[_Mailbox] = set()
-
-    def register(self) -> _Mailbox:
-        """Add one client; return its private signal mailbox."""
-        mailbox = _Mailbox()
-        with self._lock:
-            self._mailboxes.add(mailbox)
-        return mailbox
-
-    def unregister(self, mailbox: _Mailbox) -> None:
-        """Drop one client's mailbox (idempotent)."""
-        with self._lock:
-            self._mailboxes.discard(mailbox)
-
-    def publish_state(self) -> None:
-        """Coalesce one state signal independently for every client."""
-        with self._lock:
-            mailboxes = tuple(self._mailboxes)
-        for mailbox in mailboxes:
-            mailbox.publish_state()
-
-    def publish_run(self, run_id: str) -> None:
-        """Coalesce one identifier-only run signal for every client."""
-        with self._lock:
-            mailboxes = tuple(self._mailboxes)
-        for mailbox in mailboxes:
-            mailbox.publish_run(run_id)
-
-    def wake_all(self) -> None:
-        """Wake shutdown waiters without fabricating a frame."""
-        with self._lock:
-            mailboxes = tuple(self._mailboxes)
-        for mailbox in mailboxes:
-            mailbox.wake()
 
 
 class Watcher(threading.Thread):
@@ -565,7 +408,7 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         to it — and the name here is a literal, as every panel resource name in
         this module is, so no request target can select the document served.
         """
-        panel = importlib.resources.files("conductor") / "panel" / "studio.html"
+        panel = importlib.resources.files("conductor") / "panel" / ENTRY_PAGE
         self._send_body(200, "text/html; charset=utf-8", panel.read_bytes())
 
     def _serve_panel_asset(self, target: str) -> None:
@@ -621,30 +464,7 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
 
     def _serve_events(self) -> None:
         """Stream SSE: one frame on connect, then one per broker change."""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-store")
-        # A stream has no length and never will, so the CLOSE is its frame and
-        # this says so. Without it a client on a kept connection is entitled to
-        # look for a second answer after this one, and there is no second
-        # answer -- there is more of the first, until one side goes away.
-        self.send_header("Connection", "close")
-        self.close_connection = True
-        self.end_headers()
-        mailbox = self.server.clients.register()
-        try:
-            self._send_frame(b'data: {"kind":"state"}\n\n')
-            while not self.server.shutting_down:
-                if not mailbox.wait(timeout=SSE_WAIT):
-                    continue               # timeout — re-check shutdown
-                if self.server.shutting_down:
-                    break
-                for frame in mailbox.drain():
-                    self._send_frame(frame)
-        except OSError:                    # incl. ConnectionAborted/Reset/BrokenPipe
-            pass                           # client vanished: this loop only
-        finally:
-            self.server.clients.unregister(mailbox)
+        serve_events(self)
 
     def _send_frame(self, frame: bytes) -> None:
         self.wfile.write(frame)
