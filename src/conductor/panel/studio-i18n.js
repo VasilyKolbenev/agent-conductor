@@ -11,6 +11,7 @@ import {FEEDBACK_COPY} from "./studio-feedback-copy.js";
 import {AGENTS_COPY} from "./studio-agents-copy.js";
 import {AUTOMATION_COPY} from "./studio-automation-copy.js";
 import {NOTICE_COPY} from "./studio-notice-copy.js";
+import {WIZARD_COPY} from "./desk-wizard-copy.js";
 // Interface messages only. User text, identifiers and durable records are data.
 // Each entry carries both locales; parameters are exact named string values.
 const TEXT = {
@@ -166,7 +167,7 @@ const TEXT = {
 };
 
 export const LOCALES = Object.freeze(["en", "ru"]);
-export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY})
+export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY, ...WIZARD_COPY})
   .map(([key, values]) => [key, Object.freeze({en: values[0], ru: values[1]})])));
 
 function parameters(text) {

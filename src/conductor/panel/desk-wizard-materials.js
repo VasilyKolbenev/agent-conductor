@@ -10,6 +10,14 @@ export const MATERIAL_LIMITS = Object.freeze({count: 12, bytes: 49152});
 //: A state that ends the wizard in every mode: the project is not one repository, or it tracks
 //: the product's own folders (spec 6.2.1, L39). Nothing can be seeded from it.
 const ENDS_THE_WIZARD = Object.freeze(["not_repo_root", "unsupported"]);
+//: The closed words this module can say, each with a message in the catalogue: what the git
+//: step says, the exits it offers, and why a card was refused.
+export const GIT_SENTENCES = Object.freeze(["repo", "unborn", "not_git", "not_repo_root",
+  "unsupported", "unsafe_directory", "unavailable", "not_active", "reading", "failed"]);
+export const GIT_EXITS = Object.freeze(["first_commit", "connect_git", "run_without_git",
+  "reread"]);
+export const REFUSALS = Object.freeze(["too_many_materials", "already_added", "doc_unknown",
+  "document_not_text", "read_failed"]);
 const encoder = new TextEncoder();
 const GIT_OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const DOC_ID = /^d-[0-9a-f]{32}$/;

@@ -29,13 +29,13 @@
 //          settled, boundKey},
 //   roles {owner, instructions}, history {runs, revisions}.
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
-import {MATERIAL_KINDS, bodyOf, documentCard, estimateOf, gitFacts, instructionsRow,
-  isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf, textCard}
-  from "./desk-wizard-materials.js";
+import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
+  gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
+  textCard} from "./desk-wizard-materials.js";
 import {WIZARD_STARTERS, cardsOf, factsOf, flowBody, isFlowState, preselect}
   from "./desk-wizard-cycle.js";
-import {argvFit, offersFor, quotaOf, roleKind, rolesOf, rosterOf, suggest}
-  from "./desk-wizard-roles.js";
+import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
+  rosterOf, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
   utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, heldFlow,
@@ -47,8 +47,19 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
 export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, taskText, utf8Bytes,
-  assignmentView, instructionFields, previousAssignment};
+  assignmentView, instructionFields, previousAssignment,
+  GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS};
 export const suggestAssignment = suggest;
+//: Every reason a step can give for not being complete, as a closed code. Each has a message
+//: in the catalogue, and a guard holds this list to the codes the gates really return.
+export const REASONS = Object.freeze([
+  "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
+  "git_stops", "starter_needs_git", "materials_over_count", "material_incomplete",
+  "materials_over_bytes",
+  "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
+  "flow_unknown", "flow_unpublishable",
+  "no_providers", "roles_unassigned", "instruction_empty", "instruction_too_large",
+  "instruction_argv_over", "binding_pending", "binding_rows"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",

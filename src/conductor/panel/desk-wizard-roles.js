@@ -6,8 +6,12 @@
 // and the instruction fields a cycle asks for. The harness facts come from the roster's own rows
 // (`capabilities`, `task_channel`, `offered`); no harness is named here, and a row that does not
 // say it is offered is not offered.
-export const KNOWN_KINDS = Object.freeze(["analyst", "designer", "diagnostician", "reviewer",
+export const ROLE_KINDS = Object.freeze(["analyst", "designer", "diagnostician", "reviewer",
   "doer", "tester", "checker"]);
+//: The closed words the suggestion and the quota reading can say, each with a message.
+export const NOTES = Object.freeze(["new_role", "argv_not_fit", "none_eligible",
+  "unknown_quota", "independent_pick", "previous_unavailable"]);
+export const QUOTA_REASONS = Object.freeze(["no_data", "stale", "source_error"]);
 //: The rows the server adds when a binding is sent for diagnostics (spec 7.4): the wizard does
 //: not go on while any stands.
 export const BINDING_CODES = Object.freeze(["role_unassigned", "role_capability_unsupported",
@@ -28,7 +32,7 @@ function addOnce(list, value) {
 //: the owner's own role (spec 7.2.2).
 export function roleKind(roleId) {
   const found = /^role-([a-z]+)(?:-\d+)?$/.exec(typeof roleId === "string" ? roleId : "");
-  return found && KNOWN_KINDS.includes(found[1]) ? found[1] : "custom";
+  return found && ROLE_KINDS.includes(found[1]) ? found[1] : "custom";
 }
 
 function agentSteps(flow) {
