@@ -96,11 +96,15 @@ def test_every_control_the_wizard_writes_carries_a_focus_key_and_survives_a_rere
     assert every.count() >= 5
     assert every.evaluate_all("nodes => nodes.every(node => node.hasAttribute('data-focus'))")
     bench.type_into("wizard:title", "Fix login")
-    field = bench.control("wizard:title")
-    field.press("Home")
-    for _ in range(3):
-        field.press("ArrowRight")
-    field.press_sequentially("X")
+    # The caret is put by the page, in the call that focuses the field: Home and the arrow keys
+    # move it differently per platform (on macOS Home does not go to the start of an input).
+    placed = bench.page.evaluate(
+        "(key) => { const field = document.querySelector(`[data-focus=\"${key}\"]`);"
+        " field.focus(); field.setSelectionRange(3, 3);"
+        " return [document.activeElement === field, field.selectionStart, field.selectionEnd]; }",
+        "wizard:title")
+    assert placed == [True, 3, 3]
+    bench.page.keyboard.type("X")
     held = bench.page.evaluate(
         "() => [document.activeElement.dataset.focus, document.activeElement.value,"
         " document.activeElement.selectionStart]")
