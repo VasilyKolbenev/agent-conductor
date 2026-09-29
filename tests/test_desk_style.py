@@ -1,0 +1,334 @@
+"""desk.css, read through the panel's cascade model rather than grepped.
+
+The desk is the window that replaces the Studio's five tabs, and its stylesheet
+arrives under the Studio's discipline: nothing colour-bearing is written by hand
+twice. Every rule that paints a mark is either a MEASURED row -- its declaration
+resolved through the cascade under every media environment the sheet declares,
+composited onto the surface its chain stands on, and held to its WCAG floor in
+both themes -- or an EXEMPT with the reason written beside it. A new colour
+fails the completeness check until it arrives with a row or a reason.
+
+The palette is the approved concept's (`layout-v4` / `mostik.css`, the evergreen
+ground and the lime "ion" accent, in the dark theme and its light pair), and it
+is pinned here value by value: a token drifting off the concept reds, and so does
+a third `:root` block or a manual `data-theme` block that stops being exactly the
+measured system palette. Web fonts of the concept are not shipped: the panel
+loads nothing from another origin, so the font stacks are system stacks.
+
+Like `test_studio_style.py` this is a model of SOURCE TEXT. It renders nothing;
+the rendered half is `browser_tests/test_desk_shell.py`. Each guard is a function
+over the sheet's text, and the table of broken sheets further down feeds the
+whole set every defect it claims to refuse, so a guard that silently stopped
+biting reds here rather than in a review.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from tests.test_panel_cascade import E, _COMPOUND, _TOKEN, computed, environments, rules
+from tests.test_panel_colour import contrast
+from tests.test_panel_contrast import NONTEXT_MIN, TEXT_MIN, _hex_to_rgb
+
+PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
+CSS = (PANEL / "desk.css").read_text(encoding="utf-8")
+THEMES = ("dark", "light")
+LINE_CAP = 800
+
+#: The concept's colour tokens, verbatim (`mostik.css`, the approved layout-v4).
+#: The dark theme is the default; the light pair carries every token again.
+CONCEPT_DARK = {
+    "--space": "#050908", "--ground": "#0a0f0d", "--panel": "#0e1512",
+    "--line": "#24312a", "--line-strong": "#3a4a40", "--ink": "#eef4e8",
+    "--muted": "#a3b1a9", "--faint": "#839187", "--ion": "#d4f99b",
+    "--on-ion": "#10180b", "--amber": "#efc48b", "--on-amber": "#1b1305",
+}
+CONCEPT_LIGHT = {
+    "--space": "#e7ece5", "--ground": "#eef1ed", "--panel": "#f8faf6",
+    "--line": "#c7d1c8", "--line-strong": "#9aab9f", "--ink": "#18241c",
+    "--muted": "#4e6055", "--faint": "#607568", "--ion": "#36520f",
+    "--on-ion": "#f4f9ea", "--amber": "#8a6500", "--on-amber": "#fff7e2",
+}
+#: The token pairs the shell will paint text or marks with, each held to the
+#: floor its use needs on both grounds. `--faint` is the concept's quiet text
+#: and is held to the non-text floor only: on the light ground it does not reach
+#: 4.5:1, so no text rule may spend it until it does.
+PAIRS = (
+    ("--ink", "--ground", TEXT_MIN), ("--ink", "--panel", TEXT_MIN),
+    ("--muted", "--ground", TEXT_MIN), ("--muted", "--panel", TEXT_MIN),
+    ("--ion", "--ground", TEXT_MIN), ("--ion", "--panel", TEXT_MIN),
+    ("--amber", "--ground", TEXT_MIN), ("--amber", "--panel", TEXT_MIN),
+    ("--on-ion", "--ion", TEXT_MIN), ("--on-amber", "--amber", TEXT_MIN),
+    ("--faint", "--ground", NONTEXT_MIN),
+)
+
+# -- the chains the shell builds ---------------------------------------------
+BODY = [E("body")]
+SHELL = BODY + [E("div", "desk-shell")]
+TOP = SHELL + [E("header", "desk-top")]
+FOCUSED = ("focus-visible",)
+
+#: selector (exactly as the parser reports it) -> the rows that measure it. A row
+#: is (chain, mark property, floor, surface-token override or None); None
+#: composites the surface by walking the chain's own backgrounds.
+MEASURED = {
+    "body": [(BODY, "color", TEXT_MIN, None)],
+    ".desk-status": [(TOP + [E("p", "desk-status")], "color", TEXT_MIN, None)],
+    ".desk-note": [(TOP + [E("p", "desk-note")], "color", TEXT_MIN, None)],
+    ".desk-classic": [(TOP + [E("a", "desk-classic")], "color", TEXT_MIN, None)],
+    # The one focus ring, measured on each ground a control in this shell stands on.
+    ":focus-visible": [
+        (BODY + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--space"),
+        (SHELL + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--ground")],
+}
+NEUTRAL = "neutral separator between regions; it identifies no state and carries no word"
+EXEMPT = {
+    ".desk-top": NEUTRAL, ".desk-rail": NEUTRAL, ".desk-summary": NEUTRAL,
+    ".desk-pult": NEUTRAL,
+}
+#: Which declarations are marks. `background` is not one: a surface is composited
+#: under a mark rather than being one.
+MARK_PROPS = ("color", "stroke", "fill", "outline", "border", "border-color",
+              "border-top", "border-right", "border-bottom", "border-left",
+              "border-bottom-color", "border-top-color")
+COLOURFUL = re.compile(r"var\(--[\w-]+\)|#[0-9a-fA-F]{3,8}")
+#: The closed set of states a rule may key on (spec 5.6.8): the studio's
+#: `data-screen` is gone and `data-tone`, `data-state`, `data-view` and `data-lit`
+#: come in. `root` and `hidden` say what a thing is, not what somebody did to it.
+MODELLED = {"hover", "focus-visible", "aria-pressed", "aria-selected", "data-theme",
+            "data-tone", "data-state", "data-view", "data-lit"}
+INERT = {"root", "hidden"}
+CONTROLS = tuple(
+    [E("div", "desk-shell"), E(tag)] for tag in ("button", "select", "input", "textarea")
+) + ([E("div", "desk-shell"), E("header", "desk-top"), E("a", "desk-classic")],)
+
+
+def _wrap(css: str) -> str:
+    return "<style>" + css + "</style><script></script>"
+
+
+def root_blocks(sheet: str) -> list[dict[str, str]]:
+    """Every ``--name:value`` map, one per ``:root{...}`` block, in order."""
+    return [{name: value.strip() for name, value in
+             re.findall(r"(--[a-z0-9-]+):([^;}]+)", block)}
+            for block in re.findall(r":root\{(.*?)\}", sheet, re.DOTALL)]
+
+
+def tokens(theme: str, sheet: str) -> dict[str, tuple[int, int, int]]:
+    """The sheet's own colours for one theme; the light block overrides the dark."""
+    dark, light = root_blocks(sheet)[:2]
+    values = dark if theme == "dark" else {**dark, **light}
+    return {key: _hex_to_rgb(value) for key, value in values.items() if value.startswith("#")}
+
+
+def _paint(theme: str, value: str, sheet: str) -> tuple[int, int, int]:
+    found = re.search(r"var\((--[\w-]+)\)|#[0-9a-fA-F]{6}", value)
+    assert found, f"no colour in {value!r}"
+    return tokens(theme, sheet)[found.group(1)] if found.group(1) else _hex_to_rgb(found.group(0))
+
+
+def _surface(theme: str, chain: list, env: frozenset, sheet: str) -> tuple[int, int, int]:
+    for depth in range(len(chain), 0, -1):
+        win = computed(list(chain[:depth]), sheet, env)
+        value = (win.get("background") or win.get("background-color", "")).strip()
+        if value and value not in ("none", "transparent"):
+            return _paint(theme, value, sheet)
+    raise AssertionError(f"nothing under {chain} paints a surface")
+
+
+def paint_faults(sheet: str) -> list[str]:
+    """Every paint declaration that is neither a measured row nor a named exemption."""
+    faults = []
+    for rule in rules(sheet):
+        marks = [prop for prop in rule.decls if prop in MARK_PROPS
+                 and COLOURFUL.search(rule.decls[prop])]
+        if marks and rule.selector not in MEASURED and rule.selector not in EXEMPT:
+            faults.append(f"unmeasured paint: {rule.selector}")
+    return faults
+
+
+def row_faults(sheet: str) -> list[str]:
+    """Rows or exemptions that name a selector the sheet no longer declares."""
+    declared = {rule.selector for rule in rules(sheet)}
+    named = [*MEASURED, *EXEMPT]
+    faults = [f"row names no rule: {selector}" for selector in named
+              if selector not in declared]
+    return faults + [f"row is both measured and exempt: {s}" for s in MEASURED if s in EXEMPT]
+
+
+def _rows(sheet: str):
+    for theme in THEMES:
+        for selector, specs in MEASURED.items():
+            for spec in specs:
+                for label, env in environments(theme, sheet):
+                    yield theme, selector, spec, label, env
+
+
+def _floor_fault(sheet: str, theme: str, selector: str, spec: tuple, label: str,
+                 env: frozenset) -> str | None:
+    chain, prop, floor, background = spec
+    raw = computed(list(chain), sheet, env).get(prop)
+    if not raw:
+        return f"{label}: {selector} declares no {prop}"
+    under = (tokens(theme, sheet)[background] if background
+             else _surface(theme, chain, env, sheet))
+    ratio = contrast(_paint(theme, raw, sheet), under)
+    if ratio < floor:
+        return f"{label}: {selector} is {ratio:.2f}:1, below its floor {floor}"
+    return None
+
+
+def floor_faults(sheet: str) -> list[str]:
+    """Every measured row that misses its WCAG floor in some theme or environment."""
+    found = (_floor_fault(sheet, *row) for row in _rows(sheet))
+    return [fault for fault in found if fault]
+
+
+def _manual_faults(sheet: str, automatic: list[dict[str, str]]) -> list[str]:
+    faults = []
+    for theme, expected in zip(THEMES, automatic):
+        match = re.search(r':root\[data-theme="' + theme + r'"\]\{(.*?)\}', sheet, re.S)
+        if match is None:
+            faults.append(f"no manual {theme} theme block")
+            continue
+        actual = {name: value.strip()
+                  for name, value in re.findall(r"(--[a-z0-9-]+):([^;}]+)", match[1])}
+        if actual != expected or f"color-scheme:{theme}" not in match[1]:
+            faults.append(f"manual {theme} block is not the measured system palette")
+    return faults
+
+
+def palette_faults(sheet: str) -> list[str]:
+    """Two `:root` blocks, the concept's tokens verbatim, manual themes equal to them."""
+    blocks = root_blocks(sheet)
+    if len(blocks) != 2:
+        return [f"{len(blocks)} :root blocks, expected exactly 2"]
+    faults = []
+    for label, block, concept in (("dark", blocks[0], CONCEPT_DARK),
+                                  ("light", blocks[1], CONCEPT_LIGHT)):
+        faults += [f"{label} {name} is not the concept's {value}"
+                   for name, value in concept.items() if block.get(name) != value]
+    return faults + _manual_faults(sheet, blocks)
+
+
+def motion_faults(sheet: str) -> list[str]:
+    """Motion only behind the reduced-motion door, and no `@keyframes` at all."""
+    faults = [f"motion outside the reduced-motion door: {rule.selector}"
+              for rule in rules(sheet)
+              if ("transition" in rule.decls or "animation" in rule.decls)
+              and "prefers-reduced-motion:no-preference" not in rule.context]
+    return faults + (["the sheet declares @keyframes"] if "@keyframes" in sheet else [])
+
+
+def _state_name(token: str) -> str | None:
+    if token.startswith("::"):
+        return None
+    if token.startswith(":"):
+        return token.lstrip(":").split("(")[0]
+    return token[1:-1].partition("=")[0].strip() if token.startswith("[") else None
+
+
+def selector_faults(sheet: str) -> list[str]:
+    """Only modelled states, and only selector forms the cascade model can read."""
+    faults = []
+    for rule in rules(sheet):
+        names = {_state_name(token) for token in _TOKEN.findall(rule.selector)} - {None}
+        faults += [f"unmodelled state {name}: {rule.selector}"
+                   for name in sorted(names - MODELLED - INERT)]
+        if re.search(r"[>+~]", rule.selector) or not all(
+                _COMPOUND.fullmatch(part) for part in rule.selector.split()):
+            faults.append(f"selector form the cascade does not model: {rule.selector}")
+    return faults
+
+
+def target_faults(sheet: str) -> list[str]:
+    """The 44px target floor on every control type, and the one focus ring."""
+    faults = [f"{chain[-1].tag} is under the 44px target floor" for chain in CONTROLS
+              if computed(list(chain), sheet).get("min-height") != "44px"]
+    ring = computed([E("button", states=FOCUSED)], sheet)
+    if ring.get("outline") != "2px solid var(--ion)" or ring.get("outline-offset") != "3px":
+        faults.append(f"the focus ring is not 2px solid --ion at 3px: {ring.get('outline')}")
+    return faults
+
+
+def sheet_faults(css: str) -> list[str]:
+    """Every way `css` fails the desk stylesheet's contract, as plain sentences."""
+    sheet = _wrap(css)
+    faults = (paint_faults(sheet) + row_faults(sheet) + floor_faults(sheet)
+              + palette_faults(sheet) + motion_faults(sheet) + selector_faults(sheet)
+              + target_faults(sheet))
+    lines = len(css.splitlines())
+    return faults + ([f"the sheet is {lines} lines, over the {LINE_CAP} cap"]
+                     if lines > LINE_CAP else [])
+
+
+def _swap(old: str, new: str):
+    def apply(css: str) -> str:
+        assert old in css, f"the sabotage target is gone from the sheet: {old!r}"
+        return css.replace(old, new, 1)
+    return apply
+
+
+def _last(old: str, new: str):
+    def apply(css: str) -> str:
+        head, sep, tail = css.rpartition(old)
+        assert sep, f"the sabotage target is gone from the sheet: {old!r}"
+        return head + new + tail
+    return apply
+
+
+#: Each defect a guard claims to refuse: the edit that plants it in a copy of the
+#: real sheet and a word its fault must contain, so a guard that refuses a sheet
+#: for the WRONG reason does not pass for the right one.
+BROKEN = {
+    "an unmeasured colour": (lambda css: css + ".desk-extra{color:var(--ink)}\n",
+                             "unmeasured paint"),
+    "a row naming a rule that is gone": (_swap(".desk-note{", ".desk-notes{"),
+                                         "row names no rule"),
+    "a colour under its floor": (_swap(".desk-status{font-size:12.5px;color:var(--muted)}",
+                                       ".desk-status{font-size:12.5px;color:var(--line)}"),
+                                 "below its floor"),
+    "a third :root block": (lambda css: css + ":root{--extra:#000000}\n", "root blocks"),
+    "a token moved off the concept": (_swap("--ion:#d4f99b", "--ion:#d4f99c"), "concept"),
+    "a manual theme block that drifted": (_last("--ink:#18241c", "--ink:#18241d"),
+                                          "manual light"),
+    "a keyframes block": (lambda css: css + "@keyframes spin{from{opacity:0}to{opacity:1}}\n",
+                          "@keyframes"),
+    "motion outside the reduced-motion door": (
+        lambda css: css + ".desk-status{transition:opacity .2s}\n", "reduced-motion"),
+    "a 40px control": (_swap("min-height:44px", "min-height:40px"), "44px"),
+    "an unmodelled state": (lambda css: css + ".desk-note:focus-within{margin:0}\n",
+                            "unmodelled state"),
+    "a child combinator": (lambda css: css + ".desk-shell > p{margin:0}\n", "selector form"),
+    "a focus ring drawn thin": (_swap("outline:2px solid var(--ion)",
+                                      "outline:1px solid var(--ion)"), "focus ring"),
+    "a sheet over the line cap": (lambda css: css + "\n" * LINE_CAP, "cap"),
+}
+
+
+def test_the_real_desk_sheet_meets_its_whole_contract():
+    assert sheet_faults(CSS) == []
+
+
+@pytest.mark.parametrize("edit,needle", list(BROKEN.values()), ids=list(BROKEN))
+def test_the_desk_sheet_check_refuses_each_defect_and_names_it(edit, needle):
+    faults = sheet_faults(edit(CSS))
+    assert faults, "a defective sheet was accepted"
+    assert any(needle in fault for fault in faults), faults
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_every_concept_token_pair_clears_its_floor_in_both_themes(theme):
+    palette = tokens(theme, _wrap(CSS))
+    for foreground, ground, floor in PAIRS:
+        ratio = contrast(palette[foreground], palette[ground])
+        assert ratio >= floor, f"{theme}: {foreground} on {ground} is {ratio:.2f}:1, floor {floor}"
+
+
+def test_the_desk_page_is_measured_in_every_media_environment_the_sheet_declares():
+    """Calibration: a floor check that walked no environment would pass on nothing."""
+    labels = [label for label, _env in environments("light", _wrap(CSS))]
+    assert labels[0] == "light" and len(labels) >= 2, labels
+    assert sum(1 for _ in _rows(_wrap(CSS))) >= 2 * len(MEASURED)
