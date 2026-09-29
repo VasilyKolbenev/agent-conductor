@@ -57,6 +57,13 @@ DESK_BOOT_ASSETS = {
     "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
     "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
     "desk-status.js": 200,
+    # The scene, and the Studio's run deck it hands one frozen run read to, with what the
+    # deck and the run-read judges are built from.
+    "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
+    "studio-runread.js": 200, "studio-runwords.js": 200, "studio-rundocs.js": 200,
+    "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-situation.js": 200,
+    "studio-feedback-model.js": 200, "studio-controls.js": 200,
+    "studio-automation-providers.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
@@ -88,15 +95,15 @@ PAGE_WORDS = """() => ({
 PAGE_LANGUAGES = {
     "en": {
         "lang": "en", "title": "December Command — Desk",
-        "note": "The desk is being built: its regions are mounted and stay empty until "
-                "their modules land.",
+        "note": "The desk is being built: the rail and the scene are live; the feed, the "
+                "summary and the console stay empty until their modules land.",
         "link": "Classic panel",
         "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
         "said": "Read."},
     "ru": {
         "lang": "ru", "title": "December Command — Стол",
-        "note": "Стол в разработке: его области размещены и остаются пустыми, пока не "
-                "появятся их модули.",
+        "note": "Стол в разработке: рельс и сцена работают; лента, выжимка и пульт "
+                "остаются пустыми, пока не появятся их модули.",
         "link": "Прежняя панель",
         "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
         "said": "Данные прочитаны."},

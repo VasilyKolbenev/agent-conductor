@@ -281,9 +281,10 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 # `X-Conduct-Project` header belong to lane H's route on day 5 and are not faked:
 # the day that lands this list, the literal check and the header check change with it.
 
-#: The `path.<name>` reads the boot module makes, exactly: the two lists, and the automation
-#: of the newest run of each task (spec 5.2.1 reads it for every task, as the hub does).
-DESK_READS = frozenset({"tasks", "runs", "automation"})
+#: The `path.<name>` reads the boot module makes, exactly: the two lists, the automation of
+#: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), and
+#: the read of the chosen task's newest run and of its controls.
+DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
 
@@ -328,8 +329,10 @@ BOOT_BROKEN = {
     "a read that was dropped": (_edit("path.tasks()", "path.runs()"), "no longer reads"),
     "an id the page does not carry": (_edit('"deskFeed"', '"deskFeeds"'), "does not carry"),
     "a mount the module forgot": (_edit('"deskPult"', '"deskShell"'), "does not mount"),
-    "a run's own route asked from the automation read": (
-        _edit("path.automation(runId)", "path.run(runId)"), "not argued for"),
+    "a read the scene never argued for": (
+        _edit("path.controls(runId)", "path.decisions(runId)"), "not argued for"),
+    "a scene read that was dropped": (
+        _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
     "the project header before its route": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
@@ -412,8 +415,7 @@ def desk_write_faults(source: str) -> list[str]:
 #: module, and a word its fault must contain.
 BOOT_WRITES = {
     "a submit taken from the transport": (
-        _edit("const {readJson} = createTransport(locale);",
-              "const {readJson, submit} = createTransport(locale);"), "write door"),
+        lambda text: text + "\nconst {submit} = createTransport(locale);\n", "write door"),
     "a session drop": (lambda text: text + "\ndropSession();\n", "write door"),
     "a stream opened by the boot module": (lambda text: text + "\nopenStream();\n",
                                            "write door"),
@@ -453,9 +455,9 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
-READ_SIDE = ("desk.js", "desk-rail.js", "desk-status.js")
+READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
-RENDER_MODULES = {"desk-rail.js": "mountRail"}
+RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene"}
 
 
 @pytest.mark.parametrize("name", READ_SIDE)

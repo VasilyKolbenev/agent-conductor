@@ -72,7 +72,7 @@ function row(view, task, handlers) {
 //: Nothing is drawn until the lists that feed the rail have both landed: a half-read
 //: list would name a status the rules cannot yet earn.
 export function mountRail(mount, view, handlers) {
-  if (view.phase !== "ready") {
+  if (!view.listed) {
     mount.replaceChildren();
     return;
   }

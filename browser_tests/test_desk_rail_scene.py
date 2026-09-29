@@ -37,6 +37,7 @@ from conductor import server
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
+from browser_tests.test_desk_shell import LAYOUT_FACTS, SWEPT_WIDTHS
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_graph_projection import settle_to_the_confirm_gate
 from tests.test_command_run_store import a_run
@@ -315,4 +316,277 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
     facts = page.evaluate(RAIL_FACTS)
     assert [row["id"] for row in facts["rows"] if row["pressed"] == "true"] == ["task-docs"]
     assert page.evaluate("() => document.activeElement.dataset.taskId") == "task-docs"
+    assert window.problems == []
+
+
+# -- the scene: the newest run of the chosen task, drawn by the Studio's own modules -------------
+#
+# The scene mounts `participantDeck`, so what these tests hold is that the desk hands it the
+# right run, in the right language, and keeps hold of the answer only while it is the current
+# one; the deck's own inner workings are the Studio's and have their own browser modules.
+FIX_STEPS = 8
+#: What the scene of `task-fix` (its newest run stands at the Confirm gate) says, per language.
+SCENE_WORDS = {
+    "en": {"team": "Run team", "lenses": ["Trace", "Orbit"], "gate": "Decision needed",
+           "subject": "Fix lost text · run run-fix-new", "none": "This task has no run yet.",
+           "choose": "Choose a task to see its newest run."},
+    "ru": {"team": "Команда запуска", "lenses": ["Трасса", "Орбита"], "gate": "Нужно решение",
+           "subject": "Fix lost text · запуск run-fix-new",
+           "none": "У этой задачи ещё нет запусков.",
+           "choose": "Выберите задачу, чтобы увидеть её новейший запуск."},
+}
+#: Everything the scene tests ask of the page, in one evaluation.
+SCENE_FACTS = """() => {
+  const deck = document.querySelector("#deskScene [data-deck-run]");
+  const trace = document.querySelector("#deskScene .studio-trace");
+  const fleet = document.querySelector("#deskScene .studio-deck__fleet");
+  const lens = (name) => document.querySelector(`#deskScene [data-run-lens="${name}"]`);
+  const lenses = [lens("trassa"), lens("orbit")];
+  return {
+    shell: document.getElementById("deskShell").getAttribute("data-state"),
+    scene: document.getElementById("deskScene").getAttribute("data-state"),
+    said: document.getElementById("deskStatus").innerText.trim(),
+    text: document.getElementById("deskScene").innerText,
+    run: deck ? deck.dataset.deckRun : null, lens: deck ? deck.dataset.deckLens : null,
+    team: deck ? deck.querySelector("h3").textContent : null,
+    subject: document.querySelector("#deskScene .desk-scene__subject")?.textContent ?? null,
+    lenses: lenses.map((node) => node && node.textContent),
+    pressed: lenses.map((node) => node && node.getAttribute("aria-pressed")),
+    traceShown: Boolean(trace) && !trace.hidden && trace.getBoundingClientRect().height > 0,
+    fleetShown: Boolean(fleet) && !fleet.hidden && fleet.getBoundingClientRect().height > 0,
+    steps: document.querySelectorAll("#deskScene .studio-trace__step").length,
+    gates: [...document.querySelectorAll(
+      '#deskScene .studio-trace__step[data-word="needs_decision"]')].map((node) => node.innerText),
+    planets: [...document.querySelectorAll(
+      "#deskScene [data-trassa-instance], #deskScene [data-instance]")].map(
+      (node) => ({id: node.dataset.trassaInstance || node.dataset.instance,
+        shown: node.getBoundingClientRect().width > 0})),
+    chosen: [...document.querySelectorAll("#deskRail [data-task-id]")]
+      .filter((node) => node.getAttribute("aria-pressed") === "true")
+      .map((node) => node.dataset.taskId)};
+}"""
+#: The page hooks `Response.json`, so a test can tell the moment an answer it held back has
+#: been read by the page -- a signal, never a clock.
+LANDING_HOOK = """(() => {
+  window.__landed = [];
+  const real = Response.prototype.json;
+  Response.prototype.json = function () {
+    const path = new URL(this.url).pathname;
+    return real.call(this).finally(() => window.__landed.push(path));
+  };
+})();"""
+ALL_REGIONS = ["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]
+
+
+def _choose(page: Page, task_id: str) -> None:
+    page.locator(f'#deskRail [data-task-id="{task_id}"]').click()
+
+
+def _scene_settled(page: Page, word: str) -> None:
+    page.wait_for_function(
+        "(word) => document.getElementById('deskScene').getAttribute('data-state') === word",
+        arg=word)
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_choosing_a_task_mounts_the_trace_for_its_newest_run_and_only_reads(desk_in, language):
+    window = desk_in(language)
+    words = SCENE_WORDS[language]
+    before = window.page.evaluate(SCENE_FACTS)
+    assert before["scene"] == "empty" and before["text"].strip() == words["choose"]
+    _choose(window.page, "task-fix")
+    _scene_settled(window.page, "ready")
+    facts = window.page.evaluate(SCENE_FACTS)
+    assert (facts["run"], facts["lens"], facts["team"]) == ("run-fix-new", "trassa", words["team"])
+    assert (facts["shell"], facts["subject"], facts["chosen"]) == (
+        "ready", words["subject"], ["task-fix"])
+    assert facts["lenses"] == words["lenses"] and facts["pressed"] == ["true", "false"]
+    assert facts["traceShown"] and not facts["fleetShown"] and facts["steps"] == FIX_STEPS
+    assert len(facts["gates"]) == 1 and words["gate"] in facts["gates"][0]
+    assert [row["id"] for row in facts["planets"] if row["shown"]] == ["claude-dev"]
+    detail = sorted(path for _method, path, _header in window.asked
+                    if path.startswith("/command/runs/") and not path.endswith("/automation"))
+    assert detail == ["/command/runs/run-fix-new", "/command/runs/run-fix-new/controls"]
+    assert {method for method, _path, _header in window.asked} == {"GET"}
+    assert not any(header for _method, _path, header in window.asked)
+    assert window.problems == []
+
+
+def test_the_orbit_lens_shows_the_participants_of_the_run_and_the_trace_gives_way(desk_in):
+    window = desk_in("en")
+    _choose(window.page, "task-fix")
+    _scene_settled(window.page, "ready")
+    window.page.locator('#deskScene [data-run-lens="orbit"]').click()
+    facts = window.page.evaluate(SCENE_FACTS)
+    assert facts["lens"] == "orbit" and facts["pressed"] == ["false", "true"]
+    assert facts["fleetShown"] and not facts["traceShown"]
+    assert [row["id"] for row in facts["planets"] if row["shown"]] == ["claude-dev"]
+    assert window.problems == []
+
+
+def test_reading_the_same_run_again_keeps_the_lens_a_person_chose_and_another_run_starts_over(
+        desk_in):
+    window = desk_in("en")
+    page = window.page
+    _choose(page, "task-fix")
+    _scene_settled(page, "ready")
+    page.locator('#deskScene [data-run-lens="orbit"]').click()
+    _choose(page, "task-fix")
+    _scene_settled(page, "ready")
+    assert page.evaluate(SCENE_FACTS)["lens"] == "orbit"
+    _choose(page, "task-docs")
+    _scene_settled(page, "ready")
+    assert page.evaluate(SCENE_FACTS)["lens"] == "trassa"
+    assert window.problems == []
+
+
+def test_a_run_read_again_stays_on_screen_as_stale_until_the_new_answer_lands(
+        chromium: Browser, seeded_url: str):
+    """The earlier drawing is kept and named for what it is, and the shell says so."""
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    uncaught: list[str] = []
+    page.on("pageerror", lambda error: uncaught.append(str(error)))
+    held: list[Route] = []
+    reads: list[str] = []
+
+    def second_read_held(route: Route) -> None:
+        reads.append(route.request.url)
+        if len(reads) == 1:
+            route.continue_()
+        else:
+            held.append(route)
+
+    page.route("**/command/runs/run-fix-new", second_read_held)
+    try:
+        page.goto(f"{seeded_url}#lang=en", wait_until="load")
+        page.wait_for_function(SETTLED)
+        _choose(page, "task-fix")
+        _scene_settled(page, "ready")
+        with page.expect_request("**/command/runs/run-fix-new"):
+            _choose(page, "task-fix")
+        _scene_settled(page, "stale")
+        stale = page.evaluate(SCENE_FACTS)
+        held[0].continue_()
+        _scene_settled(page, "ready")
+        ready = page.evaluate(SCENE_FACTS)
+    finally:
+        page.unroute_all(behavior="ignoreErrors")
+        context.close()
+    assert (stale["scene"], stale["shell"], stale["run"]) == ("stale", "stale", "run-fix-new")
+    assert stale["said"] == "Shown from an earlier read; a newer one has not landed."
+    assert (ready["scene"], ready["shell"], ready["said"]) == ("ready", "ready", "Read.")
+    assert uncaught == []
+
+
+def test_a_task_with_no_run_says_so_and_choosing_back_restores_the_scene(desk_in):
+    window = desk_in("en")
+    page = window.page
+    _choose(page, "task-idle")
+    empty = page.evaluate(SCENE_FACTS)
+    assert (empty["scene"], empty["shell"], empty["run"]) == ("empty", "ready", None)
+    assert empty["text"].strip() == SCENE_WORDS["en"]["none"]
+    assert empty["chosen"] == ["task-idle"]
+    _choose(page, "task-fix")
+    _scene_settled(page, "ready")
+    assert page.evaluate(SCENE_FACTS)["run"] == "run-fix-new"
+    _choose(page, "task-docs")
+    _scene_settled(page, "ready")
+    assert page.evaluate(SCENE_FACTS)["run"] == "run-docs"
+    assert window.problems == []
+
+
+def test_a_late_answer_for_a_task_left_behind_never_lands(chromium: Browser, seeded_url: str):
+    """The read of `run-fix-new` is held; another task is chosen and drawn; the held one is
+    then let go and read by the page -- and the scene stays the other task's."""
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    uncaught: list[str] = []
+    page.on("pageerror", lambda error: uncaught.append(str(error)))
+    page.add_init_script(LANDING_HOOK)
+    held: list[Route] = []
+    page.route("**/command/runs/run-fix-new", lambda route: held.append(route))
+    try:
+        page.goto(f"{seeded_url}#lang=en", wait_until="load")
+        page.wait_for_function(SETTLED)
+        with page.expect_request("**/command/runs/run-fix-new"):
+            _choose(page, "task-fix")
+        _scene_settled(page, "loading")
+        assert len(held) == 1
+        _choose(page, "task-docs")
+        _scene_settled(page, "ready")
+        held[0].continue_()
+        page.wait_for_function("() => window.__landed.includes('/command/runs/run-fix-new')")
+        facts = page.evaluate(SCENE_FACTS)
+    finally:
+        page.unroute_all(behavior="ignoreErrors")
+        context.close()
+    assert (facts["run"], facts["scene"], facts["chosen"]) == ("run-docs", "ready", ["task-docs"])
+    assert facts["subject"] == "Write the docs · run run-docs"
+    assert uncaught == []
+
+
+@pytest.mark.parametrize("how,word,said", [
+    ("refused", "refused", "This read was refused. Nothing below is newer than the refusal."),
+    ("unanswered", "failed", "This read failed. Nothing below is newer than the failure."),
+], ids=["refused", "unanswered"])
+def test_a_run_read_that_is_not_answered_leaves_the_scene_empty_in_the_word_it_earned(
+        chromium: Browser, seeded_url: str, how: str, word: str, said: str):
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    uncaught: list[str] = []
+    page.on("pageerror", lambda error: uncaught.append(str(error)))
+    _answer(page, "**/command/runs/run-fix-new", how)
+    try:
+        page.goto(f"{seeded_url}#lang=en", wait_until="load")
+        page.wait_for_function(SETTLED)
+        _choose(page, "task-fix")
+        _scene_settled(page, word)
+        facts = page.evaluate(SCENE_FACTS)
+    finally:
+        context.close()
+    assert (facts["scene"], facts["shell"], facts["said"]) == (word, word, said)
+    assert facts["run"] is None and facts["text"].strip() == ""
+    assert facts["chosen"] == ["task-fix"]
+    assert uncaught == []
+
+
+def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
+        chromium: Browser, seeded_url: str):
+    """The run read names the task it belongs to; an answer for another task is refused."""
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+
+    def wrong_task(route: Route) -> None:
+        # Rewritten whole and consistently, so the Studio's boundary finds nothing torn and
+        # only the desk's own check of whose run this is can refuse it.
+        body = route.fetch().json()
+        body["config"]["task"] = {"id": "task-docs", "work_scope": "task-docs"}
+        body["task"] = {"id": "task-docs", "title": "Write the docs", "unreadable": False,
+                        "work_scope": "task-docs"}
+        route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+    page.route("**/command/runs/run-fix-new", wrong_task)
+    try:
+        page.goto(f"{seeded_url}#lang=en", wait_until="load")
+        page.wait_for_function(SETTLED)
+        _choose(page, "task-fix")
+        _scene_settled(page, "failed")
+        facts = page.evaluate(SCENE_FACTS)
+    finally:
+        context.close()
+    assert facts["run"] is None and facts["shell"] == "failed"
+
+
+def test_the_page_does_not_scroll_sideways_with_a_run_on_the_scene_at_any_swept_width(desk_in):
+    window = desk_in("en")
+    page = window.page
+    _choose(page, "task-fix")
+    _scene_settled(page, "ready")
+    for lens in ("trassa", "orbit"):
+        page.locator(f'#deskScene [data-run-lens="{lens}"]').click()
+        for width in SWEPT_WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            facts = page.evaluate(LAYOUT_FACTS, ALL_REGIONS)
+            assert facts["overflow"] <= 0, (lens, width, facts["overflow"])
     assert window.problems == []

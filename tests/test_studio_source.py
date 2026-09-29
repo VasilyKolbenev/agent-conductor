@@ -69,7 +69,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
            "desk-transport.js", "desk.js", "desk-copy.js", "desk-status.js",
-           "desk-status-copy.js", "desk-rail.js",
+           "desk-status-copy.js", "desk-rail.js", "desk-scene.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-copy.js", "desk-wizard.js")
@@ -142,7 +142,14 @@ PERMITTED_IMPORTS = {
     "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js",
                           "./studio-preferences.js", "./studio-tasks-model.js",
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
-                          "./studio-focus.js", "./desk-rail.js"}),
+                          "./studio-situation.js", "./studio-controls.js",
+                          "./studio-focus.js", "./desk-rail.js", "./desk-scene.js"}),
+    #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
+    #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
+    #: it reaches, and says its own sentences through the catalogue. It may import no store,
+    #: no transport and no other screen.
+    "desk-scene.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                "./studio-participants.js"}),
     #: The rail, drawn: `mountRail` only. It reads the word of each row from the status
     #: rules and the newest-run rule, builds elements through the view's helper and says
     #: the words through the catalogue, and may import no store, no transport and no other
