@@ -60,9 +60,11 @@ def _inline_faults(html: str, expected_scripts: tuple[str, ...]) -> list[str]:
         faults.append("the script tags are not exactly the expected ones")
     if re.search(r"<style\b", html, re.IGNORECASE):
         faults.append("the page carries a <style> block")
-    if re.search(r"\sstyle\s*=", html, re.IGNORECASE):
+    # An attribute name follows whitespace or a `/`: the tokenizer takes both as the
+    # separator, so `<a/style="x">` is a style attribute.
+    if re.search(r"[\s/]style\s*=", html, re.IGNORECASE):
         faults.append("the page carries an inline style attribute")
-    if re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE):
+    if re.search(r"[\s/]on[a-z]+\s*=", html, re.IGNORECASE):
         faults.append("the page carries an inline handler")
     return faults
 
@@ -177,7 +179,18 @@ BROKEN = {
         CLEAN.replace("<a ", "<a style='color:red' "), "style attribute"),
     "an upper-case style attribute": (
         CLEAN.replace("<a ", '<a STYLE="color:red" '), "style attribute"),
+    # The tokenizer reads a `/` before an attribute name as a separator, as it reads a space:
+    # `<a/style="x">` carries a style attribute, and so does `<a/onclick="x">` a handler.
+    "a style attribute after a slash": (
+        CLEAN.replace("<a ", '<a/style="color:red" '), "style attribute"),
+    "a style attribute after a tab": (
+        CLEAN.replace("<a ", '<a\tstyle="color:red" '), "style attribute"),
+    "a style attribute after a newline": (
+        CLEAN.replace("<a ", '<a\nstyle="color:red" '), "style attribute"),
     "an inline handler": (CLEAN.replace("<a ", '<a onclick="run()" '), "handler"),
+    "a handler after a slash": (CLEAN.replace("<a ", '<a/onclick="run()" '), "handler"),
+    "a handler after a tab": (CLEAN.replace("<a ", '<a\tonclick="run()" '), "handler"),
+    "a handler after a newline": (CLEAN.replace("<a ", '<a\nonclick="run()" '), "handler"),
     "no language": (CLEAN.replace(' lang="en"', ""), "lang"),
     "an empty title": (CLEAN.replace(f"<title>{PRODUCT_NAME}</title>", "<title> </title>"),
                        "title"),
