@@ -93,7 +93,7 @@ def test_a_constructor_refuses_an_identity_that_is_not_a_project_identity(tmp_pa
         serving(tmp_path, identity={"project_id": PROJECT_ID})
 
 
-# --- the claim, on the read road and on the write road ---------------------------------------------
+# --- the claim, on the read road and on the write road ---------------------------------------
 
 
 @pytest.mark.parametrize("claims", [(OTHER_ID,), ("not-an-id",), (PROJECT_ID, PROJECT_ID)],
@@ -134,7 +134,7 @@ def test_the_right_claim_lets_a_body_that_is_wrong_reach_the_contract(tmp_path):
     assert refused(answer) == (422, "contract_invalid")
 
 
-# --- the order of the transport does not change --------------------------------------------------------
+# --- the order of the transport does not change ----------------------------------------------
 
 
 def test_a_wrong_host_with_a_wrong_claim_is_a_wrong_host(tmp_path):
