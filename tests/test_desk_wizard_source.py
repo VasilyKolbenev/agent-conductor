@@ -127,6 +127,17 @@ def _blocks(source: str, tag_words: tuple[str, ...]) -> list[str]:
     return found
 
 
+def test_the_renderer_draws_no_radio_or_checkbox_input_the_focus_net_cannot_restore():
+    """`restoreFocus` calls `setSelectionRange`, which a radio or a checkbox input refuses.
+
+    A keyed one throws inside the host's redraw and drops the asks the same event made, so a
+    choice is a button that says whether it is on (`role` radio or switch, `aria-checked`).
+    """
+    code = _code(PANEL / RENDERER)
+    assert not re.search(r'type: "(?:radio|checkbox)"', code)
+    assert "aria-checked" in code
+
+
 def test_every_control_the_renderer_builds_carries_a_focus_key():
     blocks = _blocks(_code(PANEL / RENDERER), ("button", "input", "textarea", "select"))
     assert len(blocks) >= 2

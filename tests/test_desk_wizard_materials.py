@@ -341,6 +341,18 @@ def test_the_document_picker_asks_for_the_list_once_lists_what_is_left_and_refus
     assert out["stranger"] == [0, "doc_unknown"]
 
 
+def test_the_document_picker_closes_without_adding_anything_and_asks_nothing_more():
+    out = run_js(CARDS + """
+      const picked = wiz.stepWizard(opened(), {type: "material-add", kind: "project_doc"});
+      const closed = wiz.stepWizard(picked.state, {type: "picker-close"});
+      const twice = wiz.stepWizard(closed.state, {type: "picker-close"});
+      show({open: [wiz.documentPicker(picked.state).open, wiz.documentPicker(closed.state).open],
+        items: closed.state.materials.items.length, asks: closed.asks.length,
+        twice_same: twice.state === closed.state});
+    """, DATA)
+    assert out == {"open": [True, False], "items": 0, "asks": 0, "twice_same": True}
+
+
 def test_the_materials_step_is_complete_only_with_finished_cards_within_the_limits():
     out = run_js(CARDS + """
       const base = opened();

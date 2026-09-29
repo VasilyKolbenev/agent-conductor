@@ -160,6 +160,7 @@ def bench(chromium: Browser, desk_url: str) -> Iterator[Bench]:
     context = chromium.new_context(viewport={"width": 1100, "height": 1500})
     try:
         page = context.new_page()
+        page.set_default_timeout(8000)
         problems = _watch(page)
         requests: list[tuple[str, str]] = []
         page.on("request", lambda request: requests.append((request.method, request.url)))
@@ -168,8 +169,3 @@ def bench(chromium: Browser, desk_url: str) -> Iterator[Bench]:
         yield Bench(page, problems, requests)
     finally:
         context.close()
-
-
-def as_json(value: Any) -> str:
-    """A value as the JSON a test hands to `page.evaluate` in a string."""
-    return json.dumps(value)

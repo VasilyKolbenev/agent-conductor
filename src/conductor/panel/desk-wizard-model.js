@@ -560,6 +560,8 @@ const HANDLERS = {
   "material-edit": editMaterial,
   "material-remove": removeMaterial,
   "material-mode": setMode,
+  "picker-close": (state) => (state.materials.picker
+    ? evolve(state, {materials: {...state.materials, picker: false}}) : state),
   "cycle-choose": chooseCycle,
   "role-assign": assignRole,
   "instruction-edit": editInstruction,
