@@ -69,6 +69,8 @@ async () => {
     return settle();
   };
   host.dispatch = dispatch;
+  //: The clock the desk will tick: a test moves it, the wizard never reads one.
+  host.tick = (now) => dispatch({type: "tick", now});
   host.open = async ({locale, opening, auto}) => {
     document.getElementById("wizardBench")?.remove();
     host.mount = document.createElement("div");
@@ -160,6 +162,18 @@ class Bench:
     def dispatch(self, **event: Any) -> None:
         self.call("dispatch", event)
 
+    def tick(self, now: str) -> None:
+        """Move the host's clock to `now` (an ISO instant): the countdown of step 6 follows."""
+        self.call("tick", now)
+
+    def exit(self) -> Any:
+        """What the model says about leaving now (`wizardExit`), or None."""
+        return self.page.evaluate("() => window.host.exit")
+
+    def left(self) -> list[Any]:
+        """How many times the wizard was closed, and with which outcome."""
+        return self.page.evaluate("() => [window.host.closed, window.host.outcome]")
+
     def answer(self, name: str, payload: Any = None, *, subject: str | None = None,
                status: str = "accepted", code: str | None = None) -> None:
         self.call("answer", name, {"status": status, "code": code, "payload": payload}, subject)
@@ -246,13 +260,15 @@ def wizard_reads(**over: Any) -> dict[str, Any]:
 
 
 def to_step(bench: Bench, lang: str, step: str, *, starter: str | None = None,
-            view: bool = False, reads: dict[str, Any] | None = None) -> None:
+            view: bool = False, reads: dict[str, Any] | None = None,
+            opening: dict[str, Any] | None = None) -> None:
     """Open the wizard, fill step 1 and press Next until `step` is on screen.
 
     The answers must let every step on the way be left: for the cycle step the flow of the
-    preselected card, for the roles step the harness roster and the quotas.
+    preselected card, for the roles step the harness roster and the quotas. `opening` is what the
+    desk hands the wizard besides the mode (the owner's name, for one).
     """
-    bench.open(lang, starter=starter, view=view, auto=reads or wizard_reads())
+    bench.open(lang, starter=starter, view=view, auto=reads or wizard_reads(), **(opening or {}))
     fill_task(bench, starter=starter)
     advance(bench, step)
 
@@ -265,7 +281,7 @@ def fill_task(bench: Bench, *, starter: str | None = None) -> None:
 
 def advance(bench: Bench, step: str) -> None:
     """Press Next, step by step, until `step` is on screen."""
-    for following in ("materials", "cycle", "roles", "prepare"):
+    for following in ("materials", "cycle", "roles", "prepare", "run"):
         if bench.root().get_attribute("data-wizard-current") == step:
             break
         expect(bench.control("wizard:next")).to_be_enabled()

@@ -44,12 +44,13 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
 import {flowWriteRequest} from "./desk-wizard-input.js";
-import {cardActor, cardEnqueue, cardRefresh, cardReread, cardSeen, cardStart, cardTick,
-  chainLinks, landCard, landRun, launchFacts, launchWanted, resumeEdit,
+import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardStart, cardTick,
+  chainLinks, isPrepared, landCard, landRun, launchFacts, launchWanted, resumeEdit,
   resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
   runRetry, runStart, runWanted, wizardExit, wizardHash, prepareFacts as judgeFacts,
   prepareGate as judgePrepare} from "./desk-wizard-run.js";
-import {initialLaunch} from "./desk-wizard-launch.js";
+import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_WHY, initialLaunch}
+  from "./desk-wizard-launch.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
 
@@ -61,7 +62,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   taskText, utf8Bytes,
   assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
-  CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS,
+  CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_WHY,
   chainLinks, flowWriteRequest, launchFacts, resumeView, wizardExit, wizardHash};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
@@ -75,7 +76,7 @@ export const REASONS = Object.freeze([
   "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
   "instruction_too_large",
   "instruction_argv_over", "binding_pending", "binding_rows", "seed_needs_git",
-  "resume_pending"]);
+  "resume_pending", "prepare_not_done"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
@@ -297,9 +298,16 @@ function chooseCycle(state, event) {
 
 // -- the steps and their gates ---------------------------------------------------------
 
+//: Step 5 is complete when the run is prepared: the chain done, the preview made, nothing edited
+//: since. That is what opens step 6, whose card is drawn from that preview.
+function preparedGate(state) {
+  return isPrepared(state) ? null : "prepare_not_done";
+}
+
 //: Why a step is not complete yet, as a closed code (null when it is). One entry per built
 //: step; a step with no entry has nothing to refuse.
-const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate, roles: rolesGate};
+const GATES = {task: taskGate, materials: materialsGate, cycle: cycleGate, roles: rolesGate,
+  prepare: preparedGate};
 const PUBLISHERS = {task: taskPublication, materials: materialsPublication,
   cycle: cyclePublication, roles: rolesPublication};
 
@@ -694,6 +702,7 @@ const HANDLERS = {
   "launch-refresh": cardRefresh,
   "launch-reread": cardReread,
   "launch-seen": cardSeen,
+  "launch-info": cardInfo,
   "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
     ? evolve(state, {closing: "confirm"}) : state),
   "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),

@@ -29,9 +29,9 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                  "./desk-wizard-prep.js"},
         "desk-wizard-prep.js": {"./desk-wizard-digest.js"},
         "desk-wizard-launch.js": {"./desk-wizard-digest.js"},
-        "desk-wizard-run.js": {"./desk-wizard-base.js", "./desk-wizard-input.js",
-                               "./desk-wizard-launch.js", "./desk-wizard-prep.js",
-                               "./desk-wizard-team.js"},
+        "desk-wizard-run.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                               "./desk-wizard-input.js", "./desk-wizard-launch.js",
+                               "./desk-wizard-prep.js", "./desk-wizard-team.js"},
         "desk-wizard-base.js": {"./studio-tasks-model.js", "./desk-wizard-materials.js",
                                 "./desk-wizard-roles.js"},
         "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
@@ -45,15 +45,18 @@ RENDERER = "desk-wizard.js"
 #: the two others hold what it draws from: the controls every step is made of, and step 5.
 DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
                     "./desk-wizard-copy.js", "./desk-wizard-draw.js",
-                    "./desk-wizard-prepare-view.js"},
+                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js"},
          "desk-wizard-draw.js": {"./command-view.js"},
          "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
-                                         "./desk-wizard-model.js"}}
+                                         "./desk-wizard-model.js"},
+         "desk-wizard-card.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                 "./desk-wizard-model.js"}}
 #: What each drawing module hands the ones above it, and nothing else.
 DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
                  "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
                                          "timeText"],
-                 "desk-wizard-prepare-view.js": ["prepareBody"]}
+                 "desk-wizard-prepare-view.js": ["prepareBody"],
+                 "desk-wizard-card.js": ["runBody"]}
 #: Data only: the catalogue holds strings and nothing else.
 DATA = ("desk-wizard-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
@@ -71,11 +74,6 @@ VENDOR_WORDS = ("claude", "codex", "grok", "kimi", "qwen", "deepseek", "anthropi
 #: The events only the host sends: the wizard never emits them from a control. `tick` is the host's
 #: clock: the model holds no clock, so the seconds of a countdown arrive as an event.
 HOST_EVENTS = {"open", "answered", "tick"}
-#: The events whose control is drawn by the commit that follows the one that made them. Named by
-#: event, and held in both directions by the two tests below: an event listed here that a control
-#: already sends, or one that is neither sent nor listed, fails.
-NOT_YET_DRAWN = {"actor-edit", "launch-start", "launch-enqueue", "launch-refresh", "launch-reread",
-                 "launch-seen"}
 
 
 def _source(name: str) -> str:
@@ -155,15 +153,8 @@ def test_the_renderer_can_cause_every_event_the_model_takes_but_the_hosts_own():
     """An event no control sends is a way to change the wizard that nobody can reach."""
     events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
     emitted = _emitted(_drawn_code(), events)
-    left = set(events) - HOST_EVENTS - NOT_YET_DRAWN - emitted
+    left = set(events) - HOST_EVENTS - emitted
     assert left == set(), left
-
-
-def test_an_event_listed_as_not_yet_drawn_is_one_no_control_sends_yet():
-    """The exemption ends the moment its control exists, so it cannot outlive it."""
-    events = run_js('console.log(JSON.stringify(wiz.EVENTS));')
-    assert NOT_YET_DRAWN <= set(events), NOT_YET_DRAWN - set(events)
-    assert not NOT_YET_DRAWN & _emitted(_drawn_code(), events), "drawn now: delete it from the set"
 
 
 def _blocks(source: str, tag_words: tuple[str, ...]) -> list[str]:

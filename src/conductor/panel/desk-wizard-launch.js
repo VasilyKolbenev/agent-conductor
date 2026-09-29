@@ -23,7 +23,17 @@ const INSTANT = new RegExp("^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{
   + "(?:\\.[0-9]+)?(?:Z|\\+00:00)$");
 const SLOT_STATES = Object.freeze(["free", "busy", "stuck", "unavailable"]);
 //: The lines of the card, top to bottom.
-const CARD_LINES = Object.freeze(["actions", "time", "window", "steps", "harnesses", "receives"]);
+export const CARD_LINES = Object.freeze(["actions", "time", "window", "steps", "harnesses",
+  "receives"]);
+//: Every reason the card gives for a button that cannot be pressed (`why`, `blocked`), and every
+//: note and refusal it says: closed words, each with a message in both languages. A reason the
+//: queue itself sends that is not here is said by its code.
+export const LAUNCH_WHY = Object.freeze(["slot_reading", "slot_unread", "busy", "exhausted",
+  "card_changed", "actor_invalid", "project_not_active", "owner_required", "server_stopping"]);
+export const LAUNCH_NOTES = Object.freeze(["slot_busy", "project_not_active", "stale",
+  "not_written"]);
+export const LAUNCH_REFUSALS = Object.freeze(["authorization_refused", "queue_full",
+  "queue_not_ready", "server_stopping", "contract_invalid"]);
 //: Which line of the card each field of the terms is drawn on: a replaced card marks these lines.
 const LINE_OF = Object.freeze({max_actions: "actions", max_action_seconds: "time",
   max_total_task_seconds: "time", duration_seconds: "window", node_limits: "steps",
@@ -62,7 +72,22 @@ export function initialLaunch(actor) {
   return {actor, card: 0, preview: null, digest: null, changed: [], seen: true, now: null,
     repeats: 0, previews: 0, refreshWanted: false, repeatFailed: false, error: null,
     reads: {queue: null, automation: null, run: null}, seq: 0, phase: "idle", sending: null,
-    note: null, refusal: null, result: null, settled: [], attempts: {}};
+    note: null, refusal: null, result: null, settled: [], attempts: {}, infos: []};
+}
+
+//: The explanations the card can open behind an ⓘ: the time it reserves, and the short digest of
+//: each input and each instruction (named by the reference or the step it belongs to).
+const INFO = /^(?:time|input:[a-z0-9-]{1,64}|instruction:[A-Za-z0-9._-]{1,128})$/;
+
+/**
+ * Open or close one explanation behind an ⓘ. Which are open is the model's, not the page's, so a
+ * redraw (the countdown redraws every second) keeps them open; only a name the card draws counts.
+ */
+export function toggleInfo(launch, name) {
+  if (typeof name !== "string" || !INFO.test(name)) return launch;
+  const infos = launch.infos.includes(name) ? launch.infos.filter((one) => one !== name)
+    : [...launch.infos, name].slice(-32);
+  return {...launch, infos};
 }
 
 // -- the preview -------------------------------------------------------------------------
@@ -202,22 +227,27 @@ function heldBy(launch) {
   return isActor(launch.actor) ? null : "actor_invalid";
 }
 
+/** Whether the queue read says the project is only being viewed (nothing starts, all queues). */
+export function isViewing(launch) {
+  return slotOf(launch)?.reason_code === "project_not_active";
+}
+
 /**
  * The controls of the card: `start` and `enqueue` (each `{shown, blocked}`), whether to point at
- * «Освободить слот», the reason when nothing can be pressed, and the caption under the queue
- * button.
+ * «Освободить слот», the reason when nothing can be pressed, the caption under the queue button,
+ * and `holder`, the run that holds the slot (null when nothing does).
  */
 export function controlsOf(launch) {
-  const closed = {start: NONE, enqueue: NONE, release: false, caption: null};
+  const closed = {start: NONE, enqueue: NONE, release: false, caption: null, holder: null};
   if (launch.preview === null) return {...closed, why: null};
   const slot = slotOf(launch);
   if (slot === null) return {...closed, why: launch.reads.queue === null ? "slot_reading"
     : "slot_unread"};
   const row = slotRow(slot), held = heldBy(launch);
   const hold = (one) => (one.shown && one.blocked === null ? {...one, blocked: held} : one);
-  const view = slot.reason_code === "project_not_active";
   return {start: hold(row.start), enqueue: hold(row.enqueue), release: row.release, why: row.why,
-    caption: row.enqueue.shown ? (view ? "queue_view" : "queue") : null};
+    caption: row.enqueue.shown ? (isViewing(launch) ? "queue_view" : "queue") : null,
+    holder: slot.run_id ?? null};
 }
 
 // -- the asks ----------------------------------------------------------------------------

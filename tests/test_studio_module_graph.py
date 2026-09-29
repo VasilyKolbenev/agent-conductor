@@ -119,7 +119,8 @@ PERMITTED_IMPORTS = {
     #: screen -- an edit is an event it hands to its host.
     "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
                                  "./command-view.js", "./studio-i18n.js",
-                                 "./desk-wizard-draw.js", "./desk-wizard-prepare-view.js"}),
+                                 "./desk-wizard-draw.js", "./desk-wizard-prepare-view.js",
+                                 "./desk-wizard-card.js"}),
     #: The controls every step of the wizard is drawn from (a keyed button, a choice, a control
     #: whose door is not open, a text field, the format of an instant and of a duration). They
     #: build elements through the view's helper and reach nothing else.
@@ -128,6 +129,11 @@ PERMITTED_IMPORTS = {
     #: It draws what the model says, through the shared controls, and never a store or a wire.
     "desk-wizard-prepare-view.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
                                               "./desk-wizard-model.js"}),
+    #: Step 6 drawn: the terms card, the countdown, the owner's name and the buttons the slot
+    #: allows. It draws what the model says through the shared controls, and never a store or a
+    #: wire.
+    "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                      "./desk-wizard-model.js"}),
     #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
     #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
     "desk-wizard-copy.js": frozenset(),
@@ -163,9 +169,9 @@ PERMITTED_IMPORTS = {
     "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
-    "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-input.js",
-                                     "./desk-wizard-launch.js", "./desk-wizard-prep.js",
-                                     "./desk-wizard-team.js"}),
+    "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
+                                     "./desk-wizard-input.js", "./desk-wizard-launch.js",
+                                     "./desk-wizard-prep.js", "./desk-wizard-team.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

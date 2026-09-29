@@ -10,9 +10,10 @@
 // handed in; the model is not imported.
 import {FILL_STEPS, LIMITS, evolve, isLanguage, utf8Bytes} from "./desk-wizard-base.js";
 import {resumeInput, runInput} from "./desk-wizard-input.js";
+import {taskTitleOfRun} from "./desk-wizard-cycle.js";
 import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaunch, isActor,
-  landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch, seenLaunch,
-  tickLaunch} from "./desk-wizard-launch.js";
+  isViewing, landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch,
+  seenLaunch, tickLaunch, toggleInfo} from "./desk-wizard-launch.js";
 import {heldFlow} from "./desk-wizard-team.js";
 import {adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
   linkStates, openResume, resumeAsks, resumeFields, resumeSituation, retryChain, startChain}
@@ -157,19 +158,32 @@ export function resumeEdit(state, event) {
 export function prepareFacts(state, gateOf) {
   const {run} = state, links = chainLinks(state);
   const gate = run.resume === null ? prepareGate(state, gateOf) : resumeGate(state, gateOf);
-  const settled = links.every((row) => row.status === "done" || row.status === "skipped");
   return Object.freeze({phase: run.phase, pressed: run.pressed, links, gate,
     resume: resumeView(state), refusal: run.refusal, readFailed: run.readFailed,
-    prepared: run.phase === "review" && settled, following: followingRunNumber(run)});
+    prepared: preparedBy(run, links), following: followingRunNumber(run)});
+}
+
+//: A run is prepared when its preview is made and every link of the chain stands as written.
+function preparedBy(run, links) {
+  return run.phase === "review"
+    && links.every((row) => row.status === "done" || row.status === "skipped");
+}
+
+/** Whether the run is prepared: the chain done, the preview made, nothing edited since. */
+export function isPrepared(state) {
+  return preparedBy(state.run, chainLinks(state));
 }
 
 /**
  * When the wizard has nothing more to do: a reloaded page finds its run past preparation, or the
- * owner started or queued it. The run for the desk to open, and where it stands.
+ * owner started or queued it. The run for the desk to open, and where it stands. A queue entry in
+ * a project that is only viewed is not an exit: the closing line and the way to the flag are on
+ * the wizard's own screen, and the owner leaves from there.
  */
 export function wizardExit(state) {
   if (state.launch.result !== null) {
-    return {runId: state.run.runId, stage: state.launch.result.kind};
+    const viewed = state.launch.result.kind === "queued" && isViewing(state.launch);
+    return viewed ? null : {runId: state.run.runId, stage: state.launch.result.kind};
   }
   const situation = resumeSituation(state.run);
   return situation !== null && situation.kind === "exit"
@@ -205,6 +219,8 @@ export const cardEnqueue = (state) => withLaunch(state, beginLaunch(state.launch
 export const cardRefresh = (state) => withLaunch(state, refreshLaunch(state.launch));
 export const cardReread = (state) => withLaunch(state, rereadLaunch(state.launch));
 export const cardSeen = (state) => withLaunch(state, seenLaunch(state.launch));
+export const cardInfo = (state, event) => withLaunch(state,
+  toggleInfo(state.launch, event.name));
 
 //: The role of each step of the cycle the run follows, when this window holds it.
 function rolesByStep(state) {
@@ -224,14 +240,24 @@ function seedLine(run) {
   return {kind: "copy", ref, commit: seed.base_commit.slice(0, 7)};
 }
 
+//: The note of the last answer; a taken slot also carries the title of the holder's task when the
+//: lists the wizard read say it, and null when they do not.
+function noteOf(state) {
+  const {note} = state.launch;
+  if (note === null || note.kind !== "slot_busy") return note;
+  return {...note, holderTitle: note.holder === null ? null
+    : taskTitleOfRun(state.reads, note.holder)};
+}
+
 /**
  * What step 6 draws: the card (every number the server's), the controls the slot allows, the
  * countdown, and what the last answer said.
  */
 export function launchFacts(state) {
   const {launch} = state, seconds = remaining(launch);
-  return Object.freeze({phase: launch.phase, error: launch.error, note: launch.note,
-    refusal: launch.refusal, result: launch.result, actor: launch.actor,
+  return Object.freeze({phase: launch.phase, error: launch.error, note: noteOf(state),
+    refusal: launch.refusal, result: launch.result, viewing: isViewing(launch),
+    runId: state.run.runId, infos: launch.infos, actor: launch.actor,
     actorValid: isActor(launch.actor), changed: launch.changed, seen: launch.seen,
     repeatsSpent: repeatsSpent(launch), controls: controlsOf(launch),
     countdown: seconds === null ? null : {seconds, until: launch.preview.valid_until},

@@ -50,6 +50,41 @@ SPEC_WORDS = {
     "wizard.chain.adopt": "Продолжить с записанной расстановкой",
     "wizard.chain.status.done": "сделано", "wizard.chain.status.needed": "нужно",
     "wizard.chain.status.todo": "ещё не начато",
+    "wizard.launch.start": "Запустить", "wizard.launch.enqueue": "Поставить в очередь",
+    "wizard.launch.refresh": "Обновить условия",
+    "wizard.launch.continue_after": "Продолжить после…",
+    "wizard.launch.window_queued": "окно начнётся, когда запуск стартует",
+    "wizard.launch.time_info": "Проверяемый шаг резервирует время дважды — исполнителю и "
+                               "проверяющему.",
+    "wizard.launch.why.project_not_active": "Запуск — только у активного проекта",
+    "wizard.launch.why.owner_required": "Нет владельца проекта",
+    "wizard.launch.why.server_stopping": "Проект останавливается",
+    "wizard.launch.seed_request": "копия HEAD на момент старта; засев сделает активный проект",
+    "wizard.launch.result_queued_view": "В очереди · начнётся после активации проекта",
+    "wizard.launch.caption_queue": "Запуск начнётся сам, когда освободится слот, если условия "
+                                   "не изменятся. Если изменятся — спросим вас снова",
+    "wizard.launch.caption_queue_view": (
+        "Запуск начнётся после активации проекта — сам, только если у проекта стоит «продолжить "
+        "после» с очередью задач; иначе после активации спросим вас снова"),
+}
+#: Messages with parameters whose Russian text, once filled in, is the spec's sentence.
+SPEC_SENTENCES = {
+    ("wizard.launch.actions", (("max", "4"), ("of", "8"))):
+        "Действия: до 4 из 8 на весь запуск",
+    ("wizard.launch.actions_spent", (("max", "4"), ("of", "8"), ("spent", "2"))):
+        "Действия: до 4 из 8 на весь запуск · уже потрачено 2",
+    ("wizard.launch.warn.clean_over_actions", (("actions", "9"), ("limit", "8"))):
+        "Даже без исправлений запуску нужно 9 действий, разрешено 8 — он остановится, не "
+        "дойдя до конца",
+    ("wizard.launch.exhausted", (("spent", "8"), ("of", "8"))):
+        "Лимит запуска исчерпан: потрачено 8 из 8 действий. Продолжить этот запуск нельзя — "
+        "«Доработать» откроет новый запуск",
+    ("wizard.launch.time", (("time", "3 ч 30 мин"),)): "Время работы: до 3 ч 30 мин",
+    ("wizard.launch.window", (("time", "4 ч 30 мин"),)):
+        "Разрешение действует 4 ч 30 мин с момента старта",
+    ("wizard.launch.note.slot_busy", (("holder", "Add a search box"),)):
+        "слот только что занял Add a search box",
+    ("wizard.launch.result_queued", (("position", "3"),)): "В очереди · 3-я",
 }
 FAMILIES = {
     "reasons": "wizard.reason.{}", "git": "wizard.git.{}", "refusals": "wizard.refusal.{}",
@@ -57,7 +92,9 @@ FAMILIES = {
     "later": "wizard.later.{}", "steps": "wizard.step.{}", "kinds": "wizard.role.{}",
     "adds": "wizard.add.{}", "cards": "wizard.card.kind.{}",
     "links": "wizard.chain.link.{}", "statuses": "wizard.chain.status.{}",
-    "stages": "wizard.resume.exit_{}",
+    "stages": "wizard.resume.exit_{}", "launch_why": "wizard.launch.why.{}",
+    "launch_notes": "wizard.launch.note.{}", "launch_refusals": "wizard.launch.refused.{}",
+    "launch_lines": "wizard.launch.line.{}",
 }
 
 
@@ -94,7 +131,9 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
         notes: wiz.NOTES, quota: wiz.QUOTA_REASONS, exits: wiz.GIT_EXITS,
         later: wiz.LATER, steps: wiz.STEPS, adds: wiz.MATERIAL_KINDS, cards: wiz.MATERIAL_KINDS,
         kinds: [...wiz.ROLE_KINDS, "custom"], links: wiz.CHAIN_LINKS,
-        statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS};
+        statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS, launch_why: wiz.LAUNCH_WHY,
+        launch_notes: wiz.LAUNCH_NOTES, launch_refusals: wiz.LAUNCH_REFUSALS,
+        launch_lines: wiz.CARD_LINES};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {
@@ -109,6 +148,32 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
     assert out["missing"] == []
     assert all(size > 0 for size in out["sizes"].values()), out["sizes"]
     assert out["sizes"]["reasons"] >= 23
+
+
+def test_the_specs_sentences_of_the_card_come_out_as_given_once_their_numbers_are_filled_in():
+    out = run_js("""
+      console.log(JSON.stringify(d.map(([key, params]) => i18n.message("ru", key,
+        Object.fromEntries(params)))));
+    """, [[key, list(map(list, params))] for key, params in SPEC_SENTENCES], modules=MODULES)
+    assert out == list(SPEC_SENTENCES.values())
+
+
+def test_every_reason_note_and_refusal_the_card_returns_is_in_its_closed_list():
+    text = (Path(PANEL) / "desk-wizard-launch.js").read_text(encoding="utf-8")
+    held = re.search(r"function heldBy\(launch\) \{\n(.*?)\n\}\n", text, re.S).group(1)
+    controls = re.search(r"export function controlsOf\(launch\) \{\n(.*?)\n\}\n", text,
+                         re.S).group(1)
+    reasons = set(re.findall(r'(?:return|:) "([a-z_]+)";', held)) | set(re.findall(
+        r'"(slot_reading|slot_unread)"', controls))
+    notes = set(re.findall(r'note: \{kind: "([a-z_]+)"', text))
+    out = run_js("""
+      console.log(JSON.stringify({why: wiz.LAUNCH_WHY, notes: wiz.LAUNCH_NOTES,
+        refusals: wiz.LAUNCH_REFUSALS}));
+    """, modules=MODULES)
+    assert reasons and notes
+    assert reasons <= set(out["why"]), reasons - set(out["why"])
+    assert notes <= set(out["notes"]), notes - set(out["notes"])
+    assert {"project_not_active", "owner_required", "server_stopping"} <= set(out["why"])
 
 
 def test_every_diagnostic_code_of_spec_7_4_has_a_message_and_an_unknown_one_has_a_sentence():

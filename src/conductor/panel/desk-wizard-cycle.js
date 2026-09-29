@@ -79,6 +79,13 @@ function titleOf(reads, taskId) {
   return task && task.unreadable !== true && typeof task.title === "string" ? task.title : null;
 }
 
+//: The title of the task a run belongs to, from the two lists the wizard read when it opened; null
+//: when either does not list it. A run that is not in the list is named by its id, never guessed.
+export function taskTitleOfRun(reads, runId) {
+  const run = rowsOf(reads.runs, "runs").find((row) => row.run_id === runId);
+  return run && typeof run.task_id === "string" ? titleOf(reads, run.task_id) : null;
+}
+
 function choiceOf(card) {
   return {kind: card.kind, workflowId: card.workflowId};
 }

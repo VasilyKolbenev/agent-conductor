@@ -12,13 +12,14 @@
 // Every control that takes a key or a click carries a `data-focus` key, so the focus net under
 // the host's render pass can hand the caret back to the control that replaced it; text fields
 // carry `data-focus-value="state"` because the model, not the DOM, holds what was typed. The
-// pieces the controls are made of are `desk-wizard-draw.js`'s, and step 5 is drawn by
-// `desk-wizard-prepare-view.js`.
+// pieces the controls are made of are `desk-wizard-draw.js`'s, step 5 is drawn by
+// `desk-wizard-prepare-view.js` and step 6 by `desk-wizard-card.js`.
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
 import {action, choice, instantText, later, textField, timeText} from "./desk-wizard-draw.js";
 import {prepareBody} from "./desk-wizard-prepare-view.js";
+import {runBody} from "./desk-wizard-card.js";
 import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
   canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading,
   instructionFields, materialsEstimate, nextStep, preselection, rosterStatus, stepStates,
@@ -553,7 +554,7 @@ function rolesBody(ctx) {
 
 //: One body for each built step.
 const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody,
-  prepare: prepareBody};
+  prepare: prepareBody, run: runBody};
 
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {

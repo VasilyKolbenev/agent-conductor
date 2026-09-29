@@ -667,7 +667,7 @@ def test_a_passed_step_whose_gate_fails_again_is_shown_as_needing_attention():
                                 ["cycle", "current", None], ["roles", "ready", None]]
     assert out["lost"] == [["task", "done", None], ["materials", "attention", "git_reading"],
                            ["cycle", "current", None], ["roles", "blocked", "git_reading"],
-                           ["prepare", "blocked", "git_reading"], ["run", "later", None]]
+                           ["prepare", "blocked", "git_reading"], ["run", "blocked", "git_reading"]]
 
 
 def test_flow_asks_wait_for_the_cycle_step_and_the_cycle_step_publishes_the_next_revision():
