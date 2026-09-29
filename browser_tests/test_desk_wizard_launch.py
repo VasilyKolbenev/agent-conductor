@@ -30,6 +30,11 @@ CLOCK = "2026-09-29T10:00:30Z"
 PLAIN = {"authorization_id", "authorized_by", "preview_digest", "supersedes", "terms"}
 START = "wizard:launch:start"
 ENQUEUE = "wizard:launch:enqueue"
+SKIP = "wizard:launch:skip"
+SKIP_YES = "wizard:launch:skip-confirm"
+SKIP_NO = "wizard:launch:skip-cancel"
+SKIP_ACK = "wizard:launch:skip-ack"
+STEPS = ("enqueue", "order", "pause", "resume")
 
 
 def drafts():
@@ -415,4 +420,168 @@ def test_an_explanation_behind_an_info_mark_stays_open_while_the_clock_redraws(b
     assert bench.page.locator("[data-info]").count() == 2
     bench.control("wizard:launch:info:time").click()
     assert bench.page.locator("[data-info]").count() == 1
+    assert bench.problems == []
+
+
+def skips(bench):
+    """How many times each of the four writes of "skip ahead" was sent."""
+    return queue_door.world(bench)["skips"]
+
+
+def steps(bench):
+    """The status the page gives each step of the press, in order."""
+    return bench.page.locator("[data-skip-steps] [data-skip-step]").evaluate_all(
+        "nodes => nodes.map(node => [node.dataset.skipStep, node.dataset.status])")
+
+
+def press_skip(bench):
+    bench.control(SKIP).click()
+    bench.control(SKIP_YES).click()
+
+
+@pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("queue,over,shown", [
+    ("queue_busy_waiting", None, True),
+    ("queue_busy_waiting", {"state": "running", "reason_code": None}, False),
+    ("queue_busy_running", None, False),
+    ("queue_stuck", None, False),
+    ("queue_free", None, False),
+    ("queue_view", None, False),
+])
+def test_skip_ahead_is_offered_only_beside_a_holder_that_waits_for_a_human(
+        bench, lang, queue, over, shown):
+    to_card(bench, lang, queue=queue, holder_over=over, view=queue == "queue_view")
+    assert bench.control(SKIP).count() == (1 if shown else 0)
+    if shown:
+        assert bench.control(SKIP).is_enabled()
+        assert bench.control(SKIP).inner_text() == bench.say("wizard.launch.skip")
+        assert bench.control(ENQUEUE).is_enabled()
+    assert sum(skips(bench).values()) == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_press_opens_a_dialog_naming_the_holder_and_its_grants_end_and_writes_nothing(
+        bench, lang):
+    to_card(bench, lang, queue="queue_busy_waiting")
+    bench.control(SKIP).click()
+    assert bench.text("[data-skip-dialog] p") == bench.say(
+        "wizard.launch.skip_dialog", task="Add a search box", until="2026-09-29 13:00 UTC")
+    assert bench.control(ENQUEUE).count() == 0, "the ordinary buttons wait behind the dialog"
+    assert bench.control(SKIP_YES).inner_text() == bench.say("wizard.launch.skip")
+    assert bench.control(SKIP_NO).inner_text() == bench.say("wizard.launch.skip_cancel")
+    assert sum(skips(bench).values()) == 0
+    bench.control(SKIP_NO).click()
+    assert bench.page.locator("[data-skip-dialog]").count() == 0
+    assert bench.control(ENQUEUE).is_enabled() and bench.control(SKIP).is_enabled()
+    assert sum(skips(bench).values()) == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_one_press_puts_the_new_run_first_and_the_paused_holder_last_in_four_ordered_writes(
+        bench, lang):
+    to_card(bench, lang, queue="queue_with_entries")
+    press_skip(bench)
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_have_text(
+        bench.say("wizard.launch.result_queued", position="1"))
+    held = queue_door.world(bench)
+    sent = [row["name"].replace("launch_skip_", "") for row in held["skip_bodies"]]
+    assert sent == list(STEPS), "each write once, in order"
+    assert [(row["run_id"], row["kind"]) for row in held["queue"]["entries"]] == [
+        ("task-bench-r1", "start"), ("task-c-r1", "start"), ("task-d-r1", "start"),
+        ("task-a-r1", "resume")]
+    assert (held["holder"]["state"], held["holder"]["control"]["control_id"]) == (
+        "paused", "pause-bench0000-1")
+    enqueue, order, pause, resume = (row["body"] for row in held["skip_bodies"])
+    assert set(enqueue) == {"run_id", "start"} and set(enqueue["start"]) == PLAIN
+    assert enqueue["start"]["authorization_id"] == "auth-bench0000-1"
+    assert order == {"expected_revision": 8,
+                     "run_ids": ["task-bench-r1", "task-c-r1", "task-d-r1"]}
+    assert held["skip_bodies"][2]["subject"] == "task-a-r1"
+    assert set(pause) == {"control_id", "authorization_id", "authorization_digest", "action",
+                          "actor", "expected_control_id"}
+    assert (pause["action"], pause["actor"], pause["expected_control_id"]) == (
+        "pause", "vasily", None)
+    assert resume["run_id"] == "task-a-r1"
+    assert resume["resume"]["control_id"] == "resume-bench0000-1"
+    assert resume["resume"]["expected_control_id"] == "pause-bench0000-1"
+    assert steps(bench) == [[name, "done"] for name in STEPS]
+    assert (held["authorize_calls"], held["enqueue_calls"]) == (0, 0), "no direct authorize"
+    assert bench.exit() == {"runId": "task-bench-r1", "stage": "queued"}
+    assert stored(bench) == [0, 0] and {method for method, _ in bench.requests} == {"GET"}
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_pause_that_is_refused_leaves_the_new_run_first_and_the_next_press_starts_at_the_pause(
+        bench, lang):
+    refuse = {"launch_skip_pause": {"code": "contract_invalid", "count": 1}}
+    to_card(bench, lang, queue="queue_with_entries", refuse=refuse)
+    press_skip(bench)
+    reason = bench.say("wizard.launch.skip_stop.contract_invalid")
+    expect(bench.page.locator('[data-skip-stop="contract_invalid"]')).to_have_text(
+        bench.say("wizard.launch.skip_stopped", reason=reason))
+    assert steps(bench) == [["enqueue", "done"], ["order", "done"], ["pause", "todo"],
+                            ["resume", "todo"]]
+    assert bench.text("[data-skip-stands]") == bench.say("wizard.launch.skip_stands_first")
+    assert bench.text("[data-skip-again]") == bench.say("wizard.launch.skip_again")
+    held = queue_door.world(bench)
+    assert held["queue"]["entries"][0]["run_id"] == "task-bench-r1"
+    assert held["holder"]["state"] == "waiting"
+    assert bench.control(ENQUEUE).count() == 0 and bench.exit() is None
+    bench.control(SKIP_ACK).click()
+    assert bench.page.locator("[data-skip-stop]").count() == 0
+    assert bench.control(SKIP).is_enabled()
+    press_skip(bench)
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_be_visible()
+    assert skips(bench) == {"enqueue": 1, "order": 1, "pause": 2, "resume": 1}
+    controls = {row["body"]["control_id"] for row in queue_door.world(bench)["skip_bodies"]
+                if row["name"] == "launch_skip_pause"}
+    assert controls == {"pause-bench0000-1"}, "the same card, the same pause"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_lost_answer_of_the_pause_is_settled_by_the_reads_and_writes_nothing_twice(bench, lang):
+    to_card(bench, lang, queue="queue_with_entries", lose={"launch_skip_pause": 1})
+    press_skip(bench)
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_be_visible()
+    assert skips(bench) == {"enqueue": 1, "order": 1, "pause": 1, "resume": 1}
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_pause_that_never_landed_is_sent_again_without_repeating_the_earlier_steps(bench, lang):
+    to_card(bench, lang, queue="queue_with_entries", drop={"launch_skip_pause": 1})
+    press_skip(bench)
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_be_visible()
+    assert skips(bench) == {"enqueue": 1, "order": 1, "pause": 2, "resume": 1}
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_queue_that_changes_twice_is_shown_as_it_stands_and_is_not_reordered_a_third_time(
+        bench, lang):
+    refuse = {"launch_skip_order": {"code": "queue_changed", "count": 2}}
+    to_card(bench, lang, queue="queue_with_entries", refuse=refuse)
+    press_skip(bench)
+    expect(bench.page.locator('[data-skip-stop="queue_changed"]')).to_be_visible()
+    assert skips(bench) == {"enqueue": 1, "order": 2, "pause": 0, "resume": 0}
+    assert bench.text("[data-skip-queue] h4") == bench.say("wizard.launch.skip_queue")
+    rows = bench.page.locator("[data-skip-queue] li").evaluate_all(
+        "nodes => nodes.map(node => node.textContent)")
+    assert rows == ["1. Refactor the api", "2. Write the release notes", "3. Fix login"]
+    assert bench.page.locator("[data-skip-stands]").count() == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_when_nothing_waits_in_the_queue_the_new_run_is_already_first_and_no_order_is_written(
+        bench, lang):
+    to_card(bench, lang, queue="queue_busy_waiting")
+    press_skip(bench)
+    expect(bench.page.locator('[data-launch-result="queued"]')).to_be_visible()
+    assert skips(bench) == {"enqueue": 1, "order": 0, "pause": 1, "resume": 1}
+    assert steps(bench) == [[name, "done"] for name in STEPS]
     assert bench.problems == []

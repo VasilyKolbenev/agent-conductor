@@ -14,6 +14,8 @@ import {taskTitleOfRun} from "./desk-wizard-cycle.js";
 import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaunch, isActor,
   isViewing, landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch,
   seenLaunch, tickLaunch, toggleInfo} from "./desk-wizard-launch.js";
+import {advanceSkip, beginSkip, cancelSkip, confirmSkip, landSkip, skipAsks, skipFacts}
+  from "./desk-wizard-skip.js";
 import {heldFlow} from "./desk-wizard-team.js";
 import {adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initialRun, landChain,
   linkStates, openResume, resumeAsks, resumeFields, resumeSituation, retryChain, startChain}
@@ -200,14 +202,19 @@ function withLaunch(state, launch) {
   return launch === state.launch ? state : evolve(state, {launch});
 }
 
-/** The reads, the write and the repeated preview the card calls for now. */
+/** The reads, the write and the repeated preview the card calls for now, and the press's own. */
 export function launchWanted(state) {
-  return launchAsks(state.launch, launchCtx(state));
+  const ctx = launchCtx(state);
+  return [...launchAsks(state.launch, ctx), ...skipAsks(state.launch, ctx)];
 }
 
-/** Fold one answer of the card in. */
+/** Fold one answer of the card in (a write of «Пропустить вперёд» is folded by its own step). */
 export function landCard(state, ask, result) {
-  return withLaunch(state, landLaunch(state.launch, launchCtx(state), ask, result));
+  const ctx = launchCtx(state);
+  const launch = ask.name.startsWith("launch_skip_")
+    ? landSkip(state.launch, ctx, ask, result)
+    : advanceSkip(landLaunch(state.launch, ctx, ask, result), ctx);
+  return withLaunch(state, launch);
 }
 
 export const cardTick = (state, event) => withLaunch(state,
@@ -221,6 +228,9 @@ export const cardReread = (state) => withLaunch(state, rereadLaunch(state.launch
 export const cardSeen = (state) => withLaunch(state, seenLaunch(state.launch));
 export const cardInfo = (state, event) => withLaunch(state,
   toggleInfo(state.launch, event.name));
+export const cardSkip = (state) => withLaunch(state, beginSkip(state.launch));
+export const cardSkipConfirm = (state) => withLaunch(state, confirmSkip(state.launch));
+export const cardSkipCancel = (state) => withLaunch(state, cancelSkip(state.launch));
 
 //: The role of each step of the cycle the run follows, when this window holds it.
 function rolesByStep(state) {
@@ -257,7 +267,9 @@ export function launchFacts(state) {
   const {launch} = state, seconds = remaining(launch);
   return Object.freeze({phase: launch.phase, error: launch.error, note: noteOf(state),
     refusal: launch.refusal, result: launch.result, viewing: isViewing(launch),
-    runId: state.run.runId, infos: launch.infos, actor: launch.actor,
+    runId: state.run.runId, infos: launch.infos,
+    skip: skipFacts(launch, launchCtx(state), (runId) => taskTitleOfRun(state.reads, runId)),
+    actor: launch.actor,
     actorValid: isActor(launch.actor), changed: launch.changed, seen: launch.seen,
     repeatsSpent: repeatsSpent(launch), controls: controlsOf(launch),
     countdown: seconds === null ? null : {seconds, until: launch.preview.valid_until},

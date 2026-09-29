@@ -580,4 +580,55 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.result_queued_view": ["Queued · will start after the project is activated",
     "В очереди · начнётся после активации проекта"],
   "wizard.launch.continue_after": ["Continue after…", "Продолжить после…"],
+  // -- step 6: skip ahead from the card ---------------------------------------------------
+  "wizard.launch.skip": ["Skip ahead", "Пропустить вперёд"],
+  "wizard.launch.skip_cancel": ["Cancel", "Отмена"],
+  "wizard.launch.skip_holder_unknown": ["The run that holds the slot",
+    "Запуск, который держит слот"],
+  "wizard.launch.skip_dialog": ["{task} will be paused and will continue after the queue. Its "
+    + "permission lasts until {until} and is not extended in the meantime.",
+  "{task} встанет на паузу и продолжит после очереди. Его разрешение действует до {until} и за "
+    + "это время не продлевается."],
+  "wizard.launch.skip_running": ["Skipping ahead: writing the steps one by one…",
+    "Пропускаем вперёд: записываем шаги по порядку…"],
+  "wizard.launch.skip_step.enqueue": ["This run is queued with these terms",
+    "Этот запуск поставлен в очередь с этими условиями"],
+  "wizard.launch.skip_step.order": ["This run is first in the queue",
+    "Этот запуск первый в очереди"],
+  "wizard.launch.skip_step.pause": ["The holder of the slot is paused",
+    "Держатель слота на паузе"],
+  "wizard.launch.skip_step.resume": ["The holder is queued to continue after the queue",
+    "Держатель поставлен в очередь на продолжение"],
+  "wizard.launch.skip_status.done": ["done", "сделано"],
+  "wizard.launch.skip_status.todo": ["not done", "не сделано"],
+  "wizard.launch.skip_status.reading": ["reading…", "читаем…"],
+  "wizard.launch.skip_status.unknown": ["not known", "неизвестно"],
+  "wizard.launch.skip_stopped": ["Skipping ahead stopped: {reason}",
+    "«Пропустить вперёд» остановилось: {reason}"],
+  "wizard.launch.skip_stop.not_written": ["a step was sent three times and the server's reads "
+    + "still do not show it", "шаг отправлен три раза, а чтения сервера всё ещё его не показывают"],
+  "wizard.launch.skip_stop.read_failed": ["the queue or the holder could not be read",
+    "очередь или держателя слота не удалось прочитать"],
+  "wizard.launch.skip_stop.queue_changed": ["the queue changed twice while it was being "
+    + "reordered, so it is shown below as it stands", "очередь дважды менялась во время "
+    + "перестановки, поэтому ниже она показана как есть"],
+  "wizard.launch.skip_stop.preview_stale": ["the terms were out of date and have been read "
+    + "again", "условия устарели и прочитаны заново"],
+  "wizard.launch.skip_stop.authorization_refused": ["the project has no owner present",
+    "нет владельца проекта"],
+  "wizard.launch.skip_stop.queue_full": ["the queue is full", "очередь заполнена"],
+  "wizard.launch.skip_stop.queue_not_ready": ["the server cannot queue this yet",
+    "сервер пока не может поставить это в очередь"],
+  "wizard.launch.skip_stop.server_stopping": ["the project is stopping", "проект останавливается"],
+  "wizard.launch.skip_stop.contract_invalid": ["the server did not accept the request for this "
+    + "permission", "сервер не принял запрос для этого разрешения"],
+  "wizard.launch.skip_stop.other": ["the server refused: {code}", "сервер отказал: {code}"],
+  "wizard.launch.skip_stands_first": ["This run is first in the queue and will start when the "
+    + "holder frees the slot.", "Этот запуск первый в очереди и начнётся, когда держатель "
+    + "освободит слот."],
+  "wizard.launch.skip_again": ["Press “Skip ahead” again to continue from the first step that is "
+    + "not done.", "Нажмите «Пропустить вперёд» ещё раз, чтобы продолжить с первого несделанного "
+    + "шага."],
+  "wizard.launch.skip_queue": ["The queue as it stands", "Очередь сейчас"],
+  "wizard.launch.skip_ack": ["Close", "Закрыть"],
 });

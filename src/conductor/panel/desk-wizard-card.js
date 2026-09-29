@@ -8,11 +8,13 @@
 // desk at the slot to free, or at the flag block) goes through `ctx.leave`. The explanations behind
 // an ⓘ are open or closed in the model, so the redraw of a ticking clock keeps them as they are.
 import {element} from "./command-view.js";
-import {action, choice, textField, timeText} from "./desk-wizard-draw.js";
-import {LAUNCH_REFUSALS, LAUNCH_WHY, launchFacts, roleKind} from "./desk-wizard-model.js";
+import {action, choice, instantText, textField, timeText} from "./desk-wizard-draw.js";
+import {LAUNCH_REFUSALS, LAUNCH_WHY, SKIP_STOPS, launchFacts, roleKind}
+  from "./desk-wizard-model.js";
 
 const START = "wizard:launch:start";
 const ENQUEUE = "wizard:launch:enqueue";
+const SKIP = "wizard:launch:skip";
 const INPUTS = Object.freeze({"artifact-brief": "wizard.launch.input_brief",
   "artifact-materials": "wizard.launch.input_materials"});
 
@@ -174,7 +176,8 @@ function changedBlock(ctx, facts) {
 
 function actorField(ctx, facts) {
   return textField(ctx, {key: "wizard:launch:actor", name: "actor", multi: false,
-    label: ctx.t("wizard.launch.actor"), value: facts.actor, locked: facts.result !== null,
+    label: ctx.t("wizard.launch.actor"), value: facts.actor,
+    locked: facts.result !== null || facts.skip !== null,
     onValue: (value) => ctx.send({type: "actor-edit", value}),
     extra: [element("small", {text: ctx.t("wizard.launch.actor_hint")})]});
 }
@@ -221,7 +224,75 @@ function buttons(ctx, facts) {
     ...pressable(ctx, controls.start, START, ctx.t("wizard.launch.start"),
       () => ctx.send({type: "launch-start"})),
     ...pressable(ctx, controls.enqueue, ENQUEUE, ctx.t("wizard.launch.enqueue"),
-      () => ctx.send({type: "launch-enqueue"}))]), ...slotNotes(ctx, facts)];
+      () => ctx.send({type: "launch-enqueue"})),
+    ...pressable(ctx, controls.skip, SKIP, ctx.t("wizard.launch.skip"),
+      () => ctx.send({type: "launch-skip"}))]), ...slotNotes(ctx, facts)];
+}
+
+// -- «Пропустить вперёд»: the dialog, the steps, and the stop -----------------------------
+
+function skipDialog(ctx, facts) {
+  const {holder} = facts.skip;
+  const task = holder.title ?? ctx.t("wizard.launch.skip_holder_unknown");
+  const until = holder.expiresAt === null ? "—" : instantText(holder.expiresAt);
+  return [element("div", {className: "desk-wizard__skip", "data-skip-dialog": ""}, [
+    element("p", {text: ctx.t("wizard.launch.skip_dialog", {task, until})}),
+    action("wizard:launch:skip-confirm", ctx.t("wizard.launch.skip"),
+      () => ctx.send({type: "launch-skip-confirm"})),
+    action("wizard:launch:skip-cancel", ctx.t("wizard.launch.skip_cancel"),
+      () => ctx.send({type: "launch-skip-cancel"}))])];
+}
+
+//: What the card says of one step: done, not done, or (nothing says) still being read while the
+//: press runs and not known once it stopped.
+function stepStatus(facts, row) {
+  if (row.done === null) return facts.skip.phase === "running" ? "reading" : "unknown";
+  return row.done ? "done" : "todo";
+}
+
+function skipSteps(ctx, facts) {
+  const rows = facts.skip.steps.map((row) => {
+    const status = stepStatus(facts, row);
+    return element("li", {"data-skip-step": row.step, "data-status": status,
+      "data-failed": facts.skip.stop?.step === row.step ? "true" : null,
+      text: `${ctx.t(`wizard.launch.skip_step.${row.step}`)} · `
+        + ctx.t(`wizard.launch.skip_status.${status}`)});
+  });
+  return element("ul", {"data-skip-steps": ""}, rows);
+}
+
+function skipQueue(ctx, facts) {
+  if (facts.skip.queue.length === 0) return [];
+  const rows = facts.skip.queue.map((row) => element("li", {
+    text: `${row.position}. ${row.title ?? "—"}`}));
+  return [element("div", {"data-skip-queue": ""}, [
+    element("h4", {text: ctx.t("wizard.launch.skip_queue")}), element("ul", {}, rows)])];
+}
+
+//: The press stopped: why (a refusal the desk has no words for is said by its code), what stands,
+//: and the way on. The new run is first in the queue whenever its two steps are done.
+function skipStopped(ctx, facts) {
+  const {stop, steps} = facts.skip, first = steps.slice(0, 2).every((row) => row.done === true);
+  const reason = SKIP_STOPS.includes(stop.code) ? ctx.t(`wizard.launch.skip_stop.${stop.code}`)
+    : ctx.t("wizard.launch.skip_stop.other", {code: stop.code});
+  return [element("div", {className: "desk-wizard__skip", "data-skip-done": "stopped"}, [
+    element("p", {role: "alert", "data-skip-stop": stop.code,
+      text: ctx.t("wizard.launch.skip_stopped", {reason})}),
+    skipSteps(ctx, facts),
+    ...(first ? [element("p", {"data-skip-stands": "",
+      text: ctx.t("wizard.launch.skip_stands_first")})] : []),
+    ...skipQueue(ctx, facts),
+    element("p", {"data-skip-again": "", text: ctx.t("wizard.launch.skip_again")}),
+    action("wizard:launch:skip-ack", ctx.t("wizard.launch.skip_ack"),
+      () => ctx.send({type: "launch-skip-cancel"}))])];
+}
+
+function skipBody(ctx, facts) {
+  const {phase} = facts.skip;
+  if (phase === "confirm") return skipDialog(ctx, facts);
+  if (phase === "stopped") return skipStopped(ctx, facts);
+  return [element("div", {className: "desk-wizard__skip", "data-skip-running": ""}, [
+    element("p", {text: ctx.t("wizard.launch.skip_running")}), skipSteps(ctx, facts)])];
 }
 
 // -- what the last press did -------------------------------------------------------------
@@ -280,5 +351,7 @@ export function runBody(ctx) {
     ...(facts.card === null ? [] : termsCard(ctx, facts)), ...errorLine(ctx, facts),
     ...countdownBlock(ctx, facts), ...refreshButton(ctx, facts), ...changedBlock(ctx, facts),
     actorField(ctx, facts), ...progressLine(ctx, facts), ...answerLines(ctx, facts),
-    ...(done ? resultBlock(ctx, facts) : buttons(ctx, facts))])];
+    ...(done ? resultBlock(ctx, facts) : facts.skip === null ? buttons(ctx, facts)
+      : skipBody(ctx, facts)),
+    ...(done && facts.skip !== null ? [skipSteps(ctx, facts)] : [])])];
 }

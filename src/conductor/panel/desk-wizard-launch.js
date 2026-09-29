@@ -10,9 +10,11 @@
 //
 // The slice (`launch`) holds: the owner's name (`actor`), the card (`preview`, its `digest`, its
 // ordinal `card`, what `changed` when another replaced it and whether the owner has `seen` that),
-// the reads it is drawn from (`reads.queue`, `.automation`, `.run`), the phase (review | starting |
-// enqueuing | unknown | started | queued), a `note` or a `refusal` from the last answer, and the
-// counters that make every ask's id (`previews`, `seq`, `attempts`).
+// the reads it is drawn from (`reads.queue`, `.automation`, `.run`, and `.holder`, the automation
+// of the run that holds a busy slot), the phase (review | starting | enqueuing | skipping |
+// unknown | started | queued), a `note` or a `refusal` from the last answer, the press of
+// «Пропустить вперёд» (`skip`, folded by `desk-wizard-skip.js`), and the counters that make every
+// ask's id (`previews`, `seq`, `attempts`, `presses`).
 import {stableJson as stable} from "./desk-wizard-digest.js";
 
 export const MAX_REPEATS = 6;
@@ -71,8 +73,9 @@ export function isActor(value) {
 export function initialLaunch(actor) {
   return {actor, card: 0, preview: null, digest: null, changed: [], seen: true, now: null,
     repeats: 0, previews: 0, refreshWanted: false, repeatFailed: false, error: null,
-    reads: {queue: null, automation: null, run: null}, seq: 0, phase: "idle", sending: null,
-    note: null, refusal: null, result: null, settled: [], attempts: {}, infos: []};
+    reads: {queue: null, automation: null, run: null, holder: null}, seq: 0, phase: "idle",
+    sending: null, note: null, refusal: null, result: null, settled: [], attempts: {}, infos: [],
+    skip: null, presses: 0};
 }
 
 //: The explanations the card can open behind an ⓘ: the time it reserves, and the short digest of
@@ -219,9 +222,21 @@ function slotRow(slot) {
   return {start: NONE, enqueue: NONE, release: false, why: slot.reason_code};
 }
 
+//: «Пропустить вперёд» (6.4.5): offered when the holder of a busy slot waits for a human and the
+//: read of its automation says so and carries the grant that is to be paused. It waits on the
+//: same holds as the queue button.
+function skipRow(launch, slot, held) {
+  const read = launch.reads.holder;
+  const grant = read?.status === "ok" ? read.payload : null;
+  const waits = slot.state === "busy" && slot.reason_code === "plan_waiting" && grant !== null
+    && grant.run_id === slot.run_id && grant.state === "waiting"
+    && grant.reason_code === "plan_waiting" && record(grant.authorization);
+  return waits ? {shown: true, blocked: held} : NONE;
+}
+
 //: What holds both buttons whatever the slot says, in the order it matters.
 function heldBy(launch) {
-  if (launch.phase !== "review") return "busy";
+  if (launch.phase !== "review" || launch.skip !== null) return "busy";
   if (launch.preview.budget.exhausted) return "exhausted";
   if (!launch.seen) return "card_changed";
   return isActor(launch.actor) ? null : "actor_invalid";
@@ -233,28 +248,32 @@ export function isViewing(launch) {
 }
 
 /**
- * The controls of the card: `start` and `enqueue` (each `{shown, blocked}`), whether to point at
- * «Освободить слот», the reason when nothing can be pressed, the caption under the queue button,
- * and `holder`, the run that holds the slot (null when nothing does).
+ * The controls of the card: `start`, `enqueue` and `skip` (each `{shown, blocked}`), whether to
+ * point at «Освободить слот», the reason when nothing can be pressed, the caption under the queue
+ * button, and `holder`, the run that holds the slot (null when nothing does).
  */
 export function controlsOf(launch) {
-  const closed = {start: NONE, enqueue: NONE, release: false, caption: null, holder: null};
+  const closed = {start: NONE, enqueue: NONE, skip: NONE, release: false, caption: null,
+    holder: null};
   if (launch.preview === null) return {...closed, why: null};
   const slot = slotOf(launch);
   if (slot === null) return {...closed, why: launch.reads.queue === null ? "slot_reading"
     : "slot_unread"};
   const row = slotRow(slot), held = heldBy(launch);
   const hold = (one) => (one.shown && one.blocked === null ? {...one, blocked: held} : one);
-  return {start: hold(row.start), enqueue: hold(row.enqueue), release: row.release, why: row.why,
+  return {start: hold(row.start), enqueue: hold(row.enqueue), skip: skipRow(launch, slot, held),
+    release: row.release, why: row.why,
     caption: row.enqueue.shown ? (isViewing(launch) ? "queue_view" : "queue") : null,
     holder: slot.run_id ?? null};
 }
 
 // -- the asks ----------------------------------------------------------------------------
 
-const authId = (launch, nonce) => `auth-${nonce}-${launch.card}`;
+/** The authorization id of this card: the same card, the same id; another digest, another. */
+export const authId = (launch, nonce) => `auth-${nonce}-${launch.card}`;
 
-function grantBody(launch, nonce) {
+/** The body of authorize (and of the `start` of a queue write) for the card as it stands. */
+export function grantBody(launch, nonce) {
   const grant = launch.reads.automation !== null && launch.reads.automation.status === "ok"
     ? launch.reads.automation.payload.authorization : null;
   return {authorization_id: authId(launch, nonce), preview_digest: launch.preview.preview_digest,
@@ -308,8 +327,11 @@ export function tickLaunch(launch, now) {
   return epochSeconds(now) === null || launch.now === now ? launch : {...launch, now};
 }
 
+//: The name signs every write of a press, so it stays as it was while the press is writing.
 export function editActor(launch, value) {
-  return typeof value !== "string" || value === launch.actor ? launch : {...launch, actor: value};
+  const writing = launch.skip !== null && launch.skip.phase === "running";
+  if (typeof value !== "string" || value === launch.actor || writing) return launch;
+  return {...launch, actor: value};
 }
 
 export function seenLaunch(launch) {
@@ -324,10 +346,11 @@ export function refreshLaunch(launch) {
   return {...launch, refreshWanted: true, repeatFailed: false, repeats: 0, error: null};
 }
 
-/** Read the queue and the automation again. */
+/** Read the queue, the automation and the holder's automation again. */
 export function rereadLaunch(launch) {
   if (launch.phase !== "review") return launch;
-  return {...launch, reads: {...launch.reads, queue: null, automation: null}, seq: launch.seq + 1};
+  const reads = {...launch.reads, queue: null, automation: null, holder: null};
+  return {...launch, reads, seq: launch.seq + 1};
 }
 
 /** The owner pressed a button of the card: the write begins, if that button may be pressed. */
@@ -351,6 +374,7 @@ const READ_VALID = Object.freeze({
   launch_queue: (payload) => record(payload) && record(payload.slot)
     && SLOT_STATES.includes(payload.slot.state) && Array.isArray(payload.entries),
   launch_automation: (payload) => record(payload) && Object.hasOwn(payload, "authorization"),
+  launch_holder: (payload) => record(payload) && Object.hasOwn(payload, "authorization"),
   launch_run: record});
 
 function grantStands(launch, ctx) {
@@ -405,7 +429,7 @@ function landPreview(launch, ctx, result) {
 //: What each refusal of starting or of queueing means. None of them starts anything by itself: a
 //: taken slot or a stale preview changes what the card says, and the owner presses again.
 function refusalAnswer(launch, ctx, code, detail) {
-  const reset = {...launch.reads, queue: null, automation: null};
+  const reset = {...launch.reads, queue: null, automation: null, holder: null};
   const reread = {reads: reset, seq: launch.seq + 1};
   if (code === "slot_busy") {
     return {...launch, ...reread, note: {kind: "slot_busy", holder: detail?.run_id ?? null}};

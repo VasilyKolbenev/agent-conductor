@@ -51,6 +51,7 @@ SPEC_WORDS = {
     "wizard.chain.status.done": "сделано", "wizard.chain.status.needed": "нужно",
     "wizard.chain.status.todo": "ещё не начато",
     "wizard.launch.start": "Запустить", "wizard.launch.enqueue": "Поставить в очередь",
+    "wizard.launch.skip": "Пропустить вперёд",
     "wizard.launch.refresh": "Обновить условия",
     "wizard.launch.continue_after": "Продолжить после…",
     "wizard.launch.window_queued": "окно начнётся, когда запуск стартует",
@@ -85,6 +86,10 @@ SPEC_SENTENCES = {
     ("wizard.launch.note.slot_busy", (("holder", "Add a search box"),)):
         "слот только что занял Add a search box",
     ("wizard.launch.result_queued", (("position", "3"),)): "В очереди · 3-я",
+    ("wizard.launch.skip_dialog",
+     (("task", "Add a search box"), ("until", "2026-09-29 13:00 UTC"))):
+        "Add a search box встанет на паузу и продолжит после очереди. Его разрешение действует "
+        "до 2026-09-29 13:00 UTC и за это время не продлевается.",
 }
 FAMILIES = {
     "reasons": "wizard.reason.{}", "git": "wizard.git.{}", "refusals": "wizard.refusal.{}",
@@ -94,7 +99,8 @@ FAMILIES = {
     "links": "wizard.chain.link.{}", "statuses": "wizard.chain.status.{}",
     "stages": "wizard.resume.exit_{}", "launch_why": "wizard.launch.why.{}",
     "launch_notes": "wizard.launch.note.{}", "launch_refusals": "wizard.launch.refused.{}",
-    "launch_lines": "wizard.launch.line.{}",
+    "launch_lines": "wizard.launch.line.{}", "skip_steps": "wizard.launch.skip_step.{}",
+    "skip_stops": "wizard.launch.skip_stop.{}", "skip_status": "wizard.launch.skip_status.{}",
 }
 
 
@@ -133,7 +139,8 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
         kinds: [...wiz.ROLE_KINDS, "custom"], links: wiz.CHAIN_LINKS,
         statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS, launch_why: wiz.LAUNCH_WHY,
         launch_notes: wiz.LAUNCH_NOTES, launch_refusals: wiz.LAUNCH_REFUSALS,
-        launch_lines: wiz.CARD_LINES};
+        launch_lines: wiz.CARD_LINES, skip_steps: wiz.SKIP_STEPS, skip_stops: wiz.SKIP_STOPS,
+        skip_status: wiz.SKIP_STATUS};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {
@@ -174,6 +181,18 @@ def test_every_reason_note_and_refusal_the_card_returns_is_in_its_closed_list():
     assert reasons <= set(out["why"]), reasons - set(out["why"])
     assert notes <= set(out["notes"]), notes - set(out["notes"])
     assert {"project_not_active", "owner_required", "server_stopping"} <= set(out["why"])
+
+
+def test_every_stop_code_a_skip_ahead_press_returns_is_in_its_closed_list():
+    text = (Path(PANEL) / "desk-wizard-skip.js").read_text(encoding="utf-8")
+    coded = set(re.findall(r'code: "([a-z_]+)"', text))
+    out = run_js("""
+      const other = i18n.message("en", "wizard.launch.skip_stop.other", {code: "made_up"});
+      console.log(JSON.stringify({stops: wiz.SKIP_STOPS, other}));
+    """, modules=MODULES)
+    assert coded == {"not_written", "read_failed"}, coded
+    assert coded <= set(out["stops"])
+    assert "made_up" in out["other"], "a refusal the desk has no words for is said by its code"
 
 
 def test_every_diagnostic_code_of_spec_7_4_has_a_message_and_an_unknown_one_has_a_sentence():

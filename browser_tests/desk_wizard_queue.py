@@ -2,10 +2,12 @@
 
 Not a test module (pytest does not collect it). It stands where the doors of spec 4.4.5-4.4.6 and
 6.4.4-6.4.5 will stand, behind the asks the card makes (`launch_queue`, `launch_automation`,
-`launch_run`, `launch_preview`, `launch_authorize`, `launch_enqueue`) and in front of whatever
-answered before it. It keeps the slot, the queue's entries, the grant that was written and the
-preview it last served, so a repeated write finds what stands, a lost answer can land without being
-heard, and a refusal (with the slot it leaves behind) comes on demand.
+`launch_run`, `launch_preview`, `launch_authorize`, `launch_enqueue`, and the holder's read and
+the four writes of "skip ahead": `launch_holder`, `launch_skip_enqueue`, `launch_skip_order`,
+`launch_skip_pause`, `launch_skip_resume`) and in front of whatever answered before it. It keeps
+the slot, the queue's entries and their revision, the holder's automation, the grant that was
+written and the preview it last served, so a repeated write finds what stands, a lost answer can
+land without being heard, and a refusal (with the slot it leaves behind) comes on demand.
 
 The preview it serves after the chain's own is the standing one with fresh instants taken from the
 host's clock (`launch.now`), so the countdown a test moves is the countdown the server would count;
@@ -22,7 +24,9 @@ QUEUE_JS = """
 (setup) => {
   const queue = structuredClone(setup.queue);
   const world = {queue, automation: structuredClone(setup.automation), grants: {},
-    authorize_calls: 0, enqueue_calls: 0, previews: 0, reads: {queue: 0, automation: 0, run: 0},
+    authorize_calls: 0, enqueue_calls: 0, previews: 0,
+    reads: {queue: 0, automation: 0, run: 0, holder: 0}, holder: structuredClone(setup.holder),
+    skips: {enqueue: 0, order: 0, pause: 0, resume: 0}, skip_bodies: [],
     authorize_bodies: [], enqueue_bodies: [], calls: [], lose: {...setup.lose},
     drop: {...setup.drop},
     refuse: structuredClone(setup.refuse), served: setup.preview, seen: {}};
@@ -67,7 +71,59 @@ QUEUE_JS = """
       supersedes: body.supersedes, authorized_at: iso(seconds(world.served.previewed_at)),
       expires_at: iso(seconds(world.served.previewed_at) + body.terms.duration_seconds)};
   };
+  const entryOf = (runId, kind, start) => ({run_id: runId, task_id: runId.split("-r")[0],
+    title: kind === "resume" ? "Add a search box" : "Fix login",
+    position: world.queue.entries.length + 1, kind, enqueued_at: "2026-09-29T10:01:00Z",
+    enqueued_by: "vasily", state: "preauthorized", reason_code: "behind",
+    state_since: "2026-09-29T10:01:00Z", preauthorization: start === null ? null
+      : {authorized_by: start.authorized_by, preauthorized_at: "2026-09-29T10:01:00Z",
+        digest: start.preview_digest}});
+  const renumber = () => {
+    world.queue.entries.forEach((row, at) => { row.position = at + 1; });
+    world.queue.revision += 1;
+  };
+  const skipHandlers = {
+    launch_holder: () => { world.reads.holder += 1; return said(structuredClone(world.holder)); },
+    launch_skip_enqueue: (ask) => {
+      if (!world.queue.entries.some((row) => row.run_id === ask.body.run_id)) {
+        world.queue.entries.push(entryOf(ask.body.run_id, "start", ask.body.start));
+        renumber();
+      }
+      return answer("launch_skip_enqueue", structuredClone(world.queue));
+    },
+    launch_skip_order: (ask) => {
+      if (ask.body.expected_revision !== world.queue.revision) {
+        return refuse("queue_changed", {});
+      }
+      world.queue.entries.sort((left, right) => ask.body.run_ids.indexOf(left.run_id)
+        - ask.body.run_ids.indexOf(right.run_id));
+      renumber();
+      return answer("launch_skip_order", structuredClone(world.queue));
+    },
+    launch_skip_pause: (ask) => {
+      if (world.holder.control?.control_id !== ask.body.control_id) {
+        world.holder.control = {schema_version: 2, control_id: ask.body.control_id,
+          run_id: ask.subject, authorization_id: ask.body.authorization_id,
+          authorization_digest: ask.body.authorization_digest, action: "pause",
+          actor: ask.body.actor, recorded_at: "2026-09-29T10:01:00Z",
+          expected_control_id: ask.body.expected_control_id};
+        world.holder.state = "paused";
+        world.holder.reason_code = null;
+      }
+      return answer("launch_skip_pause", structuredClone(world.holder));
+    },
+    launch_skip_resume: (ask) => {
+      const again = world.queue.entries.some((row) => row.run_id === ask.body.run_id
+        && row.kind === "resume");
+      if (!again) {
+        world.queue.entries.push(entryOf(ask.body.run_id, "resume", null));
+        renumber();
+      }
+      return answer("launch_skip_resume", structuredClone(world.queue));
+    },
+  };
   const handlers = {
+    ...skipHandlers,
     launch_queue: () => { world.reads.queue += 1; return said(structuredClone(world.queue)); },
     launch_automation: () => {
       world.reads.automation += 1;
@@ -122,6 +178,10 @@ QUEUE_JS = """
       world.enqueue_calls += 1;
       world.enqueue_bodies.push(ask.body);
     }
+    if (ask.name.startsWith("launch_skip_")) {
+      world.skips[ask.name.replace("launch_skip_", "")] += 1;
+      world.skip_bodies.push({name: ask.name, subject: ask.subject, body: ask.body});
+    }
     if ((world.drop[ask.name] || 0) > 0) {
       world.drop[ask.name] -= 1;
       return {status: "unknown", code: null, payload: null};
@@ -133,20 +193,23 @@ QUEUE_JS = """
 
 
 def install(bench: Any, *, queue: str = "queue_free", automation: str = "automation_unconfigured",
+            holder: str = "automation_holder_waiting", holder_over: dict[str, Any] | None = None,
             preview: Any = None, overrides: list[dict[str, Any]] | None = None,
             lose: dict[str, int] | None = None, drop: dict[str, int] | None = None,
             refuse: dict[str, dict[str, Any]] | None = None) -> None:
     """Put the fake queue door in front of the card's asks (after the chain's fake server).
 
-    `queue` and `automation` name fixtures of `tests/fixtures/wizard/`; `refuse` maps an ask name
-    to `{code, count, after?, detail?, slot?}`: the slot, when given, is what the queue reads
-    after that refusal (a slot taken between the read and the press). `lose` counts writes that
-    land and are answered `unknown`; `drop` counts writes that never land and are answered
-    `unknown` the same way.
+    `queue`, `automation` and `holder` name fixtures of `tests/fixtures/wizard/` (`holder` is the
+    automation of the run that holds a busy slot; `holder_over` is merged into it); `refuse` maps
+    an ask name to `{code, count, after?, detail?, slot?}`: the slot, when given, is what the
+    queue reads after that refusal (a slot taken between the read and the press). `lose` counts
+    writes that land and are answered `unknown`; `drop` counts writes that never land and are
+    answered `unknown` the same way.
     """
     bench.page.evaluate(QUEUE_JS, {
         "queue": fixture("wizard", f"{queue}.json"),
         "automation": fixture("wizard", f"{automation}.json"),
+        "holder": {**fixture("wizard", f"{holder}.json"), **(holder_over or {})},
         "preview": preview or fixture("wizard", "preview_standard.json"),
         "run": fixture("wizard", "run_detail.json"), "overrides": overrides or [{}],
         "lose": lose or {}, "drop": drop or {}, "refuse": refuse or {}})

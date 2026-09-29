@@ -108,7 +108,8 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-input.js",
                                        "./desk-wizard-prep.js",
                                        "./desk-wizard-launch.js",
-                                       "./desk-wizard-run.js"}),
+                                       "./desk-wizard-run.js",
+                                       "./desk-wizard-skip.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.
@@ -167,11 +168,15 @@ PERMITTED_IMPORTS = {
     #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
     #: that gives a key its stable bytes.
     "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
+    #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
+    #: functions over the card's slice. It reaches the card's own module and nothing else.
+    "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
     "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                      "./desk-wizard-input.js", "./desk-wizard-launch.js",
-                                     "./desk-wizard-prep.js", "./desk-wizard-team.js"}),
+                                     "./desk-wizard-prep.js", "./desk-wizard-skip.js",
+                                     "./desk-wizard-team.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

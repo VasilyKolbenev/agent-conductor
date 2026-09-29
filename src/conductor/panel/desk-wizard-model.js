@@ -44,13 +44,15 @@ import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, 
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
 import {flowWriteRequest} from "./desk-wizard-input.js";
-import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardStart, cardTick,
+import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
+  cardSkipCancel, cardSkipConfirm, cardStart, cardTick,
   chainLinks, isPrepared, landCard, landRun, launchFacts, launchWanted, resumeEdit,
   resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
   runRetry, runStart, runWanted, wizardExit, wizardHash, prepareFacts as judgeFacts,
   prepareGate as judgePrepare} from "./desk-wizard-run.js";
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
+import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
 
@@ -63,7 +65,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   assignmentView, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_WHY,
-  chainLinks, flowWriteRequest, launchFacts, resumeView, wizardExit, wizardHash};
+  SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest, launchFacts, resumeView, wizardExit, wizardHash};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -536,7 +538,8 @@ const CHAIN_ASKS = Object.freeze(["prep_read", "prep_task", "prep_seed", "prep_f
 
 //: The asks of the card of step 6, folded into the `launch` slice.
 const CARD_ASKS = Object.freeze(["launch_queue", "launch_automation", "launch_run",
-  "launch_preview", "launch_authorize", "launch_enqueue"]);
+  "launch_holder", "launch_preview", "launch_authorize", "launch_enqueue", "launch_skip_enqueue",
+  "launch_skip_order", "launch_skip_pause", "launch_skip_resume"]);
 
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   .map((name) => [name, answerRead(name)])),
@@ -703,6 +706,9 @@ const HANDLERS = {
   "launch-reread": cardReread,
   "launch-seen": cardSeen,
   "launch-info": cardInfo,
+  "launch-skip": cardSkip,
+  "launch-skip-confirm": cardSkipConfirm,
+  "launch-skip-cancel": cardSkipCancel,
   "close-request": (state) => (closeNeedsWarning(state) && state.closing === null
     ? evolve(state, {closing: "confirm"}) : state),
   "close-cancel": (state) => (state.closing === null ? state : evolve(state, {closing: null})),
