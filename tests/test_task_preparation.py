@@ -19,15 +19,18 @@ from conductor.command.authorization_inputs import bind_inputs, executable_nodes
 from conductor.command.contract_values import ContractError
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.http_api import CommandApi
+from conductor.command.http_transport import CommandSession
 from conductor.command.graph_template import (
     TEMPLATE_DIR, GraphTemplate, RunBinding, load_template, materialize)
 from conductor.command.policy_service import PolicyService
 from conductor.command.run_closing import close_if_terminal
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import Budget
-from conductor.command.task_contracts import TaskRecord
+from conductor.command.task_contracts import MAX_TASK_ID, TaskRecord
 from conductor.command.task_store import TaskStore
 from conductor.command.workflow_flow import compile_flow
+from tests.test_command_http_api import PORT, TOKEN, get_headers, post
 from tests.test_command_workflow_flow import CANONICAL, STUDIO_CORPUS, accepted
 from tests.test_command_workflow_routes import durable_digest
 from tests.test_policy_runtime import NOW, PD, Activation
@@ -393,3 +396,62 @@ def test_a_plan_with_no_step_that_carries_out_work_misses_nothing():
                            nodes=(GraphNode("gate", "gate", "Approve", gate_id="gate-id"),),
                            edges=())
     assert task_preparation.missing_bindings(plan, ()) == {"instructions": [], "inputs": []}
+
+
+# --- the route (spec 6.4.2, route-canon 2a) --------------------------------------------------
+
+
+def door(project):
+    """The command API over the project's own stores; events collects the frames it publishes."""
+    events = []
+    api = CommandApi(project.store, project.policy.registry,
+                     session=CommandSession(PORT, TOKEN), budget=project.policy.budget,
+                     clock=lambda: NOW, ids=lambda kind: f"{kind}-1", publish_run=events.append,
+                     tasks=project.tasks)
+    return api, events
+
+
+def preparation_path(task_id=TASK):
+    return f"/command/tasks/{task_id}/preparation"
+
+
+def test_the_preparation_route_answers_what_the_read_answers(project):
+    project.ready_run(1)
+    project.open_run(2)
+    api, _events = door(project)
+    answer = api.handle("GET", preparation_path(), get_headers())
+    assert answer.status == 200
+    assert answer.payload == project.read()
+    assert [row["stage"] for row in answer.payload["runs"]] == [
+        "ready_to_preview", "documents_missing"]
+
+
+def test_an_unknown_task_on_the_route_is_409_service_refused_naming_it(project):
+    api, _events = door(project)
+    refused = api.handle("GET", preparation_path("task-nope"), get_headers())
+    assert (refused.status, refused.payload["error"]["code"]) == (409, "service_refused")
+    assert refused.payload["error"]["detail"] == {"task_id": "task-nope"}
+
+
+def test_the_preparation_route_takes_no_other_verb(project):
+    api, _events = door(project)
+    refused = post(api, preparation_path(), {})
+    assert (refused.status, refused.payload["error"]["code"]) == (405, "method_not_allowed")
+
+
+def test_the_preparation_route_writes_nothing_and_publishes_no_frame(project):
+    project.ready_run(1)
+    api, events = door(project)
+    before = durable_digest(project.root)
+    assert api.handle("GET", preparation_path(), get_headers()).status == 200
+    assert events == [] and durable_digest(project.root) == before
+
+
+@pytest.mark.parametrize("path", [
+    f"/command/tasks/{TASK}/preparation/", f"/command/tasks/{TASK}/preparation/x",
+    f"/command/tasks/{TASK}/prepare", f"/command/tasks//preparation",
+    f"/command/tasks/{'t' * (MAX_TASK_ID + 1)}/preparation", f"/command/tasks/{TASK}/seed"])
+def test_a_task_id_past_its_bound_and_a_tail_beyond_preparation_are_no_route(project, path):
+    api, _events = door(project)
+    refused = api.handle("GET", path, get_headers())
+    assert (refused.status, refused.payload["error"]["code"]) == (404, "route_not_found")

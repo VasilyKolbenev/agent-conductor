@@ -71,6 +71,7 @@ from .http_transport import (
 )
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
+from .project_cycle import ProjectCycleStore
 from .task_store import TaskStore
 from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
@@ -145,6 +146,8 @@ class CommandApi:
         # Rooted at the same project for the same reason, and holding the SAME
         # process-local gate the run store holds for that root.
         self._tasks = TaskStore(store.project_root) if tasks is None else tasks
+        # The project's pinned cycle (spec 7.10): the same root, the same gate, one small file.
+        self._cycle = ProjectCycleStore(store.project_root)
         self._registry = registry
         self._session = session
         self._budget = Budget(
