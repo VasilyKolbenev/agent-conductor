@@ -130,7 +130,8 @@ def test_hold_new_work_returns_only_after_a_tick_past_the_gate_has_admitted_its_
         assert entered.wait(8), "no tick reached its proposal"
         holder.start()
         holder.join(.3)
-        assert "returned" not in seen, "hold_new_work returned while a tick was still admitting its action"
+        assert "returned" not in seen, (
+            "hold_new_work returned while a tick was still admitting its action")
     finally:
         go.set()  # never leave the tick parked: the fixture stops the driver next
     holder.join(8)

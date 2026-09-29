@@ -56,7 +56,10 @@ TEMPLATE_FIELD_OF_STEP_FIELD = MappingProxyType({
 
 
 class FlowShapeError(ContractError):
-    """A flow the closed shapes refuse; ``path`` addresses the first fault, e.g. flow.steps[2].role_id."""
+    """A flow the closed shapes refuse.
+
+    ``path`` addresses the first fault, for example ``flow.steps[2].role_id``.
+    """
 
     def __init__(self, path: str, reason: str) -> None:
         super().__init__(f"{path}: {reason}")
@@ -91,7 +94,8 @@ def _step(path: str, value: object) -> dict[str, Any]:
             "title": _text(f"{path}.title", body["title"], nullable=True),
             "purpose": _text(f"{path}.purpose", body["purpose"], nullable=True),
             "position": _position(f"{path}.position", body["position"]),
-            "timeout_seconds": _whole(f"{path}.timeout_seconds", body["timeout_seconds"], nullable=True)}
+            "timeout_seconds": _whole(f"{path}.timeout_seconds", body["timeout_seconds"],
+                                      nullable=True)}
     if kind == "agent":
         step.update(_agent(path, body))
     if kind == "loop":
@@ -104,14 +108,17 @@ def _step(path: str, value: object) -> dict[str, Any]:
 def _agent(path: str, body: dict[str, Any]) -> dict[str, Any]:
     profile = body["review_profile"]
     if profile is not None and profile not in REVIEW_PROFILES:
-        raise FlowShapeError(f"{path}.review_profile", f"must be null or one of {', '.join(REVIEW_PROFILES)}")
+        raise FlowShapeError(f"{path}.review_profile",
+                             f"must be null or one of {', '.join(REVIEW_PROFILES)}")
     reads = _sequence(f"{path}.reads", body["reads"], MAX_READS)
     return {"role_id": _text(f"{path}.role_id", body["role_id"]),
             "capability": _text(f"{path}.capability", body["capability"]),
-            "verifier_role_id": _text(f"{path}.verifier_role_id", body["verifier_role_id"], nullable=True),
+            "verifier_role_id": _text(f"{path}.verifier_role_id", body["verifier_role_id"],
+                                      nullable=True),
             "review_profile": profile,
             "reads": [_text(f"{path}.reads[{n}]", row) for n, row in enumerate(reads)],
-            "instruction_from": _text(f"{path}.instruction_from", body["instruction_from"], nullable=True)}
+            "instruction_from": _text(f"{path}.instruction_from", body["instruction_from"],
+                                      nullable=True)}
 
 
 def _link(path: str, value: object) -> dict[str, str]:
@@ -119,13 +126,15 @@ def _link(path: str, value: object) -> dict[str, str]:
     when = body["when"]
     if type(when) is not str or when not in LINK_WHEN:
         raise FlowShapeError(f"{path}.when", f"must be one of {', '.join(LINK_WHEN)}")
-    return {"from": _text(f"{path}.from", body["from"]), "to": _text(f"{path}.to", body["to"]), "when": when}
+    return {"from": _text(f"{path}.from", body["from"]),
+            "to": _text(f"{path}.to", body["to"]), "when": when}
 
 
 def _flow_ext(path: str, value: object) -> dict[str, None]:
     body = _object(path, value, FLOW_EXT_FIELDS, required=False)
     if body.get("execution_contract", None) is not None:
-        raise FlowShapeError(f"{path}.execution_contract", "may only be null: a null drops the contract")
+        raise FlowShapeError(f"{path}.execution_contract",
+                             "may only be null: a null drops the contract")
     return dict(body)
 
 

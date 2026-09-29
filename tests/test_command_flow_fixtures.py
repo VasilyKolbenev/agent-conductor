@@ -16,7 +16,8 @@ from conductor.command.workflow_flow import LINK_WHEN, settled_flow
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "flow"
 CYCLES = ["desk-standard", "desk-short", "desk-starter-docs", "desk-standard-tester", "dalio-v5"]
-#: spec 7.8 table: clean (actions, seconds), worst (actions, seconds), terms_draft (actions, seconds, window)
+#: spec 7.8 table: clean (actions, seconds), worst (actions, seconds), terms_draft (actions,
+#: seconds, window)
 TABLE = {
     "desk-standard": ((2, 5400), (4, 12600), (4, 12600, 16200)),
     "desk-short": ((1, 3600), (2, 7200), (2, 7200, 10800)),
@@ -84,10 +85,12 @@ def test_every_flow_fixture_is_a_closed_flow_state_whose_flow_settles_unchanged(
     flow = value["flow"]
     ids = [row["step_id"] for row in flow["steps"]]
     assert len(set(ids)) == len(ids)
-    assert all(link["from"] in ids and link["to"] in ids and link["when"] in LINK_WHEN for link in flow["links"])
+    assert all(link["from"] in ids and link["to"] in ids and link["when"] in LINK_WHEN
+               for link in flow["links"])
     assert all(row["back_to"] in ids for row in flow["steps"] if row["type"] == "loop")
     for row in value["diagnostics"]:
-        assert list(row) == ["code", "severity", "at", "params"] and row["severity"] in {"error", "warning"}
+        assert list(row) == ["code", "severity", "at", "params"]
+        assert row["severity"] in {"error", "warning"}
         at = row["at"]
         assert at is None or at.get("step_id") in ids or (
             list(at) == ["link"] and dict(zip(("from", "to", "when"), at["link"])) in flow["links"])
@@ -100,7 +103,8 @@ def test_budget_of_each_fixture_cycle_matches_the_section_7_8_table(cycle):
     assert (budget["clean"]["actions"], budget["clean"]["seconds"]) == clean
     assert (budget["worst"]["actions"], budget["worst"]["seconds"]) == worst
     draft = budget["terms_draft"]
-    assert (draft["max_actions"], draft["max_total_task_seconds"], draft["duration_seconds"]) == terms
+    assert (draft["max_actions"], draft["max_total_task_seconds"],
+            draft["duration_seconds"]) == terms
 
 
 @pytest.mark.parametrize("cycle", CYCLES)
@@ -111,9 +115,12 @@ def test_terms_draft_follows_from_the_budget_steps_and_the_human_steps_on_the_cl
     reached, kinds = clean_pass(flow)
     counted = [step_id for step_id in reached if kinds[step_id] == "agent"]
     seconds = {step_id: reserve for step_id, _, reserve in rows}
-    assert [step_id for step_id, _, _ in rows] == [row["step_id"] for row in flow["steps"] if row["type"] == "agent"]
-    assert budget["clean"] == {"actions": len(counted), "seconds": sum(seconds[step_id] for step_id in counted)}
-    worst = sum(attempts for _, attempts, _ in rows), sum(attempts * reserve for _, attempts, reserve in rows)
+    assert [step_id for step_id, _, _ in rows] == [
+        row["step_id"] for row in flow["steps"] if row["type"] == "agent"]
+    assert budget["clean"] == {"actions": len(counted),
+                               "seconds": sum(seconds[step_id] for step_id in counted)}
+    worst = (sum(attempts for _, attempts, _ in rows),
+             sum(attempts * reserve for _, attempts, reserve in rows))
     assert (budget["worst"]["actions"], budget["worst"]["seconds"]) == worst
     total = min(28800, worst[1])
     assert budget["terms_draft"] == {
@@ -128,22 +135,26 @@ def test_terms_draft_follows_from_the_budget_steps_and_the_human_steps_on_the_cl
 @pytest.mark.parametrize("cycle", CYCLES)
 def test_publishable_is_true_exactly_when_no_diagnostic_row_is_an_error(cycle):
     value = state(cycle)
-    assert value["publishable"] is (not any(row["severity"] == "error" for row in value["diagnostics"]))
+    errors = [row for row in value["diagnostics"] if row["severity"] == "error"]
+    assert value["publishable"] is (not errors)
 
 
 def replacement(fresh, spent, humans):
     """The 7.8 terms of a replacement grant, from the fresh budget's rows and what the run spent."""
     used = {row["step_id"]: row["attempts"] for row in spent["attempts"]}
     steps = fresh["steps"]
-    remaining = {row["step_id"]: max(0, row["attempts"] - used.get(row["step_id"], 0)) for row in steps}
+    remaining = {row["step_id"]: max(0, row["attempts"] - used.get(row["step_id"], 0))
+                 for row in steps}
     left = sum(remaining[row["step_id"]] * row["reserve_seconds"] for row in steps)
     return {
         "node_limits": [{"node_id": row["step_id"], "timeout_seconds": row["timeout_seconds"],
-                         "max_attempts": max(row["attempts"], used.get(row["step_id"], 0))} for row in steps],
+                         "max_attempts": max(row["attempts"], used.get(row["step_id"], 0))}
+                        for row in steps],
         "max_actions": min(8, spent["actions"] + sum(remaining.values())),
         "max_action_seconds": max(row["reserve_seconds"] for row in steps),
         "max_total_task_seconds": min(28800, spent["seconds"] + left),
-        "duration_seconds": min(86400, max(3600, left + 3600 * humans))}, sum(remaining.values()) == 0
+        "duration_seconds": min(86400, max(3600, left + 3600 * humans)),
+    }, sum(remaining.values()) == 0
 
 
 def test_replacing_budget_adds_the_spent_totals_and_keeps_the_window_to_the_remaining_work():
@@ -151,10 +162,12 @@ def test_replacing_budget_adds_the_spent_totals_and_keeps_the_window_to_the_rema
     budget = load("desk-standard.budget-replacing.json")
     assert list(budget) == BUDGET_KEYS
     for key in ("limits", "clean", "worst", "steps", "inputs"):
-        assert budget[key] == fresh["budget"][key], "only spent, the terms and exhausted differ from a fresh plan"
+        assert budget[key] == fresh["budget"][key], (
+            "only spent, the terms and exhausted differ from a fresh plan")
     assert budget["spent"] == {"actions": 2, "seconds": 5400, "attempts": [
         {"step_id": "analyst", "attempts": 1}, {"step_id": "do", "attempts": 1}]}
-    terms, exhausted = replacement(fresh["budget"], budget["spent"], humans_on_clean_pass(fresh["flow"]))
+    humans = humans_on_clean_pass(fresh["flow"])
+    terms, exhausted = replacement(fresh["budget"], budget["spent"], humans)
     assert budget["terms_draft"] == terms and budget["exhausted"] is exhausted is False
     assert terms["max_total_task_seconds"] == 12600 and terms["duration_seconds"] == 10800
 
@@ -163,8 +176,10 @@ def test_replacing_budget_with_no_admissible_action_is_exhausted():
     fresh = state("desk-short")
     budget = load("desk-short.budget-exhausted.json")
     assert list(budget) == BUDGET_KEYS
-    assert budget["spent"] == {"actions": 2, "seconds": 7200, "attempts": [{"step_id": "do", "attempts": 2}]}
-    terms, exhausted = replacement(fresh["budget"], budget["spent"], humans_on_clean_pass(fresh["flow"]))
+    assert budget["spent"] == {"actions": 2, "seconds": 7200,
+                               "attempts": [{"step_id": "do", "attempts": 2}]}
+    humans = humans_on_clean_pass(fresh["flow"])
+    terms, exhausted = replacement(fresh["budget"], budget["spent"], humans)
     assert budget["terms_draft"] == terms and budget["exhausted"] is exhausted is True
 
 
