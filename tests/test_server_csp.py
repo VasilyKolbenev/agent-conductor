@@ -133,13 +133,40 @@ def test_the_policy_is_built_once_and_cannot_be_reassigned_after_the_start(tmp_p
         subject.server_close()
 
 
+@pytest.fixture
+def bind_spy(monkeypatch) -> list[tuple[str, int]]:
+    """Every call of `ConductServer.server_bind`, recorded; the bind itself still happens.
+
+    `TCPServer.__init__` binds through this method, so an empty list means nothing bound.
+    """
+    binds: list[tuple[str, int]] = []
+    real = server.ConductServer.server_bind
+
+    def recording(self) -> None:
+        binds.append(self.server_address)
+        real(self)
+
+    monkeypatch.setattr(server.ConductServer, "server_bind", recording)
+    return binds
+
+
 @pytest.mark.parametrize("origin", [
     "", "*", "http://localhost:7700", "https://127.0.0.1:7700", "http://127.0.0.1",
     "http://127.0.0.1:7700/", "http://127.0.0.1:0", "http://127.0.0.1:07700",
     "http://127.0.0.1:65536", "http://127.0.0.1:7700 https://evil.example",
     "http://127.0.0.1:7700\r\nX-Injected: 1", "http://127.0.0.1:7700;"])
 def test_a_hub_origin_outside_the_one_grammar_is_refused_before_anything_binds(
-        tmp_path, origin):
+        tmp_path, origin, bind_spy):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     with pytest.raises(ValueError, match="hub origin"):
         server.build(root, 0, registry=AdapterRegistry(), hub_origin=origin)
+    assert bind_spy == [], "the server bound before it judged the hub origin"
+
+
+def test_a_valid_build_binds_exactly_once_so_the_bind_spy_is_not_blind(tmp_path, bind_spy):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    subject = server.build(root, 0, registry=AdapterRegistry(), hub_origin=HUB)
+    try:
+        assert len(bind_spy) == 1
+    finally:
+        subject.server_close()
