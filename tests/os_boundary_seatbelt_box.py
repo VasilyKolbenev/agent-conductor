@@ -2,11 +2,10 @@
 
 Everything here is POSIX and imports cleanly on any host; only the darwin tests apply the
 real ``sandbox-exec``. A ``SeatbeltBox`` owns a layout and one profile: ``run_body`` runs a
-shell body under that profile or, with ``sandboxed=False``, the same body without it. A
-sandboxed launch is judged applied only when its shell first failed to write the box's
-CANARY (a path in an empty directory no profile makes writable) and the canary is still
-absent afterwards; a wrapper that execs the command without a profile fails that test and
-the body never runs. ``SeatbeltRunner`` builds a ``ProcessRunner`` over the same layout with
+shell body under that profile. A launch is judged applied only when its shell first failed
+to write the box's CANARY (a path in an empty directory no profile makes writable) and the
+canary is still absent afterwards; a wrapper that execs the command without a profile fails
+that test and the body never runs. ``SeatbeltRunner`` builds a ``ProcessRunner`` over the same layout with
 a production ``ProcessOwnership`` scope, and does not replace any part of the runner.
 """
 from __future__ import annotations
@@ -75,22 +74,17 @@ class SeatbeltBox:
     def tokens(self, root_name: str = "source") -> dict[str, str]:
         return self.layout.tokens(root_name)
 
-    def run_body(self, body: str, *, sandboxed: bool = True, root: str = "source") -> Outcome:
+    def run_body(self, body: str, *, root: str = "source") -> Outcome:
         script = render(body, self.tokens(root))
-        if sandboxed:
-            command = ["/bin/sh", "-c", sb.witnessed_script(self.canary, script)]
-            argv = sb.sandbox_argv(self.profile, command)
-        else:
-            argv = ["/bin/sh", "-c", script]
+        command = ["/bin/sh", "-c", sb.witnessed_script(self.canary, script)]
+        argv = sb.sandbox_argv(self.profile, command)
         done = subprocess.run(argv, capture_output=True, timeout=_STEP_TIMEOUT, env=dict(_ENV),
                               cwd=str(self.layout.tmp), check=False)
         text = (done.stdout + done.stderr).decode("utf-8", errors="replace")
         return Outcome(_judged_applied(text, self.canary), done.returncode, text)
 
-    def run(self, operation: Operation, *, root: str = "source",
-            sandboxed: bool = True) -> list[Outcome]:
-        return [self.run_body(step.body, sandboxed=sandboxed, root=root)
-                for step in operation.posix]
+    def run(self, operation: Operation, *, root: str = "source") -> list[Outcome]:
+        return [self.run_body(step.body, root=root) for step in operation.posix]
 
     def control_write(self) -> bool:
         """A sandboxed launch built the same way writes to the attempt's own tmp."""
