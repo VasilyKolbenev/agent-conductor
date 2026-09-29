@@ -14,10 +14,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .api_refusals import ApiRefusal
+from .authorization_terms import human_identity
 from .contract_values import ContractError, _digest, _id
 from .flow_rules import FLOW_CODES, flow_rules
 from .graph_template import GraphTemplate, load_template
 from .plan_budget import plan_budget, product_limits  # noqa: F401 - re-exported
+from .project_cycle import PinRecord
 from .studio_routes import _replaces_what_was_read, refused_with
 from .workflow_draft import (
     DraftRefused, draft_digest, parse_document, publish_candidate, saved_draft,
@@ -334,3 +336,60 @@ def _repeats(templates: Any, workflow_id: str, document: dict[str, Any],
         return False
     return unchanged_from_published(
         document, standing, workflow_id=workflow_id, revision=latest + 1)
+
+
+# --- the project's pinned cycle (spec 7.10) ---------------------------------------------------
+
+_PIN_FIELDS = frozenset({"workflow_id", "actor"})
+
+
+def read_project_cycle(pins: Any, templates: Any) -> Answer:
+    """`GET /command/project/cycle`: the workflow the human pinned as the project's, or none."""
+    return 200, {"pinned": _pinned(pins.read(), templates)}
+
+
+def pin_project_cycle(pins: Any, templates: Any, body: object,
+                      clock: Callable[[], str]) -> Answer:
+    """`POST /command/project/cycle/pin`: pin a published workflow, or unpin with `null`.
+
+    The same pin by the same person again writes nothing, and answers what the read answers. A
+    workflow with no published revision cannot be pinned (`contract_invalid`); unpinning what is
+    not pinned writes no file. The handler reads no driver and no policy and starts nothing, so
+    it answers the same in every mode of the server.
+    """
+    workflow_id, actor = _pin_body(body)
+    if workflow_id is not None and not templates.revisions(workflow_id):
+        raise ApiRefusal.fixed("contract_invalid")
+    with pins.transaction():
+        standing = pins.read()
+        if not _repeats_the_pin(standing, workflow_id, actor):
+            pins.write(PinRecord(workflow_id, actor, clock()))
+            standing = pins.read()
+    return 200, {"pinned": _pinned(standing, templates)}
+
+
+def _pin_body(body: object) -> tuple[str | None, str]:
+    """A closed body: the workflow (an id, or null to unpin) and the human who asked."""
+    if not isinstance(body, Mapping) or set(body) != _PIN_FIELDS:
+        raise ApiRefusal.fixed("contract_invalid")
+    workflow_id = body["workflow_id"]
+    if workflow_id is not None:
+        workflow_id = _contract(_id, "workflow_id", workflow_id)
+    return workflow_id, _contract(human_identity, "actor", body["actor"])
+
+
+def _repeats_the_pin(standing: PinRecord | None, workflow_id: str | None, actor: str) -> bool:
+    if workflow_id is None:
+        return standing is None or standing.workflow_id is None
+    return (standing is not None and standing.workflow_id == workflow_id
+            and standing.set_by == actor)
+
+
+def _pinned(record: PinRecord | None, templates: Any) -> dict[str, Any] | None:
+    """The pin as the read shows it; the latest revision is read now, never stored."""
+    if record is None or record.workflow_id is None:
+        return None
+    revisions = templates.revisions(record.workflow_id)
+    return {"workflow_id": record.workflow_id,
+            "latest_revision": revisions[-1] if revisions else None,
+            "set_by": record.set_by, "set_at": record.set_at}
