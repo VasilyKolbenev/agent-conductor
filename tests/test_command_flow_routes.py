@@ -10,14 +10,16 @@ import json
 import pytest
 
 from conductor.command import flow_routes, graph_template
+from conductor.command.adapters.process import ProcessRunner
 from conductor.command.api_contracts import ERROR_STATUS
 from conductor.command.contracts import canonical_json
+from conductor.command.project_cycle import ProjectCycleStore
 from conductor.command.workflow_draft import DraftRefused, draft_digest
 from conductor.command.workflow_flow import compile_flow, import_template
 from tests.test_command_run_routes import INSTANCE, PROVIDER, RUN_ID, a_run, journal_of
 from tests.test_command_workflow_flow import chain, fixture_flow, review, step
 from tests.test_command_workflow_routes import (
-    api, code_of, durable_digest, get, post, seeded)
+    NOW, api, code_of, durable_digest, get, post, seeded)
 
 WORKFLOW_ID = "cycle-0a1b2c3d"
 
@@ -389,3 +391,101 @@ def test_editing_a_cycle_leaves_an_open_run_on_its_revision(tmp_path):
     assert journal_of(store) == before, "publishing a newer revision touched an open run"
     frozen = get(subject, f"/command/runs/{RUN_ID}").payload["config"]["workflow"]
     assert frozen == {"id": WORKFLOW_ID, "revision": 1}
+
+
+# --- the project's pinned cycle: the two routes (spec 7.10) -------------------------------------
+
+CYCLE, PIN = "/command/project/cycle", "/command/project/cycle/pin"
+ACTOR = "Вы: Василий"
+
+
+def pinning(subject, workflow_id=WORKFLOW_ID, actor=ACTOR):
+    return post(subject, PIN, {"workflow_id": workflow_id, "actor": actor})
+
+
+def pin_file(store):
+    return ProjectCycleStore(store.project_root).path
+
+
+class Forbidden:
+    """A collaborator the pin must never reach: any use of it fails the test."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"the pin routes reached for `{name}`")
+
+
+def test_get_project_cycle_names_no_pin_before_one_is_set(tmp_path):
+    subject, store, *_ = api(tmp_path)
+    answer = get(subject, CYCLE)
+    assert (answer.status, answer.payload) == (200, {"pinned": None})
+    assert not pin_file(store).exists(), "a read creates nothing"
+
+
+def test_pin_requires_a_published_workflow_and_null_unpins(tmp_path):
+    subject, store, *_ = api(tmp_path)
+    refused = pinning(subject)
+    assert (refused.status, code_of(refused)) == (422, "contract_invalid")
+    assert not pin_file(store).exists()
+    assert write(subject, good(), publish=1).status == 201
+    pinned = pinning(subject)
+    assert (pinned.status, pinned.payload) == (200, {"pinned": {
+        "workflow_id": WORKFLOW_ID, "latest_revision": 1, "set_by": ACTOR, "set_at": NOW}})
+    assert get(subject, CYCLE).payload == pinned.payload
+    assert write(subject, better(), publish=2).status == 201
+    assert get(subject, CYCLE).payload["pinned"]["latest_revision"] == 2
+    unpinned = pinning(subject, None)
+    assert (unpinned.status, unpinned.payload) == (200, {"pinned": None})
+    assert get(subject, CYCLE).payload == {"pinned": None}
+
+
+def test_pin_repeat_writes_nothing_and_records_the_actor(tmp_path):
+    later = ["2026-09-28T13:50:00Z"]
+    subject, store, *_ = api(tmp_path, clock=lambda: later[0])
+    assert write(subject, good(), publish=1).status == 201
+    assert pinning(subject).status == 200
+    before = pin_file(store).read_bytes()
+    later[0] = "2026-09-28T16:50:00Z"
+    assert pinning(subject).status == 200
+    assert pin_file(store).read_bytes() == before
+    assert pinning(subject, actor="Вы: Анна").payload["pinned"]["set_by"] == "Вы: Анна"
+    assert get(subject, CYCLE).payload["pinned"]["set_at"] == "2026-09-28T16:50:00Z"
+
+
+@pytest.mark.parametrize("body", [
+    {}, {"workflow_id": WORKFLOW_ID}, {"actor": ACTOR},
+    {"workflow_id": WORKFLOW_ID, "actor": ACTOR, "extra": 1},
+    {"workflow_id": "not an id", "actor": ACTOR}, {"workflow_id": WORKFLOW_ID, "actor": ""}])
+def test_a_pin_body_that_is_not_exactly_a_workflow_and_an_actor_is_contract_invalid(
+        tmp_path, body):
+    subject, store, *_ = api(tmp_path)
+    assert write(subject, good(), publish=1).status == 201
+    refused = post(subject, PIN, body)
+    assert (refused.status, code_of(refused)) == (422, "contract_invalid")
+    assert not pin_file(store).exists()
+
+
+def test_the_pin_routes_reach_no_driver_no_policy_and_no_process(tmp_path, monkeypatch):
+    """Where no driver exists (the `view` server of spec 4.3.1) the pin still answers alike.
+
+    The stand-in for that mode until it is built: the collaborators a driver-bearing server has
+    are replaced by objects that fail on any use, and nothing may be started.
+    """
+    subject, store, _templates, events = api(tmp_path)
+    assert write(subject, good(), publish=1).status == 201
+    monkeypatch.setattr(ProcessRunner, "run", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("the pin started a process")))
+    subject._policy, subject._runtime = Forbidden(), Forbidden()
+    assert pinning(subject).status == 200 and get(subject, CYCLE).status == 200
+    assert pinning(subject, None).status == 200
+    assert events == [] and not list(store.runs_root.glob("*")), "no run was opened or touched"
+
+
+def test_the_project_paths_are_the_two_cycle_tails_and_nothing_wider(tmp_path):
+    subject, *_ = api(tmp_path)
+    assert write(subject, good(), publish=1).status == 201
+    for path in ("/command/project", "/command/project/", "/command/project/cycle/",
+                 "/command/project/cycle/pin/x", "/command/project/cycles",
+                 "/command/project/auto-continue", "/command/project/cycle/../cycle"):
+        assert code_of(get(subject, path)) == "route_not_found", path
+    wrong = [post(subject, CYCLE, {}), get(subject, PIN)]
+    assert [(row.status, code_of(row)) for row in wrong] == [(405, "method_not_allowed")] * 2

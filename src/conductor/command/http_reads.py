@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from . import flow_routes, studio_routes, task_routes
+from . import flow_routes, studio_routes, task_preparation, task_routes
 from .command_routes import Route
 
 if TYPE_CHECKING:
@@ -32,6 +32,11 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     if route.name == "task":
         assert route.task_id is not None
         return task_routes.read_task(api._tasks, api._store, route.task_id)
+    if route.name == "task_preparation":
+        assert route.task_id is not None
+        return task_preparation.read_preparation(api._tasks, api._store, route.task_id)
+    if route.name == "project_cycle":
+        return flow_routes.read_project_cycle(api._cycle, api._templates)
     if route.name == "workflow_flow":
         assert route.workflow_id is not None
         return flow_routes.read_flow(

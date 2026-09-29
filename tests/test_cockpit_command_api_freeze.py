@@ -143,6 +143,11 @@ EXPECTED_ERRORS = {
     #: The LIFECYCLE of the server itself: nothing about the request, the run or
     #: the plan is at fault, the process is draining toward a stop.
     "server_stopping": (409, "lifecycle"),
+    #: The project's one slot is another run's: the request is fine and the state moves.
+    "slot_busy": (409, "concurrency"),
+    #: The confirmation a human gave no longer stands on the run's facts: it moved, or the
+    #: preview it named is gone. The request is well formed and nothing else is at fault.
+    "preview_stale": (409, "authorization"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
@@ -169,7 +174,10 @@ EXPECTED_ROUTES = (
     ("GET", "/command/tasks", False, False),
     ("POST", "/command/tasks", True, True),
     ("GET", "/command/tasks/<task_id>", False, False),
+    ("GET", "/command/tasks/<task_id>/preparation", False, False),
     ("GET", "/command/quotas", False, False),
+    ("GET", "/command/project/cycle", False, False),
+    ("POST", "/command/project/cycle/pin", True, True),
     ("GET", "/command/runs/<run_id>/automation", False, False),
     ("POST", "/command/runs/<run_id>/automation/preview", False, True),
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),

@@ -16,6 +16,14 @@ class NewWorkHeld(ContractError):
     """The driver is draining: what is in flight settles, nothing new is activated or started."""
 
 
+class SlotBusy(ContractError):
+    """Another run holds the project's slot: the terms may be fine, and the holder is named."""
+
+    def __init__(self, holder: str) -> None:
+        super().__init__("another bounded run is active in this project")
+        self.holder = holder
+
+
 @dataclass(frozen=True)
 class SlotSnapshot:
     """What the driver holds at one instant: a copy, never a live view."""
@@ -90,9 +98,9 @@ class PolicyDriver:
                 raise NewWorkHeld("policy driver is holding new work")
             if self._stopping or self._thread is None or not self._thread.is_alive():
                 raise ContractError("policy driver is not running")
-            if (self._active is not None and self._active[0] != run_id
-                    or self._inflight is not None and self._inflight[0] != run_id):
-                raise ContractError("another bounded run is active in this project")
+            for held in (self._active, self._inflight):
+                if held is not None and held[0] != run_id:
+                    raise SlotBusy(held[0])
 
     def activate(self, run_id, grant_id):
         with self._condition:

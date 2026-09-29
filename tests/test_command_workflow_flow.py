@@ -693,11 +693,3 @@ def test_import_returns_a_new_document_and_leaves_its_input_alone():
     flow = imported(document)
     flow["steps"][0]["ext"]["resources"].append({"kind": "tool", "name": "x"})
     assert document == before
-
-
-def test_import_refuses_a_gate_that_binds_a_role_rather_than_dropping_the_binding():
-    gate = {**gate_node("g"), "role_id": "role-analyst", "capability": "review", "arguments": {}}
-    document = accepted(template([gate], [], **BOUNDED))
-    with pytest.raises(flow_schema.FlowImportError) as refused:
-        imported(document)
-    assert "'g'" in str(refused.value) and isinstance(refused.value, ContractError)

@@ -54,6 +54,31 @@ def test_a_folder_with_no_git_directory_up_the_tree_answers_not_git_without_runn
     assert script.calls == []
 
 
+@pytest.mark.parametrize("relative", ["project", "./project", "sub/project", Path("project"),
+                                      Path("..") / "project", ""])
+def test_a_relative_root_is_refused_before_anything_is_looked_at(relative, monkeypatch):
+    looked = []
+    monkeypatch.setattr(project_git.os.path, "lexists", lambda path: looked.append(path) or True)
+    script = Script()
+    with pytest.raises(ValueError, match="absolute"):
+        project_git.repository_admission(relative, script)
+    assert script.calls == [] and looked == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="only Windows has rooted and drive-relative spellings")
+@pytest.mark.parametrize("spelling", ["\\project", "/project", "C:project"])
+def test_a_windows_spelling_that_names_no_drive_and_folder_together_is_refused(spelling):
+    script = Script()
+    with pytest.raises(ValueError, match="absolute"):
+        project_git.repository_admission(spelling, script)
+    assert script.calls == []
+
+
+def test_an_absolute_root_given_as_text_is_admitted_like_a_path(root):
+    script = Script(said(toplevel(root)), said(b""))
+    assert project_git.repository_admission(str(root), script).state == "repo"
+
+
 def test_a_toplevel_that_is_not_the_root_answers_not_repo_root(root):
     script = Script(said(toplevel(root.parent)))
     admission = project_git.repository_admission(root, script)

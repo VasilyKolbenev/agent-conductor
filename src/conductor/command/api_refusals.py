@@ -58,6 +58,8 @@ ERROR_STATUS = MappingProxyType({
     "run_terminal": 409,
     "gate_unreached": 409,
     "server_stopping": 409,
+    "slot_busy": 409,
+    "preview_stale": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -125,6 +127,19 @@ _FIXED_MESSAGES = MappingProxyType({
     #: write, whichever one it is. It carries no detail, so it needs no
     #: `_REVIEWED_FACTS` row.
     "server_stopping": "the server is stopping and accepts no new command",
+    #: Its own code rather than `contract_invalid`, which is what a taken slot used to
+    #: answer: the terms are fine and nothing needs correcting, another run holds the
+    #: project's one slot, and a client told "invalid" could only send the same body
+    #: again. The detail names the holder (`_REVIEWED_FACTS`); this fixed sentence is
+    #: the vocabulary-completeness one, and the whole answer when the holder is not an
+    #: id that is safe to render.
+    "slot_busy": "another bounded run holds this project's slot",
+    #: Its own code rather than `contract_invalid`, for the reason `slot_busy` is: the body
+    #: is well formed, and what refuses it is that the preview a human reviewed is gone,
+    #: was evicted, has expired, or no longer describes the run. A client told "invalid"
+    #: resends the same body; told this, it repeats the preview and shows what moved. It
+    #: carries no detail, so it needs no `_REVIEWED_FACTS` row.
+    "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
 })
 
 
@@ -226,6 +241,10 @@ _REVIEWED_FACTS = (
     ("service_refused", ("run_id", "node_id", "sandbox"),
      lambda facts: (f"step '{facts['node_id']}' demands sandbox route "
                     f"'{facts['sandbox']}' that this build does not provide")),
+    # The run that holds the project's slot, by its own id and nothing else: which run it is
+    # is the one fact a person can act on, and the driver's memory holds no more.
+    ("slot_busy", ("run_id",),
+     lambda facts: f"another bounded run '{facts['run_id']}' holds this project's slot"),
 )
 
 
@@ -413,6 +432,14 @@ class ApiRefusal(Exception):
         message = (f"gate '{gate_id}' requires explicit human approval and "
                    "cannot be waived")
         return cls(_REFUSAL_BUILD, "service_refused", message, detail)
+
+    @classmethod
+    def slot_busy(cls, run_id: str) -> "ApiRefusal":
+        """Name the run that holds the project's slot, the one fact a caller can act on."""
+        if not _safe_id(run_id):
+            raise ValueError("slot refusal identifiers must be safe IDs") from None
+        message = f"another bounded run '{run_id}' holds this project's slot"
+        return cls(_REFUSAL_BUILD, "slot_busy", message, {"run_id": run_id})
 
     @classmethod
     def plan_sandbox_unprovidable(
