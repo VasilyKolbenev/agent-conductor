@@ -28,7 +28,7 @@ Answer = tuple[int, dict[str, Any]]
 #: Workflows the product ships under these names accept only their own starter (spec 7.1).
 RESERVED_PREFIX = "desk-"
 _FIELDS = frozenset({"source", "expected_digest", "expected_absent", "publish_revision", "binding"})
-_SOURCES = ("flow", "starter_id", "copy_of")
+_COPY_KEYS = {"workflow_id", "revision"}
 
 
 @dataclass(frozen=True)
@@ -92,8 +92,7 @@ def _source_of(source: object) -> tuple[str, Any]:
         return kind, value
     if kind == "starter_id":
         return kind, _contract(_id, "starter_id", value)
-    if kind == "copy_of" and isinstance(value, Mapping) and set(value) == {"workflow_id",
-                                                                           "revision"}:
+    if kind == "copy_of" and isinstance(value, Mapping) and _COPY_KEYS == set(value):
         return kind, (_contract(_id, "workflow_id", value["workflow_id"]),
                       _revision_number(value["revision"], required=True))
     raise ApiRefusal.fixed("contract_invalid")
