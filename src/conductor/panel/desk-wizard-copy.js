@@ -85,6 +85,9 @@ export const WIZARD_COPY = Object.freeze({
     "Редактор цикла появится позже."],
   "wizard.later.make_project_cycle": ["Pinning the project cycle comes in a later step: its door "
     + "is not open yet.", "Закрепление цикла проекта появится позже: его дверь ещё не открыта."],
+  "wizard.later.unpin_project_cycle": ["Unpinning the project cycle comes in a later step: its "
+    + "door is not open yet.", "Открепление цикла проекта появится позже: его дверь ещё не "
+    + "открыта."],
   "wizard.later.prepare": ["Preparing the run comes in a later step.",
     "Подготовка запуска появится позже."],
   "wizard.reason.git_stops": ["This project cannot be used; see the note at the top of the step.",
@@ -179,6 +182,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.cycle.locked": ["The starter cycle is fixed: there is nothing to choose.",
     "Стартовый цикл зафиксирован: выбирать нечего."],
   "wizard.cycle.make_project": ["Make it the project cycle", "Сделать циклом проекта"],
+  "wizard.cycle.unpin": ["Unpin", "Открепить"],
   "wizard.cycle.chosen": ["chosen", "выбран"],
   "wizard.cycle.choose": ["Choose", "Выбрать"],
   "wizard.cycle.source_pinned": ["project cycle · pinned by {by} {at}",
@@ -187,8 +191,16 @@ export const WIZARD_COPY = Object.freeze({
     "как в прошлом запуске: {task} · {at}"],
   "wizard.cycle.source_last_run_untitled": ["as in the last run · {at}",
     "как в прошлом запуске · {at}"],
+  "wizard.cycle.source_last_run_other": ["The last run went by a cycle that is not offered "
+    + "here: {workflow} · {at}. Choose a cycle.",
+    "Прошлый запуск шёл по циклу, которого нет среди карточек: {workflow} · {at}. "
+    + "Выберите цикл."],
   "wizard.cycle.pinned_unread": ["The project cycle could not be read, so nothing is said about it.",
     "Цикл проекта не удалось прочитать, поэтому о нём ничего не сказано."],
+  "wizard.cycle.workflows_unread": ["The list of cycles could not be read, so no cycle is chosen "
+    + "beforehand and nothing is said about the project cycle or the last run.",
+    "Список циклов не удалось прочитать, поэтому цикл заранее не выбран и о цикле проекта "
+    + "и прошлом запуске ничего не сказано."],
   "wizard.flow.pending": ["Asking the server about this cycle…",
     "Спрашиваем сервер об этом цикле…"],
   "wizard.flow.changed": ["The cycle was changed in another window. Try again.",

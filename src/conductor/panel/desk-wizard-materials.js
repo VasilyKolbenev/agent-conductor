@@ -27,6 +27,7 @@ const DOC_ID = /^d-[0-9a-f]{32}$/;
 const STARTER_MARK = Object.freeze({ru: "из стартовых документов · правка владельца",
   en: "from the starter documents · owner's edit"});
 const HEADING = Object.freeze({ru: "Материалы", en: "Materials"});
+const NONE = Object.freeze({ru: "Материалов нет", en: "No materials"});
 const LINK_LINE = Object.freeze({
   ru: (path, oid) => `Файл проекта в рабочей папке: \`${path}\` (git blob \`${oid}\`), `
     + "текст не скопирован",
@@ -98,18 +99,24 @@ export function bodyOf(cards, lang) {
 
 function section(card, number, lang) {
   if (card.kind === "project_doc") {
-    const head = `## ${number}. ${card.path} · ${card.kind}`;
-    return card.mode === "link" ? `${head}\n${LINK_LINE[lang](card.path, card.gitOid)}`
-      : `${head}\n${card.content}`;
+    if (card.mode === "link") {
+      const head = `## ${number}. ${card.path} · ${card.kind}`;
+      return `${head}\n${LINK_LINE[lang](card.path, card.gitOid)}`;
+    }
+    // A copy is headed with the blob it was read at, as the server heads it.
+    return `## ${number}. ${card.path}@${card.gitOid} · ${card.kind}\n${card.content}`;
   }
   const body = card.kind === "scheme" ? `\`\`\`mermaid\n${card.content}\n\`\`\`` : card.content;
   return `## ${number}. ${cardTitle(card, lang)} · ${card.kind}\n${body}`;
 }
 
 //: An approximation of the document the server will compose from these cards: the exact bytes
-//: are the server's alone, this is the text the estimate and the argv arithmetic measure.
+//: are the server's alone, this is the text the estimate and the argv arithmetic measure. It says
+//: what `command/materials.py` says, and a test holds its size at or above the composed one, so
+//: the desk never calls a list small that the server would refuse as too large.
 export function composeText(cards, lang) {
-  const parts = [`# ${HEADING[lang]}`, ...cards.map((card, at) => section(card, at + 1, lang))];
+  const sections = cards.map((card, at) => section(card, at + 1, lang));
+  const parts = [`# ${HEADING[lang]}`, ...(sections.length > 0 ? sections : [NONE[lang]])];
   return `${parts.join("\n\n")}\n`;
 }
 
@@ -154,7 +161,8 @@ const HOLDS = Object.freeze({reading: "git_reading", failed: "git_failed"});
 //: mode. `stop` is why the step cannot be left, `blocks` whether it cannot: a state that ends
 //: the wizard, a read still out or lost, or a starter that has no repository yet (in view, git
 //: waits for activation and the starter goes on to be queued). No state is guessed: an unread
-//: or failed read is its own.
+//: or failed read is its own, in view as everywhere; `not_active` is what the server says when
+//: it says it (spec 6.2.1), never what the desk supposes before the answer lands.
 export function gitFacts(read, mode) {
   const starter = mode.starterId !== null;
   let state = "reading", git = null;
@@ -162,7 +170,7 @@ export function gitFacts(read, mode) {
   else if (read && read.status === "ok") {
     git = read.payload?.git ?? {};
     state = typeof git.state === "string" ? git.state : "failed";
-  } else if (mode.view) state = "not_active";
+  }
   const ends = ENDS_THE_WIZARD.includes(state);
   const needsGit = starter && !mode.view && state !== "repo";
   const held = Object.hasOwn(HOLDS, state) ? HOLDS[state] : null;

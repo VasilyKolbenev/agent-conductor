@@ -115,3 +115,55 @@ actions and one correction six, both within the default eight; a full replanned
 second lap still needs nine and is not promised under that default.
 `graph_dalio.validate_dalio_correction_template` holds this revision to its own
 shape; the one-loop check for revisions 1–4 is unchanged.
+
+## The desk's ready cycles
+
+`desk-standard`, `desk-short` and `desk-starter-docs` are the cycles the new-task
+wizard of the desk offers ("Standard", "Short", "Starter documents"). They are
+not written like the files above. Each is a **flow** (`workflow_flow`, the
+editor's model of steps, roads and loops) run through `compile_flow`, plus two
+identity fields the compiler leaves out: `template_id`, which is the file name,
+the starter id and the workflow id the cycle has in a project, and `revision: 1`.
+The flows are drawn in `tests/fixtures/flow/`, and that fixture is the contract:
+`tests/test_command_desk_templates.py` holds each file equal to its fixture
+compiled, holds every fact below by hand, and pins each file's digest. Nothing
+in the bytes is written by hand.
+
+| File | Steps, in the order of the file | Passes |
+|---|---|---|
+| `desk-standard` | `analyst` (review, spec) → `do` (dispatch, checked) → `result` (a person) | 3, loop `do-fix` home to `do` |
+| `desk-short` | `do` (dispatch, checked) → `result` | 2, loop `do-fix` home to `do` |
+| `desk-starter-docs` | `plan` → `ideas` → `scheme` (reviews only) → `result` | none: nothing is dispatched |
+
+What the three share:
+
+- **Inputs.** An entry step reads `artifact-brief` and `artifact-materials`, the two
+  documents the wizard publishes for every run; any other step reads the result of
+  the nearest review above it. `scheme` also reads `artifact-plan` (`reads` in the
+  flow). A dispatch step's instruction is `instruction-<step_id>`.
+- **Timeouts and words.** Every step that acts writes `timeout_seconds: 1800`
+  explicitly. Every `purpose` is English and ends with the sentence "Answer in the
+  language of the brief.", so one file serves both interface languages; a step has
+  no title of its own, the compiler names it after its role kind and the desk
+  translates the name.
+- **Roles.** Only `role-analyst`, `role-reviewer`, `role-designer`, `role-doer` and
+  `role-checker` (a verifier, never a step), so an assignment of harnesses carries
+  from one cycle to the next. No file names a harness.
+- **The bounded contract.** `execution_contract: "bounded-run-v1"` lifts the rule
+  that a gate stands before every dispatch, which is why "Short" is legal. A run of
+  such a file is opened only as a Policy run with the automation contract, as the
+  desk always opens it; opening one otherwise is refused.
+- **Budget** (spec 7.8): "Standard" costs 2 actions and 1 h 30 min on a clean pass
+  and at most 4 and 3 h 30 min; "Short" 1 and 1 h, at most 2 and 2 h; "Starter
+  documents" 3 and 1 h 30 min either way.
+
+"Starter documents" is a chain and not a fork on purpose: when one branch of a fork
+fails, the other stays ready and the run halts asking for a correction that has
+nowhere to go. It is never a card of the wizard; only the desk's starter mode opens
+it. The `dalio-*` files above are unchanged, `DEFAULT_TEMPLATE` is unchanged, and the
+`desk-*` ids are reserved: in a project only `{"source": {"starter_id": ...}}` of the
+same id writes into them.
+
+**A change is a new revision here too.** The next choice of a card after a product
+that changed a file publishes the next revision; a run that is open or queued keeps
+the revision it was frozen with. Revision 1 is pinned by digest and does not move.

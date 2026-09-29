@@ -66,7 +66,7 @@ export const REASONS = Object.freeze([
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
 export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
-  "from_starter_docs", "build_own", "make_project_cycle", "prepare"]);
+  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]);
 
 export function isLater(control) {
   return LATER.includes(control);

@@ -36,6 +36,7 @@ SPEC_WORDS = {
     "wizard.instr.switch": "Передавать агентам инструкции этого проекта",
     "wizard.close.keep": "Оставить черновик", "wizard.cycle.build": "＋ Собрать свой",
     "wizard.cycle.make_project": "Сделать циклом проекта", "wizard.cycle.pinned": "цикл проекта",
+    "wizard.cycle.unpin": "Открепить",
     "wizard.step.task": "Задача", "wizard.step.materials": "Материалы",
     "wizard.step.cycle": "Цикл", "wizard.step.roles": "Роли и указания",
     "wizard.step.prepare": "Подготовка", "wizard.step.run": "Запуск",

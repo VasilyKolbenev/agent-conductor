@@ -231,7 +231,7 @@ def test_step_two_holds_while_git_is_unread_or_failed_and_says_which():
     assert out == {"unread": "git_reading", "reading": "git_reading", "failed": "git_failed",
                    "lost": "git_failed", "repo": None, "starter_reading": "git_reading",
                    "starter_failed": "git_failed", "starter_repo": None,
-                   "view_without_a_read": None, "view_failed": "git_failed",
+                   "view_without_a_read": "git_reading", "view_failed": "git_failed",
                    "reread": "git_reading"}
 
 
@@ -281,18 +281,43 @@ def test_starter_mode_without_git_stops_and_offers_only_connect_git():
     assert out["in_view_without_git"][1:] == [False, None]
 
 
+def test_in_view_mode_an_unread_git_read_is_reading_and_only_the_answer_says_not_active():
+    """Whether git is inactive is a fact the server states; before it does, the step is unread."""
+    out = run_js(CARDS + """
+      const view = opened(started({viewMode: true}));
+      const lost = {status: "refused", code: "store_error"};
+      const facts = (state) => {
+        const row = wiz.gitReading(state);
+        return [row.state, row.blocks, row.stop, wiz.canAdvance(state).reason];
+      };
+      const answered = reply(view, "git", d.git.not_active);
+      show({unread: facts(view), answered: facts(answered),
+        lost: facts(reply(view, "git", null, lost)),
+        not_git: facts(reply(view, "git", d.git.not_git)),
+        reread: facts(wiz.reduceWizard(answered, {type: "reread", name: "git"})),
+        asked: wiz.wantedAsks(view).some((ask) => ask.name === "git")});
+    """, DATA)
+    assert out["unread"] == ["reading", True, "git_reading", "git_reading"]
+    assert out["answered"] == ["not_active", False, None, None]
+    assert out["lost"] == ["failed", True, "git_failed", "git_failed"]
+    assert out["not_git"] == ["not_git", False, None, None]
+    assert out["reread"] == ["reading", True, "git_reading", "git_reading"]
+    assert out["asked"] is True, "the read is asked in view too, so the answer can land"
+
+
 def test_in_view_mode_git_reads_not_active_and_the_project_document_kind_is_unavailable():
     out = run_js(CARDS + """
       const view = opened(started({viewMode: true}));
       const active = opened();
       const picked = wiz.stepWizard(view, {type: "material-add", kind: "project_doc"});
       const plan = run(view, ...note("Plan", "Steps."));
-      show({before_any_answer: wiz.gitReading(view).state, kinds: wiz.availableKinds(view),
+      show({after_the_answer: wiz.gitReading(reply(view, "git", d.git.not_active)).state,
+        kinds: wiz.availableKinds(view),
         active_kinds: wiz.availableKinds(active), picker_ignored: picked.state === view,
         asks: picked.asks.length, documents_asked: wiz.wantedAsks(view).some(
           (ask) => ask.name === "documents"), others_work: plan.materials.items.length});
     """, DATA)
-    assert out["before_any_answer"] == "not_active"
+    assert out["after_the_answer"] == "not_active"
     assert out["kinds"] == ["plan", "ideas", "scheme", "note"]
     assert out["active_kinds"] == ["plan", "ideas", "scheme", "note", "project_doc"]
     assert out["picker_ignored"] is True and out["asks"] == 0

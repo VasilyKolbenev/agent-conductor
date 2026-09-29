@@ -350,24 +350,35 @@ function timeText(ctx, seconds) {
   return ctx.t("wizard.time.s", {seconds: String(seconds)});
 }
 
-//: Where the preselected card came from, said only while the choice is still the preselection.
+//: Where the preselected card came from, said only while the choice is still the preselection. A
+//: last run whose cycle is not offered chose nothing, and that is said while nothing is chosen.
 function sourceLine(ctx) {
-  if (ctx.wizard.cycle.chosenBy !== "preselection") return [];
-  const source = preselection(ctx.wizard.reads).source, at = instantText(source.at);
+  const cycle = ctx.wizard.cycle, source = preselection(ctx.wizard.reads).source;
+  const shown = cycle.chosenBy === "preselection"
+    || (cycle.choice === null && source.kind === "last_run_uncarded");
+  if (!shown) return [];
+  const at = instantText(source.at);
   let text = null;
   if (source.kind === "pinned") {
     text = ctx.t("wizard.cycle.source_pinned", {by: source.by ?? "—", at});
   } else if (source.kind === "last_run") {
     text = source.taskTitle === null ? ctx.t("wizard.cycle.source_last_run_untitled", {at})
       : ctx.t("wizard.cycle.source_last_run", {task: source.taskTitle, at});
+  } else if (source.kind === "last_run_uncarded") {
+    text = ctx.t("wizard.cycle.source_last_run_other", {workflow: source.workflowId, at});
   }
   return text === null ? [] : [element("p", {"data-cycle-source": source.kind, text})];
 }
 
-//: A pinned cycle that could not be read is said to be unread, never to be absent.
+//: A pinned cycle, or the list of cycles, that could not be read is said to be unread, never to be
+//: absent.
 function unreadNote(ctx) {
-  if (ctx.wizard.mode.starterId !== null || !preselection(ctx.wizard.reads).pinnedUnread) return [];
-  return [element("p", {"data-cycle-unread": "", text: ctx.t("wizard.cycle.pinned_unread")})];
+  if (ctx.wizard.mode.starterId !== null) return [];
+  const {pinnedUnread, workflowsUnread} = preselection(ctx.wizard.reads);
+  const note = (name, key) => element("p", {[name]: "", text: ctx.t(key)});
+  return [...(pinnedUnread ? [note("data-cycle-unread", "wizard.cycle.pinned_unread")] : []),
+    ...(workflowsUnread ? [note("data-cycle-workflows-unread", "wizard.cycle.workflows_unread")]
+      : [])];
 }
 
 function cardName(ctx, card) {
@@ -388,10 +399,13 @@ function cycleCard(ctx, card) {
   pick.setAttribute("aria-pressed", chosen ? "true" : "false");
   const pin = card.canPin ? [later(ctx, "make_project_cycle", `wizard:cycle:pin:${card.id}`,
     ctx.t("wizard.cycle.make_project"))] : [];
+  const unpin = card.canUnpin ? [later(ctx, "unpin_project_cycle",
+    `wizard:cycle:unpin:${card.id}`, ctx.t("wizard.cycle.unpin"))] : [];
   return element("li", {className: "desk-wizard__card", "data-card-id": card.id,
     "data-chosen": chosen ? "true" : "false", "data-pinned": card.pinned ? "true" : "false",
     "data-locked": card.locked ? "true" : null},
-  [element("h4", {text: cardName(ctx, card)}), ...notes, ...(card.locked ? [] : [pick, ...pin])]);
+  [element("h4", {text: cardName(ctx, card)}), ...notes,
+    ...(card.locked ? [] : [pick, ...pin, ...unpin])]);
 }
 
 function cardItems(ctx) {
@@ -589,7 +603,7 @@ export function mountWizard(mount, state, handlers) {
   const ctx = context(state, handlers), wizard = ctx.wizard;
   const draw = Object.hasOwn(BODIES, wizard.step) ? BODIES[wizard.step] : () => [];
   mount.replaceChildren(element("section", {className: "desk-wizard", "data-wizard": "",
-    "data-step": wizard.step, "data-mode": modeOf(wizard)}, [
+    "data-wizard-current": wizard.step, "data-mode": modeOf(wizard)}, [
     head(ctx), stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step}, draw(ctx)),
     foot(ctx), ...closing(ctx)]));

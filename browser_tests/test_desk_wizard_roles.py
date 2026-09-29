@@ -41,7 +41,7 @@ def reads(**over):
 
 def to_roles(bench, lang, **kwargs):
     to_step(bench, lang, "roles", **kwargs)
-    expect(bench.root()).to_have_attribute("data-step", "roles")
+    expect(bench.root()).to_have_attribute("data-wizard-current", "roles")
 
 
 def picks(bench, role):
@@ -226,7 +226,8 @@ def test_next_task_preselects_the_last_runs_cycle_and_role_assignment(bench, lan
     to_roles(bench, lang, reads=reads(flow={"desk-standard": ok(WITH_TESTER)}, **LAST_RUN))
     rows = {row: bench.page.locator(f'[data-role="{row}"]') for row in (
         "role-analyst", "role-doer", "role-tester", "role-checker")}
-    assert bench.page.locator("[data-wizard][data-step]").get_attribute("data-step") == "roles"
+    root = bench.page.locator("[data-wizard][data-wizard-current]")
+    assert root.get_attribute("data-wizard-current") == "roles"
     for role, harness in (("role-analyst", "claude-code"), ("role-doer", "codex"),
                           ("role-checker", "claude-code")):
         assert rows[role].get_attribute("data-by") == "previous", role

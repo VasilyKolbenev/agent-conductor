@@ -39,7 +39,7 @@ def to_materials(bench, lang, *, git="repo", starter=None, view=False, auto=None
     bench.type_into("wizard:title", "Fix login")
     bench.type_into("wizard:idea" if starter else "wizard:brief", "Make it work.")
     bench.control("wizard:next").click()
-    expect(bench.root()).to_have_attribute("data-step", "materials")
+    expect(bench.root()).to_have_attribute("data-wizard-current", "materials")
 
 
 def on(bench, key):
@@ -187,6 +187,22 @@ def test_in_view_mode_the_git_step_says_not_active_and_there_is_no_project_docum
     why = bench.page.locator('[data-blocked="wizard:git:connect_git"] small')
     assert why.inner_text() == bench.say("wizard.later.connect_git_view")
     assert [row for row in bench.asks() if row[1] in ("documents", "document")] == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_in_view_mode_git_is_unread_until_the_answer_lands_and_only_then_not_active(bench, lang):
+    unanswered = {name: table for name, table in answers().items() if name != "git"}
+    to_materials(bench, lang, view=True, auto=unanswered)
+    panel = bench.page.locator("[data-git-state]")
+    assert panel.get_attribute("data-git-state") == "reading"
+    assert panel.locator("p").first.inner_text() == bench.say("wizard.git.reading")
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.git_reading")
+    bench.answer("git", GIT["not_active"])
+    expect(panel).to_have_attribute("data-git-state", "not_active")
+    assert panel.locator("p").first.inner_text() == bench.say("wizard.git.not_active")
+    expect(bench.control("wizard:next")).to_be_enabled()
+    assert bench.problems == []
 
 
 @pytest.mark.parametrize("lang", LANGS)

@@ -243,11 +243,11 @@ def to_step(bench: Bench, lang: str, step: str, *, starter: str | None = None,
     bench.type_into("wizard:title", "Fix login")
     bench.type_into("wizard:idea" if starter else "wizard:brief", "Make it work.")
     for following in ("materials", "cycle", "roles"):
-        if bench.root().get_attribute("data-step") == step:
+        if bench.root().get_attribute("data-wizard-current") == step:
             break
         expect(bench.control("wizard:next")).to_be_enabled()
         bench.control("wizard:next").click()
-        expect(bench.root()).to_have_attribute("data-step", following)
+        expect(bench.root()).to_have_attribute("data-wizard-current", following)
 
 
 @pytest.fixture(scope="session")

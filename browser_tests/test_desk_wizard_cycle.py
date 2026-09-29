@@ -81,6 +81,25 @@ def test_cycle_cards_carry_their_source_label_and_a_last_run_names_its_task_and_
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_a_last_run_on_a_cycle_that_is_not_a_card_is_said_and_no_older_cycle_stands_in(
+        bench, lang):
+    runs = fixture("wizard", "runs.json")
+    runs["runs"][1]["workflow_id"] = "desk-starter-docs"
+    to_step(bench, lang, "cycle", reads=reads(runs=ok(runs)))
+    label = bench.page.locator("[data-cycle-source]")
+    assert label.get_attribute("data-cycle-source") == "last_run_uncarded"
+    assert label.inner_text() == bench.say("wizard.cycle.source_last_run_other",
+                                           workflow="desk-starter-docs", at="2026-09-28 13:50 UTC")
+    assert bench.page.locator('[data-card-id][data-chosen="true"]').count() == 0
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.cycle_none")
+    bench.control("wizard:cycle:choose:desk-short").click()
+    expect(label).to_have_count(0)
+    assert bench.page.locator('[data-card-id="desk-short"]').get_attribute("data-chosen") == "true"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_an_unread_pinned_cycle_says_it_could_not_be_read_and_claims_nothing_more(bench, lang):
     refused = {"status": "refused", "code": "store_error", "payload": None}
     to_step(bench, lang, "cycle", reads=reads(cycle_read=refused))
@@ -90,6 +109,27 @@ def test_an_unread_pinned_cycle_says_it_could_not_be_read_and_claims_nothing_mor
         "nodes => nodes.map(node => node.dataset.pinned === 'true')"))
     assert bench.page.locator("[data-cycle-source]").get_attribute("data-cycle-source") == \
         "last_run"
+
+
+@pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("pinned", [True, False], ids=["pinned", "unpinned"])
+def test_an_unread_list_of_cycles_is_said_and_no_cycle_is_chosen_or_called_missing(
+        bench, lang, pinned):
+    runs = fixture("wizard", "runs.json")
+    runs["runs"][1]["workflow_id"] = "cycle-7c1e5a90"
+    refused = {"status": "refused", "code": "store_error", "payload": None}
+    over = {"cycle_read": ok(PINNED)} if pinned else {}
+    to_step(bench, lang, "cycle", reads=reads(workflows=refused, runs=ok(runs), **over))
+    assert bench.page.locator("[data-cycle-workflows-unread]").inner_text() == bench.say(
+        "wizard.cycle.workflows_unread")
+    assert bench.page.locator("[data-cycle-source]").count() == 0, "no source is claimed"
+    assert bench.page.locator('[data-card-id][data-chosen="true"]').count() == 0
+    assert bench.control("wizard:next").is_disabled()
+    assert bench.text("[data-wizard-reason]") == bench.say("wizard.reason.cycle_none")
+    bench.control("wizard:cycle:choose:desk-short").click()
+    expect(bench.page.locator('[data-card-id="desk-short"]')).to_have_attribute(
+        "data-chosen", "true")
+    assert bench.problems == []
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -265,7 +305,7 @@ def test_git_lost_after_step_two_disables_next_names_that_step_and_the_stepper_r
         "wizard.reason.earlier", step=step, reason=bench.say("wizard.reason.git_stops")))
     assert bench.control("wizard:next").is_disabled()
     bench.control("wizard:step:materials").click()
-    expect(bench.root()).to_have_attribute("data-step", "materials")
+    expect(bench.root()).to_have_attribute("data-wizard-current", "materials")
     assert bench.page.locator("[data-wizard-reason]").inner_text() == bench.say(
         "wizard.reason.git_stops"), "on its own step the reason has no prefix"
     assert bench.problems == []
@@ -283,6 +323,24 @@ def test_a_failed_git_read_holds_step_two_and_reading_it_again_lets_the_owner_go
     bench.control("wizard:git:reread").click()
     expect(bench.control("wizard:next")).to_be_enabled()
     assert bench.page.locator("[data-wizard-reason]").inner_text() == ""
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_pinned_card_offers_unpin_as_a_disabled_control_with_its_reason(bench, lang):
+    to_step(bench, lang, "cycle", reads=reads(cycle_read=ok(PINNED)))
+    unpin = bench.control("wizard:cycle:unpin:cycle-7c1e5a90")
+    assert unpin.is_disabled()
+    assert unpin.inner_text() == bench.say("wizard.cycle.unpin")
+    why = bench.page.locator('[data-blocked="wizard:cycle:unpin:cycle-7c1e5a90"] small')
+    assert why.inner_text() == bench.say("wizard.later.unpin_project_cycle")
+    pinned = bench.page.locator('[data-card-id="cycle-7c1e5a90"]')
+    assert bench.say("wizard.cycle.pinned") in pinned.inner_text()
+    assert pinned.locator('[data-focus^="wizard:cycle:pin:"]').count() == 0
+    assert bench.page.locator('[data-focus^="wizard:cycle:unpin:"]').count() == 1
+    before = bench.wizard()
+    unpin.click(force=True)
+    assert bench.wizard() == before
     assert bench.problems == []
 
 

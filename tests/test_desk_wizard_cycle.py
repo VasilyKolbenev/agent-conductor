@@ -95,7 +95,7 @@ def test_desk_prefixed_workflows_are_never_saved_cycles_and_starter_docs_is_neve
         pinned_starter_docs: wiz.preselection(settled(pinnedStarter).reads).choice});
     """, DATA)
     assert out["ids"] == ["desk-standard", "desk-short", "cycle-7c1e5a90", "old-cycle", "build"]
-    assert out["last_run_on_starter_docs"] == {"kind": "saved", "workflowId": "cycle-7c1e5a90"}
+    assert out["last_run_on_starter_docs"] is None, "and no older run's cycle stands in for it"
     assert out["pinned_starter_docs"]["workflowId"] == "desk-standard"
 
 
@@ -139,22 +139,55 @@ def test_preselection_takes_the_pinned_cycle_then_the_last_runs_workflow_and_nam
         applied: [settled().cycle.choice, settled().cycle.chosenBy],
         applied_last: [settled(d.unpinned).cycle.choice, settled(d.unpinned).cycle.chosenBy]});
     """, DATA)
-    assert out["pinned"] == {"ready": True, "pinnedUnread": False,
+    assert out["pinned"] == {"ready": True, "pinnedUnread": False, "workflowsUnread": False,
                              "choice": {"kind": "saved", "workflowId": "cycle-7c1e5a90"},
                              "source": {"kind": "pinned", "by": "Вы: Василий",
                                         "at": "2026-09-28T13:50:00Z", "task": None,
-                                        "taskTitle": None}}
-    assert out["last_run"] == {"ready": True, "pinnedUnread": False,
+                                        "taskTitle": None, "workflowId": "cycle-7c1e5a90"}}
+    assert out["last_run"] == {"ready": True, "pinnedUnread": False, "workflowsUnread": False,
                                "choice": {"kind": "starter", "workflowId": "desk-standard"},
                                "source": {"kind": "last_run", "by": None,
                                           "at": "2026-09-28T13:50:00Z", "task": "task-b",
-                                          "taskTitle": "Fix the login form"}}
+                                          "taskTitle": "Fix the login form",
+                                          "workflowId": "desk-standard"}}
     assert out["nothing"]["choice"] is None and out["nothing"]["source"]["kind"] == "none"
-    assert out["deleted"]["choice"] == {"kind": "saved", "workflowId": "cycle-7c1e5a90"}
+    assert out["deleted"]["choice"] is None, "the newest run's cycle is gone: no stand-in"
+    assert out["deleted"]["source"]["kind"] == "last_run_uncarded"
     assert out["early"] == [False, None]
     assert out["applied"] == [{"kind": "saved", "workflowId": "cycle-7c1e5a90"}, "preselection"]
     assert out["applied_last"] == [{"kind": "starter", "workflowId": "desk-standard"},
                                    "preselection"]
+
+
+def test_the_newest_run_stays_the_last_run_when_its_cycle_is_not_a_card():
+    """An older run's cycle must not stand in for the newest run's under the words "last run"."""
+    out = run_js(CYCLE + """
+      const newestOn = (workflowId) => {
+        const runs = structuredClone(d.runs);
+        runs.runs[1].workflow_id = workflowId;
+        return runs;
+      };
+      const found = (workflowId, pin = d.unpinned) => wiz.preselection(
+        settled(pin, newestOn(workflowId)).reads);
+      const state = settled(d.unpinned, newestOn("desk-starter-docs"));
+      show({docs: found("desk-starter-docs"), gone: found("gone-cycle"),
+        pinned_still_wins: found("desk-starter-docs", d.pinned).source.kind,
+        card_still_chosen: found("desk-short").choice,
+        applied: [state.cycle.choice, state.cycle.chosenBy],
+        gate: wiz.canAdvance(state).reason});
+    """, DATA)
+    stood_for = {"by": None, "at": "2026-09-28T13:50:00Z", "task": "task-b",
+                 "taskTitle": "Fix the login form"}
+    assert out["docs"]["choice"] is None and out["docs"]["ready"] is True
+    assert out["docs"]["source"] == {"kind": "last_run_uncarded", "workflowId": "desk-starter-docs",
+                                     **stood_for}
+    assert out["gone"]["choice"] is None
+    assert out["gone"]["source"] == {"kind": "last_run_uncarded", "workflowId": "gone-cycle",
+                                     **stood_for}
+    assert out["pinned_still_wins"] == "pinned"
+    assert out["card_still_chosen"] == {"kind": "starter", "workflowId": "desk-short"}
+    assert out["applied"] == [None, None], "nothing is chosen for the owner"
+    assert out["gate"] == "cycle_none"
 
 
 def test_an_unread_pinned_cycle_falls_back_to_the_last_run_and_says_nothing_false():
@@ -177,6 +210,40 @@ def test_an_unread_pinned_cycle_falls_back_to_the_last_run_and_says_nothing_fals
                              "last_run"]
     assert out["lost_unread"] is True and out["none_pinned_is_not_unread"] is False
     assert out["applied"] == ["desk-standard", "preselection"]
+
+
+def test_an_unread_list_of_cycles_chooses_nothing_and_no_pin_or_run_is_called_absent():
+    """The pin and the runs were read but the list they are looked up in was not: unknown."""
+    out = run_js(CYCLE + """
+      const unread = (result, pin, runs = d.runs) => {
+        let state = reply(opened(atCycle()), "workflows", null, result);
+        for (const [name, payload] of [["runs", runs], ["cycle_read", pin], ["tasks", d.tasks]]) {
+          state = reply(state, name, payload);
+        }
+        return state;
+      };
+      const newestOn = (workflowId) => {
+        const runs = structuredClone(d.runs);
+        runs.runs[1].workflow_id = workflowId;
+        return runs;
+      };
+      const refused = {status: "refused", code: "store_error"}, lost = {status: "unknown"};
+      const seen = (state) => {
+        const found = wiz.preselection(state.reads);
+        return {ready: found.ready, unread: found.workflowsUnread, choice: found.choice,
+          source: found.source.kind, applied: [state.cycle.choice, state.cycle.chosenBy],
+          gate: wiz.canAdvance(state).reason};
+      };
+      show({pinned: seen(unread(refused, d.pinned)), pinned_lost: seen(unread(lost, d.pinned)),
+        unpinned_saved_run: seen(unread(refused, d.unpinned, newestOn("cycle-7c1e5a90"))),
+        unpinned_starter_run: seen(unread(refused, d.unpinned)),
+        read: seen(settled(d.unpinned))});
+    """, DATA)
+    nothing = {"ready": True, "unread": True, "choice": None, "source": "none",
+               "applied": [None, None], "gate": "cycle_none"}
+    unread = ("pinned", "pinned_lost", "unpinned_saved_run", "unpinned_starter_run")
+    assert {name: out[name] for name in unread} == dict.fromkeys(unread, nothing)
+    assert out["read"]["unread"] is False and out["read"]["source"] == "last_run"
 
 
 def test_choosing_a_card_asks_for_the_flow_with_no_publication():
@@ -488,13 +555,27 @@ def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_until_the
                    "pinned_card": False, "later": True}
 
 
+def test_only_the_pinned_card_offers_unpin_and_it_is_disabled_until_the_door_is_wired():
+    out = run_js(CYCLE + """
+      const unpin = (state) => Object.fromEntries(wiz.cycleCards(state).map(
+        (card) => [card.id, card.canUnpin]));
+      show({pinned: unpin(settled()), unpinned: unpin(settled(d.unpinned)),
+        starter: unpin(inStarterMode()), later: wiz.isLater("unpin_project_cycle")});
+    """, DATA)
+    assert out["pinned"] == {"cycle-7c1e5a90": True, "desk-standard": False, "desk-short": False,
+                             "old-cycle": False, "build": False}
+    assert not any(out["unpinned"].values()), "nothing is pinned, so nothing can be unpinned"
+    assert out["starter"] == {"desk-starter-docs": False}, "a locked card offers nothing"
+    assert out["later"] is True
+
+
 def test_every_control_whose_door_is_not_wired_is_named_and_none_is_a_silent_no_op():
     out = run_js(CYCLE + """
       show({later: wiz.LATER, frozen: Object.isFrozen(wiz.LATER),
         wired: ["edit-title", "next", "material-add", "cycle-choose"].map(wiz.isLater)});
     """, DATA)
     assert out["later"] == ["connect_git", "first_commit", "run_without_git", "from_starter_docs",
-                            "build_own", "make_project_cycle", "prepare"]
+                            "build_own", "make_project_cycle", "unpin_project_cycle", "prepare"]
     assert out["frozen"] is True and out["wired"] == [False] * 4
 
 

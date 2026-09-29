@@ -146,6 +146,19 @@ def test_the_renderer_draws_no_radio_or_checkbox_input_the_focus_net_cannot_rest
     assert "aria-checked" in code
 
 
+def test_no_wizard_module_writes_the_focus_nets_scope_attribute():
+    """`data-step` is the focus net's scope: `focusTarget` remembers the form around a control by
+    it and `restoreFocus` looks for the successor only inside `[data-step="<that name>"]`.
+
+    A wizard root that carried its own step name there sent the successor of "Next" looking
+    inside the step it had just left, so pressing Next from the keyboard dropped focus to the
+    page. The root says its step in its own attribute (`data-wizard-current`).
+    """
+    for name in [*PURE, *DRAWN, *DATA]:
+        assert not re.search(r"\bdata-step\b", _code(PANEL / name)), name
+    assert '"data-wizard-current": wizard.step' in _code(PANEL / RENDERER)
+
+
 def test_every_control_the_renderer_builds_carries_a_focus_key():
     blocks = _blocks(_code(PANEL / RENDERER), ("button", "input", "textarea", "select"))
     assert len(blocks) >= 5

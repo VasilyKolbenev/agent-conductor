@@ -33,6 +33,7 @@ from conductor.command.adapters.harness_workspace import (
     work_parts,
     work_route,
 )
+from conductor.command.authorization_terms import AUTOMATION_CONTRACT
 from conductor.command.contracts import ContractError, _id
 from conductor.command.graph_definition import GraphNode
 from conductor.command.graph_template import (
@@ -289,6 +290,10 @@ def test_every_work_bearing_step_of_a_shipped_cycle_carries_the_runs_task(shippe
     verifier_roles = {step.verifier_role_id for step in template.steps() if step.verifier_role_id}
     roles |= verifier_roles
     config = bound_to("a")
+    if "execution_contract" in template.as_dict():
+        # The desk opens every run as a Policy run with this contract (spec 6.4.1); a template
+        # that names the bounded contract cannot be materialized without it.
+        config = {**config, "automation_contract": AUTOMATION_CONTRACT}
     if verifier_roles:
         config = {**config, "instances": [*config["instances"],
             {**config["instances"][0], "id": "checker"}]}
