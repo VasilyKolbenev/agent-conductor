@@ -118,11 +118,13 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
             _check_identity(root, plan.project_id)
         pinned = _providers(root, providers)
     except (OwnerRefused, store.StoreError) as error:
-        raise _refusal_for(error, port) from error
+        raise _refusal_for(error) from error
     try:
         srv = server.build(root, port=port, providers=pinned)
+    except server.ServerBindError as error:
+        raise _bind_refusal(error, port) from error
     except (OwnerRefused, store.StoreError, OSError) as error:
-        raise _refusal_for(error, port) from error
+        raise _refusal_for(error) from error
     try:
         status.write("serving", port=srv.server_address[1])
     except OSError as error:
@@ -160,17 +162,21 @@ def _providers(root, providers: str | None):
         raise up_flags.UpRefusal("providers_invalid", str(error)) from error
 
 
-def _refusal_for(error: BaseException, port: int) -> up_flags.UpRefusal:
-    """Map what a start can meet onto the closed table of 4.1.5."""
+def _refusal_for(error: BaseException) -> up_flags.UpRefusal:
+    """Map what a start can meet, other than a failed bind, onto the closed table of 4.1.5."""
     if isinstance(error, OwnerRefused):
         if error.code in up_flags.OWNER_CODES:
             return up_flags.UpRefusal(error.code, error.detail)
         return up_flags.UpRefusal("start_failed", f"{error.code}: {error.detail}")
     if isinstance(error, store.StoreError):
         return up_flags.UpRefusal("store_error", str(error))
-    # An OSError out of `build` is the bind: the only port this may name is the
-    # one asked for, and no other port is known to be free, so the hint keeps
-    # the PORT placeholder literal instead of volunteering a number.
+    return up_flags.UpRefusal("start_failed", str(error))    # an OSError that is not the bind
+
+
+def _bind_refusal(error: BaseException, port: int) -> up_flags.UpRefusal:
+    """A failed bind. The only port this may name is the one asked for, and no other
+    port is known to be free, so the hint keeps the PORT placeholder literal instead
+    of volunteering a number."""
     return up_flags.UpRefusal(
         "bind_failed", f"cannot serve on 127.0.0.1:{port}: {error}. "
                        "To try a different port, rerun with --port PORT.")

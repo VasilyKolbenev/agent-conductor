@@ -26,6 +26,7 @@ import pytest
 import conductor.__main__
 from conductor import prompts, report, store, validate
 from conductor.__main__ import main
+from conductor.server import ServerBindError
 from tests.test_store import write_project, good_lane
 
 
@@ -436,7 +437,7 @@ def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
 
 def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):
     def refuse(*args, **kwargs):
-        raise OSError("address already in use")
+        raise ServerBindError("address already in use")
 
     monkeypatch.setattr("conductor.server.build", refuse)
     root = write_project(tmp_path, lanes={"claude": good_lane()})
@@ -454,7 +455,7 @@ def test_up_bind_failure_names_the_requested_endpoint_and_the_port_flag(
     # port the user requested — a substituted default port and an invented
     # "free" alternative port both fail the same one assertion.
     def refuse(*args, **kwargs):
-        raise OSError("address already in use")
+        raise ServerBindError("address already in use")
 
     monkeypatch.setattr("conductor.server.build", refuse)
     root = write_project(tmp_path, lanes={"claude": good_lane()})
@@ -476,7 +477,7 @@ def test_demo_bind_failure_keeps_its_chatter_and_names_the_users_port(
     # (numbers after `:` or `port `) is the demo-path net, tolerating the
     # digits of the throwaway temp path it must not red on.
     def refuse(*args, **kwargs):
-        raise OSError("address already in use")
+        raise ServerBindError("address already in use")
 
     monkeypatch.setattr("conductor.server.build", refuse)
     assert main(["demo", "--port", "7902"]) == 1

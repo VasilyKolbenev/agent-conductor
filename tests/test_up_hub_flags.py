@@ -13,6 +13,7 @@ Not here on purpose: the second identity check after `acquire_owner` (needs
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import socket
@@ -23,7 +24,7 @@ from pathlib import Path
 import pytest
 
 import conductor
-from conductor import store, up_flags
+from conductor import server, store, up_flags
 from conductor.__main__ import _build_parser, main
 from conductor.command import operator_config
 from conductor.ownership_errors import OwnerRefused
@@ -421,14 +422,26 @@ def test_a_broken_provider_file_is_providers_invalid_and_names_the_file(
     assert _record(activated)["code"] == "providers_invalid"
 
 
-def test_an_oserror_from_build_is_bind_failed_with_the_old_words_and_the_port_flag(
+def test_a_bind_error_from_build_is_bind_failed_with_the_old_words_and_the_port_flag(
         capsys, monkeypatch, activated):
-    monkeypatch.setattr("conductor.server.build", _raising(OSError("address already in use")))
+    busy = server.ServerBindError(errno.EADDRINUSE, "address already in use")
+    monkeypatch.setattr("conductor.server.build", _raising(busy))
     exit_code, err = _up_activated(activated, capsys, port=7901)
     assert exit_code == 1
     assert err.startswith("conduct up: refused bind_failed: cannot serve on 127.0.0.1:7901")
     assert "address already in use" in err and "--port PORT" in err
     assert _record(activated)["code"] == "bind_failed"
+
+
+def test_an_oserror_that_is_not_the_bind_is_start_failed_and_names_no_port_flag(
+        capsys, monkeypatch, activated):
+    monkeypatch.setattr("conductor.server.build",
+                        _raising(OSError("the run store could not be created")))
+    exit_code, err = _up_activated(activated, capsys, port=7901)
+    assert exit_code == 1 and len(err.splitlines()) == 1
+    assert err.startswith("conduct up: refused start_failed: ")
+    assert "the run store could not be created" in err and "--port" not in err
+    assert _record(activated)["code"] == "start_failed"
 
 
 def test_a_status_file_that_cannot_be_written_is_start_failed_on_one_line(

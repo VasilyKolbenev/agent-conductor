@@ -509,6 +509,16 @@ def _resolved_providers(
     return resolve_providers(providers, root=root, clock=clock, ids=ids)
 
 
+class ServerBindError(OSError):
+    """The listening socket could not be bound; nothing else in a start raises this.
+
+    `conduct up` answers it with the port to change (`bind_failed`). Any other
+    `OSError` of a start is a different fault with a different remedy
+    (`start_failed`), which is why the two are told apart here, at the one call
+    that binds, and not by the type family.
+    """
+
+
 class ConductServer(ThreadingHTTPServer):
     """ThreadingHTTPServer wiring broker, watcher, SSE registry and execution worker."""
 
@@ -523,8 +533,15 @@ class ConductServer(ThreadingHTTPServer):
 
         HTTPServer.server_bind adds socket.getfqdn(host), a reverse lookup of a
         loopback literal that nothing here reads (review ruling: macOS start).
+
+        Raises:
+            ServerBindError: The bind failed; it keeps the original error's
+                arguments and chains it as `__cause__`.
         """
-        socketserver.TCPServer.server_bind(self)  # honours allow_reuse_address
+        try:
+            socketserver.TCPServer.server_bind(self)  # honours allow_reuse_address
+        except OSError as error:
+            raise ServerBindError(*error.args) from error
         self.server_name, self.server_port = self.server_address[:2]
 
     def __init__(
@@ -651,7 +668,8 @@ def build(
         StoreError: If `root` has no conductor/ directory, or map.toml is
             broken at startup. Runtime map breakage instead degrades to the
             last-good map plus a warning in `state.json`.
-        OSError: If the port cannot be bound.
+        ServerBindError: If the port cannot be bound (an `OSError`).
+        OSError: Any other failure of the start, after or besides the bind.
     """
     cdir = store.conductor_dir(root)
     loaded = store.load(root)
