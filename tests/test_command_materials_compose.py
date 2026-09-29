@@ -325,10 +325,18 @@ console.log(JSON.stringify({ru: m.bodyOf(cards, "ru"), en: m.bodyOf(cards, "en")
   estimate: m.composeText(cards, "ru")}));
 """
 NO_CARDS = "const cards = [];"
+#: Two schemes whose text holds runs of backticks: the composer lengthens the fence around the
+#: longest run, so a fence of three would leave the estimate below the document.
+TICK_CARDS = """
+const cards = [
+  m.textCard("m1", {kind: "scheme", title: "S1", content: "a ````` b"}),
+  m.textCard("m2", {kind: "scheme", title: "S2", content: "```\\n``` and ``"})];
+"""
 DOCS = {"spec": SPEC_ID, "notes": NOTES_ID, "oid": OID, "other": OTHER_OID}
 
 
-@pytest.mark.parametrize("cards", [DESK_CARDS, NO_CARDS], ids=["five cards", "no cards"])
+@pytest.mark.parametrize("cards", [DESK_CARDS, NO_CARDS, TICK_CARDS],
+                         ids=["five cards", "no cards", "schemes with backticks"])
 def test_the_composer_accepts_the_body_the_desk_sends_and_the_desks_estimate_is_not_below_it(
         cards):
     sent = run_js(cards + DESK_SENDS, DOCS, modules={"m": "desk-wizard-materials.js"})

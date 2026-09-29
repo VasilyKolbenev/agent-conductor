@@ -97,6 +97,13 @@ export function bodyOf(cards, lang) {
   return {lang, items: cards.map((card) => bodyItem(card, lang))};
 }
 
+//: The fence of a Mermaid block, as the composer writes it: three backticks, or one more than
+//: the longest run of backticks inside the text, so the text can never close its own block.
+function fenceFor(content) {
+  const runs = content.match(/`+/g) ?? [];
+  return "`".repeat(Math.max(3, ...runs.map((run) => run.length + 1)));
+}
+
 function section(card, number, lang) {
   if (card.kind === "project_doc") {
     if (card.mode === "link") {
@@ -106,14 +113,16 @@ function section(card, number, lang) {
     // A copy is headed with the blob it was read at, as the server heads it.
     return `## ${number}. ${card.path}@${card.gitOid} · ${card.kind}\n${card.content}`;
   }
-  const body = card.kind === "scheme" ? `\`\`\`mermaid\n${card.content}\n\`\`\`` : card.content;
+  const fence = fenceFor(card.content);
+  const body = card.kind === "scheme" ? `${fence}mermaid\n${card.content}\n${fence}` : card.content;
   return `## ${number}. ${cardTitle(card, lang)} · ${card.kind}\n${body}`;
 }
 
-//: An approximation of the document the server will compose from these cards: the exact bytes
-//: are the server's alone, this is the text the estimate and the argv arithmetic measure. It says
-//: what `command/materials.py` says, and a test holds its size at or above the composed one, so
-//: the desk never calls a list small that the server would refuse as too large.
+//: The document the server will compose from these cards, as far as the desk can say it: the same
+//: template and the same fence rule for a scheme as `command/materials.py`, which alone knows the
+//: exact bytes (a link's path comes from the seed). This is the text the estimate and the argv
+//: arithmetic measure, and a test holds its size at or above the composed one, so the desk never
+//: calls a list small that the server would refuse as too large.
 export function composeText(cards, lang) {
   const sections = cards.map((card, at) => section(card, at + 1, lang));
   const parts = [`# ${HEADING[lang]}`, ...(sections.length > 0 ? sections : [NONE[lang]])];
