@@ -63,7 +63,6 @@ from .api_refusals import (  # noqa: F401 -- re-exported under old names
     _reviewed_fact,
     _safe_detail,
     _safe_id,
-    _safe_id,
 )
 
 ARGUMENT_SCHEMAS = MappingProxyType({
@@ -483,8 +482,9 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("proposal_rebind_required")
     if isinstance(error, AuthorizationError):
         return ApiRefusal.fixed("authorization_refused")
-    # BEFORE the `ContractError` arm, which it is a subclass of: a taken slot is not a fault
-    # in the terms, and the holder is named only when it is an id that is safe to render.
+    # The next two arms come BEFORE the `ContractError` arm, which both are subclasses of: a
+    # preview that is gone or has moved, and a slot another run holds, are not faults in the
+    # terms. The holder of a slot is named only when it is an id that is safe to render.
     if isinstance(error, PreviewStale):
         return ApiRefusal.fixed("preview_stale")
     if isinstance(error, SlotBusy):
