@@ -5,26 +5,29 @@ The guarantee sits on the runner, not on the page: a `ProcessRunner` built with
 child exists, no ownership loan was claimed (a loan that is retired without proof would poison
 the owner), and the refusal is the same `CommandSpecError` every unusable command gets.
 
-This is the first slice of that section. What is here: the runner's refusal (with a control,
-so a spy that sees nothing cannot pass), and two witnesses that a server launched with
-`Launch(mode="view")` spawns nothing: one through task creation, the reads and the preview,
-one through the writes of a cycle and a run (flow, draft, revision, template, run creation).
-A calibration plants a child in each road of the second walk and requires the spy to see it,
-so a road the walk does not reach turns that case red instead of passing unnoticed.
+What is here, in file order:
 
-What that witness does NOT prove, and why its name says what it walks and not what it
-guarantees: the mode does not gate spawning yet. `Launch.mode` reaches only the project
-identity; the runner built at `command/providers.py` is still spawn-capable whatever the mode,
-so the witness is green in `active` too. It says that today's walk starts no child, not that a
-view process cannot start one. Also not here: the policy driver and the quota collector are
-not gated by the mode, `--mode view` still refuses to start, and the routes that read git or
-request a seed are lane L's.
+* the runner's refusal, with a control, so a spy that sees nothing cannot pass;
+* two walks of a server launched with `Launch(mode="view")` that start no child (task, reads
+  and preview on a hand registry; flow, draft, revision, template and run creation on a
+  resolved provider), a calibration that plants a child in each road of the second walk and
+  requires the spy to see it, and the witness under the spec's name, which runs both walks in
+  `view` and in `active` and then asks a real command of every runner the resolver built: in
+  `view` each refuses before a child exists, in `active` each starts one. A zero that could
+  not have been anything else is not what it reports;
+* that the launch mode is what decides it: the resolver's `spawns_allowed` reaches the one
+  runner all adapters share;
+* no `PolicyDriver` and no quota collector in `view` (and both in `active`), and the quota read
+  answered from the hub's limits snapshot with `hub_snapshot`;
+* `authorize` and `resume` refused `project_not_active` in `view`. That test is strict xfail:
+  the door is lane L's (`command/policy_service.py`), delivered as
+  `handoffs/H-to-L-view-door.patch`, and the marker is removed in the commit that applies it;
+* the code `project_not_active` in every place of 11.1 python and the text files can be read from.
 
-The spec's own name for the witness (4.3.6) is kept for the day-8 version, which must (a) make
-the mode reach the runner's construction site and (b) discriminate: assert that the runner the
-flow reaches refuses to spawn, or add the control where the same flow does spawn in `active`
-(authorize, then the driver). A green test under that name is read as the guarantee holding,
-so it is not used before it is true.
+Not here: the read of git state and the request of a seed named in the spec's text (their
+routes are lane L's and do not exist in this build), `test_standalone_up_never_executes_auto_continue`
+(the queue pump that executes a flag is lane L's), and the real-process witness, which is
+`tests/test_view_child.py`.
 """
 from __future__ import annotations
 
