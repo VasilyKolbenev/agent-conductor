@@ -395,7 +395,7 @@
       "instructions": [
         {
           "step_id": "do",
-          "instruction_ref": "instruction-do"
+          "instruction_ref": "instruction-plan"
         }
       ],
       "documents": [

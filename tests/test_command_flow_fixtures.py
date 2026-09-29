@@ -3,7 +3,9 @@
 The desk draws from these files before the routes exist (spec 7.12 item 1). Two independent checks
 keep them honest without `plan_budget`: the totals equal the five rows of the 7.8 table typed in
 below from the spec, and every derived number follows from the `steps` rows and the flow by the
-7.8 formulas. On day 5 `plan_budget` has to reproduce the files from the flows.
+7.8 formulas. A third check reads `inputs.instructions` off the flow: an `ext` replaces the computed
+arguments whole (7.2.1), so the document a node binds is the one the flow names, not the default.
+On day 5 `plan_budget` has to reproduce the files from the flows.
 """
 import json
 from pathlib import Path
@@ -164,3 +166,56 @@ def test_replacing_budget_with_no_admissible_action_is_exhausted():
     assert budget["spent"] == {"actions": 2, "seconds": 7200, "attempts": [{"step_id": "do", "attempts": 2}]}
     terms, exhausted = replacement(fresh["budget"], budget["spent"], humans_on_clean_pass(fresh["flow"]))
     assert budget["terms_draft"] == terms and budget["exhausted"] is exhausted is True
+
+
+#: (file stem, cycle whose flow it belongs to): the five FlowStates and the two replacement budgets
+BUDGET_FILES = [(f"{cycle}.flow-state", cycle) for cycle in CYCLES] + [
+    ("desk-standard.budget-replacing", "desk-standard"),
+    ("desk-short.budget-exhausted", "desk-short")]
+
+
+def budget_and_flow(stem, cycle):
+    """The Budget of a file and the flow it counts; a replacement file carries only the Budget."""
+    document = load(f"{stem}.json")
+    return document.get("budget", document), state(cycle)["flow"]
+
+
+def expected_instructions(flow):
+    """One row per dispatch step, in steps order: the document its node binds (spec 7.2.1, 7.3).
+
+    An `ext.arguments` replaces the computed arguments whole, so its `instruction_ref` wins;
+    otherwise the ref is `instruction-<instruction_from or step_id>`.
+    """
+    rows = []
+    for step in flow["steps"]:
+        if step["type"] != "agent" or step["capability"] != "dispatch":
+            continue
+        ref = step["ext"].get("arguments", {}).get("instruction_ref")
+        if ref is None:
+            ref = f"instruction-{step['instruction_from'] or step['step_id']}"
+        rows.append({"step_id": step["step_id"], "instruction_ref": ref})
+    return rows
+
+
+@pytest.mark.parametrize("stem,cycle", BUDGET_FILES, ids=[stem for stem, _ in BUDGET_FILES])
+def test_budget_instructions_are_the_documents_the_dispatch_nodes_bind(stem, cycle):
+    budget, flow = budget_and_flow(stem, cycle)
+    assert budget["inputs"]["instructions"] == expected_instructions(flow)
+
+
+def test_expected_instructions_follow_the_ext_override_and_instruction_from():
+    def agent(step_id, capability, instruction_from=None, ext=None):
+        return {"step_id": step_id, "type": "agent", "capability": capability,
+                "instruction_from": instruction_from, "ext": ext or {}}
+
+    flow = {"steps": [
+        agent("look", "review"), agent("own", "dispatch"),
+        agent("shared", "dispatch", instruction_from="own"),
+        agent("pinned", "dispatch", instruction_from="own",
+              ext={"arguments": {"instruction_ref": "instruction-plan"}}),
+        {"step_id": "gate", "type": "human", "ext": {}},
+        {"step_id": "again", "type": "loop", "ext": {}}]}
+    assert expected_instructions(flow) == [
+        {"step_id": "own", "instruction_ref": "instruction-own"},
+        {"step_id": "shared", "instruction_ref": "instruction-own"},
+        {"step_id": "pinned", "instruction_ref": "instruction-plan"}]
