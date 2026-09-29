@@ -104,9 +104,6 @@ def _start(root, port, providers, plan: up_flags.UpPlan, status, stopper):
     """Everything between the settled flags and a bound, owned server."""
     from conductor import server                  # deferred: see `__main__`'s import block
     from conductor.command.project_claim import Launch     # deferred with it
-    if plan.mode == "view":                       # day 8 builds it; see the slice plan
-        raise up_flags.UpRefusal("start_failed",
-                                 "--mode view is not built yet (spec 4.3.1)")
     try:
         status.write("starting")
     except OSError as error:
