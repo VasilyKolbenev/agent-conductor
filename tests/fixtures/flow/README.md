@@ -38,5 +38,9 @@ desk can draw the editor, the diagnostics and the counter before the routes exis
   carry the codes and addresses of 7.4 with empty `params`; the spec fixes no `params` shape yet.
 - `draft_digest` is the sha256 of the canonical flow JSON, a stand-in: the real one digests the
   compiled document. Treat it as an opaque `expected_digest` to send back.
-- When `import_template`, `flow_rules` and `plan_budget` land (days 3-5) they must reproduce these
-  files from the flows; a difference is settled in the fixture or in the module, on the record.
+- The modules now reproduce these files from the flows, and a difference is settled in the fixture
+  or in the module, on the record. `plan_budget` gives every `budget` and both replacement budgets
+  (`tests/test_command_plan_budget.py`), `flow_rules` gives every `diagnostics` and `publishable`
+  (`tests/test_command_flow_rules.py`), and `import_template` gives the `dalio-v5` flow. What is
+  still only derived from the spec is the `draft_digest` stand-in and the flows of the four
+  `desk-*` and tester cycles, which wait for the shipped `desk-*` files.
