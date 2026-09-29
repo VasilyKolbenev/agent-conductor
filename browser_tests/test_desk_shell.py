@@ -42,7 +42,7 @@ from tests.test_store import good_lane, write_project
 
 #: Every file the desk page's module graph fetches, with the answer each owes:
 #: the page, its sheet and boot module, the transport and the refusal vocabulary
-#: it translates with, and the catalogue (with its twelve copy modules) that says
+#: it translates with, and the catalogue (with its thirteen copy modules) that says
 #: a phase in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
@@ -53,6 +53,7 @@ DESK_BOOT_ASSETS = {
     "studio-runform-copy.js": 200, "studio-runs-copy.js": 200,
     "studio-runstep-copy.js": 200, "studio-view-copy.js": 200,
     "studio-workflow-copy.js": 200, "studio-workflow-detail-copy.js": 200,
+    "desk-wizard-copy.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
