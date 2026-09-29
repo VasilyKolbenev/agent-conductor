@@ -302,6 +302,16 @@ def test_documents_that_are_not_a_mapping_are_a_contract_error(documents):
         compose_materials([copy_of()], "en", None, documents)
 
 
+@pytest.mark.parametrize("base", [[SPEC_ID], "docs/spec.md", 7, ()])
+@pytest.mark.parametrize("items", [[link()], [note()], []], ids=["a link", "a note", "none"])
+def test_a_base_that_is_neither_none_nor_a_mapping_is_a_contract_error(base, items):
+    """The docstring promises a ContractError for a `base` that is not what it says, so a
+    list handed over by mistake must not surface as an AttributeError from a `.get`."""
+    with pytest.raises(ContractError) as raised:
+        compose_materials(items, "en", base, DOCUMENTS)
+    assert not isinstance(raised.value, MaterialsRefused)
+
+
 # --- purity ------------------------------------------------------------------------------------
 
 

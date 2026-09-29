@@ -2,19 +2,22 @@
 
 The desk sends the owner's materials as a list of items; the server publishes them as one human
 document, `artifact-materials`, which the entry steps of a cycle read. What that document says is
-decided here and nowhere else, so the same items and language always give the same bytes: the
-artifact id is a digest of them, and a request repeated after a lost answer must find the document
-already standing.
+decided here and nowhere else, so the same items, language, `base` and `documents` always give the
+same bytes (the path of a link or of a copy is not in the item, it comes from a mapping): the
+artifact id is a digest of those bytes, and a request repeated after a lost answer must find the
+document already standing.
 
-Pure: no store, clock, randomness or I/O. Judging an item against the seed record, and turning a
-refusal into the wire's `materials_refused`, belong to the caller. The desk never sends a path; the
-composer reads it by document id from one of two mappings the caller hands over, by what the item
-is. A link says where a file lies in the task folder, so it is judged against `base`, the files
-the seed really copied there: a path the seed skipped is left out of it, and the caller refuses
-that link first as `doc_not_seeded`, because only the seed's own record knows why a file is
-missing. A copy is the owner's text and names only where it was read from, so it needs no seed:
-its path comes from `documents`, the tracked documents of HEAD, whatever the seed did or did not
-copy (an agent-instructions file, a path skipped for the seed's budget).
+Pure: no store, clock, randomness or I/O. Judging a link against the seed's own record of what it
+skipped (`doc_not_seeded`), and turning a refusal into the wire's `materials_refused`, belong to
+the caller. The desk never sends a path; the composer reads it by document id from one of two
+mappings the caller hands over, by what the item is. A link says where a file lies in the task
+folder, so it is judged against `base`, the files the seed really copied there: a path the seed
+skipped is left out of it, and the caller refuses that link first as `doc_not_seeded`, because
+only the seed's own record knows why a file is missing. A copy is the owner's text and names only
+where it was read from, so it needs no seed: its path comes from `documents`, the tracked
+documents of HEAD, whatever the seed did or did not copy (an agent-instructions file, a path
+skipped for the seed's budget). A path is one line of text and may hold any backtick: a link
+quotes it as a code span the backtick cannot close.
 """
 from __future__ import annotations
 
@@ -108,8 +111,9 @@ def compose_materials(items: Sequence[Mapping[str, Any]], lang: str,
             document over the byte limit, a copy that is not text, a copy whose document HEAD
             does not list, a link the base lacks, a link whose blob is not the base's, or a link
             with no seed.
-        ContractError: The body is not in the closed shape, or `base` or `documents` is not what
-            it says.
+        ContractError: The body is not in the closed shape; `documents` is not a mapping, or
+            `base` is neither None nor a mapping; or a row an item uses is not what it says (a
+            `BaseFile` in `base`, one line of text as a path in either mapping).
     """
     if lang not in LANGS:
         raise ContractError(f"lang must be one of {', '.join(LANGS)}")
@@ -117,6 +121,8 @@ def compose_materials(items: Sequence[Mapping[str, Any]], lang: str,
         raise ContractError("items must be a list")
     if not isinstance(documents, Mapping):
         raise ContractError("documents must map a document id to its path")
+    if base is not None and not isinstance(base, Mapping):
+        raise ContractError("base must be None or map a document id to a BaseFile")
     if len(items) > MAX_MATERIALS:
         raise MaterialsRefused("too_many_materials")
     sections = [_section(at, item, lang, base, documents) for at, item in enumerate(items)]
