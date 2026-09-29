@@ -524,6 +524,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.start": ["Start", "Запустить"],
   "wizard.launch.enqueue": ["Add to the queue", "Поставить в очередь"],
   "wizard.launch.reread": ["Read the queue again", "Прочитать очередь заново"],
+  "wizard.launch.reread_lost": ["Read again", "Прочитать заново"],
   "wizard.launch.release": ["A stuck run holds the slot: “Free the slot” is in your desk.",
     "Слот держит зависший запуск: «Освободить слот» — в Пульте."],
   "wizard.launch.release_open": ["Free the slot in the desk", "Освободить слот в Пульте"],
@@ -539,6 +540,8 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.why.slot_reading": ["Reading the queue…", "Читаем очередь…"],
   "wizard.launch.why.slot_unread": ["The queue could not be read", "Очередь не удалось прочитать"],
   "wizard.launch.why.busy": ["Waiting for the server…", "Ждём ответ сервера…"],
+  "wizard.launch.why.lost_unread": ["Read again first: the last answer was lost",
+    "Сначала прочитайте заново: ответ потерян"],
   "wizard.launch.why.exhausted": ["The limit of the run is used up", "Лимит запуска исчерпан"],
   "wizard.launch.why.card_changed": ["Look at the changed terms first",
     "Сначала посмотрите изменившиеся условия"],
@@ -574,6 +577,10 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.unknown": ["The answer was lost. Reading the queue and the permission to see "
     + "whether it was written…", "Ответ потерян. Читаем очередь и разрешение, чтобы понять, "
     + "записано ли…"],
+  "wizard.launch.unknown_unread": ["The answer was lost and the server could not be read to see "
+    + "whether it was written. Read again before pressing anything.", "Ответ потерян, и сервер не "
+    + "удалось прочитать, чтобы понять, записано ли. Прочитайте заново, прежде чем нажимать "
+    + "что-либо."],
   "wizard.launch.result_started": ["Started", "Запущено"],
   "wizard.launch.result_queued": ["Queued · No. {position}", "В очереди · {position}-я"],
   "wizard.launch.result_queued_plain": ["Queued", "В очереди"],

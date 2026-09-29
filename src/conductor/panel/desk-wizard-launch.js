@@ -30,8 +30,9 @@ export const CARD_LINES = Object.freeze(["actions", "time", "window", "steps", "
 //: Every reason the card gives for a button that cannot be pressed (`why`, `blocked`), and every
 //: note and refusal it says: closed words, each with a message in both languages. A reason the
 //: queue itself sends that is not here is said by its code.
-export const LAUNCH_WHY = Object.freeze(["slot_reading", "slot_unread", "busy", "exhausted",
-  "card_changed", "actor_invalid", "project_not_active", "owner_required", "server_stopping"]);
+export const LAUNCH_WHY = Object.freeze(["slot_reading", "slot_unread", "busy", "lost_unread",
+  "exhausted", "card_changed", "actor_invalid", "project_not_active", "owner_required",
+  "server_stopping"]);
 export const LAUNCH_NOTES = Object.freeze(["slot_busy", "project_not_active", "stale",
   "not_written"]);
 export const LAUNCH_REFUSALS = Object.freeze(["authorization_refused", "queue_full",
@@ -238,6 +239,7 @@ function skipRow(launch, slot, held) {
 
 //: What holds both buttons whatever the slot says, in the order it matters.
 function heldBy(launch) {
+  if (unreadUnknown(launch)) return "lost_unread";
   if (launch.phase !== "review" || launch.skip !== null) return "busy";
   if (launch.preview.budget.exhausted) return "exhausted";
   if (!launch.seen) return "card_changed";
@@ -348,9 +350,12 @@ export function refreshLaunch(launch) {
   return {...launch, refreshWanted: true, repeatFailed: false, repeats: 0, error: null};
 }
 
-/** Read the queue, the automation and the holder's automation again. */
+/**
+ * Read the queue, the automation and the holder's automation again: on the card, and also when a
+ * lost answer waits on a read that failed (a read still out is not read a second time).
+ */
 export function rereadLaunch(launch) {
-  if (launch.phase !== "review") return launch;
+  if (launch.phase !== "review" && !unreadUnknown(launch)) return launch;
   const reads = {...launch.reads, queue: null, automation: null, holder: null};
   return {...launch, reads, seq: launch.seq + 1};
 }
@@ -397,9 +402,26 @@ function entryOf(launch, ctx) {
     && held.authorized_by === launch.actor ? entry : null;
 }
 
+//: The read that decides a lost answer: the automation says whether a grant stands (a start), the
+//: queue whether the entry does (an enqueue). The other read is asked with it and decides nothing.
+const decidingRead = (launch) => (launch.sending === "start" ? launch.reads.automation
+  : launch.reads.queue);
+
+/**
+ * Whether a lost answer waits on a read that failed: both reads are back and the one that decides
+ * has not said. That proves nothing about the write, so the answer stays lost until it is read again.
+ */
+export function unreadUnknown(launch) {
+  const {queue, automation} = launch.reads;
+  return launch.phase === "unknown" && queue !== null && automation !== null
+    && decidingRead(launch).status !== "ok";
+}
+
 //: A lost answer is settled by the two reads alone, comparing the ids and the terms: the grant or
-//: the queue entry is there and is this card's, or it is not written and the owner may press again.
+//: the queue entry is there and is this card's, or the read that decides says it is not written and
+//: the owner may press again. A read that failed says nothing, so it settles nothing.
 function settleUnknown(launch, ctx) {
+  if (unreadUnknown(launch)) return launch;
   const done = {...launch, sending: null};
   if (launch.sending === "start" && grantStands(launch, ctx)) {
     return {...done, phase: "started", result: {kind: "started"}};

@@ -13,7 +13,7 @@ import {resumeInput, runInput} from "./desk-wizard-input.js";
 import {taskTitleOfRun} from "./desk-wizard-cycle.js";
 import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaunch, isActor,
   isViewing, landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch,
-  seenLaunch, tickLaunch, toggleInfo} from "./desk-wizard-launch.js";
+  seenLaunch, tickLaunch, toggleInfo, unreadUnknown} from "./desk-wizard-launch.js";
 import {advanceSkip, beginSkip, cancelSkip, confirmSkip, landSkip, skipAsks, skipFacts}
   from "./desk-wizard-skip.js";
 import {heldFlow} from "./desk-wizard-team.js";
@@ -261,11 +261,13 @@ function noteOf(state) {
 
 /**
  * What step 6 draws: the card (every number the server's), the controls the slot allows, the
- * countdown, and what the last answer said.
+ * countdown, and what the last answer said. `lostUnread` is true while a lost answer waits on a
+ * read that failed: nothing is known of the write, and reading again is what the owner may do.
  */
 export function launchFacts(state) {
   const {launch} = state, seconds = remaining(launch);
   return Object.freeze({phase: launch.phase, error: launch.error, note: noteOf(state),
+    lostUnread: unreadUnknown(launch),
     refusal: launch.refusal, result: launch.result, viewing: isViewing(launch),
     runId: state.run.runId, infos: launch.infos,
     skip: skipFacts(launch, launchCtx(state), (runId) => taskTitleOfRun(state.reads, runId)),

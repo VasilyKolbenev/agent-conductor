@@ -508,6 +508,87 @@ def test_a_lost_enqueue_is_settled_by_the_entry_the_queue_holds_for_this_run_and
     assert out["stale"] == ["review", None, "not_written"]
 
 
+LOST = LAUNCH + """
+//: A press whose answer was lost: the wizard as it stands then and the id of the card's grant.
+const lostAt = (kind) => {
+  const begun = kind === "start" ? wiz.stepWizard(reviewed(), {type: "launch-start"})
+    : wiz.stepWizard(reviewed({queue: d.busy_waiting}), {type: "launch-enqueue"});
+  const step = wiz.stepWizard(begun.state, {type: "answered", ask: begun.asks[0], result: lost});
+  const body = begun.asks[0].body;
+  return {state: step.state, id: (body.start ?? body).authorization_id};
+};
+const bad = refused("store_error");
+const both = (state, queue, automation) => say(say(state, "launch_queue", queue).state,
+  "launch_automation", automation).state;
+const standing = (id) => {
+  const {duration_seconds: _window, ...terms} = fresh(d.preview).terms;
+  const grant = fresh(d.auto_holder);
+  return {...grant, run_id: runId, authorization: {...grant.authorization, ...terms,
+    authorization_id: id, authorized_by: "vasily", supersedes: null}};
+};
+const entered = () => ({...fresh(d.busy_waiting), entries: [{run_id: runId, task_id: "task-t1",
+  title: "Fix login", position: 1, kind: "start", state: "preauthorized",
+  reason_code: "slot_busy", preauthorization: {authorized_by: "vasily",
+    digest: "sha256:" + "d1ce5eed".repeat(8)}}]});
+const seen = (state) => {
+  const facts = wiz.launchFacts(state);
+  return {phase: facts.phase, note: facts.note, result: facts.result, unread: facts.lostUnread,
+    start: [facts.controls.start.shown, facts.controls.start.blocked], why: facts.controls.why};
+};
+"""
+
+
+def test_a_lost_start_stays_unknown_while_the_automation_read_that_decides_it_has_failed():
+    out = run_js(LOST + """
+      const lostStart = lostAt("start");
+      const none = both(lostStart.state, ok(fresh(d.free)), ok(fresh(d.auto_new)));
+      const wholly = both(lostStart.state, bad, bad);
+      const decides = both(lostStart.state, ok(fresh(d.free)), bad);
+      const unrelated = both(lostStart.state, bad, ok(fresh(d.auto_new)));
+      const reread = wiz.stepWizard(decides, {type: "launch-reread"});
+      const settled = (automation) => seen(both(reread.state, ok(fresh(d.free)), automation));
+      show({none: seen(none), wholly: seen(wholly), decides: seen(decides),
+        unrelated: seen(unrelated), out: wiz.reduceWizard(lostStart.state,
+          {type: "launch-reread"}) === lostStart.state,
+        reread: reread.asks.map((ask) => [ask.name, ask.id]),
+        landed: settled(ok(standing(lostStart.id))), absent: settled(ok(fresh(d.auto_new))),
+        failed_again: seen(both(reread.state, ok(fresh(d.free)), bad))});
+    """, DATA, modules=MODULES)
+    assert out["none"]["phase"] == "review" and out["none"]["note"] == {"kind": "not_written"}
+    unknown = {"phase": "unknown", "note": None, "result": None, "unread": True}
+    assert out["wholly"] == {**unknown, "start": [False, None], "why": "slot_unread"}
+    assert out["decides"] == {**unknown, "start": [True, "lost_unread"], "why": None}
+    assert out["failed_again"] == out["decides"], "a second failed read keeps it open"
+    assert out["unrelated"]["phase"] == "review", "the queue read does not decide a start"
+    assert out["unrelated"]["note"] == {"kind": "not_written"}
+    assert out["out"] is True, "nothing is read again while a read is still out"
+    assert out["reread"] == [["launch_queue", "read:launch:queue:2"],
+                             ["launch_automation", "read:launch:automation:2"]]
+    assert (out["landed"]["phase"], out["landed"]["result"]) == ("started", {"kind": "started"})
+    assert (out["absent"]["phase"], out["absent"]["note"]) == ("review", {"kind": "not_written"})
+
+
+def test_a_lost_enqueue_stays_unknown_while_the_queue_read_that_decides_it_has_failed():
+    out = run_js(LOST + """
+      const lostEnqueue = lostAt("enqueue");
+      const decides = both(lostEnqueue.state, bad, ok(fresh(d.auto_new)));
+      const unrelated = both(lostEnqueue.state, ok(fresh(d.busy_waiting)), bad);
+      const reread = wiz.stepWizard(decides, {type: "launch-reread"});
+      const landed = both(reread.state, ok(entered()), ok(fresh(d.auto_new)));
+      show({decides: seen(decides), unrelated: seen(unrelated),
+        reread: reread.asks.map((ask) => ask.name), landed: seen(landed),
+        absent: seen(both(reread.state, ok(fresh(d.busy_waiting)), ok(fresh(d.auto_new))))});
+    """, DATA, modules=MODULES)
+    assert out["decides"] == {"phase": "unknown", "note": None, "result": None, "unread": True,
+                              "start": [False, None], "why": "slot_unread"}
+    assert out["unrelated"]["phase"] == "review", "the automation read does not decide an enqueue"
+    assert out["unrelated"]["note"] == {"kind": "not_written"}
+    assert out["reread"] == ["launch_queue", "launch_automation"]
+    assert (out["landed"]["phase"], out["landed"]["result"]) == (
+        "queued", {"kind": "queued", "position": 1})
+    assert (out["absent"]["phase"], out["absent"]["note"]) == ("review", {"kind": "not_written"})
+
+
 def test_the_stand_still_refresh_and_reread_are_the_owners_and_change_nothing_they_do_not_name():
     out = run_js(LAUNCH + """
       const state = reviewed({clock: CLOCK});

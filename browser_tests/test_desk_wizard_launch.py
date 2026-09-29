@@ -386,6 +386,34 @@ def test_a_lost_start_that_never_landed_is_pressed_again_with_the_same_authoriza
 
 
 @pytest.mark.parametrize("lang", LANGS)
+@pytest.mark.parametrize("failing,reads", [
+    (("launch_queue", "launch_automation"), (2, 2)), (("launch_automation",), (3, 2))])
+def test_a_lost_start_whose_deciding_read_fails_says_it_cannot_tell_until_it_is_read_again(
+        bench, lang, failing, reads):
+    refuse = {name: {"code": "store_error", "count": 1, "after": 1} for name in failing}
+    to_card(bench, lang, lose={"launch_authorize": 1}, refuse=refuse)
+    bench.control(START).click()
+    expect(bench.page.locator("[data-launch-unread]")).to_have_text(
+        bench.say("wizard.launch.unknown_unread"))
+    assert bench.page.locator('[data-launch-note="not_written"]').count() == 0
+    assert bench.page.locator("[data-launch-result]").count() == 0
+    if "launch_queue" in failing:
+        assert bench.control(START).count() == 0
+        assert bench.text("[data-launch-why]") == bench.say("wizard.launch.why.slot_unread")
+    else:
+        assert bench.control(START).is_disabled()
+        assert why(bench, START) == bench.say("wizard.launch.why.lost_unread")
+    reread = bench.control("wizard:launch:reread")
+    assert reread.inner_text() == bench.say("wizard.launch.reread_lost")
+    reread.click()
+    expect(bench.page.locator('[data-launch-result="started"]')).to_be_visible()
+    held = queue_door.world(bench)
+    assert held["authorize_calls"] == 1 and len(held["grants"]) == 1, "nothing was sent twice"
+    assert (held["reads"]["queue"], held["reads"]["automation"]) == reads
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_the_owners_name_is_held_to_the_id_grammar_and_survives_the_redraws_of_the_clock(
         bench, lang):
     to_card(bench, lang)

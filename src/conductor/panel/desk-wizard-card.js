@@ -201,9 +201,9 @@ function slotNotes(ctx, facts) {
   if (controls.why !== null) {
     out.push(element("p", {"data-launch-why": controls.why, text: whyWords(ctx, controls.why)}));
   }
-  if (controls.why === "slot_unread") {
-    out.push(action("wizard:launch:reread", ctx.t("wizard.launch.reread"),
-      () => ctx.send({type: "launch-reread"})));
+  if (controls.why === "slot_unread" || facts.lostUnread) {
+    out.push(action("wizard:launch:reread", ctx.t(facts.lostUnread ? "wizard.launch.reread_lost"
+      : "wizard.launch.reread"), () => ctx.send({type: "launch-reread"})));
   }
   if (controls.release) {
     out.push(element("div", {"data-launch-release": ""}, [
@@ -299,6 +299,10 @@ function skipBody(ctx, facts) {
 
 function progressLine(ctx, facts) {
   if (!["starting", "enqueuing", "unknown"].includes(facts.phase)) return [];
+  if (facts.lostUnread) {
+    return [element("p", {role: "alert", "data-launch-progress": facts.phase,
+      "data-launch-unread": "", text: ctx.t("wizard.launch.unknown_unread")})];
+  }
   return [element("p", {"data-launch-progress": facts.phase,
     text: ctx.t(`wizard.launch.${facts.phase}`)})];
 }
