@@ -1,0 +1,395 @@
+"""The preparation read of a task (spec 6.4.2) and `missing_bindings`, the rules of `bind_inputs`
+that answer instead of raising.
+
+A run is built here the way the desk builds it: opened on a shipped cycle bound to a task, then
+given the documents its steps read. The stage of each run is the first of five that fits, so the
+order is held as a table over the facts and every stage that can occur today is reached by a
+real run. `queued` and the receipt time need the queue store (spec 4.4, days 7 to 9): the read
+takes them from a `QueueView` its caller hands in, so the order is complete and tested now.
+"""
+import itertools
+
+import pytest
+
+from conductor.command import task_preparation
+from conductor.command.adapters import AdapterRegistry
+from conductor.command.api_refusals import ApiRefusal
+from conductor.command.artifacts import ArtifactDocument
+from conductor.command.authorization_inputs import bind_inputs, executable_nodes
+from conductor.command.contract_values import ContractError
+from conductor.command.contracts import DecisionReceipt, RunEnvelope
+from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.graph_template import (
+    TEMPLATE_DIR, GraphTemplate, RunBinding, load_template, materialize)
+from conductor.command.policy_service import PolicyService
+from conductor.command.run_closing import close_if_terminal
+from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.runtime import Budget
+from conductor.command.task_contracts import TaskRecord
+from conductor.command.task_store import TaskStore
+from conductor.command.workflow_flow import compile_flow
+from tests.test_command_workflow_flow import CANONICAL, STUDIO_CORPUS, accepted
+from tests.test_command_workflow_routes import durable_digest
+from tests.test_policy_runtime import NOW, PD, Activation
+from tests.test_standard_cycle_correction import Checker, Doer
+
+TASK = "task-prepare-1"
+#: The terms the standard cycle is offered (spec 7.8): four actions, 12 600 s, a 16 200 s window.
+STANDARD_ASK = {
+    "node_limits": [{"node_id": "analyst", "timeout_seconds": 1800, "max_attempts": 1},
+                    {"node_id": "do", "timeout_seconds": 1800, "max_attempts": 3}],
+    "max_actions": 4, "max_action_seconds": 3600, "max_total_task_seconds": 12600,
+    "duration_seconds": 16200}
+CARRIES = ["run_id", "created_at", "workflow_id", "revision", "stage", "missing", "grant", "queue"]
+
+
+def config_for(run_id, task_id, workflow_id):
+    return {"cycle": {"id": run_id},
+            "instances": [{"id": "doer", "adapter": "claude-code"},
+                          {"id": "checker", "adapter": "codex-cli"}],
+            "workflow": {"id": workflow_id, "revision": 1},
+            "task": {"id": task_id, "work_scope": task_id},
+            "automation_contract": "bounded-run-v1"}
+
+
+def binding_of(template):
+    return RunBinding(assignments={
+        role: "checker" if role == "role-checker" else "doer" for role in template.roles})
+
+
+class Project:
+    """One project folder holding a task and the runs opened for it."""
+
+    def __init__(self, root):
+        self.root = root
+        self.store, self.tasks = RunStore(root), TaskStore(root)
+        self.tasks.create_task(TaskRecord(
+            task_id=TASK, title="Prepare it", work_scope=TASK, created_at=NOW))
+        registry = AdapterRegistry([Doer(self.store), Checker(self.store, [])])
+        self.policy = PolicyService(
+            self.store, registry, budget=Budget(8, 3600, 300), clock=lambda: NOW,
+            provider_digest=lambda config: PD, owner_check=lambda: None, session="session",
+            notify=lambda run_id: None)
+        self.policy.driver = Activation()
+
+    def open_run(self, number, workflow="desk-standard", task_id=TASK):
+        run_id = f"{task_id}-r{number}"
+        config = config_for(run_id, task_id, workflow)
+        self.store.create_run(RunEnvelope(
+            run_id, run_id, NOW, snapshot_digest(config), mode="policy"), config)
+        template = load_template(workflow)
+        self.store.append(materialize(
+            template, binding_of(template), config, graph_id=f"graph-{run_id}", run_id=run_id,
+            created_at=NOW))
+        return run_id
+
+    def publish(self, run_id, *refs):
+        for ref in refs:
+            self.store.append(ArtifactDocument(
+                artifact_id=f"doc-{ref}", run_id=run_id, artifact_ref=ref, created_at=NOW,
+                media_type="text/markdown", content=f"{ref}.\n"))
+
+    def ready_run(self, number):
+        run_id = self.open_run(number)
+        self.publish(run_id, "artifact-brief", "artifact-materials", "instruction-do")
+        return run_id
+
+    def grant(self, run_id):
+        preview = self.policy.preview(run_id, STANDARD_ASK)
+        return self.policy.authorize(run_id, {
+            "authorization_id": f"grant-{run_id}", "preview_digest": preview["preview_digest"],
+            "authorized_by": "owner", "terms": preview["terms"], "supersedes": None})[0]
+
+    def gate_only_run(self, number):
+        """A plan of one gate, decided: nothing is left to open, so the plan is `complete`."""
+        run_id = f"{TASK}-r{number}"
+        config = config_for(run_id, TASK, "custom")
+        self.store.create_run(RunEnvelope(
+            run_id, run_id, NOW, snapshot_digest(config), mode="policy"), config)
+        self.store.append(GraphDefinition(
+            f"graph-{run_id}", run_id, NOW,
+            nodes=(GraphNode("gate", "gate", "Approve", gate_id="gate-id"),), edges=()))
+        self.store.append(DecisionReceipt(
+            "decision", run_id, "gate-id", "approve", "owner", NOW, "Reviewed", ("gate-id",),
+            snapshot_digest(config)))
+        return run_id
+
+    def read(self, queue=None):
+        args = () if queue is None else (queue,)
+        status, payload = task_preparation.read_preparation(self.tasks, self.store, TASK, *args)
+        assert status == 200
+        return payload
+
+    def row(self, run_id, queue=None):
+        return next(row for row in self.read(queue)["runs"] if row["run_id"] == run_id)
+
+
+@pytest.fixture
+def project(tmp_path):
+    return Project(tmp_path / "project")
+
+
+# --- the stage: the first that fits ---------------------------------------------------------------
+
+STAGE_ORDER = ("ended", "queued", "authorized", "documents_missing", "ready_to_preview")
+
+
+def expected_stage(ended, queued, granted, missing):
+    return next(name for name, holds in zip(STAGE_ORDER, (ended, queued, granted, missing, True))
+                if holds)
+
+
+@pytest.mark.parametrize("facts", list(itertools.product([False, True], repeat=4)))
+def test_preparation_reports_the_first_matching_stage(facts):
+    assert task_preparation.first_stage(*facts) == expected_stage(*facts)
+
+
+def test_each_stage_a_real_run_can_reach_today_is_reached_by_one(project):
+    missing, ready = project.open_run(1), project.ready_run(2)
+    granted, queued = project.ready_run(3), project.ready_run(4)
+    project.grant(granted)
+    project.grant(queued)
+    ended = project.gate_only_run(5)
+    line = {"state": "waiting", "position": 1, "reason_code": None,
+            "state_since": "2026-08-11T11:00:00Z"}
+    view = task_preparation.QueueView(entries={queued: line})
+    stages = {row["run_id"]: row["stage"] for row in project.read(view)["runs"]}
+    assert stages == {missing: "documents_missing", ready: "ready_to_preview",
+                      granted: "authorized", queued: "queued", ended: "ended"}
+
+
+def test_a_run_whose_ending_is_recorded_is_ended_and_the_record_changes_nothing_else(project):
+    run_id = project.gate_only_run(1)
+    before = project.row(run_id)
+    ids = iter(range(10))
+    closed = close_if_terminal(project.store, run_id, clock=lambda: NOW,
+                               ids=lambda kind: f"{kind}-{next(ids)}")
+    assert closed is not None
+    assert project.row(run_id) == before and before["stage"] == "ended"
+
+
+def test_a_queue_entry_of_an_ended_run_does_not_make_it_queued(project):
+    ended = project.gate_only_run(1)
+    view = task_preparation.QueueView(entries={ended: {
+        "state": "waiting", "position": 1, "reason_code": None, "state_since": None}})
+    assert project.row(ended, view)["stage"] == "ended"
+
+
+# --- the shape ------------------------------------------------------------------------------------
+
+
+def test_the_read_carries_the_task_the_seed_the_next_number_and_the_runs_by_id(project):
+    second, first = project.ready_run(2), project.open_run(1)
+    payload = project.read()
+    assert list(payload) == ["task", "seed", "next_run_number", "runs"]
+    assert payload["task"] == {"schema_version": 1, "task_id": TASK, "title": "Prepare it",
+                               "work_scope": TASK, "created_at": NOW}
+    assert payload["seed"] is None and payload["next_run_number"] == 3
+    assert [row["run_id"] for row in payload["runs"]] == [first, second]
+    assert list(payload["runs"][0]) == CARRIES
+
+
+def test_a_run_row_names_its_cycle_its_revision_its_missing_documents_and_no_grant_or_queue(
+        project):
+    run_id = project.open_run(1)
+    project.publish(run_id, "artifact-brief")
+    assert project.row(run_id) == {
+        "run_id": run_id, "created_at": NOW, "workflow_id": "desk-standard", "revision": 1,
+        "stage": "documents_missing",
+        "missing": {"instructions": [{"node_id": "do", "instruction_ref": "instruction-do"}],
+                    "inputs": ["artifact-materials"]},
+        "grant": None, "queue": None}
+
+
+def test_a_run_with_a_grant_shows_the_last_grant_and_no_receipt_time_without_the_queue(project):
+    run_id = project.ready_run(1)
+    project.grant(run_id)
+    row = project.row(run_id)
+    assert row["stage"] == "authorized" and row["missing"] == {"instructions": [], "inputs": []}
+    assert row["grant"] == {"authorization_id": f"grant-{run_id}", "authorized_by": "owner",
+                            "authorized_at": NOW, "preauthorized_at": None}
+
+
+def test_preparation_shows_preauthorized_at_for_a_grant_started_by_the_queue(project):
+    run_id = project.ready_run(1)
+    project.grant(run_id)
+    view = task_preparation.QueueView(preauthorized_at={
+        f"grant-{run_id}": "2026-08-11T11:00:00Z", "another-grant": "2026-08-11T10:00:00Z"})
+    assert project.row(run_id, view)["grant"]["preauthorized_at"] == "2026-08-11T11:00:00Z"
+    assert project.row(run_id)["grant"]["preauthorized_at"] is None
+
+
+def test_a_queue_entry_is_shown_with_exactly_its_four_facts(project):
+    run_id = project.ready_run(1)
+    line = {"state": "waiting", "position": 2, "reason_code": "seed_blocked",
+            "state_since": "2026-08-11T11:00:00Z", "internal": "left out"}
+    row = project.row(run_id, task_preparation.QueueView(entries={run_id: line}))
+    assert row["queue"] == {"position": 2, "state": "waiting", "reason_code": "seed_blocked",
+                            "state_since": "2026-08-11T11:00:00Z"}
+
+
+def test_a_run_of_another_task_and_a_run_that_follows_no_task_are_not_listed(project):
+    mine = project.open_run(1)
+    other = project.open_run(2, task_id="task-other")
+    assert [row["run_id"] for row in project.read()["runs"]] == [mine]
+    assert other not in [row["run_id"] for row in project.read()["runs"]]
+
+
+def test_a_run_that_follows_no_workflow_is_listed_with_no_cycle_and_nothing_missing(project):
+    run_id = f"{TASK}-r1"
+    config = {"cycle": {"id": run_id}, "instances": [], "task": {"id": TASK, "work_scope": TASK}}
+    project.store.create_run(RunEnvelope(
+        run_id, run_id, NOW, snapshot_digest(config), mode="confirm"), config)
+    row = project.row(run_id)
+    assert (row["workflow_id"], row["revision"], row["stage"]) == (None, None, "ready_to_preview")
+    assert row["missing"] == {"instructions": [], "inputs": []}
+
+
+# --- the next number counts every run of the task, readable or not ------------------------------
+
+
+def test_next_run_number_counts_unreadable_runs_of_the_task(project):
+    kept = [project.open_run(1), project.open_run(3)]
+    broken = project.store.runs_root / f"{TASK}-r7"
+    broken.mkdir(parents=True)
+    (broken / "run.json").write_text("not json", encoding="utf-8")
+    (project.store.runs_root / "task-other-r9").mkdir()
+    (project.store.runs_root / f"{TASK}-r8x").mkdir()
+    (project.store.runs_root / f"{TASK}-r5-r6").mkdir()
+    payload = project.read()
+    assert [row["run_id"] for row in payload["runs"]] == kept
+    assert payload["next_run_number"] == 8
+
+
+def test_next_run_number_is_one_for_a_task_with_no_run(project):
+    assert project.read()["next_run_number"] == 1 and project.read()["runs"] == []
+
+
+# --- refusals and the read's promise --------------------------------------------------------------
+
+
+def test_preparation_of_an_unknown_task_is_service_refused_with_its_id(project):
+    with pytest.raises(ApiRefusal) as refused:
+        task_preparation.read_preparation(project.tasks, project.store, "task-nope")
+    assert refused.value.code == "service_refused"
+    assert dict(refused.value.detail) == {"task_id": "task-nope"}
+
+
+def test_reading_the_preparation_writes_nothing(project):
+    run_id = project.ready_run(1)
+    project.grant(run_id)
+    before = durable_digest(project.root)
+    project.read()
+    assert durable_digest(project.root) == before
+
+
+# --- missing_bindings: the rules of bind_inputs that answer instead of raising ------------------
+
+
+def plan_of(document):
+    template = GraphTemplate.from_dict(
+        {**document, "template_id": "template-plan", "revision": 1})
+    config = config_for("run-plan", "task-plan", "template-plan")
+    return materialize(template, binding_of(template), config, graph_id="graph-plan",
+                       run_id="run-plan", created_at=NOW)
+
+
+def document(ref, **more):
+    return ArtifactDocument(artifact_id=f"doc-{ref}", run_id="run-plan", artifact_ref=ref,
+                            created_at=NOW, media_type="text/markdown", content=ref, **more)
+
+
+def plans():
+    """Every shipped template and every form of the corpus that a bounded run can carry."""
+    found = {path.stem: plan_of({**load_template(path.stem).as_dict()})
+             for path in sorted(TEMPLATE_DIR.glob("*.json"))}
+    corpus = [accepted(raw) for raw in STUDIO_CORPUS.values()]
+    corpus += [compile_flow(flow) for flow in CANONICAL.values()]
+    for number, raw in enumerate(corpus):
+        try:
+            found[f"form-{number}"] = plan_of(raw)
+        except ContractError:
+            continue
+    return {name: plan for name, plan in found.items() if _bindable(plan)}
+
+
+def _bindable(plan):
+    try:
+        executable_nodes(plan)
+    except ContractError:
+        return False
+    return True
+
+
+def published_states(plan):
+    """Nothing, everything, everything but one document, and the brief alone."""
+    instructions = [node.arguments["instruction_ref"] for node in plan.nodes
+                    if node.capability == "dispatch"]
+    everything = ["artifact-brief", "artifact-materials", *instructions]
+    states = [[], everything, ["artifact-brief"]]
+    states += [[ref for ref in everything if ref != gone] for gone in everything]
+    return states
+
+
+def accepts(plan, values):
+    try:
+        bind_inputs(plan, values)
+    except ContractError:
+        return False
+    return True
+
+
+PLANS = plans()
+
+
+@pytest.mark.parametrize("name", sorted(PLANS))
+def test_missing_bindings_is_empty_exactly_when_bind_inputs_accepts(name):
+    plan = PLANS[name]
+    for refs in published_states(plan):
+        values = tuple(document(ref) for ref in refs)
+        missing = task_preparation.missing_bindings(plan, values)
+        assert (not missing["instructions"] and not missing["inputs"]) == accepts(plan, values), (
+            name, refs, missing)
+
+
+def test_the_corpus_reaches_the_shipped_cycles_and_at_least_four_forms():
+    assert {"desk-standard", "desk-short", "desk-starter-docs", "dalio-v5"} <= set(PLANS)
+    assert len([name for name in PLANS if name.startswith("form-")]) >= 4
+
+
+def test_missing_bindings_names_each_absent_instruction_and_input_in_plan_order():
+    plan = PLANS["desk-standard"]
+    assert task_preparation.missing_bindings(plan, ()) == {
+        "instructions": [{"node_id": "do", "instruction_ref": "instruction-do"}],
+        "inputs": ["artifact-brief", "artifact-materials"]}
+    brief = (document("artifact-brief"),)
+    assert task_preparation.missing_bindings(plan, brief)["inputs"] == ["artifact-materials"]
+
+
+def test_an_input_a_review_of_the_plan_produces_is_not_missing():
+    plan = PLANS["desk-standard"]
+    assert "artifact-analyst" not in task_preparation.missing_bindings(plan, ())["inputs"]
+
+
+def test_an_instruction_an_agent_wrote_is_not_the_owners_document():
+    plan = PLANS["desk-standard"]
+    values = (document("artifact-brief"), document("artifact-materials"),
+              document("instruction-do", source_action_id="action-1"))
+    assert task_preparation.missing_bindings(plan, values)["instructions"] == [
+        {"node_id": "do", "instruction_ref": "instruction-do"}]
+
+
+def test_the_latest_version_of_a_document_is_the_one_that_counts():
+    plan = PLANS["desk-short"]
+    values = (document("instruction-do"), document("artifact-brief"),
+              document("artifact-materials"),
+              document("instruction-do", source_action_id="action-2"))
+    assert task_preparation.missing_bindings(plan, values)["instructions"] == [
+        {"node_id": "do", "instruction_ref": "instruction-do"}]
+
+
+def test_a_plan_with_no_step_that_carries_out_work_misses_nothing():
+    plan = GraphDefinition("graph-gate", "run-plan", NOW,
+                           nodes=(GraphNode("gate", "gate", "Approve", gate_id="gate-id"),),
+                           edges=())
+    assert task_preparation.missing_bindings(plan, ()) == {"instructions": [], "inputs": []}
