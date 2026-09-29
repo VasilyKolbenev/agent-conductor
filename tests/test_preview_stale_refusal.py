@@ -74,10 +74,13 @@ def test_terms_that_differ_from_the_reviewed_ones_are_409_preview_stale(tmp_path
         preview, terms=other, preview_digest=_content_digest(other)))
 
 
-def test_a_digest_that_names_no_preview_this_session_holds_is_409_preview_stale(tmp_path):
+def test_terms_and_a_digest_of_them_that_no_preview_this_session_holds_are_409_preview_stale(
+        tmp_path):
     f = setup(tmp_path)
-    preview = f.policy.preview("run", ASK)
-    refused_and_wrote_nothing(f, body_for(preview, preview_digest="sha256:" + "0" * 64))
+    f.policy.preview("run", ASK)
+    unheld = {**ASK, "max_actions": 2}
+    refused_and_wrote_nothing(f, body_for(
+        {"terms": unheld, "preview_digest": _content_digest(unheld)}))
 
 
 def test_an_expired_preview_is_409_preview_stale(tmp_path):
@@ -116,10 +119,22 @@ def test_a_preview_that_still_stands_authorizes_with_a_201(tmp_path):
 @pytest.mark.parametrize("wrong", [
     {"authorized_by": ""},                             # no one named
     {"extra": 1},                                      # a key the door does not know
+    {"preview_digest": "sha256:" + "0" * 64},          # not the digest of the terms it carries
+    {"terms": ["not", "an", "object"]},                # terms that are not an object
 ])
 def test_a_body_that_is_wrong_in_itself_is_still_contract_invalid(tmp_path, wrong):
     f = setup(tmp_path)
     refused_and_wrote_nothing(f, body_for(f.policy.preview("run", ASK), **wrong),
+                              expected=(422, "contract_invalid", {}))
+
+
+def test_a_self_inconsistent_body_is_contract_invalid_even_when_no_preview_is_held(tmp_path):
+    """The body's own digest is judged before the cache is asked, so the cache being empty
+    cannot turn a body that is wrong in itself into a stale one."""
+    f = setup(tmp_path)
+    preview = f.policy.preview("run", ASK)
+    f.policy.previews.discard("session", "run")
+    refused_and_wrote_nothing(f, body_for(preview, preview_digest="sha256:" + "0" * 64),
                               expected=(422, "contract_invalid", {}))
 
 

@@ -64,6 +64,9 @@ class PolicyService:
                 raise ContractError("automation driver is not available")
             self.driver.hold_activation(run_id)
             now = self.clock()
+            # A body that contradicts itself is wrong in itself, and is judged before the cache
+            # is asked: only a well-formed body that names no held preview is a stale one.
+            self._hold_to_its_own_terms(body)
             self.previews.require(self.session, run_id, body["preview_digest"], body["terms"], now)
             asked = {key: body["terms"][key] for key in PREVIEW_FIELDS}
             fresh = build_preview(recovered, asked, budget=self.budget, registry=self.registry,
@@ -82,9 +85,15 @@ class PolicyService:
         return candidate, created
 
     @staticmethod
-    def _candidate(body, at):
-        if body["preview_digest"] != _content_digest(body["terms"]):
+    def _hold_to_its_own_terms(body):
+        """The digest a body names is the digest of the terms it carries, and they are an object."""
+        terms = body["terms"]
+        if type(terms) is not dict or body["preview_digest"] != _content_digest(terms):
             raise ContractError("preview digest differs from its terms")
+
+    @classmethod
+    def _candidate(cls, body, at):
+        cls._hold_to_its_own_terms(body)
         return from_terms(body["terms"], authorization_id=body["authorization_id"],
             authorized_by=body["authorized_by"], authorized_at=at, supersedes=body["supersedes"])
 
