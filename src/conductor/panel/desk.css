@@ -75,6 +75,22 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 /* ── the five regions ─────────────────────────────────────────────────── */
 .desk-rail{min-width:0;min-height:0;padding:16px 12px;overflow:auto;
   border-right:1px solid var(--line)}
+/* The rail's caption, and one button per task: the title, and under it the word the
+   task's newest run has earned. A pressed row stands on a panel. Amber asks for you and
+   ion says the run is going; the word is in the row as well, so no tone stands alone. */
+.desk-rail__head{margin:0 0 8px;padding:0 10px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-rail__list{display:flex;flex-direction:column;gap:4px}
+.desk-rail__none{padding:0 10px;font-size:12px;color:var(--muted)}
+.desk-task{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;
+  padding:10px 12px 11px;border-radius:12px;text-align:left;color:var(--ink);
+  overflow-wrap:anywhere}
+.desk-task[aria-pressed="true"]{background:var(--panel);box-shadow:inset 2px 0 0 var(--ion)}
+.desk-task__title{font-size:13.5px;font-weight:500;line-height:1.3}
+.desk-task__state{font-size:12px;color:var(--muted)}
+.desk-task__state[data-tone="amber"]{color:var(--amber)}
+.desk-task__state[data-tone="ion"]{color:var(--ion)}
+.desk-task__note{font-size:11.5px;line-height:1.4;color:var(--muted)}
 .desk-center{display:grid;grid-template-rows:minmax(0,1fr) auto auto;min-width:0;min-height:0}
 .desk-scene{min-height:320px;margin:12px;border-radius:18px;background:var(--space)}
 .desk-feed{min-height:120px;padding:12px 22px}

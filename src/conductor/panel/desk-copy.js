@@ -18,4 +18,7 @@ export const DESK_COPY = Object.freeze({
   "desk.feed.label": ["Progress", "Ход работы"],
   "desk.summary.label": ["Summary", "Выжимка"],
   "desk.pult.label": ["Your console", "Ваш пульт"],
+  // -- the rail ------------------------------------------------------------------------
+  "desk.rail.none": ["This project has no tasks yet.", "В проекте пока нет задач."],
+  "desk.rail.unreadable": ["Unreadable task", "Задача не читается"],
 });

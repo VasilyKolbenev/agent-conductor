@@ -16,8 +16,8 @@ from tests.test_studio_source import PANEL
 TRANSPORT = PANEL / "desk-transport.js"
 #: Phrasings of the claim that the move left the text as it was.
 UNCHANGED_CLAIM = re.compile(
-    r"nothing\s+(?:here\s+)?(?:has\s+been\s+)?changed|text\s+is\s+unchanged|unchanged\s+in\s+the\s+move",
-    re.IGNORECASE)
+    r"nothing\s+(?:here\s+)?(?:has\s+been\s+)?changed|text\s+is\s+unchanged"
+    r"|unchanged\s+in\s+the\s+move", re.IGNORECASE)
 
 
 def header_of(source: str) -> str:

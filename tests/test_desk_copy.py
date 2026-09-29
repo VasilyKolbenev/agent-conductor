@@ -44,6 +44,20 @@ def test_every_key_the_desk_page_names_resolves_in_both_languages():
     assert all(key.startswith("desk.") for key in keys)
 
 
+def test_every_desk_key_is_said_by_the_page_or_a_desk_module_and_none_says_a_missing_key():
+    """No orphan word, and no module asking the catalogue for a word it lacks."""
+    catalogue = run_js("""
+      console.log(JSON.stringify(Object.keys(i18n.MESSAGES).filter(
+        (key) => key.startsWith("desk."))));
+    """, MODULES)
+    sources = [(PANEL / "desk.html").read_text(encoding="utf-8")] + [
+        path.read_text(encoding="utf-8") for path in sorted(PANEL.glob("desk*.js"))
+        if path.name != "desk-copy.js"]
+    said = {key for source in sources for key in re.findall(r'"(desk\.[a-z_.]+)"', source)}
+    said |= {key for key in re.findall(PAGE_KEY, sources[0])}
+    assert said == set(catalogue), sorted(said ^ set(catalogue))
+
+
 def test_the_catalogue_says_the_regions_the_spec_names_in_russian():
     out = run_js("""
       console.log(JSON.stringify(Object.fromEntries(

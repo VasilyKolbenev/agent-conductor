@@ -83,6 +83,27 @@ MEASURED = {
         (BODY + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--space"),
         (SHELL + [E("button", states=FOCUSED)], "outline", NONTEXT_MIN, "--ground")],
 }
+# -- the rail: a caption, a sentence, and one button per task ---------------------
+RAIL = SHELL + [E("nav", "desk-rail")]
+LIST = RAIL + [E("div", "desk-rail__list")]
+PRESSED = {"aria-pressed": "true"}
+TASK = LIST + [E("button", "desk-task")]
+TASK_ON = LIST + [E("button", "desk-task", **PRESSED)]
+
+
+def _on_both(*tail, prop: str = "color", floor: float = TEXT_MIN) -> list[tuple]:
+    """The same row on a resting task and on the pressed one, which stands on a panel."""
+    return [(base + list(tail), prop, floor, None) for base in (TASK, TASK_ON)]
+
+
+MEASURED[".desk-rail__head"] = [(RAIL + [E("h2", "desk-rail__head")], "color", TEXT_MIN, None)]
+MEASURED[".desk-rail__none"] = [(RAIL + [E("p", "desk-rail__none")], "color", TEXT_MIN, None)]
+MEASURED[".desk-task"] = _on_both()
+MEASURED[".desk-task__state"] = _on_both(E("span", "desk-task__state"))
+MEASURED[".desk-task__note"] = _on_both(E("span", "desk-task__note"))
+for _tone in ("amber", "ion"):
+    MEASURED[f'.desk-task__state[data-tone="{_tone}"]'] = _on_both(
+        E("span", "desk-task__state", **{"data-tone": _tone}))
 NEUTRAL = "neutral separator between regions; it identifies no state and carries no word"
 EXEMPT = {
     ".desk-top": NEUTRAL, ".desk-rail": NEUTRAL, ".desk-summary": NEUTRAL,

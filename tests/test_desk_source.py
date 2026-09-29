@@ -281,8 +281,9 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 # `X-Conduct-Project` header belong to lane H's route on day 5 and are not faked:
 # the day that lands this list, the literal check and the header check change with it.
 
-#: The `path.<name>` reads the boot module makes, exactly.
-DESK_READS = frozenset({"tasks", "runs"})
+#: The `path.<name>` reads the boot module makes, exactly: the two lists, and the automation
+#: of the newest run of each task (spec 5.2.1 reads it for every task, as the hub does).
+DESK_READS = frozenset({"tasks", "runs", "automation"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
 
@@ -327,6 +328,8 @@ BOOT_BROKEN = {
     "a read that was dropped": (_edit("path.tasks()", "path.runs()"), "no longer reads"),
     "an id the page does not carry": (_edit('"deskFeed"', '"deskFeeds"'), "does not carry"),
     "a mount the module forgot": (_edit('"deskPult"', '"deskShell"'), "does not mount"),
+    "a run's own route asked from the automation read": (
+        _edit("path.automation(runId)", "path.run(runId)"), "not argued for"),
     "the project header before its route": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
@@ -418,10 +421,12 @@ BOOT_WRITES = {
                       "write door"),
     "a door of its own": (lambda text: text + '\nfetch("/command/tasks");\n', "write door"),
     "a state word the seven do not hold, through mark": (
-        _edit('mark(shell, "loading");', 'mark(shell, "done");'), "'done'"),
+        lambda text: text + '\nmark(shell, "done");\n', "'done'"),
     "a phase word the seven do not hold, returned": (
-        _edit('phases.includes("refused") ? "refused" : "ready"',
-              'phases.includes("refused") ? "refused" : "finished"'), "'finished'"),
+        _edit('  return "ready";\n}', '  return "finished";\n}'), "'finished'"),
+    "a phase word the seven do not hold, in a phase property": (
+        _edit('Object.freeze({phase: "loading", list: NONE})',
+              'Object.freeze({phase: "pending", list: NONE})'), "'pending'"),
     "a state word through setAttribute": (
         lambda text: text + '\nnode.setAttribute("data-state", "ok");\n', "'ok'"),
     "a state word through dataset": (
@@ -444,6 +449,31 @@ def test_the_desk_write_check_refuses_each_planted_write_and_names_it(edit, need
 def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
     prose = '// it never calls submit() and never says "done" in mark(shell, "done")\n'
     assert desk_write_faults(prose + DESK_SCRIPT.read_text(encoding="utf-8")) == []
+
+
+#: The modules of the desk that only read, draw or say a word: none reaches a write door, and
+#: none says a state word outside the seven. A module joins this list the day it is written.
+READ_SIDE = ("desk.js", "desk-rail.js", "desk-status.js")
+#: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
+RENDER_MODULES = {"desk-rail.js": "mountRail"}
+
+
+@pytest.mark.parametrize("name", READ_SIDE)
+def test_no_read_side_desk_module_reaches_a_write_door_or_says_a_stray_state_word(name):
+    source = (PANEL / name).read_text(encoding="utf-8")
+    assert desk_write_faults(source) == []
+    # Calibration: the same check bites a write planted in THIS module, so a clean answer
+    # is not an empty one.
+    assert desk_write_faults(source + "\nsubmit();\n")
+    assert desk_write_faults(source + '\nmark(node, "done");\n')
+
+
+@pytest.mark.parametrize("name,mount", list(RENDER_MODULES.items()))
+def test_a_desk_render_module_exports_only_its_mount(name, mount):
+    code = strip_comments((PANEL / name).read_text(encoding="utf-8"))
+    exported = re.findall(r"^export\s+(?:async\s+)?(?:function|const|class)\s+(\w+)", code,
+                          re.MULTILINE)
+    assert exported == [mount]
 
 
 # -- the partition over studio*, desk* and hub* ---------------------------------

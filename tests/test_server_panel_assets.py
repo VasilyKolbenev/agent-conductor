@@ -116,6 +116,8 @@ ASSETS = {
     # The word of a task row and the strings that say it.
     "/panel/desk-status.js": "text/javascript; charset=utf-8",
     "/panel/desk-status-copy.js": "text/javascript; charset=utf-8",
+    # The regions the desk draws.
+    "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",
@@ -241,6 +243,10 @@ REFUSED = (
     "/panel/%2e%2e/desk-status-copy.js", "/panel/DESK-STATUS-COPY.JS",
     "/panel/Desk-status-copy.js", "/panel/desk-status-copy.js/",
     "/panel/desk-status-copy.js%00.txt",
+    # The rail, the same nine shapes.
+    "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
+    "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",
+    "/panel/Desk-rail.js", "/panel/desk-rail.js/", "/panel/desk-rail.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

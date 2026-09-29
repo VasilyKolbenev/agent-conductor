@@ -60,6 +60,8 @@ DESK_ASSETS = {
     # The word of a task row and the strings that say it: shared with the hub later.
     "/panel/desk-status.js": ("text/javascript; charset=utf-8", "desk-status.js"),
     "/panel/desk-status-copy.js": ("text/javascript; charset=utf-8", "desk-status-copy.js"),
+    # The regions the desk draws: one module each, `mountX` only.
+    "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
     "/panel/desk-wizard-materials.js": (

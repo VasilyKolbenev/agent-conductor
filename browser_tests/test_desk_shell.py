@@ -11,16 +11,19 @@ What this module holds, each as a measurement and not a reading of source:
 - the page boots with no console error and no uncaught exception, and every file
   its module graph fetches answers 200 (the census is spelled out, not derived
   from the server's own allowlist, which would only agree with itself);
-- the five regions of spec 5.1 are mounted, childless, and say in `data-state`
-  what became of the read that feeds them: the rail and the summary `ready`, the
-  three with no read of their own still `empty`;
-- a read that is refused, never answered or abandoned at its deadline puts ITS
-  region, and the whole shell and its one sentence, in the word it earned
+- the five regions of spec 5.1 are mounted and say in `data-state` what became
+  of the read that feeds them: the rail and the summary `ready`, the scene, the
+  feed and the pult, which nothing feeds yet, still `empty` and childless; the
+  rail of a project with no tasks says so (what the rail draws for a project
+  that has tasks is `test_desk_rail_scene.py`'s);
+- a read that is refused, never answered or abandoned at its deadline puts the
+  regions it feeds, and the whole shell and its one sentence, in the word it earned
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
   pass every check above, because the server answers both reads;
-- the shell reads exactly `/command/tasks` and `/command/runs` and writes nothing
-  -- no other route, no method but GET, nothing in browser storage. The project
-  route and its header are lane H's, and are not faked here;
+- the shell of a project with no tasks reads exactly `/command/tasks` and
+  `/command/runs` and writes nothing -- no other route, no method but GET, nothing
+  in browser storage. The project route and its header are lane H's, and are not
+  faked here;
 - the page never scrolls sideways, at the desk's width and stacked under 900px.
 
 A fact and its sentence are read in ONE evaluation: two round trips let a read
@@ -50,6 +53,10 @@ DESK_BOOT_ASSETS = {
     "command-projection.js": 200, "studio-i18n.js": 200,
     "studio-preferences.js": 200, "command-view.js": 200, "desk-copy.js": 200,
     "desk-status-copy.js": 200,
+    # What the boot module judges a read with, and the rail it draws from it.
+    "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
+    "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
+    "desk-status.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
@@ -60,7 +67,7 @@ DESK_BOOT_ASSETS = {
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
-    ("deskRail", "ready"),     # fed by the tasks read
+    ("deskRail", "ready"),     # fed by the tasks read and the runs read
     ("deskScene", "empty"),    # follows a chosen task: no read of its own yet
     ("deskFeed", "empty"),     # follows a chosen run
     ("deskSummary", "ready"),  # fed by the runs read
@@ -142,7 +149,7 @@ SHORT_DEADLINE = """(() => {
 #: `real` passes through to the server; `refused` is a 403 with a known code;
 #: `unanswered` aborts the request; `held` is never answered at all.
 PHASE_ROWS = (
-    ("refused-then-unanswered", "refused", "unanswered", "refused", "failed",
+    ("refused-then-unanswered", "refused", "unanswered", "failed", "failed",
      "failed", SAID_FAILED),
     ("refused-then-real", "refused", "real", "refused", "ready",
      "refused", SAID_REFUSED),
@@ -212,11 +219,17 @@ def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answer
     assert desk.problems == []
 
 
-def test_the_five_regions_are_mounted_childless_and_the_two_that_are_read_stand_ready(
+def test_the_two_regions_that_are_read_stand_ready_and_the_three_no_read_feeds_stay_empty(
         desk: Desk) -> None:
     facts = desk.page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
     assert [(row["id"], row["word"]) for row in facts["regions"]] == list(REGION_WORDS)
-    assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"])
+    by_id = {row["id"]: row for row in facts["regions"]}
+    assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
+               if name not in ("deskRail", "deskSummary"))
+    # The summary has no module yet; the rail of a project with no tasks says so.
+    assert by_id["deskSummary"]["children"] == 0
+    assert by_id["deskRail"]["children"] == 2
+    assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
     assert desk.problems == []
 
@@ -243,11 +256,12 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
         rail: str, summary: str, shell: str, said: str) -> None:
     """Every word here is a read the page did not get, and each row names its own.
 
-    The rail is fed by the tasks read and the summary by the runs read; the shell
-    says the worst of the two, in the one sentence a person reads. Two reads that
-    fail differently tell `refused` from `failed` on the region they feed and
-    `failed` from `ready` on the shell, so a page that wrote one word whatever
-    came back, or that mixed the two up, is red on some row.
+    The word of a task is a fact of both lists, so the rail says the worst of the tasks
+    read and the runs read; the summary is fed by the runs read alone; the shell says
+    the worst of the regions, in the one sentence a person reads. Two reads that fail
+    differently tell `refused` from `failed` on the regions they feed and `failed` from
+    `ready` on the shell, so a page that wrote one word whatever came back, or that
+    mixed the two up, is red on some row.
     """
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
@@ -298,7 +312,8 @@ def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses
     assert problems == []
 
 
-def test_the_shell_reads_the_two_routes_that_exist_and_writes_nothing(desk: Desk) -> None:
+def test_the_shell_of_a_project_with_no_tasks_reads_the_two_lists_and_writes_nothing(
+        desk: Desk) -> None:
     command = [(method, path, header) for method, path, header in desk.asked
                if path.startswith("/command/")]
     assert sorted(command) == [("GET", "/command/runs", False),

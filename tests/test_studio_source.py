@@ -69,7 +69,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
            "desk-transport.js", "desk.js", "desk-copy.js", "desk-status.js",
-           "desk-status-copy.js",
+           "desk-status-copy.js", "desk-rail.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-copy.js", "desk-wizard.js")
@@ -132,13 +132,23 @@ PERMITTED_IMPORTS = {
     #: screen, store or copy module: a door that could reach a screen would be a
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
-    #: The desk's boot module: the doors, the catalogue that says a phase in the
-    #: reader's language, and the reader of the address's `lang` (the one place the
-    #: Studio keeps it until the desk's hash module takes it over). It reaches no
-    #: screen, no store and no model of the Studio's, and the wire only through the
-    #: transport -- it holds no door of its own.
+    #: The desk's boot module: the doors, the catalogue that says a word in the reader's
+    #: language, the reader of the address's `lang` (the one place the Studio keeps it
+    #: until the desk's hash module takes it over), the boundaries that judge what a
+    #: read brought (the task list, the run list, the newest-run rule, and the frozen copy
+    #: a landed read is kept in), the focus net a redraw carries a keypress across, and the
+    #: regions it mounts. It reaches no Studio screen and no store, and the wire only
+    #: through the transport -- it holds no door of its own.
     "desk.js": frozenset({"./desk-transport.js", "./studio-i18n.js",
-                          "./studio-preferences.js"}),
+                          "./studio-preferences.js", "./studio-tasks-model.js",
+                          "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
+                          "./studio-focus.js", "./desk-rail.js"}),
+    #: The rail, drawn: `mountRail` only. It reads the word of each row from the status
+    #: rules and the newest-run rule, builds elements through the view's helper and says
+    #: the words through the catalogue, and may import no store, no transport and no other
+    #: screen -- a press is a call to its host.
+    "desk-rail.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-status.js",
+                               "./studio-taskruns.js"}),
     #: The desk's own words: a frozen catalogue that imports nothing, spread into the one
     #: table by `studio-i18n.js`.
     "desk-copy.js": frozenset(),
