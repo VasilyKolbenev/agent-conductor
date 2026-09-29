@@ -324,7 +324,7 @@ def test_capability_choices_come_from_the_payload_and_never_from_a_provider_id()
     the PROVEN `controls` each row declares. So a capability name appearing as
     a literal in the inspector would be a second, silent roster.
     """
-    inspector, canvas = _code(*INSPECTOR), _code(CANVAS)
+    inspector, canvas = _code(*INSPECTOR), _code(*CANVAS_PARTS)
     literals = set(re.findall(r'"([a-z_-]+)"', inspector))
     assert not literals & adapter_base.CAPABILITIES
     # The canvas names exactly one, and only to tell a review step apart.
@@ -353,9 +353,10 @@ def test_the_mount_api_is_exactly_the_two_signatures_slice_d_wires():
     assert _code(CANVAS).count("mount.replaceChildren(") == 1
     assert _code(*INSPECTOR).count("mount.replaceChildren(") == 1
     # Neither module defines a handler; both only call the ones handed in.
-    for source in (_code(CANVAS), _code(*INSPECTOR)):
+    for source in (_code(*CANVAS_PARTS), _code(*INSPECTOR)):
         assert "handlers.on" not in source
-    assert set(re.findall(r'call\((?:context\.)?handlers, "(\w+)"', _code(CANVAS))) == {
+    assert set(re.findall(r'call\((?:context\.)?handlers, "(\w+)"',
+                          _code(*CANVAS_PARTS))) == {
         "onSelect", "onView", "onEdit", "onStatus"}
     assert set(re.findall(r'call\(\w*\.?handlers, "(\w+)"', _code(*INSPECTOR))) == {
         "onSelect", "onEdit", "onStatus"}
