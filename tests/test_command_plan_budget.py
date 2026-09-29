@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from conductor.command.flow_rules import flow_rules
 from conductor.command.graph_template_document import GraphTemplate, _build
 from conductor.command.plan_budget import plan_budget
 from conductor.command.workflow_flow import compile_flow
@@ -236,3 +237,14 @@ def test_spent_is_echoed_as_a_copy_and_attempts_of_unknown_steps_change_nothing(
     budget = plan_of(flow, spent=spent)
     assert budget["spent"] == spent and budget["spent"] is not spent
     assert budget["exhausted"] is True
+
+
+def test_clean_pass_over_eight_actions_is_an_error_and_worst_case_over_eight_a_warning():
+    long = chain(*[review(f"r{number}") for number in range(9)], step("result", "human"))
+    rows = flow_rules(long, budget=plan_of(long))
+    assert {row["code"]: row["severity"] for row in rows}["clean_over_actions"] == "error"
+    dalio = fixture_flow("dalio-v5")
+    rows = flow_rules(dalio, budget=plan_of(dalio))
+    severities = {row["code"]: row["severity"] for row in rows}
+    assert severities["worst_over_actions"] == severities["worst_over_time"] == "warning"
+    assert "error" not in severities.values(), "over the worst case a cycle still publishes"
