@@ -42,7 +42,8 @@ function actorRow(view, handlers) {
 }
 
 //: The form that asks for the name. A refused name is said in place and the typed words stay
-//: where they are. The field is drawn from the words typed and not saved (`view.draft`, which
+//: where they are; the refusal is the boot module's to remember (`view.refused`), so a redraw
+//: says it again until a keystroke or a cancel ends it. The field is drawn from the words typed and not saved (`view.draft`, which
 //: every keystroke hands to the boot module), else from the name that stands, else empty: a
 //: field the person emptied stays empty, and a redraw that rebuilds the form never takes the
 //: words back, whether the field had the keyboard or not.
@@ -52,7 +53,7 @@ function actorForm(view, handlers) {
     "aria-describedby": "deskActorHint"});
   input.value = view.draft ?? view.actor ?? "";
   const hint = element("p", {className: "desk-pult__hint", id: "deskActorHint", role: "alert",
-    hidden: "", text: localize(view, "desk.pult.actor_hint")});
+    hidden: view.refused === true ? null : "", text: localize(view, "desk.pult.actor_hint")});
   const cancel = element("button", {type: "button", "data-focus-key": "pult:actor-cancel",
     text: localize(view, "desk.pult.actor_cancel")});
   const form = element("form", {className: "desk-pult__form", novalidate: ""}, [

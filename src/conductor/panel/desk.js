@@ -111,7 +111,7 @@ const MISMATCH = "project_mismatch";
 //: is the code of the last refusal (or `unknown`).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
-  mode: null, queue: null, flag: null});
+  refused: false, mode: null, queue: null, flag: null});
 let choice = 0;
 let door = null;
 let flagDoor = null;
@@ -221,7 +221,7 @@ function render() {
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
-    mode: state.mode, queue: state.queue, flag: flagView()};
+    refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView()};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountPult(byId("deskPult"), view, handlers);
@@ -410,25 +410,31 @@ function editActor() {
 
 function cancelActor() {
   if (state.foreign) return;
-  move({editing: false, draft: null});
+  move({editing: false, draft: null, refused: false});
   focusOn("pult:actor-change");
 }
 
 //: Hold the words typed into the form so far. A redraw of the page -- a task chosen, a language
 //: set, a read landing -- rebuilds the form from the state, and the state is what holds them.
-//: Nothing is drawn: the field already shows what was typed. Page memory only, like the name.
+//: Nothing is drawn: the field already shows what was typed. A keystroke also ends the refusal
+//: the form may be saying: the words are new. Page memory only, like the name.
 function typeActor(text) {
   if (state.foreign || !state.editing || typeof text !== "string") return;
-  state = Object.freeze({...state, draft: text});
+  state = Object.freeze({...state, draft: text, refused: false});
 }
 
 //: Keep the name of the person at this page, or say it was refused. It is held in this page's
 //: memory and nowhere else: no storage, no address, no request. A refused name leaves the words
-//: typed where they are; a kept one, like a cancel, ends them, so the form always opens on the
-//: name that stands.
+//: typed where they are, and the refusal is remembered (the form says it again after every
+//: redraw, until a keystroke or a cancel ends it); a kept one, like a cancel, ends them, so the
+//: form always opens on the name that stands.
 function setActor(name) {
-  if (state.foreign || typeof name !== "string" || !ACTOR.test(name)) return false;
-  move({actor: name, editing: false, draft: null});
+  if (state.foreign || typeof name !== "string") return false;
+  if (!ACTOR.test(name)) {
+    state = Object.freeze({...state, refused: true});
+    return false;
+  }
+  move({actor: name, editing: false, draft: null, refused: false});
   focusOn("pult:actor-change");
   return true;
 }
@@ -558,7 +564,7 @@ function enterForeign() {
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
-    mode: null, queue: null, flag: null});
+    refused: false, mode: null, queue: null, flag: null});
   render();
 }
 

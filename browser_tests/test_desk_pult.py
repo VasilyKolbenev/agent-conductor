@@ -220,6 +220,32 @@ def test_a_name_outside_the_id_grammar_is_refused_in_place_and_the_typed_text_st
     assert window.problems == []
 
 
+def test_a_refused_name_is_still_said_after_a_redraw_until_the_person_types_again(open_desk):
+    """The hint of a refusal is part of what the form shows, not of one drawing of it: a redraw
+    (a task pressed, a language set) rebuilds the form with the hint where it was, and the next
+    keystroke ends it for good -- a later redraw does not bring it back."""
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "a b")
+    page.click(SAVE)
+    assert page.evaluate(PULT)["hintHidden"] is False
+    page.locator('#deskRail [data-task-id="task-docs"]').click()
+    page.wait_for_function(ON_RUN, arg="run-docs")
+    again = page.evaluate(PULT)
+    assert (again["form"], again["hintHidden"], again["input"]) == (True, False, "a b")
+    _go(page, "#lang=ru")
+    page.wait_for_function("() => document.documentElement.lang === 'ru'")
+    assert page.evaluate(PULT)["hintHidden"] is False
+    page.press(NAME, "x")
+    assert page.evaluate(PULT)["hintHidden"] is True
+    page.locator('#deskRail [data-task-id="task-fix"]').click()
+    page.wait_for_function(ON_RUN, arg="run-fix-new")
+    assert page.evaluate(PULT)["hintHidden"] is True
+    assert window.problems == []
+
+
 def test_the_name_field_cuts_what_is_typed_at_128_characters(open_desk):
     window = open_desk("#lang=en")
     page = window.page
