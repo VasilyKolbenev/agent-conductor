@@ -56,7 +56,7 @@ DESK_BOOT_ASSETS = {
     # What the boot module judges a read with, and the rail it draws from it.
     "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
     "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
-    "desk-status.js": 200,
+    "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
@@ -78,7 +78,7 @@ REGION_WORDS = (
     ("deskScene", "empty"),    # follows a chosen task: no read of its own yet
     ("deskFeed", "empty"),     # follows a chosen run
     ("deskSummary", "ready"),  # fed by the runs read
-    ("deskPult", "empty"),     # follows the gates of a run
+    ("deskPult", "ready"),     # draws the name of the person, which no read feeds
 )
 #: Every word the page carries itself, read in ONE evaluation: the document's language and
 #: title, the note and the link in the top bar, the accessible name of each region and the
@@ -95,14 +95,14 @@ PAGE_WORDS = """() => ({
 PAGE_LANGUAGES = {
     "en": {
         "lang": "en", "title": "December Command — Desk",
-        "note": "The desk is being built: the rail and the scene are live; the feed, the "
-                "summary and the console stay empty until their modules land.",
+        "note": "The desk is being built: the rail, the scene and the console are live; "
+                "the feed and the summary stay empty until their modules land.",
         "link": "Classic panel",
         "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
         "said": "Read."},
     "ru": {
         "lang": "ru", "title": "December Command — Стол",
-        "note": "Стол в разработке: рельс и сцена работают; лента, выжимка и пульт "
+        "note": "Стол в разработке: рельс, сцена и пульт работают; лента и выжимка "
                 "остаются пустыми, пока не появятся их модули.",
         "link": "Прежняя панель",
         "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
@@ -226,15 +226,18 @@ def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answer
     assert desk.problems == []
 
 
-def test_the_two_regions_that_are_read_stand_ready_and_the_three_no_read_feeds_stay_empty(
+def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_stay_empty(
         desk: Desk) -> None:
     facts = desk.page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
     assert [(row["id"], row["word"]) for row in facts["regions"]] == list(REGION_WORDS)
     by_id = {row["id"]: row for row in facts["regions"]}
     assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
-               if name not in ("deskRail", "deskSummary"))
-    # The summary has no module yet; the rail of a project with no tasks says so.
+               if name not in ("deskRail", "deskSummary", "deskPult"))
+    # The summary has no module yet; the rail of a project with no tasks says so; the console
+    # says its heading and the line that asks for the name.
     assert by_id["deskSummary"]["children"] == 0
+    assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
+        2, "Your consoleYou: name not given · set")
     assert by_id["deskRail"]["children"] == 2
     assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
@@ -287,8 +290,9 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
         context.close()
     words = [(row["id"], row["word"]) for row in facts["regions"]]
     assert words == [("deskRail", rail), ("deskScene", "empty"), ("deskFeed", "empty"),
-                     ("deskSummary", summary), ("deskPult", "empty")]
-    assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"])
+                     ("deskSummary", summary), ("deskPult", "ready")]
+    assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"]
+               if row["id"] != "deskPult")
     assert (facts["shell"], facts["said"]) == (shell, said)
     assert uncaught == []
 

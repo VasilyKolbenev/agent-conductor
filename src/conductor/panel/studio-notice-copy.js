@@ -95,5 +95,7 @@ export const NOTICE_COPY = Object.freeze({
   "error.service_refused": ["The command service refused the request.", "Командная служба отклонила запрос."],
   "error.preview_stale": ["The conditions you reviewed are out of date. Nothing was started; review them again.", "Условия, которые вы смотрели, устарели. Ничего не запущено; посмотрите их заново."],
   "error.slot_busy": ["Another run holds this project's slot. Nothing was started.", "Слот проекта занят другим запуском. Ничего не запущено."],
+  "error.project_not_active": ["This project is open for viewing. Starting a run is only possible in the active project; nothing was started.", "Проект открыт на просмотр. Запуск возможен только в активном проекте; ничего не запущено."],
+  "error.materials_refused": ["The materials were not accepted. Nothing was published; correct the list and try again.", "Материалы не приняты. Ничего не опубликовано; исправьте список и попробуйте снова."],
   "error.store_error": ["The run store is unavailable.", "Хранилище запусков недоступно."],
 });

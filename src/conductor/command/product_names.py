@@ -8,6 +8,7 @@ a guard rebuilds the expected list from the catalog and from the adapter modules
 """
 from __future__ import annotations
 
+import fnmatch
 import importlib
 import os
 import secrets
@@ -47,7 +48,17 @@ PRODUCT_TOP_NAMES = (
 
 __all__ = ["AGENT_INSTRUCTION_NAMES", "PRODUCT_TOP_NAMES", "EXCLUDE_LINES", "write_exclude_block",
            "ExcludeWriteError", "SEED_STAGING_DIR", "RETIRED_PATTERN", "BLOCK_BEGIN", "BLOCK_END",
-           "BLOCK_NOTE"]
+           "BLOCK_NOTE", "is_product_path"]
+
+
+def is_product_path(path: str) -> bool:
+    """Whether the first component of a project-relative path (with `/`) is a name the product owns.
+
+    The top name is compared without regard to case: on a volume that folds case, a tracked
+    `Work/` is the product's `work/`. A name that only contains one (`workspace`) is not owned.
+    """
+    top = path.split("/", 1)[0].casefold()
+    return any(fnmatch.fnmatchcase(top, name.casefold()) for name in PRODUCT_TOP_NAMES)
 
 #: The lines of the block written into `.git/info/exclude`: the single spelling of spec 9.2.
 #: Folders end in a slash; a harness marker has none, so it is excluded whatever it is.

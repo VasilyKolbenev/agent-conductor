@@ -27,7 +27,8 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         session=subject.command_session, budget=budget, clock=clock, ids=ids,
         publish_run=subject.clients.publish_run, providers=subject.command_providers,
         quota_service=subject.command_quotas,
-        project=subject.broker.project_name, provider_configs=providers)
+        project=subject.broker.project_name, provider_configs=providers,
+        identity=subject.project_identity)
     # The effect belongs to server-owned workers, never to a request thread:
     # the coordinator holds the API's own runtime, so it spends exactly the
     # grants that boundary minted and can spend no others. Each start() mints

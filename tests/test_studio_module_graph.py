@@ -76,7 +76,8 @@ PERMITTED_IMPORTS = {
                           "./desk-hash.js", "./desk-embed.js", "./studio-tasks-model.js",
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
-                          "./studio-focus.js", "./desk-rail.js", "./desk-scene.js"}),
+                          "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
+                          "./desk-pult.js"}),
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
@@ -89,6 +90,11 @@ PERMITTED_IMPORTS = {
     #: screen -- a press is a call to its host.
     "desk-rail.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-status.js",
                                "./studio-taskruns.js"}),
+    #: The console, drawn: `mountPult` only. It builds elements through the view's helper,
+    #: says the words through the catalogue and the times through the time module, and
+    #: may import no store, no transport and no other screen -- a press is a call to its
+    #: host, and the queue it draws is a read the boot module already judged.
+    "desk-pult.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js"}),
     #: The desk's own words: a frozen catalogue that imports nothing, spread into the one
     #: table by `studio-i18n.js`.
     "desk-copy.js": frozenset(),
@@ -102,6 +108,12 @@ PERMITTED_IMPORTS = {
     #: Embed mode: whether a hub frames the desk, and the one message it says. Values in and
     #: one call out, so it imports nothing -- the boot module hands it the claim it read.
     "desk-embed.js": frozenset(),
+    #: The time of an instant, short and exact, shared with the hub's page: it imports
+    #: nothing and reads no clock -- the caller hands it the string the server wrote.
+    "desk-time.js": frozenset(),
+    #: The task-queue read judged against its shape: values in, a frozen cut or null out. The
+    #: boot module reads the queue and hands the answer here, so it imports nothing.
+    "desk-queue-model.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,

@@ -181,8 +181,36 @@ MEASURED[".desk-scene .studio-note"] = (
 MEASURED[".desk-scene .studio-step-flow__stage svg"] = _in(
     [INSPECTOR], E("section", "studio-step-flow__stage"), E("svg"), prop="stroke",
     floor=NONTEXT_MIN)
+# -- the console: the actor line and its form, the queue block and the lines of a view ---
+CONSOLE = SHELL + [E("aside", "desk-pult")]
+ACTOR_LINE = CONSOLE + [E("p", "desk-pult__actor")]
+ACTOR_FORM = CONSOLE + [E("form", "desk-pult__form")]
+QUEUE = CONSOLE + [E("section", "desk-queue")]
+QUEUE_LIST = QUEUE + [E("ul", "desk-queue__list")]
+MEASURED[".desk-pult__head"] = [(CONSOLE + [E("h2", "desk-pult__head")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__head"] = [(QUEUE + [E("h3", "desk-queue__head")], "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__actor"] = [(ACTOR_LINE, "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__change"] = [
+    (ACTOR_LINE + [E("button", "desk-pult__change")], "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__label"] = [
+    (ACTOR_FORM + [E("label", "desk-pult__label")], "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__hint"] = [
+    (ACTOR_FORM + [E("p", "desk-pult__hint")], "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__buttons button"] = [
+    (ACTOR_FORM + [E("div", "desk-pult__buttons"), E("button")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__now"] = [(QUEUE + [E("p", "desk-queue__now")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__entry"] = [
+    (QUEUE_LIST + [E("li", "desk-queue__entry")], "color", TEXT_MIN, None)]
+MEASURED['.desk-queue__entry[data-tone="amber"]'] = [
+    (QUEUE_LIST + [E("li", "desk-queue__entry", **{"data-tone": "amber"})],
+     "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__none"] = [(QUEUE + [E("p", "desk-queue__none")], "color", TEXT_MIN, None)]
+MEASURED[".desk-pult__flag"] = [(QUEUE + [E("p", "desk-pult__flag")], "color", TEXT_MIN, None)]
 MEASURED[".desk-shell select"] = [
     (SHELL + [E("select")], prop, floor, None)
+    for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
+MEASURED[".desk-shell input"] = [
+    (SHELL + [E("input")], prop, floor, None)
     for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
 NEUTRAL = "neutral separator between regions; it identifies no state and carries no word"
 EXEMPT = {

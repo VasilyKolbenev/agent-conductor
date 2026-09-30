@@ -61,6 +61,8 @@ ERROR_STATUS = MappingProxyType({
     "project_mismatch": 409,
     "slot_busy": 409,
     "preview_stale": 409,
+    "project_not_active": 409,
+    "materials_refused": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -147,6 +149,18 @@ _FIXED_MESSAGES = MappingProxyType({
     #: resends the same body; told this, it repeats the preview and shows what moved. It
     #: carries no detail, so it needs no `_REVIEWED_FACTS` row.
     "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
+    #: Its own code because the request is well formed and nothing about it needs changing:
+    #: this process was opened for viewing, and a view process starts no agent and runs no
+    #: git, whichever write asks for one. It carries no detail, so it needs no
+    #: `_REVIEWED_FACTS` row; the desk knows the mode from `GET /command/project` and shows
+    #: this as a safety net, not as the way to learn it.
+    "project_not_active": "the project is open for viewing and starts no agent",
+    #: Its own code rather than `contract_invalid`: the body is well formed, and what the
+    #: server will not do is turn THESE materials into the one document the entry steps read
+    #: (too many, too large, a file that is not text, a document the project or the seed does
+    #: not hold). The reason, one word of `MATERIALS_REASONS`, is the detail (`_REVIEWED_FACTS`);
+    #: this fixed sentence is the vocabulary-completeness one.
+    "materials_refused": "the materials could not be made into a document",
 })
 
 
@@ -194,6 +208,13 @@ def _safe_detail(value: object) -> bool:
         return value >= 1
     return _safe_id(value)
 
+
+#: The reasons of `materials_refused` (spec 6.2.3): the six the pure composer can give, and
+#: `doc_not_seeded`, which only the seed's own record knows (a path the seed skipped). The list
+#: is closed in `ApiRefusal.materials_refused`, and a test holds it to the composer's own.
+MATERIALS_REASONS = (
+    "too_many_materials", "materials_too_large", "document_not_text", "doc_unknown",
+    "doc_not_seeded", "materials_base_moved", "seed_missing")
 
 #: Every refusal that may carry a detail, as `(code, fields, sentence)`. A
 #: closed table rather than a condition, because the closure is the point: a
@@ -252,6 +273,9 @@ _REVIEWED_FACTS = (
     # is the one fact a person can act on, and the driver's memory holds no more.
     ("slot_busy", ("run_id",),
      lambda facts: f"another bounded run '{facts['run_id']}' holds this project's slot"),
+    # The one word that says why the materials were not accepted, from `MATERIALS_REASONS`.
+    ("materials_refused", ("reason",),
+     lambda facts: f"the materials were not accepted: {facts['reason']}"),
 )
 
 
@@ -381,6 +405,18 @@ class ApiRefusal(Exception):
         message = (f"no draft of '{workflow_id}' stands to publish as revision "
                    f"{revision}")
         return cls(_REFUSAL_BUILD, "draft_conflict", message, detail)
+
+    @classmethod
+    def materials_refused(cls, reason: str) -> "ApiRefusal":
+        """Say the materials were not accepted, for one reason of the closed list.
+
+        The reason is a word this build wrote, never one the caller sent, so it is safe to
+        render; anything off `MATERIALS_REASONS` is a fault of the caller of this factory.
+        """
+        if reason not in MATERIALS_REASONS:
+            raise ValueError("materials refusal reason must be one of the closed list") from None
+        return cls(_REFUSAL_BUILD, "materials_refused",
+                   f"the materials were not accepted: {reason}", {"reason": reason})
 
     @classmethod
     def service_no_providers(cls) -> "ApiRefusal":
