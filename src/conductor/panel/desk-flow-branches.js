@@ -79,6 +79,21 @@ export function branchMarks(flow) {
   return marks;
 }
 
+/**
+ * The branch a step stands in, for the outermost fork it belongs to (the one `branchMarks` marks):
+ * `{fork, number, of, waiting}`, or null for a step in no branch.
+ */
+export function branchOf(flow, id) {
+  for (const fork of forksOf(flow)) {
+    const branch = fork.branches.find((one) => one.steps.includes(id));
+    if (branch !== undefined) {
+      return {fork: fork.fork, number: branch.number, of: fork.branches.length,
+        waiting: branch.number > 1};
+    }
+  }
+  return null;
+}
+
 /** «Сначала эта ветка»: the steps of the branch `id` stands in move before the first branch's. */
 export function branchFirst(flow, id) {
   const forks = forksOf(flow);

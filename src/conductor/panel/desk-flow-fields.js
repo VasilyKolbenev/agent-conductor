@@ -15,7 +15,8 @@
 //
 // Pure functions of a flow and a step; nothing is changed, nothing is read from a clock or a store.
 import {BOUND_EXT_FIELDS, DESK_WORDS, EXT_FIELDS, LINK_WHENS, LOOP_ENTRY_WORDS, REVIEW_PROFILES,
-  defaultWhen, isDispatch, isLoop, loopOf, stepOf} from "./desk-flow-shape.js";
+  defaultWhen, isDispatch, isLoop, loopKind, loopOf, stepOf} from "./desk-flow-shape.js";
+import {branchOf} from "./desk-flow-branches.js";
 
 //: The control each field is drawn with. An extension field is always `json`.
 const CONTROL = Object.freeze({title: "text", purpose: "area", timeout_seconds: "int",
@@ -133,6 +134,24 @@ export function roadWords(flow, link) {
   const given = source?.type === "agent" || source?.type === "human";
   return {main, extra: LINK_WHENS.filter((word) => !main.includes(word)),
     outside: !main.includes(link.when), home: given ? defaultWhen(source) : null};
+}
+
+/**
+ * What a person needs to tell loops and branches apart, read off the flow's own roads and never
+ * worked out by a rule of the desk's (spec 7.5, 7.7): for a loop, its kind (`passes` of a dispatch
+ * step, `rework` of a gate, or `other`), the step that leads into it, where it returns to and its
+ * bound; for any other step, the loops that return to it in the order of the steps, and the branch
+ * it stands in (null for a step in no fork's branch).
+ */
+export function stepFacts(flow, step) {
+  if (isLoop(step)) {
+    const {kind, owner} = loopKind(flow, step.step_id);
+    return {loop: {kind, owner, back_to: step.back_to, bound: step.bound}, returning: [],
+      branch: null};
+  }
+  const returning = flow.steps.filter((one) => isLoop(one) && one.back_to === step.step_id)
+    .map((one) => ({id: one.step_id, ...loopKind(flow, one.step_id), bound: one.bound}));
+  return {loop: null, returning, branch: branchOf(flow, step.step_id)};
 }
 
 /** How many extension keys a step holds: the number its «Расширенные поля» heading carries. */

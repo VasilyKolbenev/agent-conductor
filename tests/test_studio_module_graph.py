@@ -214,8 +214,8 @@ PERMITTED_IMPORTS = {
     #: shape, nothing that touches the page.
     "desk-flow-graph.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
     #: The rows of the inspector and the way a typed text becomes one edit: the shape's facts and
-    #: nothing else, so the model can flush a typed text without reaching the drawing.
-    "desk-flow-fields.js": frozenset({"./desk-flow-shape.js"}),
+    #: the branches' numbering, so the model can flush a typed text without reaching the drawing.
+    "desk-flow-fields.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
     #: The words of the «Схема»: data only, like every copy module.
     "desk-flow-copy.js": frozenset(),
     #: The «Схема» is drawn by four modules. The shared pieces reach the catalogue, the panel's model

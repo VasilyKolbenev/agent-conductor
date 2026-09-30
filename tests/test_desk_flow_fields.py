@@ -263,3 +263,46 @@ def test_the_desks_road_words_agree_with_the_servers_link_outside_desk_rule_in_e
     for case, flow, desk_says in zip(cases, flows, out):
         server_says = any(row["code"] == "link_outside_desk" for row in flow_rules(flow))
         assert desk_says == server_says, case
+
+
+# -- which loop is which, and which branch a step is in (spec 7.5, 7.7) -------------------------
+
+def _fork_flow() -> dict[str, Any]:
+    """`a` leads to `b` and to `c` by the same word: a fork of two branches."""
+    steps = [_road_step(name, "agent") for name in ("a", "b", "c")]
+    return {"flow_version": 1, "title": "Fork", "steps": steps, "ext": {},
+            "links": [{"from": "a", "to": "b", "when": "success"},
+                      {"from": "a", "to": "c", "when": "success"}]}
+
+
+def test_a_loop_says_its_kind_and_owner_and_a_step_lists_the_loops_that_return_to_it():
+    out = js("""
+      const facts = (flow, id) => fields.stepFacts(flow,
+        flow.steps.find((row) => row.step_id === id));
+      const orphan = {...d.tester, links: d.tester.links.filter((link) => link.to !== "do-fix")};
+      show({passes: facts(d.tester, "tester-fix"), rework: facts(d.dalio, "retry-loop"),
+        other: facts(orphan, "do-fix"), doer: facts(d.tester, "do"),
+        inputs: facts(d.dalio, "identify"), alone: facts(d.tester, "result")});
+    """)
+    assert out["passes"] == {"loop": {"kind": "passes", "owner": "tester", "back_to": "do",
+                                      "bound": 2}, "returning": [], "branch": None}
+    assert out["rework"]["loop"] == {"kind": "rework", "owner": "result-gate",
+                                     "back_to": "identify", "bound": 3}
+    assert out["other"]["loop"] == {"kind": "other", "owner": None, "back_to": "do", "bound": 3}
+    assert out["doer"] == {"loop": None, "branch": None, "returning": [
+        {"id": "do-fix", "kind": "passes", "owner": "do", "bound": 3},
+        {"id": "tester-fix", "kind": "passes", "owner": "tester", "bound": 2}]}, (
+        "both loops that return to the doer, in the order of the steps")
+    assert out["inputs"]["returning"] == [{"id": "retry-loop", "kind": "rework",
+                                           "owner": "result-gate", "bound": 3}]
+    assert out["alone"] == {"loop": None, "returning": [], "branch": None}
+
+
+def test_a_step_of_a_fork_says_which_branch_it_is_in_and_whether_it_waits_its_turn():
+    out = run_js("const show = (value) => console.log(JSON.stringify(value));\n"
+                 "const facts = (id) => fields.stepFacts(d, d.steps.find((row) => "
+                 "row.step_id === id));\n"
+                 "show({a: facts('a').branch, b: facts('b').branch, c: facts('c').branch});",
+                 _fork_flow(), modules={"fields": "desk-flow-fields.js"})
+    assert out == {"a": None, "b": {"fork": "a", "number": 1, "of": 2, "waiting": False},
+                   "c": {"fork": "a", "number": 2, "of": 2, "waiting": True}}

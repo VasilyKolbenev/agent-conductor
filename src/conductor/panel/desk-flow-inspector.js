@@ -11,7 +11,7 @@
 // and to the canvas's by `tests/test_desk_flow_guards.py`: a word added to one and not the others is a
 // control writing an edit nothing applies.
 import {element} from "./command-view.js";
-import {clearEdit, extCount, flowRows, roadWords, stepRows} from "./desk-flow-fields.js";
+import {clearEdit, extCount, flowRows, roadWords, stepFacts, stepRows} from "./desk-flow-fields.js";
 import {draftKey} from "./desk-flow-model.js";
 import {isLoop} from "./desk-flow-shape.js";
 import {action, knownText, stepLabel, stepName, textControl, whenWord} from "./desk-flow-draw.js";
@@ -113,6 +113,44 @@ function fold(ctx, key, count, children) {
   return details;
 }
 
+// -- what a step is among the loops and the branches --------------------------------------
+
+const LOOP_TEXT = Object.freeze({passes: "schema.facts.loop_passes",
+  rework: "schema.facts.loop_rework", other: "schema.facts.loop_other"});
+const KIND_TEXT = Object.freeze({passes: "schema.facts.kind_passes",
+  rework: "schema.facts.kind_rework", other: "schema.facts.kind_other"});
+
+function loopFact(ctx, loop) {
+  const owner = loop.owner === null ? {} : {step: stepLabel(ctx, loop.owner)};
+  return element("div", {"data-facts": "loop"}, [element("p", {text: ctx.t(LOOP_TEXT[loop.kind],
+    owner)}), element("p", {text: ctx.t("schema.facts.loop_to", {step: stepLabel(ctx, loop.back_to),
+    bound: String(loop.bound)})})]);
+}
+
+function returningFact(ctx, loops) {
+  const row = (loop) => element("li", {}, [action(`schema:facts:loop:${loop.id}`,
+    ctx.t("schema.facts.returning_row", {loop: stepLabel(ctx, loop.id),
+      kind: ctx.t(KIND_TEXT[loop.kind]), bound: String(loop.bound)}),
+    () => ctx.send({type: "select", selection: {kind: "node", id: loop.id}}))]);
+  return element("div", {"data-facts": "returning"}, [element("p",
+    {text: ctx.t("schema.facts.returning")}), element("ul", {}, loops.map(row))]);
+}
+
+function branchFact(ctx, branch) {
+  const text = ctx.t("schema.facts.branch", {number: String(branch.number),
+    count: String(branch.of), fork: stepLabel(ctx, branch.fork)});
+  return element("p", {"data-facts": "branch",
+    text: branch.waiting ? `${text} · ${ctx.t("schema.branch.waits")}` : text});
+}
+
+//: Facts the flow's own roads state, never a judgement: the diagnostics above say what is wrong.
+function factsView(ctx, step) {
+  const facts = stepFacts(ctx.view.flow, step);
+  if (facts.loop !== null) return [loopFact(ctx, facts.loop)];
+  return [...(facts.returning.length === 0 ? [] : [returningFact(ctx, facts.returning)]),
+    ...(facts.branch === null ? [] : [branchFact(ctx, facts.branch)])];
+}
+
 // -- a step ------------------------------------------------------------------------------
 
 function sections(rows) {
@@ -147,7 +185,8 @@ function stepPanel(ctx) {
     element("section", {"data-section": name}, [element("h4", {text: ctx.t(`schema.section.${name}`)}),
       ...rows.map((row) => rowView(ctx, row, id, step))]));
   const ext = all.filter((row) => row.section === "ext");
-  return [element("h3", {text: stepName(ctx, step)}), ...body, stepActions(ctx, step),
+  return [element("h3", {text: stepName(ctx, step)}), ...factsView(ctx, step), ...body,
+    stepActions(ctx, step),
     ...(ext.length === 0 ? [] : [fold(ctx, "ext", extCount(step),
       ext.map((row) => extRow(ctx, row, id)))])];
 }

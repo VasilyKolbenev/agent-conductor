@@ -268,6 +268,55 @@ def test_a_road_word_outside_the_desks_three_lives_in_its_fold_and_one_press_ret
     assert "link_outside_desk" in flow.diag_codes(), "the server says it is outside the desk"
 
 
+FACTS = """() => {
+  const take = (selector) => [...document.querySelectorAll(selector)].map((n) => n.textContent);
+  const root = document.querySelector("[data-flow-inspector]");
+  return {loop: take("[data-facts='loop'] p"), branch: take("[data-facts='branch']"),
+    returning: take("[data-facts='returning'] p"),
+    rows: [...root.querySelectorAll("[data-facts='returning'] button")].map((b) => [
+      b.dataset.focus, b.textContent])};
+}"""
+
+
+def test_the_inspector_tells_which_loops_return_to_a_step_and_what_kind_each_loop_is(flow):
+    from_starter(flow, "desk-standard")
+    flow.select_step("do")
+    flow.add("tester")
+    flow.select_step("do")
+    facts = flow.page.evaluate(FACTS)
+    assert facts["returning"] == [flow.say("schema.facts.returning")]
+    loop = lambda name: f"{flow.say('schema.kind.loop')} ({name})"  # noqa: E731
+    kind = flow.say("schema.facts.kind_passes")
+    assert facts["rows"] == [
+        ["schema:facts:loop:do-fix", flow.say("schema.facts.returning_row", loop=loop("do-fix"),
+                                              kind=kind, bound="3")],
+        ["schema:facts:loop:tester-fix", flow.say("schema.facts.returning_row",
+                                                  loop=loop("tester-fix"), kind=kind, bound="2")]]
+    flow.control("schema:facts:loop:tester-fix").click()
+    expect(flow.page.locator("[data-flow-inspector]")).to_have_attribute("data-selected",
+                                                                         "tester-fix")
+    doer = f"{flow.say('wizard.role.doer')} (do)"
+    tester = f"{flow.say('wizard.role.tester')} (tester)"
+    assert flow.page.evaluate(FACTS)["loop"] == [
+        flow.say("schema.facts.loop_passes", step=tester),
+        flow.say("schema.facts.loop_to", step=doer, bound="2")]
+
+
+def test_the_inspector_tells_the_branch_a_step_is_in_and_that_a_later_branch_waits(flow):
+    from_starter(flow, "desk-standard")
+    flow.select_step("analyst")
+    flow.add("reviewer")
+    fork = flow.say("wizard.role.analyst") + " (analyst)"
+    flow.select_step("reviewer")
+    waits = flow.say("schema.facts.branch", number="2", count="2", fork=fork)
+    assert flow.page.evaluate(FACTS)["branch"] == [f"{waits} · {flow.say('schema.branch.waits')}"]
+    flow.select_step("do")
+    assert flow.page.evaluate(FACTS)["branch"] == [
+        flow.say("schema.facts.branch", number="1", count="2", fork=fork)]
+    flow.select_step("analyst")
+    assert flow.page.evaluate(FACTS)["branch"] == [], "the step that forks belongs to no branch"
+
+
 def test_a_road_into_a_loop_keeps_the_loops_own_word_among_its_main_ones(flow):
     from_starter(flow, "dalio-v5")
     flow.select_road("do", "correct")
