@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from conductor import ownership, tool_pins
-from conductor.hub import home, registry
+from conductor.hub import home, instance, registry, state
 from conductor.ownership_errors import OwnerRefused
 
 
@@ -154,6 +154,14 @@ def _hub_operations(folder: Path) -> None:
     registry.add_project(project_id="3f9c0d5a7b2e4c168a90d3e1f4b7a625",
                          root=str(folder.parent / "project"), root_identity=(1, 1), folder=made)
     registry.set_projects_home(str(folder.parent / "ConductProjects"), folder=made)
+    live = instance.HubInstance.acquire(made)
+    try:
+        live.publish(7700)
+        flag_id = "f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1"
+        state.HubStateStore(made, live).update(
+            lambda current: state.enqueue(current, "b" * 32, flag_id))
+    finally:
+        live.close()
 
 
 def _markers_at_or_above(folder: Path) -> list[str]:
