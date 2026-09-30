@@ -28,9 +28,8 @@ export const EDIT_FIELDS = Object.freeze(["arguments", "attempt_bound", "back_to
   "instruction_from", "missing_artifact_policy", "passes", "purpose", "reads",
   "required_evidence", "resources", "review_profile", "rework", "role_id", "stage",
   "success_requires", "timeout_seconds", "title", "verifier_role_id"]);
-//: What the two fields of the flow itself are called and the two loop forms.
+//: What the two fields of the flow itself are called.
 export const FLOW_FIELDS = Object.freeze(["flow_title", "execution_contract"]);
-export const SUGAR_FIELDS = Object.freeze(["passes", "rework"]);
 //: The kinds `add` takes (`task` and `gate` are the canvas's own words for the first two).
 const ADD_TYPES = Object.freeze({agent: "agent", task: "agent", human: "human", gate: "human",
   route: "route", loop: "loop"});

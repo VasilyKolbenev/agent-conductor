@@ -69,7 +69,6 @@ export function stepOf(flow, id) {
 }
 
 export const isDispatch = (step) => step?.type === "agent" && step.capability === "dispatch";
-export const isReview = (step) => step?.type === "agent" && step.capability === "review";
 
 export const roadsFrom = (flow, id) => rows(flow?.links).filter((link) => link.from === id);
 export const roadsInto = (flow, id) => rows(flow?.links).filter((link) => link.to === id);
