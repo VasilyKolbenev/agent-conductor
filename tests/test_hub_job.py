@@ -30,6 +30,12 @@ from conductor.hub import job
 from tests._drain_harness import WAIT, wait_until
 
 STANDIN = Path(__file__).resolve().with_name("_hub_job_standin.py")
+#: The interpreter itself. In a virtual environment `sys.executable` is a launcher that starts the
+#: interpreter as its child, inside a job of the launcher's own (limit flags 0x3000); the process
+#: a test puts into a job must be the one that reads it, so the stand-in is started from the
+#: base interpreter, which needs the folder that holds `conductor` on its path.
+INTERPRETER = sys._base_executable
+SOURCE = str(Path(job.__file__).resolve().parents[2])
 KILL, BREAKAWAY, SILENT = 0x2000, 0x0800, 0x1000
 windows = pytest.mark.skipif(os.name != "nt", reason="a job is Windows'")
 
@@ -109,7 +115,8 @@ class _Job:
         self.handle = self.k32.CreateJobObjectW(None, None)
         assert self.handle, ctypes.get_last_error()
         info = _Extended()
-        info.Basic.LimitFlags = KILL | (BREAKAWAY if may_leave else 0)
+        self.flags = KILL | (BREAKAWAY if may_leave else 0)
+        info.Basic.LimitFlags = self.flags
         assert self.k32.SetInformationJobObject(self.handle, 9, ctypes.byref(info),
                                                 ctypes.sizeof(info)), ctypes.get_last_error()
 
@@ -129,21 +136,45 @@ class _Job:
 
 
 class _Standin:
-    """The stand-in for a hub, in a job, and what it reported."""
+    """The stand-in for a hub, in a job (or in two, the second nested in the first), and what
+    it reported. `which` is the policy its spawner is given: `real` (the job it reads),
+    `breakaway` or `none` (whatever the job says)."""
 
-    def __init__(self, tmp_path: Path, *, may_leave: bool, which: str) -> None:
+    def __init__(self, tmp_path: Path, *, may_leave: bool, which: str,
+                 inner_may_leave: bool | None = None) -> None:
         self.go, self.result = tmp_path / "go", tmp_path / "result.json"
         self.pidfile = tmp_path / "sleeper.pid"
-        env = {**os.environ, "SLEEPER_PIDFILE": str(self.pidfile)}
-        self.job = _Job(may_leave=may_leave)
+        env = {**os.environ, "SLEEPER_PIDFILE": str(self.pidfile),
+               "PYTHONPATH": os.pathsep.join(filter(None, [SOURCE, os.environ.get("PYTHONPATH")]))}
+        self.jobs = [_Job(may_leave=may_leave)]
+        if inner_may_leave is not None:
+            self.jobs.append(_Job(may_leave=inner_may_leave))
         self.proc = subprocess.Popen(
-            [sys.executable, str(STANDIN), str(self.go), str(self.result), str(tmp_path / "home"),
+            [INTERPRETER, str(STANDIN), str(self.go), str(self.result), str(tmp_path / "home"),
              which], env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE)
-        self.job.hold(self.proc)
+        for each in self.jobs:
+            each.hold(self.proc)
         self.go.write_text("go", encoding="ascii")
         wait_until(self.result.exists, WAIT, "the stand-in to report")
         self.report = json.loads(self.result.read_text(encoding="utf-8"))
+
+    def assert_it_read_the_job_made_here(self) -> None:
+        """The process in the job is the stand-in itself, and its own reading is the innermost
+        job made here.
+
+        A job that holds a launcher in front of the interpreter is a job the stand-in is not in
+        (the launcher's child is in the launcher's own job, not in this one), so every claim
+        about "the job made here" is first judged by what the stand-in says of itself.
+        """
+        report, flags = self.report, self.jobs[-1].flags
+        assert report["pid"] == self.proc.pid, (
+            f"the process put into the job ({self.proc.pid}) is not the stand-in "
+            f"({report['pid']}): a launcher stands in front of it")
+        assert report["in_job"] is True
+        assert report["flags"] == flags, (
+            f"the stand-in read limit flags {report['flags']:#x}, not the {flags:#x} "
+            "set on the job made here")
 
     def sleeper(self) -> int:
         """The pid the sleeper wrote; the file is made before it is filled, so wait for digits."""
@@ -154,11 +185,13 @@ class _Standin:
         return int(self.pidfile.read_text(encoding="ascii"))
 
     def close_the_job(self) -> None:
-        self.job.close()
+        for each in reversed(self.jobs):
+            each.close()
         self.proc.wait(timeout=WAIT)
 
     def clean_up(self, pid: int | None) -> None:
-        self.job.close()
+        for each in reversed(self.jobs):
+            each.close()
         if self.proc.poll() is None:
             self.proc.kill()
         self.proc.wait(timeout=WAIT)
@@ -171,6 +204,7 @@ def test_the_instrument_a_child_started_without_breakaway_is_gone_when_its_job_c
     standin = _Standin(tmp_path, may_leave=True, which="none")
     pid = None
     try:
+        standin.assert_it_read_the_job_made_here()
         assert standin.report["started"] is True
         pid = standin.sleeper()
         assert process_identity.started_of(pid) is not None
@@ -186,7 +220,8 @@ def test_in_a_job_that_allows_it_a_child_breaks_away_and_outlives_the_job(tmp_pa
     standin = _Standin(tmp_path, may_leave=True, which="real")
     pid = None
     try:
-        assert standin.report == {"policy": "breakaway", "started": True}
+        standin.assert_it_read_the_job_made_here()
+        assert (standin.report["policy"], standin.report["started"]) == ("breakaway", True)
         pid = standin.sleeper()
         standin.close_the_job()
         assert process_identity.started_of(pid) is not None, "the child died with the job"
@@ -194,33 +229,61 @@ def test_in_a_job_that_allows_it_a_child_breaks_away_and_outlives_the_job(tmp_pa
         standin.clean_up(pid)
 
 
-def _the_job_the_os_names_is_the_one_made_here() -> str | None:
-    """None when it is; otherwise why a job made in a test cannot be the one a process reads.
-
-    With no handle, `QueryInformationJobObject` answers about the outermost job of a process in
-    nested jobs (measured: a process put into a job of its own under a job of flags 0x3000 reads
-    0x3000, not its own). A machine whose test runner is itself in a job cannot show the policy
-    of a job made here, so the test that needs it says so and does not pretend.
-    """
-    in_job, flags = job.read_own_job()
-    if not in_job:
-        return None
-    return (f"this test process already runs in a job (limit flags {flags:#x}); the OS answers "
-            "a process in nested jobs about the outermost one, so the job made here is not the "
-            "one the stand-in would read")
-
-
 @windows
 def test_in_a_job_that_does_not_allow_it_every_project_start_is_refused_and_nothing_is_made(
         tmp_path):
-    reason = _the_job_the_os_names_is_the_one_made_here()
-    if reason is not None:
-        pytest.skip(reason)
     standin = _Standin(tmp_path, may_leave=False, which="real")
     try:
-        assert standin.report == {"policy": "kill_on_close", "started": False,
-                                  "code": "hub_in_kill_on_close_job"}
+        standin.assert_it_read_the_job_made_here()
+        report = standin.report
+        assert (report["policy"], report["started"], report["code"]) == (
+            "kill_on_close", False, "hub_in_kill_on_close_job")
         assert not standin.pidfile.exists()
         assert not (tmp_path / "home" / "logs").exists(), "a log was made for a child not started"
     finally:
         standin.clean_up(None)
+
+
+@windows
+def test_a_breakaway_the_real_os_refuses_in_a_job_that_does_not_allow_it_is_that_same_refusal(
+        tmp_path):
+    standin = _Standin(tmp_path, may_leave=False, which="breakaway")
+    try:
+        standin.assert_it_read_the_job_made_here()
+        report = standin.report
+        assert (report["started"], report["code"]) == (False, "hub_in_kill_on_close_job")
+        assert not standin.pidfile.exists(), "a child was started in a job that forbids it"
+    finally:
+        standin.clean_up(None)
+
+
+@windows
+def test_a_process_in_nested_jobs_reads_the_innermost_one_and_not_the_outermost(tmp_path):
+    standin = _Standin(tmp_path, may_leave=True, which="real", inner_may_leave=False)
+    try:
+        standin.assert_it_read_the_job_made_here()
+        report = standin.report
+        assert (report["flags"], report["policy"], report["started"]) == (
+            KILL, "kill_on_close", False), "the outer job allows a breakaway and the inner one not"
+    finally:
+        standin.clean_up(None)
+
+
+@windows
+def test_a_child_that_leaves_the_inner_job_is_still_ended_by_an_outer_job_that_forbids_it(
+        tmp_path):
+    """The limit of reading only the immediate job, shown on the OS: the read says `breakaway`."""
+    standin = _Standin(tmp_path, may_leave=False, which="real", inner_may_leave=True)
+    pid = None
+    try:
+        standin.assert_it_read_the_job_made_here()
+        assert (standin.report["policy"], standin.report["started"]) == ("breakaway", True)
+        pid = standin.sleeper()
+        standin.jobs[1].close()
+        standin.proc.wait(timeout=WAIT)
+        assert process_identity.started_of(pid) is not None, "the child died with the inner job"
+        standin.jobs[0].close()
+        wait_until(lambda: process_identity.started_of(pid) is None, WAIT,
+                   "the child that left the inner job to be ended with the outer one")
+    finally:
+        standin.clean_up(pid)

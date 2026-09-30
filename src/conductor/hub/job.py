@@ -61,6 +61,11 @@ class _Extended(ctypes.Structure):
 def read_own_job() -> tuple[bool, int]:
     """`(in_job, limit_flags)` of the job this process is in; Windows only.
 
+    With no handle the OS answers about the job the process is immediately in, which is the
+    innermost one when jobs are nested (`tests/test_hub_job.py` puts a process in two). The jobs
+    above it are not read: a child that leaves the immediate job stays in an outer job that does
+    not let it leave.
+
     Raises:
         OSError: The OS would not say, or this is not Windows.
     """

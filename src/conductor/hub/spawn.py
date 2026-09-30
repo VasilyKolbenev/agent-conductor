@@ -192,9 +192,13 @@ class Spawner:
 def _refusal_for(error: OSError, asked_to_break_away: bool) -> SpawnRefused:
     """A start the OS refused. `ERROR_ACCESS_DENIED` for a breakaway is the job saying no.
 
-    The job the hub reads is the one the OS names for a process with no handle, and with jobs
-    nested that may not be the one that decides; a breakaway the OS refuses is the answer that
-    does.
+    The job the hub reads (`job.read_own_job`) is the one the process is immediately in, the
+    innermost when jobs are nested, and that is the job whose limits decide a breakaway: the OS
+    refuses it with this error exactly when that job does not allow it (measured, with a real
+    job in `tests/test_hub_job.py`). A breakaway refused after the read said `breakaway` means
+    the job is not the one that was read (it changed, or the policy was given by the caller);
+    the OS's answer stands, and the start is the same refusal as for a job read as
+    `kill_on_close`.
     """
     if asked_to_break_away and getattr(error, "winerror", None) == _ACCESS_DENIED:
         return SpawnRefused("hub_in_kill_on_close_job",
