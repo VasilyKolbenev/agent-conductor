@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>December Command</title>
 <link rel="stylesheet" href="/panel/desk.css">
+<link rel="stylesheet" href="/panel/desk-flow.css">
 <script src="/panel/desk.js" type="module"></script>
 <!-- The project desk. It is served at /panel/desk.html from the first day, and
      the hub mounts exactly that address, so it exists before any of its code
@@ -38,12 +39,15 @@
     <h1 class="desk-brand">December Command</h1>
     <p class="desk-status" id="deskStatus" role="status" aria-live="polite"></p>
     <button id="deskNewTask" type="button" data-i18n="desk.new_task"></button>
+    <span id="deskConnection" role="status" aria-live="polite"></span>
+    <button id="deskFlowToggle" type="button" aria-controls="deskFlow" aria-expanded="false" data-i18n="desk.flow"></button>
     <p class="desk-note" data-i18n="desk.note"></p>
     <a class="desk-classic" href="/panel/index.html" data-i18n="desk.classic"></a>
   </header>
   <nav class="desk-rail" id="deskRail" data-i18n-label="desk.rail.label" data-region="rail" data-state="empty"></nav>
   <main class="desk-center" id="deskCenter">
     <p class="desk-plate" id="deskPlate" role="note" data-i18n="desk.plate.view" hidden></p>
+    <section class="desk-schema" id="deskFlow" data-i18n-label="desk.flow" hidden></section>
     <section class="desk-scene" id="deskScene" data-i18n-label="desk.scene.label" data-region="scene" data-state="empty"></section>
     <section class="desk-feed" id="deskFeed" data-i18n-label="desk.feed.label" data-region="feed" data-state="empty"></section>
     <section class="desk-summary" id="deskSummary" data-i18n-label="desk.summary.label" data-region="summary" data-state="empty"></section>

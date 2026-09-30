@@ -275,7 +275,7 @@ def test_every_reference_the_desk_page_makes_is_a_route_this_server_serves():
     """
     html = DESK_PAGE.read_text(encoding="utf-8")
     refs = re.findall(QUOTED_REFERENCE, html)
-    assert refs == ["/panel/desk.css", "/panel/desk.js", "/panel/index.html"]
+    assert refs == ["/panel/desk.css", "/panel/desk-flow.css", "/panel/desk.js", "/panel/index.html"]
     assert set(refs) <= set(server.PANEL_ASSETS), sorted(set(refs) - set(server.PANEL_ASSETS))
     assert html.count('<link rel="stylesheet" href="/panel/desk.css">') == 1
     assert html.count(f"{DESK_TAG}</script>") == 1

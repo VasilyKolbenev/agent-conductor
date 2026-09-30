@@ -1,44 +1,5 @@
 "use strict";
-// Boot module of the desk: it stands the regions of spec 5.1 on the page, reads what
-// feeds them, and says on each the phase of the read that fed it.
-//
-// The regions are the five mounts of `desk.html`. Each stands in a machine word, one of the
-// seven a state may hold, and the top bar says the whole of it in one plain sentence. The
-// rail is drawn from the project's task list and the runs list, and from the automation of
-// the newest run of each task, because the word of a task is a fact of all three (spec
-// 5.2.1). The scene is drawn from the newest run of the task a person chose, or from the run
-// the address names: choosing is a press or a hash, and the run is a read. The pult draws the
-// name of the person at this page (held here, in the page's memory), the project queue as the
-// queue door read it once at load (`desk-queue.js`) and, in a project the claim says is in `view`,
-// the lines that say so. The rail says "Queued" under the task whose run the queue holds. The feed is drawn from the run the scene is drawn from and stands in the word the
-// scene stands in. The summary is drawn from the lists, the automation of each task's newest run
-// and the reads that say which tasks were closed, and from the run on the scene; it stands in the
-// word of the runs read and is drawn when its numbers are known. Nothing else waits for the reads
-// that say which tasks were closed: a slow one holds the summary and nothing more.
-//
-// The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
-// `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
-// A hash the desk did not write is read by ONE listener, the router, which selects, reads and
-// sets the appearance and nothing else. A hash, or a project claim, that names another project
-// than the one the desk bound to puts it in a terminal state, and it then reads and applies
-// nothing.
-//
-// It reaches the wire only through `desk-transport.js`, the ONLY module of the Studio and
-// the desk that touches the network (`graph.js` and the classic `command.js` keep doors of
-// their own), and holds no door, no timer and no storage of its own. Facts enter through
-// a READ and through nothing else, and this module writes nothing at all.
-//
-// The desk binds to its project before it reads anything else (spec 4.5.1): the first read
-// of every window is the project claim, with the project of the hash when there is one, and
-// the lists are read only after it has answered. The project the doors claim from then on is
-// the hash's, or else the one the server named; the header itself is the transport's, which
-// this module never names. A claim that names another project than the bound one, and a
-// refusal `project_mismatch` from any read, end the desk in its terminal state, which seals
-// the transport. A claim read that fails any other way binds nothing new: the desk runs on
-// what its hash said, and the header it then sends is what guards each request. The mode the
-// claim names is the desk's mode in every window. In embed mode (spec 4.5.5), decided from
-// that same claim, it says its location to the hub, in one message, and listens to nothing
-// the hub posts.
+// Project-bound desk: shared transport, explicit writes through hosts, and live read refreshes.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
 import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
@@ -63,6 +24,8 @@ import {createFlagDoor} from "./desk-flag.js";
 import {createQueueDoor} from "./desk-queue.js";
 import {NO_PULT, createPultFlow} from "./desk-pult-flow.js";
 import {createWizardHost} from "./desk-wizard-host.js";
+import {connectDeskStream} from "./desk-stream.js";
+import {createFlowHost} from "./desk-flow-host.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -89,11 +52,6 @@ const UNUSABLE = Object.freeze({phase: "failed", list: NONE});
 const NO_RUN = Object.freeze({phase: "empty", detail: null, absent: null});
 const READING_RUN = Object.freeze({phase: "loading", detail: null, absent: null});
 const UNUSABLE_RUN = Object.freeze({phase: "failed", detail: null, absent: null});
-//: The word of the live connection the scene is drawn under. The desk opens no stream yet,
-//: so nothing it draws is confirmed live and the word is the Studio's own `closed`: the
-//: deck then says a gate as an attention it cannot confirm and marks no active step, as it
-//: does in the Studio once its stream has dropped. The stream slice turns this into state.
-const NO_STREAM = "closed";
 //: What the transport answers when the wire gave no answer at all: the read was
 //: abandoned at its deadline, or the request could not be made. Any other answer
 //: is the server's own refusal.
@@ -101,27 +59,7 @@ const UNANSWERED = Object.freeze([LATE, "store_error"]);
 //: The refusal that says this server serves another project (spec 4.5.1).
 const MISMATCH = "project_mismatch";
 
-//: What a landed read is kept in: the two lists, the automation read for the newest run of
-//: each task (a map that is built once and never changed), the task chosen, and the run drawn
-//: for it; `foreign` is the terminal state of a desk open for another project. `choice`
-//: counts the choices made, so an answer that lands for a task a person has since left is
-//: dropped. `door` is this window's transport, made at boot.
-//:
-//: The console's facts: `actor` is the name of the person at this page (null until given),
-//: `editing` says the form that asks for it is open, and `draft` is what was typed into that
-//: form and not saved (null: nothing typed since it opened) -- all three live in this page's
-//: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
-//: project claim said (`active`, `view`, or null when no claim was read or it named no mode
-//: this build knows); `queue` is the task-queue read the queue door judged (null: not read);
-//: `closing` is the digest of the newest finished run of each task that could have been
-//: accepted, by task id (null until those reads have landed); `pult` is what the console's
-//: queue controls keep (`desk-pult-flow.js`): the notice a write left and what is in flight.
-//:
-//: The continue-after block's memory is `flag` (spec 5.8): null where there is no block (a desk
-//: nobody framed, or one whose read of the flag gave no record this desk can vouch for);
-//: otherwise `record` is the flag the server holds, `draft` what a person changed and did not
-//: save (null: nothing), `open` says the block is open, `saving` a write is out, and `refused`
-//: is the code of the last refusal (or `unknown`).
+// State belongs to this page; choice and loading epochs fence late answers.
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
   refused: false, mode: null, queue: null, flag: null, closing: null, pult: NO_PULT});
@@ -131,14 +69,11 @@ let flagDoor = null;
 let queueDoor = null;
 let pultFlow = null;
 let wizardHost = null;
-//: The project this desk is bound to: the one its first hash named, or else the one the claim
-//: named (null when neither named one), and what the doors claim from then on. `hashProject`
-//: is only what the first hash named: it is what the address the desk writes says, so a project
-//: learned from the server is never written into an address the hub did not write. The last
-//: address the desk wrote, which a new hash is compared with; the hash it last wrote or read;
-//: what was last remembered; and the promise that the claim has answered, the lists have landed
-//: and the first hash has been applied. `embedded` is the hub origin when embed mode is in force
-//: (null when it is not), and `announced` is the location the hub was last told.
+let stream = null, connection = "closed", loading = 0;
+let selectionRead = Promise.resolve(true);
+let flowHost = null, flowOpen = false;
+// The bound project comes from the first hash or claim; only the hash's own identity is written
+// back. Embedded origin and announced location belong to this page, never browser storage.
 let bound = null;
 let hashProject = null;
 let lastWritten = readDeskHash("");
@@ -236,7 +171,7 @@ function render() {
   const said = words();
   const view = {locale: locale(), listed: said.rail === "ready", tasks: state.tasks,
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
-    connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
+    connection, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
     refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView(),
     closing: state.closing, pult: state.pult};
@@ -253,6 +188,11 @@ function render() {
   mark(byId("deskPult"), state.foreign ? "empty" : "ready");
   mark(byId("deskSummary"), said.summary);
   mark(byId("deskShell"), said.shell);
+  byId("deskShell").dataset.connection = connection;
+  byId("deskConnection").textContent = message(locale(), `desk.connection.${connection}`);
+  byId("deskFlowToggle").hidden = state.foreign;
+  byId("deskFlowToggle").setAttribute("aria-expanded", String(flowOpen));
+  for (const id of ["deskScene", "deskFeed", "deskSummary"]) byId(id).hidden = flowOpen;
   say(said.shell);
   restoreFocus(byId("deskShell"), held);
 }
@@ -273,7 +213,7 @@ function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
-  const panel = state.flag !== null && state.flag.open ? "continue" : null;
+  const panel = flowOpen ? "cycle" : state.flag !== null && state.flag.open ? "continue" : null;
   const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
   // Preparation names the wizard's task. Until its run link has landed, a previously
   // selected run in the scene must not be paired with that new task in the address.
@@ -366,20 +306,26 @@ async function readAutomation(tasks, runs) {
 //: answer, so nothing waits for them: not the scene of the task an address names, not the hash
 //: that comes next. The answer is kept when it lands, unless the desk has ended by then (`move`
 //: keeps nothing for one that has).
-function learnClosing(reads) {
-  reads.then((found) => move({closing: found}));
+function learnClosing(reads, current) {
+  reads.then((found) => { if (current()) move({closing: found}); });
 }
 
 //: The lists and the automation of each task's newest run, which the rail's words are made of, so
 //: the desk is settled when they have landed. The reads that say which tasks were closed are
 //: started beside them and are not waited for (`learnClosing`): the summary is drawn when its
 //: numbers are known.
-async function load() {
-  move({tasks: READING, runs: READING});
+async function load(fresh = () => true, background = false) {
+  const epoch = ++loading;
+  const current = () => !state.foreign && epoch === loading && fresh();
+  if (!background) move({tasks: READING, runs: READING});
   const [tasks, runs, queue] = await Promise.all([readTasks(), readRuns(), queueDoor.read()]);
+  if (!current()) return false;
+  const automation = await readAutomation(tasks, runs);
+  if (!current()) return false;
   learnClosing(readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
-    stopped: () => state.foreign}));
-  move({tasks, runs, queue, automation: await readAutomation(tasks, runs)});
+    stopped: () => !current()}), current);
+  move({tasks, runs, queue, automation});
+  return tasks.phase === "ready" && runs.phase === "ready";
 }
 
 //: The newest run of one task, read whole: the run and, beside it, what protects it. A run
@@ -419,19 +365,26 @@ function whileReading(taskId) {
 //: What a press or a hash MEANS. Choosing a task remembers which one and reads its newest
 //: run, or the run named with it; it writes nothing. Only the answer to the current choice
 //: is kept.
-async function chooseTask(taskId, runId = null) {
-  if (state.foreign) return;
+function chooseTask(...args) {
+  selectionRead = readChoice(...args);
+  return selectionRead;
+}
+
+async function readChoice(taskId, runId = null, fresh = () => true) {
+  if (state.foreign || !fresh()) return false;
   const asked = ++choice;
   const newest = newestRun(state.runs, taskId);
   const absent = absence(state.tasks.list.find((row) => row.task_id === taskId), newest,
     runId !== null);
   if (absent !== null) {
     move({taskId, run: Object.freeze({phase: "empty", detail: null, absent})});
-    return;
+    return true;
   }
   move({taskId, run: whileReading(taskId)});
   const landed = await readRun(runId ?? newest.row.run_id, taskId);
-  if (asked === choice) move({run: landed});
+  if (asked !== choice || state.foreign || !fresh()) return false;
+  move({run: landed});
+  return landed.phase === "ready";
 }
 
 //: The name of a person, in the grammar every id of the routes has: it is what the routes will
@@ -601,6 +554,7 @@ function setAppearance(next) {
   const language = locale() !== next.locale;
   if (!language && (root.getAttribute("data-theme") ?? null) === next.theme) return false;
   paintAppearance(next);
+  flowHost?.refresh();
   render();
   return language;
 }
@@ -610,6 +564,13 @@ function setAppearance(next) {
 //: made again), a plate says so with the one way out, and `move` keeps nothing from then on.
 function enterForeign() {
   if (state.foreign) return;
+  loading += 1;
+  choice += 1;
+  stream?.dispose();
+  flowHost?.dispose();
+  flowOpen = false;
+  byId("deskFlow").hidden = true;
+  connection = "closed";
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
@@ -651,10 +612,12 @@ function closeContinue() {
 async function navigate(change, address) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
+  if (address.panel !== "cycle" && flowOpen) showFlow(false);
   const opened = await navigateSelection(keys, address);
   if (keys.includes("panel")) {
     if (address.panel === "continue") showContinue();
     else closeContinue();
+    if (address.panel === "cycle") showFlow(true);
   }
   await wizardHost?.navigate(change, address);
   return opened;
@@ -748,12 +711,56 @@ async function settle(address) {
   if (embedded !== null) loadFlag();
   await load();
   await start(address);
+  startStream();
 }
 
 //: The page's language is the address's (`#lang=ru`), and without a choice the page's own
 //: `lang` stands. The platform's language is not asked for here or in the hash module: the
 //: source guards keep that question in the transport and the Studio's boot module, and the
 //: hub always says `lang` when it mounts a desk.
+function showFlow(open) {
+  if (state.foreign) return;
+  flowOpen = open;
+  byId("deskFlow").hidden = !open;
+  if (open && flowHost === null) {
+    flowHost = createFlowHost({mount: byId("deskFlow"), door, locale,
+      nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign});
+    flowHost.open();
+  }
+  render();
+}
+
+async function refreshStream({current}) {
+  if (!await load(current, true) || !current()) return false;
+  while (current()) {
+    const pending = selectionRead;
+    await pending;
+    if (!current()) return false;
+    if (pending !== selectionRead) continue;
+    if (state.taskId === null) return true;
+    const fresh = chooseTask(state.taskId, where().run, current);
+    const confirmed = await fresh;
+    if (fresh !== selectionRead) continue;
+    return confirmed && current();
+  }
+  return false;
+}
+
+function startStream() {
+  if (state.foreign || stream !== null) return;
+  stream = connectDeskStream({door, refresh: refreshStream, onForeign: enterForeign,
+    onConnection: (value) => { connection = value; render(); }});
+}
+
+function stopStream() {
+  flowHost?.suspend();
+  stream?.dispose();
+  stream = null;
+  loading += 1;
+  choice += 1;
+  connection = "closed";
+}
+
 function boot() {
   seen = location.hash;
   const address = readDeskHash(seen);
@@ -769,6 +776,15 @@ function boot() {
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
   wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
     tasks: () => state.tasks.list, foreign: () => state.foreign});
+  byId("deskFlowToggle").addEventListener("click", () => {
+    closeContinue();
+    showFlow(!flowOpen);
+    remember();
+  });
+  window.addEventListener("pagehide", stopStream);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) { flowHost?.resume(); startStream(); }
+  });
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

@@ -96,5 +96,5 @@ emit('error'); emit('open');
 console.log(JSON.stringify({closes, listeners:events.size, drops,
   unchanged:connections.length === count, reads:reads.length, current:reads[0].current()}));
 """)
-    assert found == {"closes": 1, "listeners": 0, "drops": 0,
+    assert found == {"closes": 1, "listeners": 0, "drops": 1,
                      "unchanged": True, "reads": 1, "current": False}

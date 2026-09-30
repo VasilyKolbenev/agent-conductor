@@ -177,8 +177,13 @@ def _open(browser: Browser, url: str, language: str, *, width: int = 1280,
         (request.method, urlsplit(request.url).path, "x-conduct-project" in request.headers)))
     for pattern, edit in (rewrite or {}).items():
         page.route(pattern, _rewriting(edit))
+    # These projection cases judge one set of reads and an unconfirmed scene.
+    # HTTP 204 deliberately ends EventSource without retry; live updates and
+    # reconnect are exercised against real SSE in test_desk_live_stream.py.
+    page.route("**/events", lambda route: route.fulfill(status=204))
     page.goto(f"{url}#lang={language}", wait_until="load")
     page.wait_for_function(SETTLED)
+    page.wait_for_selector('#deskShell[data-connection="closed"]')
     return window
 
 
@@ -437,7 +442,7 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
 # one; the deck's own inner workings are the Studio's and have their own browser modules.
 FIX_STEPS = 8
 #: What the scene of `task-fix` (its newest run stands at the Confirm gate) says, per language.
-#: The desk opens no stream, so nothing on the scene is confirmed live and the gate is said
+#: This fixture refuses its stream with HTTP 204, so the gate is said
 #: as `unconfirmed` (the Studio's own word for a decision it cannot vouch for), not as a
 #: decision needed.
 SCENE_WORDS = {

@@ -76,6 +76,7 @@ export function connectDeskStream({door, refresh, onConnection, onForeign}) {
     generation += 1;
     connected = false;
     pending = undefined;
+    door.dropSession();
     if (source !== null) {
       source.removeEventListener("message", message);
       source.removeEventListener("open", opened);

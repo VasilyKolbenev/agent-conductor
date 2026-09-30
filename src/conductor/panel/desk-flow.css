@@ -102,3 +102,5 @@
   .desk-flow .studio-orbit__centre{position:static;transform:none;max-width:100%;flex-basis:100%}
   .desk-flow .studio-planet.studio-orbit__role{position:static;transform:none;max-width:100%}
 }
+
+.desk-schema{grid-row:2/5;min-width:0;padding:16px}

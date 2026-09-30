@@ -1,8 +1,6 @@
 """The desk's flow host uses its shared transport against the real flow route."""
 from __future__ import annotations
 
-import uuid
-
 from playwright.sync_api import Browser, expect
 
 from browser_tests.desk_flow_bench import desk_url  # noqa: F401
@@ -14,24 +12,13 @@ def test_flow_host_renders_a_new_cycle_and_saves_an_edit_through_transport(
     try:
         page = context.new_page()
         page.goto(f"{desk_url}/panel/desk.html", wait_until="load")
-        page.add_style_tag(url=f"{desk_url}/panel/desk-flow.css")
-        nonce = uuid.uuid4().hex
-        page.evaluate("""async (nonce) => {
-          const {createFlowHost} = await import('/panel/desk-flow-host.js');
-          const {createTransport} = await import('/panel/desk-transport.js');
-          const mount = document.createElement('div');
-          document.body.append(mount);
-          const door = createTransport(() => 'en');
-          window.flowHost = createFlowHost({mount, door, locale: () => 'en', nonce,
-            onForeign: () => { throw new Error('unexpected foreign project'); }});
-          window.flowHost.open();
-          window.flowHost.dispatch({type: 'new', from: 'empty', title: 'Host witness'});
-        }""", nonce)
+        page.locator("#deskFlowToggle").click()
+        page.locator('[data-focus="schema:new:blank"]').click()
         expect(page.locator("[data-flow]")).to_have_attribute("data-flow-phase", "ready")
         page.locator('[data-add-kind="analyst"]').click()
         expect(page.locator("[data-flow]")).to_have_attribute("data-flow-save", "saved")
         answer = page.evaluate("""async () => {
-          const id = window.flowHost.state().write.workflowId;
+          const id = document.querySelector('[data-focus="schema:pick"]').value;
           const response = await fetch(`/command/workflows/${encodeURIComponent(id)}/flow`);
           return {id, payload: await response.json()};
         }""")
@@ -50,7 +37,11 @@ def test_flow_host_renders_a_new_cycle_and_saves_an_edit_through_transport(
         }""")
         assert layout["node"] == "absolute" and layout["overflow"] == "auto"
         assert layout["inspectorRight"] <= 900 and layout["inspectorWidth"] <= layout["available"]
-        page.evaluate("() => window.flowHost.dispose()")
-        expect(page.locator("[data-flow]")).to_have_count(0)
+        page.locator("#deskFlowToggle").click()
+        expect(page.locator("#deskFlow")).to_be_hidden()
+        assert "panel=cycle" not in page.url
+        page.locator("#deskFlowToggle").click()
+        expect(page.locator('[data-node-id="analyst"]')).to_be_visible()
+        assert "panel=cycle" in page.url
     finally:
         context.close()

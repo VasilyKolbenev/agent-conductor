@@ -12,6 +12,10 @@ export const DESK_COPY = Object.freeze({
     "The desk is being built: the rail, the scene, the feed, the summary and the console are "
       + "live.",
     "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают."],
+  "desk.flow": ["Cycle editor", "Схема цикла"],
+  "desk.connection.open": ["Up to date", "Данные обновлены"],
+  "desk.connection.connecting": ["Refreshing…", "Обновление…"],
+  "desk.connection.closed": ["Data not confirmed", "Данные не подтверждены"],
   "desk.classic": ["Classic panel", "Прежняя панель"],
   "desk.new_task": ["＋ New task", "＋ Новая задача"],
   // -- the terminal state: an address that claims another project ------------------------
