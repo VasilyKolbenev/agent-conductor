@@ -23,17 +23,25 @@
 // It reaches the wire only through `desk-transport.js`, the ONLY module of the Studio and
 // the desk that touches the network (`graph.js` and the classic `command.js` keep doors of
 // their own), and holds no door, no timer and no storage of its own. Facts enter through
-// a READ and through nothing else, and this module writes nothing at all. It reads the
-// routes that exist for it today, and the project claim only when a framed window asks for
-// embed mode (spec 4.5.5): the claim's header, `X-Conduct-Project`, is lane H's and is not
-// faked here. In embed mode it says its location to the hub, in one message, and listens to
-// nothing the hub posts.
+// a READ and through nothing else, and this module writes nothing at all.
+//
+// The desk binds to its project before it reads anything else (spec 4.5.1): the first read
+// of every window is the project claim, with the project of the hash when there is one, and
+// the lists are read only after it has answered. The project the doors claim from then on is
+// the hash's, or else the one the server named; the header itself is the transport's, which
+// this module never names. A claim that names another project than the bound one, and a
+// refusal `project_mismatch` from any read, end the desk in its terminal state, which seals
+// the transport. A claim read that fails any other way binds nothing new: the desk runs on
+// what its hash said, and the header it then sends is what guards each request. The mode the
+// claim names is the desk's mode in every window. In embed mode (spec 4.5.5), decided from
+// that same claim, it says its location to the hub, in one message, and listens to nothing
+// the hub posts.
 import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
 import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
   readPreferences} from "./desk-hash.js";
-import {announceLocation, claimNamesAnotherProject, embedAsked,
-  embedTarget} from "./desk-embed.js";
+import {announceLocation, claimNamesAnotherProject, embedTarget,
+  projectOf} from "./desk-embed.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
 import {newestRun} from "./studio-taskruns.js";
@@ -78,6 +86,8 @@ const NO_STREAM = "closed";
 //: abandoned at its deadline, or the request could not be made. Any other answer
 //: is the server's own refusal.
 const UNANSWERED = Object.freeze([LATE, "store_error"]);
+//: The refusal that says this server serves another project (spec 4.5.1).
+const MISMATCH = "project_mismatch";
 
 //: What a landed read is kept in: the two lists, the automation read for the newest run of
 //: each task (a map that is built once and never changed), the task chosen, and the run drawn
@@ -96,12 +106,16 @@ let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(
   mode: null, queue: null});
 let choice = 0;
 let door = null;
-//: The project this desk bound to, from its first hash (null when that named none); the last
+//: The project this desk is bound to: the one its first hash named, or else the one the claim
+//: named (null when neither named one), and what the doors claim from then on. `hashProject`
+//: is only what the first hash named: it is what the address the desk writes says, so a project
+//: learned from the server is never written into an address the hub did not write. The last
 //: address the desk wrote, which a new hash is compared with; the hash it last wrote or read;
-//: what was last remembered; and the promise that the lists have landed and the first hash
-//: has been applied. `embedded` is the hub origin when embed mode is in force (null when it is
-//: not), and `announced` is the location the hub was last told.
+//: what was last remembered; and the promise that the claim has answered, the lists have landed
+//: and the first hash has been applied. `embedded` is the hub origin when embed mode is in force
+//: (null when it is not), and `announced` is the location the hub was last told.
 let bound = null;
+let hashProject = null;
 let lastWritten = readDeskHash("");
 let seen = "";
 let shown = Object.freeze({task: null, run: null});
@@ -113,7 +127,17 @@ const byId = (id) => document.getElementById(id);
 //: The page's own language is the language of record: `<html lang>` says it, and anything
 //: but Russian is read as English.
 const locale = () => (document.documentElement.lang === "ru" ? "ru" : "en");
-const readJson = (target) => door.readJson(target);
+//: The one read of this module. A refusal `project_mismatch` from any answer ends the desk
+//: (spec 4.5.1) before the caller hears of it; the caller then finds a terminal desk, which
+//: keeps nothing a late answer brings.
+async function readJson(target) {
+  try {
+    return await door.readJson(target);
+  } catch (error) {
+    if (error instanceof Error && error.message === MISMATCH) enterForeign();
+    throw error;
+  }
+}
 
 //: The phase a failed read puts its region in.
 function phaseOf(error) {
@@ -201,7 +225,8 @@ function remember() {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
-  const address = preferenceHash(deskHash({project: bound, embed, task: at.task, run: at.run}),
+  const address = preferenceHash(
+    deskHash({project: hashProject, embed, task: at.task, run: at.run}),
     {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
   history.replaceState(null, "", address);
   seen = location.hash;
@@ -381,7 +406,12 @@ function setActor(name) {
   return true;
 }
 
-const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor});
+//: The one way out of the terminal state: the page is loaded again and binds afresh.
+function reload() {
+  location.reload();
+}
+
+const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -407,8 +437,11 @@ function setAppearance(next) {
 }
 
 //: The terminal state of a desk open for another project (spec 4.5.1): everything it holds is
-//: dropped, one sentence says so, and `move` keeps nothing from then on.
+//: dropped, the door is sealed (the token is forgotten, the stream closed, no read or write is
+//: made again), a plate says so with the one way out, and `move` keeps nothing from then on.
 function enterForeign() {
+  if (state.foreign) return;
+  door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
     mode: null, queue: null});
@@ -466,33 +499,55 @@ function claimMode(claim) {
   return mode === "active" || mode === "view" ? mode : null;
 }
 
-//: Embed mode (spec 4.5.5), decided once, at load. Only a framed window whose hash asks for it
-//: reads the project claim. A claim that names another project than the one the desk bound to
-//: ends the desk (spec 4.5.1): it is open for another project, and says so. The desk embeds
-//: only if the claim repeats the hash's project and names a hub origin of the exact grammar.
-//: Any other answer, a refusal, or no route at all leaves it off, and the hash the desk keeps
-//: then says no `embed`. The hub is told where the desk stands at once, and again at each change.
-async function enterEmbed(address) {
-  const framed = window.parent !== window;
-  if (!embedAsked({framed, address})) return;
-  let claim = null;
+//: The first read of every window (spec 4.5.1): the project claim. The claim, or null when
+//: the read gave none (a refusal, a route that is not there, no answer). A `project_mismatch`
+//: has ended the desk by now, in `readJson`.
+async function readClaim() {
   try {
-    claim = await readJson(READS.project());
+    return await readJson(READS.project());
   } catch (_error) {
-    claim = null;
+    return null;
   }
+}
+
+//: Whether the claim ends the desk: the hash named a project and the claim names another
+//: (an id that differs, or none), which is the claim being wrong for this window. A window
+//: whose hash named none binds to what the claim names, `null` included; a claim that names
+//: nothing usable binds nothing and ends nothing.
+function bindToClaim(address, claim) {
+  if (address.project !== null) return !claimNamesAnotherProject(bound, claim);
+  const named = projectOf(claim);
+  if (typeof named === "string") bound = named;
+  return true;
+}
+
+//: Embed mode (spec 4.5.5), decided once, from the claim the window already read. The desk
+//: embeds only if the window is framed, its hash asks for it and names a project, and the claim
+//: repeats that project and names a hub origin of the exact grammar. Any other answer leaves it
+//: off, and the hash the desk keeps then says no `embed`. The hub is told where the desk stands
+//: at once, and again at each change.
+function enterEmbed(address, claim) {
+  const origin = embedTarget({framed: window.parent !== window, address, claim});
+  if (origin === null) return;
+  embedded = Object.freeze({origin});
+  remember();
+  announce();
+}
+
+//: The boot of the data (spec 4.5.1): the claim first, and everything else only after it has
+//: answered. A desk the claim ended reads nothing more.
+async function settle(address) {
+  const claim = await readClaim();
   if (state.foreign) return;
-  if (claimNamesAnotherProject(bound, claim)) {
+  if (!bindToClaim(address, claim)) {
     enterForeign();
     return;
   }
   const mode = claimMode(claim);
   if (mode !== null) move({mode});
-  const origin = embedTarget({framed, address, claim});
-  if (origin === null) return;
-  embedded = Object.freeze({origin});
-  remember();
-  announce();
+  enterEmbed(address, claim);
+  await load();
+  await start(address);
 }
 
 //: The page's language is the address's (`#lang=ru`), and without a choice the page's own
@@ -503,15 +558,14 @@ function boot() {
   seen = location.hash;
   const address = readDeskHash(seen);
   paintAppearance(readPreferences(seen, document.documentElement.lang));
-  door = createTransport(locale);
-  bound = address.project;
+  bound = hashProject = address.project;
+  door = createTransport(locale, () => bound);
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();
     return;
   }
-  booted = load().then(() => start(address));
-  enterEmbed(address);
+  booted = settle(address);
 }
 
 if (byId("deskShell") && MOUNTS.every((id) => byId(id))) boot();

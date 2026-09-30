@@ -18,6 +18,7 @@ export const DESK_COPY = Object.freeze({
   "desk.foreign": [
     "This desk is open for another project. Reload the page to continue.",
     "Стол открыт для другого проекта. Перезагрузите страницу, чтобы продолжить."],
+  "desk.reload": ["Reload", "Перезагрузить"],
   // -- the names of the five regions, as a screen reader hears them --------------------
   "desk.rail.label": ["Tasks", "Задачи"],
   "desk.scene.label": ["Scene", "Сцена"],

@@ -1,21 +1,13 @@
-"""The desk's binding to its project in a real Chromium (spec 4.5.1).
+"""The transport's two network doors and its seal, the real module in a real Chromium (spec 4.5.1).
 
-Two halves. The first is the transport's two doors, the real module in a real page of a real
-server: the single GET and the single POST carry `X-Conduct-Project` exactly when the window is
-bound to a project, the session read is one of the GETs, and a sealed transport (the terminal
-state of a desk open for another project) makes no request at all. The second half is the desk
-itself, booted on a page whose `/command/*` answers are given by the test:
-
-- the first request of every window is `GET /command/project`, and nothing else is asked until
-  it has answered;
-- a project in the hash, or a project the server names when the hash names none, is claimed by
-  every later request of the window; a window that is bound to nothing sends no header;
-- a claim that names another project (`null` against an id too), a `409 project_mismatch` on any
-  read or write, ends the desk in the state "open for another project": one sentence, a Reload
-  button of the touch size, no request after it; a press on the button reloads the document;
-- a claim read that fails some other way leaves the desk running on what its hash said.
-
-A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
+The real `desk-transport.js` is imported into a page of a real server (a stylesheet of it, so no
+desk boots and the only requests are the test's own) and the `/command/*` routes are answered in
+the page. What this module holds: the single GET and the single POST carry `X-Conduct-Project`
+exactly when the window is bound to a project, the session read is one of the GETs and carries
+it, the claim is asked at the moment of each request, and a sealed transport (the terminal state
+of a desk open for another project) closes its stream, refuses every read, write and stream, and
+asks for no session, without one request. The desk that uses them is in
+`test_desk_bound_project.py`.
 """
 from __future__ import annotations
 
@@ -68,7 +60,9 @@ def _wire(page: Page, origin: str) -> Wire:
 
 
 @pytest.fixture
-def stand(chromium: Browser, seeded_url: str) -> Iterator[Callable[[], tuple[Page, Wire]]]:  # noqa: F811
+def stand(chromium: Browser,
+          seeded_url: str,  # noqa: F811
+          ) -> Iterator[Callable[[], tuple[Page, Wire]]]:
     """A page of the desk's origin with the real transport importable, and its wire."""
     origin = "{0.scheme}://{0.netloc}".format(urlsplit(seeded_url))
     contexts = []

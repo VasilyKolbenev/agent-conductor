@@ -319,6 +319,22 @@ DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls", "proje
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
 
+def _binding_faults(code: str) -> list[str]:
+    """The three facts of the binding the boot module holds (spec 4.5.1): the terminal state
+    seals the door, the one read of the module ends the desk on a mismatch, and the first thing
+    the boot of the data does is read the claim, before any list."""
+    faults = []
+    if "door.seal()" not in _function_body(code, "enterForeign"):
+        faults.append("the terminal state does not seal the door")
+    if "enterForeign()" not in _function_body(code, "readJson"):
+        faults.append("a mismatch on a read does not end the desk")
+    settle = _function_body(code, "settle")
+    claim, lists = settle.find("readClaim()"), settle.find("load()")
+    if claim < 0 or lists < 0 or claim > lists:
+        faults.append("the claim is not read before the lists")
+    return faults
+
+
 def desk_boot_faults(source: str, page: str) -> list[str]:
     """Every way the desk's boot module steps outside what the shell has argued for.
 
@@ -342,7 +358,7 @@ def desk_boot_faults(source: str, page: str) -> list[str]:
     faults += [f"does not mount {ident}" for ident in sorted(MOUNT_IDS - named)]
     if re.search(r"x-conduct-project", code, re.IGNORECASE):
         faults.append("names X-Conduct-Project, which only the transport's two doors send")
-    return faults
+    return faults + _binding_faults(code)
 
 
 def _edit(old: str, new: str):
@@ -366,6 +382,14 @@ BOOT_BROKEN = {
         _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
     "the project claim that embed mode needs, dropped": (
         _edit("path.project()", "path.runs()"), "no longer reads"),
+    "a terminal state that leaves the door open": (
+        _edit("  door.seal();\n", ""), "does not seal the door"),
+    "a read that ignores a mismatch": (
+        _edit("if (error instanceof Error && error.message === MISMATCH) enterForeign();\n",
+              ""), "does not end the desk"),
+    "lists read before the claim": (
+        _edit("const claim = await readClaim();",
+              "await load();\n  const claim = await readClaim();"), "before the lists"),
     "the project header named in the boot module, which has no door of its own": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),

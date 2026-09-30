@@ -323,11 +323,13 @@ def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses
     assert problems == []
 
 
-def test_the_shell_of_a_project_with_no_tasks_reads_the_two_lists_and_writes_nothing(
+def test_the_shell_of_a_project_with_no_tasks_reads_the_claim_and_the_two_lists_only(
         desk: Desk) -> None:
     command = [(method, path, header) for method, path, header in desk.asked
                if path.startswith("/command/")]
-    assert sorted(command) == [("GET", "/command/runs", False),
+    assert command[0] == ("GET", "/command/project", False), "the claim is the first read"
+    assert sorted(command) == [("GET", "/command/project", False),
+                               ("GET", "/command/runs", False),
                                ("GET", "/command/tasks", False)]
     assert {method for method, _path, _header in desk.asked} == {"GET"}
     assert desk.page.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]
