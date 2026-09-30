@@ -65,6 +65,7 @@ PERMITTED_IMPORTS = {
     #: screen, store or copy module: a door that could reach a screen would be a
     #: second boot module.
     "desk-transport.js": frozenset({"./command-projection.js"}),
+    "desk-stream.js": frozenset(),
     #: The desk's boot module: the doors, the catalogue that says a word in the reader's
     #: language, the desk's hash module (the reader and writer of the address), the
     #: boundaries that judge what a read brought (the task list, the run list, the

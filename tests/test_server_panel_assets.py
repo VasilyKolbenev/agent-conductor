@@ -114,6 +114,7 @@ ASSETS = {
     "/panel/desk.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
+    "/panel/desk-stream.js": "text/javascript; charset=utf-8",
     # The desk's own words, RU and EN.
     "/panel/desk-copy.js": "text/javascript; charset=utf-8",
     # The word of a task row and the strings that say it.
@@ -290,6 +291,9 @@ REFUSED = (
     "/panel/%2e%2e/desk-transport.js", "/panel/DESK-TRANSPORT.JS",
     "/panel/Desk-transport.js", "/panel/desk-transport.js/",
     "/panel/desk-transport.js%00.txt",
+    "/panel/desk-stream.json", "/panel/desk-stream.js?v=1", "/panel/desk-stream.js.map",
+    "/panel/../desk-stream.js", "/panel/%2e%2e/desk-stream.js", "/panel/DESK-STREAM.JS",
+    "/panel/Desk-stream.js", "/panel/desk-stream.js/", "/panel/desk-stream.js%00.txt",
     # The desk's catalogue, the same nine shapes again.
     "/panel/desk-copy.json", "/panel/desk-copy.js?v=1", "/panel/desk-copy.js.map",
     "/panel/../desk-copy.js", "/panel/%2e%2e/desk-copy.js", "/panel/DESK-COPY.JS",

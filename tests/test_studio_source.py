@@ -68,7 +68,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-tasks-model.js", "studio-tasks.js", "studio-taskflow.js",
            "studio-mounts.js", "studio-shell.js", "studio-runhead.js", "studio-preferences.js", "studio-i18n.js",
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
-           "desk-transport.js", "desk.js", "desk-copy.js", "desk-status.js",
+           "desk-transport.js", "desk-stream.js", "desk.js", "desk-copy.js", "desk-status.js",
            "desk-status-copy.js", "desk-rail.js", "desk-scene.js", "desk-hash.js", "desk-embed.js",
            "desk-time.js", "desk-queue-model.js", "desk-flag-model.js", "desk-flag.js",
            "desk-queue.js", "desk-pult-flow.js", "desk-pult-copy.js", "desk-feed-model.js",

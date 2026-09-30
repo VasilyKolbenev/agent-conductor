@@ -56,6 +56,7 @@ DESK_ASSETS = {
     "/panel/desk.js": ("text/javascript; charset=utf-8", "desk.js"),
     # The wire doors the Studio's boot module and, later, the desk share.
     "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
+    "/panel/desk-stream.js": ("text/javascript; charset=utf-8", "desk-stream.js"),
     # The desk's own words, RU and EN, that the page and its modules say.
     "/panel/desk-copy.js": ("text/javascript; charset=utf-8", "desk-copy.js"),
     # The word of a task row and the strings that say it: shared with the hub later.
