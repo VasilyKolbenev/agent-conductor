@@ -11,11 +11,14 @@ nothing: the list lives in this process alone.
 """
 from __future__ import annotations
 
+import re
+from datetime import datetime, timedelta
+from itertools import count
 from types import SimpleNamespace
 
 import pytest
 
-from conductor.command import auto_continue
+from conductor.command import auto_continue, queue_flag
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.auto_continue import AutoContinueStore
 from conductor.command.queue_bodies import parse_write
@@ -302,3 +305,33 @@ def test_a_flag_resume_written_but_not_activated_is_never_written_twice(q):
     assert len(resumed(q, "run")) == 1
     assert service.start_next() is False                   # the retry finds it and writes no more
     assert len(resumed(q, "run")) == 1 and q.driver.active is None
+
+
+def ticking(start):
+    """A clock that moves one second on every call, so the order of two reads is visible."""
+    base, calls = datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ"), count()
+    return lambda: (base + timedelta(seconds=next(calls))).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_a_flag_resume_is_recorded_no_earlier_than_the_flag_was_consumed(q):
+    three_paused(q)
+    service = activate(q, set_flag(q, ["run"]))
+    q.f.policy.clock = ticking(LATER)
+    assert service.start_next() is True
+    consumed = q.flags.read().consumed
+    control, = resumed(q, "run")
+    receipt = service.store.read_receipt("run", "run_authorization_control", control.control_id)
+    assert control.recorded_at >= consumed.at and receipt.started_at == control.recorded_at
+
+
+def test_a_flag_resume_control_is_named_flag_and_thirty_two_hex_by_the_flag_and_the_run(q):
+    three_paused(q)
+    record = set_flag(q, ["run", "run-b"])
+    service = activate(q, record)
+    assert service.start_next() is True
+    q.driver.active = None
+    assert service.start_next() is True
+    names = [resumed(q, "run")[0].control_id, resumed(q, "run-b")[0].control_id]
+    assert all(re.fullmatch(r"flag-[0-9a-f]{32}", name) for name in names) and names[0] != names[1]
+    assert names == [queue_flag.control_id_of(record["flag_id"], run) for run in ("run", "run-b")]
+    assert queue_flag.control_id_of("another-flag", "run") != names[0]

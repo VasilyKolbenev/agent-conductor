@@ -62,6 +62,7 @@ def _pass(svc: Any) -> bool:
         svc.commit([row for row in file.entries if row.run_id not in done], list(done))
     if queue_flag.consume_once(svc):
         facts = svc.facts(svc.store.read())     # the admission the flag gave is part of the facts
+        now = svc.policy.clock()                # nothing is recorded before the flag was consumed
     carried = queue_flag.resume_next(svc, now)
     if carried != "none":
         return carried == "started"

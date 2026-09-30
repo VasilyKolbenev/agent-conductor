@@ -62,7 +62,12 @@ def consume_once(svc: Any) -> bool:
 
 
 def control_id_of(flag_id: str, run_id: str) -> str:
-    """One name per (flag, run), so a retry after a fault finds what a first try left."""
+    """One name per (flag, run), so a retry after a fault finds what a first try left.
+
+    The name is `flag-` and 32 hex digits: a control of this shape in a run's journal is a resume
+    the flag wrote (the control has no field for it), and a test holds the shape for the readers
+    that rely on it.
+    """
     return "flag-" + hashlib.sha256(f"{flag_id}/{run_id}".encode("utf-8")).hexdigest()[:32]
 
 
