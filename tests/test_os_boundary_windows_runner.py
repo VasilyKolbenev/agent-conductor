@@ -26,23 +26,30 @@ if os.name == "nt":
     from tests.os_boundary_runner import runner_box  # noqa: F401
 
 #: How long a stop or a timeout may take. A tree stop is milliseconds; an orphaned grandchild
-#: sleeping 45 s that the runner had to wait out would exceed this and fail the test.
-_PROMPTLY = 30.0
-_RAN = "[IO.File]::WriteAllText('@TMPD@\\ran.txt','ran'); Write-Output 'child-output'"
+#: sleeping 120 s that the runner had to wait out would exceed this and fail the test.
+_PROMPTLY = 60.0
+#: The runner's own timeout for the child that outlives it. It counts from the launch, so it
+#: must outlast the start of a shell and of the shell that shell starts: 12 s was measured on a
+#: desktop, and a slower host would kill the child before it had published anything.
+_TIMEOUT = 30.0
+_RAN = ("[IO.File]::WriteAllText('@TMPD@\\ran.txt','ran'); "
+        "[Console]::Out.WriteLine('child-output')")
 _WITH_GRANDCHILD = (
-    "$i = New-Object Diagnostics.ProcessStartInfo; $i.FileName = '@POWERSHELL@'; "
-    "$i.Arguments = '-NoProfile -NonInteractive -Command Start-Sleep 45'; "
+    "$i = [Diagnostics.ProcessStartInfo]::new(); $i.FileName = '@POWERSHELL@'; "
+    "$i.Arguments = '-NoProfile -NonInteractive -Command [Threading.Thread]::Sleep(120000)'; "
     "$i.UseShellExecute = $false; $p = [Diagnostics.Process]::Start($i); "
     "[IO.File]::WriteAllText('@TMPD@\\gc.pid.tmp', [string]$p.Id); "
-    "[IO.File]::Move('@TMPD@\\gc.pid.tmp','@TMPD@\\gc.pid'); Start-Sleep 60"
+    "[IO.File]::Move('@TMPD@\\gc.pid.tmp','@TMPD@\\gc.pid'); [Threading.Thread]::Sleep(150000)"
 )
 _THROUGH_HANDLE = (
-    "$s = New-Object Microsoft.Win32.SafeHandles.SafeFileHandle([IntPtr][int]$env:LEASE_HANDLE,"
-    "$false); $f = New-Object IO.FileStream($s,[IO.FileAccess]::Write); "
+    "$h = [Environment]::GetEnvironmentVariable('LEASE_HANDLE'); "
+    "$s = [Microsoft.Win32.SafeHandles.SafeFileHandle]::new([IntPtr][int]$h,$false); "
+    "$f = [IO.FileStream]::new($s,[IO.FileAccess]::Write); "
     "$b = [Text.Encoding]::ASCII.GetBytes('through-the-handle'); $f.Write($b,0,$b.Length); "
     "$f.Flush(); "
-    "try { [void][IO.File]::ReadAllText('@LEASE@'); Write-Output 'open-by-path=allowed' } "
-    "catch { Write-Output 'open-by-path=denied' }"
+    "try { [void][IO.File]::ReadAllText('@LEASE@'); "
+    "[Console]::Out.WriteLine('open-by-path=allowed') } "
+    "catch { [Console]::Out.WriteLine('open-by-path=denied') }"
 )
 
 
@@ -62,8 +69,9 @@ def test_a_confined_child_run_by_the_runner_completes_with_its_output_and_the_lo
 def test_a_confined_child_that_outlives_its_timeout_dies_with_the_process_it_started(
         runner_box):
     rb = runner_box
+    rb.require_child_shell()
     started = time.monotonic()
-    outcome, grandchild = rb.run_until_pid_file(_WITH_GRANDCHILD, timeout=12.0)
+    outcome, grandchild = rb.run_until_pid_file(_WITH_GRANDCHILD, timeout=_TIMEOUT)
     assert time.monotonic() - started < _PROMPTLY, "the runner waited out an orphan"
     assert outcome.status == "timed_out", outcome
     assert rb.runner.active_tokens() == ()
@@ -73,6 +81,7 @@ def test_a_confined_child_that_outlives_its_timeout_dies_with_the_process_it_sta
 
 def test_a_confined_child_started_and_stopped_by_token_leaves_no_live_process(runner_box):
     rb = runner_box
+    rb.require_child_shell()
     owned = rb.runner.start(rb.spec(_WITH_GRANDCHILD))
     leader = rb.watch(owned.pid)
     grandchild = rb.wait_for_pid_file()
@@ -84,6 +93,15 @@ def test_a_confined_child_started_and_stopped_by_token_leaves_no_live_process(ru
     assert rb.runner.active_tokens() == ()
     assert rb.scope.retired == [True]
     assert grandchild.is_gone() and leader.is_gone()
+
+
+def test_a_script_run_by_the_runner_gets_no_utility_cmdlet_and_still_gets_dotnet(runner_box):
+    """The same contract as the box's: the probe must not depend on what the CI host lost."""
+    rb = runner_box
+    outcome = rb.runner.run(rb.spec(
+        "[Console]::Out.WriteLine('dotnet-ran'); Write-Output 'cmdlet-ran'"))
+    assert b"dotnet-ran" in outcome.output and outcome.exit_code != 0, outcome
+    assert b"cmdlet-ran" not in outcome.output, outcome
 
 
 def test_a_launch_for_a_container_that_does_not_exist_is_refused_with_no_token(runner_box):

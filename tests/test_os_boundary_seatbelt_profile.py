@@ -61,6 +61,18 @@ def test_a_writable_directory_cannot_itself_be_unlinked_or_renamed(dirs):
     assert f'(deny file-write-unlink (literal "{dirs["vendor"]}"))' in text
 
 
+def test_a_root_named_removable_loses_its_unlink_deny_and_the_others_keep_theirs(dirs):
+    text = seatbelt_profile(writable=[dirs["tmp"], dirs["vendor"]], removable=[dirs["vendor"]])
+    assert f'(deny file-write-unlink (literal "{dirs["tmp"]}"))' in text
+    assert f'(deny file-write-unlink (literal "{dirs["vendor"]}"))' not in text
+    assert f'(subpath "{dirs["vendor"]}")' in text, "a removable root is still writable"
+
+
+def test_a_removable_root_that_is_not_writable_is_refused(dirs):
+    with pytest.raises(ProfileError, match="removable but not writable"):
+        seatbelt_profile(writable=[dirs["tmp"]], removable=[dirs["vendor"]])
+
+
 def test_read_and_link_rules_appear_only_when_asked(dirs):
     plain = seatbelt_profile(writable=[dirs["tmp"]])
     assert "file-read" not in plain and "file-link" not in plain

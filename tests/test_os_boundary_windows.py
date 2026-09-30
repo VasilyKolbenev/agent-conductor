@@ -23,7 +23,8 @@ pytestmark = pytest.mark.skipif(
 
 if os.name == "nt":
     from tests import os_boundary_windows as ac
-    from tests.os_boundary_box import container, implement_box, review_box  # noqa: F401
+    from tests.os_boundary_box import (  # noqa: F401
+        container, implement_box, require_child_shell, review_box)
 
 SOURCE_OPS = operations_for("source")
 WORK_OPS = operations_for("work")
@@ -89,6 +90,8 @@ _INNER = (
 def test_the_process_a_confined_child_starts_is_confined_like_its_parent(
         implement_box, confined):
     box = implement_box
+    if confined:
+        require_child_shell(box)
     before = box.snapshot("source")
     box.write_inner_script(_INNER)
     box.run_nested(confined=confined)
@@ -162,6 +165,22 @@ def test_a_native_rename_over_an_existing_file_works_in_the_granted_home(impleme
     outcome = box.run_native_move_replace("@HOMED@\\new.tmp", "@HOMED@\\auth.json")
     assert outcome.started and outcome.output.strip() == "ok=True", outcome.output
     assert (box.layout.home / "auth.json").read_bytes() == b"NEW"
+
+
+@pytest.mark.parametrize("confined", [True, False], ids=["confined", "unconfined-control"])
+def test_a_probe_script_that_needs_a_utility_cmdlet_fails_while_one_that_needs_only_dotnet_runs(
+        implement_box, confined):
+    """The CI host's container lost these cmdlets, so the instrument removes them everywhere.
+
+    A probe that quietly depended on one would pass here and fail there. With the cmdlets
+    removed from the launch itself, the same dependence fails on every host.
+    """
+    box = implement_box
+    needs_cmdlet = box.run_script("Write-Output 'cmdlet-ran'", confined=confined)
+    needs_dotnet = box.run_script("[Console]::Out.Write('dotnet-ran')", confined=confined)
+    assert needs_dotnet.output == "dotnet-ran", needs_dotnet
+    assert needs_cmdlet.started and needs_cmdlet.exit_code != 0, needs_cmdlet
+    assert "cmdlet-ran" not in needs_cmdlet.output, needs_cmdlet
 
 
 def test_the_verifier_rejects_a_process_that_is_not_an_appcontainer_process(implement_box):

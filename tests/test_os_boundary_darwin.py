@@ -147,8 +147,10 @@ PROTECTED_OPS = (
     Operation("replace_the_protected_directory_via_the_parent", ("vendor",), (),
               (_sh('rmdir "@VENDOR@/hooks"; mkdir "@VENDOR@/hooks" 2>/dev/null; '
                    'printf x > "@VENDOR@/hooks/evil"'),)),
+    # Into the attempt's own tmp: a name beside the vendor home lies outside every writable root,
+    # so the rename would be refused with or without the protection and would show nothing.
     Operation("rename_the_directory_that_holds_the_protected_entries", ("vendor",),
-              (), (_sh('mv "@VENDOR@" "@VENDOR@-moved"'),)),
+              (), (_sh('mv "@VENDOR@" "@TMPD@/vendor-moved"'),)),
 )
 
 

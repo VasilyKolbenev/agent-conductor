@@ -308,12 +308,19 @@ def test_a_refusal_line_never_carries_a_second_line_of_detail():
     assert line == "conduct up: refused start_failed: first second third"
 
 
-def test_mode_view_is_accepted_by_the_flags_and_refused_at_start_until_it_is_built(
-        tmp_path, capsys, monkeypatch, home):
-    exit_code, out, err = _up(tmp_path, [*_hub(home), "--mode", "view"], capsys, monkeypatch)
-    assert exit_code == 1 and out == ""
-    assert err.startswith("conduct up: refused start_failed: ") and "view" in err
-    assert _status(home)["state"] == "refused"
+def test_mode_view_reaches_build_as_a_view_launch_and_the_status_file_says_view(
+        tmp_path, monkeypatch):
+    project = DrainProject.build(tmp_path)
+    monkeypatch.setenv("CONDUCT_HOME", str(project.home))
+    seen: list[dict] = []
+    monkeypatch.setattr("conductor.server.build", _spying_build(seen))
+    with pytest.raises(Reached):
+        main(["up", "--dir", str(project.root), "--port", "0",
+              *_hub(project.home, project.project_id), "--mode", "view"])
+    from conductor.command.project_claim import Launch
+    assert [call["launch"] for call in seen] == [Launch("view", False, None, None)]
+    record = _status(project.home, project.project_id)
+    assert (record["state"], record["mode"]) == ("starting", "view")
 
 
 # -- identity: the nonce of the folder must be the one the hub was told -----------

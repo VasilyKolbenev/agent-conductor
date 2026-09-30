@@ -57,12 +57,12 @@ def internet():
 
 
 _START_SIBLINGS = (
-    "function Try-Start($path) { try { $i = New-Object Diagnostics.ProcessStartInfo; "
+    "function Try-Start($path) { try { $i = [Diagnostics.ProcessStartInfo]::new(); "
     "$i.FileName = $path; $i.Arguments = '/user'; $i.UseShellExecute = $false; "
     "$i.RedirectStandardOutput = $true; $q = [Diagnostics.Process]::Start($i); "
     "[void]$q.StandardOutput.ReadToEnd(); $q.WaitForExit(); 'started' } catch { 'denied' } }; "
-    "Write-Output ('granted=' + (Try-Start '@GRANTED@')); "
-    "Write-Output ('ungranted=' + (Try-Start '@UNGRANTED@'))"
+    "[Console]::Out.WriteLine('granted=' + (Try-Start '@GRANTED@')); "
+    "[Console]::Out.WriteLine('ungranted=' + (Try-Start '@UNGRANTED@'))"
 )
 
 
@@ -151,7 +151,8 @@ def test_the_project_stays_unreadable_in_the_launch_that_updates_the_vendor_home
         implement_box):
     box = implement_box
     script = (_UPDATE + "; try { [void][IO.File]::ReadAllText('@SRC@\\file.txt'); "
-              "Write-Output 'project=readable' } catch { Write-Output 'project=unreadable' }")
+              "[Console]::Out.WriteLine('project=readable') } "
+              "catch { [Console]::Out.WriteLine('project=unreadable') }")
     outcome = box.run_script(script)
     assert "project=unreadable" in outcome.output, outcome
     assert (box.layout.vendor_home / "auth.json").read_bytes() == b"token=updated"

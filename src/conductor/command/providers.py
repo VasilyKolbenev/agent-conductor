@@ -369,12 +369,15 @@ def resolve_providers(
         configs: Iterable[ProviderConfig], *, root: str | os.PathLike[str],
         clock: Callable[[], str], ids: Callable[[str], str],
         environ: dict[str, str] | None = None,
-        catalog: object = PROVIDER_CATALOG) -> ProviderResolution:
+        catalog: object = PROVIDER_CATALOG,
+        spawns_allowed: bool = True) -> ProviderResolution:
     """Resolve each operator config to a descriptor and register it through the door.
 
     An adapter -- and with it the owned process runner it would spawn through --
     is built only for a provider that resolved AVAILABLE, so an absent or
-    version-mismatched provider reaches no runner at all.
+    version-mismatched provider reaches no runner at all. `spawns_allowed=False` is
+    a process opened for viewing (spec 4.3.1): the one runner every adapter shares
+    then refuses each `run` and `start` before a child exists.
 
     Every CATALOGUED provider is registered, configured or not. One the operator
     never named resolves ``unconfigured``: nothing on the machine was looked at
@@ -404,7 +407,8 @@ def resolve_providers(
         adapter: object = None
         if availability == "available":
             if runner is None:
-                runner = ProcessRunner(Path(root), environ=environ)
+                runner = ProcessRunner(Path(root), environ=environ,
+                                       spawns_allowed=spawns_allowed)
             adapter = _build_adapter(
                 entry, config, runner, root=root, clock=clock, ids=ids)
             quota_plan = quota_plan_for(provider_id, adapter)

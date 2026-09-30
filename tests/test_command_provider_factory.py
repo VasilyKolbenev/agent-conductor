@@ -65,8 +65,8 @@ def _counted_runner(monkeypatch) -> dict[str, int]:
         replaced but `run`, which asserts rather than spawning.
         """
 
-        def __init__(self, root, environ=None) -> None:
-            super().__init__(root, environ=environ)
+        def __init__(self, root, environ=None, **options) -> None:
+            super().__init__(root, environ=environ, **options)
             counts["constructed"] += 1
 
         def run(self, spec):
