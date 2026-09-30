@@ -277,6 +277,77 @@ def test_saving_commits_every_typed_text_first_and_then_asks_one_write():
     assert ["schema_write", "Test"] in out["then"], "and goes out when the first is answered"
 
 
+def test_pressing_publish_with_a_text_still_typed_writes_the_text_first_and_opens_no_review():
+    out = js("""
+      const ready = opened();
+      const title = (flow) => flow?.steps.find((step) => step.step_id === "do").title ?? null;
+      const typed = send(ready, {type: "field-input", nodeId: "do", field: "title",
+        text: "Build"});
+      const asked = send(typed, {type: "publish-request"});
+      const late = send(asked, {type: "field-commit", nodeId: "do", field: "title",
+        text: "Build"});
+      const sent = named(asked, "schema_write");
+      const saved = sent === undefined ? late : reply(late, sent, landed(sent, D("1")));
+      const again = send(saved, {type: "publish-request"});
+      const confirmed = send(again, {type: "publish-confirm"});
+      const view = model.flowView(asked.state), after = model.flowView(late.state);
+      show({asked: [asked.asks.map((ask) => ask.name), view.publishing, view.notice,
+          Object.keys(asked.state.drafts), title(sent?.body.source.flow)],
+        late: [late.asks.length, title(late.state.write.held), Object.keys(late.state.drafts),
+          after.notice, after.publishing],
+        again: model.flowView(again.state).publishing !== null,
+        body: [confirmed.asks[0]?.body.publish_revision !== undefined,
+          title(confirmed.asks[0]?.body.source.flow)]});
+    """)
+    assert out["asked"] == [["schema_write"], None, {"key": "schema.write.publish_wait"}, [],
+                            "Build"], "the typed text is written before any review opens"
+    assert out["late"] == [0, "Build", [], {"key": "schema.write.publish_wait"}, None], (
+        "the commit that leaving the field brings after the press finds the text already held")
+    assert out["again"] is True, "the next press opens the review, nothing is unsaved by then"
+    assert out["body"] == [True, "Build"], "what is published holds the typed text"
+
+
+def test_a_text_that_cannot_be_committed_keeps_the_review_shut_and_stays_typed_with_its_reason():
+    out = js("""
+      const ready = opened();
+      const typed = send(ready, {type: "field-input", nodeId: "do", field: "timeout_seconds",
+        text: "ten"});
+      const asked = send(typed, {type: "publish-request"});
+      const view = model.flowView(asked.state);
+      show({asks: asked.asks.length, publishing: view.publishing, notice: view.notice,
+        drafts: Object.values(asked.state.drafts).map((draft) => draft.text)});
+    """)
+    assert out == {"asks": 0, "publishing": None, "notice": {"key": "schema.model.field_int"},
+                   "drafts": ["ten"]}, "no review opens over a text the flow does not hold"
+
+
+def test_a_text_committed_while_a_review_is_open_stays_typed_and_says_the_review_is_open():
+    out = js("""
+      const ready = opened();
+      const title = (out) => out.state.write.held.steps.find((step) => step.step_id === "do").title;
+      const review = send(ready, {type: "publish-request"});
+      const typed = send(review, {type: "field-input", nodeId: "do", field: "title",
+        text: "Build"});
+      const shape = (out) => [out.asks.length,
+        Object.values(out.state.drafts).map((one) => one.text),
+        model.flowView(out.state).notice, title(out)];
+      const left = send(typed, {type: "field-commit", nodeId: "do", field: "title",
+        text: "Build"});
+      const saved = send(typed, {type: "save"});
+      const cancelled = send(left, {type: "publish-cancel"});
+      const after = send(cancelled, {type: "field-commit", nodeId: "do", field: "title",
+        text: "Build"});
+      show({open: model.flowView(review.state).publishing !== null, left: shape(left),
+        saved: shape(saved), after: [after.asks.map((ask) => ask.name),
+          Object.keys(after.state.drafts), title(after)]});
+    """)
+    shut = {"key": "schema.write.publish_open"}
+    assert out["open"] is True
+    assert out["left"] == [0, ["Build"], shut, None], "leaving the field did not lose the text"
+    assert out["saved"] == [0, ["Build"], shut, None], "nor did «Сохранить» under an open review"
+    assert out["after"] == [["schema_write"], [], "Build"], "once it is closed the text is written"
+
+
 def test_the_canvas_view_the_status_line_and_the_open_sections_are_kept_and_ask_nothing():
     out = js("""
       const ready = opened();

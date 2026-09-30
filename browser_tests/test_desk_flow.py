@@ -393,6 +393,46 @@ def test_a_step_released_after_a_drag_is_written_with_its_position(flow):
     assert flow.held()["steps"][1]["position"] == placed["position"]
 
 
+def test_pressing_publish_with_a_text_still_typed_writes_the_text_and_publishes_it_next(flow):
+    from_starter(flow, "desk-standard")
+    name = flow.view()["workflowId"]
+    flow.select_step("do")
+    flow.type_into("schema:field:title", "Build")
+    flow.control("schema:publish").click()
+    flow.settle()
+    shown = flow.page.evaluate("""() => [document.querySelectorAll("[data-flow-review]").length,
+      document.querySelector('[data-focus="schema:field:title"]').value,
+      document.querySelector("[data-flow-notice]").textContent]""")
+    assert shown == [0, "Build", flow.say("schema.write.publish_wait")], (
+        "the text was written, not lost, and no review opened over a flow without it")
+    assert flow.held()["steps"][1]["title"] == "Build"
+    assert flow.server(name)["flow"]["steps"][1]["title"] == "Build"
+    flow.control("schema:publish").click()
+    expect(flow.page.locator("[data-flow-review]")).to_be_visible()
+    flow.control("schema:publish:confirm").click()
+    flow.settle()
+    published = flow.server(name)
+    assert published["source"] == "published" and published["flow"]["steps"][1]["title"] == "Build"
+
+
+def test_a_text_typed_under_an_open_review_stays_typed_and_is_written_once_it_is_closed(flow):
+    from_starter(flow, "desk-standard")
+    name = flow.view()["workflowId"]
+    flow.select_step("do")
+    flow.control("schema:publish").click()
+    expect(flow.page.locator("[data-flow-review]")).to_be_visible()
+    flow.set_field("schema:field:title", "Kept")
+    shown = flow.page.evaluate("""() => [document.querySelector(
+      '[data-focus="schema:field:title"]').value, document.querySelector(
+      "[data-flow-notice]").textContent]""")
+    assert shown == ["Kept", flow.say("schema.write.publish_open")], (
+        "leaving the field while a review is open loses nothing and says why it was not written")
+    flow.control("schema:publish:cancel").click()
+    flow.control("schema:save").click()
+    flow.settle()
+    assert flow.server(name)["flow"]["steps"][1]["title"] == "Kept"
+
+
 def test_a_press_that_takes_focus_from_a_field_still_does_its_work_and_commits_the_field(flow):
     from_starter(flow, "desk-standard")
     flow.select_step("do")

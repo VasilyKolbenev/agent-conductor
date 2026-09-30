@@ -113,7 +113,9 @@ function withoutDraft(state, key) {
 }
 
 //: A typed text is one edit. A text that means none stays typed and says why; one that would change
-//: nothing is let go without a word; one the flow refuses stays typed with the edit's own reason.
+//: nothing is let go without a word; one the flow refuses stays typed with the edit's own reason;
+//: and so does one the write chain does not take (a revision review is open): it is let go only
+//: once its edit is in the flow held.
 function commit(state, nodeId, field, text) {
   const held = state.write.held, key = draftKey(nodeId, field);
   if (held === null) return {state, asks: []};
@@ -128,23 +130,42 @@ function commit(state, nodeId, field, text) {
     const base = quiet ? withoutDraft(state, key) : state;
     return {state: {...base, notice: quiet ? null : tried.notice}, asks: []};
   }
-  return viaWrite(withoutDraft(state, key), {type: "edit", edit: made.edit});
+  const out = viaWrite(state, {type: "edit", edit: made.edit});
+  if (out.state.write.held === held) return out;
+  return {state: withoutDraft(out.state, key), asks: out.asks};
 }
 
 function fieldCommit(state, event) {
   return commit(state, event.nodeId ?? null, event.field, event.text);
 }
 
-//: «Сохранить»: every text still typed is committed first, then what stands is written.
-function save(state) {
+//: Every text still typed is committed, one edit each; the asks they made come out together.
+function commitAll(state) {
   let now = state, asks = [];
   for (const draft of Object.values(state.drafts)) {
     const out = commit(now, draft.nodeId, draft.field, draft.text);
     now = out.state;
     asks = [...asks, ...out.asks];
   }
-  const end = viaWrite(now, {type: "save"});
-  return {state: end.state, asks: [...asks, ...end.asks]};
+  return {state: now, asks};
+}
+
+//: «Сохранить»: every text still typed is committed first, then what stands is written.
+function save(state) {
+  const typed = commitAll(state);
+  const end = viaWrite(typed.state, {type: "save"});
+  return {state: end.state, asks: [...typed.asks, ...end.asks]};
+}
+
+//: «Опубликовать»: a revision is reviewed only over a cycle that holds every word typed. The press
+//: that takes a field's focus brings this event before the field's own commit, so the texts are
+//: committed here first; the chain then says to wait for their write, and the next press opens the
+//: review. A text that cannot be committed stays typed with its reason and no review opens.
+function publishRequest(state, event) {
+  const typed = commitAll(state);
+  if (Object.keys(typed.state.drafts).length > 0) return typed;
+  const end = viaWrite(typed.state, event);
+  return {state: end.state, asks: [...typed.asks, ...end.asks]};
 }
 
 // -- opening, beginning, answering -------------------------------------------------------
@@ -217,7 +238,7 @@ const clearsStatus = (handler) => (state, event) => handler({...state, status: n
 const HANDLERS = Object.freeze({
   open: clearsStatus((state, event) => switching(state, event, true)), answered,
   edit: clearsStatus(passes("edit")), new: (state, event) => switching(state, event, false),
-  save, check: passes("check"), "publish-request": passes("publish-request"),
+  save, check: passes("check"), "publish-request": publishRequest,
   "publish-confirm": passes("publish-confirm"), "publish-cancel": passes("publish-cancel"),
   select: (state, event) => {
     const one = event.selection, ok = record(one) && typeof one.id === "string"
