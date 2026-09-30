@@ -124,6 +124,10 @@ ASSETS = {
     "/panel/desk-time.js": "text/javascript; charset=utf-8",
     # The task-queue read judged against its shape.
     "/panel/desk-queue-model.js": "text/javascript; charset=utf-8",
+    # The continue-after flag judged against its shape, and the runs a person may mark.
+    "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
+    # The one read and the one write of that flag.
+    "/panel/desk-flag.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
@@ -280,6 +284,16 @@ REFUSED = (
     "/panel/%2e%2e/desk-queue-model.js", "/panel/DESK-QUEUE-MODEL.JS",
     "/panel/Desk-queue-model.js", "/panel/desk-queue-model.js/",
     "/panel/desk-queue-model.js%00.txt",
+    # The flag model, the same nine shapes.
+    "/panel/desk-flag-model.json", "/panel/desk-flag-model.js?v=1",
+    "/panel/desk-flag-model.js.map", "/panel/../desk-flag-model.js",
+    "/panel/%2e%2e/desk-flag-model.js", "/panel/DESK-FLAG-MODEL.JS",
+    "/panel/Desk-flag-model.js", "/panel/desk-flag-model.js/",
+    "/panel/desk-flag-model.js%00.txt",
+    # The flag's door, the same nine shapes.
+    "/panel/desk-flag.json", "/panel/desk-flag.js?v=1", "/panel/desk-flag.js.map",
+    "/panel/../desk-flag.js", "/panel/%2e%2e/desk-flag.js", "/panel/DESK-FLAG.JS",
+    "/panel/Desk-flag.js", "/panel/desk-flag.js/", "/panel/desk-flag.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",

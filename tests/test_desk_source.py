@@ -307,16 +307,32 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 # `desk.js` reads the routes of `DESK_READS` and paints what each read says on the mount it
 # feeds. It may read no other route until one is argued for here, it writes no
 # route out by hand (a route is `path.<name>` of the transport module), and it
-# names only ids the page carries. The `X-Conduct-Project` header belongs to lane H's
-# claim and is not faked: the day that lands it, the header check changes with it. The
-# project claim itself is READ (`path.project`), and only by a framed window in embed mode.
+# names only ids the page carries. The `X-Conduct-Project` header belongs to the transport's
+# two doors (`tests/test_desk_transport_claim.py` holds them) and is never named here. The
+# project claim itself is READ (`path.project`), first, by every window (spec 4.5.1).
 
 #: The `path.<name>` reads the boot module makes, exactly: the two lists, the automation of
 #: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), the
-#: read of the chosen task's newest run and of its controls, and the project claim -- asked
-#: only by a framed window whose hash says `embed=hub` (spec 4.5.5).
+#: read of the chosen task's newest run and of its controls, and the project claim -- the first
+#: read of every window (spec 4.5.1), which embed mode (spec 4.5.5) then reuses.
 DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls", "project"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
+
+
+def _binding_faults(code: str) -> list[str]:
+    """The three facts of the binding the boot module holds (spec 4.5.1): the terminal state
+    seals the door, the one read of the module ends the desk on a mismatch, and the first thing
+    the boot of the data does is read the claim, before any list."""
+    faults = []
+    if "door.seal()" not in _function_body(code, "enterForeign"):
+        faults.append("the terminal state does not seal the door")
+    if "enterForeign()" not in _function_body(code, "readJson"):
+        faults.append("a mismatch on a read does not end the desk")
+    settle = _function_body(code, "settle")
+    claim, lists = settle.find("readClaim()"), settle.find("load()")
+    if claim < 0 or lists < 0 or claim > lists:
+        faults.append("the claim is not read before the lists")
+    return faults
 
 
 def desk_boot_faults(source: str, page: str) -> list[str]:
@@ -341,8 +357,8 @@ def desk_boot_faults(source: str, page: str) -> list[str]:
                for ident in sorted(named) if page.count(f'id="{ident}"') != 1]
     faults += [f"does not mount {ident}" for ident in sorted(MOUNT_IDS - named)]
     if re.search(r"x-conduct-project", code, re.IGNORECASE):
-        faults.append("sends X-Conduct-Project before lane H's route exists")
-    return faults
+        faults.append("names X-Conduct-Project, which only the transport's two doors send")
+    return faults + _binding_faults(code)
 
 
 def _edit(old: str, new: str):
@@ -366,7 +382,15 @@ BOOT_BROKEN = {
         _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
     "the project claim that embed mode needs, dropped": (
         _edit("path.project()", "path.runs()"), "no longer reads"),
-    "the project header before its route": (
+    "a terminal state that leaves the door open": (
+        _edit("  door.seal();\n", ""), "does not seal the door"),
+    "a read that ignores a mismatch": (
+        _edit("if (error instanceof Error && error.message === MISMATCH) enterForeign();\n",
+              ""), "does not end the desk"),
+    "lists read before the claim": (
+        _edit("const claim = await readClaim();",
+              "await load();\n  const claim = await readClaim();"), "before the lists"),
+    "the project header named in the boot module, which has no door of its own": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
 }
@@ -377,8 +401,6 @@ def test_the_desk_boot_module_meets_its_contract():
     page = DESK_PAGE.read_text(encoding="utf-8")
     assert desk_boot_faults(source, page) == []
     assert "/panel/desk.js" in server_assets.DESK_ASSETS
-    transport = strip_comments((PANEL / "desk-transport.js").read_text(encoding="utf-8"))
-    assert "x-conduct-project" not in transport.lower()
 
 
 @pytest.mark.parametrize("edit,needle", list(BOOT_BROKEN.values()), ids=list(BOOT_BROKEN))
@@ -498,7 +520,7 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
 READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js", "desk-hash.js",
-             "desk-embed.js", "desk-time.js", "desk-queue-model.js")
+             "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
 RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene",
                   "desk-pult.js": "mountPult"}

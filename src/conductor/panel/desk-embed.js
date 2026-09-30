@@ -31,8 +31,8 @@ export function hubOrigin(value) {
   return found !== null && Number(found[1]) <= MAX_PORT ? value : null;
 }
 
-//: Whether the window and its hash ask for embed at all. When they do not, the project claim
-//: is not read: a desk nobody framed has nothing to ask the server.
+//: Whether the window and its hash ask for embed at all. When they do not, the claim every
+//: window reads is still the desk's binding and its mode, and embed is simply off.
 export function embedAsked({framed, address}) {
   return framed === true && address.embed === "hub" && address.project !== null;
 }
@@ -41,6 +41,18 @@ export function embedAsked({framed, address}) {
 //: is not one.
 function plainClaim(claim) {
   return claim !== null && typeof claim === "object" && !Array.isArray(claim);
+}
+
+//: The grammar of a project id: the activation's 32 hex, as `desk-hash.js` holds it.
+const PROJECT_ID = /^[0-9a-f]{32}$/;
+
+//: The project a claim names, for a desk that bound to none from its hash: its id, `null` for
+//: none, and `undefined` when the claim is not one or its id is neither -- a claim that binds
+//: nothing, so the desk runs on without it.
+export function projectOf(claim) {
+  if (!plainClaim(claim)) return undefined;
+  const id = claim.project_id ?? null;
+  return id === null || (typeof id === "string" && PROJECT_ID.test(id)) ? id : undefined;
 }
 
 //: The origin the desk may post its location to, or `null` when it is not embedded. The claim

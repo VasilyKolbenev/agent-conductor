@@ -77,7 +77,10 @@ PERMITTED_IMPORTS = {
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
-                          "./desk-pult.js"}),
+                          "./desk-pult.js", "./desk-flag-model.js", "./desk-flag.js"}),
+    #: The door of the continue-after flag: the one read and the one write of it, through the
+    #: transport's own doors, judged by the flag's model. It names one target and opens no door.
+    "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
@@ -114,6 +117,10 @@ PERMITTED_IMPORTS = {
     #: The task-queue read judged against its shape: values in, a frozen cut or null out. The
     #: boot module reads the queue and hands the answer here, so it imports nothing.
     "desk-queue-model.js": frozenset(),
+    #: The continue-after flag judged against its shape, the runs a person may mark and the
+    #: body of a save: values in, values out. The boot module hands it what it read, so it
+    #: imports nothing.
+    "desk-flag-model.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
