@@ -67,8 +67,20 @@ def test_every_state_and_code_is_one_of_the_closed_lists_of_the_spec():
                                liveness).state
               for state in up_status.STATES for liveness in ("alive", "dead", "unproven")}
     assert states <= set(lifecycle.STATES)
-    assert lifecycle.STATE_CODES == set(up_flags.START_CODES) | {"start_timeout",
-                                                                 "active_not_closed"}
+    # The spec's list (4.1.5) and the one code the tech lead added on 30.09: a status file that is
+    # not the record blocks a new active child and is said on the rows it concerns.
+    assert lifecycle.STATE_CODES == set(up_flags.START_CODES) | {
+        "start_timeout", "active_not_closed", "status_unreadable"}
+
+
+def test_a_status_file_that_is_not_the_record_puts_its_code_on_a_row_and_fails_no_start():
+    found = lifecycle.derive(None, "dead", hub_code="status_unreadable")
+    assert (found.state, found.state_code) == ("stopped", "status_unreadable")
+    pending = lifecycle.derive(None, "dead", pending="alive", hub_code="status_unreadable")
+    assert (pending.state, pending.state_code) == ("starting", "status_unreadable")
+    assert "status_unreadable" not in {
+        lifecycle.derive(record("refused", code=code), "dead").state_code
+        for code in up_flags.START_CODES}
 
 
 # -- a live or dead process under each state of the file ---------------------------------------
