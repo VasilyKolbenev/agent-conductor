@@ -24,7 +24,8 @@ PURE = {"desk-flow-shape.js": set(),
                                "./desk-flow-branches.js"},
         "desk-flowwrite.js": {"./desk-flow-edits.js", "./desk-flow-shape.js"},
         "desk-quickcycle.js": {"./desk-flow-edits.js", "./desk-flow-shape.js"},
-        "desk-flow-graph.js": {"./desk-flow-branches.js", "./desk-flow-shape.js"}}
+        "desk-flow-graph.js": {"./desk-flow-branches.js", "./desk-flow-shape.js"},
+        "desk-flow-fields.js": {"./desk-flow-shape.js"}}
 #: Modules that draw. None yet: the drawing lands with the panel.
 DRAWN: dict[str, set[str]] = {}
 #: Data only.

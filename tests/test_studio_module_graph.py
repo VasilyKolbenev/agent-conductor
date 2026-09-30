@@ -201,6 +201,9 @@ PERMITTED_IMPORTS = {
     #: The flow as the canvas draws it, and the summary before a revision: the branches and the
     #: shape, nothing that touches the page.
     "desk-flow-graph.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
+    #: The rows of the inspector and the way a typed text becomes one edit: the shape's facts and
+    #: nothing else, so the model can flush a typed text without reaching the drawing.
+    "desk-flow-fields.js": frozenset({"./desk-flow-shape.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
