@@ -8,7 +8,13 @@
 // whether the answer is well formed and what the desk may read from it. The words a record
 // earns, its times and its order on screen are `desk-pult.js`'s.
 //
-// It is values in and values out and imports nothing: the queue is read by the boot module
+// Beside the judgement are the moves a person makes on a queue that was read: the bodies of the
+// two writes that change its order (`order` takes the revision that was read and the FULL list of
+// the visible entries, `withdraw` takes nothing), and the questions that say whether what was
+// asked has come to stand. A write is never judged by its own answer: what stands is read off a
+// queue, so a lost answer is settled by reading the queue again.
+//
+// It is values in and values out and imports nothing: the queue is read by the queue door
 // and handed here, and no clock or page is reached.
 
 const SLOT_STATES = Object.freeze(["free", "busy", "stuck", "unavailable"]);
@@ -68,4 +74,43 @@ export function projectQueue(payload) {
   if (entries.includes(null)) return null;
   if (new Set(entries.map((entry) => entry.run_id)).size !== entries.length) return null;
   return Object.freeze({revision: payload.revision, slot, entries: Object.freeze(entries)});
+}
+
+// -- the moves of a person on a queue that was read ---------------------------------------------
+
+//: The run ids of the visible entries after one of them stepped one place: `step` is -1 (up, toward
+//: the head) or 1 (down). An entry at the end it would step past, an entry the queue does not hold
+//: and any other step lead nowhere: null, and the caller writes nothing.
+export function movedOrder(queue, runId, step) {
+  if (queue === null || (step !== -1 && step !== 1)) return null;
+  const ids = queue.entries.map((entry) => entry.run_id);
+  const from = ids.indexOf(runId);
+  const to = from + step;
+  if (from < 0 || to < 0 || to >= ids.length) return null;
+  [ids[from], ids[to]] = [ids[to], ids[from]];
+  return Object.freeze(ids);
+}
+
+//: The body of `POST /command/queue/order`: the revision that was read and every visible entry in
+//: its new place, or null when the step leads nowhere.
+export function orderBody(queue, runId, step) {
+  const ids = movedOrder(queue, runId, step);
+  return ids === null ? null
+    : Object.freeze({expected_revision: queue.revision, run_ids: ids});
+}
+
+//: The body of `POST /command/queue/<run_id>/withdraw`: nothing. A fresh object each time.
+export function withdrawBody() {
+  return Object.freeze({});
+}
+
+//: Whether the queue holds exactly these run ids, in this order.
+export function holdsOrder(queue, runIds) {
+  if (queue === null || queue.entries.length !== runIds.length) return false;
+  return queue.entries.every((entry, place) => entry.run_id === runIds[place]);
+}
+
+//: Whether the queue holds an entry of this run.
+export function holdsRun(queue, runId) {
+  return queue !== null && queue.entries.some((entry) => entry.run_id === runId);
 }

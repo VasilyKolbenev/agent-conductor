@@ -61,6 +61,7 @@ import {readClosing} from "./desk-closing.js";
 import {flagBody, flagLine, initialMarks, resumableRuns, runVerdicts} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
 import {createQueueDoor} from "./desk-queue.js";
+import {NO_PULT, createPultFlow} from "./desk-pult-flow.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -112,7 +113,8 @@ const MISMATCH = "project_mismatch";
 //: project claim said (`active`, `view`, or null when no claim was read or it named no mode
 //: this build knows); `queue` is the task-queue read the queue door judged (null: not read);
 //: `closing` is the digest of the newest finished run of each task that could have been
-//: accepted, by task id (null until those reads have landed).
+//: accepted, by task id (null until those reads have landed); `pult` is what the console's
+//: queue controls keep (`desk-pult-flow.js`): the notice a write left and what is in flight.
 //:
 //: The continue-after block's memory is `flag` (spec 5.8): null where there is no block (a desk
 //: nobody framed, or one whose read of the flag gave no record this desk can vouch for);
@@ -121,11 +123,12 @@ const MISMATCH = "project_mismatch";
 //: is the code of the last refusal (or `unknown`).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
-  refused: false, mode: null, queue: null, flag: null, closing: null});
+  refused: false, mode: null, queue: null, flag: null, closing: null, pult: NO_PULT});
 let choice = 0;
 let door = null;
 let flagDoor = null;
 let queueDoor = null;
+let pultFlow = null;
 //: The project this desk is bound to: the one its first hash named, or else the one the claim
 //: named (null when neither named one), and what the doors claim from then on. `hashProject`
 //: is only what the first hash named: it is what the address the desk writes says, so a project
@@ -234,7 +237,7 @@ function render() {
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
     refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView(),
-    closing: state.closing};
+    closing: state.closing, pult: state.pult};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountFeed(byId("deskFeed"), view);
@@ -561,8 +564,12 @@ function reload() {
   location.reload();
 }
 
+//: The presses of the queue block go to the console's hands (`desk-pult-flow.js`), made at boot.
+const orderEntry = (runId, step) => pultFlow.order(runId, step);
+const withdrawEntry = (runId) => pultFlow.withdraw(runId);
+
 const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload,
-  draftFlag, openFlag, saveFlag, clearFlag});
+  draftFlag, openFlag, saveFlag, clearFlag, orderEntry, withdrawEntry});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -595,7 +602,7 @@ function enterForeign() {
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
-    refused: false, mode: null, queue: null, flag: null, closing: null});
+    refused: false, mode: null, queue: null, flag: null, closing: null, pult: NO_PULT});
   render();
 }
 
@@ -736,6 +743,7 @@ function boot() {
   door = createTransport(locale, () => bound);
   flagDoor = createFlagDoor(door, enterForeign);
   queueDoor = createQueueDoor(door, enterForeign);
+  pultFlow = createPultFlow({door: queueDoor, host: {state: () => state, move}});
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

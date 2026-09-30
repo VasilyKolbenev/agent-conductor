@@ -63,6 +63,8 @@ DESK_BOOT_ASSETS = {
     "desk-flag-model.js": 200, "desk-flag.js": 200,
     # The queue's door, and the model that judges what it reads.
     "desk-queue-model.js": 200, "desk-queue.js": 200,
+    # What a press on the queue block means, and the words of its controls.
+    "desk-pult-flow.js": 200, "desk-pult-copy.js": 200,
     # The feed: what it draws from, the words it says and the module that draws it.
     "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
     # What says whether a task was closed: the reads, and the model they ask.

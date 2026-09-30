@@ -47,8 +47,13 @@ def _cut(body: dict) -> dict:
             "entries": [{key: entry[key] for key in ENTRY_KEYS} for entry in body["entries"]]}
 
 
-def test_the_module_exports_project_queue_and_nothing_else():
-    assert run_js("console.log(JSON.stringify(Object.keys(queue)));", MODULES) == ["projectQueue"]
+#: What the module exports: the judgement of a read and the moves a person makes on one (a
+#: module namespace lists its names in alphabetical order).
+EXPORTS = ["holdsOrder", "holdsRun", "movedOrder", "orderBody", "projectQueue", "withdrawBody"]
+
+
+def test_the_module_exports_the_judgement_and_the_moves_of_a_person_and_nothing_else():
+    assert run_js("console.log(JSON.stringify(Object.keys(queue)));", MODULES) == EXPORTS
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case["name"] for case in CASES])
@@ -162,6 +167,66 @@ def test_a_slot_may_say_any_reason_the_policy_names_and_none():
     bodies = [_with(BUSY, ("slot", "reason_code"), reason)
               for reason in ("action_in_flight", "plan_waiting", "seed_blocked", None)]
     assert all(kept is not None for kept in _judge(*bodies))
+
+
+# -- the moves of a person on a queue (spec 4.4.5, 4.4.8): order and withdraw ----------------------
+
+
+def _queue_of(*run_ids: str, revision: int = 7) -> dict:
+    """A body of the read with one entry that starts on its own per run, in this order."""
+    entries = [{**MANY["entries"][0], "run_id": run_id, "task_id": f"task-{run_id}",
+                "title": run_id.upper(), "position": place + 1, "state": "preauthorized",
+                "reason_code": "behind"} for place, run_id in enumerate(run_ids)]
+    return {**BUSY, "revision": revision, "entries": entries}
+
+
+def _moves(body: dict, script: str) -> object:
+    return run_js(f"const held = queue.projectQueue(d); console.log(JSON.stringify({script}));",
+                  MODULES, body)
+
+
+@pytest.mark.parametrize("run_id, step, expected", [
+    ("b", -1, ["b", "a", "c"]), ("b", 1, ["a", "c", "b"]), ("a", 1, ["b", "a", "c"]),
+    ("c", -1, ["a", "c", "b"]),
+    ("a", -1, None), ("c", 1, None), ("z", 1, None), ("b", 0, None), ("b", 2, None),
+    ("b", "1", None), ("b", None, None)])
+def test_an_entry_steps_one_place_among_the_visible_entries_and_the_ends_lead_nowhere(
+        run_id, step, expected):
+    got = _moves(_queue_of("a", "b", "c"), f"queue.movedOrder(held, {json.dumps(run_id)}, "
+                                           f"{json.dumps(step)})")
+    assert got == expected
+
+
+def test_a_queue_of_one_entry_has_no_step_at_all():
+    assert _moves(_queue_of("a"), 'queue.movedOrder(held, "a", 1)') is None
+    assert _moves(_queue_of("a"), 'queue.movedOrder(held, "a", -1)') is None
+
+
+def test_the_order_body_is_the_revision_that_was_read_and_the_full_list_in_the_new_order():
+    got = _moves(_queue_of("a", "b", "c", revision=41), """(() => {
+      const body = queue.orderBody(held, "b", 1);
+      return {body, keys: Object.keys(body), frozen: Object.isFrozen(body)
+        && Object.isFrozen(body.run_ids), none: queue.orderBody(held, "c", 1)};
+    })()""")
+    assert got == {"body": {"expected_revision": 41, "run_ids": ["a", "c", "b"]},
+                   "keys": ["expected_revision", "run_ids"], "frozen": True, "none": None}
+
+
+def test_a_withdraw_body_is_an_empty_object_and_is_frozen():
+    assert _moves(_queue_of("a"), """(() => {
+      const body = queue.withdrawBody();
+      return {body, frozen: Object.isFrozen(body), same: queue.withdrawBody() === body};
+    })()""") == {"body": {}, "frozen": True, "same": False}
+
+
+def test_what_landed_is_read_from_the_queue_and_never_from_an_answer():
+    got = _moves(_queue_of("a", "b", "c"), """({
+      order: [queue.holdsOrder(held, ["a", "b", "c"]), queue.holdsOrder(held, ["a", "c", "b"]),
+              queue.holdsOrder(held, ["a", "b"]), queue.holdsOrder(held, [])],
+      run: [queue.holdsRun(held, "b"), queue.holdsRun(held, "z")],
+      not_a_queue: [queue.holdsOrder(null, ["a"]), queue.holdsRun(null, "a")]})""")
+    assert got == {"order": [True, False, False, False], "run": [True, False],
+                   "not_a_queue": [False, False]}
 
 
 def test_the_model_imports_nothing_reads_no_clock_and_touches_no_page():

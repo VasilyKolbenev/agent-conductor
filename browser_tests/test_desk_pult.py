@@ -78,8 +78,9 @@ PULT = """() => {
     save: form ? form.querySelectorAll("button")[0].textContent : null,
     cancel: form ? form.querySelectorAll("button")[1].textContent : null,
     focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
-    block: block ? [...block.querySelectorAll("h3, p, li")].map((node) => node.textContent.trim())
-      : null,
+    block: block ? [...block.querySelectorAll("h3, p, li")].map((node) => (node.tagName === "LI"
+      ? [...node.querySelectorAll(":scope > span")].map((part) => part.textContent).join("").trim()
+      : node.textContent.trim())) : null,
     text: pult.innerText, lang: document.documentElement.lang,
     storage: [localStorage.length, sessionStorage.length], cookie: document.cookie,
     hash: location.hash,

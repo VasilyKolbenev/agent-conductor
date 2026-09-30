@@ -212,11 +212,14 @@ FACTS = """() => {
     block: block !== null, head: text(block && block.querySelector(".desk-queue__head")),
     now: text(block && block.querySelector(".desk-queue__now")),
     none: text(block && block.querySelector(".desk-queue__none")),
+    notice: text(block && block.querySelector("[data-pult-notice]")),
     entries: block === null ? [] : [...block.querySelectorAll(".desk-queue__entry")].map((row) => ({
       run: row.dataset.runId, state: row.dataset.queueState, tone: row.dataset.tone,
-      text: text(row),
+      text: [...row.querySelectorAll(":scope > span")].map((part) => part.textContent).join("")
+        .trim(),
       buttons: [...row.querySelectorAll("button")].map((button) => ({
-        key: button.dataset.focusKey, text: text(button), disabled: button.disabled,
+        key: button.dataset.focusKey, text: text(button), label: button.getAttribute("aria-label"),
+        disabled: button.disabled || button.getAttribute("aria-disabled") === "true",
         size: box(button)}))})),
     rail: Object.fromEntries([...document.querySelectorAll("#deskRail [data-task-id]")].map(
       (row) => [row.dataset.taskId, text(row.querySelector(".desk-task__state"))])),
@@ -231,6 +234,7 @@ class Window:
     page: Any
     problems: list[str] = field(default_factory=list)
     asked: list[tuple[str, str]] = field(default_factory=list)
+    posted: list[tuple[str, Any]] = field(default_factory=list)
 
     def facts(self) -> dict:
         return self.page.evaluate(FACTS)
@@ -238,18 +242,48 @@ class Window:
     def requests(self, method: str, path: str) -> int:
         return sum(1 for asked in self.asked if asked == (method, path))
 
+    def until(self, what: str, done: Callable[[], Any]) -> None:
+        """Wait (pumping the page) until a fact of THIS side of the wire holds, e.g. that a
+        route the test holds has been reached."""
+        for _ in range(160):
+            if done():
+                return
+            self.page.wait_for_timeout(50)
+        raise AssertionError(f"the page never reached: {what}")
+
+    def press(self, key: str, *, force: bool = False) -> None:
+        """Press the control that carries this focus key, as a person does. `force` presses one
+        that says it is unavailable: the page must then do nothing."""
+        self.page.locator(f'#deskPult [data-focus-key="{key}"]').click(force=force)
+
+    def order(self) -> list[str]:
+        """The run ids of the entries the console draws, in the order it draws them."""
+        return [row["run"] for row in self.facts()["entries"]]
+
+    def errors(self, ignore: tuple[str, ...] = ()) -> list[str]:
+        """The console errors that are not a failed request a test made on purpose."""
+        return [one for one in self.problems if not any(word in one for word in ignore)]
+
+
+def _note(window: Window, served: Project, request: Any) -> None:
+    """Remember what the desk asked, and the body of each write it sent."""
+    where = request.url.removeprefix(served.origin).split("#")[0]
+    window.asked.append((request.method, where))
+    if request.method == "POST":
+        window.posted.append((where, request.post_data_json))
+
 
 def open_desk(browser: Any, served: Project, language: str = "en", *, width: int = 1280,
               extra: str = "", before: Callable[[Any], None] | None = None) -> Window:
     """A desk on the project, waited until it is settled; `before` may route the page first."""
     context = browser.new_context(viewport={"width": width, "height": 900})
     page = context.new_page()
+    page.set_default_timeout(8000)
     window = Window(page)
     page.on("console", lambda message: window.problems.append(message.text)
             if message.type == "error" else None)
     page.on("pageerror", lambda error: window.problems.append(str(error)))
-    page.on("request", lambda request: window.asked.append(
-        (request.method, request.url.removeprefix(served.origin).split("#")[0])))
+    page.on("request", lambda request: _note(window, served, request))
     if before is not None:
         before(page)
     page.goto(served.url(language, extra=extra), wait_until="load")

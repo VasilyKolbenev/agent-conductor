@@ -111,7 +111,35 @@ function tail(view, entry) {
     ? localize(view, "desk.pult.entry_queued", {time: queued.short}) : null;
 }
 
-function entryRow(view, entry) {
+//: One control of an entry. A press is a call to the boot module's handler; while a write is out
+//: (`view.pult.busy`) no control of the block can be pressed, and a step the entry cannot take
+//: (up at the head, down at the tail) is not offered. Such a control says it is unavailable
+//: (`aria-disabled`) and does nothing, and is NOT `disabled`: a control that is disabled cannot
+//: hold the keyboard, and the press that put the write out must not lose its place in the redraw.
+function control(view, {key, glyph, words, off, press}) {
+  const button = element("button", {type: "button", "data-focus-key": key,
+    "aria-label": localize(view, words), text: glyph ?? localize(view, words)});
+  if (off || view.pult?.busy) {
+    button.setAttribute("aria-disabled", "true");
+    button.classList.add("desk-queue__off");
+  } else button.addEventListener("click", press);
+  return button;
+}
+
+//: The controls of an entry: a step up, a step down, and "Remove from the queue".
+function actions(view, handlers, entry) {
+  const last = view.queue.entries.length;
+  const id = entry.run_id;
+  return element("div", {className: "desk-queue__acts"}, [
+    control(view, {key: `queue:up:${id}`, glyph: "↑", words: "desk_pult.up",
+      off: entry.position === 1, press: () => handlers.orderEntry(id, -1)}),
+    control(view, {key: `queue:down:${id}`, glyph: "↓", words: "desk_pult.down",
+      off: entry.position === last, press: () => handlers.orderEntry(id, 1)}),
+    control(view, {key: `queue:withdraw:${id}`, glyph: null, words: "desk_pult.withdraw",
+      off: false, press: () => handlers.withdrawEntry(id)})]);
+}
+
+function entryRow(view, handlers, entry) {
   const title = entry.title === "" ? entry.run_id : entry.title;
   const said = [localize(view, LEADS[entry.state], {position: String(entry.position), title})];
   if (entry.state !== "preauthorized" && entry.reason_code !== null) {
@@ -122,25 +150,39 @@ function entryRow(view, entry) {
   return element("li", {className: "desk-queue__entry", "data-run-id": entry.run_id,
     "data-queue-state": entry.state,
     "data-tone": entry.state === "confirmation_required" ? "amber" : null},
-  said.map((part) => element("span", {text: part})));
+  [...said.map((part) => element("span", {text: part})), actions(view, handlers, entry)]);
 }
 
-function entryList(view) {
+function entryList(view, handlers) {
   const {entries} = view.queue;
   return entries.length === 0
     ? element("p", {className: "desk-queue__none", text: localize(view, "desk.pult.queue_empty")})
     : element("ul", {className: "desk-queue__list"},
-      entries.map((entry) => entryRow(view, entry)));
+      entries.map((entry) => entryRow(view, handlers, entry)));
+}
+
+//: What the last write left under the block: a refusal in the words of its code, or that a change
+//: could not be confirmed. Nothing is drawn when the last write left nothing to say.
+function noticeLine(view) {
+  const notice = view.pult?.notice ?? null;
+  if (notice === null) return [];
+  let key = "desk_pult.unconfirmed";
+  if (notice.kind === "refused") {
+    const code = `error.${notice.code}`;
+    key = Object.hasOwn(MESSAGES, code) ? code : "error.store_error";
+  }
+  return [element("p", {className: "desk-queue__notice", role: "status",
+    "data-pult-notice": "", text: localize(view, key)})];
 }
 
 //: The block is drawn when the queue was read, and in `view` even when it was not: the mode is
 //: the server's word, and it says the project cannot start what the queue holds.
-function queueBlock(view) {
+function queueBlock(view, handlers) {
   if (view.queue === null && view.mode !== "view") return [];
   const kids = [
     element("h3", {className: "desk-queue__head", text: localize(view, "desk.pult.queue")}),
     element("p", {className: "desk-queue__now", text: firstRow(view)})];
-  if (view.queue !== null) kids.push(entryList(view));
+  if (view.queue !== null) kids.push(entryList(view, handlers), ...noticeLine(view));
   if (view.mode === "view") {
     kids.push(element("p", {className: "desk-pult__flag", text: localize(view, "desk.pult.flag")}));
   }
@@ -265,5 +307,5 @@ export function mountPult(mount, view, handlers) {
   mount.replaceChildren(
     element("h2", {className: "desk-pult__head", text: localize(view, "desk.pult.label")}),
     view.editing ? actorForm(view, handlers) : actorRow(view, handlers),
-    ...queueBlock(view), ...flagBlock(view, handlers));
+    ...queueBlock(view, handlers), ...flagBlock(view, handlers));
 }

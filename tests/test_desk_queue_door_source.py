@@ -16,9 +16,9 @@ from tests.test_desk_source import PANEL, _edit
 from tests.test_panel_cascade import strip_comments
 
 QUEUE_DOOR = PANEL / "desk-queue.js"
-#: The targets of the mutation door the queue's door names, in the order it names them: none yet,
-#: because the door so far reads.
-WRITTEN = ()
+#: The targets of the mutation door the queue's door names, in the order it names them: the two
+#: writes that change the order of what waits.
+WRITTEN = ("queueOrder", "queueWithdraw")
 #: The routes it reads, and no other.
 READ = {"queue"}
 #: Everything else that reaches the wire or a session, which the queue's door does not do.
@@ -54,7 +54,14 @@ def queue_door_faults(source: str) -> list[str]:
 BROKEN = {
     "a write nobody argued for": (
         lambda text: text + '\nconst later = () => door.submit("tasks", null, {});\n',
-        "not for []"),
+        "is called for"),
+    "a write with another target": (
+        _edit('submit("queueOrder"', 'submit("tasks"'), "is called for"),
+    "a write that was dropped": (_edit('door.submit("queueWithdraw", runId, body)', "body"),
+                                 "is called for"),
+    "a write that is not named at the call": (
+        _edit('door.submit("queueOrder", null, body)', "door.submit(target, null, body)"),
+        "is called for"),
     "a door of its own": (lambda text: text + '\nfetch("/command/tasks");\n', "another door"),
     "a session drop": (lambda text: text + "\ndoor.dropSession();\n", "another door"),
     "a stream": (lambda text: text + "\nconst s = door.openStream();\n", "another door"),
