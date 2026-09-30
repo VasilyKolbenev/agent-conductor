@@ -1,22 +1,38 @@
-"""The supervisor of the hub's children (spec 4.1.4, 4.1.5, 4.1.7, 4.1.13 item 3).
+"""The supervisor of the hub's children (spec 4.1.4, 4.1.5, 4.1.7, 4.3.6, 4.1.13 item 3).
 
-This file grows with the supervisor. It begins with the rule the supervisor stands on: a project
-is proven closed only when its process is dead by `(pid, process_started)` AND the head of its
-ownership, read without writing, is not `opened` (4.1.7). The rule is a function of the state
-module; what it is asked here is the claim of the spec under its own name, on the real
-probe and the real head of a real project, next to the fakes of `test_hub_state.py`.
+It begins with the rule the supervisor stands on: a project is proven closed only when its
+process is dead by `(pid, process_started)` AND the head of its ownership, read without
+writing, is not `opened` (4.1.7); that rule is a function of the state module, asked here on the
+real probe and the real head of a real project. Then the supervisor on a world of fakes
+(`tests/_hub_world.py`: a clock, a table of live pids, a table of heads, a spawner that starts
+nothing and records each start): the switch that drains the old child before it starts the new
+one, the rule that nothing starts while a closure is not proven, the restart of the hub, the
+transition that is spawned once, the start that times out, the bind that is tried again on port
+0, and what `activate`, `view` and `stop` refuse. The real children are in the last part.
 """
 from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import timedelta
+
+import pytest
 
 from conductor import ownership, ownership_records, ownership_transition, process_identity
-from conductor.hub import state
+from conductor.hub import registry, spawn, state, supervisor
+from tests._hub_world import FakeSpawner, World, id_of, iso
 from tests.test_store import good_lane, write_project
 
 NOW = "2026-09-30T10:00:00Z"
 SLEEPER = [sys.executable, "-c", "import time; time.sleep(120)"]
+FLAG = state.Flag("f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1", 3)
+
+
+@pytest.fixture
+def world(tmp_path):
+    made = World(tmp_path)
+    yield made
+    made.close()
 
 
 def _activated(tmp_path):
@@ -51,3 +67,348 @@ def test_proven_closed_needs_a_dead_process_and_an_ownership_head_that_is_not_op
         if child.poll() is None:
             child.kill()
             child.wait(timeout=20)
+
+
+# -- the supervisor on a world of fakes ----------------------------------------------------------
+
+
+def _activate_and_start(world: World, name: str = "a") -> None:
+    """Make `name` the active project and let the supervisor start its child; it then serves."""
+    world.supervisor.activate(id_of(name))
+    world.supervisor.tick()
+    assert len(world.spawner.started(name)) == 1
+    world.running(name)
+
+
+def test_activating_a_project_with_nothing_running_starts_its_child_with_the_transition(world):
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    assert world.spawner.calls == [], "activate only records the intent; a tick carries it out"
+    world.supervisor.tick()
+    (call,) = world.spawner.calls
+    expected = world.hub_state().transition
+    assert call == {"project_id": id_of("a"), "root": world.roots["a"], "port": 7701,
+                    "mode": "active", "transition": expected.id,
+                    "auto_continue": f"{FLAG.flag_id}@{FLAG.revision}"}
+    assert expected.spawned_at == iso(world.clock.now) and world.hub_state().closing == ()
+
+
+def test_switching_active_project_drains_the_old_one_before_starting_the_new_one(world):
+    _activate_and_start(world, "a")
+    old = world.spawner.children[0]
+    world.supervisor.activate(id_of("b"))
+    assert old.closed, "the old child was not asked to drain"
+    assert [entry.project_id for entry in world.hub_state().closing] == [id_of("a")]
+    world.supervisor.tick()
+    world.put_status("a", "stopping")
+    world.supervisor.tick()
+    assert world.spawner.started("b") == [], "the new child started while the old one drained"
+    world.gone("a")                                  # the drain is over and the head is closed
+    world.supervisor.tick()
+    (started,) = world.spawner.started("b")
+    assert started["mode"] == "active" and started["transition"] is not None
+    assert world.hub_state().closing == () and world.hub_state().active_project_id == id_of("b")
+
+
+def test_the_start_is_recorded_before_the_child_is_started_so_a_crash_between_cannot_repeat_it(
+        world):
+    seen_at_the_start = []
+    world.spawner.before_start = lambda arguments: seen_at_the_start.append(
+        (world.hub_state().transition.spawned_at, world.hub_state().closing))
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    world.supervisor.tick()
+    assert seen_at_the_start == [(iso(world.clock.now), ())], (
+        "the child was started before the state said it was")
+
+
+@pytest.mark.parametrize("how", ["draining", "stop_uncertain", "died_opened"])
+def test_hub_never_starts_a_second_active_child_while_the_first_is_not_proven_closed(world, how):
+    _activate_and_start(world, "a")
+    world.supervisor.activate(id_of("b"))
+    if how == "draining":
+        world.put_status("a", "stopping")
+    elif how == "stop_uncertain":
+        world.gone("a", "stop_uncertain", head="opened")
+    else:
+        world.gone("a", "serving", head="opened")
+    for _ in range(3):
+        world.supervisor.tick()
+    assert world.spawner.started("b") == [], how
+    assert [entry.project_id for entry in world.hub_state().closing] == [id_of("a")]
+    if how != "draining":
+        assert world.supervisor.status(id_of("b")).lifecycle.state_code == "active_not_closed"
+    world.gone("a", "stopped", head="recovered")      # the person recovered it (ADR-8)
+    world.supervisor.tick()
+    assert len(world.spawner.started("b")) == 1 and world.hub_state().closing == ()
+
+
+def test_a_view_child_never_stands_in_the_way_of_the_active_one(world):
+    world.supervisor.view(id_of("b"))
+    world.running("b", mode="view")
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    assert [call["mode"] for call in world.spawner.calls] == ["view", "active"]
+
+
+# -- the restart of the hub (4.1.7) -------------------------------------------------------------
+
+
+def _with_a_spawned_transition(world: World, name: str = "a", flag=None) -> None:
+    tid = "00000000-0000-0000-0000-0000000000aa"
+    world.store.update(lambda s: state.begin_switch(
+        s, id_of(name), kind="manual", transition_id=tid, since=NOW, flag=flag, previous=None))
+    world.store.update(lambda s: state.settle_closed(s, [], spawned_at=NOW, transition_id=tid))
+
+
+def test_hub_restart_waits_for_any_live_active_mode_process_before_starting_an_active_child(
+        world):
+    _with_a_spawned_transition(world)
+    world.running("a")
+    world.put_status("a", "stopping")                # its own project's child, draining
+    world.running("b")                               # and another project's active child
+    world.put_status("a", "stopping")
+    world.supervisor.restart()
+    world.supervisor.tick()
+    assert world.spawner.calls == []
+    assert world.supervisor.status(id_of("a")).lifecycle.state == "stopping"
+    world.gone("a")
+    world.supervisor.tick()
+    assert world.spawner.calls == [], "another project's active child is still alive"
+    world.gone("b")
+    world.supervisor.tick()
+    (call,) = world.spawner.calls
+    assert call["project_id"] == id_of("a") and call["mode"] == "active"
+
+
+def test_a_restart_starts_the_active_project_with_neither_a_transition_nor_a_flag(world):
+    _with_a_spawned_transition(world, flag=FLAG)
+    world.gone("a", "serving", head="closed")        # the hub died, the child drained and closed
+    world.supervisor.restart()
+    (call,) = world.spawner.calls
+    assert (call["transition"], call["auto_continue"]) == (None, None)
+    assert world.hub_state().handed_flags == {id_of("a"): FLAG.flag_id}
+
+
+def test_hub_restart_restores_no_view_children(world):
+    _with_a_spawned_transition(world, "a")
+    world.gone("a")
+    world.gone("b", "serving")                       # a view child that drained with the hub
+    world.put_status("b", "serving", mode="view")
+    world.supervisor.restart()
+    world.supervisor.tick()
+    assert world.spawner.started("b") == []
+    assert [call["project_id"] for call in world.spawner.calls] == [id_of("a")]
+
+
+def test_a_restart_with_no_active_project_chooses_none(world):
+    world.supervisor.restart()
+    world.supervisor.tick()
+    assert world.spawner.calls == [] and world.hub_state().active_project_id is None
+
+
+def test_hub_restart_during_a_switch_keeps_at_most_one_active(world):
+    _with_a_spawned_transition(world, "a")
+    tid = "00000000-0000-0000-0000-0000000000bb"
+    world.store.update(lambda s: state.begin_switch(
+        s, id_of("b"), kind="manual", transition_id=tid, since=NOW, flag=FLAG,
+        previous=state.ClosingEntry(id_of("a"), 101, "windows:1", id_of("a"), NOW)))
+    world.gone("a", "serving", head="opened")         # the crash left the old child's head open
+    spawner = FakeSpawner()
+    newer = world.new_supervisor(spawner)
+    newer.restart()
+    newer.tick()
+    assert world.spawner.calls == [] and spawner.calls == []
+    assert [entry.project_id for entry in world.hub_state().closing] == [id_of("a")]
+    assert newer.status(id_of("a")).lifecycle.state == "recovery_required"
+    assert newer.status(id_of("b")).lifecycle.state_code == "active_not_closed"
+    world.gone("a", "stopped", head="recovered")      # after "Восстановить"
+    newer.tick()
+    (call,) = spawner.calls
+    assert call["project_id"] == id_of("b") and call["transition"] == tid
+    assert call["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"
+    assert world.hub_state().closing == ()
+
+
+def test_a_transition_is_spawned_once_and_a_hub_restart_never_hands_the_flag_again(world):
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    world.supervisor.tick()
+    (first,) = world.spawner.calls
+    assert first["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"
+    world.spawner.children[0].leave(1)               # the child died before it consumed the flag
+    world.gone("a", "serving", head="closed")
+    for _ in range(3):
+        world.supervisor.tick()
+    assert len(world.spawner.calls) == 1, "a dead child is not started again by the hub's loop"
+    newer_spawner = FakeSpawner()
+    newer = world.new_supervisor(newer_spawner)
+    newer.restart()
+    (again,) = newer_spawner.calls
+    assert (again["transition"], again["auto_continue"]) == (None, None)
+    assert world.hub_state().queue == () and world.hub_state().transition.spawned_at is not None
+
+
+# -- the start that does not come to serving ------------------------------------------------------
+
+
+def test_a_child_that_has_not_served_in_thirty_seconds_is_asked_to_drain_and_reads_failed(world):
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    child = world.spawner.children[0]
+    world.clock.advance(29)
+    world.supervisor.tick()
+    assert not child.closed
+    world.clock.advance(2)
+    world.supervisor.tick()
+    assert child.closed
+    found = world.supervisor.status(id_of("a")).lifecycle
+    assert (found.state, found.state_code) == ("failed", "start_timeout")
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 1
+
+
+def test_a_child_that_serves_in_time_is_never_timed_out(world):
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    world.clock.advance(20)
+    world.running("a")
+    world.clock.advance(60)
+    world.supervisor.tick()
+    assert not world.spawner.children[0].closed
+    assert world.supervisor.status(id_of("a")).lifecycle.state == "running"
+
+
+def test_a_child_that_left_without_a_record_is_a_start_that_failed(world):
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    world.spawner.children[0].leave(1)
+    found = world.supervisor.status(id_of("a")).lifecycle
+    assert (found.state, found.state_code) == ("failed", "start_failed")
+
+
+def test_a_bind_that_failed_is_tried_once_more_on_port_zero_and_the_registry_keeps_its_port(
+        world):
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    world.supervisor.tick()
+    world.spawner.children[0].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+    world.supervisor.tick()
+    first, second = world.spawner.calls
+    assert first["port"] == 7701 and second["port"] == 0
+    assert {k: v for k, v in second.items() if k != "port"} == {
+        k: v for k, v in first.items() if k != "port"}, "the retry is the same start"
+    world.spawner.children[1].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 2, "a second failed bind is not tried a third time"
+    assert world.supervisor.status(id_of("a")).lifecycle.state_code == "bind_failed"
+    assert registry.load(world.home).project(id_of("a")).port == 7701
+
+
+def test_a_stale_refusal_of_an_earlier_child_is_not_taken_for_the_new_ones(world):
+    world.put_status("a", "refused", code="bind_failed", at=world.clock.now - timedelta(hours=1))
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    world.spawner.children[0].leave(1)
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 1, "the old file is not this child's refusal"
+
+
+def test_a_registry_port_that_is_the_hubs_own_starts_the_child_on_port_zero_at_once(tmp_path):
+    made = World(tmp_path, hub_port=7701)
+    try:
+        made.supervisor.activate(id_of("a"))
+        made.supervisor.tick()
+        assert made.spawner.calls[0]["port"] == 0
+    finally:
+        made.close()
+
+
+# -- what activate, view and stop refuse --------------------------------------------------------
+
+
+def _refused(call, *args, **kwargs) -> str:
+    with pytest.raises(supervisor.SupervisorRefused) as caught:
+        call(*args, **kwargs)
+    return caught.value.code
+
+
+def test_activate_refuses_what_cannot_be_made_active_and_changes_nothing(world):
+    assert _refused(world.supervisor.activate, "f" * 32) == "project_not_found"
+    _activate_and_start(world, "a")
+    before = world.hub_state()
+    assert _refused(world.supervisor.activate, id_of("a")) == "already_active"
+    world.spawner.refusal = spawn.SpawnRefused("hub_in_kill_on_close_job", "a job")
+    assert _refused(world.supervisor.activate, id_of("b")) == "hub_in_kill_on_close_job"
+    assert world.hub_state() == before
+    world.spawner.refusal = None
+    world.supervisor.activate(id_of("b"))
+    assert _refused(world.supervisor.activate, id_of("a")) == "active_not_closed"
+
+
+def test_view_starts_a_view_child_and_refuses_a_project_that_is_running_or_active(world):
+    world.supervisor.view(id_of("b"))
+    (call,) = world.spawner.calls
+    assert (call["mode"], call["transition"], call["auto_continue"]) == ("view", None, None)
+    assert _refused(world.supervisor.view, id_of("b")) == "project_running"
+    _activate_and_start(world, "a")
+    assert _refused(world.supervisor.view, id_of("a")) in ("project_running", "already_active")
+    assert _refused(world.supervisor.view, "f" * 32) == "project_not_found"
+    world.spawner.refusal = spawn.SpawnRefused("hub_in_kill_on_close_job", "a job")
+    assert _refused(world.supervisor.view, id_of("c")) == "hub_in_kill_on_close_job"
+    assert len(world.spawner.calls) == 2
+
+
+def test_stopping_the_active_project_hands_the_place_to_the_next_queued_one(world):
+    _activate_and_start(world, "a")
+    world.store.update(lambda s: state.enqueue(s, id_of("c"), FLAG.flag_id))
+    world.supervisor.stop(id_of("a"), next_flag=FLAG)
+    assert world.spawner.children[0].closed
+    assert world.hub_state().active_project_id == id_of("c")
+    assert [entry.project_id for entry in world.hub_state().closing] == [id_of("a")]
+    world.supervisor.tick()
+    assert world.spawner.started("c") == []
+    world.gone("a")
+    world.supervisor.tick()
+    (started,) = world.spawner.started("c")
+    assert started["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"
+
+
+def test_stopping_the_active_project_with_nobody_queued_leaves_none_active(world):
+    _activate_and_start(world, "a")
+    world.supervisor.stop(id_of("a"))
+    assert world.hub_state().active_project_id is None
+    world.gone("a")
+    world.supervisor.tick()
+    assert world.hub_state().closing == () and len(world.spawner.calls) == 1
+
+
+def test_stopping_a_view_child_drains_it_and_changes_no_state(world):
+    world.supervisor.view(id_of("b"))
+    world.running("b", mode="view")
+    before = world.hub_state()
+    world.supervisor.stop(id_of("b"))
+    assert world.spawner.children[0].closed and world.hub_state() == before
+
+
+def test_stopping_what_is_not_running_is_project_not_running(world):
+    assert _refused(world.supervisor.stop, id_of("b")) == "project_not_running"
+    assert _refused(world.supervisor.stop, "f" * 32) == "project_not_found"
+
+
+# -- the words of a project ------------------------------------------------------------------------
+
+
+def test_a_project_reads_its_lifecycle_its_working_state_and_its_mode(world):
+    _activate_and_start(world, "a")
+    world.supervisor.view(id_of("b"))
+    world.running("b", mode="view")
+    world.store.update(lambda s: state.enqueue(s, id_of("c"), FLAG.flag_id))
+    found = {name: world.supervisor.status(id_of(name)) for name in "abc"}
+    assert [(found[n].lifecycle.state, found[n].working, found[n].mode) for n in "abc"] == [
+        ("running", "active", "active"), ("running", "view", "view"), ("stopped", "queued", None)]
+
+
+def test_a_registry_that_is_not_the_schema_stops_the_loop_without_a_crash(world):
+    _activate_and_start(world, "a")
+    (world.home / "registry.json").write_text("{not json", encoding="utf-8")
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 1
