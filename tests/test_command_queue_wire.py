@@ -21,7 +21,10 @@ from conductor.command.http_transport import CommandSession
 from conductor.command.project_claim import ProjectIdentity
 from conductor.command.queue_routes import make_queue
 from conductor.command.queue_store import MAX_QUEUE
-from tests.queue_fixtures import Holder, add_run, project, start_body
+from conductor.command.queue_store import Receipt
+from conductor.command.task_contracts import TaskRecord
+from conductor.command.task_store import TaskStore
+from tests.queue_fixtures import NOW, Holder, add_run, project, start_body
 from tests.test_command_http_api import PORT, TOKEN, get_headers, post
 from tests.test_command_queue import a_start, unreadable_entry
 
@@ -233,3 +236,52 @@ def test_the_project_claim_header_applies_to_the_queue_doors_like_every_command_
     right = w.api.handle("GET", "/command/queue",
                          (*get_headers(), ("X-Conduct-Project", PROJECT_ID)))
     assert error(wrong) == (409, "project_mismatch", {}) and right.status == 200
+
+
+# --- the preparation of a task sees the queue -----------------------------------------------------
+
+
+def preparation(w, task_id="task-7"):
+    answer = w.api.handle("GET", f"/command/tasks/{task_id}/preparation", get_headers())
+    assert answer.status == 200
+    return {row["run_id"]: row for row in answer.payload["runs"]}
+
+
+def test_the_preparation_of_a_task_shows_its_queue_entry_and_when_the_human_confirmed(
+        tmp_path):
+    w = wire(tmp_path)
+    TaskStore(tmp_path).create_task(TaskRecord(task_id="task-7", title="Seven",
+                                               work_scope="task-7", created_at=NOW))
+    for run_id in ("task-7-r1", "task-7-r2", "task-7-r3"):
+        add_run(w.f, run_id, task_id="task-7")
+    put(w, "task-7-r1", "same")
+    queued = preparation(w)["task-7-r1"]
+    assert queued["stage"] == "queued" and queued["grant"] is None
+    assert queued["queue"] == {"position": 1, "state": "preauthorized", "reason_code": None,
+                               "state_since": NOW}
+    w.f.ticks[0] = "2026-08-11T12:01:00Z"
+    assert w.f.policy.queue.start_next() is True
+    started = preparation(w)["task-7-r1"]
+    assert started["stage"] == "authorized" and started["queue"] is None
+    assert started["grant"]["preauthorized_at"] == NOW
+    assert started["grant"]["authorized_at"] == "2026-08-11T12:01:00Z"
+    w.f.policy.driver.active = None
+    w.f.policy.authorize("task-7-r2", start_body(w.f, "task-7-r2", "same"))   # by hand
+    assert preparation(w)["task-7-r2"]["grant"]["preauthorized_at"] is None
+
+
+def test_a_receipt_no_journal_record_pairs_with_is_not_a_time_the_preparation_shows(tmp_path):
+    w = wire(tmp_path)
+    TaskStore(tmp_path).create_task(TaskRecord(task_id="task-7", title="Seven",
+                                               work_scope="task-7", created_at=NOW))
+    add_run(w.f, "task-7-r1", task_id="task-7")
+    granted, _ = w.f.policy.authorize("task-7-r1", start_body(w.f, "task-7-r1", "g-1"))
+    w.f.policy.queue.store.write_receipt(Receipt(
+        "task-7-r1", "run_authorization", "g-1", "vasily", "2026-08-11T11:00:00Z",
+        "sha256:" + "a" * 64, "sha256:" + "b" * 64, granted.authorized_at, "confirmation"))
+    assert preparation(w)["task-7-r1"]["grant"]["preauthorized_at"] is None
+    w.f.policy.queue.store.replace_receipt(Receipt(
+        "task-7-r1", "run_authorization", "g-1", granted.authorized_by, "2026-08-11T11:00:00Z",
+        "sha256:" + "a" * 64, granted.authorization_digest, granted.authorized_at,
+        "confirmation"))
+    assert preparation(w)["task-7-r1"]["grant"]["preauthorized_at"] == "2026-08-11T11:00:00Z"

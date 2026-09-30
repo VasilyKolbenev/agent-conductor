@@ -30,12 +30,18 @@ from .policy_view import automation_view
 from .queue_bodies import Ask
 from .queue_pump import run_pass
 from .queue_reading import (
-    CORRUPT, Facts, assemble, done_reason, grant_standing, run_ended, slot_reading)
-from .queue_store import MAX_QUEUE, CorruptReceipt, QueueEntry, QueueFile, QueueStore
+    CORRUPT, Facts, assemble, done_reason, grant_standing, receipt_matches_record, run_ended,
+    slot_reading)
+from .queue_store import (
+    JOURNAL_KIND, MAX_QUEUE, CorruptReceipt, QueueEntry, QueueFile, QueueStore)
 from .run_authorization import RunAuthorizationControl
 from .store_errors import StoreError
 from .task_contracts import frozen_config_task
+from .task_preparation import QueueView
 from .template_store import RouteNotOwned
+#: What the preparation read shows of an entry (spec 4.4.6): four facts and nothing else.
+_PREPARATION_FACTS = ("position", "state", "reason_code", "state_since")
+
 
 class QueueService:
     """The queue of one project, in one server process."""
@@ -127,6 +133,27 @@ class QueueService:
             file = self.store.read()
             return assemble(file.revision, self.facts(file), slot=self.slot(), mode=self.mode,
                             now=self.policy.clock(), process_started=self.started_at)
+
+    # --- the preparation of a task ----------------------------------------------------------------
+
+    def preparation_view(self) -> QueueView:
+        """What the preparation read of a task needs of the queue (spec 4.4.6, 6.4.2): the entry of
+        each run that has one, and, for a grant the queue started, when the human confirmed it."""
+        rows = self.read()["entries"]
+        shown = {row["run_id"]: {key: row[key] for key in _PREPARATION_FACTS} for row in rows}
+        return QueueView(entries=shown, preauthorized=self._confirmed_at)
+
+    def _confirmed_at(self, run_id: str, grant: Any) -> str | None:
+        """The moment of the preauthorization of a grant, if a receipt that tells the truth about
+        that very record says the queue started it; a receipt nothing pairs with says nothing."""
+        try:
+            receipt = self.store.read_receipt(run_id, JOURNAL_KIND["start"],
+                                              grant.authorization_id)
+        except (CorruptReceipt, RouteNotOwned):
+            return None
+        if receipt is None or not receipt_matches_record(receipt, grant):
+            return None
+        return receipt.preauthorized_at
 
     # --- writing: one commit, frames for the runs it touched --------------------------------------
 

@@ -123,6 +123,18 @@ def receipt_agrees(receipt: Receipt, value: Any, *, digest: str, human: str,
             and record_human(value) == receipt.authorized_by)
 
 
+def receipt_matches_record(receipt: Receipt, value: Any) -> bool:
+    """A receipt says the truth about a journal record: its digest, its person and its time.
+
+    For a reader that has no entry to hold the receipt to (the entry is gone once the run started):
+    the record is judged against the receipt alone, and what the human preauthorized stays the
+    receipt's word.
+    """
+    return (receipt.record_digest == record_digest(value)
+            and receipt.authorized_by == record_human(value)
+            and receipt.started_at == record_time(value))
+
+
 def pairing(preauth: Any, journal_kind: str, receipt: Any, value: Any) -> str:
     """How a receipt and a journal record stand to one entry's key.
 
