@@ -16,6 +16,9 @@ from tests.test_desk_source import PANEL, _edit
 from tests.test_panel_cascade import strip_comments
 
 FLAG_DOOR = PANEL / "desk-flag.js"
+#: The modules that may call the mutation door: the transport that owns it and the doors that each
+#: name their own closed list of targets (the queue's is held by `test_desk_queue_door_source.py`).
+DOORS = ("desk-transport.js", "desk-flag.js", "desk-queue.js")
 #: Everything else that reaches the wire or a session, which the flag's door does not do.
 FLAG_OTHER_DOORS = (r"\bfetch\s*\(", r"\bmethod\s*:", r'"POST"', r"\bXMLHttpRequest\b",
                     r"\bsendBeacon\b", r"\bdropSession\b", r"\bopenStream\b", r"\bEventSource\b")
@@ -73,8 +76,7 @@ def test_no_desk_module_but_the_transport_and_the_flag_door_names_the_mutation_d
     """The boot module and every module that draws hand a press to a handler; none of them
     calls the transport's `submit`. The wizard's own modules are lane D2's and ask the host."""
     for path in sorted(PANEL.glob("desk*.js")):
-        if path.name in ("desk-transport.js", "desk-flag.js") or path.name.startswith(
-                "desk-wizard"):
+        if path.name in DOORS or path.name.startswith("desk-wizard"):
             continue
         assert not re.search(r"\.submit\(", strip_comments(path.read_text(encoding="utf-8"))), (
             path.name)

@@ -129,19 +129,12 @@ def _answer(run_id: str, state: str, reason: str, **more: Any) -> dict:
 
 
 #: (task id, the run of it, created, the automation answer or None): one task per case of the
-#: table of spec 5.8 -- and the runs a flag can never continue. The read judges a pause before it
-#: looks at the expiry, so a paused grant that has expired reads `paused`; the module reads no
-#: clock, so it is told apart only by the fact `expired` the read is asked to give beside the state.
+#: table of spec 5.8 -- and the runs a flag can never continue. The read judges the clock before a
+#: pause (lane L, `policy_view._state`), so a paused grant that ran out reads `expired`, and the
+#: state is the only fact of expiry the module reads.
 WORLD = (
-    ("t-paused-expired", "r-paused-expired", "2026-09-30T04:00:00Z",
-     _answer("r-paused-expired", "paused", "paused", expires_at="2026-09-30T03:00:00Z",
-             expired=True)),
-    ("t-revoked-expired", "r-revoked-expired", "2026-09-30T05:07:00Z",
-     _answer("r-revoked-expired", "revoked", "revoked", expires_at="2026-09-30T03:00:00Z",
-             expired=True)),
     ("t-paused-fresh", "r-paused-fresh", "2026-09-30T10:00:00Z",
-     _answer("r-paused-fresh", "paused", "paused", expires_at="2026-10-01T03:00:00Z",
-             expired=False)),
+     _answer("r-paused-fresh", "paused", "paused", expires_at="2026-10-01T03:00:00Z")),
     ("t-paused", "r-paused", "2026-09-30T08:00:00Z", _answer("r-paused", "paused", "paused")),
     ("t-explicit", "r-explicit", "2026-09-30T09:00:00Z",
      _answer("r-explicit", "restart_required", "explicit_resume_required")),
@@ -179,7 +172,7 @@ def test_only_a_paused_or_waiting_for_a_resume_run_is_offered_oldest_first_and_e
     got = _resumable()
     assert got["frozen"] is True
     assert [(row["run_id"], row["expired"]) for row in got["rows"]] == [
-        ("r-paused-expired", True), ("r-expired", True), ("r-inactive", False),
+        ("r-expired", True), ("r-inactive", False),
         ("r-paused", False), ("r-explicit", False), ("r-paused-fresh", False)]
     first = next(row for row in got["rows"] if row["run_id"] == "r-inactive")
     assert first == {"run_id": "r-inactive", "task_id": "t-inactive",
@@ -187,14 +180,16 @@ def test_only_a_paused_or_waiting_for_a_resume_run_is_offered_oldest_first_and_e
                      "expired": False}
 
 
-def test_a_paused_answer_is_marked_expired_only_by_the_fact_the_read_gives_not_by_its_time():
+def test_an_answer_is_marked_expired_only_by_its_state_and_never_by_a_fact_beside_it_or_its_time():
+    """The server judges the clock before a pause and says `expired`; the module reads no clock
+    and no second fact, so a `paused` answer stays offered whatever else it carries."""
     past = "2026-09-30T03:00:00Z"
     world = (("t-a", "r-a", "2026-09-30T08:00:00Z",
               _answer("r-a", "paused", "paused", expires_at=past)),
              ("t-b", "r-b", "2026-09-30T08:01:00Z",
-              _answer("r-b", "paused", "paused", expires_at=past, expired="true")),
+              _answer("r-b", "paused", "paused", expires_at=past, expired=True)),
              ("t-c", "r-c", "2026-09-30T08:02:00Z",
-              _answer("r-c", "paused", "paused", expires_at=past, expired=True)))
+              _answer("r-c", "expired", "expired", expires_at=past)))
     got = _resumable(world, unreadable=())["rows"]
     assert [(row["run_id"], row["expired"]) for row in got] == [
         ("r-a", False), ("r-b", False), ("r-c", True)]
@@ -261,3 +256,101 @@ def test_a_flag_taken_off_names_no_run_and_no_queue_start_whatever_was_marked():
     assert got["body"] == {"enabled": False, "actor": "vasya", "resume_runs": [],
                            "start_task_queue": False}
     assert got["keys"] == ["enabled", "actor", "resume_runs", "start_task_queue"]
+
+
+# -- what became of the runs a consumed flag listed (`L-to-D1-flag-facts.md`, 3.1) -----------------
+
+CONSUMED_AT = RECORDS["consumed"]["consumed"]["at"]
+LISTED = RECORDS["consumed"]["resume_runs"][0]
+#: The name the pump gives the resume it writes for a listed run: `flag-` and 32 lowercase hex.
+FLAG_RESUME = "flag-" + "0123456789abcdef" * 2
+
+
+def _control(control_id: str = FLAG_RESUME, action: str = "resume", at: str = CONSUMED_AT) -> dict:
+    return {"control_id": control_id, "action": action, "recorded_at": at, "actor": "vasya"}
+
+
+def _read_of(state: str = "restart_required", reason: str = "explicit_resume_required", *,
+             grant: str = LISTED["authorization_id"], digest: str = LISTED["authorization_digest"],
+             control: dict | None = None, run: str = LISTED["run_id"]) -> dict:
+    return {"run_id": run, "state": state, "reason_code": reason, "control": control,
+            "authorization": {"authorization_id": grant, "authorization_digest": digest}}
+
+
+def _verdicts(record: dict, answers: list[dict]) -> list[dict]:
+    return run_js("""
+      const rows = flag.runVerdicts(flag.projectFlag(d.record), d.answers);
+      console.log(JSON.stringify({rows, frozen: Object.isFrozen(rows)
+        && rows.every((row) => Object.isFrozen(row))}));
+    """, MODULES, {"record": record, "answers": answers})
+
+
+def _only_verdict(answer: dict | None, record: dict | None = None) -> str:
+    got = _verdicts(record or RECORDS["consumed"], [] if answer is None else [answer])
+    assert got["frozen"] is True
+    (row,) = got["rows"]
+    assert row["run_id"] == LISTED["run_id"]
+    return row["verdict"]
+
+
+@pytest.mark.parametrize("at", [CONSUMED_AT, "2026-09-30T16:41:00Z", "2026-09-30T19:40:00+03:00"])
+def test_a_run_the_flags_own_resume_continued_reads_continued(at):
+    """The name is the flag's alone, its action is resume, and it was recorded at or after the
+    consumption -- compared as instants, so a zone offset that says the same moment counts."""
+    assert _only_verdict(_read_of(control=_control(at=at))) == "continued"
+
+
+def test_a_continued_run_stays_continued_whatever_its_state_became_after():
+    assert _only_verdict(_read_of("expired", "expired", control=_control())) == "continued"
+
+
+@pytest.mark.parametrize("what, answer", [
+    ("a flag-shaped resume recorded before the consumption",
+     _read_of(control=_control(at="2026-09-30T16:39:59Z"))),
+    ("the same, told in another zone", _read_of(control=_control(at="2026-09-30T19:39:59+03:00"))),
+    ("a flag-shaped name that is a pause", _read_of(control=_control(action="pause"))),
+    ("a resume a person wrote", _read_of(control=_control("control-9"))),
+    ("a name that is flag- and 31 digits", _read_of(control=_control("flag-" + "a" * 31))),
+    ("a name that is flag- and upper-case digits", _read_of(control=_control("flag-" + "A" * 32))),
+    ("another grant", _read_of(grant="auth-2")),
+    ("the same grant with another digest", _read_of(digest="sha256:" + "9" * 64)),
+    ("an expired grant", _read_of("expired", "expired")),
+    ("a revoked grant", _read_of("revoked", "revoked")),
+    ("a run that has no grant now", {**_read_of(), "authorization": None}),
+])
+def test_a_run_whose_grant_or_control_or_state_moved_after_the_flag_reads_changed(what, answer):
+    assert _only_verdict(answer) == "changed", what
+
+
+@pytest.mark.parametrize("answer", [
+    _read_of(), _read_of("paused", "paused"), _read_of("running", "action_in_flight"),
+    _read_of("restart_required", "project_not_active")])
+def test_a_run_still_on_the_recorded_grant_and_control_and_not_continued_reads_pending(answer):
+    """It waits for a free slot (the pump resumes one listed run per free slot) or was left when
+    the child stopped: either way it waits for "Continue", and the flag did not fail it."""
+    assert _only_verdict(answer) == "pending"
+
+
+def test_the_recorded_last_control_counts_as_unchanged_and_a_different_one_as_changed():
+    record = copy.deepcopy(RECORDS["consumed"])
+    record["resume_runs"][0]["last_control_id"] = "control-7"
+    assert _only_verdict(_read_of(control=_control("control-7", "pause")), record) == "pending"
+    assert _only_verdict(_read_of(control=_control("control-8", "pause")), record) == "changed"
+    assert _only_verdict(_read_of(), record) == "changed"       # the recorded control is gone
+
+
+def test_a_run_whose_automation_was_not_read_is_said_to_be_unknown_and_never_guessed():
+    assert _only_verdict(None) == "unknown"
+    assert _only_verdict(_read_of(run="run-other")) == "unknown"
+
+
+def test_only_a_consumed_flag_has_verdicts_and_they_follow_the_order_of_its_list():
+    assert _verdicts(RECORDS["standing"], [_read_of()])["rows"] == []
+    assert _verdicts(RECORDS["absent"], [])["rows"] == []
+    assert _verdicts(RECORDS["removed"], [])["rows"] == []
+    record = copy.deepcopy(RECORDS["consumed"])
+    record["resume_runs"].append({**LISTED, "run_id": "run-new", "authorization_id": "auth-2"})
+    got = _verdicts(record, [_read_of(run="run-new", grant="auth-2", control=_control()),
+                             _read_of("expired", "expired")])["rows"]
+    assert got == [{"run_id": "run-old", "verdict": "changed"},
+                   {"run_id": "run-new", "verdict": "continued"}]

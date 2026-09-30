@@ -66,12 +66,17 @@ export const path = Object.freeze({
   projectDocument: (id) => `/command/project/documents/${encodeURIComponent(id)}`,
   // The continue-after flag (spec 4.3.4): one path, read with a GET and written with a POST.
   autoContinue: () => "/command/project/auto-continue",
+  // The project's task queue (spec 4.4.5, lane L's route-canon 4): the read and the put-in are
+  // one path under two verbs, `order` and the withdraw of one run are POST only.
+  queue: () => "/command/queue",
+  queueOrder: () => "/command/queue/order",
+  queueWithdraw: (id) => `/command/queue/${encodeURIComponent(id)}/withdraw`,
 });
 // Closed mutation targets share the same CSRF and refusal door.
 const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
-  "autoContinue"]);
+  "autoContinue", "queue", "queueOrder", "queueWithdraw"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

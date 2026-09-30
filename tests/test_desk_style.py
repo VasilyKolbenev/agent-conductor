@@ -275,6 +275,19 @@ MEASURED['.desk-queue__entry[data-tone="amber"]'] = [
      "color", TEXT_MIN, None)]
 MEASURED[".desk-queue__none"] = [(QUEUE + [E("p", "desk-queue__none")], "color", TEXT_MIN, None)]
 MEASURED[".desk-pult__flag"] = [(QUEUE + [E("p", "desk-pult__flag")], "color", TEXT_MIN, None)]
+ACTS = QUEUE_LIST + [E("li", "desk-queue__entry"), E("div", "desk-queue__acts")]
+MEASURED[".desk-queue__acts button"] = [
+    (ACTS + [E("button")], prop, floor, None)
+    for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
+MEASURED[".desk-queue__notice"] = [
+    (QUEUE + [E("p", "desk-queue__notice")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__hint"] = [(QUEUE + [E("p", "desk-queue__hint")], "color", TEXT_MIN, None)]
+DIALOG = QUEUE + [E("div", "desk-queue__dialog")]
+MEASURED[".desk-queue__dialog"] = [(DIALOG, "border", NONTEXT_MIN, None)]
+MEASURED[".desk-queue__dialog p"] = [(DIALOG + [E("p")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__dialog .desk-queue__note"] = [
+    (DIALOG + [E("div", "desk-queue__choice"), E("p", "desk-queue__note")],
+     "color", TEXT_MIN, None)]
 # -- the console: the "continue after" block -----------------------------------------------------
 FLAG = CONSOLE + [E("details", "desk-flag")]
 MEASURED[".desk-flag__head"] = [
@@ -285,6 +298,8 @@ MEASURED[".desk-flag__runs legend"] = [
     (FLAG + [E("fieldset", "desk-flag__runs"), E("legend")], "color", TEXT_MIN, None)]
 MEASURED[".desk-flag__note"] = [(FLAG + [E("p", "desk-flag__note")], "color", TEXT_MIN, None)]
 MEASURED[".desk-flag__line"] = [(FLAG + [E("p", "desk-flag__line")], "color", TEXT_MIN, None)]
+MEASURED[".desk-flag__verdicts"] = [
+    (FLAG + [E("ul", "desk-flag__verdicts")], "color", TEXT_MIN, None)]
 MEASURED[".desk-shell select"] = [
     (SHELL + [E("select")], prop, floor, None)
     for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]

@@ -17,6 +17,7 @@ import {DESK_STATUS_COPY} from "./desk-status-copy.js";
 import {FLOW_COPY} from "./desk-flow-copy.js";
 import {FEED_COPY} from "./desk-feed-copy.js";
 import {SUMMARY_COPY} from "./desk-summary-copy.js";
+import {DESK_PULT_COPY} from "./desk-pult-copy.js";
 // Interface messages only. User text, identifiers and durable records are data.
 // Each entry carries both locales; parameters are exact named string values.
 const TEXT = {
@@ -172,7 +173,7 @@ const TEXT = {
 };
 
 export const LOCALES = Object.freeze(["en", "ru"]);
-export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY, ...WIZARD_COPY, ...DESK_COPY, ...DESK_STATUS_COPY, ...FLOW_COPY, ...FEED_COPY, ...SUMMARY_COPY})
+export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY, ...WIZARD_COPY, ...DESK_COPY, ...DESK_STATUS_COPY, ...FLOW_COPY, ...FEED_COPY, ...SUMMARY_COPY, ...DESK_PULT_COPY})
   .map(([key, values]) => [key, Object.freeze({en: values[0], ru: values[1]})])));
 
 function parameters(text) {

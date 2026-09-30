@@ -48,6 +48,13 @@ ACTOR = {
            "hint": "Латинские буквы и цифры, затем точки, дефисы или подчёркивания; "
                    "до 128 знаков.", "save": "Сохранить", "cancel": "Отмена"}}
 HEAD = {"en": "Your console", "ru": "Ваш пульт"}
+#: The block the console draws from the queue the test server reads: it has no owner, so its slot
+#: is unavailable for that reason, and nothing is queued. A desk reads the queue whatever mode the
+#: claim names.
+EMPTY_QUEUE = {"en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+                      "Nothing is queued."],
+               "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+                      "В очереди ничего нет."]}
 CHANGE = '#deskPult [data-focus-key="pult:actor-change"]'
 NAME = '#deskPult [data-focus-key="pult:actor-name"]'
 SAVE = '#deskPult [data-focus-key="pult:actor-save"]'
@@ -74,8 +81,9 @@ PULT = """() => {
     save: form ? form.querySelectorAll("button")[0].textContent : null,
     cancel: form ? form.querySelectorAll("button")[1].textContent : null,
     focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
-    block: block ? [...block.querySelectorAll("h3, p, li")].map((node) => node.textContent.trim())
-      : null,
+    block: block ? [...block.querySelectorAll("h3, p, li")].map((node) => (node.tagName === "LI"
+      ? [...node.querySelectorAll(":scope > span")].map((part) => part.textContent).join("").trim()
+      : node.textContent.trim())) : null,
     text: pult.innerText, lang: document.documentElement.lang,
     storage: [localStorage.length, sessionStorage.length], cookie: document.cookie,
     hash: location.hash,
@@ -175,7 +183,7 @@ def test_the_name_is_asked_for_once_kept_in_the_pages_memory_and_nowhere_else(
     page.wait_for_function(SETTLED)
     first = page.evaluate(PULT)
     assert (first["actor"], first["form"], first["state"]) == (said["none"], False, "ready")
-    assert first["head"] == HEAD[language] and first["block"] is None
+    assert first["head"] == HEAD[language] and first["block"] == EMPTY_QUEUE[language]
     page.click(CHANGE)
     form = page.evaluate(PULT)
     assert (form["form"], form["label"], form["input"], form["hintHidden"]) == (
@@ -426,24 +434,26 @@ def _framed(embed: Callable[..., Embedded], rig: Rig, language: str, mode: str) 
 def test_a_framed_desk_whose_claim_says_view_says_the_project_is_not_active(
         embed, rig, language):
     facts = _framed(embed, rig, language, "view")
-    assert facts["block"] == [line for line in QUEUES[3]["text"][language]
-                              if not line.startswith("1.")]
+    lines = [line for line in QUEUES[3]["text"][language] if not line.startswith("1.")]
+    none = EMPTY_QUEUE[language][2]
+    assert facts["block"] == [*lines[:2], none, *lines[2:]]
     assert facts["state"] == "ready" and not RAW.search(facts["text"])
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])
-def test_a_framed_desk_whose_claim_says_active_draws_no_queue_block_and_no_view_line(
+def test_a_framed_desk_whose_claim_says_active_draws_the_queue_and_no_view_line(
         embed, rig, language):
     facts = _framed(embed, rig, language, "active")
-    assert facts["block"] is None and facts["actor"] == ACTOR[language]["none"]
+    assert facts["block"] == EMPTY_QUEUE[language]
+    assert facts["actor"] == ACTOR[language]["none"]
 
 
 def test_a_mode_the_claim_does_not_know_is_no_view_and_no_line(embed, rig):
-    assert _framed(embed, rig, "en", "paused")["block"] is None
+    assert _framed(embed, rig, "en", "paused")["block"] == EMPTY_QUEUE["en"]
 
 
 def test_a_plain_desk_with_no_claim_says_nothing_of_a_view(open_desk):
     window = open_desk("#lang=en")
     window.page.wait_for_function(SETTLED)
-    assert window.page.evaluate(PULT)["block"] is None
+    assert window.page.evaluate(PULT)["block"] == EMPTY_QUEUE["en"]
     assert window.page.evaluate(FACTS)["shell"] == "ready"

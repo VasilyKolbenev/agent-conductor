@@ -46,7 +46,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -79,10 +79,19 @@ PERMITTED_IMPORTS = {
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
                           "./desk-feed.js", "./desk-summary.js", "./desk-closing.js",
                           "./desk-pult.js",
-                          "./desk-flag-model.js", "./desk-flag.js"}),
+                          "./desk-flag-model.js", "./desk-flag.js", "./desk-queue.js",
+                          "./desk-pult-flow.js"}),
+    #: What a press on the console's queue block means: a pure flow over the door it is handed and
+    #: the queue's model. It names no route and no wire word, and imports no door itself.
+    "desk-pult-flow.js": frozenset({"./desk-queue-model.js"}),
+    #: The words of the console's queue controls: a frozen catalogue that imports nothing.
+    "desk-pult-copy.js": frozenset(),
     #: The door of the continue-after flag: the one read and the one write of it, through the
     #: transport's own doors, judged by the flag's model. It names one target and opens no door.
     "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
+    #: The door of the project's task queue: its reads and writes, through the transport's own
+    #: doors, judged by the queue's model. It opens no door of its own.
+    "desk-queue.js": frozenset({"./desk-transport.js", "./desk-queue-model.js"}),
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
@@ -99,7 +108,8 @@ PERMITTED_IMPORTS = {
     #: says the words through the catalogue and the times through the time module, and
     #: may import no store, no transport and no other screen -- a press is a call to its
     #: host, and the queue it draws is a read the boot module already judged.
-    "desk-pult.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js"}),
+    "desk-pult.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js",
+                              "./desk-queue-model.js"}),
     #: The desk's own words: a frozen catalogue that imports nothing, spread into the one
     #: table by `studio-i18n.js`.
     "desk-copy.js": frozenset(),

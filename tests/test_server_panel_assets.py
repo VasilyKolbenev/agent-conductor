@@ -130,6 +130,11 @@ ASSETS = {
     "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
     # The one read and the one write of that flag.
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
+    # The door of the project's task queue.
+    "/panel/desk-queue.js": "text/javascript; charset=utf-8",
+    # What a press on the console's queue block means, and the words of its controls.
+    "/panel/desk-pult-flow.js": "text/javascript; charset=utf-8",
+    "/panel/desk-pult-copy.js": "text/javascript; charset=utf-8",
     # The reads that say whether a task was closed.
     "/panel/desk-closing.js": "text/javascript; charset=utf-8",
     # The words of the summary.
@@ -321,6 +326,19 @@ REFUSED = (
     "/panel/desk-flag.json", "/panel/desk-flag.js?v=1", "/panel/desk-flag.js.map",
     "/panel/../desk-flag.js", "/panel/%2e%2e/desk-flag.js", "/panel/DESK-FLAG.JS",
     "/panel/Desk-flag.js", "/panel/desk-flag.js/", "/panel/desk-flag.js%00.txt",
+    # The queue's door, the same nine shapes.
+    "/panel/desk-queue.json", "/panel/desk-queue.js?v=1", "/panel/desk-queue.js.map",
+    "/panel/../desk-queue.js", "/panel/%2e%2e/desk-queue.js", "/panel/DESK-QUEUE.JS",
+    "/panel/Desk-queue.js", "/panel/desk-queue.js/", "/panel/desk-queue.js%00.txt",
+    # The console's flow and its words, the same nine shapes each.
+    "/panel/desk-pult-flow.json", "/panel/desk-pult-flow.js?v=1", "/panel/desk-pult-flow.js.map",
+    "/panel/../desk-pult-flow.js", "/panel/%2e%2e/desk-pult-flow.js",
+    "/panel/DESK-PULT-FLOW.JS", "/panel/Desk-pult-flow.js", "/panel/desk-pult-flow.js/",
+    "/panel/desk-pult-flow.js%00.txt",
+    "/panel/desk-pult-copy.json", "/panel/desk-pult-copy.js?v=1", "/panel/desk-pult-copy.js.map",
+    "/panel/../desk-pult-copy.js", "/panel/%2e%2e/desk-pult-copy.js",
+    "/panel/DESK-PULT-COPY.JS", "/panel/Desk-pult-copy.js", "/panel/desk-pult-copy.js/",
+    "/panel/desk-pult-copy.js%00.txt",
     # The feed's model, the same nine shapes.
     "/panel/desk-feed-model.json", "/panel/desk-feed-model.js?v=1",
     "/panel/desk-feed-model.js.map", "/panel/../desk-feed-model.js",

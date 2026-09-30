@@ -85,6 +85,10 @@ BLOCK = """() => {
         mark: mark ? mark.checked : null};
     }),
     line: text(block.querySelector("[data-flag-line]")),
+    verdicts: [...block.querySelectorAll("[data-verdict-run]")].map((row) => ({
+      run: row.dataset.verdictRun, verdict: row.dataset.flagVerdict,
+      title: text(row.querySelector("[data-flag-title]")),
+      note: text(row.querySelector("[data-flag-note]"))})),
     save: control("flag:save") ? [text(control("flag:save")), control("flag:save").disabled] : null,
     clear: control("flag:clear") ? [text(control("flag:clear")), control("flag:clear").disabled]
       : null,
@@ -99,12 +103,12 @@ STORAGE = "() => [localStorage.length, sessionStorage.length]"
 FRAMED = "#project={project}&embed=hub&lang={language}"
 
 
-def _open(embed, rig, language, *, server=None, automations=AUTOMATIONS):
+def _open(embed, rig, language, *, server=None, automations=AUTOMATIONS, before=None):
     """A framed desk on the seeded project with the flag door and the automation reads given."""
     server = server if server is not None else fake.FlagServer()
     window = embed(FRAMED.format(project=PROJECT, language=language),
                    _answering(_claim(hub_origin=rig.host_origin)),
-                   flag=server, automations=automations)
+                   flag=server, automations=automations, before=before)
     window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
     return window, server
 
@@ -202,6 +206,51 @@ def test_a_consumed_flag_reads_executed_and_its_switch_is_off(embed, rig, langua
     facts = window.frame.evaluate(BLOCK)
     assert (facts["enabled"], facts["line"]) == (False, words["consumed"])
     assert [row["mark"] for row in facts["rows"]] == [None, False, False]
+
+
+#: What a consumed flag says of a listed run that changed after it (spec 5.8, 4.3.4).
+CHANGED = {"en": "Flag not applied: the run changed after it",
+           "ru": "Флаг не применён: после него запуск изменился"}
+#: The three listed runs of a consumed flag: one the flag's own resume continued, one that a
+#: person paused after the flag, one that waits where the flag left it.
+VERDICT_READS = {
+    "run-check": fake.automation("run-check", "restart_required", "explicit_resume_required",
+                                 bound=True, current=fake.control(fake.FLAG_RESUME)),
+    "run-docs": fake.automation("run-docs", "paused", "paused", bound=True,
+                                current=fake.control("control-9", "pause")),
+    "run-fix-new": fake.automation("run-fix-new", "restart_required",
+                                   "explicit_resume_required", bound=True),
+}
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_a_consumed_flag_says_which_listed_run_changed_after_it_and_says_nothing_of_the_rest(
+        embed, rig, language):
+    server = fake.FlagServer(record=fake.consumed("vasya", LISTED))
+    window, _server = _open(embed, rig, language, server=server, automations=VERDICT_READS)
+    facts = window.frame.evaluate(BLOCK)
+    assert facts["verdicts"] == [{"run": "run-docs", "verdict": "changed",
+                                  "title": TITLES["run-docs"], "note": CHANGED[language]}]
+    assert not RAW.search(window.frame.evaluate(CONSOLE_TEXT)) and window.problems == []
+
+
+@pytest.mark.parametrize("record", [
+    fake.standing("vasya", LISTED), fake.record()], ids=["a flag that stands", "no flag"])
+def test_a_flag_that_was_not_consumed_says_nothing_of_the_runs(embed, rig, record):
+    window, _server = _open(embed, rig, "en", server=fake.FlagServer(record=record),
+                            automations=VERDICT_READS)
+    assert window.frame.evaluate(BLOCK)["verdicts"] == []
+
+
+def test_a_listed_run_whose_automation_was_not_read_is_not_said_to_have_changed(embed, rig):
+    """The read of `run-docs` fails (the page answers 500), so the desk holds nothing of it."""
+    server = fake.FlagServer(record=fake.consumed("vasya", LISTED))
+    reads = {key: value for key, value in VERDICT_READS.items() if key != "run-docs"}
+    window, _server = _open(embed, rig, "en", server=server, automations=reads,
+                            before=lambda page: page.route(
+                                "**/command/runs/run-docs/automation",
+                                lambda route: route.fulfill(status=500, body="{}")))
+    assert window.frame.evaluate(BLOCK)["verdicts"] == []
 
 
 def test_a_refused_save_says_so_in_place_and_keeps_the_marks(embed, rig):

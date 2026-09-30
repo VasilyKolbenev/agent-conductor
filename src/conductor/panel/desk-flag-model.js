@@ -9,9 +9,11 @@
 // the desk then draws no block rather than one that might say what the server did not.
 //
 // What the desk cannot know is left unsaid here. That a flag was handed to a transition and its
-// project died before consuming it, and that a run changed after the flag so the flag did not
-// apply, are facts of the hub and of the queue pump; the flag file carries neither, so no
-// function below infers them.
+// project died before consuming it is a fact of the hub, and the flag file does not carry it, so
+// no function below infers it. That a listed run changed after the flag, so the flag did not
+// apply, is derived (`runVerdicts`) from what the flag recorded and what the run's automation
+// read says now, by the table lane L fixed (spec 5.8, 4.3.4): the pump keeps no record of its own
+// verdict, but the name of the resume it writes and its time are facts of the journal.
 
 const RECORD_KEYS = Object.freeze(["schema_version", "flag_id", "revision", "enabled", "actor",
   "set_at", "resume_runs", "start_task_queue", "consumed"]);
@@ -69,17 +71,14 @@ export function flagLine(flag) {
 
 //: Whether a run's automation read says its grant can be continued: paused, or waiting for an
 //: explicit resume because the project started again or is not active. An expired grant is told
-//: apart, not folded into "no": it has no mark and says why (spec 5.8). The read says so in two
-//: ways. It gives the state `expired` over a wait. It judges a pause before it looks at the
-//: expiry, so a paused grant that expired still reads `paused`; this module reads no clock, and
-//: only the fact `expired: true` beside the state tells it apart. A read that does not give that
-//: fact leaves an expired paused grant offered, and the server then refuses the save.
+//: apart, not folded into "no": it has no mark and says why (spec 5.8). The state says so and
+//: nothing else does: the read judges the clock before a pause, so a paused grant that ran out
+//: reads `expired` (lane L, `policy_view._state`), and this module reads no clock.
 function continuable(answer) {
   if (answer.state === "expired") return "expired";
   const waits = answer.state === "restart_required"
     && RESUMABLE_REASONS.includes(answer.reason_code);
-  if (answer.state !== "paused" && !waits) return null;
-  return answer.expired === true ? "expired" : "resumable";
+  return answer.state === "paused" || waits ? "resumable" : null;
 }
 
 //: The runs the block may list, from what the desk already holds: the automation read of the
@@ -102,6 +101,55 @@ export function resumableRuns({tasks, runs, automation}) {
   const order = (a, b) => (a.created_at === b.created_at ? (a.run_id < b.run_id ? -1 : 1)
     : (a.created_at < b.created_at ? -1 : 1));
   return Object.freeze(rows.sort(order));
+}
+
+// -- what became of the runs a consumed flag listed (spec 5.8; the table of lane L) ---------------
+
+//: The name of the resume the pump writes for a listed run: `flag-` and 32 lowercase hex digits,
+//: one name per (flag, run). The doors a person's control id enters by refuse this shape, so a
+//: control with it is the flag's own.
+const FLAG_RESUME = /^flag-[0-9a-f]{32}$/;
+const instantMs = (text) => (typeof text === "string" ? Date.parse(text) : Number.NaN);
+
+//: Whether the run's current control is the resume the flag wrote for THIS consumption: the flag's
+//: name, the action resume, and recorded no earlier than the consumption -- compared as instants,
+//: so a zone offset that names the same moment counts, and a value that is no instant never does.
+function flagResumed(control, consumed) {
+  if (!isPlain(control) || control.action !== "resume" || !FLAG_RESUME.test(control.control_id)) {
+    return false;
+  }
+  return instantMs(control.recorded_at) >= instantMs(consumed.at);
+}
+
+//: Whether the run is still on what the flag recorded: the same grant (id and digest), the same
+//: last control (none and none is the same), and a grant that is neither expired nor revoked.
+function unchanged(row, read) {
+  const grant = isPlain(read.authorization) ? read.authorization : {};
+  const control = isPlain(read.control) ? read.control.control_id ?? null : null;
+  return grant.authorization_id === row.authorization_id
+    && grant.authorization_digest === row.authorization_digest && control === row.last_control_id
+    && read.state !== "expired" && read.state !== "revoked";
+}
+
+//: For each run a CONSUMED flag listed, in the order of its list, what its automation read says of
+//: it now, by the first row that fits: `continued` (the flag's own resume stands), `changed`
+//: (the grant, the last control or the state moved after the flag), `pending` (nothing moved and it
+//: was not continued: it waits for a free slot or was left when the child stopped, and waits for
+//: "Continue"), or `unknown` when its read is not among `answers` -- never a guess. A flag that
+//: was not consumed has no verdicts. The residue is named, not hidden: a run the flag continued and
+//: a person then paused or resumed again reads `changed`, because the journal's history is not read.
+export function runVerdicts(flag, answers) {
+  if (flag.consumed === null) return Object.freeze([]);
+  const reads = Array.isArray(answers) ? answers.filter(isPlain) : [];
+  return Object.freeze(flag.resume_runs.map((row) => {
+    const read = reads.find((one) => one.run_id === row.run_id);
+    let verdict = "unknown";
+    if (read !== undefined) {
+      if (flagResumed(read.control, flag.consumed)) verdict = "continued";
+      else verdict = unchanged(row, read) ? "pending" : "changed";
+    }
+    return Object.freeze({run_id: row.run_id, verdict});
+  }));
 }
 
 //: The runs the block opens with marked: those a standing flag already lists, that can still be

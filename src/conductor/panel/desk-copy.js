@@ -88,6 +88,8 @@ export const DESK_COPY = Object.freeze({
   "desk.flag.standing": ["Flag set since {time} · {actor}", "Флаг стоит с {time} · {actor}"],
   "desk.flag.consumed": ["Flag executed on activation {time} · {actor}",
     "Флаг исполнен при активации {time} · {actor}"],
+  "desk.flag.changed": ["Flag not applied: the run changed after it",
+    "Флаг не применён: после него запуск изменился"],
   "desk.flag.need_name": ["Give your name above to record the flag in it.",
     "Укажите имя выше, чтобы записать флаг от вашего имени."],
   "desk.flag.save": ["Save", "Сохранить"],

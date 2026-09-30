@@ -19,6 +19,7 @@
 import {element} from "./command-view.js";
 import {MESSAGES, localize} from "./studio-i18n.js";
 import {instantText} from "./desk-time.js";
+import {releaseOffer, skipOffer} from "./desk-queue-model.js";
 
 //: What each state of a queue record says of itself, and the tone that asks for a person.
 const LEADS = Object.freeze({preauthorized: "desk.pult.entry_start",
@@ -87,14 +88,24 @@ function holderName(view, runId) {
   return task !== undefined && !task.unreadable && task.title ? task.title : runId;
 }
 
-//: The first row: a project in `view` cannot start anything, so it says so; otherwise the slot.
+//: The reason a slot gives for being stopped or unavailable, in the desk's words; a reason the
+//: desk has no words for is left unsaid, never shown as the machine's word.
+function whyText(view, reason) {
+  const key = `desk_pult.why_${reason}`;
+  return reason !== null && Object.hasOwn(MESSAGES, key) ? localize(view, key) : null;
+}
+
+//: The first row: a project in `view` cannot start anything, so it says so; otherwise the state of
+//: the slot, and for a holder that stopped or a slot nobody can use, why.
 function firstRow(view) {
   if (view.mode === "view") return localize(view, "desk.pult.inactive");
-  const {state, run_id: runId} = view.queue.slot;
-  if (Object.hasOwn(SLOTS, state)) {
-    return localize(view, SLOTS[state], {task: holderName(view, runId)});
-  }
-  return localize(view, state === "free" ? "desk.pult.slot_free" : "desk.pult.slot_unavailable");
+  const {state, run_id: runId, reason_code: reason} = view.queue.slot;
+  if (state === "free") return localize(view, "desk.pult.slot_free");
+  const line = Object.hasOwn(SLOTS, state)
+    ? localize(view, SLOTS[state], {task: holderName(view, runId)})
+    : localize(view, "desk.pult.slot_unavailable");
+  const why = state === "busy" ? null : whyText(view, reason);
+  return why === null ? line : `${line}: ${why}`;
 }
 
 //: "since when" for a record: a wait for a person is dated by the server's `state_since` (none:
@@ -111,7 +122,41 @@ function tail(view, entry) {
     ? localize(view, "desk.pult.entry_queued", {time: queued.short}) : null;
 }
 
-function entryRow(view, entry) {
+//: One control of an entry. A press is a call to the boot module's handler; while a write is out
+//: (`view.pult.busy`) no control of the block can be pressed, and a step the entry cannot take
+//: (up at the head, down at the tail) is not offered. Such a control says it is unavailable
+//: (`aria-disabled`) and does nothing, and is NOT `disabled`: a control that is disabled cannot
+//: hold the keyboard, and the press that put the write out must not lose its place in the redraw.
+function control(view, {key, glyph, words, off, press}) {
+  const button = element("button", {type: "button", "data-focus-key": key,
+    "aria-label": localize(view, words), text: glyph ?? localize(view, words)});
+  if (off || view.pult?.busy) {
+    button.setAttribute("aria-disabled", "true");
+    button.classList.add("desk-queue__off");
+  } else button.addEventListener("click", press);
+  return button;
+}
+
+//: The controls of an entry: a step up, a step down, and "Remove from the queue".
+function actions(view, handlers, entry) {
+  const last = view.queue.entries.length;
+  const id = entry.run_id;
+  const buttons = [
+    control(view, {key: `queue:up:${id}`, glyph: "↑", words: "desk_pult.up",
+      off: entry.position === 1, press: () => handlers.orderEntry(id, -1)}),
+    control(view, {key: `queue:down:${id}`, glyph: "↓", words: "desk_pult.down",
+      off: entry.position === last, press: () => handlers.orderEntry(id, 1)}),
+    control(view, {key: `queue:withdraw:${id}`, glyph: null, words: "desk_pult.withdraw",
+      off: false, press: () => handlers.withdrawEntry(id)})];
+  if (entry.state === "confirmation_required") {
+    buttons.push(control(view, {key: `queue:confirm:${id}`, glyph: null,
+      words: "desk_pult.confirm", off: view.actor === null,
+      press: () => handlers.openConfirm(id)}));
+  }
+  return element("div", {className: "desk-queue__acts"}, buttons);
+}
+
+function entryRow(view, handlers, entry) {
   const title = entry.title === "" ? entry.run_id : entry.title;
   const said = [localize(view, LEADS[entry.state], {position: String(entry.position), title})];
   if (entry.state !== "preauthorized" && entry.reason_code !== null) {
@@ -119,28 +164,147 @@ function entryRow(view, entry) {
   }
   const since = tail(view, entry);
   if (since !== null) said.push(" · ", since);
+  const nameHint = entry.state === "confirmation_required" && view.actor === null
+    ? [element("span", {className: "desk-queue__hint",
+      text: localize(view, "desk_pult.confirm_need_name")})] : [];
+  const dialog = view.pult?.dialog;
+  const card = dialog?.kind === "confirm" && dialog.run_id === entry.run_id
+    ? [confirmDialog(view, handlers, entry, dialog)] : [];
   return element("li", {className: "desk-queue__entry", "data-run-id": entry.run_id,
     "data-queue-state": entry.state,
     "data-tone": entry.state === "confirmation_required" ? "amber" : null},
-  said.map((part) => element("span", {text: part})));
+  [...said.map((part) => element("span", {text: part})), actions(view, handlers, entry),
+    ...nameHint, ...card]);
 }
 
-function entryList(view) {
+function confirmDialog(view, handlers, entry, dialog) {
+  const terms = dialog.preview;
+  const lines = terms === null ? [] : [
+    ["desk_pult.confirm_actions", {count: String(terms.max_actions)}],
+    ["desk_pult.confirm_time", {seconds: String(terms.max_total_task_seconds)}],
+    ["desk_pult.confirm_window", {seconds: String(terms.duration_seconds)}]]
+    .map(([key, args]) => element("p", {text: localize(view, key, args)}));
+  return element("div", {className: "desk-queue__dialog", role: "group",
+    "data-pult-dialog": "confirm"}, [
+    element("p", {className: "desk-queue__dialog-head", text: localize(view,
+      "desk_pult.confirm")}),
+    element("p", {text: localize(view, "desk_pult.confirm_text", {task: entry.title})}),
+    ...lines,
+    control(view, {key: `queue:confirm:accept:${entry.run_id}`, glyph: null,
+      words: "desk_pult.confirm_press", off: terms === null,
+      press: () => handlers.confirm()}),
+    control(view, {key: `queue:confirm:cancel:${entry.run_id}`, glyph: null,
+      words: "desk_pult.cancel", off: false, press: () => handlers.closeDialog()})]);
+}
+
+function entryList(view, handlers) {
   const {entries} = view.queue;
   return entries.length === 0
     ? element("p", {className: "desk-queue__none", text: localize(view, "desk.pult.queue_empty")})
     : element("ul", {className: "desk-queue__list"},
-      entries.map((entry) => entryRow(view, entry)));
+      entries.map((entry) => entryRow(view, handlers, entry)));
+}
+
+//: What the last write left under the block: a refusal in the words of its code, or that a change
+//: could not be confirmed. Nothing is drawn when the last write left nothing to say.
+function noticeLine(view) {
+  const notice = view.pult?.notice ?? null;
+  if (notice === null) return [];
+  let key = "desk_pult.unconfirmed";
+  let text = null;
+  if (notice.kind === "refused") {
+    const code = `error.${notice.code}`;
+    key = Object.hasOwn(MESSAGES, code) ? code : "error.store_error";
+  } else if (notice.kind === "partial") {
+    const code = `error.${notice.code}`;
+    const reason = localize(view, Object.hasOwn(MESSAGES, code) ? code : "error.store_error");
+    text = localize(view, "desk_pult.skip_partial", {
+      task: holderName(view, notice.run_id), reason});
+  }
+  return [element("p", {className: "desk-queue__notice", role: "status",
+    "data-pult-notice": "", text: text ?? localize(view, key)})];
+}
+
+//: One choice of a dialog: the button, and what it does said under it.
+function choice(view, {key, words, note, press}) {
+  return element("div", {className: "desk-queue__choice"}, [
+    control(view, {key, glyph: null, words, off: false, press}),
+    element("p", {className: "desk-queue__note", text: localize(view, note)})]);
+}
+
+//: The dialog of freeing the slot: two choices, equal, none of them taken for the person. A run
+//: that needs a correction the desk cannot make says so before the choices.
+function releaseDialog(view, handlers, offer) {
+  const feedback = offer.reason === "feedback_required"
+    ? [element("p", {className: "desk-queue__note", text: localize(view, "desk_pult.release_feedback")})]
+    : [];
+  return element("div", {className: "desk-queue__dialog", role: "group",
+    "aria-labelledby": "deskReleaseHead", "data-pult-dialog": "release"}, [
+    element("p", {className: "desk-queue__dialog-head", id: "deskReleaseHead",
+      text: localize(view, "desk_pult.release")}),
+    element("p", {text: localize(view, "desk_pult.release_text",
+      {task: holderName(view, offer.run_id)})}),
+    ...feedback,
+    choice(view, {key: "queue:release:pause", words: "desk_pult.release_pause",
+      note: "desk_pult.release_pause_note", press: () => handlers.release("pause")}),
+    choice(view, {key: "queue:release:revoke", words: "desk_pult.release_revoke",
+      note: "desk_pult.release_revoke_note", press: () => handlers.release("revoke")}),
+    element("div", {className: "desk-queue__acts"}, [control(view, {key: "queue:release:cancel",
+      glyph: null, words: "desk_pult.cancel", off: false, press: () => handlers.closeDialog()})])]);
+}
+
+function skipDialog(view, handlers, offer) {
+  const dialog = view.pult.dialog;
+  const when = dialog.expires_at === null ? null : instantText(view.locale, dialog.expires_at);
+  const windowLine = when === null || !when.known ? [] : [element("p", {text: localize(view,
+    "desk_pult.skip_window", {time: when.short})})];
+  return element("div", {className: "desk-queue__dialog", role: "group",
+    "aria-labelledby": "deskSkipHead", "data-pult-dialog": "skip"}, [
+    element("p", {className: "desk-queue__dialog-head", id: "deskSkipHead",
+      text: localize(view, "desk_pult.skip")}),
+    element("p", {text: localize(view, "desk_pult.skip_text",
+      {task: holderName(view, offer.run_id)})}),
+    ...windowLine,
+    control(view, {key: "queue:skip:confirm", glyph: null, words: "desk_pult.skip_confirm",
+      off: when === null, press: () => handlers.skip()}),
+    control(view, {key: "queue:skip:cancel", glyph: null, words: "desk_pult.cancel",
+      off: false, press: () => handlers.closeDialog()})]);
+}
+
+//: What the console offers for a holder that stopped: "Free the slot" once a name is given (or the
+//: sentence that says a name is needed), and the dialog it opens.
+function slotActions(view, handlers) {
+  const dialog = view.pult?.dialog ?? null;
+  if (dialog?.kind === "skip" && view.queue.slot.run_id !== dialog.run_id) {
+    return [skipDialog(view, handlers, {run_id: dialog.run_id})];
+  }
+  const offer = releaseOffer(view.queue, view) ?? skipOffer(view.queue, view);
+  if (offer === null) return [];
+  const skip = skipOffer(view.queue, view) !== null;
+  if (!offer.named) {
+    return [element("p", {className: "desk-queue__hint", "data-pult-slot-hint": "",
+      text: localize(view, skip ? "desk_pult.skip_need_name" : "desk_pult.release_need_name")})];
+  }
+  const kind = skip ? "skip" : "release";
+  const open = dialog !== null && dialog.kind === kind && dialog.run_id === offer.run_id;
+  const button = control(view, {key: `queue:${kind}`, glyph: null, words: `desk_pult.${kind}`,
+    off: false, press: () => skip ? handlers.openSkip() : handlers.openRelease()});
+  button.setAttribute("aria-expanded", String(open));
+  return [element("div", {className: "desk-queue__acts"}, [button]),
+    ...(open ? [skip ? skipDialog(view, handlers, offer) : releaseDialog(view, handlers, offer)]
+      : [])];
 }
 
 //: The block is drawn when the queue was read, and in `view` even when it was not: the mode is
 //: the server's word, and it says the project cannot start what the queue holds.
-function queueBlock(view) {
+function queueBlock(view, handlers) {
   if (view.queue === null && view.mode !== "view") return [];
   const kids = [
     element("h3", {className: "desk-queue__head", text: localize(view, "desk.pult.queue")}),
     element("p", {className: "desk-queue__now", text: firstRow(view)})];
-  if (view.queue !== null) kids.push(entryList(view));
+  if (view.queue !== null) {
+    kids.push(...slotActions(view, handlers), entryList(view, handlers), ...noticeLine(view));
+  }
   if (view.mode === "view") {
     kids.push(element("p", {className: "desk-pult__flag", text: localize(view, "desk.pult.flag")}));
   }
@@ -195,6 +359,19 @@ function lineOfFlag(view) {
   return [element("p", {className: "desk-flag__line", "data-flag-line": "", text: words})];
 }
 
+//: A run the consumed flag listed that changed after it, said once: the flag was not applied to
+//: it (spec 5.8). A run the flag continued or one that waits says nothing, and a run whose
+//: automation was not read is never said to have changed.
+function verdictLines(view) {
+  const changed = view.flag.verdicts.filter((row) => row.verdict === "changed");
+  if (changed.length === 0) return [];
+  return [element("ul", {className: "desk-flag__verdicts"}, changed.map((row) =>
+    element("li", {"data-verdict-run": row.run_id, "data-flag-verdict": row.verdict}, [
+      element("span", {"data-flag-title": "", text: holderName(view, row.run_id)}),
+      element("span", {className: "desk-flag__note", "data-flag-note": "",
+        text: localize(view, "desk.flag.changed")})])))];
+}
+
 //: A refusal, or an unconfirmed save, said in place: the catalogue's words for the code.
 function hintText(view) {
   const {refused} = view.flag;
@@ -234,7 +411,7 @@ function flagBlock(view, handlers) {
     check(shown, handlers, {key: "flag:queue", label: localize(view, "desk.flag.queue"),
       on: flag.form.queue, change: (queue) => ({queue})}),
     element("p", {className: "desk-flag__note", text: localize(view, "desk.flag.queue_note")}),
-    ...lineOfFlag(view), hint, flagButtons(view, handlers),
+    ...lineOfFlag(view), ...verdictLines(view), hint, flagButtons(view, handlers),
     element("details", {className: "desk-flag__info"}, [
       element("summary", {"data-focus-key": "flag:info", "aria-label": localize(view,
         "desk.flag.info"), text: "ⓘ"}),
@@ -252,5 +429,5 @@ export function mountPult(mount, view, handlers) {
   mount.replaceChildren(
     element("h2", {className: "desk-pult__head", text: localize(view, "desk.pult.label")}),
     view.editing ? actorForm(view, handlers) : actorRow(view, handlers),
-    ...queueBlock(view), ...flagBlock(view, handlers));
+    ...queueBlock(view, handlers), ...flagBlock(view, handlers));
 }

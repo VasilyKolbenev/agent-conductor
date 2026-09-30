@@ -388,6 +388,25 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-queue__entry{padding:0 4px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
 .desk-queue__entry[data-tone="amber"]{color:var(--amber)}
 .desk-queue__none{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
+/* The controls of an entry: two steps and "Remove from the queue". An unavailable control (the end
+   it cannot step past, or a write in flight) says so with aria-disabled, is dimmed by a class of
+   its own, and is not `disabled`, so it keeps the keyboard. */
+.desk-queue__acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.desk-queue__acts button{min-width:44px;padding:0 12px;border:1px solid var(--faint);
+  border-radius:8px;background:var(--panel);color:var(--ink);font-size:12.5px}
+.desk-queue__acts .desk-queue__off{opacity:.5;cursor:default}
+.desk-queue__notice{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--amber);
+  overflow-wrap:anywhere}
+.desk-queue__hint{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted);
+  overflow-wrap:anywhere}
+/* The dialog of freeing the slot: a panel under the slot line with two equal choices, each with
+   what it does said under it, and a way out. */
+.desk-queue__dialog{margin:8px 0 0;padding:10px 12px;border:1px solid var(--faint);
+  border-radius:10px;background:var(--panel)}
+.desk-queue__dialog p{margin:4px 0;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__dialog-head{font-weight:700}
+.desk-queue__dialog .desk-queue__note{font-size:12px;color:var(--muted)}
+.desk-queue__choice{margin:8px 0 0}
 .desk-pult__flag{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
 
 /* The "continue after" block: closed until a person opens it, then a switch, the runs whose
@@ -407,6 +426,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-flag__runs li{font-size:12.5px;overflow-wrap:anywhere}
 .desk-flag__note{margin:4px 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .desk-flag__line{margin:8px 0;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-flag__verdicts{display:flex;flex-direction:column;gap:4px;margin:8px 0;padding:0;
+  list-style:none;font-size:12.5px;color:var(--amber);overflow-wrap:anywhere}
 .desk-flag__info{margin:8px 0 0}
 
 @media (max-width:900px){
