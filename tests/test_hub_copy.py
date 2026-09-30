@@ -9,8 +9,9 @@ every `state_code` of 4.1.5 has one clause in each language, one per name (a con
 checked before a route answers and inside a long step carries one name and one word); no message
 shows a raw code; the parameters of a message are the ones its two languages share; and the strings
 the spec gives stand as the spec gives them. The lists are typed here as the spec's tables. Once
-`conductor.hub.refusals` exists (lane H), the catalogue is held equal to it too, and until then that
-comparison says nothing.
+`conductor.hub.refusals` exists (lane H), the route codes are held equal to its `HUB_ERROR_STATUS`
+and no code of either of its lists may lie outside the table (the operation codes are held only
+within it, not equal to it); until then that one test is skipped, and says why.
 """
 from __future__ import annotations
 
@@ -181,10 +182,10 @@ def _hub_refusals():
         return None
 
 
-def test_the_catalogue_is_held_equal_to_the_hubs_own_lists_once_lane_h_writes_them():
+def test_the_hub_route_codes_equal_the_spec_table_and_no_hub_code_lies_outside_the_table():
     refusals = _hub_refusals()
     if refusals is None:
-        return
+        pytest.skip("conductor.hub.refusals not written yet (lane H)")
     named = set(refusals.HUB_ERROR_STATUS) | set(refusals.OPERATION_ERROR_CODES)
     assert named <= set(ALL_CODES), sorted(named - set(ALL_CODES))
     assert set(ROUTE_CODES) == set(refusals.HUB_ERROR_STATUS)
