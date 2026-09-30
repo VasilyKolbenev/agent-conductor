@@ -223,6 +223,22 @@ def test_a_job_policy_that_is_not_one_of_the_three_is_a_fault_of_the_caller(tmp_
         _start(_spawner(tmp_path, Launches(), job_policy=lambda: "maybe"))
 
 
+def test_a_log_that_cannot_be_rotated_because_another_process_holds_it_is_start_failed(
+        tmp_path, monkeypatch):
+    launches = Launches()
+    spawner = _spawner(tmp_path, launches)
+    _start(spawner)
+
+    def held(source, target):
+        raise PermissionError(13, "the log is held by the previous child")
+
+    monkeypatch.setattr(os, "replace", held)
+    with pytest.raises(spawn.SpawnRefused) as caught:
+        _start(spawner)
+    assert caught.value.code == "start_failed" and "log" in caught.value.detail
+    assert len(launches.calls) == 1, "a child was started without a log of its own"
+
+
 def test_an_operating_system_that_cannot_start_the_process_is_start_failed(tmp_path):
     def cannot(argv, **options):
         raise FileNotFoundError("no interpreter")

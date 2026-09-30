@@ -151,7 +151,11 @@ class Spawner:
                           root=root, port=port, mode=mode, transition=transition,
                           auto_continue=auto_continue)
         extra = self._breakaway_flags()
-        log = _rotate(log_path(self._home, project_id))
+        try:
+            log = _rotate(log_path(self._home, project_id))
+        except OSError as error:
+            raise SpawnRefused("start_failed", f"the log of the child could not be made: {error}"
+                               ) from error
         options = {"stdin": subprocess.PIPE, "stdout": subprocess.DEVNULL, "stderr": log,
                    "cwd": str(self._home), "close_fds": True,
                    "env": {**self._environ, "CONDUCT_HOME": str(self._home)},
