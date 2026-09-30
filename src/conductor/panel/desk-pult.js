@@ -9,7 +9,8 @@
 // name (spec 5.2). It is asked for once and held in the boot module's state, in the page's
 // memory: never in storage, in the address or in a request. The boot module owns the rule that
 // says what a name may be; the form only asks it and shows the answer, in place, so the words
-// typed are never lost to a refusal.
+// typed are never lost to a refusal. The words typed and not yet saved are the boot module's
+// too (`view.draft`): every redraw rebuilds the form, and it is drawn from them.
 //
 // A row of the queue is up to three runs of words -- what the record is, why, and since when --
 // each a message of its own; the separators between them are punctuation and belong to no
@@ -40,13 +41,15 @@ function actorRow(view, handlers) {
 }
 
 //: The form that asks for the name. A refused name is said in place and the typed words stay
-//: where they are; a name that was typed and not saved is carried across a redraw by the boot
-//: module's focus net, through the `data-focus-key` of the input.
+//: where they are. The field is drawn from the words typed and not saved (`view.draft`, which
+//: every keystroke hands to the boot module), else from the name that stands, else empty: a
+//: field the person emptied stays empty, and a redraw that rebuilds the form never takes the
+//: words back, whether the field had the keyboard or not.
 function actorForm(view, handlers) {
   const input = element("input", {type: "text", name: "actor", maxlength: "128",
     autocomplete: "off", spellcheck: "false", "data-focus-key": "pult:actor-name",
     "aria-describedby": "deskActorHint"});
-  input.value = view.actor ?? "";
+  input.value = view.draft ?? view.actor ?? "";
   const hint = element("p", {className: "desk-pult__hint", id: "deskActorHint", role: "alert",
     hidden: "", text: localize(view, "desk.pult.actor_hint")});
   const cancel = element("button", {type: "button", "data-focus-key": "pult:actor-cancel",
@@ -64,7 +67,10 @@ function actorForm(view, handlers) {
     hint.hidden = accepted;
     if (!accepted) input.focus();
   });
-  input.addEventListener("input", () => { hint.hidden = true; });
+  input.addEventListener("input", () => {
+    hint.hidden = true;
+    handlers.typeActor(input.value);
+  });
   cancel.addEventListener("click", () => handlers.cancelActor());
   return form;
 }

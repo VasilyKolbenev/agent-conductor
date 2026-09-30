@@ -26,7 +26,7 @@ from playwright.sync_api import Browser, Page
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     Embedded, Rig, _answering, _claim, embed, rig)
 from browser_tests.test_desk_hash import (  # noqa: F401  (fixtures and helpers)
-    FACTS, PROJECT_A, QUIET, _go, open_desk)
+    FACTS, ON_RUN, PROJECT_A, QUIET, _go, open_desk)
 from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
 from browser_tests.test_desk_status import RAW
 
@@ -52,6 +52,8 @@ CHANGE = '#deskPult [data-focus-key="pult:actor-change"]'
 NAME = '#deskPult [data-focus-key="pult:actor-name"]'
 SAVE = '#deskPult [data-focus-key="pult:actor-save"]'
 CANCEL = '#deskPult [data-focus-key="pult:actor-cancel"]'
+#: The rail's button for the seeded project's task, whose newest run the scene then draws.
+RAIL_TASK = '#deskRail [data-task-id="task-fix"]'
 #: Everything a test asks of the console, in one evaluation. The rows of the queue block are read
 #: by `textContent`: the headings are drawn in capitals by the style, and what a screen reader
 #: says is the text of the node, not its capitals. `text` is the rendered `innerText`, and is
@@ -85,7 +87,8 @@ PULT = """() => {
 BENCH = """async ({locale, mode, actor, editing, body, tasks, runs}) => {
   const [pult, model] = await Promise.all([
     import("/panel/desk-pult.js"), import("/panel/desk-queue-model.js")]);
-  const handlers = {setActor: () => true, editActor: () => {}, cancelActor: () => {}};
+  const handlers = {setActor: () => true, editActor: () => {}, cancelActor: () => {},
+    typeActor: () => {}};
   const view = {locale, foreign: false, mode, actor, editing, tasks: {list: tasks},
     runs: {list: runs}, queue: body === null ? null : model.projectQueue(body)};
   pult.mountPult(document.getElementById("deskPult"), view, handlers);
@@ -267,6 +270,103 @@ def test_words_typed_and_not_saved_survive_a_redraw_and_are_said_in_the_new_lang
     facts = page.evaluate(PULT)
     assert (facts["input"], facts["focus"], facts["label"]) == (
         "va", "pult:actor-name", ACTOR["ru"]["label"])
+    assert window.problems == []
+
+
+def test_a_name_typed_and_not_saved_survives_choosing_a_task_in_the_rail(open_desk):
+    """A redraw that the rail's press causes rebuilds the form; the words stay in it, open,
+    and go nowhere but the page's memory."""
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "vasya")
+    page.click(RAIL_TASK)
+    page.wait_for_function(ON_RUN, arg="run-fix-new")
+    facts = page.evaluate(PULT)
+    assert (facts["form"], facts["input"], facts["actor"]) == (True, "vasya", None)
+    assert facts["storage"] == [0, 0] and facts["cookie"] == "" and "vasya" not in facts["hash"]
+    assert {method for method, _path, _header in window.asked} == {"GET"}
+    assert window.problems == []
+
+
+def test_a_name_typed_and_left_unfocused_survives_a_change_of_language(open_desk):
+    """With no focus to carry, the words are what the page held, and the new language says
+    the rest of the form."""
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "va")
+    page.evaluate("() => document.activeElement.blur()")
+    assert page.evaluate(PULT)["focus"] is None
+    _go(page, "#lang=ru")
+    page.wait_for_function("() => document.documentElement.lang === 'ru'")
+    facts = page.evaluate(PULT)
+    assert (facts["form"], facts["input"], facts["focus"], facts["label"]) == (
+        True, "va", None, ACTOR["ru"]["label"])
+    assert window.problems == []
+
+
+def test_a_name_typed_over_a_saved_one_is_what_a_redraw_keeps_and_the_saved_one_stands_after(
+        open_desk):
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "vasya")
+    page.click(SAVE)
+    page.click(CHANGE)
+    page.fill(NAME, "petya")
+    page.click(RAIL_TASK)
+    page.wait_for_function(ON_RUN, arg="run-fix-new")
+    assert page.evaluate(PULT)["input"] == "petya"
+    page.click(CANCEL)
+    facts = page.evaluate(PULT)
+    assert (facts["actor"], facts["form"]) == ("You: vasya · change", False)
+    page.click(CHANGE)
+    assert page.evaluate(PULT)["input"] == "vasya"
+    assert window.problems == []
+
+
+def test_a_field_the_person_emptied_stays_empty_across_a_redraw_and_does_not_take_the_name_back(
+        open_desk):
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "vasya")
+    page.click(SAVE)
+    page.click(CHANGE)
+    page.fill(NAME, "")
+    page.click(RAIL_TASK)
+    page.wait_for_function(ON_RUN, arg="run-fix-new")
+    assert page.evaluate(PULT)["input"] == ""
+    assert window.problems == []
+
+
+def test_a_saved_name_is_what_the_form_opens_on_and_not_the_padded_words_it_was_typed_in(
+        open_desk):
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "  padded  ")
+    page.click(SAVE)
+    page.click(CHANGE)
+    assert page.evaluate(PULT)["input"] == "padded"
+    assert window.problems == []
+
+
+def test_words_typed_and_cancelled_are_not_carried_into_the_next_opening_of_the_form(open_desk):
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "half-typed")
+    page.click(CANCEL)
+    page.click(CHANGE)
+    assert page.evaluate(PULT)["input"] == ""
     assert window.problems == []
 
 

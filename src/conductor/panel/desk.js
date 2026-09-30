@@ -85,14 +85,15 @@ const UNANSWERED = Object.freeze([LATE, "store_error"]);
 //: counts the choices made, so an answer that lands for a task a person has since left is
 //: dropped. `door` is this window's transport, made at boot.
 //:
-//: The console's facts: `actor` is the name of the person at this page (null until given) and
-//: `editing` says the form that asks for it is open -- both live in this page's memory only;
-//: `mode` is what the project claim said (`active`, `view`, or null when no claim was read or it
-//: named no mode this build knows); `queue` is the task-queue read once one is wired (null:
-//: not read).
+//: The console's facts: `actor` is the name of the person at this page (null until given),
+//: `editing` says the form that asks for it is open, and `draft` is what was typed into that
+//: form and not saved (null: nothing typed since it opened) -- all three live in this page's
+//: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
+//: project claim said (`active`, `view`, or null when no claim was read or it named no mode
+//: this build knows); `queue` is the task-queue read once one is wired (null: not read).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
-  taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, mode: null,
-  queue: null});
+  taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
+  mode: null, queue: null});
 let choice = 0;
 let door = null;
 //: The project this desk bound to, from its first hash (null when that named none); the last
@@ -170,8 +171,8 @@ function render() {
   const view = {locale: locale(), listed: said.rail === "ready", tasks: state.tasks,
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
-    foreign: state.foreign, actor: state.actor, editing: state.editing, mode: state.mode,
-    queue: state.queue};
+    foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
+    mode: state.mode, queue: state.queue};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountPult(byId("deskPult"), view, handlers);
@@ -357,20 +358,30 @@ function editActor() {
 
 function cancelActor() {
   if (state.foreign) return;
-  move({editing: false});
+  move({editing: false, draft: null});
   focusOn("pult:actor-change");
 }
 
+//: Hold the words typed into the form so far. A redraw of the page -- a task chosen, a language
+//: set, a read landing -- rebuilds the form from the state, and the state is what holds them.
+//: Nothing is drawn: the field already shows what was typed. Page memory only, like the name.
+function typeActor(text) {
+  if (state.foreign || !state.editing || typeof text !== "string") return;
+  state = Object.freeze({...state, draft: text});
+}
+
 //: Keep the name of the person at this page, or say it was refused. It is held in this page's
-//: memory and nowhere else: no storage, no address, no request.
+//: memory and nowhere else: no storage, no address, no request. A refused name leaves the words
+//: typed where they are; a kept one, like a cancel, ends them, so the form always opens on the
+//: name that stands.
 function setActor(name) {
   if (state.foreign || typeof name !== "string" || !ACTOR.test(name)) return false;
-  move({actor: name, editing: false});
+  move({actor: name, editing: false, draft: null});
   focusOn("pult:actor-change");
   return true;
 }
 
-const handlers = Object.freeze({chooseTask, editActor, cancelActor, setActor});
+const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -399,8 +410,8 @@ function setAppearance(next) {
 //: dropped, one sentence says so, and `move` keeps nothing from then on.
 function enterForeign() {
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
-    taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, mode: null,
-    queue: null});
+    taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
+    mode: null, queue: null});
   render();
 }
 
