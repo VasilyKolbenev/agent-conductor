@@ -19,6 +19,7 @@
 import {element} from "./command-view.js";
 import {MESSAGES, localize} from "./studio-i18n.js";
 import {instantText} from "./desk-time.js";
+import {releaseOffer} from "./desk-queue-model.js";
 
 //: What each state of a queue record says of itself, and the tone that asks for a person.
 const LEADS = Object.freeze({preauthorized: "desk.pult.entry_start",
@@ -87,14 +88,24 @@ function holderName(view, runId) {
   return task !== undefined && !task.unreadable && task.title ? task.title : runId;
 }
 
-//: The first row: a project in `view` cannot start anything, so it says so; otherwise the slot.
+//: The reason a slot gives for being stopped or unavailable, in the desk's words; a reason the
+//: desk has no words for is left unsaid, never shown as the machine's word.
+function whyText(view, reason) {
+  const key = `desk_pult.why_${reason}`;
+  return reason !== null && Object.hasOwn(MESSAGES, key) ? localize(view, key) : null;
+}
+
+//: The first row: a project in `view` cannot start anything, so it says so; otherwise the state of
+//: the slot, and for a holder that stopped or a slot nobody can use, why.
 function firstRow(view) {
   if (view.mode === "view") return localize(view, "desk.pult.inactive");
-  const {state, run_id: runId} = view.queue.slot;
-  if (Object.hasOwn(SLOTS, state)) {
-    return localize(view, SLOTS[state], {task: holderName(view, runId)});
-  }
-  return localize(view, state === "free" ? "desk.pult.slot_free" : "desk.pult.slot_unavailable");
+  const {state, run_id: runId, reason_code: reason} = view.queue.slot;
+  if (state === "free") return localize(view, "desk.pult.slot_free");
+  const line = Object.hasOwn(SLOTS, state)
+    ? localize(view, SLOTS[state], {task: holderName(view, runId)})
+    : localize(view, "desk.pult.slot_unavailable");
+  const why = state === "busy" ? null : whyText(view, reason);
+  return why === null ? line : `${line}: ${why}`;
 }
 
 //: "since when" for a record: a wait for a person is dated by the server's `state_since` (none:
@@ -175,6 +186,52 @@ function noticeLine(view) {
     "data-pult-notice": "", text: localize(view, key)})];
 }
 
+//: One choice of a dialog: the button, and what it does said under it.
+function choice(view, {key, words, note, press}) {
+  return element("div", {className: "desk-queue__choice"}, [
+    control(view, {key, glyph: null, words, off: false, press}),
+    element("p", {className: "desk-queue__note", text: localize(view, note)})]);
+}
+
+//: The dialog of freeing the slot: two choices, equal, none of them taken for the person. A run
+//: that needs a correction the desk cannot make says so before the choices.
+function releaseDialog(view, handlers, offer) {
+  const feedback = offer.reason === "feedback_required"
+    ? [element("p", {className: "desk-queue__note", text: localize(view, "desk_pult.release_feedback")})]
+    : [];
+  return element("div", {className: "desk-queue__dialog", role: "group",
+    "aria-labelledby": "deskReleaseHead", "data-pult-dialog": "release"}, [
+    element("p", {className: "desk-queue__dialog-head", id: "deskReleaseHead",
+      text: localize(view, "desk_pult.release")}),
+    element("p", {text: localize(view, "desk_pult.release_text",
+      {task: holderName(view, offer.run_id)})}),
+    ...feedback,
+    choice(view, {key: "queue:release:pause", words: "desk_pult.release_pause",
+      note: "desk_pult.release_pause_note", press: () => handlers.release("pause")}),
+    choice(view, {key: "queue:release:revoke", words: "desk_pult.release_revoke",
+      note: "desk_pult.release_revoke_note", press: () => handlers.release("revoke")}),
+    element("div", {className: "desk-queue__acts"}, [control(view, {key: "queue:release:cancel",
+      glyph: null, words: "desk_pult.cancel", off: false, press: () => handlers.closeDialog()})])]);
+}
+
+//: What the console offers for a holder that stopped: "Free the slot" once a name is given (or the
+//: sentence that says a name is needed), and the dialog it opens.
+function slotActions(view, handlers) {
+  const offer = releaseOffer(view.queue, view);
+  if (offer === null) return [];
+  if (!offer.named) {
+    return [element("p", {className: "desk-queue__hint", "data-pult-slot-hint": "",
+      text: localize(view, "desk_pult.release_need_name")})];
+  }
+  const dialog = view.pult?.dialog ?? null;
+  const open = dialog !== null && dialog.kind === "release" && dialog.run_id === offer.run_id;
+  const button = control(view, {key: "queue:release", glyph: null, words: "desk_pult.release",
+    off: false, press: () => handlers.openRelease()});
+  button.setAttribute("aria-expanded", String(open));
+  return [element("div", {className: "desk-queue__acts"}, [button]),
+    ...(open ? [releaseDialog(view, handlers, offer)] : [])];
+}
+
 //: The block is drawn when the queue was read, and in `view` even when it was not: the mode is
 //: the server's word, and it says the project cannot start what the queue holds.
 function queueBlock(view, handlers) {
@@ -182,7 +239,9 @@ function queueBlock(view, handlers) {
   const kids = [
     element("h3", {className: "desk-queue__head", text: localize(view, "desk.pult.queue")}),
     element("p", {className: "desk-queue__now", text: firstRow(view)})];
-  if (view.queue !== null) kids.push(entryList(view, handlers), ...noticeLine(view));
+  if (view.queue !== null) {
+    kids.push(...slotActions(view, handlers), entryList(view, handlers), ...noticeLine(view));
+  }
   if (view.mode === "view") {
     kids.push(element("p", {className: "desk-pult__flag", text: localize(view, "desk.pult.flag")}));
   }

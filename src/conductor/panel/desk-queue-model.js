@@ -114,3 +114,55 @@ export function holdsOrder(queue, runIds) {
 export function holdsRun(queue, runId) {
   return queue !== null && queue.entries.some((entry) => entry.run_id === runId);
 }
+
+// -- freeing the slot: the holder, the control that stops it, the offer --------------------------
+
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
+//: What the desk writes to a holder: a pause (it can be continued while its grant lasts) and a
+//: revoke (it cannot be undone). A resume is the Studio's and the queue's, never this door's.
+const CONTROLS = Object.freeze(["pause", "revoke"]);
+
+//: The holder of the slot as `GET /command/runs/<run_id>/automation` tells it, cut to what a
+//: control needs: the state and its reason, the grant (null for a run that has none) and the id of
+//: the last control written to it. A read of another run, or one that does not say these, is null:
+//: nothing is written to a grant the desk could not read.
+export function projectHolder(read, runId) {
+  if (!isObject(read) || read.run_id !== runId || !isText(read.state)
+      || !isText(read.reason_code)) return null;
+  const {authorization: grant, control} = read;
+  const grantOk = grant === null || (isObject(grant) && isId(grant.authorization_id)
+    && isText(grant.authorization_digest) && DIGEST.test(grant.authorization_digest));
+  const controlOk = control === null || (isObject(control) && isId(control.control_id));
+  if (!grantOk || !controlOk) return null;
+  return Object.freeze({run_id: runId, state: read.state, reason_code: read.reason_code,
+    grant: grant === null ? null : Object.freeze({authorization_id: grant.authorization_id,
+      authorization_digest: grant.authorization_digest}),
+    last_control_id: control === null ? null : control.control_id});
+}
+
+//: The body of `POST /command/runs/<run_id>/automation/control` for a pause or a revoke: the grant
+//: the person was looking at, the control they saw last (the server refuses a body that has been
+//: overtaken), the action and their name. Null without a grant, an action of the two, a name and
+//: an id in the grammar.
+export function controlBody(holder, {action, actor, controlId}) {
+  if (holder === null || holder.grant === null || !CONTROLS.includes(action)) return null;
+  if (!isText(actor) || actor === "" || !isId(controlId)) return null;
+  return Object.freeze({control_id: controlId, authorization_id: holder.grant.authorization_id,
+    authorization_digest: holder.grant.authorization_digest, action, actor,
+    expected_control_id: holder.last_control_id});
+}
+
+//: Whether the holder read says this control is the last one written to its grant: a write that
+//: was not answered is settled by asking, never by assuming.
+export function controlRecorded(holder, controlId) {
+  return holder !== null && isText(controlId) && holder.last_control_id === controlId;
+}
+
+//: What the console offers for a slot somebody holds and cannot go on with (`stuck`): the run that
+//: holds it, the reason, and whether a person is named to write in. Nothing for a slot in any other
+//: state, for a queue that was not read, and in a project opened for viewing, which has no slot.
+export function releaseOffer(queue, {mode, actor}) {
+  if (queue === null || mode === "view" || queue.slot.state !== "stuck") return null;
+  return Object.freeze({run_id: queue.slot.run_id, reason: queue.slot.reason_code,
+    named: actor !== null});
+}

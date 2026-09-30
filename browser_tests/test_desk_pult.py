@@ -49,9 +49,12 @@ ACTOR = {
                    "до 128 знаков.", "save": "Сохранить", "cancel": "Отмена"}}
 HEAD = {"en": "Your console", "ru": "Ваш пульт"}
 #: The block the console draws from the queue the test server reads: it has no owner, so its slot
-#: is unavailable, and nothing is queued. A desk reads the queue whatever mode the claim names.
-EMPTY_QUEUE = {"en": ["Project queue", "Now: the slot is unavailable", "Nothing is queued."],
-               "ru": ["Очередь проекта", "Сейчас: слот недоступен", "В очереди ничего нет."]}
+#: is unavailable for that reason, and nothing is queued. A desk reads the queue whatever mode the
+#: claim names.
+EMPTY_QUEUE = {"en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+                      "Nothing is queued."],
+               "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+                      "В очереди ничего нет."]}
 CHANGE = '#deskPult [data-focus-key="pult:actor-change"]'
 NAME = '#deskPult [data-focus-key="pult:actor-name"]'
 SAVE = '#deskPult [data-focus-key="pult:actor-save"]'

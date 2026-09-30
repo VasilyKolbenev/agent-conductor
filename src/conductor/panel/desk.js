@@ -565,11 +565,12 @@ function reload() {
 }
 
 //: The presses of the queue block go to the console's hands (`desk-pult-flow.js`), made at boot.
-const orderEntry = (runId, step) => pultFlow.order(runId, step);
-const withdrawEntry = (runId) => pultFlow.withdraw(runId);
+const press = (name) => (...args) => pultFlow[name](...args);
 
 const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload,
-  draftFlag, openFlag, saveFlag, clearFlag, orderEntry, withdrawEntry});
+  draftFlag, openFlag, saveFlag, clearFlag, orderEntry: press("order"),
+  withdrawEntry: press("withdraw"), openRelease: press("openRelease"),
+  closeDialog: press("closeDialog"), release: press("release")});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -743,7 +744,8 @@ function boot() {
   door = createTransport(locale, () => bound);
   flagDoor = createFlagDoor(door, enterForeign);
   queueDoor = createQueueDoor(door, enterForeign);
-  pultFlow = createPultFlow({door: queueDoor, host: {state: () => state, move}});
+  pultFlow = createPultFlow({door: queueDoor,
+    host: {state: () => state, move, nonce: () => crypto.randomUUID()}});
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

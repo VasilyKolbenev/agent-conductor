@@ -213,6 +213,19 @@ FACTS = """() => {
     now: text(block && block.querySelector(".desk-queue__now")),
     none: text(block && block.querySelector(".desk-queue__none")),
     notice: text(block && block.querySelector("[data-pult-notice]")),
+    release: text(block && block.querySelector('[data-focus-key="queue:release"]')),
+    slotHint: text(block && block.querySelector("[data-pult-slot-hint]")),
+    dialog: (() => {
+      const dialog = block && block.querySelector("[data-pult-dialog]");
+      if (!dialog) return null;
+      return {kind: dialog.dataset.pultDialog,
+        lines: [...dialog.querySelectorAll("p")].map(text),
+        buttons: [...dialog.querySelectorAll("button")].map((button) => ({
+          key: button.dataset.focusKey, text: text(button),
+          disabled: button.disabled || button.getAttribute("aria-disabled") === "true",
+          size: box(button)}))};
+    })(),
+    focus: document.activeElement ? document.activeElement.dataset.focusKey ?? null : null,
     entries: block === null ? [] : [...block.querySelectorAll(".desk-queue__entry")].map((row) => ({
       run: row.dataset.runId, state: row.dataset.queueState, tone: row.dataset.tone,
       text: [...row.querySelectorAll(":scope > span")].map((part) => part.textContent).join("")
@@ -241,6 +254,12 @@ class Window:
 
     def requests(self, method: str, path: str) -> int:
         return sum(1 for asked in self.asked if asked == (method, path))
+
+    def name(self, who: str) -> None:
+        """Give the console the name of the person at the page, as a person does."""
+        self.page.locator('[data-focus-key="pult:actor-change"]').click()
+        self.page.locator('[name="actor"]').fill(who)
+        self.page.locator('[data-focus-key="pult:actor-save"]').click()
 
     def until(self, what: str, done: Callable[[], Any]) -> None:
         """Wait (pumping the page) until a fact of THIS side of the wire holds, e.g. that a

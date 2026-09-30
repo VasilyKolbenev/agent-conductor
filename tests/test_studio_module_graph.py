@@ -108,7 +108,8 @@ PERMITTED_IMPORTS = {
     #: says the words through the catalogue and the times through the time module, and
     #: may import no store, no transport and no other screen -- a press is a call to its
     #: host, and the queue it draws is a read the boot module already judged.
-    "desk-pult.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js"}),
+    "desk-pult.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js",
+                              "./desk-queue-model.js"}),
     #: The desk's own words: a frozen catalogue that imports nothing, spread into the one
     #: table by `studio-i18n.js`.
     "desk-copy.js": frozenset(),

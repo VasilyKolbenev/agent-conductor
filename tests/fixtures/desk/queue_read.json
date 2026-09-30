@@ -47,12 +47,14 @@
         ]},
       "mode": "active",
       "text": {
-        "en": ["Project queue", "Now: Fix lost text · stopped and holds the slot",
+        "en": ["Project queue", "Now: Fix lost text · stopped and holds the slot: the plan has no eligible next step",
+               "Give your name above to free the slot.",
                "1. Write the docs · waits for your confirmation: the terms changed · waiting since 09/29 12:40",
                "2. Check the export · waits for your confirmation: the server restarted · noticed · time not given",
                "3. run-idle · cannot start: the queue and the journal disagree · remove it from the queue · in the queue since 09/29 11:20",
                "4. Twin · cannot start: the run record cannot be read · in the queue since 09/29 11:30"],
-        "ru": ["Очередь проекта", "Сейчас: Fix lost text · остановился и держит слот",
+        "ru": ["Очередь проекта", "Сейчас: Fix lost text · остановился и держит слот: в плане нет допустимого шага",
+               "Укажите имя выше, чтобы освободить слот.",
                "1. Write the docs · ждёт вашего подтверждения: условия изменились · ждёт с 29.09 12:40",
                "2. Check the export · ждёт вашего подтверждения: сервер перезапускался · замечено · время не указано",
                "3. run-idle · не может начаться: записи очереди и журнала расходятся · уберите из очереди · в очереди с 29.09 11:20",
@@ -85,8 +87,10 @@
         "entries": []},
       "mode": "active",
       "text": {
-        "en": ["Project queue", "Now: the slot is unavailable", "Nothing is queued."],
-        "ru": ["Очередь проекта", "Сейчас: слот недоступен", "В очереди ничего нет."]
+        "en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+               "Nothing is queued."],
+        "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+               "В очереди ничего нет."]
       }
     }
   ]

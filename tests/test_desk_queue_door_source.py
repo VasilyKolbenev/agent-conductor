@@ -17,10 +17,10 @@ from tests.test_panel_cascade import strip_comments
 
 QUEUE_DOOR = PANEL / "desk-queue.js"
 #: The targets of the mutation door the queue's door names, in the order it names them: the two
-#: writes that change the order of what waits.
-WRITTEN = ("queueOrder", "queueWithdraw")
-#: The routes it reads, and no other.
-READ = {"queue"}
+#: writes that change the order of what waits, and the control that frees a stopped holder's slot.
+WRITTEN = ("queueOrder", "queueWithdraw", "automationControl")
+#: The routes it reads, and no other: the queue, and the automation of the holder.
+READ = {"queue", "automation"}
 #: Everything else that reaches the wire or a session, which the queue's door does not do.
 OTHER_DOORS = (r"\bfetch\s*\(", r"\bmethod\s*:", r'"POST"', r"\bXMLHttpRequest\b",
                r"\bsendBeacon\b", r"\bdropSession\b", r"\bopenStream\b", r"\bEventSource\b")
@@ -66,6 +66,10 @@ BROKEN = {
     "a session drop": (lambda text: text + "\ndoor.dropSession();\n", "another door"),
     "a stream": (lambda text: text + "\nconst s = door.openStream();\n", "another door"),
     "a read of another route": (_edit("path.queue()", "path.tasks()"), "does not own"),
+    "a read of the holder's whole run": (
+        _edit("path.automation(runId)", "path.run(runId)"), "does not own"),
+    "a control that names another target": (
+        _edit('submit("automationControl"', 'submit("automationAuthorize"'), "is called for"),
     "a POST method": (lambda text: text + '\nconst OPTIONS = {method: "POST"};\n',
                       "another door"),
 }
@@ -86,4 +90,4 @@ def test_the_queue_door_judges_what_it_reads_with_the_queue_model_and_nothing_el
     code = strip_comments(QUEUE_DOOR.read_text(encoding="utf-8"))
     assert re.findall(r'^import .* from "([^"]+)";', code, re.MULTILINE) == [
         "./desk-transport.js", "./desk-queue-model.js"]
-    assert "projectQueue(" in code
+    assert "projectQueue" in code and "projectHolder(" in code

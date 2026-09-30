@@ -49,7 +49,8 @@ def _cut(body: dict) -> dict:
 
 #: What the module exports: the judgement of a read and the moves a person makes on one (a
 #: module namespace lists its names in alphabetical order).
-EXPORTS = ["holdsOrder", "holdsRun", "movedOrder", "orderBody", "projectQueue", "withdrawBody"]
+EXPORTS = ["controlBody", "controlRecorded", "holdsOrder", "holdsRun", "movedOrder",
+           "orderBody", "projectHolder", "projectQueue", "releaseOffer", "withdrawBody"]
 
 
 def test_the_module_exports_the_judgement_and_the_moves_of_a_person_and_nothing_else():
@@ -227,6 +228,128 @@ def test_what_landed_is_read_from_the_queue_and_never_from_an_answer():
       not_a_queue: [queue.holdsOrder(null, ["a"]), queue.holdsRun(null, "a")]})""")
     assert got == {"order": [True, False, False, False], "run": [True, False],
                    "not_a_queue": [False, False]}
+
+
+# -- freeing the slot: the holder's read, the control's body, the offer (spec 4.4.8) --------------
+
+DIGEST = "sha256:" + "a" * 64
+HOLDER = {"run_id": "run-x", "state": "expired", "reason_code": "expired",
+          "authorization": {"authorization_id": "grant-1", "authorization_digest": DIGEST,
+                            "authorized_by": "vasya", "terms": "not read"},
+          "control": None, "spent_actions": 1}
+
+
+#: What the model cuts `HOLDER` to, written out by hand (the tests below read it from the module).
+SEEN = {"run_id": "run-x", "state": "expired", "reason_code": "expired",
+        "grant": {"authorization_id": "grant-1", "authorization_digest": DIGEST},
+        "last_control_id": None}
+SEEN_PAUSED = {**SEEN, "last_control_id": "control-7"}
+SEEN_NO_GRANT = {**SEEN, "grant": None}
+
+
+def _holder(run_id: str, **changes: object) -> dict:
+    return {**copy.deepcopy(HOLDER), "run_id": run_id, **changes}
+
+
+def _seen(read: object, run_id: str = "run-x") -> object:
+    return run_js("console.log(JSON.stringify(queue.projectHolder(d.read, d.run)));", MODULES,
+                  {"read": read, "run": run_id})
+
+
+def test_a_holder_read_is_cut_to_its_grant_and_its_last_control():
+    assert _seen(HOLDER) == {"run_id": "run-x", "state": "expired", "reason_code": "expired",
+                             "grant": {"authorization_id": "grant-1",
+                                       "authorization_digest": DIGEST},
+                             "last_control_id": None}
+    paused = _holder("run-x", control={"control_id": "control-7", "action": "pause"})
+    assert _seen(paused)["last_control_id"] == "control-7"
+    assert _seen(_holder("run-x", authorization=None, control=None))["grant"] is None
+
+
+@pytest.mark.parametrize("what, read", [
+    ("another run's read", _holder("run-y")),
+    ("a grant with no digest", _holder("run-x", authorization={"authorization_id": "grant-1"})),
+    ("a grant whose digest is not one", _holder(
+        "run-x", authorization={"authorization_id": "grant-1", "authorization_digest": "abc"})),
+    ("a grant whose id is outside the grammar", _holder(
+        "run-x", authorization={"authorization_id": "a/b", "authorization_digest": DIGEST})),
+    ("a control that is not an object", _holder("run-x", control="pause")),
+    ("a control with no id", _holder("run-x", control={"action": "pause"})),
+    ("no control key at all", {key: value for key, value in HOLDER.items() if key != "control"}),
+    ("a state that is a number", _holder("run-x", state=3)),
+    ("a reason that is missing", {key: value for key, value in HOLDER.items()
+                                  if key != "reason_code"}),
+    ("a list", []), ("nothing", None), ("a text", "run-x")])
+def test_a_holder_read_the_desk_cannot_vouch_for_is_refused(what, read):
+    assert _seen(read) is None, what
+
+
+def _body(holder: object, **ask: object) -> object:
+    return run_js("console.log(JSON.stringify(queue.controlBody(d.holder, d.ask)));", MODULES,
+                  {"holder": holder, "ask": ask})
+
+
+def test_the_control_body_carries_the_grant_the_last_control_the_action_and_the_person():
+    holder = SEEN_PAUSED
+    for action in ("pause", "revoke"):
+        assert _body(holder, action=action, actor="vasya", controlId="control-abc") == {
+            "control_id": "control-abc", "authorization_id": "grant-1",
+            "authorization_digest": DIGEST, "action": action, "actor": "vasya",
+            "expected_control_id": "control-7"}
+    assert _body(SEEN, action="pause", actor="vasya", controlId="c-1")[
+        "expected_control_id"] is None
+
+
+@pytest.mark.parametrize("what, holder, ask", [
+    ("a run with no grant", SEEN_NO_GRANT,
+     {"action": "pause", "actor": "vasya", "controlId": "c-1"}),
+    ("no holder read", None, {"action": "pause", "actor": "vasya", "controlId": "c-1"}),
+    ("a resume, which this door never writes", SEEN,
+     {"action": "resume", "actor": "vasya", "controlId": "c-1"}),
+    ("an action that is no action", SEEN,
+     {"action": "stop", "actor": "vasya", "controlId": "c-1"}),
+    ("no person", SEEN, {"action": "pause", "actor": "", "controlId": "c-1"}),
+    ("a person that is null", SEEN,
+     {"action": "pause", "actor": None, "controlId": "c-1"}),
+    ("a control id outside the grammar", SEEN,
+     {"action": "pause", "actor": "vasya", "controlId": "a b"})])
+def test_a_control_body_is_refused_without_a_grant_a_known_action_a_person_and_an_id(
+        what, holder, ask):
+    assert _body(holder, **ask) is None, what
+
+
+def test_a_control_is_recorded_only_when_the_holder_read_names_its_id_as_the_last_control():
+    seen = SEEN_PAUSED
+    got = run_js("""console.log(JSON.stringify([queue.controlRecorded(d.holder, "control-7"),
+      queue.controlRecorded(d.holder, "control-8"), queue.controlRecorded(null, "control-7"),
+      queue.controlRecorded(d.none, "control-7"), queue.controlRecorded(d.none, null)]));""",
+                 MODULES, {"holder": seen, "none": SEEN})
+    assert got == [True, False, False, False, False]
+
+
+def _slot(state: str, reason: str | None, run_id: str | None = "run-fix-new") -> dict:
+    return {**BUSY, "slot": {"state": state, "run_id": run_id, "reason_code": reason}}
+
+
+@pytest.mark.parametrize("body, mode, actor, expected", [
+    (_slot("stuck", "expired"), "active", "vasya",
+     {"run_id": "run-fix-new", "reason": "expired", "named": True}),
+    (_slot("stuck", "feedback_required"), "active", None,
+     {"run_id": "run-fix-new", "reason": "feedback_required", "named": False}),
+    (_slot("stuck", "expired"), None, "vasya",
+     {"run_id": "run-fix-new", "reason": "expired", "named": True}),
+    (_slot("stuck", "expired"), "view", "vasya", None),
+    (_slot("busy", "plan_waiting"), "active", "vasya", None),
+    (_slot("free", None, None), "active", "vasya", None),
+    (_slot("unavailable", "owner_required", None), "active", "vasya", None)])
+def test_freeing_the_slot_is_offered_only_for_a_stuck_holder_and_never_in_view(
+        body, mode, actor, expected):
+    got = run_js("""const held = queue.projectQueue(d.body);
+      console.log(JSON.stringify(queue.releaseOffer(held, d.ask)));""", MODULES,
+                 {"body": body, "ask": {"mode": mode, "actor": actor}})
+    assert got == expected
+    assert run_js("console.log(JSON.stringify(queue.releaseOffer(null, d)));", MODULES,
+                  {"mode": "active", "actor": "vasya"}) is None
 
 
 def test_the_model_imports_nothing_reads_no_clock_and_touches_no_page():

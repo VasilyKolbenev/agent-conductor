@@ -281,6 +281,13 @@ MEASURED[".desk-queue__acts button"] = [
     for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]
 MEASURED[".desk-queue__notice"] = [
     (QUEUE + [E("p", "desk-queue__notice")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__hint"] = [(QUEUE + [E("p", "desk-queue__hint")], "color", TEXT_MIN, None)]
+DIALOG = QUEUE + [E("div", "desk-queue__dialog")]
+MEASURED[".desk-queue__dialog"] = [(DIALOG, "border", NONTEXT_MIN, None)]
+MEASURED[".desk-queue__dialog p"] = [(DIALOG + [E("p")], "color", TEXT_MIN, None)]
+MEASURED[".desk-queue__dialog .desk-queue__note"] = [
+    (DIALOG + [E("div", "desk-queue__choice"), E("p", "desk-queue__note")],
+     "color", TEXT_MIN, None)]
 # -- the console: the "continue after" block -----------------------------------------------------
 FLAG = CONSOLE + [E("details", "desk-flag")]
 MEASURED[".desk-flag__head"] = [

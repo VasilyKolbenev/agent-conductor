@@ -251,8 +251,8 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     # (it has no owner: its slot is unavailable, and nothing is queued).
     assert by_id["deskSummary"]["children"] == 0
     assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
-        3, "Your consoleYou: name not given · setProject queueNow: the slot is unavailable"
-           "Nothing is queued.")
+        3, "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
+           "the project has no ownerNothing is queued.")
     assert by_id["deskRail"]["children"] == 2
     assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
