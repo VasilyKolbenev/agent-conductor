@@ -307,14 +307,14 @@ def test_the_desk_page_carries_its_five_region_mounts_once_each_and_empty():
 # `desk.js` reads the routes of `DESK_READS` and paints what each read says on the mount it
 # feeds. It may read no other route until one is argued for here, it writes no
 # route out by hand (a route is `path.<name>` of the transport module), and it
-# names only ids the page carries. The `X-Conduct-Project` header belongs to lane H's
-# claim and is not faked: the day that lands it, the header check changes with it. The
-# project claim itself is READ (`path.project`), and only by a framed window in embed mode.
+# names only ids the page carries. The `X-Conduct-Project` header belongs to the transport's
+# two doors (`tests/test_desk_transport_claim.py` holds them) and is never named here. The
+# project claim itself is READ (`path.project`), first, by every window (spec 4.5.1).
 
 #: The `path.<name>` reads the boot module makes, exactly: the two lists, the automation of
 #: the newest run of each task (spec 5.2.1 reads it for every task, as the hub does), the
-#: read of the chosen task's newest run and of its controls, and the project claim -- asked
-#: only by a framed window whose hash says `embed=hub` (spec 4.5.5).
+#: read of the chosen task's newest run and of its controls, and the project claim -- the first
+#: read of every window (spec 4.5.1), which embed mode (spec 4.5.5) then reuses.
 DESK_READS = frozenset({"tasks", "runs", "automation", "run", "controls", "project"})
 MOUNT_IDS = frozenset(ident for _, ident in REGIONS)
 
@@ -341,7 +341,7 @@ def desk_boot_faults(source: str, page: str) -> list[str]:
                for ident in sorted(named) if page.count(f'id="{ident}"') != 1]
     faults += [f"does not mount {ident}" for ident in sorted(MOUNT_IDS - named)]
     if re.search(r"x-conduct-project", code, re.IGNORECASE):
-        faults.append("sends X-Conduct-Project before lane H's route exists")
+        faults.append("names X-Conduct-Project, which only the transport's two doors send")
     return faults
 
 
@@ -366,7 +366,7 @@ BOOT_BROKEN = {
         _edit("path.controls(runId)", "path.run(runId)"), "no longer reads"),
     "the project claim that embed mode needs, dropped": (
         _edit("path.project()", "path.runs()"), "no longer reads"),
-    "the project header before its route": (
+    "the project header named in the boot module, which has no door of its own": (
         lambda text: text + '\nconst HEADERS = {"X-Conduct-Project": "p"};\n',
         "X-Conduct-Project"),
 }
@@ -377,8 +377,6 @@ def test_the_desk_boot_module_meets_its_contract():
     page = DESK_PAGE.read_text(encoding="utf-8")
     assert desk_boot_faults(source, page) == []
     assert "/panel/desk.js" in server_assets.DESK_ASSETS
-    transport = strip_comments((PANEL / "desk-transport.js").read_text(encoding="utf-8"))
-    assert "x-conduct-project" not in transport.lower()
 
 
 @pytest.mark.parametrize("edit,needle", list(BOOT_BROKEN.values()), ids=list(BOOT_BROKEN))
