@@ -151,8 +151,11 @@ function workingActions(project, ctx) {
     return [act("stop", "projectStop", "hub.act.stop", locale, {confirm: "stop"})];
   }
   if (project.working === "queued") return queueActions(project, ctx);
-  const start = act("activate", "projectActivate", text(project.resume_run_id) !== null
-    ? "hub.act.resume" : "hub.act.activate", locale, {confirm: ask});
+  //: «Continue» is the word of a stopped project that has a run to resume; a project in view is made
+  //: active whatever it holds (spec 4.1.10).
+  const resumes = project.working === "stopped" && text(project.resume_run_id) !== null;
+  const start = act("activate", "projectActivate", resumes ? "hub.act.resume"
+    : "hub.act.activate", locale, {confirm: ask});
   if (project.working === "view") {
     return [start, act("close_view", "projectStop", "hub.act.view_close", locale)];
   }

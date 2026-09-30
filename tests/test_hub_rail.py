@@ -66,6 +66,21 @@ def test_a_stopped_project_with_a_run_to_resume_offers_continue_else_make_active
     assert out["idle"] == [["activate", None]], "nothing is working, so nothing asks first"
 
 
+def test_a_project_in_view_says_make_active_with_a_run_to_resume_and_a_stopped_one_continue():
+    out = js("""
+      const labels = (over) => line(row({resume_run_id: "run-9", ...over})).actions.map(
+        (a) => [a.id, a.label]);
+      show({view: labels({working: "view", state: "running"}),
+        viewRu: line(row({resume_run_id: "run-9", working: "view", state: "running"}),
+          {locale: "ru"}).actions.map((a) => a.label),
+        stopped: labels({working: "stopped", state: "stopped"})});
+    """)
+    assert out["view"] == [["activate", "Make active"], ["close_view", "Close the view"]], (
+        "spec 4.1.10: a project in view is made active; «Continue» is for a stopped one")
+    assert out["viewRu"] == ["Сделать активным", "Закрыть просмотр"]
+    assert out["stopped"] == [["activate", "Continue"]]
+
+
 #: One row per value of `state` with no word of its own beside the working state, and one per value
 #: that has: the line after the working word, the actions by id in order, and the tone.
 STATE_TABLE = [

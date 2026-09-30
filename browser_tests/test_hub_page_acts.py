@@ -125,7 +125,7 @@ def test_a_project_in_view_says_who_is_in_progress_and_offers_to_make_it_active(
     page = hub_page
     view = fixture("hub_projects.json")
     view["projects"][2].update(working="view", state="running", mode="view",
-                               instance="c" * 32, data="live",
+                               instance="c" * 32, data="live", resume_run_id="run-9",
                                desk_url="http://127.0.0.1:7702/panel/desk.html")
     page.hub.answer("/hub/projects", view)
     page.page.reload()
@@ -135,7 +135,8 @@ def test_a_project_in_view_says_who_is_in_progress_and_offers_to_make_it_active(
       ?.firstElementChild.textContent ?? null, button: document.querySelector(
         '#hubActions .hub-view [data-focus="view:activate"]')?.textContent ?? null})""")
     assert bar == {"text": say(page, "hub.view.with_active", name="web-app"),
-                   "button": say(page, "hub.act.activate")}
+                   "button": say(page, "hub.act.activate")}, (
+        "a run to resume does not turn «Make active» into «Continue» for a project in view")
     press(page, "view:activate")
     assert page.page.evaluate(CONFIRM)["sentences"] == [
         say(page, "hub.confirm.switch", name="web-app")]
