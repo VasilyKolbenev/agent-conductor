@@ -81,8 +81,9 @@ class _LazyReader:
         self._verdict: _Tool | str | None = None
         self._read: project_git.GitRead | None = None
 
-    def __call__(self, args: Sequence[str], separate_stderr: bool = False):
-        return self._ready()(args, separate_stderr)
+    def __call__(self, args: Sequence[str], separate_stderr: bool = False, **keywords: object):
+        """One git read; `stdin`, `output_limit` and `timeout` go on to the reader it built."""
+        return self._ready()(args, separate_stderr, **keywords)
 
     def _ready(self) -> project_git.GitRead:
         with self._lock:
