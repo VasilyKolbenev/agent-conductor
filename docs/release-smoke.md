@@ -60,7 +60,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -609,6 +609,11 @@ Named so that passing it is not read as more than it is.
 - **`conduct tools`.** `conduct tools pin git --path <absolute path>` writes the pin of the git a
   child may run into `~/.december-command/tools.json` (or under `CONDUCT_HOME`), which this
   procedure would leave on the machine it ran on; it is held by `tests/test_tool_pins.py`.
+- **`conduct hub`.** `conduct hub` serves the hub page on one loopback port (7700 unless `--port`
+  says otherwise) and starts one server per project it is asked to open; none of that is walked
+  above, because a hub keeps `~/.december-command` (or `CONDUCT_HOME`) between runs and answers
+  until it is interrupted, and a clean install has no project for it to open. It is held by
+  `tests/test_hub_command.py` and, over a real child, by `tests/test_hub_live.py`.
 - **Any platform but this one.** Everything above ran on Windows. The CI configuration runs the
   suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
   the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two

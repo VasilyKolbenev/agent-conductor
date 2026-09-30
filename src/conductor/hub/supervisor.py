@@ -617,7 +617,11 @@ class Supervisor:
                 self._codes[pid] = "start_timeout"
 
     def _retry_failed_binds(self, projects: tuple[registry.Project, ...]) -> None:
-        """A bind that failed is tried once more on port 0; the registry keeps its port (4.1.4)."""
+        """A bind that failed is tried once more on port 0; the registry keeps its port (4.1.4).
+
+        The retry of an `active` start is a start like any other and passes `_retry_verdict`; a
+        `view` child starts nothing itself and is retried as it always was.
+        """
         for project in projects:
             pid = project.project_id
             seen = self._seen(project)
@@ -625,7 +629,43 @@ class Supervisor:
             refused = (seen.own is not None and seen.own.poll() is not None and seen.fresh
                        and seen.record is not None and seen.record.state == "refused"
                        and seen.record.code == "bind_failed")
-            if refused and last is not None and pid not in self._retried and last["port"] != 0:
-                self._retried.add(pid)
+            if not (refused and last is not None and pid not in self._retried
+                    and last["port"] != 0):
+                continue
+            verdict = self._retry_verdict(pid, last) if last["mode"] == "active" else "go"
+            if verdict == "wait":
+                continue                        # a block that can lift does not spend the retry
+            self._retried.add(pid)
+            if verdict == "go":
                 self._launch(project, mode=last["mode"], transition=last["transition"],
                              auto_continue=last["auto_continue"], port=0, retry=True)
+
+    def _retry_verdict(self, pid: str, last: dict) -> str:
+        """`go`, `wait` or `drop` for the retry of an active start that was refused on its port.
+
+        It is the admission every active start passes, asked again now: a state that can be read,
+        the request the start belonged to still standing, nothing left to close, and nothing in
+        the way (`_busy`, which counts a status file nobody can read). A block that can lift is
+        `wait` and leaves the one retry unspent; a request that no longer stands is `drop`: it is
+        never started, and a later real start begins afresh.
+        """
+        try:
+            current = self._store.load()
+        except state.HubStateError:
+            return "wait"                       # `tick` meets the same refusal a line later
+        if not self._request_stands(current, pid, last["transition"]):
+            return "drop"
+        return "wait" if current.closing or self._busy(pid) else "go"
+
+    def _request_stands(self, current: state.HubState, pid: str, transition: str | None) -> bool:
+        """Whether the project is still the one asked for, by the request that started it.
+
+        A start made by a transition stands while that very transition is the recorded one; a
+        start made by a restart (no transition) stands while no newer transition waits.
+        """
+        if current.active_project_id != pid:
+            return False
+        if transition is None:
+            return self._waiting(current) is None
+        found = current.transition
+        return found is not None and found.id == transition and found.spawned_at is not None

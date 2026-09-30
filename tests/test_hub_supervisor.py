@@ -259,6 +259,104 @@ def test_a_registry_port_that_is_the_hubs_own_starts_the_child_on_port_zero_at_o
         made.close()
 
 
+# -- a retry of an active start passes the admission every active start passes -------------------
+
+
+def _a_bind_refused_and_the_child_gone(world: World) -> None:
+    """A is the active project, its child was refused on the registry port and left."""
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    world.supervisor.tick()
+    world.spawner.children[0].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+
+
+def _no_new_active_child_of_a(world: World) -> None:
+    assert len(world.spawner.started("a")) == 1, "a new active child was started past a block"
+
+
+def _the_allowed_retry_runs_exactly_once(world: World) -> None:
+    """Once the block is gone: one more start of A, on port 0, and a failed one is not repeated."""
+    for _ in range(3):
+        world.supervisor.tick()
+    assert [call["port"] for call in world.spawner.started("a")[1:]] == [0]
+    world.spawner.children[-1].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+    world.supervisor.tick()
+    assert len(world.spawner.started("a")) == 2
+
+
+def test_a_bind_retry_of_an_active_start_waits_while_hub_state_cannot_be_read_and_is_kept(world):
+    _a_bind_refused_and_the_child_gone(world)
+    path = world.home / "hub-state.json"
+    readable = path.read_bytes()
+    path.write_bytes(b"{not json")
+    with pytest.raises(state.HubStateError):
+        world.supervisor.tick()
+    _no_new_active_child_of_a(world)
+    path.write_bytes(readable)
+    _the_allowed_retry_runs_exactly_once(world)
+
+
+def test_a_bind_retry_of_an_active_start_waits_while_a_status_file_cannot_be_read_and_is_kept(
+        world):
+    _a_bind_refused_and_the_child_gone(world)
+    neighbour = world.home / "run" / f"{id_of('b')}.json"
+    neighbour.write_bytes(b"{not json")
+    world.supervisor.tick()
+    _no_new_active_child_of_a(world)
+    neighbour.unlink()
+    _the_allowed_retry_runs_exactly_once(world)
+
+
+def test_a_bind_retry_of_an_active_start_waits_for_an_open_closing_entry_and_is_kept(world):
+    _a_bind_refused_and_the_child_gone(world)
+    world.heads["b"] = "opened"
+    owed = state.ClosingEntry(id_of("b"), 202, "windows:1", id_of("b"), NOW)
+    world.store.update(lambda s: replace(s, closing=(owed,)))
+    world.supervisor.tick()
+    _no_new_active_child_of_a(world)
+    assert world.hub_state().closing == (owed,), "the obligation is not shed to make room"
+    world.heads["b"] = "closed"
+    _the_allowed_retry_runs_exactly_once(world)
+
+
+def test_a_bind_retry_of_an_active_start_waits_while_another_active_process_lives_and_is_kept(
+        world):
+    _a_bind_refused_and_the_child_gone(world)
+    world.running("c")
+    world.supervisor.tick()
+    _no_new_active_child_of_a(world)
+    world.gone("c")
+    _the_allowed_retry_runs_exactly_once(world)
+
+
+def test_a_bind_retry_is_never_started_once_another_project_has_been_asked_for(world):
+    _a_bind_refused_and_the_child_gone(world)
+    world.supervisor.activate(id_of("b"))
+    for _ in range(3):
+        world.supervisor.tick()
+    _no_new_active_child_of_a(world)
+    assert [call["mode"] for call in world.spawner.started("b")] == ["active"]
+    assert world.hub_state().active_project_id == id_of("b")
+
+
+def test_a_bind_failure_of_a_restart_is_retried_once_on_port_zero_while_the_request_stands(world):
+    _with_a_spawned_transition(world)
+    world.gone("a", "serving", head="closed")
+    world.supervisor.restart()
+    (first,) = world.spawner.calls
+    assert (first["transition"], first["port"]) == (None, 7701)
+    world.spawner.children[0].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+    world.supervisor.tick()
+    second = world.spawner.calls[1]
+    assert (second["mode"], second["transition"], second["port"]) == ("active", None, 0)
+    world.spawner.children[1].leave(1)
+    world.put_status("a", "refused", code="bind_failed")
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 2
+
+
 # -- what activate, view and stop refuse --------------------------------------------------------
 
 

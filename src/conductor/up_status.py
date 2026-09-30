@@ -182,7 +182,7 @@ def read_status(path: Path | str) -> StatusRecord | None:
     """
     target = Path(path)
     try:
-        data = target.read_bytes()
+        data = atomic_replace.read_bytes(target)
     except FileNotFoundError:
         return None
     except OSError as error:
