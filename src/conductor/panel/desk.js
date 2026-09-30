@@ -62,6 +62,7 @@ import {flagBody, flagLine, initialMarks, resumableRuns, runVerdicts} from "./de
 import {createFlagDoor} from "./desk-flag.js";
 import {createQueueDoor} from "./desk-queue.js";
 import {NO_PULT, createPultFlow} from "./desk-pult-flow.js";
+import {createWizardHost} from "./desk-wizard-host.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -129,6 +130,7 @@ let door = null;
 let flagDoor = null;
 let queueDoor = null;
 let pultFlow = null;
+let wizardHost = null;
 //: The project this desk is bound to: the one its first hash named, or else the one the claim
 //: named (null when neither named one), and what the doors claim from then on. `hashProject`
 //: is only what the first hash named: it is what the address the desk writes says, so a project
@@ -243,6 +245,7 @@ function render() {
   mountFeed(byId("deskFeed"), view);
   mountSummary(byId("deskSummary"), view);
   mountPult(byId("deskPult"), view, handlers);
+  wizardHost?.render();
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
   mark(byId("deskScene"), said.scene);
@@ -266,13 +269,17 @@ function where() {
 //: never start a loop, and the address it leaves is the one a new hash is compared with.
 //: A hash the router has not read yet is a request, and is not overwritten: the router
 //: that reads it normalises it.
-function remember() {
+function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
   const panel = state.flag !== null && state.flag.open ? "continue" : null;
+  const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
+  // Preparation names the wizard's task. Until its run link has landed, a previously
+  // selected run in the scene must not be paired with that new task in the address.
+  const run = extra?.prepare === "1" ? null : at.run;
   const address = preferenceHash(
-    deskHash({project: hashProject, embed, task: at.task, run: at.run, panel}),
+    deskHash({project: hashProject, embed, task: at.task, run, panel, ...extra}),
     {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
   history.replaceState(null, "", address);
   seen = location.hash;
@@ -469,6 +476,7 @@ function setActor(name) {
     return false;
   }
   move({actor: name, editing: false, draft: null, refused: false});
+  wizardHost?.actor(name);
   focusOn("pult:actor-change");
   return true;
 }
@@ -606,7 +614,13 @@ function enterForeign() {
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
     refused: false, mode: null, queue: null, flag: null, closing: null, pult: NO_PULT});
+  wizardHost?.dispose();
   render();
+}
+
+async function wizardExited({taskId, runId}) {
+  await load();
+  if (!state.foreign) await chooseTask(taskId, runId);
 }
 
 //: The selection steps: the task and its run. A task the lists do not hold, or a run with no
@@ -638,9 +652,11 @@ async function navigate(change, address) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
   const opened = await navigateSelection(keys, address);
-  if (!keys.includes("panel")) return opened;
-  if (address.panel === "continue") showContinue();
-  else closeContinue();
+  if (keys.includes("panel")) {
+    if (address.panel === "continue") showContinue();
+    else closeContinue();
+  }
+  await wizardHost?.navigate(change, address);
   return opened;
 }
 
@@ -748,6 +764,11 @@ function boot() {
   queueDoor = createQueueDoor(door, enterForeign);
   pultFlow = createPultFlow({door: queueDoor,
     host: {state: () => state, move, nonce: () => crypto.randomUUID()}});
+  wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
+    door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
+    onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
+  wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
+    tasks: () => state.tasks.list, foreign: () => state.foreign});
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

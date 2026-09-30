@@ -81,7 +81,9 @@ PERMITTED_IMPORTS = {
                           "./desk-feed.js", "./desk-summary.js", "./desk-closing.js",
                           "./desk-pult.js",
                           "./desk-flag-model.js", "./desk-flag.js", "./desk-queue.js",
-                          "./desk-pult-flow.js"}),
+                          "./desk-pult-flow.js", "./desk-wizard-host.js"}),
+    "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
+                                         "./desk-wizard-run.js", "./desk-wizard.js"}),
     #: What a press on the console's queue block means: a pure flow over the door it is handed and
     #: the queue's model. It names no route and no wire word, and imports no door itself.
     "desk-pult-flow.js": frozenset({"./desk-queue-model.js"}),

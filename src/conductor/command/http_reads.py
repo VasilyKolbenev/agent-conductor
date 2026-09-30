@@ -37,7 +37,9 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     if route.name == "queue":
         return queue_routes.read_queue(api)
     if route.name == "workflows":
-        return studio_routes.list_workflows(api._templates, api._providers, api._project())
+        return studio_routes.list_workflows(
+            api._templates, api._providers, api._project(),
+            registry=api._registry, offered_ids=api._offered_provider_ids)
     if route.name == "runs":
         return studio_routes.list_runs(api._store, api._providers, computed_at=api._clock())
     if route.name == "tasks":

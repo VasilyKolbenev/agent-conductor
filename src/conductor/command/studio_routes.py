@@ -14,12 +14,12 @@ The seam is spelled as ``(status, payload)`` rather than as this package's
 would make the two modules import each other -- so the boundary wraps, and
 nothing in this file knows how a response is shaped on the wire.
 
-Two of these answers carry a ``providers`` array, and it is the SAME
-``provider_projection`` the per-run controls route carries. It answers a
-different question from that route's ``instances``: a provider row is about this
-BUILD and this MACHINE, an instance row is about one run's frozen binding, and a
-consumer joins them by identity. It is here because a user with no runs at all
-can reach these routes and can never reach a per-run one.
+Two of these answers carry a ``providers`` array, based on the SAME
+``provider_projection`` the per-run controls route carries. The workflows
+answer joins two wizard-only facts: this version's offered membership and the
+registered adapter's task channel. A provider row is about this BUILD and this
+MACHINE, while an instance row is about one run's frozen binding. A user with
+no runs can reach these routes and can never reach a per-run one.
 """
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from .adapters.provider import provider_projection
+from .adapters.base import AdapterContractError
+from .policy_providers import task_channel_fact
 from .api_contracts import ApiRefusal
 from .studio_contracts import (
     RunInput, parse_draft_save, parse_run, parse_workflow_revision)
@@ -81,7 +83,8 @@ _PROBE_GRAPH = "graph-open-run-probe"
 
 
 def list_workflows(templates: "TemplateStore", providers,
-                   project: str | None = None) -> Answer:
+                   project: str | None = None, *, registry=None,
+                   offered_ids=()) -> Answer:
     """Every workflow this project holds, what this build can reach, and what
     it ships to start from.
 
@@ -102,9 +105,31 @@ def list_workflows(templates: "TemplateStore", providers,
     return 200, {
         "project": project,
         "workflows": workflow_rows(templates),
-        "providers": provider_projection(providers),
+        "providers": _wizard_providers(providers, registry, offered_ids),
         "starters": starters(),
     }
+
+
+def _wizard_providers(providers, registry, offered_ids):
+    """Add the wizard's two facts at this route, without changing shared provider rows.
+
+    The offered set is the caller's reviewed V1 catalogue; the task channel
+    comes only from the registered adapter class. An unresolved adapter has no
+    known channel, even if its display contract names the provider.
+    """
+    offered = frozenset(offered_ids)
+    rows = provider_projection(providers)
+    for row in rows:
+        row["offered"] = row["provider_id"] in offered
+        adapter = None
+        if registry is not None:
+            try:
+                adapter = registry.resolve(row["provider_id"])
+            except AdapterContractError:
+                pass
+        row["task_channel"] = task_channel_fact(
+            getattr(type(adapter), "profile", None)) if adapter is not None else None
+    return rows
 
 
 def read_workflow(templates: "TemplateStore", workflow_id: str) -> Answer:

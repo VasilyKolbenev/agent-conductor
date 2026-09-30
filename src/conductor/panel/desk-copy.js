@@ -13,6 +13,7 @@ export const DESK_COPY = Object.freeze({
       + "live.",
     "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают."],
   "desk.classic": ["Classic panel", "Прежняя панель"],
+  "desk.new_task": ["＋ New task", "＋ Новая задача"],
   // -- the terminal state: an address that claims another project ------------------------
   "desk.foreign": [
     "This desk is open for another project. Reload the page to continue.",

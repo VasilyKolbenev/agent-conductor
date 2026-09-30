@@ -71,6 +71,27 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-note{font-size:12px;color:var(--muted)}
 .desk-classic{margin-left:auto;display:inline-flex;align-items:center;min-height:44px;
   font-size:12.5px;color:var(--muted);text-decoration:underline}
+#deskNewTask{padding:0 12px;border-radius:8px;background:var(--panel)}
+
+/* The six-step wizard covers this project's desk while it is open. Its controls retain their
+   own state and focus across redraws; only the outer scroll belongs to the overlay. */
+.desk-wizard-shell{position:fixed;inset:0;z-index:20;overflow:auto;padding:24px;
+  background:var(--space)}
+.desk-wizard{max-width:900px;margin:0 auto;padding:20px;background:var(--panel);
+  border-radius:14px;display:grid;gap:16px}
+.desk-wizard__head,.desk-wizard__foot{display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:12px}
+.desk-wizard__steps{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.desk-wizard__steps li{flex:1 1 130px;min-width:0;padding:6px;background:var(--ground);
+  border-radius:8px}
+.desk-wizard__steps small{display:block}
+.desk-wizard__body{display:grid;gap:14px;min-width:0}
+.desk-wizard__body label{display:grid;gap:6px;min-width:0}
+.desk-wizard input,.desk-wizard textarea,.desk-wizard select{width:100%;padding:8px;
+  font:inherit;background:var(--ground)}
+.desk-wizard textarea{min-height:100px;resize:vertical}
+.desk-wizard button{padding:6px 12px;border-radius:8px;background:var(--ground)}
+.desk-wizard__dialog{padding:14px;background:var(--ground);border-radius:8px}
 
 /* ── the five regions ─────────────────────────────────────────────────── */
 .desk-rail{min-width:0;min-height:0;padding:16px 12px;overflow:auto;
@@ -431,6 +452,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-flag__info{margin:8px 0 0}
 
 @media (max-width:900px){
+  .desk-wizard-shell{padding:8px}
+  .desk-wizard{padding:12px}
   .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
   .desk-rail{border-right:0;border-bottom:1px solid var(--line)}
   .desk-pult{border-left:0;border-top:1px solid var(--line)}
