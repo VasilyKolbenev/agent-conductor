@@ -352,6 +352,7 @@ def _cmd_reconcile(args: argparse.Namespace) -> int:
 #: One constant, because init advising a port the panel is not on is worse
 #: than init saying nothing about the panel at all.
 DEFAULT_PORT = 7777
+HUB_PORT = 7700
 
 
 def _add_port(p: argparse.ArgumentParser) -> None:
@@ -511,6 +512,19 @@ def _add_tools(sub) -> None:
     pin.set_defaults(func=_cmd_tools)
 
 
+def _cmd_hub(args: argparse.Namespace) -> int:
+    # Deferred like the server: the hub is imported only when it runs.
+    from conductor.hub import cli
+    return cli.hub_command(args.port)
+
+
+def _add_hub(sub) -> None:
+    parser = sub.add_parser("hub", help="serve the hub: one child per project, on one port")
+    parser.add_argument("--port", type=int, default=HUB_PORT,
+                        help=f"TCP port on 127.0.0.1 (default: {HUB_PORT}; 0 lets the OS choose)")
+    parser.set_defaults(func=_cmd_hub)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -558,6 +572,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_demo)
 
     _add_tools(sub)
+    _add_hub(sub)
     return parser
 
 

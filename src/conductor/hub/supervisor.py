@@ -95,6 +95,15 @@ class UnlistedClosing:
 
 
 @dataclass(frozen=True)
+class ChildReport:
+    """A child the hub started, at the hub's exit: its drain deadline and whether it is gone."""
+
+    project_id: str
+    drain_deadline: datetime | None
+    done: bool
+
+
+@dataclass(frozen=True)
 class ProjectStatus:
     """A project in the words of 4.6.4: its lifecycle, working state, mode and drain deadline."""
 
@@ -247,6 +256,26 @@ class Supervisor:
                 instance=None if reported is None else self._instance_of(reported),
                 stopped_at=record.updated_at if record is not None
                 and record.state == "stopped" else None)
+
+    def drain_all(self) -> None:
+        """Close the pipe of every child this hub started: each reads end of file and drains.
+
+        This is the exit of the hub (4.1.7): the state file is not touched, so the next hub goes on
+        with the same active project and the same queue.
+        """
+        with self._lock:
+            self._drain(*self._children)
+
+    def children_report(self) -> tuple[ChildReport, ...]:
+        """Each child the hub started, with the drain deadline its status file states (if any)."""
+        with self._lock:
+            found = []
+            for project_id, child in self._children.items():
+                done = child.poll() is not None
+                record = None if done else self._seen_id(project_id).record
+                found.append(ChildReport(
+                    project_id, None if record is None else record.drain_deadline, done))
+            return tuple(found)
 
     def forget(self, project_id: str) -> None:
         """Take a project off the list ("Убрать из списка"); its files are not touched.

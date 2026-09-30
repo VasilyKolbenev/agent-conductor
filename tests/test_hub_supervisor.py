@@ -383,6 +383,21 @@ def test_a_project_reports_its_port_a_stable_instance_per_process_and_when_it_st
     assert world.supervisor.status(id_of("b")).stopped_at is None
 
 
+def test_the_exit_of_the_hub_asks_every_child_it_started_to_drain_and_reports_each(world):
+    _activate_and_start(world, "a")
+    world.supervisor.view(id_of("b"))
+    world.running("b", mode="view")
+    world.supervisor.drain_all()
+    assert all(child.closed for child in world.spawner.children)
+    report = {one.project_id: one for one in world.supervisor.children_report()}
+    assert set(report) == {id_of("a"), id_of("b")}
+    assert not report[id_of("a")].done and not report[id_of("b")].done
+    world.spawner.children[1].leave(0)
+    later = {one.project_id: one for one in world.supervisor.children_report()}
+    assert later[id_of("b")].done and not later[id_of("a")].done
+    assert later[id_of("b")].drain_deadline is None
+
+
 def test_a_registry_that_is_not_the_schema_stops_the_loop_without_a_crash(world):
     _activate_and_start(world, "a")
     (world.home / "registry.json").write_text("{not json", encoding="utf-8")
