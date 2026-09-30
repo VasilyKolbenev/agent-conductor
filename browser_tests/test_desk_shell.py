@@ -12,10 +12,12 @@ What this module holds, each as a measurement and not a reading of source:
   its module graph fetches answers 200 (the census is spelled out, not derived
   from the server's own allowlist, which would only agree with itself);
 - the five regions of spec 5.1 are mounted and say in `data-state` what became
-  of the read that feeds them: the rail and the summary `ready`, the scene, the
-  feed and the pult, which nothing feeds yet, still `empty` and childless; the
-  rail of a project with no tasks says so (what the rail draws for a project
-  that has tasks is `test_desk_rail_scene.py`'s);
+  of the read that feeds them: the rail, the summary and the pult `ready`, the
+  scene and the feed, which follow a chosen task, still `empty` and childless
+  until one is chosen; the rail of a project with no tasks says so and the
+  summary draws nothing for it (what they draw for a project that has tasks is
+  `test_desk_rail_scene.py`'s and `test_desk_summary.py`'s, and the feed's is
+  `test_desk_feed.py`'s);
 - a read that is refused, never answered or abandoned at its deadline puts the
   regions it feeds, and the whole shell and its one sentence, in the word it earned
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
@@ -83,9 +85,9 @@ DESK_BOOT_ASSETS = {
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
     ("deskRail", "ready"),     # fed by the tasks read and the runs read
-    ("deskScene", "empty"),    # follows a chosen task: no read of its own yet
-    ("deskFeed", "empty"),     # follows a chosen run
-    ("deskSummary", "ready"),  # fed by the runs read
+    ("deskScene", "empty"),    # follows a chosen task
+    ("deskFeed", "empty"),     # follows the run on the scene
+    ("deskSummary", "ready"),  # fed by the lists; it draws nothing for a project with no tasks
     ("deskPult", "ready"),     # draws the name of the person, which no read feeds
 )
 #: Every word the page carries itself, read in ONE evaluation: the document's language and
@@ -240,8 +242,8 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     by_id = {row["id"]: row for row in facts["regions"]}
     assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
                if name not in ("deskRail", "deskSummary", "deskPult"))
-    # The summary has no module yet; the rail of a project with no tasks says so; the console
-    # says its heading and the line that asks for the name.
+    # The summary draws nothing for a project with no tasks; the rail of one says so; the
+    # console says its heading and the line that asks for the name.
     assert by_id["deskSummary"]["children"] == 0
     assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
         2, "Your consoleYou: name not given · set")

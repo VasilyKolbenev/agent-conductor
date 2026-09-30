@@ -71,7 +71,8 @@ const READS = Object.freeze({
   project: () => path.project(),
 });
 //: The five mounts, in reading order: the desk boots only on a page that carries all of
-//: them. A mount no module fills stays in the word `empty`.
+//: them. Each has a module that fills it; one whose read gave nothing to draw stays in the word
+//: `empty`.
 const MOUNTS = Object.freeze(["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]);
 //: What a list stands at before a read and while one is out, and after a read that brought
 //: nothing usable: a phase and no rows.
