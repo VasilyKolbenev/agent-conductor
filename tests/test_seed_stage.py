@@ -9,6 +9,7 @@ follows a link or touches a neighbour's staging.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import subprocess
@@ -24,7 +25,7 @@ from conductor.command.api_refusals import SEED_REASONS
 from conductor.command.product_names import SEED_STAGING_DIR
 from conductor.command.project_git import GitAnswer
 from conductor.command.seed_plan import SeedRefusal
-from conductor.command.seed_record import SeedRecord, SeedWarning, Skip
+from conductor.command.seed_record import SeedRecord, SeedWarning, Skip, read_seed, write_seed
 from conductor.command.template_store import RouteNotOwned
 from tests.git_repo_helpers import (
     GIT, IDENTITY, ISOLATED, Script, commit, git, needs_git, real_reader, repository, said,
@@ -91,12 +92,31 @@ def test_a_staging_folder_is_named_by_the_task_and_work_item_and_by_nothing_else
     assert one == seed_stage.staging_name("task-a", "work-001")
     assert one != seed_stage.staging_name("task-b", "work-001")
     assert one != seed_stage.staging_name("task-a", "work-002")
-    assert len(one) == 10 and one.startswith("s-") and int(one[2:], 16) >= 0
+    assert one == "s-" + hashlib.sha256(b"task-a/work-001").hexdigest()
 
 
 def test_a_seed_record_of_the_reader_accepts_the_name():
     from conductor.command.seed_record import _STAGING
     assert _STAGING.match(seed_stage.staging_name(TASK, ITEM))
+
+
+def test_tasks_with_the_same_eight_hex_prefix_keep_separate_committed_stagings(tmp_path):
+    tasks = ("task-collision-717", "task-collision-121720")
+    digests = [hashlib.sha256(f"{task}/{ITEM}".encode()).hexdigest() for task in tasks]
+    assert digests[0][:8] == digests[1][:8] and digests[0] != digests[1]
+    first = seed_stage.stage_empty(tmp_path, task_id=tasks[0], work_scope=tasks[0],
+                                   work_item_id=ITEM, staged_at=AT)
+    (staging_of(tmp_path, first) / "keep.txt").write_bytes(b"committed seed")
+    write_seed(tmp_path, first)
+    second = seed_stage.stage_empty(tmp_path, task_id=tasks[1], work_scope=tasks[1],
+                                    work_item_id=ITEM, staged_at=AT)
+    assert tree_of(staging_of(tmp_path, first)) == {"keep.txt": b"committed seed"}
+    assert first.staging != second.staging and tree_of(staging_of(tmp_path, second)) == {}
+    assert read_seed(tmp_path, tasks[0]) == first
+    seed_stage.remove_staging(tmp_path, second.staging)
+    seed_stage.move_staged(tmp_path, first)
+    target = tmp_path / "work" / "_tasks" / tasks[0] / ITEM
+    assert (target / "keep.txt").read_bytes() == b"committed seed"
 
 
 # --- the base -----------------------------------------------------------------------------------
@@ -409,7 +429,8 @@ def test_removing_a_staging_takes_its_folder_and_the_seed_folder_only_when_it_is
 
 
 @pytest.mark.parametrize("name", ["", "s-1", "s-ZZZZZZZZ", "../s-1a2b3c4d", "s-1a2b3c4d/x",
-                                  "S-1A2B3C4D", ".conduct-seed"])
+                                  "S-1A2B3C4D", ".conduct-seed", "s-" + "a" * 9,
+                                  "s-" + "a" * 63, "s-" + "a" * 65])
 def test_only_a_staging_name_of_the_grammar_can_be_removed(tmp_path, name):
     with pytest.raises(ValueError):
         seed_stage.remove_staging(tmp_path, name)

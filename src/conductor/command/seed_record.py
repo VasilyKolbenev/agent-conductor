@@ -53,7 +53,7 @@ MAX_RECORD_BYTES = 1 << 20
 MAX_PATH_CHARS = 4096
 
 _OID = {"sha1": re.compile(r"[0-9a-f]{40}\Z"), "sha256": re.compile(r"[0-9a-f]{64}\Z")}
-_STAGING = re.compile(r"s-[0-9a-f]{8}\Z")
+_STAGING = re.compile(r"s-(?:[0-9a-f]{8}|[0-9a-f]{64})\Z")
 _FIELDS = frozenset({
     "schema_version", "task_id", "work_scope", "work_item_id", "source", "base_commit",
     "base_tree", "object_format", "base_ref", "file_count", "total_bytes",

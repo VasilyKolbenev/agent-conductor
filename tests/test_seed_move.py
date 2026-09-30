@@ -1,6 +1,6 @@
 """The move of a staged seed under `work/`: one rename, under the root gate (spec 9.1.4).
 
-A seed is prepared in `<root>/.conduct-seed/s-<8 hex>/` and moved, by one `rename`, to
+A seed is prepared in `<root>/.conduct-seed/s-<64 hex>/` and moved, by one `rename`, to
 `work/_tasks/<scope>/<item>` while the root's turn is held, so no other dispatch sees a change
 outside its own subtree. The target must be absent; an empty folder there is removed first; anything
 else is `work_not_empty`. This file judges the move itself, then the door that attempts it (201
@@ -14,6 +14,7 @@ import shutil
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,9 +24,10 @@ from conductor.command.adapters.harness_workspace import WorkspaceBusy, root_tur
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.product_names import SEED_STAGING_DIR
 from conductor.command.seed_plan import SeedRefusal
-from conductor.command.seed_record import read_seed, seed_state
+from conductor.command.seed_record import read_seed, seed_state, write_seed
 from conductor.command.template_store import RouteNotOwned
 from tests.git_repo_helpers import needs_git
+from tests.sabotage_fixtures import SabotageUnavailable, plant_route_portal
 from tests.test_command_materials_routes import TASK, NoGit, Project
 from tests.test_command_project_doors import code_of
 from tests.test_seed_routes import preparation, reason_of, seed, serving
@@ -187,6 +189,44 @@ def test_a_staging_that_is_a_link_is_not_moved(tmp_path):
         seed_stage.move_staged(tmp_path, record)
     assert refused.value.reason == "seed_lost" and (outside / "keep.txt").exists()
     assert not (tmp_path / "work").exists()
+
+
+@pytest.mark.parametrize("kind", ["junction", "symlink"])
+def test_a_move_refuses_a_portal_at_the_seed_parent_without_moving_outside_bytes(tmp_path, kind):
+    root, outside = tmp_path / "project", tmp_path / "outside"
+    root.mkdir()
+    record = staged(root)
+    seeds = root / SEED_STAGING_DIR
+    seeds.rename(outside)
+    try:
+        plant_route_portal(seeds, outside, kind=kind)
+    except SabotageUnavailable as error:
+        pytest.skip(str(error))
+    try:
+        with pytest.raises(RouteNotOwned):
+            seed_stage.move_staged(root, record)
+        assert tree_of(outside) == {f"{record.staging}/a.txt": b"alpha\n"}
+        assert not (root / "work").exists()
+    finally:
+        if os.path.lexists(seeds):
+            seeds.unlink() if kind == "symlink" else seeds.rmdir()
+
+
+@pytest.mark.parametrize("operation", ["move", "remove"])
+def test_a_legacy_eight_hex_staging_still_reads_and_moves_or_cleans_up(tmp_path, operation):
+    record = staged(tmp_path)
+    seeds = tmp_path / SEED_STAGING_DIR
+    legacy = replace(record, staging="s-1a2b3c4d")
+    (seeds / record.staging).rename(seeds / legacy.staging)
+    write_seed(tmp_path, legacy)
+    assert read_seed(tmp_path, legacy.task_id) == legacy
+    if operation == "move":
+        seed_stage.move_staged(tmp_path, legacy)
+        assert tree_of(target_of(tmp_path)) == {"a.txt": b"alpha\n"}
+    else:
+        seed_stage.remove_staging(tmp_path, legacy.staging)
+        assert not (tmp_path / "work").exists()
+    assert not seeds.exists()
 
 
 def test_a_work_folder_that_is_a_file_or_a_link_is_not_written_through(tmp_path):

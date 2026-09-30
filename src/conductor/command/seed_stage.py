@@ -1,7 +1,7 @@
 """Stage a seed: write a base commit into a folder of its own, byte for byte (spec 9.1.2).
 
 A task's work folder is seeded from a commit of the project. The bytes are prepared here first, in
-`<root>/.conduct-seed/s-<8 hex>/`, outside `work/`, so no other dispatch of the project sees a
+`<root>/.conduct-seed/s-<64 hex>/`, outside `work/`, so no other dispatch of the project sees a
 change outside its own subtree and the request does not wait for one (9.1.2 step 3). The move under
 `work/` is a separate step under the root gate (9.1.4).
 
@@ -48,7 +48,7 @@ from .work_layout import TASKS_DIR, WORK_DIR, work_parts
 LISTING_LIMIT = 4 * 1024 * 1024
 #: How long a move waits for the root's turn before it leaves the seed staged (spec 9.1.4).
 MOVE_WAIT_SECONDS = 2
-_NAME = re.compile(r"s-[0-9a-f]{8}\Z")
+_NAME = re.compile(r"s-(?:[0-9a-f]{8}|[0-9a-f]{64})\Z")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _FORMATS = ("sha1", "sha256")
 _EXECUTABLE = 0o100
@@ -65,13 +65,13 @@ class BaseFacts:
 
 
 def staging_name(task_id: str, work_item_id: str) -> str:
-    """`s-` and the first eight hex of the SHA-256 of `task/item`: one folder per pair.
+    """`s-` and the full SHA-256 of `task/item`: one folder per pair.
 
     One name per pair is what lets the next seed of a task remove the preparations it abandoned
     by an exact name, without a marker file that would travel with the tree into the task.
     """
     digest = hashlib.sha256(f"{task_id}/{work_item_id}".encode("utf-8")).hexdigest()
-    return "s-" + digest[:8]
+    return "s-" + digest
 
 
 def read_base(root: str | os.PathLike[str], git: GitRead) -> BaseFacts | None:
@@ -145,7 +145,7 @@ def stage_empty(root: str | os.PathLike[str], *, task_id: str, work_scope: str,
 
 
 def remove_staging(root: str | os.PathLike[str], name: str) -> None:
-    """Remove one staging folder of the grammar `s-<8 hex>`, following nothing, if it is there.
+    """Remove one staging folder, following nothing; accept both current and legacy names.
 
     The seed folder goes with it when nothing else is in it. Removing what is not there is fine.
 
@@ -154,7 +154,7 @@ def remove_staging(root: str | os.PathLike[str], name: str) -> None:
         RouteNotOwned: The seed folder is not a plain folder of this project.
     """
     if _NAME.match(name) is None:
-        raise ValueError("a staging folder is named s- and eight lower-case hex digits")
+        raise ValueError("a staging folder is named s- and 8 or 64 lower-case hex digits")
     folder = Path(root).resolve()
     with ProcessRunner.project_write_guard(folder):
         _discard(folder, name)
@@ -193,6 +193,7 @@ def move_staged(root: str | os.PathLike[str], record: SeedRecord, *,
     target = folder.joinpath(*work_parts(record.work_item_id, record.work_scope))
     turn = root_turn(folder, wait=MOVE_WAIT_SECONDS if wait is None else wait)
     with turn, ProcessRunner.project_write_guard(folder):
+        _plain_seed_folder(folder, folder / SEED_STAGING_DIR, make=False)
         if not _plain_folder(staging):
             raise SeedRefusal("seed_lost")
         _make_parents(folder, target)

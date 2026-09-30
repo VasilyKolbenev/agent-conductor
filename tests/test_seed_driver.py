@@ -23,7 +23,7 @@ from conductor.command.graph_definition import GraphDefinition, GraphEdge, Graph
 from conductor.command.graph_template import RunBinding, load_template, materialize
 from conductor.command.product_names import SEED_STAGING_DIR
 from conductor.command.seed_record import (
-    SeedRequest, read_request, read_seed, seed_state, write_request)
+    SeedRequest, read_request, read_seed, seed_state, write_request, write_seed)
 from tests.flow_driver_bench import FlowCycle
 from tests.git_repo_helpers import commit, git, needs_git
 from tests.test_command_flow_driver import DOER
@@ -120,6 +120,35 @@ def test_a_seed_whose_task_folder_filled_up_blocks_the_run_until_it_empties(cycl
     (folder / "late.txt").unlink()
     at_result_gate(run)
     assert run.steps() == ["analyst", "do"]
+
+
+@pytest.mark.parametrize("boundary", ["http", "driver"])
+@pytest.mark.parametrize("state", ["staged", "seeded"])
+def test_a_saved_seed_cannot_substitute_another_scope_for_the_tasks_binding(cycle, boundary, state):
+    run = cycle(LINEAR)
+    root = run.store.project_root
+    record = seed_stage.stage_empty(root, task_id=BENCH_TASK, work_scope="foreign-scope",
+                                    work_item_id=ITEM, staged_at=NOW)
+    staging = root / SEED_STAGING_DIR / record.staging
+    (staging / "keep.txt").write_bytes(b"foreign bytes")
+    write_seed(root, record)
+    if state == "seeded":
+        seed_stage.move_staged(root, record)
+    foreign = root / "work" / "_tasks" / "foreign-scope" / ITEM
+    held = staging if state == "staged" else foreign
+    assert read_seed(root, BENCH_TASK) == record, "the stored schema alone permits this scope"
+    if boundary == "http":
+        status, payload = empty_seed(run)
+        assert (status, payload.get("error", {}).get("code")) == (500, "store_error")
+    else:
+        assert not run.subject.command_api._policy.seeds.settle(run.graph.run_id)
+        run.start()
+        assert run.until("the seed binding block") == "seed_blocked"
+        assert run.automation() == ("stalled", "seed_blocked")
+    assert run.records("action_proposal") == [] and run.steps() == []
+    assert (held / "keep.txt").read_bytes() == b"foreign bytes"
+    assert not folder_of(run).exists()
+    assert seed_state(root, record) == state and read_seed(root, BENCH_TASK) == record
 
 
 def test_a_run_that_performs_no_dispatch_is_not_held_for_a_seed(cycle):
