@@ -171,9 +171,12 @@ DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
 #: DOOR rather than opening one of its own: the counts above are unchanged, so
 #: every road goes through the same `fetch(`, the same token header and the
 #: same refusal vocabulary as the four before them.
+#: `materials` joined when lane L's route `POST /command/runs/<run_id>/materials` landed
+#: (spec 6.2.3, route-canon 3): one more name on the same door, the counts unchanged.
 WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
                            "proposals", "actions", "artifacts", "tasks",
-                           "automationPreview", "automationAuthorize", "automationControl"})
+                           "automationPreview", "automationAuthorize", "automationControl",
+                           "materials"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.

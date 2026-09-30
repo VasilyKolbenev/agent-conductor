@@ -59,11 +59,16 @@ export const path = Object.freeze({
   automationPreview: (id) => `/command/runs/${encodeURIComponent(id)}/automation/preview`,
   automationAuthorize: (id) => `/command/runs/${encodeURIComponent(id)}/automation/authorize`,
   automationControl: (id) => `/command/runs/${encodeURIComponent(id)}/automation/control`,
+  // Lane L's route-canon 3 (spec 6.2.3, 9.1.6): the run's materials document, written once
+  // a run exists, and the documents of the project's HEAD -- the list, and one by its id.
+  materials: (id) => `/command/runs/${encodeURIComponent(id)}/materials`,
+  projectDocuments: () => "/command/project/documents",
+  projectDocument: (id) => `/command/project/documents/${encodeURIComponent(id)}`,
 });
 // Closed mutation targets share the same CSRF and refusal door.
 const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
-  "automationPreview", "automationAuthorize", "automationControl"]);
+  "automationPreview", "automationAuthorize", "automationControl", "materials"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

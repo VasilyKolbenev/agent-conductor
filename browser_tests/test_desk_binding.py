@@ -19,7 +19,9 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
-from browser_tests.test_desk_rail_scene import seeded_url  # noqa: F401  (a fixture)
+from browser_tests.desk_identity import identified_server
+from browser_tests.test_desk_rail_scene import _seed, seeded_url  # noqa: F401  (a fixture)
+from tests.test_store import good_lane, write_project
 
 PROJECT_A, PROJECT_B = "a" * 32, "b" * 32
 HEADER = "x-conduct-project"
@@ -171,3 +173,41 @@ def test_a_write_after_a_seal_does_not_fetch_a_new_session(stand):
     }""", [MODULE, PROJECT_A])
     assert answer == {"status": "refused", "code": "project_mismatch"}
     assert wire.asked == []
+
+
+# -- the materials write and the two document reads, through the real doors -------------------
+
+#: One evaluation: the write twice (a retry after a lost answer is the same document), a write
+#: the route refuses, the list of documents, and a document the project does not hold.
+MATERIALS = """async ([module, run]) => {
+  const {createTransport, path} = await import(module);
+  const door = createTransport(() => "en", () => null);
+  const body = {lang: "en", items: []};
+  const first = await door.submit("materials", run, body);
+  const again = await door.submit("materials", run, body);
+  const extra = await door.submit("materials", run, {...body, path: "x"});
+  const listing = await door.readJson(path.projectDocuments());
+  let unknown = null;
+  try { await door.readJson(path.projectDocument("d-" + "0".repeat(32))); }
+  catch (error) { unknown = error.message; }
+  return {first, again, extra, listing, unknown};
+}"""
+
+
+def test_the_materials_write_and_the_document_reads_work_through_the_real_doors(
+        chromium: Browser, tmp_path_factory: pytest.TempPathFactory):
+    root = write_project(tmp_path_factory.mktemp("desk-materials"), lanes={"claude": good_lane()})
+    _seed(root)
+    with identified_server(root, None) as origin:
+        context = chromium.new_context()
+        try:
+            page = context.new_page()
+            page.goto(origin + STAND, wait_until="load")
+            said = page.evaluate(MATERIALS, [MODULE, "run-docs"])
+        finally:
+            context.close()
+    assert said["first"]["status"] == "accepted" and said["again"]["status"] == "accepted"
+    assert said["again"]["payload"] == said["first"]["payload"]
+    assert (said["extra"]["status"], said["extra"]["code"]) == ("refused", "contract_invalid")
+    assert said["listing"] == {"base": None, "documents": [], "truncated": False}
+    assert said["unknown"] == "materials_refused"
