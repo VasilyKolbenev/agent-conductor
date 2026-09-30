@@ -15,6 +15,10 @@
 // it): the flow is read and compared. A `draft_conflict` on a draft that stands is read again and said
 // so, and on the first write of an id this desk made, the next id is taken. A ready cycle (`desk-*`)
 // is never written by an edit: the first edit makes a copy under a new `cycle-<8 hex>`.
+//
+// The count of asks runs on for the whole page (`open` and `new` carry it), so the id of an ask is
+// never the id of an older one, and an answer is judged by the cycle it names as well as by its id:
+// the answer to a cycle's read that lands after another cycle was opened changes nothing.
 import {applyEdit} from "./desk-flow-edits.js";
 import {canonical, emptyFlow} from "./desk-flow-shape.js";
 
@@ -162,7 +166,7 @@ const LANDINGS = Object.freeze({open: landOpen, check: landCheck, conflict: land
   settle: landSettle});
 
 function landRead(state, ask, result) {
-  if (state.reading?.id !== ask.id) return {state, asks: []};
+  if (state.reading?.id !== ask.id || ask.subject !== state.workflowId) return {state, asks: []};
   const purpose = state.reading.purpose ?? "check";
   const base = {...state, reading: null};
   const allowNone = purpose === "open" || purpose === "check" || purpose === "settle";
@@ -215,7 +219,9 @@ function landLost(state, sent) {
 
 function landWrite(state, ask, result) {
   const sent = state.inflight;
-  if (sent === null || sent.id !== ask.id) return {state, asks: []};
+  if (sent === null || sent.id !== ask.id || ask.subject !== state.workflowId) {
+    return {state, asks: []};
+  }
   const base = {...state, inflight: null};
   if (result.status === "unknown") return landLost(base, sent);
   if (result.status === "refused") {
@@ -231,7 +237,7 @@ function landWrite(state, ask, result) {
 // -- the events --------------------------------------------------------------------------
 
 function open(state, event) {
-  const base = {...initialWrite({nonce: state.nonce}), minted: state.minted,
+  const base = {...initialWrite({nonce: state.nonce}), minted: state.minted, seq: state.seq,
     workflowId: event.workflowId, title: typeof event.title === "string" ? event.title : "",
     phase: "reading"};
   return readAsk(base, "open");
@@ -266,7 +272,8 @@ function edit(state, event) {
 //: A new cycle begins from nothing, a starter, or a copy of the revision that stands. A starter or
 //: a copy is written at once (its seed is what the write carries); nothing is written for nothing.
 function begin(state, event) {
-  const base = {...initialWrite({nonce: state.nonce}), minted: state.minted, phase: "ready"};
+  const base = {...initialWrite({nonce: state.nonce}), minted: state.minted, seq: state.seq,
+    phase: "ready"};
   if (event.from === "empty") {
     return {state: {...minted(base), held: emptyFlow(event.title ?? ""), fresh: true}, asks: []};
   }

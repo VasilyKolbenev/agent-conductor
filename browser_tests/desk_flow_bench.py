@@ -26,7 +26,8 @@ from browser_tests.desk_wizard_bench import desk_url  # noqa: F401  (the fixture
 
 #: Evaluated once on the served page. `host.log` is every ask the model made, in order;
 #: `host.answers` is what the server said to each; `host.lose` is the number of write answers to
-#: swallow AFTER the write has landed (the answer is then `unknown`, as a dropped connection is).
+#: swallow AFTER the write has landed (the answer is then `unknown`, as a dropped connection is);
+#: `host.hold(id)` keeps back every read answer of a cycle until `host.release(id)` (a slow line).
 HOST_JS = """
 async () => {
   const model = await import("/panel/desk-flow-model.js");
@@ -60,10 +61,24 @@ async () => {
   };
   const reads = {flowRead: (id) => `/command/workflows/${enc(id)}/flow`,
     workflows: () => "/command/workflows"};
+  const gates = new Map();
+  host.hold = (id) => {
+    const gate = {};
+    gate.promise = new Promise((go) => { gate.release = go; });
+    gates.set(id, gate);
+  };
+  host.release = (id) => {
+    gates.get(id)?.release();
+    gates.delete(id);
+  };
   const wire = async (ask) => {
     try {
       if (ask.door === "read") {
-        return await answer(await fetch(reads[ask.target](ask.subject), {cache: "no-store"}));
+        const read = await answer(await fetch(reads[ask.target](ask.subject),
+          {cache: "no-store"}));
+        const gate = ask.name === "schema_read" ? gates.get(ask.subject) : undefined;
+        if (gate !== undefined) await gate.promise;
+        return read;
       }
       const response = await fetch(`/command/workflows/${enc(ask.subject)}/flow`, {method: "POST",
         body: JSON.stringify(ask.body), headers: {"Content-Type": "application/json",
@@ -106,6 +121,7 @@ async () => {
     host.mount.id = "flowBench";
     document.body.append(host.mount);
     Object.assign(host, {log: [], answers: [], renders: 0, lose: 0, pending: 0});
+    gates.clear();
     host.state = {locale, schema: model.initialFlow({nonce})};
     dispatch({type: "cycles"});
   };
@@ -173,6 +189,13 @@ class Flow:
 
     def server(self, workflow_id: str) -> dict[str, Any]:
         return self.call("server", workflow_id)
+
+    def hold(self, workflow_id: str) -> None:
+        """Keep back the answers to reads of a cycle, as a slow line does, until `release`."""
+        self.call("hold", workflow_id)
+
+    def release(self, workflow_id: str) -> None:
+        self.call("release", workflow_id)
 
     def log(self) -> list[dict[str, Any]]:
         return self.page.evaluate("() => window.host.log.map((ask) => ({id: ask.id, "

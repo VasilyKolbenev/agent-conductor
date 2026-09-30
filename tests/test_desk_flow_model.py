@@ -84,6 +84,23 @@ def test_opening_a_cycle_asks_its_flow_and_the_list_of_cycles_once_and_keeps_the
     assert out["phase"] == "ready" and out["listed"] is None
 
 
+def test_the_answer_to_the_first_cycles_read_does_not_fill_the_panel_of_the_second_cycle():
+    out = js("""
+      const a = send({state: fresh()}, {type: "open", workflowId: "cycle-a1", title: "A"});
+      const b = send(a, {type: "open", workflowId: "cycle-b2", title: "B"});
+      const late = reply(b, named(a, "schema_read"), fs("tester", "cycle-a1"));
+      const waiting = model.flowView(late.state);
+      const right = reply(late, named(b, "schema_read"), fs("none", "cycle-b2"));
+      const done = model.flowView(right.state);
+      show({ids: [named(a, "schema_read").id, named(b, "schema_read").id],
+        late: [waiting.workflowId, waiting.phase, waiting.flow, late.asks.length],
+        right: [done.workflowId, done.phase, done.flow.steps.length]});
+    """)
+    assert out["ids"][0] != out["ids"][1], "the second open asks under an id of its own"
+    assert out["late"] == ["cycle-b2", "reading", None, 0], "B shows nothing of A while it waits"
+    assert out["right"] == ["cycle-b2", "ready", 0]
+
+
 def test_a_list_that_cannot_be_read_is_said_and_a_stale_answer_changes_nothing():
     out = js("""
       const first = send({state: fresh()}, {type: "open", workflowId: "cycle-x1", title: "T"});

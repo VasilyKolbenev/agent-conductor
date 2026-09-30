@@ -97,6 +97,49 @@ def test_a_wrong_answer_fails_the_read_and_a_stale_ask_changes_nothing():
     assert out["lost"] == ["failed", "unknown"] and out["stale"] == [True, 0]
 
 
+def test_the_answer_to_the_read_of_a_cycle_opened_before_changes_nothing_in_the_one_opened_after():
+    out = js("""
+      const first = begin("cycle-a1", "A");
+      const second = send(first, {type: "open", workflowId: "cycle-b2", title: "B"});
+      const late = reply(second, first.asks[0], fs("tester", "cycle-a1"));
+      const right = reply(late, second.asks[0], fs("none", "cycle-b2"));
+      show({ids: [first.asks[0].id, second.asks[0].id],
+        late: [late.state === second.state, late.asks.length, late.state.phase,
+          late.state.reading?.id ?? null],
+        right: [right.state.workflowId, right.state.phase, right.state.held.steps.length]});
+    """)
+    assert out["ids"][0] != out["ids"][1], "no two reads of one page share an id"
+    assert out["late"] == [True, 0, "reading", out["ids"][1]], "the second cycle still waits"
+    assert out["right"] == ["cycle-b2", "ready", 0]
+
+
+def test_a_read_asked_after_a_new_cycle_is_begun_has_an_id_no_earlier_read_of_the_page_had():
+    out = js("""
+      const first = begin("cycle-a1", "A");
+      const began = send(first, {type: "new", from: "empty", title: "N"});
+      const check = send(began, {type: "check"});
+      const late = reply(check, first.asks[0], fs("tester", "cycle-a1"));
+      show({ids: [first.asks[0].id, check.asks[0].id],
+        late: [late.state === check.state, late.state.held.steps.length, late.state.workflowId]});
+    """)
+    assert out["ids"][0] != out["ids"][1], "a new cycle does not start the count again"
+    assert out["late"] == [True, 0, "cycle-a1b2c3d4"], "the new cycle's check is not answered by A"
+
+
+def test_an_answer_naming_another_cycle_than_the_one_open_changes_nothing_under_a_live_id():
+    out = js("""
+      const reading = begin("cycle-b2", "B");
+      const foreign = {...reading.asks[0], subject: "cycle-a1"};
+      const read = reply(reading, foreign, fs("tester", "cycle-a1"));
+      const one = send(opened(), {type: "edit", edit: title("Mine")});
+      const other = {...one.asks[0], subject: "cycle-other"};
+      const wrote = reply(one, other, landed(other, D("1")));
+      show({read: [read.state === reading.state, read.asks.length],
+        write: [wrote.state === one.state, wrote.asks.length]});
+    """)
+    assert out == {"read": [True, 0], "write": [True, 0]}, "the subject is judged, not only the id"
+
+
 def test_a_completed_edit_asks_one_write_with_the_last_digest_and_a_closed_body():
     out = js("""
       const ready = opened();

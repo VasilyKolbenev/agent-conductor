@@ -18,6 +18,7 @@ caret survive a redraw.
 from __future__ import annotations
 
 import json
+import uuid
 
 from playwright.sync_api import expect
 
@@ -51,6 +52,16 @@ def from_starter(bench: Flow, starter: str) -> None:
     bench.open()
     bench.control(f"schema:new:starter:{starter}").click()
     bench.settle()
+
+
+def step_ids(state: dict) -> list[str]:
+    """The step ids of the flow a `FlowState` holds."""
+    return [row["step_id"] for row in state["flow"]["steps"]]
+
+
+def writes_of(bench: Flow) -> list[str]:
+    """The cycle each write the panel asked was for, in order."""
+    return [ask["subject"] for ask in bench.log() if ask["name"] == "schema_write"]
 
 
 def server_counter(answer: dict) -> dict[str, list[int]]:
@@ -291,6 +302,36 @@ def test_a_lost_answer_is_settled_by_reading_and_the_write_is_never_repeated_bli
     assert name and [s["step_id"] for s in flow.server(flow.view()["workflowId"])["flow"]["steps"]
                      ] == ["analyst"]
     assert flow.view()["save"] == "saved"
+
+
+def test_the_late_answer_of_a_cycle_opened_first_does_not_fill_the_cycle_opened_second(flow):
+    first = flow.open()
+    flow.add("analyst")
+    flow.add("doer")
+    kept = step_ids(flow.server(first))
+    flow.open()
+    second = f"cycle-{uuid.uuid4().hex[:8]}"
+    flow.hold(first)
+    flow.hold(second)
+    flow.control("schema:pick").select_option(first)
+    flow.dispatch(type="open", workflowId=second, title="Fresh")
+    flow.release(first)
+    flow.page.wait_for_function("() => window.host.pending === 1")
+    waiting = flow.page.evaluate("""() => {
+      const view = window.host.view(), nodes = document.querySelectorAll("[data-node-id]");
+      return [view.workflowId, view.phase, view.flow, nodes.length];
+    }""")
+    assert waiting == [second, "reading", None, 0], (
+        "the answer of the first cycle lands nowhere while the second still waits for its own")
+    flow.release(second)
+    expect(flow.root).to_have_attribute("data-flow-phase", "ready")
+    flow.idle()
+    assert flow.view()["workflowId"] == second and flow.held()["steps"] == []
+    before = len(writes_of(flow))
+    flow.add("analyst")
+    assert writes_of(flow)[before:] == [second], "the edit is written to the cycle that stands"
+    assert step_ids(flow.server(second)) == ["analyst"]
+    assert step_ids(flow.server(first)) == kept and len(kept) > 1, "the first cycle is as it was"
 
 
 def test_a_change_made_in_another_window_is_said_and_shown_and_ours_is_not_written_over_it(flow):
