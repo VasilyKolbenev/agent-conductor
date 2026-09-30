@@ -46,11 +46,14 @@ def _state(policy, run_id, grant, control, computed, pending, owner, now):
         return "unconfigured", "authorization_required"
     if computed is not None and computed.run_state == "complete":
         return "complete", "plan_ended"
-    if control is not None and control.action in {"pause", "revoke"}:
-        word = "paused" if control.action == "pause" else "revoked"
-        return word, word
+    if control is not None and control.action == "revoke":
+        return "revoked", "revoked"
+    # The clock is judged before a pause: a paused grant that ran out cannot be resumed, and
+    # `paused` would promise that it can. A revoke is the human's final word and stays first.
     if _time_parts("now", now) >= _time_parts("expires_at", grant.expires_at):
         return "expired", "expired"
+    if control is not None and control.action == "pause":
+        return "paused", "paused"
     driver = policy.driver
     if not owner:
         return "restart_required", "owner_required"

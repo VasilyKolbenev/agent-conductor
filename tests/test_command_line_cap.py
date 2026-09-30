@@ -53,6 +53,7 @@ CAPPED = (
     "tests/test_policy_driver_slot.py",
     "tests/test_policy_queue_hook.py",
     "tests/test_policy_view_door.py",
+    "tests/test_policy_view_expired.py",
     "tests/test_policy_view_reasons.py",
     "tests/test_preview_draft.py",
     "tests/test_preview_stale_refusal.py",

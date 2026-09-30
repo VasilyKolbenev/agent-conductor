@@ -56,7 +56,8 @@ def slot_reading(driver: Any, mode: str,
     The table is the one of spec 4.4.6, checked from the top and the first row that fits decides:
     no driver (a view process, or an active one with no owner), a drain, nothing held, and then
     the holder's own `(state, reason)` from the automation read. A holder that cannot be read is
-    stuck and not free: its action may still be running.
+    stuck and not free: its action may still be running. A paused holder whose grant ran out
+    while its action is in flight reads `expired`, but its slot is still the busy/paused row.
 
     Args:
         driver: The policy driver, or None when this process has none.
@@ -77,6 +78,9 @@ def slot_reading(driver: Any, mode: str,
     except (StoreError, ContractError):
         return _slot("stuck", holder, "run_unreadable")
     state, reason = view["state"], view["reason_code"]
+    if (state == "expired" and snapshot.inflight_run_id == holder
+            and (view.get("control") or {}).get("action") == "pause"):
+        return _slot("busy", holder, "paused")      # the action ends by itself; nobody is stuck
     if state in _BUSY:
         return _slot("busy", holder, reason)
     if state == "restart_required":
