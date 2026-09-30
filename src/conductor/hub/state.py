@@ -349,7 +349,10 @@ def begin_switch(current: HubState, new_id: str, *, kind: str, transition_id: st
     here), the transition is recorded unspawned, and the flag handed to it is remembered.
 
     Args:
-        previous: The closing entry of the project that is active now; `None` when none is.
+        previous: The closing entry of the project that is active now. `None` when nothing is
+            active, or when the active project has nothing left to close (no process of it ever
+            ran, or it is already proven closed): the caller has judged that, this function
+            cannot.
 
     Raises:
         TransitionRefused: `already_active`, or `active_not_closed` when the new project is
@@ -363,9 +366,8 @@ def begin_switch(current: HubState, new_id: str, *, kind: str, transition_id: st
     if any(entry.project_id == new_id for entry in current.closing):
         raise TransitionRefused("active_not_closed", f"{new_id} has not finished closing")
     active = current.active_project_id
-    if (previous is None) != (active is None) or (previous and previous.project_id != active):
-        raise ValueError("previous must be the closing entry of the active project, "
-                         "and only when one is active")
+    if previous is not None and previous.project_id != active:
+        raise ValueError("previous must be the closing entry of the project that is active")
     handed = dict(current.handed_flags)
     if flag is not None:
         handed[new_id] = flag.flag_id

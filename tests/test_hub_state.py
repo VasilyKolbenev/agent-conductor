@@ -254,12 +254,18 @@ def test_a_switch_to_a_project_that_is_still_closing_is_active_not_closed():
     assert caught.value.reason == "active_not_closed"
 
 
-def test_a_switch_needs_the_entry_of_the_project_that_is_active_and_no_other():
-    before = state.HubState(active_project_id=A)
-    for previous in (None, entry(C)):
+def test_a_switch_parks_only_the_entry_of_the_project_that_is_active_and_no_other():
+    for before, previous in ((state.HubState(active_project_id=A), entry(C)),
+                             (state.HubState(), entry(A))):
         with pytest.raises(ValueError, match="previous"):
             state.begin_switch(before, B, kind="manual", transition_id=T1, since=NOW,
                                flag=None, previous=previous)
+
+
+def test_a_switch_from_an_active_project_with_nothing_left_to_close_parks_nobody():
+    after = state.begin_switch(state.HubState(active_project_id=A), B, kind="manual",
+                               transition_id=T1, since=NOW, flag=None, previous=None)
+    assert after.active_project_id == B and after.closing == ()
 
 
 def test_a_second_switch_while_the_first_one_still_closes_adds_to_the_closing_list():

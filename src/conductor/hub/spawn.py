@@ -165,6 +165,14 @@ class Spawner:
         return Child(process, argv, project_id, mode, uuid.uuid4().hex, time.monotonic(),
                      Path(log.name))
 
+    def require_startable(self) -> None:
+        """Raise `SpawnRefused` if no child can be started from this hub, before anything changes.
+
+        A caller that must refuse (`activate`, `view`) asks this first, so that a refusal never
+        follows a change of state.
+        """
+        self._breakaway_flags()
+
     def _breakaway_flags(self) -> int:
         policy = self._job_policy()
         if policy not in JOB_POLICIES:

@@ -209,6 +209,15 @@ def test_in_a_kill_on_close_job_nothing_is_started_and_the_code_is_the_spec_s(tm
     assert not (tmp_path / "home" / "logs").exists(), "a log was made for a child never started"
 
 
+def test_a_caller_can_ask_whether_a_start_is_possible_without_starting_anything(tmp_path):
+    launches = Launches()
+    _spawner(tmp_path, launches).require_startable()
+    with pytest.raises(spawn.SpawnRefused) as caught:
+        _spawner(tmp_path, launches, job_policy=lambda: "kill_on_close").require_startable()
+    assert caught.value.code == "hub_in_kill_on_close_job"
+    assert launches.calls == [] and not (tmp_path / "home" / "logs").exists()
+
+
 def test_a_job_policy_that_is_not_one_of_the_three_is_a_fault_of_the_caller(tmp_path):
     with pytest.raises(ValueError, match="job"):
         _start(_spawner(tmp_path, Launches(), job_policy=lambda: "maybe"))
