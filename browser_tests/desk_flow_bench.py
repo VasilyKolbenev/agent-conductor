@@ -27,7 +27,9 @@ from browser_tests.desk_wizard_bench import desk_url  # noqa: F401  (the fixture
 #: Evaluated once on the served page. `host.log` is every ask the model made, in order;
 #: `host.answers` is what the server said to each; `host.lose` is the number of write answers to
 #: swallow AFTER the write has landed (the answer is then `unknown`, as a dropped connection is);
-#: `host.hold(id)` keeps back every read answer of a cycle until `host.release(id)` (a slow line).
+#: `host.failRead` is the number of the panel's next reads to answer `unknown` without asking the
+#: server; `host.hold(id)` keeps back every read answer of a cycle until `host.release(id)` (a slow
+#: line).
 HOST_JS = """
 async () => {
   const model = await import("/panel/desk-flow-model.js");
@@ -37,8 +39,8 @@ async () => {
   const shape = await import("/panel/desk-flow-shape.js");
   const focus = await import("/panel/studio-focus.js");
   const i18n = await import("/panel/studio-i18n.js");
-  const host = {log: [], answers: [], state: null, mount: null, renders: 0, lose: 0, token: null,
-    pending: 0, model, edits, quick, shape, i18n};
+  const host = {log: [], answers: [], state: null, mount: null, renders: 0, lose: 0, failRead: 0,
+    token: null, pending: 0, model, edits, quick, shape, i18n};
   //: The canvas is the Studio's, and so is the sheet that lays it out (the desk's own sheet does
   //: not style it yet): without it the edge layer would lie over the steps and swallow every press.
   const sheet = document.createElement("link");
@@ -73,6 +75,10 @@ async () => {
   };
   const wire = async (ask) => {
     try {
+      if (ask.door === "read" && ask.name === "schema_read" && host.failRead > 0) {
+        host.failRead -= 1;
+        return {status: "unknown", code: null, payload: null};
+      }
       if (ask.door === "read") {
         const read = await answer(await fetch(reads[ask.target](ask.subject),
           {cache: "no-store"}));
@@ -120,7 +126,7 @@ async () => {
     host.mount = document.createElement("div");
     host.mount.id = "flowBench";
     document.body.append(host.mount);
-    Object.assign(host, {log: [], answers: [], renders: 0, lose: 0, pending: 0});
+    Object.assign(host, {log: [], answers: [], renders: 0, lose: 0, failRead: 0, pending: 0});
     gates.clear();
     host.state = {locale, schema: model.initialFlow({nonce})};
     dispatch({type: "cycles"});

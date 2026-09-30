@@ -264,6 +264,53 @@ def test_a_lost_answer_is_read_and_settled_by_comparing_and_a_write_is_never_rep
     assert out["other"] == [0, "conflict", "Theirs"], "another window's draft is not overwritten"
 
 
+def test_a_lost_answer_whose_settling_read_failed_too_is_read_again_before_the_next_write():
+    out = js("""
+      const ready = opened();
+      const one = send(ready, {type: "edit", edit: title("Mine")});
+      const sent = one.asks[0].body.source.flow;
+      const lost = reply(one, one.asks[0], null, {status: "unknown"});
+      const failed = reply(lost, lost.asks[0], null, {status: "unknown"});
+      const next = send(failed, {type: "edit", edit: title("Next")});
+      const checked = send(failed, {type: "check"});
+      const saved = send(failed, {type: "save"});
+      const did = reply(next, next.asks[0], fs("tester", "cycle-x1", {source: "draft", flow: sent,
+        draft_digest: D("2")}));
+      const didnt = reply(next, next.asks[0], fs("tester", "cycle-x1"));
+      const written = (out) => [asksOf(out), out.asks[0]?.body?.expected_digest ?? null,
+        out.asks[0]?.body?.source?.flow ? stepOf(out.asks[0].body.source.flow, "do").title : null];
+      show({failed: [failed.state.lost !== null, failed.state.notice, failed.asks.length,
+        failed.state.save], next: [asksOf(next), next.state.dirty], checked: asksOf(checked),
+        saved: asksOf(saved), landed: written(did), not_landed: written(didnt),
+        digests: [ready.state.digest, D("2")]});
+    """)
+    assert out["failed"] == [True, {"key": "schema.write.check_failed"}, 0, "unknown"]
+    assert out["next"] == [[["read:schema:4", *READ, "cycle-x1"]], True], (
+        "the flow is read and compared first: a write that may have landed is not written over")
+    assert out["checked"] == [["read:schema:4", *READ, "cycle-x1"]]
+    assert out["saved"] == [], "nothing is unsaved but the answer that was lost"
+    assert out["landed"] == [[["write:schema:5", *DOOR, "cycle-x1"]], out["digests"][1], "Next"], (
+        "what landed is kept and the next edit goes out under the digest the read gave")
+    assert out["not_landed"] == [[["write:schema:5", *DOOR, "cycle-x1"]], out["digests"][0],
+                                 "Next"], "what did not land is written again under its digest"
+
+
+def test_a_lost_publication_whose_settling_read_failed_too_is_read_before_it_is_confirmed_again():
+    out = js(SAVED + """
+      const asked = send(saved, {type: "publish-request"});
+      const confirm = send(asked, {type: "publish-confirm"});
+      const lost = reply(confirm, confirm.asks[0], null, {status: "unknown"});
+      const failed = reply(lost, lost.asks[0], null, {status: "unknown"});
+      const again = send(failed, {type: "publish-confirm"});
+      const waiting = send(lost, {type: "publish-confirm"});
+      show({again: asksOf(again), waiting: asksOf(waiting), open: failed.state.publishing});
+    """)
+    assert out["again"] == [["read:schema:5", *READ, "cycle-x1"]], (
+        "a publication whose answer was lost is not repeated blind")
+    assert out["waiting"] == [], "while the settling read is out, a second confirm asks nothing"
+    assert out["open"] == {"revision": 1}, "the review stays open: nothing is known yet"
+
+
 def test_editing_a_shipped_cycle_writes_only_a_copy_under_a_new_cycle_id():
     out = js("""
       const shipped = begin("desk-standard");

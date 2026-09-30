@@ -304,6 +304,25 @@ def test_a_lost_answer_is_settled_by_reading_and_the_write_is_never_repeated_bli
     assert flow.view()["save"] == "saved"
 
 
+def test_a_lost_answer_whose_read_failed_too_is_read_again_before_the_next_edit_is_written(flow):
+    flow.open()
+    flow.page.evaluate("() => { window.host.lose = 1; window.host.failRead = 1; }")
+    flow.page.locator('[data-add-kind="analyst"]').click()
+    expect(flow.root).to_have_attribute("data-flow-save", "unknown")
+    flow.idle()
+    flow.page.locator('[data-add-kind="doer"]').click()
+    flow.settle("saved")
+    asked = [ask["name"] for ask in flow.log() if ask["name"] in ("schema_write", "schema_read")]
+    assert asked[-4:] == ["schema_write", "schema_read", "schema_read", "schema_write"], (
+        "the lost write, the read that failed, the read that settled it, then the next write")
+    assert flow.page.locator("[data-flow-notice]").text_content() != flow.say(
+        "schema.write.conflict"), "the desk did not take its own landed write for another window's"
+    held = [row["step_id"] for row in flow.held()["steps"]]
+    assert held[:2] == ["analyst", "doer"]
+    assert [row["step_id"] for row in flow.server(flow.view()["workflowId"])["flow"]["steps"]
+            ] == held, "both edits are on the server, the first one written once"
+
+
 def test_the_late_answer_of_a_cycle_opened_first_does_not_fill_the_cycle_opened_second(flow):
     first = flow.open()
     flow.add("analyst")

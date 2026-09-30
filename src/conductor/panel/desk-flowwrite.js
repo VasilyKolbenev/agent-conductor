@@ -97,12 +97,14 @@ function writeAsk(state, publish) {
 }
 
 //: What is due when nothing is out: the write of what is unsaved, else a check that was waiting.
+//: While an answer is lost and unsettled nothing is written over it: what is unsaved waits for the
+//: read that settles it (it names the digest the next write must carry).
 function flush(state) {
   const quiet = state.inflight === null && state.reading === null && state.phase === "ready";
-  if (quiet && state.dirty && !state.blocked) return writeAsk(state, null);
-  if (quiet && state.checkLater && (!state.dirty || state.blocked)) {
-    return readAsk({...state, checkLater: false}, null);
-  }
+  const unsaved = state.dirty && !state.blocked;
+  if (quiet && unsaved && state.lost !== null) return readAsk(state, "settle");
+  if (quiet && unsaved) return writeAsk(state, null);
+  if (quiet && state.checkLater && !unsaved) return readAsk({...state, checkLater: false}, null);
   return {state, asks: []};
 }
 
@@ -327,10 +329,13 @@ function request(state) {
     asks: []};
 }
 
+//: A publication whose answer was lost is read and settled first, never written again blind.
 function confirm(state) {
   if (state.publishing === null || state.dirty || state.inflight !== null) {
     return {state, asks: []};
   }
+  if (state.lost !== null) return state.reading === null ? readAsk(state, "settle")
+    : {state, asks: []};
   return writeAsk(state, state.publishing.revision);
 }
 
