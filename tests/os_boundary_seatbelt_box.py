@@ -5,8 +5,8 @@ real ``sandbox-exec``. A ``SeatbeltBox`` owns a layout and one profile: ``run_bo
 shell body under that profile. A launch is judged applied only when its shell first failed
 to write the box's CANARY (a path in an empty directory no profile makes writable) and the
 canary is still absent afterwards; a wrapper that execs the command without a profile fails
-that test and the body never runs. ``SeatbeltRunner`` builds a ``ProcessRunner`` over the same layout with
-a production ``ProcessOwnership`` scope, and does not replace any part of the runner.
+that test and the body never runs. ``SeatbeltRunner`` builds a ``ProcessRunner`` over the same
+layout with a production ``ProcessOwnership`` scope, and does not replace any part of the runner.
 """
 from __future__ import annotations
 

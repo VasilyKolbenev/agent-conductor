@@ -25,9 +25,9 @@ What is here, in file order:
 * the code `project_not_active` in every place of 11.1 python and the text files can be read from.
 
 Not here: the read of git state and the request of a seed named in the spec's text (their
-routes are lane L's and do not exist in this build), `test_standalone_up_never_executes_auto_continue`
-(the queue pump that executes a flag is lane L's), and the real-process witness, which is
-`tests/test_view_child.py`.
+routes are lane L's and do not exist in this build),
+`test_standalone_up_never_executes_auto_continue` (the queue pump that executes a flag is lane
+L's), and the real-process witness, which is `tests/test_view_child.py`.
 """
 from __future__ import annotations
 
@@ -440,7 +440,7 @@ def _asked_in(mode: str, tmp_path) -> list:
             (granted, resumed)]
 
 
-@pytest.mark.xfail(strict=True, reason=(
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
     "the door that throws the code is lane L's (command/policy_service.py, spec 4.4.1); the two "
     "lines are in handoffs/H-to-L-view-door.patch. When they land this turns XPASS, which strict "
     "reports as a failure: remove this marker then."))
