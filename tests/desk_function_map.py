@@ -238,4 +238,3 @@ ROWS: tuple[Row, ...] = (
         (_in("desk-summary-model.js", "participantsOf"),),
         owed=(("D1", "the panel «Участники»"),)),
 )
-
