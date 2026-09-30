@@ -1,0 +1,2983 @@
+{
+  "_comment": "Derived by tests/desk_feed_reads.py from the production CommandApi; do not edit. `seeded` is the project of tests/desk_progress_seed.py, `rejected` the read of the independent-check rig after its first rejection.",
+  "rejected": {
+    "config": {
+      "automation_contract": "bounded-run-v1",
+      "cycle": {
+        "id": "cycle"
+      },
+      "instances": [
+        {
+          "adapter": "claude-code",
+          "id": "doer"
+        },
+        {
+          "adapter": "codex-cli",
+          "id": "checker"
+        }
+      ],
+      "workflow": {
+        "id": "custom",
+        "revision": 1
+      }
+    },
+    "graph": {
+      "definition": {
+        "created_at": "2026-08-11T12:00:00Z",
+        "edges": [
+          {
+            "condition": "on_approved",
+            "from_node": "gate",
+            "to_node": "do"
+          },
+          {
+            "condition": "on_failed",
+            "from_node": "do",
+            "to_node": "next"
+          }
+        ],
+        "execution_contract": "bounded-run-v1",
+        "graph_id": "graph",
+        "nodes": [
+          {
+            "gate_id": "gate-id",
+            "kind": "gate",
+            "node_id": "gate",
+            "resources": [],
+            "title": "Approve"
+          },
+          {
+            "arguments": {
+              "artifact_refs": [],
+              "instruction_ref": "instructions",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "item"
+            },
+            "attempt_bound": 2,
+            "capability": "dispatch",
+            "instance_id": "doer",
+            "kind": "task",
+            "node_id": "do",
+            "resources": [],
+            "timeout_seconds": 30,
+            "title": "do",
+            "verifier_instance_id": "checker"
+          },
+          {
+            "arguments": {
+              "artifact_refs": [],
+              "instruction_ref": "instructions",
+              "output_limit_profile": "small",
+              "profile": "implement",
+              "work_item_id": "item"
+            },
+            "attempt_bound": 2,
+            "capability": "dispatch",
+            "instance_id": "doer",
+            "kind": "task",
+            "node_id": "next",
+            "resources": [],
+            "timeout_seconds": 30,
+            "title": "next",
+            "verifier_instance_id": "checker"
+          }
+        ],
+        "run_id": "run",
+        "schema_version": 2
+      },
+      "definition_digest": "sha256:9cdc6675a1d02987c24022553e4e45cc858ce3872be227531412d9fead61df21",
+      "runtime": {
+        "graph_id": "graph",
+        "nodes": [
+          {
+            "attempt_ids": [],
+            "decision": "satisfied",
+            "evidence_refs": [],
+            "node_id": "gate",
+            "observed_at": null,
+            "outcome": null,
+            "phase": "idle"
+          },
+          {
+            "attempt_ids": [
+              "attempt"
+            ],
+            "evidence_refs": [],
+            "node_id": "do",
+            "observed_at": "2026-08-11T12:00:00Z",
+            "outcome": "verification_failed",
+            "phase": "observed"
+          },
+          {
+            "attempt_ids": [],
+            "evidence_refs": [],
+            "node_id": "next",
+            "observed_at": null,
+            "outcome": null,
+            "phase": "idle"
+          }
+        ],
+        "run_id": "run"
+      },
+      "schedule": {
+        "nodes": [
+          {
+            "answerable": "supersede",
+            "attempts_spent": false,
+            "awaiting_artifacts": [],
+            "blocked_by": [],
+            "closed_by": [],
+            "node_id": "gate",
+            "opened_by": [],
+            "opens": [
+              {
+                "condition": "on_approved",
+                "to_node": "do"
+              }
+            ],
+            "required_pass": 1,
+            "settled_laps": 1,
+            "state": "settled"
+          },
+          {
+            "answerable": null,
+            "attempts_spent": false,
+            "awaiting_artifacts": [],
+            "blocked_by": [],
+            "closed_by": [],
+            "node_id": "do",
+            "opened_by": [
+              "gate"
+            ],
+            "opens": [
+              {
+                "condition": "on_failed",
+                "to_node": "next"
+              }
+            ],
+            "required_pass": 1,
+            "settled_laps": 1,
+            "state": "settled"
+          },
+          {
+            "answerable": null,
+            "attempts_spent": false,
+            "awaiting_artifacts": [],
+            "blocked_by": [],
+            "closed_by": [],
+            "node_id": "next",
+            "opened_by": [
+              "do"
+            ],
+            "opens": [],
+            "required_pass": 1,
+            "settled_laps": 0,
+            "state": "runnable"
+          }
+        ],
+        "run_state": "open",
+        "runnable": [
+          "next"
+        ],
+        "settled": [
+          "gate",
+          "do"
+        ],
+        "unreachable": []
+      },
+      "situation": {
+        "checked": [
+          {
+            "count": 0,
+            "reason": "gate_decision",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "confirmation",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "input_document",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "reconcile",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "attempt_bound",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "run_ended",
+            "sources": []
+          }
+        ],
+        "computed_at": "2026-08-11T12:00:00Z",
+        "gates": [
+          {
+            "answerable": "supersede",
+            "arrived": false,
+            "decision": "satisfied",
+            "gate_id": "gate-id",
+            "lap": {
+              "required_pass": 1,
+              "settled_laps": 1
+            },
+            "needs_decision": false,
+            "node_id": "gate",
+            "standing_belongs_to_current_lap": true,
+            "standing_receipt": "decision",
+            "why_not": "answered_current_lap"
+          }
+        ],
+        "state": "not_required",
+        "unknown_because": [],
+        "unknown_sources": [
+          {
+            "count": 0,
+            "reason": "contradictory_gate_receipts",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "replay_warnings",
+            "sources": []
+          },
+          {
+            "count": 0,
+            "reason": "unobserved_request",
+            "sources": []
+          }
+        ]
+      },
+      "success_criteria": {
+        "do": [
+          {
+            "source": "the runtime's verification rule",
+            "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+          },
+          {
+            "source": "the frozen plan",
+            "text": "Verified by checker, which this plan names as the step's verifier. Evidence from anybody else is refused, including from the instance that did the work."
+          }
+        ],
+        "gate": [],
+        "next": [
+          {
+            "source": "the runtime's verification rule",
+            "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+          },
+          {
+            "source": "the frozen plan",
+            "text": "Verified by checker, which this plan names as the step's verifier. Evidence from anybody else is refused, including from the instance that did the work."
+          }
+        ]
+      }
+    },
+    "records": [
+      {
+        "record": {
+          "created_at": "2026-08-11T12:00:00Z",
+          "edges": [
+            {
+              "condition": "on_approved",
+              "from_node": "gate",
+              "to_node": "do"
+            },
+            {
+              "condition": "on_failed",
+              "from_node": "do",
+              "to_node": "next"
+            }
+          ],
+          "execution_contract": "bounded-run-v1",
+          "graph_id": "graph",
+          "nodes": [
+            {
+              "gate_id": "gate-id",
+              "kind": "gate",
+              "node_id": "gate",
+              "resources": [],
+              "title": "Approve"
+            },
+            {
+              "arguments": {
+                "artifact_refs": [],
+                "instruction_ref": "instructions",
+                "output_limit_profile": "small",
+                "profile": "implement",
+                "work_item_id": "item"
+              },
+              "attempt_bound": 2,
+              "capability": "dispatch",
+              "instance_id": "doer",
+              "kind": "task",
+              "node_id": "do",
+              "resources": [],
+              "timeout_seconds": 30,
+              "title": "do",
+              "verifier_instance_id": "checker"
+            },
+            {
+              "arguments": {
+                "artifact_refs": [],
+                "instruction_ref": "instructions",
+                "output_limit_profile": "small",
+                "profile": "implement",
+                "work_item_id": "item"
+              },
+              "attempt_bound": 2,
+              "capability": "dispatch",
+              "instance_id": "doer",
+              "kind": "task",
+              "node_id": "next",
+              "resources": [],
+              "timeout_seconds": 30,
+              "title": "next",
+              "verifier_instance_id": "checker"
+            }
+          ],
+          "run_id": "run",
+          "schema_version": 2
+        },
+        "record_type": "graph_definition"
+      },
+      {
+        "record": {
+          "artifact_id": "instruction-1",
+          "artifact_ref": "instructions",
+          "content": "Keep my task.\n",
+          "created_at": "2026-08-11T12:00:00Z",
+          "media_type": "text/plain",
+          "run_id": "run",
+          "schema_version": 2
+        },
+        "record_type": "artifact"
+      },
+      {
+        "record": {
+          "action": "approve",
+          "actor": "owner",
+          "config_digest": "sha256:97fd37408355e96e61e387d3f1cf1338dd3cfb6dd08259abf6d48145c3a365d5",
+          "decided_at": "2026-08-11T12:00:00Z",
+          "evidence_refs": [],
+          "gate_id": "gate-id",
+          "reason": "Reviewed",
+          "receipt_id": "decision",
+          "run_id": "run",
+          "schema_version": 2,
+          "scope_refs": [
+            "gate-id"
+          ],
+          "supersedes": null
+        },
+        "record_type": "decision"
+      },
+      {
+        "record": {
+          "authorization_digest": "sha256:1298f576d07ce9ddd6b5f821037d40c735f28acdcfa0dbd4ac702a8fa3323290",
+          "authorization_id": "grant",
+          "authorized_at": "2026-08-11T12:00:00Z",
+          "authorized_by": "owner",
+          "concurrency": 1,
+          "config_digest": "sha256:97fd37408355e96e61e387d3f1cf1338dd3cfb6dd08259abf6d48145c3a365d5",
+          "contract": "bounded-run-v1",
+          "expires_at": "2026-08-11T12:05:00Z",
+          "failure_handling": "explicit-failure-route-only",
+          "graph_digest": "sha256:9cdc6675a1d02987c24022553e4e45cc858ce3872be227531412d9fead61df21",
+          "initial_input_bindings": [],
+          "instruction_bindings": [
+            {
+              "artifact_id": "instruction-1",
+              "content_digest": "sha256:a9a0838be0789bca92fd16162636654056c3957675db20405d4b13587cba239b",
+              "node_id": "do"
+            },
+            {
+              "artifact_id": "instruction-1",
+              "content_digest": "sha256:a9a0838be0789bca92fd16162636654056c3957675db20405d4b13587cba239b",
+              "node_id": "next"
+            }
+          ],
+          "max_action_seconds": 60,
+          "max_actions": 2,
+          "max_total_task_seconds": 120,
+          "node_limits": [
+            {
+              "max_attempts": 2,
+              "node_id": "do",
+              "timeout_seconds": 30
+            },
+            {
+              "max_attempts": 2,
+              "node_id": "next",
+              "timeout_seconds": 30
+            }
+          ],
+          "provider_config_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "run_id": "run",
+          "schema_version": 2,
+          "source_prefix_digest": "sha256:83fc1fee0e920084345cacde1e30b933741624f43bb283ad532ed22b85de80aa",
+          "supersedes": null
+        },
+        "record_type": "run_authorization"
+      },
+      {
+        "record": {
+          "arguments": {
+            "artifact_refs": [],
+            "instruction_ref": "instructions",
+            "output_limit_profile": "small",
+            "profile": "implement",
+            "work_item_id": "item"
+          },
+          "attempt_id": "attempt",
+          "capability": "dispatch",
+          "config_digest": "sha256:97fd37408355e96e61e387d3f1cf1338dd3cfb6dd08259abf6d48145c3a365d5",
+          "input_binding": "proposal-v1",
+          "instance_id": "doer",
+          "node_id": "do",
+          "preview_digest": "sha256:8216916c3e48ba6019163577060cd803d2091aaba1020a2575b89e0c81ec2666",
+          "proposal_id": "proposal",
+          "proposed_at": "2026-08-11T12:00:00Z",
+          "proposed_by": "run-driver",
+          "rationale": "Approved work",
+          "run_id": "run",
+          "schema_version": 2,
+          "scope": [
+            "work/item"
+          ],
+          "timeout_seconds": 30
+        },
+        "record_type": "action_proposal"
+      },
+      {
+        "record": {
+          "action_id": "action-0",
+          "arguments": {
+            "artifact_refs": [],
+            "instruction_ref": "instructions",
+            "output_limit_profile": "small",
+            "profile": "implement",
+            "work_item_id": "item"
+          },
+          "attempt_id": "attempt",
+          "capability": "dispatch",
+          "idempotency_key": "dispatch-proposal",
+          "instance_id": "doer",
+          "mode": "policy",
+          "node_id": "do",
+          "preview_digest": "sha256:8216916c3e48ba6019163577060cd803d2091aaba1020a2575b89e0c81ec2666",
+          "requested_at": "2026-08-11T12:00:00Z",
+          "requested_by": "run-policy",
+          "run_authorization_digest": "sha256:1298f576d07ce9ddd6b5f821037d40c735f28acdcfa0dbd4ac702a8fa3323290",
+          "run_authorization_id": "grant",
+          "run_id": "run",
+          "schema_version": 2,
+          "scope": [
+            "work/item"
+          ],
+          "timeout_seconds": 30
+        },
+        "record_type": "action_request"
+      },
+      {
+        "record": {
+          "action_id": "action-0",
+          "adapter_id": "claude-code",
+          "attempt_id": "attempt",
+          "event_id": "effect_lease-event-1",
+          "exit_code": null,
+          "instance_id": "doer",
+          "outcome": null,
+          "phase": "effect_lease",
+          "recorded_at": "2026-08-11T12:00:00Z",
+          "recovery_ref": "recovery-2",
+          "request_digest": "sha256:47bfdb47e16ea8bdf8544fef936ce6ad376b2e8257852d4559ddb78a7c740b34",
+          "run_id": "run",
+          "schema_version": 2
+        },
+        "record_type": "attempt_event"
+      },
+      {
+        "record": {
+          "action_id": "action-0",
+          "adapter_id": "claude-code",
+          "attempt_id": "attempt",
+          "event_id": "execution_observed-event-3",
+          "exit_code": 0,
+          "instance_id": "doer",
+          "outcome": "succeeded",
+          "phase": "execution_observed",
+          "recorded_at": "2026-08-11T12:00:00Z",
+          "recovery_ref": "recovery-2",
+          "request_digest": "sha256:47bfdb47e16ea8bdf8544fef936ce6ad376b2e8257852d4559ddb78a7c740b34",
+          "run_id": "run",
+          "schema_version": 2
+        },
+        "record_type": "attempt_event"
+      },
+      {
+        "record": {
+          "authorization_digest": "sha256:1298f576d07ce9ddd6b5f821037d40c735f28acdcfa0dbd4ac702a8fa3323290",
+          "authorization_id": "grant",
+          "checker_adapter_id": "codex-cli",
+          "checker_instance_id": "checker",
+          "feedback_id": "feedback-46a5fcde7329036f107d2d1be98bc4993d3bc4dbedb09caffb82d26374e67462",
+          "payload": {
+            "findings": [
+              {
+                "kind": "defect",
+                "line": 2,
+                "path": "answer.py",
+                "summary": "answer() must return 1 instead of 2"
+              }
+            ],
+            "protocol": "conduct.feedback.v1"
+          },
+          "recorded_at": "2026-08-11T12:00:00Z",
+          "result_manifest": {
+            "action_id": "action-0",
+            "attempt_id": "attempt",
+            "files": [],
+            "input_artifact_ids": [
+              "instruction-1"
+            ]
+          },
+          "result_manifest_digest": "sha256:0ae150376b856cb439caecbefa506c58dd9dcc47c2dedabba326603d4b40056a",
+          "run_id": "run",
+          "schema_version": 2,
+          "source_action_id": "action-0",
+          "source_attempt_id": "attempt",
+          "source_lap": 1,
+          "source_node_id": "do"
+        },
+        "record_type": "correction_feedback"
+      },
+      {
+        "record": {
+          "action_id": "action-0",
+          "attempt_id": "attempt",
+          "detail": "the independent checker rejected the doer's result",
+          "evidence_refs": [],
+          "exit_code": 0,
+          "instance_id": "doer",
+          "observed_at": "2026-08-11T12:00:00Z",
+          "outcome": "verification_failed",
+          "receipt_id": "result-4",
+          "run_id": "run",
+          "schema_version": 2
+        },
+        "record_type": "action_result"
+      }
+    ],
+    "run": {
+      "config_digest": "sha256:97fd37408355e96e61e387d3f1cf1338dd3cfb6dd08259abf6d48145c3a365d5",
+      "created_at": "2026-08-11T12:00:00Z",
+      "cycle_id": "cycle",
+      "mode": "policy",
+      "run_id": "run",
+      "schema_version": 2,
+      "status": "created"
+    },
+    "task": null,
+    "warnings": []
+  },
+  "seeded": {
+    "automation": {
+      "run-closed": {
+        "active_action_id": null,
+        "authorization": null,
+        "control": null,
+        "expires_at": null,
+        "next_node_id": null,
+        "owner_present": false,
+        "reason_code": "authorization_required",
+        "remaining_actions": 0,
+        "remaining_task_seconds": 0,
+        "run_id": "run-closed",
+        "spent_actions": 0,
+        "spent_task_seconds": 0,
+        "state": "unconfigured"
+      },
+      "run-waiting": {
+        "active_action_id": null,
+        "authorization": null,
+        "control": null,
+        "expires_at": null,
+        "next_node_id": null,
+        "owner_present": false,
+        "reason_code": "authorization_required",
+        "remaining_actions": 0,
+        "remaining_task_seconds": 0,
+        "run_id": "run-waiting",
+        "spent_actions": 0,
+        "spent_task_seconds": 0,
+        "state": "unconfigured"
+      },
+      "run-working": {
+        "active_action_id": "action-205",
+        "authorization": null,
+        "control": null,
+        "expires_at": null,
+        "next_node_id": null,
+        "owner_present": false,
+        "reason_code": "authorization_required",
+        "remaining_actions": 0,
+        "remaining_task_seconds": 0,
+        "run_id": "run-working",
+        "spent_actions": 0,
+        "spent_task_seconds": 0,
+        "state": "unconfigured"
+      }
+    },
+    "reads": {
+      "run-closed": {
+        "config": {
+          "cycle": {
+            "id": "default-orbit"
+          },
+          "instances": [
+            {
+              "adapter": "claude-code",
+              "id": "claude-dev"
+            },
+            {
+              "adapter": "codex-cli",
+              "id": "codex-check"
+            }
+          ],
+          "task": {
+            "id": "task-closed",
+            "work_scope": "task-closed"
+          }
+        },
+        "graph": {
+          "definition": {
+            "created_at": "2026-08-19T08:00:00Z",
+            "edges": [
+              {
+                "from_node": "analyse",
+                "to_node": "confirm-gate"
+              },
+              {
+                "condition": "on_approved",
+                "from_node": "confirm-gate",
+                "to_node": "do"
+              },
+              {
+                "from_node": "do",
+                "to_node": "result-gate"
+              }
+            ],
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "arguments": {
+                  "result_artifact_ref": "artifact-plan",
+                  "review_profile": "spec",
+                  "target_artifact_refs": [
+                    "artifact-brief"
+                  ],
+                  "work_item_id": "work-001"
+                },
+                "capability": "review",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "analyse",
+                "resources": [],
+                "title": "Analyse the brief"
+              },
+              {
+                "gate_id": "gate-confirm-do",
+                "kind": "gate",
+                "node_id": "confirm-gate",
+                "resources": [],
+                "title": "Confirm the plan"
+              },
+              {
+                "arguments": {
+                  "artifact_refs": [
+                    "artifact-plan"
+                  ],
+                  "instruction_ref": "instruction-plan",
+                  "output_limit_profile": "normal",
+                  "profile": "implement",
+                  "work_item_id": "work-001"
+                },
+                "capability": "dispatch",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "do",
+                "resources": [
+                  {
+                    "kind": "model",
+                    "name": "sonnet"
+                  },
+                  {
+                    "kind": "sandbox",
+                    "name": "project-root"
+                  }
+                ],
+                "stage": "do",
+                "title": "Do the work",
+                "verifier_instance_id": "codex-check"
+              },
+              {
+                "gate_id": "gate-result",
+                "kind": "gate",
+                "node_id": "result-gate",
+                "resources": [],
+                "title": "Accept the result"
+              }
+            ],
+            "run_id": "run-closed",
+            "schema_version": 2
+          },
+          "definition_digest": "sha256:de0f70ee4df5f7fa2284fea8d334e78ca785bf0d5fae25c363e1ce16ef3a0c61",
+          "runtime": {
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "attempt_ids": [
+                  "attempt-102"
+                ],
+                "evidence_refs": [
+                  "evidence-103"
+                ],
+                "node_id": "analyse",
+                "observed_at": "2026-08-19T08:27:00Z",
+                "outcome": "succeeded",
+                "phase": "observed"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "satisfied",
+                "evidence_refs": [],
+                "node_id": "confirm-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              },
+              {
+                "attempt_ids": [
+                  "attempt-105"
+                ],
+                "evidence_refs": [
+                  "evidence-105"
+                ],
+                "node_id": "do",
+                "observed_at": "2026-08-19T08:51:00Z",
+                "outcome": "succeeded",
+                "phase": "observed"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "satisfied",
+                "evidence_refs": [],
+                "node_id": "result-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              }
+            ],
+            "run_id": "run-closed"
+          },
+          "schedule": {
+            "nodes": [
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "analyse",
+                "opened_by": [],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "confirm-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": "none",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "confirm-gate",
+                "opened_by": [
+                  "analyse"
+                ],
+                "opens": [
+                  {
+                    "condition": "on_approved",
+                    "to_node": "do"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "do",
+                "opened_by": [
+                  "confirm-gate"
+                ],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "result-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": "none",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "result-gate",
+                "opened_by": [
+                  "do"
+                ],
+                "opens": [],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              }
+            ],
+            "run_state": "complete",
+            "runnable": [],
+            "settled": [
+              "analyse",
+              "confirm-gate",
+              "do",
+              "result-gate"
+            ],
+            "unreachable": []
+          },
+          "situation": {
+            "checked": [
+              {
+                "count": 0,
+                "reason": "gate_decision",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "confirmation",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "input_document",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "reconcile",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "attempt_bound",
+                "sources": []
+              },
+              {
+                "count": 1,
+                "reason": "run_ended",
+                "sources": [
+                  "terminal-107"
+                ]
+              }
+            ],
+            "computed_at": "2026-08-13T12:00:00Z",
+            "gates": [
+              {
+                "answerable": "none",
+                "arrived": false,
+                "decision": "satisfied",
+                "gate_id": "gate-confirm-do",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 1
+                },
+                "needs_decision": false,
+                "node_id": "confirm-gate",
+                "standing_belongs_to_current_lap": true,
+                "standing_receipt": "decision-104",
+                "why_not": "run_ended"
+              },
+              {
+                "answerable": "none",
+                "arrived": false,
+                "decision": "satisfied",
+                "gate_id": "gate-result",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 1
+                },
+                "needs_decision": false,
+                "node_id": "result-gate",
+                "standing_belongs_to_current_lap": true,
+                "standing_receipt": "decision-106",
+                "why_not": "run_ended"
+              }
+            ],
+            "state": "not_required",
+            "unknown_because": [],
+            "unknown_sources": [
+              {
+                "count": 0,
+                "reason": "contradictory_gate_receipts",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "replay_warnings",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "unobserved_request",
+                "sources": []
+              }
+            ]
+          },
+          "success_criteria": {
+            "analyse": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by claude-dev, the instance that does the work — this plan names no separate verifier."
+              },
+              {
+                "source": "the store's artifact chain rule",
+                "text": "The artifact artifact-plan must stand, published by this step's own action and answering the request that asked for it — the same reference, from the inputs it named."
+              }
+            ],
+            "confirm-gate": [],
+            "do": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by codex-check, which this plan names as the step's verifier. Evidence from anybody else is refused, including from the instance that did the work."
+              }
+            ],
+            "result-gate": []
+          }
+        },
+        "records": [
+          {
+            "record": {
+              "created_at": "2026-08-19T08:00:00Z",
+              "edges": [
+                {
+                  "from_node": "analyse",
+                  "to_node": "confirm-gate"
+                },
+                {
+                  "condition": "on_approved",
+                  "from_node": "confirm-gate",
+                  "to_node": "do"
+                },
+                {
+                  "from_node": "do",
+                  "to_node": "result-gate"
+                }
+              ],
+              "graph_id": "graph-progress",
+              "nodes": [
+                {
+                  "arguments": {
+                    "result_artifact_ref": "artifact-plan",
+                    "review_profile": "spec",
+                    "target_artifact_refs": [
+                      "artifact-brief"
+                    ],
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "review",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "analyse",
+                  "resources": [],
+                  "title": "Analyse the brief"
+                },
+                {
+                  "gate_id": "gate-confirm-do",
+                  "kind": "gate",
+                  "node_id": "confirm-gate",
+                  "resources": [],
+                  "title": "Confirm the plan"
+                },
+                {
+                  "arguments": {
+                    "artifact_refs": [
+                      "artifact-plan"
+                    ],
+                    "instruction_ref": "instruction-plan",
+                    "output_limit_profile": "normal",
+                    "profile": "implement",
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "dispatch",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "do",
+                  "resources": [
+                    {
+                      "kind": "model",
+                      "name": "sonnet"
+                    },
+                    {
+                      "kind": "sandbox",
+                      "name": "project-root"
+                    }
+                  ],
+                  "stage": "do",
+                  "title": "Do the work",
+                  "verifier_instance_id": "codex-check"
+                },
+                {
+                  "gate_id": "gate-result",
+                  "kind": "gate",
+                  "node_id": "result-gate",
+                  "resources": [],
+                  "title": "Accept the result"
+                }
+              ],
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "graph_definition"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-101",
+              "artifact_ref": "artifact-brief",
+              "content": "Ship the landing page by Friday.\nKeep the hero copy short.",
+              "created_at": "2026-08-19T08:03:00Z",
+              "media_type": "text/markdown",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-102",
+              "capability": "review",
+              "config_digest": "sha256:288e37ee60ce58a31d3bab123bd6c70955d0a213b456a4ca788a5bb9509cfb17",
+              "instance_id": "claude-dev",
+              "node_id": "analyse",
+              "preview_digest": "sha256:5b9b5771f51e9116961c28a7111350bcb60f247e3aad675fd20d0f0047e8b839",
+              "proposal_id": "proposal-102",
+              "proposed_at": "2026-08-19T08:06:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out analyse.",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-102",
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-102",
+              "capability": "review",
+              "idempotency_key": "dispatch-proposal-102",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "analyse",
+              "preview_digest": "sha256:5b9b5771f51e9116961c28a7111350bcb60f247e3aad675fd20d0f0047e8b839",
+              "requested_at": "2026-08-19T08:09:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-102",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-102",
+              "event_id": "event-effect_lease-102",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:12:00Z",
+              "recovery_ref": "recovery-102",
+              "request_digest": "sha256:ec2c462f07d46934749a0e29b6a5a74d39f68211deb8c94c5ab5c0b283dfa664",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-102",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-102",
+              "event_id": "event-execution_observed-102",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-19T08:15:00Z",
+              "recovery_ref": "recovery-102",
+              "request_digest": "sha256:ec2c462f07d46934749a0e29b6a5a74d39f68211deb8c94c5ab5c0b283dfa664",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-103",
+              "artifact_ref": "artifact-plan",
+              "content": "# Plan\n\n1. Draft the hero copy\n2. Put <b>bold</b> in the footer\n",
+              "created_at": "2026-08-19T08:18:00Z",
+              "input_artifact_ids": [
+                "artifact-101"
+              ],
+              "media_type": "text/markdown",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "source_action_id": "action-102"
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "created_by": "claude-code",
+              "digest": "sha256:90843ea88eb8516e210f6b594e1c4bb148cf5dc16190168cff2c58e1cba086e6",
+              "evidence_id": "evidence-103",
+              "kind": "verification",
+              "label": "dispatch verification",
+              "observed_at": "2026-08-19T08:21:00Z",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "uri": "verification/action-102",
+              "verification": "verified",
+              "verified_at": "2026-08-19T08:24:00Z",
+              "verified_by": "claude-code"
+            },
+            "record_type": "evidence"
+          },
+          {
+            "record": {
+              "action_id": "action-102",
+              "attempt_id": "attempt-102",
+              "detail": null,
+              "evidence_refs": [
+                "evidence-103"
+              ],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-19T08:27:00Z",
+              "outcome": "succeeded",
+              "receipt_id": "result-103",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          },
+          {
+            "record": {
+              "action": "approve",
+              "actor": "release-owner",
+              "config_digest": "sha256:288e37ee60ce58a31d3bab123bd6c70955d0a213b456a4ca788a5bb9509cfb17",
+              "decided_at": "2026-08-19T08:30:00Z",
+              "evidence_refs": [],
+              "gate_id": "gate-confirm-do",
+              "reason": "Reviewed the plan.",
+              "receipt_id": "decision-104",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope_refs": [
+                "src"
+              ],
+              "supersedes": null
+            },
+            "record_type": "decision"
+          },
+          {
+            "record": {
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-105",
+              "capability": "dispatch",
+              "config_digest": "sha256:288e37ee60ce58a31d3bab123bd6c70955d0a213b456a4ca788a5bb9509cfb17",
+              "instance_id": "claude-dev",
+              "node_id": "do",
+              "preview_digest": "sha256:b678eb1f9cb7719e653ec90ba2fafcc83ae90c0f36ca26ef3445c147a5353b78",
+              "proposal_id": "proposal-105",
+              "proposed_at": "2026-08-19T08:33:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out do.",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-105",
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-105",
+              "capability": "dispatch",
+              "idempotency_key": "dispatch-proposal-105",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "do",
+              "preview_digest": "sha256:b678eb1f9cb7719e653ec90ba2fafcc83ae90c0f36ca26ef3445c147a5353b78",
+              "requested_at": "2026-08-19T08:36:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-105",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-105",
+              "event_id": "event-effect_lease-105",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:39:00Z",
+              "recovery_ref": "recovery-105",
+              "request_digest": "sha256:f86de45772119f09297134cf3190bc4dc943964dd236c2f1448555559fb9339f",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-105",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-105",
+              "event_id": "event-execution_observed-105",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-19T08:42:00Z",
+              "recovery_ref": "recovery-105",
+              "request_digest": "sha256:f86de45772119f09297134cf3190bc4dc943964dd236c2f1448555559fb9339f",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "created_by": "codex-cli",
+              "digest": null,
+              "evidence_id": "evidence-105",
+              "kind": "verification",
+              "label": "dispatch verification",
+              "observed_at": "2026-08-19T08:45:00Z",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "uri": "verification/action-105",
+              "verification": "verified",
+              "verified_at": "2026-08-19T08:48:00Z",
+              "verified_by": "codex-cli",
+              "verifier_instance_id": "codex-check"
+            },
+            "record_type": "evidence"
+          },
+          {
+            "record": {
+              "action_id": "action-105",
+              "attempt_id": "attempt-105",
+              "detail": null,
+              "evidence_refs": [
+                "evidence-105"
+              ],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-19T08:51:00Z",
+              "outcome": "succeeded",
+              "receipt_id": "result-105",
+              "run_id": "run-closed",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          },
+          {
+            "record": {
+              "action": "approve",
+              "actor": "release-owner",
+              "config_digest": "sha256:288e37ee60ce58a31d3bab123bd6c70955d0a213b456a4ca788a5bb9509cfb17",
+              "decided_at": "2026-08-19T08:54:00Z",
+              "evidence_refs": [],
+              "gate_id": "gate-result",
+              "reason": "Looks right.",
+              "receipt_id": "decision-106",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "scope_refs": [
+                "src"
+              ],
+              "supersedes": null
+            },
+            "record_type": "decision"
+          },
+          {
+            "record": {
+              "graph_id": "graph-progress",
+              "recorded_at": "2026-08-19T08:57:00Z",
+              "run_id": "run-closed",
+              "schema_version": 2,
+              "settled_nodes": [
+                "analyse",
+                "confirm-gate",
+                "do",
+                "result-gate"
+              ],
+              "state": "complete",
+              "terminal_id": "terminal-107",
+              "unreachable_nodes": []
+            },
+            "record_type": "run_terminal"
+          }
+        ],
+        "run": {
+          "config_digest": "sha256:288e37ee60ce58a31d3bab123bd6c70955d0a213b456a4ca788a5bb9509cfb17",
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "mode": "confirm",
+          "run_id": "run-closed",
+          "schema_version": 2,
+          "status": "created"
+        },
+        "task": {
+          "id": "task-closed",
+          "title": "Ship the landing page",
+          "unreadable": false,
+          "work_scope": "task-closed"
+        },
+        "warnings": []
+      },
+      "run-waiting": {
+        "config": {
+          "cycle": {
+            "id": "default-orbit"
+          },
+          "instances": [
+            {
+              "adapter": "claude-code",
+              "id": "claude-dev"
+            },
+            {
+              "adapter": "codex-cli",
+              "id": "codex-check"
+            }
+          ],
+          "task": {
+            "id": "task-waiting",
+            "work_scope": "task-waiting"
+          }
+        },
+        "graph": {
+          "definition": {
+            "created_at": "2026-08-19T08:00:00Z",
+            "edges": [
+              {
+                "from_node": "analyse",
+                "to_node": "confirm-gate"
+              },
+              {
+                "condition": "on_approved",
+                "from_node": "confirm-gate",
+                "to_node": "do"
+              },
+              {
+                "from_node": "do",
+                "to_node": "result-gate"
+              }
+            ],
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "arguments": {
+                  "result_artifact_ref": "artifact-plan",
+                  "review_profile": "spec",
+                  "target_artifact_refs": [
+                    "artifact-brief"
+                  ],
+                  "work_item_id": "work-001"
+                },
+                "capability": "review",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "analyse",
+                "resources": [],
+                "title": "Analyse the brief"
+              },
+              {
+                "gate_id": "gate-confirm-do",
+                "kind": "gate",
+                "node_id": "confirm-gate",
+                "resources": [],
+                "title": "Confirm the plan"
+              },
+              {
+                "arguments": {
+                  "artifact_refs": [
+                    "artifact-plan"
+                  ],
+                  "instruction_ref": "instruction-plan",
+                  "output_limit_profile": "normal",
+                  "profile": "implement",
+                  "work_item_id": "work-001"
+                },
+                "capability": "dispatch",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "do",
+                "resources": [
+                  {
+                    "kind": "model",
+                    "name": "sonnet"
+                  },
+                  {
+                    "kind": "sandbox",
+                    "name": "project-root"
+                  }
+                ],
+                "stage": "do",
+                "title": "Do the work",
+                "verifier_instance_id": "codex-check"
+              },
+              {
+                "gate_id": "gate-result",
+                "kind": "gate",
+                "node_id": "result-gate",
+                "resources": [],
+                "title": "Accept the result"
+              }
+            ],
+            "run_id": "run-waiting",
+            "schema_version": 2
+          },
+          "definition_digest": "sha256:2f644143cc8dcc61763d30a1aed7397da565573fca4dda308202dba12d135bed",
+          "runtime": {
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "attempt_ids": [
+                  "attempt-302"
+                ],
+                "evidence_refs": [
+                  "evidence-303"
+                ],
+                "node_id": "analyse",
+                "observed_at": "2026-08-19T08:27:00Z",
+                "outcome": "succeeded",
+                "phase": "observed"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "satisfied",
+                "evidence_refs": [],
+                "node_id": "confirm-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              },
+              {
+                "attempt_ids": [
+                  "attempt-305"
+                ],
+                "evidence_refs": [],
+                "node_id": "do",
+                "observed_at": "2026-08-19T08:45:00Z",
+                "outcome": "verification_failed",
+                "phase": "observed"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "idle",
+                "evidence_refs": [],
+                "node_id": "result-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              }
+            ],
+            "run_id": "run-waiting"
+          },
+          "schedule": {
+            "nodes": [
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "analyse",
+                "opened_by": [],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "confirm-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": "supersede",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "confirm-gate",
+                "opened_by": [
+                  "analyse"
+                ],
+                "opens": [
+                  {
+                    "condition": "on_approved",
+                    "to_node": "do"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "do",
+                "opened_by": [
+                  "confirm-gate"
+                ],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "result-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": "first",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "result-gate",
+                "opened_by": [
+                  "do"
+                ],
+                "opens": [],
+                "required_pass": 1,
+                "settled_laps": 0,
+                "state": "runnable"
+              }
+            ],
+            "run_state": "open",
+            "runnable": [
+              "result-gate"
+            ],
+            "settled": [
+              "analyse",
+              "confirm-gate",
+              "do"
+            ],
+            "unreachable": []
+          },
+          "situation": {
+            "checked": [
+              {
+                "count": 1,
+                "reason": "gate_decision",
+                "sources": [
+                  "result-gate"
+                ]
+              },
+              {
+                "count": 0,
+                "reason": "confirmation",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "input_document",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "reconcile",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "attempt_bound",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "run_ended",
+                "sources": []
+              }
+            ],
+            "computed_at": "2026-08-13T12:00:00Z",
+            "gates": [
+              {
+                "answerable": "supersede",
+                "arrived": false,
+                "decision": "satisfied",
+                "gate_id": "gate-confirm-do",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 1
+                },
+                "needs_decision": false,
+                "node_id": "confirm-gate",
+                "standing_belongs_to_current_lap": true,
+                "standing_receipt": "decision-304",
+                "why_not": "answered_current_lap"
+              },
+              {
+                "answerable": "first",
+                "arrived": true,
+                "decision": "idle",
+                "gate_id": "gate-result",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 0
+                },
+                "needs_decision": true,
+                "node_id": "result-gate",
+                "standing_belongs_to_current_lap": null,
+                "standing_receipt": null,
+                "why_not": null
+              }
+            ],
+            "state": "required",
+            "unknown_because": [],
+            "unknown_sources": [
+              {
+                "count": 0,
+                "reason": "contradictory_gate_receipts",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "replay_warnings",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "unobserved_request",
+                "sources": []
+              }
+            ]
+          },
+          "success_criteria": {
+            "analyse": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by claude-dev, the instance that does the work — this plan names no separate verifier."
+              },
+              {
+                "source": "the store's artifact chain rule",
+                "text": "The artifact artifact-plan must stand, published by this step's own action and answering the request that asked for it — the same reference, from the inputs it named."
+              }
+            ],
+            "confirm-gate": [],
+            "do": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by codex-check, which this plan names as the step's verifier. Evidence from anybody else is refused, including from the instance that did the work."
+              }
+            ],
+            "result-gate": []
+          }
+        },
+        "records": [
+          {
+            "record": {
+              "created_at": "2026-08-19T08:00:00Z",
+              "edges": [
+                {
+                  "from_node": "analyse",
+                  "to_node": "confirm-gate"
+                },
+                {
+                  "condition": "on_approved",
+                  "from_node": "confirm-gate",
+                  "to_node": "do"
+                },
+                {
+                  "from_node": "do",
+                  "to_node": "result-gate"
+                }
+              ],
+              "graph_id": "graph-progress",
+              "nodes": [
+                {
+                  "arguments": {
+                    "result_artifact_ref": "artifact-plan",
+                    "review_profile": "spec",
+                    "target_artifact_refs": [
+                      "artifact-brief"
+                    ],
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "review",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "analyse",
+                  "resources": [],
+                  "title": "Analyse the brief"
+                },
+                {
+                  "gate_id": "gate-confirm-do",
+                  "kind": "gate",
+                  "node_id": "confirm-gate",
+                  "resources": [],
+                  "title": "Confirm the plan"
+                },
+                {
+                  "arguments": {
+                    "artifact_refs": [
+                      "artifact-plan"
+                    ],
+                    "instruction_ref": "instruction-plan",
+                    "output_limit_profile": "normal",
+                    "profile": "implement",
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "dispatch",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "do",
+                  "resources": [
+                    {
+                      "kind": "model",
+                      "name": "sonnet"
+                    },
+                    {
+                      "kind": "sandbox",
+                      "name": "project-root"
+                    }
+                  ],
+                  "stage": "do",
+                  "title": "Do the work",
+                  "verifier_instance_id": "codex-check"
+                },
+                {
+                  "gate_id": "gate-result",
+                  "kind": "gate",
+                  "node_id": "result-gate",
+                  "resources": [],
+                  "title": "Accept the result"
+                }
+              ],
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "graph_definition"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-301",
+              "artifact_ref": "artifact-brief",
+              "content": "Ship the landing page by Friday.\nKeep the hero copy short.",
+              "created_at": "2026-08-19T08:03:00Z",
+              "media_type": "text/markdown",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-302",
+              "capability": "review",
+              "config_digest": "sha256:ff4c94731abd7b624d584b44dbf485eed1c3e1260d3e52aa2aa3dc879e52b1c2",
+              "instance_id": "claude-dev",
+              "node_id": "analyse",
+              "preview_digest": "sha256:126a7aac363b740e02ff31c599f53636c962342ef0e29b567c65f8abf3f614e7",
+              "proposal_id": "proposal-302",
+              "proposed_at": "2026-08-19T08:06:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out analyse.",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-302",
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-302",
+              "capability": "review",
+              "idempotency_key": "dispatch-proposal-302",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "analyse",
+              "preview_digest": "sha256:126a7aac363b740e02ff31c599f53636c962342ef0e29b567c65f8abf3f614e7",
+              "requested_at": "2026-08-19T08:09:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-302",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-302",
+              "event_id": "event-effect_lease-302",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:12:00Z",
+              "recovery_ref": "recovery-302",
+              "request_digest": "sha256:2860c98dbb6f4fbcc01cca87cf5a4e724b1ed1b38c8688363890545f3ff7249e",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-302",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-302",
+              "event_id": "event-execution_observed-302",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-19T08:15:00Z",
+              "recovery_ref": "recovery-302",
+              "request_digest": "sha256:2860c98dbb6f4fbcc01cca87cf5a4e724b1ed1b38c8688363890545f3ff7249e",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-303",
+              "artifact_ref": "artifact-plan",
+              "content": "# Plan\n\n1. Draft the hero copy\n2. Put <b>bold</b> in the footer\n",
+              "created_at": "2026-08-19T08:18:00Z",
+              "input_artifact_ids": [
+                "artifact-301"
+              ],
+              "media_type": "text/markdown",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "source_action_id": "action-302"
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "created_by": "claude-code",
+              "digest": "sha256:950ef0d456f4492870db071bddbbdece78f9310f86e8b9bd1022747821de706f",
+              "evidence_id": "evidence-303",
+              "kind": "verification",
+              "label": "dispatch verification",
+              "observed_at": "2026-08-19T08:21:00Z",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "uri": "verification/action-302",
+              "verification": "verified",
+              "verified_at": "2026-08-19T08:24:00Z",
+              "verified_by": "claude-code"
+            },
+            "record_type": "evidence"
+          },
+          {
+            "record": {
+              "action_id": "action-302",
+              "attempt_id": "attempt-302",
+              "detail": null,
+              "evidence_refs": [
+                "evidence-303"
+              ],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-19T08:27:00Z",
+              "outcome": "succeeded",
+              "receipt_id": "result-303",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          },
+          {
+            "record": {
+              "action": "approve",
+              "actor": "release-owner",
+              "config_digest": "sha256:ff4c94731abd7b624d584b44dbf485eed1c3e1260d3e52aa2aa3dc879e52b1c2",
+              "decided_at": "2026-08-19T08:30:00Z",
+              "evidence_refs": [],
+              "gate_id": "gate-confirm-do",
+              "reason": "Reviewed the plan.",
+              "receipt_id": "decision-304",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "scope_refs": [
+                "src"
+              ],
+              "supersedes": null
+            },
+            "record_type": "decision"
+          },
+          {
+            "record": {
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-305",
+              "capability": "dispatch",
+              "config_digest": "sha256:ff4c94731abd7b624d584b44dbf485eed1c3e1260d3e52aa2aa3dc879e52b1c2",
+              "instance_id": "claude-dev",
+              "node_id": "do",
+              "preview_digest": "sha256:b9b45ad384427b86c294624fd4ad07cf9b68c544bc9f9fb574338dee4740086d",
+              "proposal_id": "proposal-305",
+              "proposed_at": "2026-08-19T08:33:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out do.",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-305",
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-305",
+              "capability": "dispatch",
+              "idempotency_key": "dispatch-proposal-305",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "do",
+              "preview_digest": "sha256:b9b45ad384427b86c294624fd4ad07cf9b68c544bc9f9fb574338dee4740086d",
+              "requested_at": "2026-08-19T08:36:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-waiting",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-305",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-305",
+              "event_id": "event-effect_lease-305",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:39:00Z",
+              "recovery_ref": "recovery-305",
+              "request_digest": "sha256:5c1de47bc664d56266fb026ef2d8ac9b752800f8bfd9a10f74994f64b3b241e0",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-305",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-305",
+              "event_id": "event-execution_observed-305",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-19T08:42:00Z",
+              "recovery_ref": "recovery-305",
+              "request_digest": "sha256:5c1de47bc664d56266fb026ef2d8ac9b752800f8bfd9a10f74994f64b3b241e0",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-305",
+              "attempt_id": "attempt-305",
+              "detail": null,
+              "evidence_refs": [],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-19T08:45:00Z",
+              "outcome": "verification_failed",
+              "receipt_id": "result-305",
+              "run_id": "run-waiting",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          }
+        ],
+        "run": {
+          "config_digest": "sha256:ff4c94731abd7b624d584b44dbf485eed1c3e1260d3e52aa2aa3dc879e52b1c2",
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "mode": "confirm",
+          "run_id": "run-waiting",
+          "schema_version": 2,
+          "status": "created"
+        },
+        "task": {
+          "id": "task-waiting",
+          "title": "Import the export",
+          "unreadable": false,
+          "work_scope": "task-waiting"
+        },
+        "warnings": []
+      },
+      "run-working": {
+        "config": {
+          "cycle": {
+            "id": "default-orbit"
+          },
+          "instances": [
+            {
+              "adapter": "claude-code",
+              "id": "claude-dev"
+            },
+            {
+              "adapter": "codex-cli",
+              "id": "codex-check"
+            }
+          ],
+          "task": {
+            "id": "task-working",
+            "work_scope": "task-working"
+          }
+        },
+        "graph": {
+          "definition": {
+            "created_at": "2026-08-19T08:00:00Z",
+            "edges": [
+              {
+                "from_node": "analyse",
+                "to_node": "confirm-gate"
+              },
+              {
+                "condition": "on_approved",
+                "from_node": "confirm-gate",
+                "to_node": "do"
+              },
+              {
+                "from_node": "do",
+                "to_node": "result-gate"
+              }
+            ],
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "arguments": {
+                  "result_artifact_ref": "artifact-plan",
+                  "review_profile": "spec",
+                  "target_artifact_refs": [
+                    "artifact-brief"
+                  ],
+                  "work_item_id": "work-001"
+                },
+                "capability": "review",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "analyse",
+                "resources": [],
+                "title": "Analyse the brief"
+              },
+              {
+                "gate_id": "gate-confirm-do",
+                "kind": "gate",
+                "node_id": "confirm-gate",
+                "resources": [],
+                "title": "Confirm the plan"
+              },
+              {
+                "arguments": {
+                  "artifact_refs": [
+                    "artifact-plan"
+                  ],
+                  "instruction_ref": "instruction-plan",
+                  "output_limit_profile": "normal",
+                  "profile": "implement",
+                  "work_item_id": "work-001"
+                },
+                "capability": "dispatch",
+                "instance_id": "claude-dev",
+                "kind": "task",
+                "node_id": "do",
+                "resources": [
+                  {
+                    "kind": "model",
+                    "name": "sonnet"
+                  },
+                  {
+                    "kind": "sandbox",
+                    "name": "project-root"
+                  }
+                ],
+                "stage": "do",
+                "title": "Do the work",
+                "verifier_instance_id": "codex-check"
+              },
+              {
+                "gate_id": "gate-result",
+                "kind": "gate",
+                "node_id": "result-gate",
+                "resources": [],
+                "title": "Accept the result"
+              }
+            ],
+            "run_id": "run-working",
+            "schema_version": 2
+          },
+          "definition_digest": "sha256:387d59a90f0acbe8e6cb99747605d2042378d6a35d053c5022fa7e045cf11815",
+          "runtime": {
+            "graph_id": "graph-progress",
+            "nodes": [
+              {
+                "attempt_ids": [
+                  "attempt-202"
+                ],
+                "evidence_refs": [
+                  "evidence-203"
+                ],
+                "node_id": "analyse",
+                "observed_at": "2026-08-19T08:27:00Z",
+                "outcome": "succeeded",
+                "phase": "observed"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "satisfied",
+                "evidence_refs": [],
+                "node_id": "confirm-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              },
+              {
+                "attempt_ids": [
+                  "attempt-205"
+                ],
+                "evidence_refs": [],
+                "node_id": "do",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "running"
+              },
+              {
+                "attempt_ids": [],
+                "decision": "idle",
+                "evidence_refs": [],
+                "node_id": "result-gate",
+                "observed_at": null,
+                "outcome": null,
+                "phase": "idle"
+              }
+            ],
+            "run_id": "run-working"
+          },
+          "schedule": {
+            "nodes": [
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "analyse",
+                "opened_by": [],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "confirm-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": "supersede",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "confirm-gate",
+                "opened_by": [
+                  "analyse"
+                ],
+                "opens": [
+                  {
+                    "condition": "on_approved",
+                    "to_node": "do"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 1,
+                "state": "settled"
+              },
+              {
+                "answerable": null,
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [],
+                "closed_by": [],
+                "node_id": "do",
+                "opened_by": [
+                  "confirm-gate"
+                ],
+                "opens": [
+                  {
+                    "condition": null,
+                    "to_node": "result-gate"
+                  }
+                ],
+                "required_pass": 1,
+                "settled_laps": 0,
+                "state": "blocked"
+              },
+              {
+                "answerable": "none",
+                "attempts_spent": false,
+                "awaiting_artifacts": [],
+                "blocked_by": [
+                  "do"
+                ],
+                "closed_by": [],
+                "node_id": "result-gate",
+                "opened_by": [],
+                "opens": [],
+                "required_pass": 1,
+                "settled_laps": 0,
+                "state": "blocked"
+              }
+            ],
+            "run_state": "open",
+            "runnable": [],
+            "settled": [
+              "analyse",
+              "confirm-gate"
+            ],
+            "unreachable": []
+          },
+          "situation": {
+            "checked": [
+              {
+                "count": 0,
+                "reason": "gate_decision",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "confirmation",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "input_document",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "reconcile",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "attempt_bound",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "run_ended",
+                "sources": []
+              }
+            ],
+            "computed_at": "2026-08-13T12:00:00Z",
+            "gates": [
+              {
+                "answerable": "supersede",
+                "arrived": false,
+                "decision": "satisfied",
+                "gate_id": "gate-confirm-do",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 1
+                },
+                "needs_decision": false,
+                "node_id": "confirm-gate",
+                "standing_belongs_to_current_lap": true,
+                "standing_receipt": "decision-204",
+                "why_not": "answered_current_lap"
+              },
+              {
+                "answerable": "none",
+                "arrived": false,
+                "decision": "idle",
+                "gate_id": "gate-result",
+                "lap": {
+                  "required_pass": 1,
+                  "settled_laps": 0
+                },
+                "needs_decision": false,
+                "node_id": "result-gate",
+                "standing_belongs_to_current_lap": null,
+                "standing_receipt": null,
+                "why_not": "road_not_open"
+              }
+            ],
+            "state": "not_required",
+            "unknown_because": [],
+            "unknown_sources": [
+              {
+                "count": 0,
+                "reason": "contradictory_gate_receipts",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "replay_warnings",
+                "sources": []
+              },
+              {
+                "count": 0,
+                "reason": "unobserved_request",
+                "sources": []
+              }
+            ]
+          },
+          "success_criteria": {
+            "analyse": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by claude-dev, the instance that does the work — this plan names no separate verifier."
+              },
+              {
+                "source": "the store's artifact chain rule",
+                "text": "The artifact artifact-plan must stand, published by this step's own action and answering the request that asked for it — the same reference, from the inputs it named."
+              }
+            ],
+            "confirm-gate": [],
+            "do": [
+              {
+                "source": "the runtime's verification rule",
+                "text": "The result must be verified. A step that finished is not a step that succeeded, and an unverified result never counts as one."
+              },
+              {
+                "source": "the frozen plan",
+                "text": "Verified by codex-check, which this plan names as the step's verifier. Evidence from anybody else is refused, including from the instance that did the work."
+              }
+            ],
+            "result-gate": []
+          }
+        },
+        "records": [
+          {
+            "record": {
+              "created_at": "2026-08-19T08:00:00Z",
+              "edges": [
+                {
+                  "from_node": "analyse",
+                  "to_node": "confirm-gate"
+                },
+                {
+                  "condition": "on_approved",
+                  "from_node": "confirm-gate",
+                  "to_node": "do"
+                },
+                {
+                  "from_node": "do",
+                  "to_node": "result-gate"
+                }
+              ],
+              "graph_id": "graph-progress",
+              "nodes": [
+                {
+                  "arguments": {
+                    "result_artifact_ref": "artifact-plan",
+                    "review_profile": "spec",
+                    "target_artifact_refs": [
+                      "artifact-brief"
+                    ],
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "review",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "analyse",
+                  "resources": [],
+                  "title": "Analyse the brief"
+                },
+                {
+                  "gate_id": "gate-confirm-do",
+                  "kind": "gate",
+                  "node_id": "confirm-gate",
+                  "resources": [],
+                  "title": "Confirm the plan"
+                },
+                {
+                  "arguments": {
+                    "artifact_refs": [
+                      "artifact-plan"
+                    ],
+                    "instruction_ref": "instruction-plan",
+                    "output_limit_profile": "normal",
+                    "profile": "implement",
+                    "work_item_id": "work-001"
+                  },
+                  "capability": "dispatch",
+                  "instance_id": "claude-dev",
+                  "kind": "task",
+                  "node_id": "do",
+                  "resources": [
+                    {
+                      "kind": "model",
+                      "name": "sonnet"
+                    },
+                    {
+                      "kind": "sandbox",
+                      "name": "project-root"
+                    }
+                  ],
+                  "stage": "do",
+                  "title": "Do the work",
+                  "verifier_instance_id": "codex-check"
+                },
+                {
+                  "gate_id": "gate-result",
+                  "kind": "gate",
+                  "node_id": "result-gate",
+                  "resources": [],
+                  "title": "Accept the result"
+                }
+              ],
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "graph_definition"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-201",
+              "artifact_ref": "artifact-brief",
+              "content": "Ship the landing page by Friday.\nKeep the hero copy short.",
+              "created_at": "2026-08-19T08:03:00Z",
+              "media_type": "text/markdown",
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-202",
+              "capability": "review",
+              "config_digest": "sha256:89ce826e9febec6937b442c5aaea14a9191f740d747bae5751814b86faa73d81",
+              "instance_id": "claude-dev",
+              "node_id": "analyse",
+              "preview_digest": "sha256:38f729aec9156206340e394687f4511ac56c45799ea60f9aa36648fee303b1f0",
+              "proposal_id": "proposal-202",
+              "proposed_at": "2026-08-19T08:06:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out analyse.",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-202",
+              "arguments": {
+                "result_artifact_ref": "artifact-plan",
+                "review_profile": "spec",
+                "target_artifact_refs": [
+                  "artifact-brief"
+                ],
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-202",
+              "capability": "review",
+              "idempotency_key": "dispatch-proposal-202",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "analyse",
+              "preview_digest": "sha256:38f729aec9156206340e394687f4511ac56c45799ea60f9aa36648fee303b1f0",
+              "requested_at": "2026-08-19T08:09:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-202",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-202",
+              "event_id": "event-effect_lease-202",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:12:00Z",
+              "recovery_ref": "recovery-202",
+              "request_digest": "sha256:330de3b1d31612e78c93affd177c9af2a327d5fe6bfecd7489353c80c55d84bb",
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "action_id": "action-202",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-202",
+              "event_id": "event-execution_observed-202",
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "outcome": "succeeded",
+              "phase": "execution_observed",
+              "recorded_at": "2026-08-19T08:15:00Z",
+              "recovery_ref": "recovery-202",
+              "request_digest": "sha256:330de3b1d31612e78c93affd177c9af2a327d5fe6bfecd7489353c80c55d84bb",
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          },
+          {
+            "record": {
+              "artifact_id": "artifact-203",
+              "artifact_ref": "artifact-plan",
+              "content": "# Plan\n\n1. Draft the hero copy\n2. Put <b>bold</b> in the footer\n",
+              "created_at": "2026-08-19T08:18:00Z",
+              "input_artifact_ids": [
+                "artifact-201"
+              ],
+              "media_type": "text/markdown",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "source_action_id": "action-202"
+            },
+            "record_type": "artifact"
+          },
+          {
+            "record": {
+              "created_by": "claude-code",
+              "digest": "sha256:caa7676c48df091f67226f93e59b93690d51217760e2214702b3ed5931946f8f",
+              "evidence_id": "evidence-203",
+              "kind": "verification",
+              "label": "dispatch verification",
+              "observed_at": "2026-08-19T08:21:00Z",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "uri": "verification/action-202",
+              "verification": "verified",
+              "verified_at": "2026-08-19T08:24:00Z",
+              "verified_by": "claude-code"
+            },
+            "record_type": "evidence"
+          },
+          {
+            "record": {
+              "action_id": "action-202",
+              "attempt_id": "attempt-202",
+              "detail": null,
+              "evidence_refs": [
+                "evidence-203"
+              ],
+              "exit_code": 0,
+              "instance_id": "claude-dev",
+              "observed_at": "2026-08-19T08:27:00Z",
+              "outcome": "succeeded",
+              "receipt_id": "result-203",
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "action_result"
+          },
+          {
+            "record": {
+              "action": "approve",
+              "actor": "release-owner",
+              "config_digest": "sha256:89ce826e9febec6937b442c5aaea14a9191f740d747bae5751814b86faa73d81",
+              "decided_at": "2026-08-19T08:30:00Z",
+              "evidence_refs": [],
+              "gate_id": "gate-confirm-do",
+              "reason": "Reviewed the plan.",
+              "receipt_id": "decision-204",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "scope_refs": [
+                "src"
+              ],
+              "supersedes": null
+            },
+            "record_type": "decision"
+          },
+          {
+            "record": {
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-205",
+              "capability": "dispatch",
+              "config_digest": "sha256:89ce826e9febec6937b442c5aaea14a9191f740d747bae5751814b86faa73d81",
+              "instance_id": "claude-dev",
+              "node_id": "do",
+              "preview_digest": "sha256:675d902ddecd9443b7cf1e2842cf8ca287fe1670239ee3d83e48d8b99a0a5710",
+              "proposal_id": "proposal-205",
+              "proposed_at": "2026-08-19T08:33:00Z",
+              "proposed_by": "claude-dev",
+              "rationale": "Carry out do.",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_proposal"
+          },
+          {
+            "record": {
+              "action_id": "action-205",
+              "arguments": {
+                "artifact_refs": [
+                  "artifact-plan"
+                ],
+                "instruction_ref": "instruction-plan",
+                "output_limit_profile": "normal",
+                "profile": "implement",
+                "work_item_id": "work-001"
+              },
+              "attempt_id": "attempt-205",
+              "capability": "dispatch",
+              "idempotency_key": "dispatch-proposal-205",
+              "instance_id": "claude-dev",
+              "mode": "confirm",
+              "node_id": "do",
+              "preview_digest": "sha256:675d902ddecd9443b7cf1e2842cf8ca287fe1670239ee3d83e48d8b99a0a5710",
+              "requested_at": "2026-08-19T08:36:00Z",
+              "requested_by": "release-owner",
+              "run_id": "run-working",
+              "schema_version": 2,
+              "scope": [
+                "src"
+              ],
+              "timeout_seconds": 900
+            },
+            "record_type": "action_request"
+          },
+          {
+            "record": {
+              "action_id": "action-205",
+              "adapter_id": "claude-code",
+              "attempt_id": "attempt-205",
+              "event_id": "event-effect_lease-205",
+              "exit_code": null,
+              "instance_id": "claude-dev",
+              "outcome": null,
+              "phase": "effect_lease",
+              "recorded_at": "2026-08-19T08:39:00Z",
+              "recovery_ref": "recovery-205",
+              "request_digest": "sha256:aa9569282b88f3693e31310496b42625dc5073da3b1206d8f73bf59e4eda12a9",
+              "run_id": "run-working",
+              "schema_version": 2
+            },
+            "record_type": "attempt_event"
+          }
+        ],
+        "run": {
+          "config_digest": "sha256:89ce826e9febec6937b442c5aaea14a9191f740d747bae5751814b86faa73d81",
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "mode": "confirm",
+          "run_id": "run-working",
+          "schema_version": 2,
+          "status": "created"
+        },
+        "task": {
+          "id": "task-working",
+          "title": "Fix lost text",
+          "unreadable": false,
+          "work_scope": "task-working"
+        },
+        "warnings": []
+      }
+    },
+    "runs": {
+      "providers": [],
+      "runs": [
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "envelope_status": "created",
+          "graph_id": "graph-progress",
+          "human_state": "not_required",
+          "last_outcome": "succeeded",
+          "mode": "confirm",
+          "open_actions": 0,
+          "revision": null,
+          "run_id": "run-closed",
+          "task_id": "task-closed",
+          "undecided_gates": 0,
+          "unreadable": false,
+          "workflow_id": null
+        },
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "envelope_status": "created",
+          "graph_id": "graph-progress",
+          "human_state": "required",
+          "last_outcome": "verification_failed",
+          "mode": "confirm",
+          "open_actions": 0,
+          "revision": null,
+          "run_id": "run-waiting",
+          "task_id": "task-waiting",
+          "undecided_gates": 1,
+          "unreadable": false,
+          "workflow_id": null
+        },
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "cycle_id": "default-orbit",
+          "envelope_status": "created",
+          "graph_id": "graph-progress",
+          "human_state": "not_required",
+          "last_outcome": "succeeded",
+          "mode": "confirm",
+          "open_actions": 1,
+          "revision": null,
+          "run_id": "run-working",
+          "task_id": "task-working",
+          "undecided_gates": 1,
+          "unreadable": false,
+          "workflow_id": null
+        }
+      ]
+    },
+    "tasks": {
+      "tasks": [
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "schema_version": 1,
+          "task_id": "task-closed",
+          "title": "Ship the landing page",
+          "unreadable": false,
+          "work_scope": "task-closed"
+        },
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "schema_version": 1,
+          "task_id": "task-idle",
+          "title": "Update the API docs",
+          "unreadable": false,
+          "work_scope": "task-idle"
+        },
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "schema_version": 1,
+          "task_id": "task-waiting",
+          "title": "Import the export",
+          "unreadable": false,
+          "work_scope": "task-waiting"
+        },
+        {
+          "created_at": "2026-08-19T08:00:00Z",
+          "schema_version": 1,
+          "task_id": "task-working",
+          "title": "Fix lost text",
+          "unreadable": false,
+          "work_scope": "task-working"
+        }
+      ]
+    }
+  }
+}

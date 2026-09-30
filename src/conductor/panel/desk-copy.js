@@ -9,10 +9,9 @@ export const DESK_COPY = Object.freeze({
   // -- the page ------------------------------------------------------------------------
   "desk.title": ["December Command — Desk", "December Command — Стол"],
   "desk.note": [
-    "The desk is being built: the rail, the scene and the console are live; the feed and the "
-      + "summary stay empty until their modules land.",
-    "Стол в разработке: рельс, сцена и пульт работают; лента и выжимка остаются пустыми, "
-      + "пока не появятся их модули."],
+    "The desk is being built: the rail, the scene, the feed, the summary and the console are "
+      + "live.",
+    "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают."],
   "desk.classic": ["Classic panel", "Прежняя панель"],
   // -- the terminal state: an address that claims another project ------------------------
   "desk.foreign": [

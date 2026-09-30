@@ -12,10 +12,12 @@ What this module holds, each as a measurement and not a reading of source:
   its module graph fetches answers 200 (the census is spelled out, not derived
   from the server's own allowlist, which would only agree with itself);
 - the five regions of spec 5.1 are mounted and say in `data-state` what became
-  of the read that feeds them: the rail and the summary `ready`, the scene, the
-  feed and the pult, which nothing feeds yet, still `empty` and childless; the
-  rail of a project with no tasks says so (what the rail draws for a project
-  that has tasks is `test_desk_rail_scene.py`'s);
+  of the read that feeds them: the rail, the summary and the pult `ready`, the
+  scene and the feed, which follow a chosen task, still `empty` and childless
+  until one is chosen; the rail of a project with no tasks says so and the
+  summary draws nothing for it (what they draw for a project that has tasks is
+  `test_desk_rail_scene.py`'s and `test_desk_summary.py`'s, and the feed's is
+  `test_desk_feed.py`'s);
 - a read that is refused, never answered or abandoned at its deadline puts the
   regions it feeds, and the whole shell and its one sentence, in the word it earned
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
@@ -59,6 +61,12 @@ DESK_BOOT_ASSETS = {
     "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
     # The continue-after flag: its model, and the door that reads and writes it.
     "desk-flag-model.js": 200, "desk-flag.js": 200,
+    # The feed: what it draws from, the words it says and the module that draws it.
+    "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
+    # What says whether a task was closed: the reads, and the model they ask.
+    "desk-closing.js": 200, "desk-summary-model.js": 200,
+    # The summary: the module that draws it and the words it says.
+    "desk-summary.js": 200, "desk-summary-copy.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
@@ -77,9 +85,9 @@ DESK_BOOT_ASSETS = {
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
     ("deskRail", "ready"),     # fed by the tasks read and the runs read
-    ("deskScene", "empty"),    # follows a chosen task: no read of its own yet
-    ("deskFeed", "empty"),     # follows a chosen run
-    ("deskSummary", "ready"),  # fed by the runs read
+    ("deskScene", "empty"),    # follows a chosen task
+    ("deskFeed", "empty"),     # follows the run on the scene
+    ("deskSummary", "ready"),  # fed by the lists; it draws nothing for a project with no tasks
     ("deskPult", "ready"),     # draws the name of the person, which no read feeds
 )
 #: Every word the page carries itself, read in ONE evaluation: the document's language and
@@ -97,15 +105,14 @@ PAGE_WORDS = """() => ({
 PAGE_LANGUAGES = {
     "en": {
         "lang": "en", "title": "December Command — Desk",
-        "note": "The desk is being built: the rail, the scene and the console are live; "
-                "the feed and the summary stay empty until their modules land.",
+        "note": "The desk is being built: the rail, the scene, the feed, the summary and the "
+                "console are live.",
         "link": "Classic panel",
         "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
         "said": "Read."},
     "ru": {
         "lang": "ru", "title": "December Command — Стол",
-        "note": "Стол в разработке: рельс, сцена и пульт работают; лента и выжимка "
-                "остаются пустыми, пока не появятся их модули.",
+        "note": "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают.",
         "link": "Прежняя панель",
         "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
         "said": "Данные прочитаны."},
@@ -235,8 +242,8 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     by_id = {row["id"]: row for row in facts["regions"]}
     assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
                if name not in ("deskRail", "deskSummary", "deskPult"))
-    # The summary has no module yet; the rail of a project with no tasks says so; the console
-    # says its heading and the line that asks for the name.
+    # The summary draws nothing for a project with no tasks; the rail of one says so; the
+    # console says its heading and the line that asks for the name.
     assert by_id["deskSummary"]["children"] == 0
     assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
         2, "Your consoleYou: name not given · set")

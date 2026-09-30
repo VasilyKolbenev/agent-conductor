@@ -72,9 +72,21 @@ DESK_ASSETS = {
     "/panel/desk-flag-model.js": ("text/javascript; charset=utf-8", "desk-flag-model.js"),
     # The one read and the one write of that flag: the only write the boot module hands on.
     "/panel/desk-flag.js": ("text/javascript; charset=utf-8", "desk-flag.js"),
+    # The journal of a run read as the rows of the feed, for the region that draws them.
+    "/panel/desk-feed-model.js": ("text/javascript; charset=utf-8", "desk-feed-model.js"),
+    # The reads that say whether a task was closed: its newest finished run, read once.
+    "/panel/desk-closing.js": ("text/javascript; charset=utf-8", "desk-closing.js"),
+    # The summary's counters, tasks and people, judged from the reads the desk holds.
+    "/panel/desk-summary-model.js": ("text/javascript; charset=utf-8", "desk-summary-model.js"),
+    # The words of the summary and its panel, RU and EN.
+    "/panel/desk-summary-copy.js": ("text/javascript; charset=utf-8", "desk-summary-copy.js"),
+    # The words of the feed, RU and EN.
+    "/panel/desk-feed-copy.js": ("text/javascript; charset=utf-8", "desk-feed-copy.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),
+    "/panel/desk-feed.js": ("text/javascript; charset=utf-8", "desk-feed.js"),
+    "/panel/desk-summary.js": ("text/javascript; charset=utf-8", "desk-summary.js"),
     "/panel/desk-pult.js": ("text/javascript; charset=utf-8", "desk-pult.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),

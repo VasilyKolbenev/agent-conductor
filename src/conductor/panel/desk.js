@@ -10,8 +10,11 @@
 // the address names: choosing is a press or a hash, and the run is a read. The pult draws the
 // name of the person at this page (held here, in the page's memory), the project queue once a
 // read of it is wired (none is yet) and, in a project the claim says is in `view`, the lines
-// that say so. The feed and the summary's numbers still have no module: they stay `empty`
-// until one is written.
+// that say so. The feed is drawn from the run the scene is drawn from and stands in the word the
+// scene stands in. The summary is drawn from the lists, the automation of each task's newest run
+// and the reads that say which tasks were closed, and from the run on the scene; it stands in the
+// word of the runs read and is drawn when its numbers are known. Nothing else waits for the reads
+// that say which tasks were closed: a slow one holds the summary and nothing more.
 //
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
@@ -51,7 +54,10 @@ import {projectControls, wireControls} from "./studio-controls.js";
 import {focusTarget, restoreFocus} from "./studio-focus.js";
 import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
+import {mountFeed} from "./desk-feed.js";
+import {mountSummary} from "./desk-summary.js";
 import {mountPult} from "./desk-pult.js";
+import {readClosing} from "./desk-closing.js";
 import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
 
@@ -66,7 +72,8 @@ const READS = Object.freeze({
   project: () => path.project(),
 });
 //: The five mounts, in reading order: the desk boots only on a page that carries all of
-//: them. A mount no module fills stays in the word `empty`.
+//: them. Each has a module that fills it; one whose read gave nothing to draw stays in the word
+//: `empty`.
 const MOUNTS = Object.freeze(["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]);
 //: What a list stands at before a read and while one is out, and after a read that brought
 //: nothing usable: a phase and no rows.
@@ -102,7 +109,9 @@ const MISMATCH = "project_mismatch";
 //: form and not saved (null: nothing typed since it opened) -- all three live in this page's
 //: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
 //: project claim said (`active`, `view`, or null when no claim was read or it named no mode
-//: this build knows); `queue` is the task-queue read once one is wired (null: not read).
+//: this build knows); `queue` is the task-queue read once one is wired (null: not read);
+//: `closing` is the digest of the newest finished run of each task that could have been
+//: accepted, by task id (null until those reads have landed).
 //:
 //: The continue-after block's memory is `flag` (spec 5.8): null where there is no block (a desk
 //: nobody framed, or one whose read of the flag gave no record this desk can vouch for);
@@ -111,7 +120,7 @@ const MISMATCH = "project_mismatch";
 //: is the code of the last refusal (or `unknown`).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
-  refused: false, mode: null, queue: null, flag: null});
+  refused: false, mode: null, queue: null, flag: null, closing: null});
 let choice = 0;
 let door = null;
 let flagDoor = null;
@@ -221,13 +230,17 @@ function render() {
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
-    refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView()};
+    refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView(),
+    closing: state.closing};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
+  mountFeed(byId("deskFeed"), view);
+  mountSummary(byId("deskSummary"), view);
   mountPult(byId("deskPult"), view, handlers);
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
   mark(byId("deskScene"), said.scene);
+  mark(byId("deskFeed"), said.scene);
   mark(byId("deskPult"), state.foreign ? "empty" : "ready");
   mark(byId("deskSummary"), said.summary);
   mark(byId("deskShell"), said.shell);
@@ -335,9 +348,24 @@ async function readAutomation(tasks, runs) {
   return found;
 }
 
+//: The reads that say which tasks were closed (`desk-closing.js`) are one run read per finished
+//: task and may take as long as a read may (`READ_DEADLINE`). Only the summary needs their
+//: answer, so nothing waits for them: not the scene of the task an address names, not the hash
+//: that comes next. The answer is kept when it lands, unless the desk has ended by then (`move`
+//: keeps nothing for one that has).
+function learnClosing(reads) {
+  reads.then((found) => move({closing: found}));
+}
+
+//: The lists and the automation of each task's newest run, which the rail's words are made of, so
+//: the desk is settled when they have landed. The reads that say which tasks were closed are
+//: started beside them and are not waited for (`learnClosing`): the summary is drawn when its
+//: numbers are known.
 async function load() {
   move({tasks: READING, runs: READING});
   const [tasks, runs] = await Promise.all([readTasks(), readRuns()]);
+  learnClosing(readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
+    stopped: () => state.foreign}));
   move({tasks, runs, automation: await readAutomation(tasks, runs)});
 }
 
@@ -564,7 +592,7 @@ function enterForeign() {
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
-    refused: false, mode: null, queue: null, flag: null});
+    refused: false, mode: null, queue: null, flag: null, closing: null});
   render();
 }
 
