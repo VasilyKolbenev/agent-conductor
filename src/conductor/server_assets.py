@@ -72,6 +72,8 @@ DESK_ASSETS = {
     "/panel/desk-flag-model.js": ("text/javascript; charset=utf-8", "desk-flag-model.js"),
     # The one read and the one write of that flag: the only write the boot module hands on.
     "/panel/desk-flag.js": ("text/javascript; charset=utf-8", "desk-flag.js"),
+    # The door of the project's task queue: its reads and its writes, each through the transport.
+    "/panel/desk-queue.js": ("text/javascript; charset=utf-8", "desk-queue.js"),
     # The journal of a run read as the rows of the feed, for the region that draws them.
     "/panel/desk-feed-model.js": ("text/javascript; charset=utf-8", "desk-feed-model.js"),
     # The reads that say whether a task was closed: its newest finished run, read once.

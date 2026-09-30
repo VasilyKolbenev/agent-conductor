@@ -8,9 +8,9 @@
 // the newest run of each task, because the word of a task is a fact of all three (spec
 // 5.2.1). The scene is drawn from the newest run of the task a person chose, or from the run
 // the address names: choosing is a press or a hash, and the run is a read. The pult draws the
-// name of the person at this page (held here, in the page's memory), the project queue once a
-// read of it is wired (none is yet) and, in a project the claim says is in `view`, the lines
-// that say so. The feed is drawn from the run the scene is drawn from and stands in the word the
+// name of the person at this page (held here, in the page's memory), the project queue as the
+// queue door read it once at load (`desk-queue.js`) and, in a project the claim says is in `view`,
+// the lines that say so. The rail says "Queued" under the task whose run the queue holds. The feed is drawn from the run the scene is drawn from and stands in the word the
 // scene stands in. The summary is drawn from the lists, the automation of each task's newest run
 // and the reads that say which tasks were closed, and from the run on the scene; it stands in the
 // word of the runs read and is drawn when its numbers are known. Nothing else waits for the reads
@@ -60,6 +60,7 @@ import {mountPult} from "./desk-pult.js";
 import {readClosing} from "./desk-closing.js";
 import {flagBody, flagLine, initialMarks, resumableRuns, runVerdicts} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
+import {createQueueDoor} from "./desk-queue.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -109,7 +110,7 @@ const MISMATCH = "project_mismatch";
 //: form and not saved (null: nothing typed since it opened) -- all three live in this page's
 //: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
 //: project claim said (`active`, `view`, or null when no claim was read or it named no mode
-//: this build knows); `queue` is the task-queue read once one is wired (null: not read);
+//: this build knows); `queue` is the task-queue read the queue door judged (null: not read);
 //: `closing` is the digest of the newest finished run of each task that could have been
 //: accepted, by task id (null until those reads have landed).
 //:
@@ -124,6 +125,7 @@ let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(
 let choice = 0;
 let door = null;
 let flagDoor = null;
+let queueDoor = null;
 //: The project this desk is bound to: the one its first hash named, or else the one the claim
 //: named (null when neither named one), and what the doors claim from then on. `hashProject`
 //: is only what the first hash named: it is what the address the desk writes says, so a project
@@ -364,10 +366,10 @@ function learnClosing(reads) {
 //: numbers are known.
 async function load() {
   move({tasks: READING, runs: READING});
-  const [tasks, runs] = await Promise.all([readTasks(), readRuns()]);
+  const [tasks, runs, queue] = await Promise.all([readTasks(), readRuns(), queueDoor.read()]);
   learnClosing(readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
     stopped: () => state.foreign}));
-  move({tasks, runs, automation: await readAutomation(tasks, runs)});
+  move({tasks, runs, queue, automation: await readAutomation(tasks, runs)});
 }
 
 //: The newest run of one task, read whole: the run and, beside it, what protects it. A run
@@ -733,6 +735,7 @@ function boot() {
   bound = hashProject = address.project;
   door = createTransport(locale, () => bound);
   flagDoor = createFlagDoor(door, enterForeign);
+  queueDoor = createQueueDoor(door, enterForeign);
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

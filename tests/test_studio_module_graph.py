@@ -79,10 +79,13 @@ PERMITTED_IMPORTS = {
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
                           "./desk-feed.js", "./desk-summary.js", "./desk-closing.js",
                           "./desk-pult.js",
-                          "./desk-flag-model.js", "./desk-flag.js"}),
+                          "./desk-flag-model.js", "./desk-flag.js", "./desk-queue.js"}),
     #: The door of the continue-after flag: the one read and the one write of it, through the
     #: transport's own doors, judged by the flag's model. It names one target and opens no door.
     "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
+    #: The door of the project's task queue: its reads and writes, through the transport's own
+    #: doors, judged by the queue's model. It opens no door of its own.
+    "desk-queue.js": frozenset({"./desk-transport.js", "./desk-queue-model.js"}),
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,

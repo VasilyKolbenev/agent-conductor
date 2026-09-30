@@ -130,6 +130,8 @@ ASSETS = {
     "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
     # The one read and the one write of that flag.
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
+    # The door of the project's task queue.
+    "/panel/desk-queue.js": "text/javascript; charset=utf-8",
     # The reads that say whether a task was closed.
     "/panel/desk-closing.js": "text/javascript; charset=utf-8",
     # The words of the summary.
@@ -321,6 +323,10 @@ REFUSED = (
     "/panel/desk-flag.json", "/panel/desk-flag.js?v=1", "/panel/desk-flag.js.map",
     "/panel/../desk-flag.js", "/panel/%2e%2e/desk-flag.js", "/panel/DESK-FLAG.JS",
     "/panel/Desk-flag.js", "/panel/desk-flag.js/", "/panel/desk-flag.js%00.txt",
+    # The queue's door, the same nine shapes.
+    "/panel/desk-queue.json", "/panel/desk-queue.js?v=1", "/panel/desk-queue.js.map",
+    "/panel/../desk-queue.js", "/panel/%2e%2e/desk-queue.js", "/panel/DESK-QUEUE.JS",
+    "/panel/Desk-queue.js", "/panel/desk-queue.js/", "/panel/desk-queue.js%00.txt",
     # The feed's model, the same nine shapes.
     "/panel/desk-feed-model.json", "/panel/desk-feed-model.js?v=1",
     "/panel/desk-feed-model.js.map", "/panel/../desk-feed-model.js",

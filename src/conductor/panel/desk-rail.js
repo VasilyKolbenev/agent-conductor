@@ -38,10 +38,17 @@ function newestOf(view, task) {
   return newest.state === "none" ? null : HIDDEN_RUN;
 }
 
+//: The record of the project queue that stands for this run, or null: a queue that was not read,
+//: and a run the queue does not hold, have none.
+function entryOf(view, run) {
+  if (run === null || run.unreadable || view.queue === null) return null;
+  return view.queue.entries.find((one) => one.run_id === run.run_id) ?? null;
+}
+
 function statusOf(view, task) {
   const run = newestOf(view, task);
   const automation = run && !run.unreadable ? view.automation.get(task.task_id) ?? null : null;
-  return taskStatus({task, run, automation, entry: null});
+  return taskStatus({task, run, automation, entry: entryOf(view, run)});
 }
 
 //: A key's message takes the parameters its text names and no other: the status carries

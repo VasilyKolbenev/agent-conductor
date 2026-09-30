@@ -22,8 +22,8 @@ What this module holds, each as a measurement and not a reading of source:
   regions it feeds, and the whole shell and its one sentence, in the word it earned
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
   pass every check above, because the server answers both reads;
-- the shell of a project with no tasks reads exactly `/command/tasks` and
-  `/command/runs` and writes nothing -- no other route, no method but GET, nothing
+- the shell of a project with no tasks reads exactly `/command/tasks`, `/command/runs` and the
+  project queue `/command/queue` and writes nothing -- no other route, no method but GET, nothing
   in browser storage. The project route and its header are lane H's, and are not
   faked here;
 - the page never scrolls sideways, at the desk's width and stacked under 900px.
@@ -61,6 +61,8 @@ DESK_BOOT_ASSETS = {
     "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
     # The continue-after flag: its model, and the door that reads and writes it.
     "desk-flag-model.js": 200, "desk-flag.js": 200,
+    # The queue's door, and the model that judges what it reads.
+    "desk-queue-model.js": 200, "desk-queue.js": 200,
     # The feed: what it draws from, the words it says and the module that draws it.
     "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
     # What says whether a task was closed: the reads, and the model they ask.
@@ -243,10 +245,12 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
                if name not in ("deskRail", "deskSummary", "deskPult"))
     # The summary draws nothing for a project with no tasks; the rail of one says so; the
-    # console says its heading and the line that asks for the name.
+    # console says its heading, the line that asks for the name and the queue this server reads
+    # (it has no owner: its slot is unavailable, and nothing is queued).
     assert by_id["deskSummary"]["children"] == 0
     assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
-        2, "Your consoleYou: name not given · set")
+        3, "Your consoleYou: name not given · setProject queueNow: the slot is unavailable"
+           "Nothing is queued.")
     assert by_id["deskRail"]["children"] == 2
     assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
@@ -338,6 +342,7 @@ def test_the_shell_of_a_project_with_no_tasks_reads_the_claim_and_the_two_lists_
                if path.startswith("/command/")]
     assert command[0] == ("GET", "/command/project", False), "the claim is the first read"
     assert sorted(command) == [("GET", "/command/project", False),
+                               ("GET", "/command/queue", False),
                                ("GET", "/command/runs", False),
                                ("GET", "/command/tasks", False)]
     assert {method for method, _path, _header in desk.asked} == {"GET"}

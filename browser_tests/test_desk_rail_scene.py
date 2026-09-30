@@ -12,8 +12,9 @@ What this module holds, each as a measurement of the page and not a reading of s
 - the rail lists every task with the word the rules of spec 5.2.1 give its NEWEST run, in the
   reader's language, and the machine words never reach the screen;
 - `verification_failed` is never drawn without its sentence in the same row;
-- the desk reads the project claim first, then `/command/tasks`, `/command/runs` and the
-  automation of the newest run of each task that has one -- no other route, no method but GET,
+- the desk reads the project claim first, then `/command/tasks`, `/command/runs`, the project
+  queue `/command/queue` and the automation of the newest run of each task that has one -- no
+  other route, no method but GET,
   no project header (this server serves no identified project), nothing stored;
 - a refused or unanswered list read empties the rail and says so, and an automation read that
   fails changes only the row it belongs to;
@@ -226,7 +227,7 @@ def test_the_desk_reads_the_lists_and_the_newest_run_of_each_task_and_writes_not
     assert asked[0] == ("GET", "/command/project", False), "the claim is the first read"
     assert sorted(asked) == sorted(
         [("GET", "/command/project", False), ("GET", "/command/tasks", False),
-         ("GET", "/command/runs", False)]
+         ("GET", "/command/runs", False), ("GET", "/command/queue", False)]
         + [("GET", f"/command/runs/{run}/automation", False) for run in NEWEST.values()])
     assert {method for method, _path, _header in window.asked} == {"GET"}
     assert window.page.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]
