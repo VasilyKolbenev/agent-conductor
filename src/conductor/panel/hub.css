@@ -1,0 +1,187 @@
+/* The hub's page -- the window that holds every project, and beside each the desk it mounts.
+
+   The palette is the desk's, and so the concept's (layout-v4): an evergreen ground and a lime "ion"
+   accent in the dark theme, with a light pair. Every colour is a token and the theme is one
+   attribute. The page loads nothing from another origin, so the font stacks are system stacks.
+
+   A sheet of its own and not the desk's: the hub serves one literal list of files, and the desk's
+   sheet is not on it. tests/test_hub_source.py holds this sheet to the concept's tokens value by
+   value, to two :root blocks, to the 44px target floor on every control type, to no motion and no
+   request of its own, and every text colour to a pair the contrast floor has measured in both
+   themes. */
+:root{
+  color-scheme:dark light;
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:light){:root{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+}}
+
+/* A chosen theme overrides the OS; without it the media default stays live. */
+:root[data-theme="dark"]{
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;min-height:100%}
+body{background:var(--space);color:var(--ink);font:14px/1.45 var(--sans);
+     -webkit-font-smoothing:antialiased}
+h1,h2,h3,p,ul{margin:0;padding:0}
+ul{list-style:none}
+button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inherit}
+:focus-visible{outline:2px solid var(--ion);outline-offset:3px}
+
+/* Every control the page or a module builds clears the 44px minimum target height, declared over the
+   ELEMENT TYPES rather than over a list of classes: a control added later is already above it. */
+.hub-shell button,.hub-shell select,.hub-shell input,.hub-shell a{min-height:44px}
+.hub-shell select,.hub-shell input{font:inherit;padding:4px 8px;border:1px solid var(--line-strong);
+  border-radius:6px;background:var(--panel);color:var(--ink)}
+
+/* -- the frame -------------------------------------------------------------------------------- */
+/* The top bar, the notices and the confirmation span the page; the column of projects, the centre
+   and the side stand under them. Under 900px they stack in reading order and the page never scrolls
+   sideways. */
+.hub-shell{display:grid;grid-template-columns:260px minmax(0,1fr) 300px;
+  grid-template-rows:auto auto auto minmax(0,1fr) auto;min-height:100vh;max-width:1400px;
+  margin:0 auto;background:var(--ground);
+  grid-template-areas:"top top top" "banners banners banners" "confirm confirm confirm"
+    "rail center side" "status status status"}
+.hub-top{grid-area:top;display:flex;align-items:center;flex-wrap:wrap;gap:4px 18px;
+  padding:0 22px;min-height:52px;border-bottom:1px solid var(--line)}
+.hub-brand{font:500 12px var(--display);letter-spacing:.26em;text-transform:uppercase}
+.hub-path{flex:1 1 200px;min-width:0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.hub-top__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.hub-action{display:inline-flex;align-items:center;padding:0 16px;border-radius:22px;
+  border:1px solid var(--line-strong);font-size:12.5px;color:var(--ink);text-decoration:none}
+.hub-action[data-primary="true"]{background:var(--ion);color:var(--on-ion);
+  border-color:var(--ion);font-weight:600}
+.hub-action:disabled,.hub-action[aria-disabled="true"]{opacity:.6;cursor:default}
+.hub-why{font-size:12px;color:var(--muted)}
+.hub-seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:22px;
+  overflow:hidden}
+.hub-seg button{padding:0 12px;font:500 11.5px var(--mono);color:var(--muted)}
+.hub-seg button[aria-pressed="true"]{background:var(--ion);color:var(--on-ion)}
+.hub-view{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12.5px;
+  color:var(--amber)}
+.hub-status{grid-area:status;padding:6px 22px;font-size:12px;color:var(--muted);
+  border-top:1px solid var(--line)}
+
+/* -- notices and the confirmation ----------------------------------------------------------------- */
+.hub-banners{grid-area:banners;display:flex;flex-direction:column;gap:8px}
+.hub-banners:not(:empty){padding:10px 22px;border-bottom:1px solid var(--line)}
+.hub-banner{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px;padding:8px 12px;
+  border:1px solid var(--amber);border-radius:10px;color:var(--amber);overflow-wrap:anywhere}
+.hub-banner small{flex-basis:100%;font-size:12px;color:var(--muted)}
+.hub-banner button{padding:0 12px;border:1px solid var(--amber);border-radius:10px;
+  color:var(--amber)}
+.hub-confirm{grid-area:confirm}
+.hub-confirm:not(:empty){padding:10px 22px;border-bottom:1px solid var(--line)}
+.hub-confirm__box{display:flex;flex-direction:column;gap:8px;padding:12px 14px;
+  background:var(--panel);border:1px solid var(--line-strong);border-radius:12px}
+.hub-confirm__box p{font-size:13px;color:var(--ink)}
+.hub-confirm__buttons{display:flex;flex-wrap:wrap;gap:8px}
+.hub-confirm__buttons button{padding:0 16px;border-radius:22px;border:1px solid var(--line-strong)}
+.hub-confirm__buttons button[data-primary="true"]{background:var(--ion);color:var(--on-ion);
+  border-color:var(--ion);font-weight:600}
+.hub-notice{padding:0 22px;font-size:12.5px;color:var(--amber)}
+
+/* -- the column of projects ---------------------------------------------------------------------- */
+.hub-rail{grid-area:rail;min-width:0;min-height:0;padding:16px 12px;overflow:auto;
+  border-right:1px solid var(--line)}
+.hub-rail__head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  margin:0 0 8px;padding:0 10px;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.hub-rail__count{letter-spacing:.04em;text-transform:none;color:var(--amber)}
+.hub-rail__none,.hub-waiting__none,.hub-project__none{padding:0 10px;font-size:12px;
+  color:var(--muted)}
+.hub-rail__projects{display:flex;flex-direction:column;gap:6px;margin:0 0 18px}
+.hub-project{display:flex;flex-direction:column;gap:2px;padding:6px 0 8px;border-radius:12px}
+.hub-project[data-selected="true"]{background:var(--panel);box-shadow:inset 2px 0 0 var(--ion)}
+.hub-project[data-muted="true"] .hub-project__line{color:var(--muted)}
+.hub-project__head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hub-project__name{flex:1 1 auto;min-width:0;padding:0 10px;text-align:left;font-size:13.5px;
+  font-weight:600;overflow-wrap:anywhere}
+.hub-project__badge{padding:0 10px;font-size:12px;color:var(--amber)}
+.hub-project__line{padding:0 10px;font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+.hub-project__line[data-tone="amber"]{color:var(--amber)}
+.hub-project__line[data-tone="ion"]{color:var(--ion)}
+.hub-project__note{padding:0 10px;font-size:11.5px;color:var(--muted)}
+.hub-project__actions{display:flex;flex-wrap:wrap;gap:4px 6px;padding:0 6px}
+.hub-project__act{padding:0 12px;border:1px solid var(--line-strong);border-radius:22px;
+  font-size:12px}
+.hub-project__menu{min-width:44px;padding:0 10px;font-size:16px;color:var(--muted)}
+.hub-project__items{display:flex;flex-direction:column;flex-basis:100%;padding:0 4px}
+.hub-project__items button{width:100%;padding:0 10px;text-align:left;font-size:12.5px}
+.hub-tasks{display:flex;flex-direction:column;gap:2px;margin:4px 0 0 10px;padding-left:6px;
+  border-left:1px solid var(--line)}
+.hub-task{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;
+  padding:6px 10px;text-align:left;border-radius:10px;overflow-wrap:anywhere}
+.hub-task[aria-pressed="true"]{background:var(--ground);box-shadow:inset 2px 0 0 var(--ion)}
+.hub-task__title{font-size:13px;font-weight:500;line-height:1.3}
+.hub-task__state{font-size:12px;color:var(--muted)}
+.hub-task[data-tone="amber"] .hub-task__state{color:var(--amber)}
+.hub-task[data-tone="ion"] .hub-task__state{color:var(--ion)}
+.hub-task__snapshot{font-size:11.5px;color:var(--muted)}
+.hub-waiting{margin-top:6px}
+.hub-waiting__list{display:flex;flex-direction:column;gap:2px}
+.hub-waiting__item{width:100%;padding:6px 10px;text-align:left;font-size:12.5px;
+  color:var(--amber);border-radius:10px;overflow-wrap:anywhere}
+
+/* -- the centre and the side ---------------------------------------------------------------------- */
+.hub-center{grid-area:center;display:flex;flex-direction:column;gap:12px;min-width:0;
+  min-height:0;padding:22px}
+.hub-stub{display:flex;flex-direction:column;gap:10px;max-width:60ch}
+.hub-stub__line{font-size:15px;font-weight:500;overflow-wrap:anywhere}
+.hub-stub__line[data-tone="amber"]{color:var(--amber)}
+.hub-stub__drain{font:500 13px var(--mono);color:var(--amber)}
+.hub-stub__actions{display:flex;flex-wrap:wrap;gap:8px}
+.hub-stub__actions button,.hub-stub__actions a{padding:0 16px;border:1px solid var(--line-strong);
+  border-radius:22px}
+.hub-stub__actions [data-primary="true"]{background:var(--ion);color:var(--on-ion);
+  border-color:var(--ion);font-weight:600}
+.hub-center__choose{font-size:13px;color:var(--muted)}
+.hub-side{grid-area:side;min-width:0;min-height:0;padding:16px 14px;overflow:auto;
+  border-left:1px solid var(--line)}
+.hub-queue,.hub-limits{display:flex;flex-direction:column;gap:6px;margin:0 0 18px}
+.hub-queue__now{font-size:13px;color:var(--ink);overflow-wrap:anywhere}
+.hub-queue__list{display:flex;flex-direction:column;gap:6px}
+.hub-queue__entry{display:flex;flex-direction:column;gap:4px;font-size:12.5px;
+  overflow-wrap:anywhere}
+.hub-queue__buttons{display:flex;flex-wrap:wrap;gap:4px 6px}
+.hub-queue__buttons button{padding:0 12px;border:1px solid var(--line-strong);
+  border-radius:22px;font-size:12px}
+.hub-limits__source{font-size:12px;color:var(--muted)}
+.hub-card{display:flex;flex-direction:column;gap:2px;padding:10px 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;font-size:12.5px}
+.hub-card__name{font-weight:600;overflow-wrap:anywhere}
+.hub-card__note{font-size:12px;color:var(--amber)}
+.hub-card__row{font-size:12.5px;color:var(--ink)}
+.hub-card__row[data-quiet="true"]{color:var(--muted)}
+
+@media (max-width:900px){
+  .hub-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;
+    grid-template-areas:"top" "banners" "confirm" "rail" "center" "side" "status"}
+  .hub-rail{border-right:0;border-bottom:1px solid var(--line)}
+  .hub-side{border-left:0;border-top:1px solid var(--line)}
+}
