@@ -27,6 +27,7 @@ from .contracts import ActionRequest
 from .policy_preview import PreviewStale, build_preview
 from .policy_view import automation_view
 from .queue_bodies import Ask
+from .queue_pump import run_pass
 from .queue_reading import (
     CORRUPT, Facts, assemble, done_reason, grant_standing, run_ended, slot_reading)
 from .queue_store import MAX_QUEUE, CorruptReceipt, QueueEntry, QueueFile, QueueStore
@@ -34,10 +35,6 @@ from .run_authorization import RunAuthorizationControl
 from .store_errors import StoreError
 from .task_contracts import frozen_config_task
 from .template_store import RouteNotOwned
-
-#: A pump pass that finds no owner waits this long before it asks again (spec 4.4.4 step 1).
-OWNER_RETRY_SECONDS = 5
-
 
 class QueueService:
     """The queue of one project, in one server process."""
@@ -112,7 +109,7 @@ class QueueService:
             return None, None
         return binding.task_id, None if record is None else record.title
 
-    def _processed(self, facts: Sequence[Facts], now: str) -> dict[str, str]:
+    def processed(self, facts: Sequence[Facts], now: str) -> dict[str, str]:
         """`{run_id: why}` for every entry that is done and only waits to be removed."""
         return {item.entry.run_id: why for item in facts
                 if (why := done_reason(item, now)) is not None}
@@ -143,7 +140,7 @@ class QueueService:
     def _live(self, file: QueueFile, now: str) -> tuple[list[QueueEntry], list[str]]:
         """The entries that are not done, in order, and the runs of those that were dropped."""
         facts = self.facts(file)
-        done = self._processed(facts, now)
+        done = self.processed(facts, now)
         return ([row for row in file.entries if row.run_id not in done],
                 [row.run_id for row in file.entries if row.run_id in done])
 
@@ -273,6 +270,12 @@ class QueueService:
             if entry is None or (action == "revoke" and entry.kind != "resume"):
                 return
             self.commit([row for row in file.entries if row.run_id != run_id], [])
+
+    # --- the pump ---------------------------------------------------------------------------------
+
+    def start_next(self) -> bool:
+        """One pass of the pump (spec 4.4.4); True when a run was started or resumed."""
+        return run_pass(self)
 
 
 def _same(standing: QueueEntry, ask: Ask) -> bool:
