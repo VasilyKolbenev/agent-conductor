@@ -33,7 +33,7 @@ from .containment import first_directory_violation, lstat_or_none, portal_violat
 from .contract_values import ContractError, _id, _timestamp
 from .path_admission import admit_file
 from .product_names import SEED_STAGING_DIR
-from .run_store import _exclusive_bytes, _fsync_dir
+from .run_store import _exclusive_bytes, _fsync_dir, _root_gate
 from .store_errors import StoreError
 from .task_contracts import _bounded_id
 from .template_store import RouteNotOwned, _leaf_violation
@@ -447,8 +447,11 @@ def _write_once(project_root: str | os.PathLike[str], task_id: str, work_item_id
         raise SeedRecordTooLarge(f"a {label} larger than {MAX_RECORD_BYTES} bytes cannot be read")
     root = Path(project_root).resolve()
     seeds, path, _task, _item = _stored_place(root, task_id, work_item_id, suffix)
+    # Keep the weakly indexed gate alive until publication has removed its temporary hard link.
+    # Otherwise a competing writer's route check mistakes that second name for foreign bytes.
+    gate = _root_gate(root)
     try:
-        with write_guard(root):
+        with gate.lock, write_guard(root):
             admit_file(path, label)
             _hold_route(seeds, path)
             path.parent.mkdir(parents=True, exist_ok=True)
