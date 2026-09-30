@@ -95,7 +95,7 @@ def test_the_registry_is_exactly_the_import_closure_of_hub_js_and_its_stylesheet
         assert kind == (CSS_TYPE if name.endswith(".css") else JS_TYPE), route
 
 
-def test_the_registry_serves_each_file_byte_for_byte_from_the_packaged_directory():
+def test_every_registry_row_names_a_packaged_file_with_a_plain_name():
     for route, (_kind, name) in assets.HUB_ASSETS.items():
         assert (PANEL / name).is_file(), route
         assert re.fullmatch(r"[a-z][a-z-]*\.(?:js|css)", name), name
