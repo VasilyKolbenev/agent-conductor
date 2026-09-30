@@ -13,6 +13,7 @@ import sys
 
 import conductor
 from conductor import server
+from conductor.hub.assets import HUB_ASSETS
 
 package = Path(conductor.__file__).resolve().parent
 venv = Path(sys.prefix).resolve()
@@ -24,6 +25,8 @@ files = {str(path.relative_to(package)).replace("\\", "/"):
 routes = {route: {"content_type": value[0], "file": value[1]}
           for route, value in server.PANEL_ASSETS.items()}
 routes["/"] = {"content_type": "text/html; charset=utf-8", "file": "studio.html"}
+# The hub serves its own files (its registry, and `GET /` for hub.html), not this server.
+hub_files = sorted({name for _, name in HUB_ASSETS.values()} | {"hub.html"})
 print(json.dumps({"python": sys.executable, "prefix": str(venv),
                   "package": str(package), "version": importlib.metadata.version("agent-conductor"),
-                  "files": files, "routes": routes}, sort_keys=True))
+                  "files": files, "routes": routes, "hub_files": hub_files}, sort_keys=True))
