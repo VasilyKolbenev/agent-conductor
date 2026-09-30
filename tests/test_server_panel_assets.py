@@ -130,6 +130,8 @@ ASSETS = {
     "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
     # The one read and the one write of that flag.
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
+    # The reads that say whether a task was closed.
+    "/panel/desk-closing.js": "text/javascript; charset=utf-8",
     # The summary's counters, tasks and people.
     "/panel/desk-summary-model.js": "text/javascript; charset=utf-8",
     # The journal of a run read as the rows of the feed, and the words that say them.
@@ -322,6 +324,10 @@ REFUSED = (
     "/panel/%2e%2e/desk-feed-model.js", "/panel/DESK-FEED-MODEL.JS",
     "/panel/Desk-feed-model.js", "/panel/desk-feed-model.js/",
     "/panel/desk-feed-model.js%00.txt",
+    # The closing reads, the same nine shapes.
+    "/panel/desk-closing.json", "/panel/desk-closing.js?v=1", "/panel/desk-closing.js.map",
+    "/panel/../desk-closing.js", "/panel/%2e%2e/desk-closing.js", "/panel/DESK-CLOSING.JS",
+    "/panel/Desk-closing.js", "/panel/desk-closing.js/", "/panel/desk-closing.js%00.txt",
     # The summary's model, the same nine shapes.
     "/panel/desk-summary-model.json", "/panel/desk-summary-model.js?v=1",
     "/panel/desk-summary-model.js.map", "/panel/../desk-summary-model.js",

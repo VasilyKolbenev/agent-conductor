@@ -77,8 +77,8 @@ PERMITTED_IMPORTS = {
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
-                          "./desk-feed.js", "./desk-pult.js", "./desk-flag-model.js",
-                          "./desk-flag.js"}),
+                          "./desk-feed.js", "./desk-closing.js", "./desk-pult.js",
+                          "./desk-flag-model.js", "./desk-flag.js"}),
     #: The door of the continue-after flag: the one read and the one write of it, through the
     #: transport's own doors, judged by the flag's model. It names one target and opens no door.
     "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
@@ -132,6 +132,11 @@ PERMITTED_IMPORTS = {
     "desk-summary-model.js": frozenset({"./desk-status.js", "./studio-taskruns.js",
                                         "./studio-scene-model.js", "./studio-runread.js",
                                         "./desk-feed-model.js"}),
+    #: The reads that say whether a task was closed. They go through the door the boot module
+    #: hands in, so this module opens none: it judges a run read as the scene does, asks the
+    #: summary's model which runs could have been accepted and what a run read says.
+    "desk-closing.js": frozenset({"./desk-summary-model.js", "./studio-taskruns.js",
+                                  "./studio-situation.js"}),
     #: The words of the feed: a frozen catalogue that imports nothing, spread into the one table
     #: by `studio-i18n.js`.
     "desk-feed-copy.js": frozenset(),

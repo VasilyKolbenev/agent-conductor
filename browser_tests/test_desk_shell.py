@@ -61,6 +61,8 @@ DESK_BOOT_ASSETS = {
     "desk-flag-model.js": 200, "desk-flag.js": 200,
     # The feed: what it draws from, the words it says and the module that draws it.
     "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
+    # What says whether a task was closed: the reads, and the model they ask.
+    "desk-closing.js": 200, "desk-summary-model.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,

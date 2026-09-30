@@ -54,6 +54,7 @@ import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
 import {mountFeed} from "./desk-feed.js";
 import {mountPult} from "./desk-pult.js";
+import {readClosing} from "./desk-closing.js";
 import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
 
@@ -104,7 +105,9 @@ const MISMATCH = "project_mismatch";
 //: form and not saved (null: nothing typed since it opened) -- all three live in this page's
 //: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
 //: project claim said (`active`, `view`, or null when no claim was read or it named no mode
-//: this build knows); `queue` is the task-queue read once one is wired (null: not read).
+//: this build knows); `queue` is the task-queue read once one is wired (null: not read);
+//: `closing` is the digest of the newest finished run of each task that could have been
+//: accepted, by task id (null until those reads have landed).
 //:
 //: The continue-after block's memory is `flag` (spec 5.8): null where there is no block (a desk
 //: nobody framed, or one whose read of the flag gave no record this desk can vouch for);
@@ -113,7 +116,7 @@ const MISMATCH = "project_mismatch";
 //: is the code of the last refusal (or `unknown`).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
-  refused: false, mode: null, queue: null, flag: null});
+  refused: false, mode: null, queue: null, flag: null, closing: null});
 let choice = 0;
 let door = null;
 let flagDoor = null;
@@ -339,10 +342,16 @@ async function readAutomation(tasks, runs) {
   return found;
 }
 
+//: The lists, the automation of each task's newest run, and, beside them, the reads that say
+//: which tasks were closed (`desk-closing.js`): the rail is drawn when its words are known and
+//: the summary when its numbers are.
 async function load() {
   move({tasks: READING, runs: READING});
   const [tasks, runs] = await Promise.all([readTasks(), readRuns()]);
+  const closing = readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
+    stopped: () => state.foreign});
   move({tasks, runs, automation: await readAutomation(tasks, runs)});
+  move({closing: await closing});
 }
 
 //: The newest run of one task, read whole: the run and, beside it, what protects it. A run
@@ -568,7 +577,7 @@ function enterForeign() {
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
-    refused: false, mode: null, queue: null, flag: null});
+    refused: false, mode: null, queue: null, flag: null, closing: null});
   render();
 }
 
