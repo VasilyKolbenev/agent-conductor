@@ -474,6 +474,18 @@ class QueueStore:
         """
         self._write_receipt(receipt, replace=True)
 
+    def put_receipt(self, receipt: Receipt) -> None:
+        """Create the receipt; one that already stands is an orphan and is replaced.
+
+        The caller reconciled the key first and found no journal record under it, so a receipt
+        that stands is the leftover of a start that never reached the journal: a retry replaces it
+        and is not poisoned by it. A receipt a journal record pairs with is never passed here.
+        """
+        try:
+            self.write_receipt(receipt)
+        except ReceiptExists:
+            self.replace_receipt(receipt)
+
     def _write_receipt(self, receipt: Receipt, *, replace: bool) -> None:
         if type(receipt) is not Receipt:
             raise StoreError("a receipt write takes exactly a Receipt")

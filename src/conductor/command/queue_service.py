@@ -49,7 +49,9 @@ class QueueService:
 
     def __init__(self, policy: Any, tasks: Any, *, mode: str = "active",
                  monotonic: Callable[[], float] = time.monotonic,
-                 started_at: str | None = None) -> None:
+                 started_at: str | None = None, project_id: str | None = None,
+                 transition_id: str | None = None, auto_continue: str | None = None,
+                 flags: Any = None) -> None:
         """Hold the collaborators; a constructor writes nothing and starts nothing (spec 4.4.3).
 
         Args:
@@ -61,6 +63,10 @@ class QueueService:
             started_at: The moment this process started, for the `server_restarted` entries;
                 by default the wall clock now. The server clock is never read here: a
                 constructor that took a tick would change what every test that counts them sees.
+            project_id: The activation nonce this process holds (`ProjectIdentity.project_id`).
+            transition_id: The hub's `--transition`, or None (spec 4.3.4).
+            auto_continue: The hub's `--auto-continue <flag_id>@<revision>`, or None.
+            flags: The project's continue-after flag file (lane H's `AutoContinueStore`).
         """
         self.policy, self.tasks, self.mode = policy, tasks, mode
         self.store = QueueStore(policy.store.project_root)
@@ -68,6 +74,18 @@ class QueueService:
         self.started_at = started_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self.admitted: set[tuple[str, str, str]] = set()
         self.owner_retry_at = 0.0
+        self.project_id, self.transition_id = project_id, transition_id
+        self.auto_continue, self.flags = auto_continue, flags
+        self.flag_tried, self.flag_record, self.flag_runs = False, None, []
+
+    def hands_over_a_flag(self) -> bool:
+        """Only an active child a hub started for a planned transition may consume the flag."""
+        return (self.mode == "active" and self.flags is not None and bool(self.transition_id)
+                and bool(self.auto_continue) and bool(self.project_id))
+
+    def admit_all_on_file(self) -> None:
+        """Admit every preauthorization on the file (spec 4.4.2: the flag is one of the human's)."""
+        self.admitted |= {row.key for row in self.store.read().entries if row.key is not None}
 
     # --- the facts --------------------------------------------------------------------------------
 
@@ -90,12 +108,12 @@ class QueueService:
         return [self._facts_of(entry, holder) for entry in file.entries]
 
     def _facts_of(self, entry: QueueEntry, holder: str | None) -> Facts:
-        recovered = self._recovered(entry.run_id)
+        recovered = self.recovered(entry.run_id)
         task_id, title = self._task_of(recovered)
         return Facts(entry, recovered, self._receipt(entry), entry.key in self.admitted,
                      holder == entry.run_id, task_id, title)
 
-    def _recovered(self, run_id: str) -> Any | None:
+    def recovered(self, run_id: str) -> Any | None:
         try:
             return self.policy.store.read(run_id)
         except (StoreError, ContractError):
@@ -216,7 +234,7 @@ class QueueService:
     def _ready(self, ask: Ask, now: str) -> Any:
         """The run, if it may be queued at all (spec 4.4.5 step 3); else `queue_not_ready`."""
         not_ready = ApiRefusal.fixed("queue_not_ready")
-        recovered = self._recovered(ask.run_id)
+        recovered = self.recovered(ask.run_id)
         if recovered is None or not bounded_history_enabled(recovered):
             raise not_ready
         if run_ended(recovered) or self.holder() == ask.run_id:

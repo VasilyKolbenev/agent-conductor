@@ -20,13 +20,11 @@ import copy
 from typing import Any
 
 from .authorization_history import validate_authorization_history
-from .authorization_terms import _time_parts
 from .contract_values import ContractError
-from .policy_history import current_authorization, current_control
 from .policy_preview import build_preview, from_terms
-from .policy_service import PolicyService
-from .queue_reading import Facts, pairing_of, record_digest
-from .queue_store import Dropped, QueueEntry, QueueStore, Receipt, ReceiptExists
+from . import queue_flag
+from .queue_reading import Facts, pairing_of, record_digest, resume_refusal
+from .queue_store import Dropped, QueueEntry, Receipt
 from .run_authorization import RunAuthorizationControl
 from .store_errors import StoreError
 
@@ -58,12 +56,15 @@ def run_pass(svc: Any) -> bool:
 def _pass(svc: Any) -> bool:
     now = svc.policy.clock()
     file = svc.store.read()
-    if not file.entries:
-        return False
     facts = svc.facts(file)
     done = svc.processed(facts, now)
     if done:
         svc.commit([row for row in file.entries if row.run_id not in done], list(done))
+    if queue_flag.consume_once(svc):
+        facts = svc.facts(svc.store.read())     # the admission the flag gave is part of the facts
+    carried = queue_flag.resume_next(svc, now)
+    if carried != "none":
+        return carried == "started"
     for item in facts:
         if item.entry.run_id in done or not _eligible(item):
             continue
@@ -139,42 +140,19 @@ def _resume(svc: Any, item: Facts, now: str) -> str:
 
 
 def _resume_refusal(pre: Any, run: Any, now: str) -> str | None:
-    """Why the grant a human confirmed resuming is no longer the one to resume, or None."""
-    values = tuple(row.value for row in run.records)
-    grant = current_authorization(values)
-    if grant is None or (grant.authorization_id, grant.authorization_digest) != (
-            pre.authorization_id, pre.authorization_digest):
-        return "grant_changed"
-    if _time_parts("now", now) >= _time_parts("expires_at", grant.expires_at):
-        return "grant_expired"
-    control = current_control(values, grant)
-    if (None if control is None else control.control_id) != pre.expected_control_id:
-        return "grant_changed"
-    try:
-        PolicyService._hold_resume(run)
-    except ContractError:
-        return "grant_changed"      # an unsettled or unknown action: the run moved since he looked
-    return None
+    return resume_refusal(pre.authorization_id, pre.authorization_digest,
+                          pre.expected_control_id, run, now)
 
 
 def _carry_out(svc: Any, item: Facts, receipt: Receipt, record: Any, grant_id: str) -> str:
     """Receipt, journal record, activation, removal, frame: in that order, each one recoverable."""
     run_id = item.entry.run_id
-    _write_receipt(svc.store, receipt)
+    svc.store.put_receipt(receipt)
     svc.policy.store.append(record)
     svc.policy.driver.activate(run_id, grant_id)
     _remove(svc, item.entry)
     svc.policy.notify(run_id)
     return "started"
-
-
-def _write_receipt(store: QueueStore, receipt: Receipt) -> None:
-    """Create the receipt; one that stands under the key is an orphan (the reconciliation ran
-    first and found no journal record), so a retry replaces it and is not poisoned by it."""
-    try:
-        store.write_receipt(receipt)
-    except ReceiptExists:
-        store.replace_receipt(receipt)
 
 
 def _remove(svc: Any, entry: QueueEntry) -> None:

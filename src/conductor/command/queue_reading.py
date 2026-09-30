@@ -21,6 +21,7 @@ from .authorization_terms import _time_parts
 from .contract_values import ContractError, _content_digest
 from .graph_schedule import schedule
 from .policy_history import current_authorization, current_control
+from .policy_service import PolicyService
 from .queue_store import JOURNAL_KIND, QueueEntry, Receipt
 from .run_authorization import RunAuthorization
 from .run_terminal import RunTerminal
@@ -177,6 +178,30 @@ def grant_standing(recovered: Any, now: str) -> bool:
     if control is not None and control.action == "revoke":
         return False
     return _time_parts("now", now) < _time_parts("expires_at", grant.expires_at)
+
+
+def resume_refusal(authorization_id: str, digest: str, last_control_id: str | None, run: Any,
+                   now: str) -> str | None:
+    """Why the grant a human was shown is no longer the one to resume, or None.
+
+    The grant, its digest, its last control and its time must be what he looked at (the last
+    control is his `expected_control_id`, not the current one), and no action may be unsettled.
+    """
+    values = tuple(row.value for row in run.records)
+    grant = current_authorization(values)
+    if grant is None or (grant.authorization_id, grant.authorization_digest) != (
+            authorization_id, digest):
+        return "grant_changed"
+    if _time_parts("now", now) >= _time_parts("expires_at", grant.expires_at):
+        return "grant_expired"
+    control = current_control(values, grant)
+    if (None if control is None else control.control_id) != last_control_id:
+        return "grant_changed"
+    try:
+        PolicyService._hold_resume(run)
+    except ContractError:
+        return "grant_changed"      # an unsettled or unknown action: the run moved since he looked
+    return None
 
 
 def terms_changed(entry: QueueEntry, recovered: Any) -> bool:
