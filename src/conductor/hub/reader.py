@@ -10,7 +10,9 @@ made into rows (`summary.live_from_cycle`) and then acted on:
   5 s); an incomplete one writes nothing;
 - the continue-after flag it read puts the project on the queue of projects or takes it off
   (4.3.4), the flags of one step in the order they were set;
-- the quotas it read, if the project is the ACTIVE one, go to `limits.json` and a `limits` frame.
+- the quotas it read, if the project is the ACTIVE one and its child runs as the active one (a
+  view child, even of the project that has just become active, answers with the hub's own file),
+  go to `limits.json` and a `limits` frame.
 
 A project whose child is gone loses its live data (its last snapshot stays) and its stream.
 Nothing here writes to a child or to the registry. The loop that calls `step()` belongs to the hub.
@@ -154,8 +156,9 @@ class ChildReader:
             active = self._store.load().active_project_id
         except state.HubStateError:
             return
-        if project_id == active and cycle.verdict == "live" and cycle.quotas is not None:
-            self._snapshots.put_limits(project_id, taken_at=live.taken_at, quotas=cycle.quotas)
+        quotas = cycle.active_quotas
+        if project_id == active and quotas is not None:
+            self._snapshots.put_limits(project_id, taken_at=live.taken_at, quotas=quotas)
             self._bus.publish("limits")
 
     def _move_flags(self, flags: list[tuple[str, dict[str, Any] | None]]) -> None:

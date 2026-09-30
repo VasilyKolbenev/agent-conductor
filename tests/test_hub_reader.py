@@ -24,11 +24,11 @@ PORTS = {"a": 7701, "b": 7702, "c": 7703}
 
 
 def _cycle(task: str = "task-1", *, failures=(), verdict="live", flag=None, quotas=None,
-           queue=None, human: str = "not_required") -> child_client.Cycle:
+           queue=None, human: str = "not_required", mode: str = "active") -> child_client.Cycle:
     read = child_client.TaskRead(task_row(task, "Fix"), run_row(f"run-{task}", task,
                                                                   human_state=human), None)
-    return child_client.Cycle(verdict, {"project_id": A}, (read,), queue, flag, quotas,
-                              tuple(failures))
+    project = {"project_id": A, "hub_origin": HUB_ORIGIN, "demo": False, "mode": mode}
+    return child_client.Cycle(verdict, project, (read,), queue, flag, quotas, tuple(failures))
 
 
 def _flag(flag_id: str = F1, *, enabled: bool = True, consumed=None, set_at: str = "t") -> dict:
@@ -203,6 +203,46 @@ def test_limits_json_is_written_only_from_the_quotas_of_the_active_project(rig):
     assert stored is not None and stored.project_id == A and stored.quotas["as_of"] == quotas[
         "as_of"]
     assert {"kind": "limits"} in rig.frames()
+
+
+QUOTAS = {"as_of": "2026-09-30T10:00:00Z", "max_age_seconds": 300, "providers": [], "snapshots": []}
+
+
+def _b_became_active_over_a_good_limits_file_of_a(rig) -> bytes:
+    """A's `limits.json` stands; B was open for viewing and has just been made the active one."""
+    assert rig.snapshots.put_limits(A, taken_at="2026-09-30T09:00:00Z", quotas=QUOTAS) == "written"
+    rig.world.store.update(lambda s: state.begin_switch(
+        s, B, kind="manual", transition_id="00000000-0000-0000-0000-0000000000cc",
+        since="2026-09-30T10:00:00Z", flag=None, previous=None))
+    rig.run("b", mode="view")                   # its view child serves until it drains
+    rig.mono.advance(31)                        # the rule of one write in 5 s no longer holds it
+    rig.frames()
+    return (rig.world.home / "limits.json").read_bytes()
+
+
+def test_the_view_child_of_the_project_that_just_became_active_writes_no_limits(rig):
+    before = _b_became_active_over_a_good_limits_file_of_a(rig)
+    echo = {**QUOTAS, "hub_snapshot": {"project_id": A, "taken_at": "2026-09-30T09:00:00Z"}}
+    rig.fakes.answers[B] = _cycle(quotas=echo, mode="view")
+    rig.reader.step()
+    assert rig.reader.live(B).cycle.verdict == "live", "the view child is read as any child is"
+    stored = rig.snapshots.get_limits()
+    assert stored is not None, "the echo made limits.json unreadable to every view desk"
+    assert stored.project_id == A and (rig.world.home / "limits.json").read_bytes() == before
+    assert {"kind": "limits"} not in rig.frames()
+
+
+def test_the_mode_alone_keeps_a_view_childs_quotas_out_of_limits_json(rig):
+    before = _b_became_active_over_a_good_limits_file_of_a(rig)
+    rig.fakes.answers[B] = _cycle(quotas={**QUOTAS, "as_of": "2026-09-30T09:59:00Z"}, mode="view")
+    rig.reader.step()
+    assert (rig.world.home / "limits.json").read_bytes() == before
+    rig.run("b", mode="active", started="windows:2")     # drained and started again as the active
+    rig.fakes.answers[B] = _cycle(quotas={**QUOTAS, "as_of": "2026-09-30T09:59:00Z"})
+    rig.reader.step()
+    stored = rig.snapshots.get_limits()
+    assert stored is not None and (stored.project_id, stored.quotas["as_of"]) == (
+        B, "2026-09-30T09:59:00Z"), "the same project, now running as the active one, is the limits"
 
 
 def test_a_project_that_read_a_standing_flag_joins_the_queue_and_leaves_it_when_the_flag_is_down(

@@ -573,3 +573,30 @@ def test_a_running_childs_tasks_reach_the_projects_answer_through_the_reader(sta
         assert {req.method for req in child.log} == {"GET"}
     finally:
         child.close()
+
+
+def test_the_view_child_of_the_project_just_made_active_is_not_the_live_limits(stack):
+    from conductor.hub import state
+
+    quotas = {"as_of": "2026-09-30T09:00:00Z", "max_age_seconds": 300, "providers": [],
+              "snapshots": []}
+    assert stack.snapshots.put_limits(A, taken_at=quotas["as_of"], quotas=quotas) == "written"
+    stack.world.store.update(lambda s: state.begin_switch(
+        s, B, kind="manual", transition_id="00000000-0000-0000-0000-0000000000cc",
+        since="2026-09-30T10:00:00Z", flag=None, previous=None))
+    before = (stack.world.home / "limits.json").read_bytes()
+    child = FakeChild(B, mode="view")
+    try:
+        serve_standard(child, [task_row("task-001", "Fix")], [run_row("run-001", "task-001")])
+        child.put("/command/quotas", {**quotas, "hub_snapshot": {
+            "project_id": A, "taken_at": quotas["as_of"]}})
+        _running(stack, "b", mode="view", port=child.port)
+        stack.mono.advance(31)
+        stack.reader.step()
+        assert any(req.target == "/command/quotas" for req in child.log), "the child was not read"
+        answer = stack.get("/hub/limits").json()
+        assert (answer["source"], answer["project_id"], answer["taken_at"]) == (
+            "snapshot", A, quotas["as_of"]), "the view child's echo was served as live limits"
+        assert (stack.world.home / "limits.json").read_bytes() == before
+    finally:
+        child.close()

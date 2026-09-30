@@ -36,8 +36,10 @@ def _read(task_id: str, title: str, *, state: str | None = "waiting", reason: st
                                     "expires_at": "2026-09-30T12:00:00Z"}, detail, failed)
 
 
-def _cycle(*reads, queue=None, flag=None, quotas=None, failures=(), verdict="live"):
-    return child_client.Cycle(verdict, {"project_id": A}, tuple(reads), queue, flag, quotas,
+def _cycle(*reads, queue=None, flag=None, quotas=None, failures=(), verdict="live",
+           mode="active"):
+    project = {"project_id": A, "hub_origin": "http://127.0.0.1:7700", "demo": False, "mode": mode}
+    return child_client.Cycle(verdict, project, tuple(reads), queue, flag, quotas,
                               tuple(failures))
 
 
@@ -403,3 +405,16 @@ def test_a_live_cycle_whose_quotas_read_failed_is_not_a_source_of_limits():
                                    summary.ObservedLedger(), LATER)
     assert summary.limits_response(LATER, active_project_id=A, live=live,
                                    stored=stored)["source"] == "snapshot"
+
+
+def test_a_live_read_of_a_child_that_is_not_the_active_one_is_not_a_source_of_limits():
+    stored = snapshots.LimitsSnapshot(B, NOW, _quotas([_row_of("openai", "c85e", NOW, ["x"])]))
+    echo = {**_quotas([]), "hub_snapshot": {"project_id": B, "taken_at": NOW}}
+    viewed = summary.live_from_cycle(A, _cycle(quotas=echo, mode="view"),
+                                     summary.ObservedLedger(), LATER)
+    got = summary.limits_response(LATER, active_project_id=A, live=viewed, stored=stored)
+    assert (got["source"], got["project_id"], got["taken_at"]) == ("snapshot", B, NOW)
+    unsaid = child_client.Cycle("live", {"project_id": A}, (), None, None, _quotas([]), ())
+    silent = summary.live_from_cycle(A, unsaid, summary.ObservedLedger(), LATER)
+    assert summary.limits_response(LATER, active_project_id=A, live=silent,
+                                   stored=None)["source"] == "none", "no mode said is not active"

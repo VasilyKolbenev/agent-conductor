@@ -168,10 +168,12 @@ def limit_cards(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def limits_response(computed_at: str, *, active_project_id: str | None, live: Live | None,
                     stored: snapshots.LimitsSnapshot | None) -> dict[str, Any]:
-    """`GET /hub/limits`: the active project's live read, else `limits.json`, else nothing."""
-    quotas = None if live is None else live.cycle.quotas
-    if (active_project_id is not None and live is not None and live.cycle.verdict == "live"
-            and quotas is not None):
+    """`GET /hub/limits`: the active project's live read, else `limits.json`, else nothing.
+
+    A live read counts only when it is of a child that runs as the active one (`active_quotas`).
+    """
+    quotas = None if live is None else live.cycle.active_quotas
+    if active_project_id is not None and live is not None and quotas is not None:
         return _limits(computed_at, "live", active_project_id, live.taken_at, quotas)
     if stored is not None:
         return _limits(computed_at, "snapshot", stored.project_id, stored.taken_at, stored.quotas)

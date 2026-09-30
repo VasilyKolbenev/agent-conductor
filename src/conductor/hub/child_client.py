@@ -193,6 +193,19 @@ class Cycle:
         """Whether every read of the pass was answered: the only pass a snapshot may come from."""
         return self.verdict == "live" and not self.failures
 
+    @property
+    def active_quotas(self) -> dict[str, Any] | None:
+        """The quotas of a pass over a child that runs as the ACTIVE one: the only source of limits.
+
+        A child opened for viewing answers `GET /command/quotas` with the hub's own stored answer
+        and a `hub_snapshot`, so reading it is not reading a quota source. The mode is the child's
+        own word from `GET /command/project`; on a `live` verdict `read_cycle` has matched it with
+        the mode the hub started the child in. A child that names no mode is not the active one.
+        """
+        if self.verdict != "live" or not isinstance(self.project, dict):
+            return None
+        return self.quotas if self.project.get("mode") == "active" else None
+
 
 class _Failed(Exception):
     def __init__(self, name: str) -> None:
