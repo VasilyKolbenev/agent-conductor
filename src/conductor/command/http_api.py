@@ -198,12 +198,14 @@ class CommandApi:
         self._clock = clock
         self._ids = ids
         from .policy_wiring import notify_run, make_policy
+        from .queue_routes import make_queue
         self._publish_run = notify_run(self, publish_run)
         self._service = CommandService(store, registry, clock=clock, ids=ids)
         self._runtime = ControlRuntime(
             store, registry, clock=clock, ids=ids, notify=self._publish_run)
         self._execution: ExecutionCoordinator | None = None
         self._policy = make_policy(self, provider_configs)
+        self._queue = make_queue(self)
         self._runtime._policy = self._policy
 
     @property

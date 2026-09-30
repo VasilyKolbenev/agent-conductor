@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 import time
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
 from typing import Any
 
 from .api_refusals import ApiRefusal
@@ -40,7 +41,8 @@ class QueueService:
     """The queue of one project, in one server process."""
 
     def __init__(self, policy: Any, tasks: Any, *, mode: str = "active",
-                 monotonic: Callable[[], float] = time.monotonic) -> None:
+                 monotonic: Callable[[], float] = time.monotonic,
+                 started_at: str | None = None) -> None:
         """Hold the collaborators; a constructor writes nothing and starts nothing (spec 4.4.3).
 
         Args:
@@ -49,11 +51,14 @@ class QueueService:
             tasks: The project's `TaskStore`, for the title of a run's task.
             mode: `active` or `view` (the `ProjectIdentity` mode).
             monotonic: A clock for the owner retry interval, replaceable in tests.
+            started_at: The moment this process started, for the `server_restarted` entries;
+                by default the wall clock now. The server clock is never read here: a
+                constructor that took a tick would change what every test that counts them sees.
         """
         self.policy, self.tasks, self.mode = policy, tasks, mode
         self.store = QueueStore(policy.store.project_root)
         self.monotonic = monotonic
-        self.started_at = policy.clock()
+        self.started_at = started_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         self.admitted: set[tuple[str, str, str]] = set()
         self.owner_retry_at = 0.0
 
