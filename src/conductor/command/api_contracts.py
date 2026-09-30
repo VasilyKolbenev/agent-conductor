@@ -482,9 +482,8 @@ def refusal_from_exception(error: Exception) -> ApiRefusal:
         return ApiRefusal.fixed("proposal_rebind_required")
     if isinstance(error, AuthorizationError):
         return ApiRefusal.fixed("authorization_refused")
-    # The next two arms come BEFORE the `ContractError` arm, which both are subclasses of: a
-    # preview that is gone or has moved, and a slot another run holds, are not faults in the
-    # terms. The holder of a slot is named only when it is an id that is safe to render.
+    # The next two arms come BEFORE the `ContractError` arm they are both subclasses of: a stale
+    # preview and a busy slot are no fault in the terms; a holder is named only if id-safe.
     if isinstance(error, PreviewStale):
         return ApiRefusal.fixed("preview_stale")
     if isinstance(error, SlotBusy):
