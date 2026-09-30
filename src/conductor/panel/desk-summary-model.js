@@ -150,7 +150,11 @@ function acceptedBy(detail) {
 }
 
 //: What a run read says of who did, who checked and who accepted, and whether it was accepted at
-//: its final gate. Null for a value that is not a run read.
+//: its final gate. Null for a value that is not a run read. Who checked is an independent
+//: checker: the evidence names the participant that made the check (`verifier_instance_id`). A
+//: step with no verifier is checked by its own adapter over its own evidence, which names no such
+//: participant (the read leaves the field out), and that is nobody's check of the work but the
+//: doer's own, so it is not listed here.
 export function digestOf(detail) {
   const run = isObject(detail) && isObject(detail.run) ? text(detail.run.run_id) : null;
   if (run === null) return null;
@@ -161,7 +165,7 @@ export function digestOf(detail) {
     did: freeze(distinct(of(detail, "action_result")
       .map((one) => named(instances, one.instance_id)))),
     verified: freeze(distinct(of(detail, "evidence")
-      .filter((one) => one.verification === "verified")
+      .filter((one) => one.verification === "verified" && text(one.verifier_instance_id) !== null)
       .map((one) => named(instances, one.verifier_instance_id, one.verified_by)))),
     accepted});
 }

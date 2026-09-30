@@ -136,16 +136,16 @@ TASKS = {
     "en": {
         "title": "Who did what, and what was done",
         "rows": [
-            ("Ship the landing page", "Succeeded · Did: claude-code · Checked: claude-code, "
-                                      "codex-cli · Accepted: release-owner", "done"),
+            ("Ship the landing page", "Succeeded · Did: claude-code · Checked: codex-cli · "
+                                      "Accepted: release-owner", "done"),
             ("Update the API docs", "Not started", None),
             ("Import the export", "Waiting for your decision", "amber"),
             ("Fix lost text", "Running", "ion")]},
     "ru": {
         "title": "Кто что делал и сделал",
         "rows": [
-            ("Ship the landing page", "Успешно · Сделал: claude-code · Проверил: claude-code, "
-                                      "codex-cli · Принял: release-owner", "done"),
+            ("Ship the landing page", "Успешно · Сделал: claude-code · Проверил: codex-cli · "
+                                      "Принял: release-owner", "done"),
             ("Update the API docs", "Не запущена", None),
             ("Import the export", "Ждёт вашего решения", "amber"),
             ("Fix lost text", "Идёт", "ion")]}}
@@ -193,8 +193,8 @@ def test_the_task_on_the_scene_says_what_its_run_records_before_it_is_finished(d
     window.page.locator("#deskSummary .desk-sum__bar").click()
     rows = {row["title"]: row["what"]
             for row in window.page.evaluate(SUMMARY_FACTS)["panel"]["tasks"]}
-    assert rows["Import the export"] == (
-        "Waiting for your decision · Did: claude-code · Checked: claude-code")
+    assert rows["Import the export"] == "Waiting for your decision · Did: claude-code", (
+        "its independent check failed and left no evidence, so nobody is named as its checker")
     assert rows["Fix lost text"] == "Running", "a task whose run is not on the scene has no facts"
 
 

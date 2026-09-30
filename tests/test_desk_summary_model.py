@@ -233,8 +233,8 @@ def test_the_digest_of_the_accepted_run_says_who_did_who_checked_and_who_accepte
     found = digest(READS["run-closed"])
     assert found["run_id"] == "run-closed" and found["pass"] is None
     assert found["did"] == [{"instance": "claude-dev", "harness": "claude-code"}]
-    assert found["verified"] == [{"instance": None, "harness": "claude-code"},
-                                 {"instance": "codex-check", "harness": "codex-cli"}]
+    assert found["verified"] == [{"instance": "codex-check", "harness": "codex-cli"}], (
+        "the step nobody was named to check is not the checked step of anyone")
     assert found["accepted"] == ["release-owner"]
 
 
@@ -242,6 +242,44 @@ def test_the_digest_of_a_run_no_one_has_accepted_names_no_acceptor_and_says_no_p
     found = digest(READS["run-waiting"])
     assert (found["accepted"], found["closed"], found["pass"]) == ([], False, None)
     assert found["did"] == [{"instance": "claude-dev", "harness": "claude-code"}]
+
+
+def _evidence(edit):
+    """One change made to every evidence record of `run-closed`."""
+    def apply(read):
+        for row in read["records"]:
+            if row["record_type"] == "evidence":
+                edit(row["record"])
+    return apply
+
+
+def test_a_step_with_no_verifier_names_no_checker_in_the_digest():
+    """The analyse step has no verifier: its evidence is its own adapter's, and the read leaves
+    the verifier instance out of it. Where that is all a run has, nobody is named as a checker,
+    whether the field is absent, null or empty."""
+    own = [row["record"] for row in READS["run-waiting"]["records"]
+           if row["record_type"] == "evidence"]
+    assert [("verifier_instance_id" in one, one["verified_by"], one["verification"])
+            for one in own] == [(False, "claude-code", "verified")], "the fixture's own check"
+    assert digest(READS["run-waiting"])["verified"] == []
+    for edit in (lambda one: one.pop("verifier_instance_id", None),
+                 lambda one: one.update(verifier_instance_id=None),
+                 lambda one: one.update(verifier_instance_id="")):
+        assert digest(edited("run-closed", _evidence(edit)))["verified"] == []
+
+
+def test_an_independent_checker_is_named_by_the_instance_the_run_froze_or_the_adapter_that_signed():
+    def unfrozen(read):
+        read["config"]["instances"] = [one for one in read["config"]["instances"]
+                                       if one["id"] != "codex-check"]
+    assert digest(edited("run-closed", unfrozen))["verified"] == [
+        {"instance": "codex-check", "harness": "codex-cli"}]
+
+
+def test_a_check_that_did_not_pass_names_nobody_as_the_one_who_checked():
+    for word in ("mismatch", "error", "unavailable", "unverified"):
+        read = edited("run-closed", _evidence(lambda one, w=word: one.update(verification=w)))
+        assert digest(read)["verified"] == [], word
 
 
 def test_the_pass_of_a_bounded_return_is_said_only_when_the_run_states_it():
