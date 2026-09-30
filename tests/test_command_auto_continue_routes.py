@@ -19,6 +19,7 @@ from conductor.command.http_transport import CommandSession
 from conductor.command.project_claim import ProjectIdentity
 from conductor.command.queue_routes import make_queue
 from tests.queue_fixtures import Holder, project, start_body
+from tests.test_queue_pump import paused_grant
 from tests.test_command_http_api import PORT, TOKEN, get_headers, post
 
 PATH = "/command/project/auto-continue"
@@ -35,6 +36,11 @@ def door(tmp_path, mode="active", *, handed=None, granted=False):
     f.policy.driver = Holder()
     if granted:
         f.policy.authorize("run", start_body(f, "run", "grant-run"))
+    return api_on(f, mode, handed)
+
+
+def api_on(f, mode="active", handed=None):
+    """The API a process of this project builds: an active one has a driver that holds nothing."""
     f.policy.driver = Holder() if mode == "active" else None
     identity = ProjectIdentity(PROJECT_ID, None, False, mode,
                                None if handed is None else TRANSITION, handed)
@@ -118,3 +124,19 @@ def test_the_queue_is_built_with_the_hand_over_of_the_identity_and_the_flag_file
     assert not standalone.api._queue.hands_over_a_flag()
     viewing = door(tmp_path / "third", "view", handed=handed)
     assert not viewing.api._queue.hands_over_a_flag()
+
+
+def test_a_child_handed_the_flag_resumes_the_listed_run_through_the_queue_its_api_built(tmp_path):
+    f = project(tmp_path)
+    f.policy.driver = Holder()
+    paused_grant(SimpleNamespace(f=f, driver=f.policy.driver), "run", "grant-run")
+    flag = write(api_on(f)).payload                        # set in the desk of a running project
+    child = api_on(f, handed=f"{flag['flag_id']}@{flag['revision']}")
+    assert child.api._queue.start_next() is True
+    resumes = [row.value for row in f.store.read("run").records
+               if row.kind == "run_authorization_control" and row.value.action == "resume"]
+    assert [(row.actor, row.control_id.startswith("flag-")) for row in resumes] == [
+        ("Вы: Анна", True)]
+    after = read(child).payload
+    assert after["enabled"] is False and after["consumed"]["transition_id"] == TRANSITION
+    assert after["consumed"]["activation_nonce"] == PROJECT_ID
