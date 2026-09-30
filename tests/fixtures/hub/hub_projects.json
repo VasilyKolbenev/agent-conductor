@@ -91,7 +91,7 @@
             },
             "attention": {
               "reasons": [
-                {"reason": "gate_decision", "count": 1, "sources": ["gate-review"]}
+                {"reason": "gate_decision", "count": 1, "sources": ["review"]}
               ],
               "gates": [{"node_id": "review", "gate_id": "gate-review"}],
               "runtime": [{"node_id": "do", "opened_by": ["proposal-002"]}],

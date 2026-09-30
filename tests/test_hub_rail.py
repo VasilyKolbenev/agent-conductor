@@ -301,21 +301,33 @@ def test_two_tasks_with_one_title_carry_their_id_tails_and_a_task_with_no_run_is
                    ["Same · task-002", "Not started", None]]
 
 
+def test_the_fixtures_gate_decision_names_its_source_by_a_node_id_its_own_gate_rows_have():
+    """Spec 4.5.6: the `sources` of a `gate_decision` are node ids, and `gates` give the gate id of
+    each node. The fixture once said the gate's id where the node's belongs (lane H's handoff of
+    30.09 names it a mistake of the fixture); the shared module matches node ids, so such a row found
+    no gate."""
+    held = 0
+    for project in PAGE["projects"]:
+        for one in project["tasks"]:
+            attention = one["attention"] or {"reasons": [], "gates": []}
+            nodes = {gate["node_id"] for gate in attention["gates"]}
+            for reason in attention["reasons"]:
+                if reason["reason"] == "gate_decision":
+                    held += 1
+                    assert set(reason["sources"]) <= nodes, (reason["sources"], sorted(nodes))
+    assert held >= 1
+
+
 def test_what_waits_for_you_is_listed_with_the_ids_of_its_row_and_counted_per_project():
     out = js("""
-      const named = structuredClone(page.projects);
-      named[0].tasks[1].attention.reasons[0].sources = ["review"];
-      const list = rail.attentionList(named, {}, ctx());
-      const raw = rail.attentionList(page.projects, {}, ctx());
-      show({list, raw: raw.map((one) => one.gate_id), count: rail.waitingCount(list),
-        byProject: rail.waitingByProject(list)});
+      const list = rail.attentionList(page.projects, {}, ctx());
+      show({list, count: rail.waitingCount(list), byProject: rail.waitingByProject(list)});
     """)
     [item] = out["list"]
     assert (item["project_id"], item["task_id"], item["run_id"], item["gate_id"]) == (
-        PAGE["projects"][0]["project_id"], "task-002", "run-002", "gate-review")
-    assert out["raw"] == [None], (
-        "the fixture names the source by the gate id where its own gate row has the node id, and "
-        "the shared module matches node ids: so the gate is not found, and none is invented")
+        PAGE["projects"][0]["project_id"], "task-002", "run-002", "gate-review"), (
+        "the gate id is found from the row: the reason's source is the node id `review`, and the "
+        "row's own gate list gives that node's gate")
     assert item["text"].startswith("web-app · Add a dark theme · Gate decision · noticed at ")
     assert item["exact"] == "2026-09-29T10:00:00Z"
     assert out["count"] == 1

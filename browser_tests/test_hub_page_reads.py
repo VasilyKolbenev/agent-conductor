@@ -132,8 +132,10 @@ def test_a_task_or_a_waiting_item_chosen_writes_its_ids_to_the_address_and_nothi
     assert fields(page.page.evaluate("location.hash"))["run"] == "run-001"
     page.page.locator(".hub-waiting__item").click()
     again = fields(page.page.evaluate("location.hash"))
-    assert again == {"project": WEB, "task": "task-002", "run": "run-002", "lang": lang}, (
-        "the ids come from the row the hub gave; no text and no path is ever written")
+    assert again == {"project": WEB, "task": "task-002", "run": "run-002", "gate": "gate-review",
+                     "lang": lang}, (
+        "the ids come from the row the hub gave, the gate's from the row's own gate list by the "
+        "node id its reason names; no text and no path is ever written")
     page.page.reload()
     ready(page)
     assert page.page.evaluate(CENTER)["path"] == "web-app › Add a dark theme › run-002", (
