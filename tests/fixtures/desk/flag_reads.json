@@ -1,0 +1,37 @@
+{
+  "_about": "D1 fixture of GET/POST /command/project/auto-continue in the record shape of spec 4.3.4 (lane H's hand-off H-to-L-auto-continue.md). The route rows were not in lane D1's branch when this was written; replace with lane L's fixture when they land.",
+  "absent": {
+    "schema_version": 2, "flag_id": null, "revision": 0, "enabled": false, "actor": null,
+    "set_at": null, "resume_runs": [], "start_task_queue": false, "consumed": null
+  },
+  "standing": {
+    "schema_version": 2, "flag_id": "5d8b7f0e-2c64-4d3a-9f1e-0a6c1d2b3e4f", "revision": 3,
+    "enabled": true, "actor": "vasya", "set_at": "2026-09-30T14:05:00Z",
+    "resume_runs": [
+      {"run_id": "run-old", "authorization_id": "auth-1",
+       "authorization_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+       "last_control_id": null},
+      {"run_id": "run-new", "authorization_id": "auth-2",
+       "authorization_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+       "last_control_id": "control-7"}
+    ],
+    "start_task_queue": true, "consumed": null
+  },
+  "removed": {
+    "schema_version": 2, "flag_id": "5d8b7f0e-2c64-4d3a-9f1e-0a6c1d2b3e4f", "revision": 4,
+    "enabled": false, "actor": "vasya", "set_at": "2026-09-30T14:05:00Z",
+    "resume_runs": [], "start_task_queue": false, "consumed": null
+  },
+  "consumed": {
+    "schema_version": 2, "flag_id": "5d8b7f0e-2c64-4d3a-9f1e-0a6c1d2b3e4f", "revision": 4,
+    "enabled": false, "actor": "vasya", "set_at": "2026-09-30T14:05:00Z",
+    "resume_runs": [
+      {"run_id": "run-old", "authorization_id": "auth-1",
+       "authorization_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+       "last_control_id": null}
+    ],
+    "start_task_queue": true,
+    "consumed": {"at": "2026-09-30T16:40:00Z", "transition_id": "b7c1e3d4-0000-4000-8000-000000000001",
+                 "activation_nonce": "0123456789abcdef0123456789abcdef"}
+  }
+}

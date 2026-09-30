@@ -68,6 +68,8 @@ DESK_ASSETS = {
     "/panel/desk-time.js": ("text/javascript; charset=utf-8", "desk-time.js"),
     # The task-queue read judged against its shape, for the console that draws it.
     "/panel/desk-queue-model.js": ("text/javascript; charset=utf-8", "desk-queue-model.js"),
+    # The continue-after flag judged against its shape, for the block that draws it.
+    "/panel/desk-flag-model.js": ("text/javascript; charset=utf-8", "desk-flag-model.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),

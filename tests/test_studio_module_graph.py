@@ -114,6 +114,10 @@ PERMITTED_IMPORTS = {
     #: The task-queue read judged against its shape: values in, a frozen cut or null out. The
     #: boot module reads the queue and hands the answer here, so it imports nothing.
     "desk-queue-model.js": frozenset(),
+    #: The continue-after flag judged against its shape, the runs a person may mark and the
+    #: body of a save: values in, values out. The boot module hands it what it read, so it
+    #: imports nothing.
+    "desk-flag-model.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
