@@ -37,7 +37,7 @@ async () => {
   const focus = await import("/panel/studio-focus.js");
   const i18n = await import("/panel/studio-i18n.js");
   const host = {log: [], answers: [], state: null, mount: null, renders: 0, lose: 0, token: null,
-    model, edits, quick, shape, i18n};
+    pending: 0, model, edits, quick, shape, i18n};
   //: The canvas is the Studio's, and so is the sheet that lays it out (the desk's own sheet does
   //: not style it yet): without it the edge layer would lie over the steps and swallow every press.
   const sheet = document.createElement("link");
@@ -86,9 +86,11 @@ async () => {
   };
   const perform = (ask) => {
     host.log.push(ask);
+    host.pending += 1;
     wire(ask).then((result) => {
       host.answers.push({ask, result});
       dispatch({type: "answered", ask, result});
+      host.pending -= 1;
     });
   };
   const dispatch = (event) => {
@@ -103,7 +105,7 @@ async () => {
     host.mount = document.createElement("div");
     host.mount.id = "flowBench";
     document.body.append(host.mount);
-    Object.assign(host, {log: [], answers: [], renders: 0, lose: 0});
+    Object.assign(host, {log: [], answers: [], renders: 0, lose: 0, pending: 0});
     host.state = {locale, schema: model.initialFlow({nonce})};
     dispatch({type: "cycles"});
   };
@@ -144,12 +146,14 @@ class Flow:
     def start(self, locale: str = "en") -> None:
         """A panel with nothing opened, its nonce a fresh one (so its cycle ids are its own)."""
         self.call("start", {"locale": locale, "nonce": uuid.uuid4().hex})
+        self.idle()
 
     def open(self, workflow_id: str | None = None, title: str = "New cycle") -> str:
         """Open a cycle by id (a fresh `cycle-<8 hex>` when none is given) and wait for the read."""
         name = workflow_id or f"cycle-{uuid.uuid4().hex[:8]}"
         self.dispatch(type="open", workflowId=name, title=title)
         expect(self.root).to_have_attribute("data-flow-phase", "ready")
+        self.idle()
         return name
 
     def dispatch(self, **event: Any) -> None:
@@ -182,8 +186,17 @@ class Flow:
         return self.page.locator(f'[data-focus="{key}"]')
 
     def settle(self, state: str = "saved") -> None:
-        """Wait until the panel says its cycle is `state` (saved, by default)."""
+        """Wait until the panel says its cycle is `state` (saved, by default) and no ask is out.
+
+        The second half matters: an answer that lands late (the list of cycles, read again after a
+        write) redraws the page, and a press made while it lands can meet an element it replaced.
+        """
         expect(self.root).to_have_attribute("data-flow-save", state)
+        self.idle()
+
+    def idle(self) -> None:
+        """Wait until every ask the host sent has been answered and drawn."""
+        self.page.wait_for_function("() => window.host.pending === 0")
 
     def add(self, kind: str) -> None:
         """Press a palette button: the step is added after the selected one and written."""

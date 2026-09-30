@@ -334,6 +334,24 @@ def test_text_typed_into_a_field_and_its_caret_survive_a_redraw_and_leaving_comm
     assert flow.server(flow.view()["workflowId"])["flow"]["steps"][1]["title"] == "BuXild"
 
 
+def test_a_step_released_after_a_drag_is_written_with_its_position(flow):
+    from_starter(flow, "desk-standard")
+    assert flow.held()["steps"][1]["position"] is None, "a starter's steps carry no place yet"
+    node = flow.page.locator('[data-node-id="do"]')
+    node.scroll_into_view_if_needed()
+    box = node.bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    flow.page.mouse.move(x, y)
+    flow.page.mouse.down()
+    flow.page.mouse.move(x + 140, y + 70, steps=8)
+    flow.page.mouse.up()
+    flow.settle()
+    placed = flow.server(flow.view()["workflowId"])["flow"]["steps"][1]
+    assert placed["step_id"] == "do" and set(placed["position"]) == {"x", "y"}
+    assert all(isinstance(value, int) for value in placed["position"].values())
+    assert flow.held()["steps"][1]["position"] == placed["position"]
+
+
 def test_a_press_that_takes_focus_from_a_field_still_does_its_work_and_commits_the_field(flow):
     from_starter(flow, "desk-standard")
     flow.select_step("do")
