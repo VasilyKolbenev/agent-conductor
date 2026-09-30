@@ -41,6 +41,8 @@ from .adapters.harness_workspace import WorkspaceBusy
 from .seed_record import (
     SOURCES, WORK_ITEM_ID, SeedRecord, SeedRecordTooLarge, SeedRequest, read_request, read_seed,
     seed_state, write_request, write_seed)
+from .store_errors import StoreError
+from .task_contracts import frozen_config_task
 from .task_routes import resolve_task_binding
 
 if TYPE_CHECKING:  # pragma: no cover - the boundary this module is called by, never built here
@@ -218,3 +220,56 @@ def _one_at_a_time(root: Path) -> Iterator[None]:
         lock = _LOCKS.setdefault(root, threading.Lock())
     with lock:
         yield
+
+
+def make_seeds(api: CommandApi) -> SeedSettler:
+    """The settler of this API's project, for the driver to ask (spec 9.1.4)."""
+    return SeedSettler(api)
+
+
+class SeedSettler:
+    """What the driver asks before the first action of a run: is the seed of its task in place?
+
+    `settle(run_id)` is True when nothing of the seed keeps the run from acting: the run has no
+    task, performs no dispatch (its review steps never read the work folder), or its task was
+    never seeded and nobody asked for a seed (it starts from its folder as before). Otherwise it
+    sees to it: a request a view server left is made into a seed from HEAD at this moment, a
+    staged seed is moved under the root's turn. It is False while it cannot, and says no more:
+    the reason is learned by asking the seed door again, which answers it in `detail.reason`.
+    """
+
+    def __init__(self, api: CommandApi) -> None:
+        self._api = api
+
+    def settle(self, run_id: str) -> bool:
+        """See the class text. Runs only in an active project, where the driver lives."""
+        api = self._api
+        recovered = api._store.read(run_id)
+        graph = next((row.value for row in recovered.records
+                      if row.kind == "graph_definition"), None)
+        binding = frozen_config_task(recovered.config)
+        if binding is None or graph is None or not any(
+                node.capability == "dispatch" for node in graph.nodes):
+            return True
+        root = api._store.project_root
+        with _one_at_a_time(root):
+            try:
+                return self._settled(root, binding.task_id, binding.work_scope)
+            except (WorkspaceBusy, SeedRefusal, ApiRefusal, StoreError, OSError):
+                return False
+
+    def _settled(self, root: Path, task_id: str, scope: str) -> bool:
+        record = read_seed(root, task_id)
+        if record is None:
+            request = read_request(root, task_id)
+            if request is None:
+                return True
+            asked = _Asked("git", None, request.include_agent_instructions)
+            _translated(lambda: seed_stage.hold_target_free(root, scope, WORK_ITEM_ID))
+            record = _staged_from_git(self._api, root, scope, task_id, asked, self._api._clock())
+            _record(root, record)
+        state = seed_state(root, record)
+        if state == "staged":
+            seed_stage.move_staged(root, record)
+            state = seed_state(root, record)
+        return state == "seeded"

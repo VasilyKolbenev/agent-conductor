@@ -202,7 +202,25 @@ class PolicyDriver:
             with self._condition:
                 if self._holding_new_work:
                     return
+            if self._seed_owed(run_id):
+                return
             self._admit_next(run_id, grant_id)
+
+    def _seed_owed(self, run_id):
+        """Whether the seed of this run's task is still owed, so that nothing may be proposed.
+
+        Asked before the store is held (the move waits for the root's turn, and a dispatch holds
+        the turn and then needs the store). Nothing owed is the answer of a run that performs no
+        dispatch, of no task and of a task never seeded; otherwise the settler moves a staged seed
+        or performs a requested one (spec 9.1.4). When it cannot, the driver names `seed_blocked`
+        and tries again on its next tick.
+        """
+        seeds = getattr(self.policy, "seeds", None)
+        if seeds is None or seeds.settle(run_id):
+            return False
+        with self._condition:
+            self._reason = "seed_blocked"
+        return True
 
     def _admit_next(self, run_id, grant_id):
         proposal, ended = self._select_next(run_id, grant_id)

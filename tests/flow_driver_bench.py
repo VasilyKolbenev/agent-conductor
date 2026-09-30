@@ -94,14 +94,17 @@ class ScriptedChecker(Checker):
 class FlowCycle:
     """One owned server and one Policy run on a compiled flow, driven through its doors."""
 
-    def __init__(self, root, flow, *, verdicts=(), outcomes=None, through_doors=False):
+    def __init__(self, root, flow, *, verdicts=(), outcomes=None, through_doors=False,
+                 task=None):
         """`through_doors`: publish the template and open the run by the server's own routes,
-        instead of appending the run's journal before the server is built."""
+        instead of appending the run's journal before the server is built. `task` (with it): a
+        task of that id is made first and the run is bound to it."""
         project = write_project(root, lanes={"claude": good_lane()})
         self.template = template_of(flow)
         self.roles = {role: "checker" if role == "role-checker" else "doer"
                       for role in self.template.roles}
         self.graph = self.published = None
+        self.task = task
         if not through_doors:
             journal = RunStore(project)
             journal.create_run(
@@ -134,10 +137,13 @@ class FlowCycle:
         self.subject.command_api._providers = contracts(reachable=providers, known=providers)
         status, self.published = self.post("/command/templates", self.template.as_dict())
         assert status == 201, self.published
+        if self.task is not None:
+            status, made = self.post("/command/tasks", {"task_id": self.task, "title": "Bench"})
+            assert status == 201, made
         status, opened = self.post("/command/runs", {
             "run_id": RUN, "cycle_id": "cycle", "mode": "policy", "participants": PARTICIPANTS,
             "workflow_id": self.template.template_id, "revision": 1, "assignments": self.roles,
-            "task_id": None, "automation_contract": "bounded-run-v1"})
+            "task_id": self.task, "automation_contract": "bounded-run-v1"})
         assert status == 201, opened
         self.graph = GraphDefinition.from_dict(opened["graph"])
 
