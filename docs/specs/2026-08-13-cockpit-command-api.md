@@ -211,6 +211,14 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "method": "POST", "path": "/command/project/cycle/pin",
     "mutation": true, "csrf": true
   },
+  {
+    "method": "GET", "path": "/command/project/auto-continue",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/project/auto-continue",
+    "mutation": true, "csrf": true
+  },
   {"method": "GET", "path": "/command/runs/<run_id>/automation", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
@@ -1223,6 +1231,17 @@ is the fourth path that both verbs reach. A body that names anything else, a `ro
 longer the file's, and a preview that is gone or no longer describes the run is `preview_stale`.
 None of the four refuses `project_not_active`: in a process opened for viewing a put-in-queue is
 only a write. The shapes are in the desk redesign specification, sections 4.4.5 to 4.4.7.
+
+`GET /command/project/auto-continue` and `POST /command/project/auto-continue` read and write the
+continue-after flag: what the owner decided while looking at the desk of a project, that when the
+project is next made active these runs are resumed and the task queue is started. Both answer 200
+with the record (`flag_id`, `revision`, `enabled`, `actor`, `set_at`, `resume_runs`, each bound to
+the grant and the last control of the run, `start_task_queue`, `consumed`), or, when there is no
+file, the same keys off and empty with `revision` 0. The body is exactly `{"enabled", "actor",
+"resume_runs", "start_task_queue"}`; a run that has no standing grant, or has an open action, is
+`contract_invalid` with `detail.run_id`. The path answers in every mode of the server, the queue's
+pump alone executes the flag, and it is the fifth path that both verbs reach. The shapes are in the
+desk redesign specification, section 4.3.4.
 
 ### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
 

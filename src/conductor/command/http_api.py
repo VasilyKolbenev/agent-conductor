@@ -72,6 +72,7 @@ from .http_transport import (
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
 from .project_claim import UNCLAIMED, ProjectIdentity
+from .auto_continue import AutoContinueStore
 from .project_cycle import ProjectCycleStore
 from .project_git import GitRead
 from .task_store import TaskStore
@@ -142,8 +143,9 @@ def _quota_reader(quota_view: object, service: QuotaService | None,
 
 def _project_stores(
         store: RunStore, templates: TemplateStore | None,
-        tasks: TaskStore | None) -> tuple[TemplateStore, TaskStore, ProjectCycleStore]:
-    """The reusable plans, the tasks and the pinned cycle of the project the run store serves.
+        tasks: TaskStore | None
+) -> tuple[TemplateStore, TaskStore, ProjectCycleStore, AutoContinueStore]:
+    """The plans, the tasks, the pinned cycle and the continue-after flag of this project.
 
     All are rooted at the same project as the run store, because one project owns one set of
     each; the task store holds the SAME process-local gate the run store holds for that root, and
@@ -152,7 +154,7 @@ def _project_stores(
     """
     return (TemplateStore(store.project_root) if templates is None else templates,
             TaskStore(store.project_root) if tasks is None else tasks,
-            ProjectCycleStore(store.project_root))
+            ProjectCycleStore(store.project_root), AutoContinueStore(store.project_root))
 
 
 class CommandApi:
@@ -189,7 +191,8 @@ class CommandApi:
         # The reader of the project's git (spec 9.3), or None for a server that has none.
         self._project_git = project_git
         self._store = store
-        self._templates, self._tasks, self._cycle = _project_stores(store, templates, tasks)
+        self._templates, self._tasks, self._cycle, self._flag = _project_stores(
+            store, templates, tasks)
         self._registry = registry
         self._session = session
         self._budget = Budget(

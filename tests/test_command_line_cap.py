@@ -37,6 +37,7 @@ CAPPED = (
     "tests/test_command_flow_import_corners.py",
     "tests/test_command_flow_routes.py",
     "tests/test_command_flow_rules.py",
+    "tests/test_command_auto_continue_routes.py",
     "tests/test_command_import_hygiene.py",
     "tests/test_command_plan_budget.py",
     "tests/test_command_product_names.py",

@@ -91,7 +91,7 @@ NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
 #: `target()` gives them, because that is what the parametrized claims compare.
 BOTH_VERBS = frozenset({
     "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow",
-    "/command/queue"})
+    "/command/queue", "/command/project/auto-continue"})
 #: The task every route pattern carrying ``<task_id>`` is filled with.
 TASK = "task-studio-1"
 #: The project document every route pattern carrying ``<doc_id>`` is filled with: `d-` and 32 hex.

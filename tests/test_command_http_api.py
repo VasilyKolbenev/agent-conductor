@@ -148,6 +148,8 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("GET", "/command/quotas"),
         ("GET", "/command/project/cycle"),
         ("POST", "/command/project/cycle/pin"),
+        ("GET", "/command/project/auto-continue"),
+        ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),
         ("POST", "/command/runs/<run_id>/automation/preview"),
         ("POST", "/command/runs/<run_id>/automation/authorize"),

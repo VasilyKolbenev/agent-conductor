@@ -191,6 +191,8 @@ EXPECTED_ROUTES = (
     ("GET", "/command/quotas", False, False),
     ("GET", "/command/project/cycle", False, False),
     ("POST", "/command/project/cycle/pin", True, True),
+    ("GET", "/command/project/auto-continue", False, False),
+    ("POST", "/command/project/auto-continue", True, True),
     ("GET", "/command/runs/<run_id>/automation", False, False),
     ("POST", "/command/runs/<run_id>/automation/preview", False, True),
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),

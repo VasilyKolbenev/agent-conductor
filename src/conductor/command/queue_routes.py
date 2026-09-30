@@ -27,7 +27,10 @@ Answer = tuple[int, dict[str, Any]]
 def make_queue(api: CommandApi) -> QueueService:
     """The queue of this API's project, attached to its policy so the driver and a direct
     authorize can reach it; the mode is the one the server was started in (spec 4.3.1)."""
-    queue = QueueService(api._policy, api._tasks, mode=api._identity.mode)
+    identity = api._identity
+    queue = QueueService(api._policy, api._tasks, mode=identity.mode,
+                         project_id=identity.project_id, transition_id=identity.transition_id,
+                         auto_continue=identity.auto_continue, flags=api._flag)
     api._policy.queue = queue
     return queue
 

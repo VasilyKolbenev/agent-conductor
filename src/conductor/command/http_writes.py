@@ -42,7 +42,8 @@ from .http_holds import (
 from .plan_admission import _gated, _plan, _servable_pair, _task, work_scope_admits
 from .run_closing import close_if_terminal
 from .run_store import RecordConflict
-from . import flow_routes, project_routes, queue_routes, studio_routes, task_routes
+from . import (
+    auto_continue, flow_routes, project_routes, queue_routes, studio_routes, task_routes)
 from .studio_routes import standing_graph as _standing_graph
 
 if TYPE_CHECKING:
@@ -76,6 +77,8 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "workflow_flow":
         assert route.workflow_id is not None
         return _write_flow(api, route.workflow_id, body)
+    if route.name == "project_auto_continue":
+        return auto_continue.set_flag(api._flag, api._store, body, api._clock)
     if route.name == "project_cycle_pin":
         return flow_routes.pin_project_cycle(api._cycle, api._templates, body, api._clock)
     if route.name.startswith("queue"):

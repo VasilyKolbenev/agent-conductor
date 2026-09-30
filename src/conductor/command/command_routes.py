@@ -50,6 +50,8 @@ COMMAND_ROUTES = (
     ("GET", "/command/quotas"),
     ("GET", "/command/project/cycle"),
     ("POST", "/command/project/cycle/pin"),
+    ("GET", "/command/project/auto-continue"),
+    ("POST", "/command/project/auto-continue"),
     ("GET", "/command/runs/<run_id>/automation"),
     ("POST", "/command/runs/<run_id>/automation/preview"),
     ("POST", "/command/runs/<run_id>/automation/authorize"),
@@ -87,9 +89,9 @@ _WORKFLOW_ROUTE = re.compile(
 _TASK_ROUTE = re.compile(
     rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
-#: pinned, and the write that pins or unpins. The bare `project` path is `_PROJECT_PATH` below; the
-#: flag of "continue after" is another lane's row and joins this pattern with its own canon commit.
-_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
+#: pinned, and the write that pins or unpins; and the flag of "continue after" (spec 4.3.4), which
+#: both verbs reach. The bare `project` path is `_PROJECT_PATH` below.
+_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle|auto-continue)\Z")
 #: The documents of the project's HEAD (spec 6.2.2): the list, and one by its id. The id grammar is
 #: the one the server mints, `d-` and 32 lowercase hex, so anything else is a path no row names and
 #: never a document the reader is then asked about.
@@ -245,7 +247,13 @@ def _task_route(method: str, path: str) -> Route | None:
 
 
 def _project_route(method: str, tail: str) -> Route:
-    """Name one of the two project-cycle routes: the read under GET, the pin under POST."""
+    """Name a project route: the cycle's read under GET and its pin under POST, or the flag.
+
+    `auto-continue` is the one project path both verbs reach, for the run list's reason: reading
+    the continue-after flag and writing it are one noun asked two ways.
+    """
+    if tail == "auto-continue":
+        return Route("project_auto_continue")
     name, expected = ("project_cycle", "GET") if tail == "cycle" else (
         "project_cycle_pin", "POST")
     if method != expected:
