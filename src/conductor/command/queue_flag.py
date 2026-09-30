@@ -27,6 +27,7 @@ from typing import Any
 from . import auto_continue
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError
+from .flag_control_id import HEX_DIGITS, PREFIX
 from .queue_reading import record_digest, resume_refusal
 from .queue_store import JOURNAL_KIND, Receipt
 from .run_authorization import RunAuthorizationControl
@@ -64,11 +65,13 @@ def consume_once(svc: Any) -> bool:
 def control_id_of(flag_id: str, run_id: str) -> str:
     """One name per (flag, run), so a retry after a fault finds what a first try left.
 
-    The name is `flag-` and 32 hex digits: a control of this shape in a run's journal is a resume
-    the flag wrote (the control has no field for it), and a test holds the shape for the readers
-    that rely on it.
+    The name is `flag-` and 32 hex digits (`flag_control_id`): a control of this shape in a run's
+    journal is a resume the flag wrote (the control has no field for it). That holds because the
+    two doors through which a human's control id enters refuse the shape, and the pump refuses to
+    write it for a queue entry; tests hold the shape and each of the three refusals.
     """
-    return "flag-" + hashlib.sha256(f"{flag_id}/{run_id}".encode("utf-8")).hexdigest()[:32]
+    digest = hashlib.sha256(f"{flag_id}/{run_id}".encode("utf-8")).hexdigest()
+    return PREFIX + digest[:HEX_DIGITS]
 
 
 def resume_next(svc: Any, now: str) -> str:

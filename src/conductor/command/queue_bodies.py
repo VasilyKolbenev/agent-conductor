@@ -14,6 +14,7 @@ from typing import Any
 
 from .authorization_terms import closed_fields
 from .contract_values import ContractError, _id
+from .flag_control_id import refuse_flag_control_id
 from .path_admission import admit_name
 from .policy_preview import PREVIEW_FIELDS
 from .policy_service import AUTHORIZE_FIELDS, CONTROL_FIELDS, PolicyService
@@ -57,7 +58,9 @@ def parse_write(body: object, now: str) -> Ask:
         fields = closed_fields(body["start"], AUTHORIZE_FIELDS, "queue start")
         return Ask(run_id, kind, _start(fields, now), fields)
     fields = closed_fields(body["resume"], RESUME_FIELDS, "queue resume")
-    admit_name(_id("control_id", fields["control_id"]), "control_id")
+    control_id = _id("control_id", fields["control_id"])
+    admit_name(control_id, "control_id")
+    refuse_flag_control_id(control_id)      # the name of the flag's own resume (spec 4.3.4)
     preauth = ResumePreauth(fields["control_id"], fields["authorization_id"],
                             fields["authorization_digest"], fields["expected_control_id"],
                             fields["actor"], now)

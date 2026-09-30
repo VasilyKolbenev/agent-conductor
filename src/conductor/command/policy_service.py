@@ -6,6 +6,7 @@ from .authorization_terms import closed_fields
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError, _content_digest, _id
 from .contracts import ActionRequest, ActionResultReceipt
+from .flag_control_id import refuse_flag_control_id
 from .plan_budget import product_limits
 from .policy_history import current_authorization
 from .preview_draft import drafted_preview
@@ -102,6 +103,7 @@ class PolicyService:
 
     def control(self, run_id, body):
         body = closed_fields(body, CONTROL_FIELDS, "automation control")
+        refuse_flag_control_id(body["control_id"])  # the name of the flag's own resume (4.3.4)
         with self.store.transaction():
             recovered = self.store.read(run_id)
             previous = next((r.value for r in recovered.records if r.kind == "run_authorization_control"

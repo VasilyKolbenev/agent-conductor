@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
     "src/conductor/command/adapters/agent_instructions.py",
+    "src/conductor/command/flag_control_id.py",
     "src/conductor/command/flow_routes.py",
     "src/conductor/command/flow_rules.py",
     "src/conductor/command/plan_budget.py",
@@ -48,6 +49,7 @@ CAPPED = (
     "tests/test_command_project_route.py",
     "tests/test_command_quota_view.py",
     "tests/test_command_workflow_flow.py",
+    "tests/test_flag_control_id.py",
     "tests/test_materials_refused_refusal.py",
     "tests/test_policy_driver_queue.py",
     "tests/test_policy_driver_slot.py",

@@ -21,6 +21,7 @@ from typing import Any
 
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError
+from .flag_control_id import refuse_flag_control_id
 from .policy_preview import build_preview, from_terms
 from . import queue_flag
 from .queue_reading import Facts, pairing_of, record_digest, resume_refusal
@@ -129,6 +130,7 @@ def _resume(svc: Any, item: Facts, now: str) -> str:
             action="resume", actor=pre.actor, recorded_at=now,
             expected_control_id=pre.expected_control_id)
         try:
+            refuse_flag_control_id(pre.control_id)      # an entry the doors never judged
             validate_authorization_history(run, control)
         except ContractError:
             reason = "preview_refused"
