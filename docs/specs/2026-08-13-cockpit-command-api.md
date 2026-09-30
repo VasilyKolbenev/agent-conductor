@@ -435,7 +435,10 @@ choose a code.
   { "code": "slot_busy",             "status": 409, "source": "concurrency" },
   { "code": "preview_stale",         "status": 409, "source": "authorization" },
   { "code": "project_not_active",    "status": 409, "source": "lifecycle" },
-  { "code": "materials_refused",     "status": 409, "source": "service" }
+  { "code": "materials_refused",     "status": 409, "source": "service" },
+  { "code": "queue_changed",         "status": 409, "source": "concurrency" },
+  { "code": "queue_full",            "status": 409, "source": "service" },
+  { "code": "queue_not_ready",       "status": 409, "source": "plan" }
 ]
 ```
 

@@ -134,6 +134,11 @@ export const ERROR_LABELS = Object.freeze({
     + "the active project; nothing was started.",
   materials_refused: "The materials were not accepted. Nothing was published; correct "
     + "the list and try again.",
+  queue_changed: "The queue changed while you were looking at it. Nothing was reordered; "
+    + "look at it again.",
+  queue_full: "The project queue is full. Nothing was queued; take an entry out first.",
+  queue_not_ready: "This run cannot be queued now. Nothing was queued; the preparation of "
+    + "its task says why.",
   store_error: "The run store is unavailable.",
 });
 const RECORD_FIELDS = Object.freeze({

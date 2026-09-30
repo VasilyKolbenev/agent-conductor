@@ -45,6 +45,7 @@ CAPPED = (
     "tests/test_preview_stale_refusal.py",
     "tests/test_project_documents.py",
     "tests/test_project_not_active_refusal.py",
+    "tests/test_queue_refusals.py",
     "tests/test_seed_record.py",
     "tests/test_slot_busy_refusal.py",
     "tests/test_task_preparation.py",

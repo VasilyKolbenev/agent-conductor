@@ -157,6 +157,10 @@ EXPECTED_ERRORS = {
     #: The list of materials is well formed and the server will not make a document of it; the
     #: reason, one word of a closed list, is the detail.
     "materials_refused": (409, "service"),
+    #: The queue moved under the reader; it holds its 32 entries; the run cannot be queued now.
+    "queue_changed": (409, "concurrency"),
+    "queue_full": (409, "service"),
+    "queue_not_ready": (409, "plan"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
