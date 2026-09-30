@@ -4,6 +4,11 @@ from .contracts import ActionRequest, ActionResultReceipt
 from .graph_schedule import schedule
 from .policy_history import current_authorization, current_control, spent_budget
 
+#: What the driver may name when it stops on its own; `seed_blocked` is the seed of the run
+#: (spec 9.1.4) and, like the others, only a reason of `stalled`.
+_STALLS = frozenset({"unknown_action", "feedback_required", "admission_refused", "stalled",
+                     "seed_blocked"})
+
 
 def automation_view(policy, run_id):
     recovered = policy.store.read(run_id)
@@ -47,14 +52,18 @@ def _state(policy, run_id, grant, control, computed, pending, owner, now):
     if _time_parts("now", now) >= _time_parts("expires_at", grant.expires_at):
         return "expired", "expired"
     driver = policy.driver
-    if not owner or driver is None or not driver.is_active(run_id, grant.authorization_id):
-        return "restart_required", "owner_required" if not owner else "explicit_resume_required"
+    if not owner:
+        return "restart_required", "owner_required"
+    if driver is None:  # an owner and no driver: a process opened for viewing (spec 4.4.1)
+        return "restart_required", "project_not_active"
+    if not driver.is_active(run_id, grant.authorization_id):
+        return "restart_required", "explicit_resume_required"
     if len(pending) > 1:
         return "stalled", "ambiguous_actions"
     if pending:
         return "running", "action_in_flight"
     reason = driver.reason(run_id)
-    if reason in {"unknown_action", "feedback_required", "admission_refused", "stalled"}:
+    if reason in _STALLS:
         return "stalled", reason
     if computed is not None and computed.run_state == "stalled":
         return "stalled", "plan_stalled"
