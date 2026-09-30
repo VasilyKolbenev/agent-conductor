@@ -206,7 +206,7 @@ def test_in_view_mode_git_is_unread_until_the_answer_lands_and_only_then_not_act
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_unwired_git_buttons_are_disabled_and_say_they_wait_for_a_later_step(bench, lang):
+def test_git_exits_keep_later_buttons_disabled_and_enable_explicit_no_git_choice(bench, lang):
     for state, ids in (("not_git", ["connect_git"]),
                        ("unborn", ["first_commit"])):
         to_materials(bench, lang, git=state)
@@ -218,6 +218,13 @@ def test_unwired_git_buttons_are_disabled_and_say_they_wait_for_a_later_step(ben
             before = bench.wizard()
             button.click(force=True)
             assert bench.wizard() == before, "a disabled control is not a silent no-op"
+    to_materials(bench, lang, git="not_git")
+    without_git = bench.control("wizard:git:run_without_git")
+    expect(without_git).to_be_enabled()
+    assert not on(bench, "wizard:git:run_without_git")
+    without_git.click()
+    assert on(bench, "wizard:git:run_without_git")
+    assert bench.wizard()["materials"]["withoutGit"] is True
     starter = bench.control("wizard:add:starter_docs")
     assert starter.is_disabled()
     assert bench.page.locator('[data-blocked="wizard:add:starter_docs"] small').inner_text() == \
