@@ -189,3 +189,77 @@ def test_every_field_a_row_writes_is_a_word_of_the_edit_vocabulary():
       show({bad, written: fields.WRITTEN_FIELDS.filter((name) => !named.has(name))});
     """)
     assert out == {"bad": [], "written": []}
+
+
+# -- the road's own extended words (spec 7.2.1, 5.6.3) -----------------------------------------
+
+ROAD_WORDS = ("success", "failed", "approved", "rejected", "changes_requested", "waived",
+              "bound_reached", "bound_remaining", "always")
+DESK_THREE = ["success", "approved", "rejected"]
+#: A step of each kind a road may leave or enter, with a home for a loop to return to.
+ROAD_STEPS: dict[str, dict[str, Any]] = {
+    "agent": {"type": "agent", "role_id": "role-doer", "capability": "dispatch",
+              "verifier_role_id": "role-checker", "review_profile": None, "reads": [],
+              "instruction_from": None},
+    "human": {"type": "human"},
+    "loop": {"type": "loop", "back_to": "home", "bound": 2},
+}
+
+
+def _road_step(step_id: str, kind: str) -> dict[str, Any]:
+    return {"step_id": step_id, "title": None, "purpose": None, "position": None,
+            "timeout_seconds": 1800 if kind == "agent" else None, "ext": {},
+            **ROAD_STEPS[kind]}
+
+
+def _road_flow(source: str, target: str, word: str) -> dict[str, Any]:
+    """A flow with one road `a -> b` of `word`, `a` of kind `source` and `b` of kind `target`."""
+    steps = [_road_step("home", "agent"), _road_step("a", source), _road_step("b", target)]
+    return {"flow_version": 1, "title": "Road", "steps": steps, "ext": {},
+            "links": [{"from": "a", "to": "b", "when": word}]}
+
+
+def test_a_road_offers_the_desks_three_words_and_a_loops_entry_words_and_the_rest_is_extended():
+    out = js("""
+      const words = (flow, link) => fields.roadWords(flow, link);
+      const find = (flow, from, to) => flow.links.find((l) => l.from === from && l.to === to);
+      show({
+        plain: words(d.tester, find(d.tester, "analyst", "do")),
+        always: words(d.dalio, find(d.dalio, "goal", "identify")),
+        entry: words(d.tester, find(d.tester, "do", "do-fix")),
+        rework: words(d.dalio, find(d.dalio, "result-gate", "retry-loop")),
+        waived: words(d.dalio, {from: "result-gate", to: "do", when: "waived"}),
+        failedOnward: words(d.tester, {from: "do", to: "tester", when: "failed"}),
+        fromLoop: words(d.tester, {from: "do-fix", to: "result", when: "bound_reached"}),
+        fromGate: words(d.dalio, find(d.dalio, "confirm-gate", "do")),
+      });
+    """)
+    extra = [word for word in ROAD_WORDS if word not in DESK_THREE]
+    assert out["plain"] == {"main": DESK_THREE, "extra": extra, "outside": False,
+                            "home": "success"}
+    assert out["always"] == {"main": DESK_THREE, "extra": extra, "outside": True,
+                             "home": "success"}
+    loops = DESK_THREE + ["failed", "changes_requested"]
+    rest = ["waived", "bound_reached", "bound_remaining", "always"]
+    assert out["entry"] == {"main": loops, "extra": rest, "outside": False, "home": "success"}
+    assert out["rework"] == {"main": loops, "extra": rest, "outside": False, "home": "approved"}
+    assert out["waived"]["outside"] is True and out["waived"]["home"] == "approved"
+    assert out["failedOnward"]["outside"] is True, "failed is the loop's word only into a loop"
+    assert out["fromLoop"]["outside"] is True and out["fromLoop"]["home"] is None
+    assert out["fromGate"]["outside"] is False and out["fromGate"]["home"] == "approved"
+
+
+def test_the_desks_road_words_agree_with_the_servers_link_outside_desk_rule_in_every_case():
+    from conductor.command.flow_rules import flow_rules
+
+    cases = [(source, target, word) for source in ("agent", "human", "loop")
+             for target in ("agent", "loop") for word in ROAD_WORDS
+             if not (source == "loop" and target == "loop")]
+    flows = [_road_flow(*case) for case in cases]
+    out = run_js("const show = (value) => console.log(JSON.stringify(value));\n"
+                 "show(d.map((flow) => fields.roadWords(flow, flow.links[0]).outside));",
+                 flows, modules={"fields": "desk-flow-fields.js"})
+    assert len(out) == len(cases) == 6 * 9 - 9
+    for case, flow, desk_says in zip(cases, flows, out):
+        server_says = any(row["code"] == "link_outside_desk" for row in flow_rules(flow))
+        assert desk_says == server_says, case

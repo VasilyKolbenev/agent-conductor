@@ -368,6 +368,19 @@ def test_the_canvas_view_the_status_line_and_the_open_sections_are_kept_and_ask_
     assert out["sections"] == [{"ext": True}, {"ext": False}] and out["asks"] == [0, 0, 0]
 
 
+def test_the_road_fold_is_kept_like_the_step_fold_and_a_fold_of_another_name_is_not():
+    out = js("""
+      const ready = opened();
+      const open = send(ready, {type: "section", key: "road", open: true});
+      const both = send(open, {type: "section", key: "ext", open: true});
+      const other = send(both, {type: "section", key: "elsewhere", open: true});
+      show({sections: model.flowView(other.state).sections, keys: model.SECTION_KEYS,
+        asks: [open, both, other].map((out) => out.asks.length)});
+    """)
+    assert out["sections"] == {"road": True, "ext": True}
+    assert out["keys"] == ["ext", "flow", "road"] and out["asks"] == [0, 0, 0]
+
+
 def test_the_quick_form_collects_rows_and_builds_the_flow_the_same_edits_build():
     out = js("""
       const ready = opened();

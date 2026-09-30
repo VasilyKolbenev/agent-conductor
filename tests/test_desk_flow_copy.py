@@ -48,6 +48,8 @@ def test_every_closed_word_the_flow_modules_can_say_has_a_message_in_both_langua
         ...quick.QUICK_NOTICES.map((name) => `schema.quick.${name}`),
         ...model.MODEL_NOTICES.map((name) => `schema.model.${name}`),
         ...fields.WRITTEN_FIELDS.map((name) => `schema.field.${name}`), "schema.field.when",
+        "schema.field.when_extra", "schema.road.extended", "schema.road.ordinary",
+        "schema.road.home",
         ...shape.LINK_WHENS.map((word) => `schema.when.${word}`),
         ...["none", ...shape.REVIEW_PROFILES].map((name) => `schema.profile.${name}`),
         ...["review", "dispatch"].map((name) => `schema.capability.${name}`),

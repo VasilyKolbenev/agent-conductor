@@ -237,6 +237,12 @@ class Flow:
         expect(self.page.locator("[data-flow-inspector]")).to_have_attribute("data-selected",
                                                                                step_id)
 
+    def select_road(self, source: str, target: str) -> None:
+        """Select the road `source -> target` (the canvas names a road by its two ends)."""
+        name = f"{source} {target}"
+        self.dispatch(type="select", selection={"kind": "edge", "id": name})
+        expect(self.page.locator("[data-flow-inspector]")).to_have_attribute("data-selected", name)
+
     def type_into(self, key: str, text: str) -> None:
         """Type one character at a time, so every keystroke goes through the host's redraw."""
         field = self.control(key)

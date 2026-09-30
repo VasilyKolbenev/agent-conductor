@@ -24,8 +24,8 @@ import {notice, stepOf} from "./desk-flow-shape.js";
 //: Every notice this model gives, each with a message in both languages (`schema.model.<name>`).
 export const MODEL_NOTICES = Object.freeze(["switch_wait", "field_int", "field_json",
   "field_empty", "field_unknown", "field_text", "quick_kind"]);
-//: The folds the panel keeps open or shut: the extension rows of a step, and of the cycle.
-export const SECTION_KEYS = Object.freeze(["ext", "flow"]);
+//: The folds the panel keeps open or shut: the extension rows of a step, of the cycle, and of a road.
+export const SECTION_KEYS = Object.freeze(["ext", "flow", "road"]);
 const say = (name) => ({key: `schema.model.${name}`});
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 

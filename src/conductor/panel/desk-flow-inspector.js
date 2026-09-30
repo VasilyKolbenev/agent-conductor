@@ -11,9 +11,9 @@
 // and to the canvas's by `tests/test_desk_flow_guards.py`: a word added to one and not the others is a
 // control writing an edit nothing applies.
 import {element} from "./command-view.js";
-import {clearEdit, extCount, flowRows, stepRows} from "./desk-flow-fields.js";
+import {clearEdit, extCount, flowRows, roadWords, stepRows} from "./desk-flow-fields.js";
 import {draftKey} from "./desk-flow-model.js";
-import {DESK_WORDS, LINK_WHENS, isLoop} from "./desk-flow-shape.js";
+import {isLoop} from "./desk-flow-shape.js";
 import {action, knownText, stepLabel, stepName, textControl, whenWord} from "./desk-flow-draw.js";
 
 //: The canvas's nine words, and every name a `set-field` may carry (copies; see the header).
@@ -154,22 +154,47 @@ function stepPanel(ctx) {
 
 // -- a road ------------------------------------------------------------------------------
 
+//: A select of words: choosing one writes it; the row's empty option is a label and writes nothing.
+function wordSelect(ctx, link, spec) {
+  const select = element("select", {"data-focus": spec.key, name: spec.name}, [
+    ...(spec.blank === null ? [] : [element("option", {value: "", text: spec.blank})]),
+    ...spec.words.map((word) => element("option", {value: word, text: whenWord(ctx, word)}))]);
+  select.value = spec.value;
+  select.addEventListener("change", () => {
+    if (select.value !== "") edit(ctx, {type: "set-edge-condition", fromId: link.from,
+      toId: link.to, value: select.value});
+  });
+  return select;
+}
+
+const labelled = (ctx, name, key, control) => element("label", {className: "desk-flow__field",
+  "data-field": name}, [element("span", {text: ctx.t(key)}), control]);
+
+//: The road's own «Расширенные поля»: every word the desk does not draw by default, and the way back
+//: to the ordinary word of the step the road leaves (there is none for a loop or a route).
+function roadFold(ctx, link, words) {
+  const other = wordSelect(ctx, link, {key: "schema:field:when-extra", name: "when-extra",
+    words: words.extra, blank: ctx.t("schema.road.ordinary"), value: words.outside ? link.when : ""});
+  const back = words.outside && words.home !== null ? [action("schema:road:home",
+    ctx.t("schema.road.home"), () => edit(ctx, {type: "set-edge-condition", fromId: link.from,
+      toId: link.to, value: words.home}))] : [];
+  return fold(ctx, "road", words.outside ? 1 : 0, [labelled(ctx, "when-extra",
+    "schema.field.when_extra", other), ...back]);
+}
+
 function roadPanel(ctx) {
   const link = ctx.view.selection.link, flow = ctx.view.flow;
-  const words = [...DESK_WORDS, ...LINK_WHENS.filter((word) => !DESK_WORDS.includes(word))];
-  const select = element("select", {"data-focus": "schema:field:when", name: "when"},
-    words.map((word) => element("option", {value: word, text: whenWord(ctx, word)})));
-  select.value = link.when;
-  select.addEventListener("change", () => edit(ctx, {type: "set-edge-condition",
-    fromId: link.from, toId: link.to, value: select.value}));
+  const words = roadWords(flow, link);
+  const main = wordSelect(ctx, link, {key: "schema:field:when", name: "when", words: words.main,
+    blank: words.outside ? ctx.t("schema.road.extended") : null,
+    value: words.outside ? "" : link.when});
   const source = flow.steps.find((one) => one.step_id === link.from);
   const success = link.when === "always" && source?.type === "agent"
     ? [action("schema:road:success", ctx.t("schema.fix.when_success"), () => edit(ctx,
       {type: "set-edge-condition", fromId: link.from, toId: link.to, value: "success"}))] : [];
   return [element("h3", {text: ctx.t("schema.road.between", {from: stepLabel(ctx, link.from),
-    to: stepLabel(ctx, link.to)})}),
-  element("label", {className: "desk-flow__field", "data-field": "when"},
-    [element("span", {text: ctx.t("schema.field.when")}), select]), ...success,
+    to: stepLabel(ctx, link.to)})}), labelled(ctx, "when", "schema.field.when", main), ...success,
+  roadFold(ctx, link, words),
   action("schema:road:delete", ctx.t("schema.road.delete"),
     () => edit(ctx, {type: "delete-edge", fromId: link.from, toId: link.to}))];
 }

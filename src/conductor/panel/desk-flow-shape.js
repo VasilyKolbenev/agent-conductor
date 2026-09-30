@@ -18,6 +18,9 @@ export const LINK_WHENS = Object.freeze(["success", "failed", "approved", "rejec
   "changes_requested", "waived", "bound_reached", "bound_remaining", "always"]);
 //: The words of a road the desk draws by default; the others live in a road's extended fields.
 export const DESK_WORDS = Object.freeze(["success", "approved", "rejected"]);
+//: The two words that are also the desk's when the road enters a loop: the passes of a step and the
+//: rework of a gate are drawn as loops, and the road that leads into one is part of the drawing.
+export const LOOP_ENTRY_WORDS = Object.freeze(["failed", "changes_requested"]);
 export const EXT_FIELDS = Object.freeze(["stage", "arguments", "resources", "attempt_bound",
   "required_evidence", "failure_policy", "missing_artifact_policy", "gate_id", "success_requires"]);
 //: What a gate or a loop may keep in `ext` besides: the role keys an import found on it.

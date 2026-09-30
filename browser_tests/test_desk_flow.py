@@ -223,6 +223,59 @@ def test_an_always_road_out_of_an_agent_has_a_button_that_makes_it_on_success(fl
         row for row in before if row[:2] != ("goal", "identify")], "nothing else moved"
 
 
+ROAD_FACTS = """() => {
+  const root = document.querySelector("[data-flow-inspector]");
+  const main = root.querySelector('[data-focus="schema:field:when"]');
+  const fold = root.querySelector('[data-fold="road"]');
+  const extra = root.querySelector('[data-focus="schema:field:when-extra"]');
+  const home = root.querySelector('[data-focus="schema:road:home"]');
+  return {main: [...main.options].map((one) => one.value), shown: main.value,
+    heading: fold.querySelector("summary").textContent, open: fold.open,
+    extra: extra === null ? null : [...extra.options].map((one) => one.value),
+    chosen: extra === null ? null : extra.value, home: home === null ? null : home.textContent};
+}"""
+
+
+def test_a_road_word_outside_the_desks_three_lives_in_its_fold_and_one_press_returns_it(flow):
+    from_starter(flow, "dalio-v5")
+    flow.select_road("goal", "identify")
+    three = ["success", "approved", "rejected"]
+    beyond = ["failed", "changes_requested", "waived", "bound_reached", "bound_remaining", "always"]
+    facts = flow.page.evaluate(ROAD_FACTS)
+    assert facts["main"] == ["", *three], "the main choice holds the desk's three and a marker"
+    assert facts["shown"] == "", "the road holds «always», which the main choice does not offer"
+    assert facts["heading"] == flow.say("schema.section.ext_count", count="1")
+    assert facts["open"] is False, "the fold is shut until it is opened"
+    flow.control("schema:fold:road").click()
+    facts = flow.page.evaluate(ROAD_FACTS)
+    assert facts["open"] is True and facts["extra"] == ["", *beyond] and facts["chosen"] == "always"
+    assert facts["home"] == flow.say("schema.road.home")
+    flow.control("schema:road:home").click()
+    flow.settle()
+    assert ("goal", "identify", "success") in [(link["from"], link["to"], link["when"])
+                                                for link in flow.held()["links"]]
+    facts = flow.page.evaluate(ROAD_FACTS)
+    assert facts["heading"] == flow.say("schema.section.ext") and facts["shown"] == "success"
+    assert facts["home"] is None and facts["chosen"] == "", "nothing extended is held any more"
+    flow.control("schema:field:when-extra").select_option("waived")
+    flow.settle()
+    held = {(link["from"], link["to"]): link["when"] for link in flow.held()["links"]}
+    assert held[("goal", "identify")] == "waived"
+    facts = flow.page.evaluate(ROAD_FACTS)
+    assert facts["heading"] == flow.say("schema.section.ext_count", count="1")
+    assert facts["chosen"] == "waived" and facts["shown"] == ""
+    assert flow.server(flow.view()["workflowId"])["flow"]["links"][0]["when"] == "waived"
+    assert "link_outside_desk" in flow.diag_codes(), "the server says it is outside the desk"
+
+
+def test_a_road_into_a_loop_keeps_the_loops_own_word_among_its_main_ones(flow):
+    from_starter(flow, "dalio-v5")
+    flow.select_road("do", "correct")
+    facts = flow.page.evaluate(ROAD_FACTS)
+    assert facts["main"] == ["success", "approved", "rejected", "failed", "changes_requested"]
+    assert facts["shown"] == "failed" and facts["heading"] == flow.say("schema.section.ext")
+
+
 def test_an_extension_field_edited_then_published_and_reopened_gives_an_equal_flow(flow):
     from_starter(flow, "dalio-v5")
     name = flow.view()["workflowId"]

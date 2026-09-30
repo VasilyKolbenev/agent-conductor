@@ -199,6 +199,11 @@ export const FLOW_COPY = Object.freeze({
   "schema.step.branch_first": ["This branch first", "Сначала эта ветка"],
   "schema.road.delete": ["Delete road", "Удалить дорогу"],
   "schema.road.between": ["Road {from} → {to}", "Дорога {from} → {to}"],
+  "schema.road.extended": ["Another word: see the advanced fields",
+    "Другое слово: в расширенных полях"],
+  "schema.road.ordinary": ["— choose a word —", "— выберите слово —"],
+  "schema.road.home": ["Return the ordinary word", "Вернуть обычное слово"],
+  "schema.field.when_extra": ["Another word", "Другое слово"],
   "schema.hint.timeout_checked": ["Offered: 60–1800 s for a checked step (its reserve is "
     + "doubled); other values are kept.", "Предлагается 60–1800 с для шага с проверяющим (его "
     + "резерв удваивается); другие значения сохраняются."],
