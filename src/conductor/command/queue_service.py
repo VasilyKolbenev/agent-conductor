@@ -39,6 +39,7 @@ from .store_errors import StoreError
 from .task_contracts import frozen_config_task
 from .task_preparation import QueueView
 from .template_store import RouteNotOwned
+
 #: What the preparation read shows of an entry (spec 4.4.6): four facts and nothing else.
 _PREPARATION_FACTS = ("position", "state", "reason_code", "state_since")
 
