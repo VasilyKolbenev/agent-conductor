@@ -195,6 +195,19 @@ function lineOfFlag(view) {
   return [element("p", {className: "desk-flag__line", "data-flag-line": "", text: words})];
 }
 
+//: A run the consumed flag listed that changed after it, said once: the flag was not applied to
+//: it (spec 5.8). A run the flag continued or one that waits says nothing, and a run whose
+//: automation was not read is never said to have changed.
+function verdictLines(view) {
+  const changed = view.flag.verdicts.filter((row) => row.verdict === "changed");
+  if (changed.length === 0) return [];
+  return [element("ul", {className: "desk-flag__verdicts"}, changed.map((row) =>
+    element("li", {"data-verdict-run": row.run_id, "data-flag-verdict": row.verdict}, [
+      element("span", {"data-flag-title": "", text: holderName(view, row.run_id)}),
+      element("span", {className: "desk-flag__note", "data-flag-note": "",
+        text: localize(view, "desk.flag.changed")})])))];
+}
+
 //: A refusal, or an unconfirmed save, said in place: the catalogue's words for the code.
 function hintText(view) {
   const {refused} = view.flag;
@@ -234,7 +247,7 @@ function flagBlock(view, handlers) {
     check(shown, handlers, {key: "flag:queue", label: localize(view, "desk.flag.queue"),
       on: flag.form.queue, change: (queue) => ({queue})}),
     element("p", {className: "desk-flag__note", text: localize(view, "desk.flag.queue_note")}),
-    ...lineOfFlag(view), hint, flagButtons(view, handlers),
+    ...lineOfFlag(view), ...verdictLines(view), hint, flagButtons(view, handlers),
     element("details", {className: "desk-flag__info"}, [
       element("summary", {"data-focus-key": "flag:info", "aria-label": localize(view,
         "desk.flag.info"), text: "ⓘ"}),

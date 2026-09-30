@@ -285,6 +285,8 @@ MEASURED[".desk-flag__runs legend"] = [
     (FLAG + [E("fieldset", "desk-flag__runs"), E("legend")], "color", TEXT_MIN, None)]
 MEASURED[".desk-flag__note"] = [(FLAG + [E("p", "desk-flag__note")], "color", TEXT_MIN, None)]
 MEASURED[".desk-flag__line"] = [(FLAG + [E("p", "desk-flag__line")], "color", TEXT_MIN, None)]
+MEASURED[".desk-flag__verdicts"] = [
+    (FLAG + [E("ul", "desk-flag__verdicts")], "color", TEXT_MIN, None)]
 MEASURED[".desk-shell select"] = [
     (SHELL + [E("select")], prop, floor, None)
     for prop, floor in (("color", TEXT_MIN), ("border", NONTEXT_MIN))]

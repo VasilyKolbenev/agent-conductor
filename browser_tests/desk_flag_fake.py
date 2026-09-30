@@ -47,12 +47,28 @@ def _bound(run_id: str) -> dict:
             "authorization_digest": DIGEST, "last_control_id": None}
 
 
-def automation(run_id: str, state: str, reason: str) -> dict:
-    """The body of `GET /command/runs/<run_id>/automation` for a run in `state`."""
-    return {"run_id": run_id, "authorization": None, "control": None, "state": state,
-            "reason_code": reason, "active_action_id": None, "next_node_id": None,
-            "spent_actions": 0, "remaining_actions": 0, "spent_task_seconds": 0,
-            "remaining_task_seconds": 0, "expires_at": None, "owner_present": True}
+#: The name of the resume the queue pump writes for a run a flag listed: `flag-` and 32 hex digits.
+FLAG_RESUME = "flag-" + "0123456789abcdef" * 2
+
+
+def control(control_id: str, action: str = "resume", at: str = "2026-09-30T16:41:00Z") -> dict:
+    """The control an automation read carries as its current one."""
+    return {"control_id": control_id, "action": action, "recorded_at": at, "actor": "vasya"}
+
+
+def automation(run_id: str, state: str, reason: str, *, bound: bool = False,
+               current: dict | None = None) -> dict:
+    """The body of `GET /command/runs/<run_id>/automation` for a run in `state`.
+
+    `bound` gives it the grant a flag recorded for the run (`_bound`), and `current` its current
+    control.
+    """
+    grant = {"authorization_id": f"auth-{run_id}", "authorization_digest": DIGEST}
+    return {"run_id": run_id, "authorization": grant if bound else None, "control": current,
+            "state": state, "reason_code": reason, "active_action_id": None,
+            "next_node_id": None, "spent_actions": 0, "remaining_actions": 0,
+            "spent_task_seconds": 0, "remaining_task_seconds": 0, "expires_at": None,
+            "owner_present": True}
 
 
 @dataclass

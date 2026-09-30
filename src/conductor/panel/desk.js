@@ -58,7 +58,7 @@ import {mountFeed} from "./desk-feed.js";
 import {mountSummary} from "./desk-summary.js";
 import {mountPult} from "./desk-pult.js";
 import {readClosing} from "./desk-closing.js";
-import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
+import {flagBody, flagLine, initialMarks, resumableRuns, runVerdicts} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
@@ -211,8 +211,8 @@ function words() {
 }
 
 //: What the console draws of the block: the memory above, the runs the desk may offer from what
-//: it already holds, what the controls say now (a person's change, else the flag the server holds)
-//: and the line the record reads as.
+//: it already holds, what the controls say now (a person's change, else the flag the server holds),
+//: the line the record reads as, and what became of the runs a consumed flag listed.
 function flagView() {
   const {flag} = state;
   if (flag === null) return null;
@@ -220,7 +220,8 @@ function flagView() {
   const {record} = flag;
   const form = flag.draft ?? Object.freeze({enabled: record.enabled,
     marked: initialMarks(record, rows), queue: record.enabled && record.start_task_queue});
-  return Object.freeze({...flag, rows, form, line: flagLine(flag.record)});
+  return Object.freeze({...flag, rows, form, line: flagLine(flag.record),
+    verdicts: runVerdicts(record, [...state.automation.values()])});
 }
 
 function render() {
