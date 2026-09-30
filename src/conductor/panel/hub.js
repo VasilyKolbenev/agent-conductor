@@ -18,7 +18,8 @@
 // not fire a `hashchange`), and never a token, a path or a line of text.
 import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
 import {codeWords, hubText} from "./hub-copy.js";
-import {confirmWords, deskLink, mountRail, node, noticedMap, projectLine} from "./hub-rail.js";
+import {confirmWords, deskLink, mountRail, node, noticedMap, projectLine, unlistedNotes}
+  from "./hub-rail.js";
 import {mountCenter, mountSide} from "./hub-stub.js";
 
 const byId = (id) => document.getElementById(id);
@@ -63,7 +64,7 @@ const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable
 
 //: What the page holds. The lists are what the hub last said, and stay as they were when a read fails.
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], computedAt: null,
-  noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
+  unlisted: [], noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
   stream: "connecting", selection: {project_id: null, task_id: null, run_id: null, gate_id: null},
   menu: null, confirm: null, notice: null, busy: false, cancelFocus: false};
 let token = null;
@@ -145,6 +146,7 @@ function landProjects(answer) {
   Object.assign(state, {projects, activeId: held.active_project_id ?? null,
     queue: held.project_queue.filter((id) => typeof id === "string"),
     computedAt: held.computed_at ?? null, readState: "ready", registryBad: false,
+    unlisted: isList(held.unlisted_closing) ? held.unlisted_closing.filter(isObject) : [],
     noticed: noticedMap(state.noticed, projects, held.computed_at)});
   if (state.selection.project_id !== null
       && !projects.some((one) => one.project_id === state.selection.project_id)) {
@@ -361,9 +363,9 @@ function topActions() {
 
 // -- notices, the confirmation and the status line -------------------------------------------------
 
-function banner(name, words, extras = []) {
+function banner(name, words, extras = [], exact = "") {
   return node("div", {className: "hub-banner", "data-banner": name}, [node("span",
-    {text: words}), ...extras]);
+    {text: words, title: exact === "" ? null : exact}), ...extras]);
 }
 
 function loginBanner(one) {
@@ -401,10 +403,20 @@ function setupBanners() {
   return list;
 }
 
+//: A project taken off the list that still owes its closing has no row to say so, yet it keeps every
+//: next active project from starting. The action the hub names for it has no route (it is the add
+//: dialog on the same folder), so it is drawn blocked beside the reason, like «＋ Добавить проект».
+function unlistedBanners() {
+  const {locale} = state, why = hubText(locale, "hub.unlisted.relist_blocked");
+  return unlistedNotes(state.unlisted, {locale}).map((one) => banner("unlisted", one.text,
+    one.relist ? [blocked(`unlisted:${one.key}`, hubText(locale, "hub.act.relist"), why)] : [],
+    one.exact));
+}
+
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
-  byId("hubBanners").replaceChildren(...registry, ...setupBanners());
+  byId("hubBanners").replaceChildren(...registry, ...setupBanners(), ...unlistedBanners());
 }
 
 function confirmation() {

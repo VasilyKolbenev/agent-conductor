@@ -186,7 +186,8 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
     page.page.reload()
     ready(page)
     banners = page.page.evaluate(BANNERS)
-    assert [name for name, _ in banners] == ["profile", "tools", "login", "home", "job"]
+    assert [name for name, _ in banners] == ["profile", "tools", "login", "home", "job",
+                                             "unlisted"]
     assert banners[0][1] == [say(page, "hub.banner.profile_absent"),
                              say(page, "hub.banner.profile_how")]
     assert banners[1][1] == [say(page, "hub.banner.tools")]
@@ -196,6 +197,32 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
     page.page.locator(f'[data-focus="login:{LOGIN}"]').click()
     expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.accepted"))
     assert page.hub.posts == [{"path": f"/hub/logins/{LOGIN}/recover", "body": {}}]
+
+
+UNLISTED = """() => [...document.querySelectorAll('#hubBanners [data-banner="unlisted"]')].map((n) => {
+  const control = n.querySelector(".hub-blocked");
+  return {text: n.firstElementChild.textContent, title: n.firstElementChild.title,
+    label: control.querySelector("button").textContent,
+    disabled: control.querySelector("button").disabled,
+    why: control.querySelector("small").textContent};
+})"""
+
+
+def test_a_project_taken_off_the_list_that_still_owes_its_closing_is_named_with_its_action_blocked(
+        hub_page):
+    page = hub_page
+    ready(page)
+    [fact] = page.page.evaluate(UNLISTED)
+    at = short(page, "2026-09-29T08:30:00Z")
+    assert fact == {"text": say(page, "hub.unlisted.note", time=at), "title": "2026-09-29T08:30:00Z",
+                    "label": say(page, "hub.act.relist"), "disabled": True,
+                    "why": say(page, "hub.unlisted.relist_blocked")}
+    assert page.hub.posts == [], "the action has no route: it is drawn, never sent"
+    clear = fixture("hub_projects.json")
+    clear["unlisted_closing"] = []
+    page.hub.answer("/hub/projects", clear)
+    page.hub.push({"kind": "projects"})
+    expect(page.page.locator('#hubBanners [data-banner="unlisted"]')).to_have_count(0)
 
 
 def test_a_frame_is_an_id_that_makes_the_page_read_again_and_carries_no_fact(hub_page):
@@ -236,5 +263,7 @@ def test_a_read_the_hub_refuses_is_said_and_what_was_read_stays_until_a_read_lan
     assert facts["shell"] == "failed"
     page.hub.answer("/hub/projects", fixture("hub_projects.json"))
     page.hub.push({"kind": "projects"})
-    expect(page.page.locator("#hubBanners [data-banner]")).to_have_count(1)
+    expect(page.page.locator('#hubBanners [data-banner="registry"]')).to_have_count(0)
     ready(page)
+    assert [name for name, _ in page.page.evaluate(BANNERS)] == ["tools", "unlisted"], (
+        "what setup and the list say stays; only the registry's complaint goes")

@@ -230,6 +230,25 @@ export function deskLink(project, nav, prefs, hubPort) {
   return `${project.desk_url}${preferenceHash(deskHash(address), prefs)}`;
 }
 
+// -- a project that left the list and still owes its closing ---------------------------------------
+
+/**
+ * The notes for the projects the hub says were taken off the list while they still owed their
+ * closing (`unlisted_closing` of `GET /hub/projects`): `{key, project_id, text, exact, relist}`. Such
+ * a project has no row (it is not in the registry), so nothing else on the page names it, yet it
+ * blocks every next active project. `exact` is the moment the hub gave, for a hint, and `relist` is
+ * whether the hub names the one action there is for it; a value that is not an entry is no entry.
+ */
+export function unlistedNotes(entries, ctx) {
+  return rows(entries).map((entry, at) => {
+    const since = clock(ctx.locale, entry.since);
+    return {key: `${text(entry.project_id) ?? "unlisted"}/${at}`, project_id: text(entry.project_id),
+      text: since.known ? hubText(ctx.locale, "hub.unlisted.note", {time: since.short})
+        : hubText(ctx.locale, "hub.unlisted.note_open"),
+      exact: since.known ? since.exact : "", relist: entry.action === "relist"};
+  });
+}
+
 // -- tasks, and the note of a project read from a snapshot ------------------------------------------
 
 /** What to say under a project whose data is not live: its snapshot's moment, or that it has none. */

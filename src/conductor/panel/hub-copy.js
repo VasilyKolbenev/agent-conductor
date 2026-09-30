@@ -126,6 +126,16 @@ export const HUB_COPY = Object.freeze({
   "hub.banner.home_invalid": ["The folder for new projects cannot be used",
     "Папку для новых проектов нельзя использовать"],
   "hub.banner.registry": ["The project registry cannot be read", "Реестр не читается"],
+  "hub.unlisted.note": ["A project taken off the list is not closed yet (since {time}): no other "
+    + "project starts until it is.", "Проект, убранный из списка, ещё не закрыт (с {time}): другой "
+    + "проект не запустится, пока он не будет закрыт."],
+  "hub.unlisted.note_open": ["A project taken off the list is not closed yet: no other project "
+    + "starts until it is.", "Проект, убранный из списка, ещё не закрыт: другой проект не "
+    + "запустится, пока он не будет закрыт."],
+  "hub.unlisted.relist_blocked": ["Putting it back needs the add-project dialog, which is not in "
+    + "this build yet.", "Чтобы вернуть проект, нужно окно добавления проекта, его в этой сборке "
+    + "пока нет."],
+  "hub.act.relist": ["Put back on the list", "Вернуть в список"],
   "hub.banner.job": ["Projects do not start from this hub: it runs inside a Windows job",
     "Проекты из этого hub не запускаются: он внутри задания Windows"],
   "hub.banner.job_how": ["Stop the hub (Ctrl+C) and start conduct hub from a separate terminal "
