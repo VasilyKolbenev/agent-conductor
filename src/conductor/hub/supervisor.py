@@ -153,9 +153,11 @@ class Supervisor:
                 closing).
         """
         with self._lock:
-            self._project(project_id)
+            project = self._project(project_id)
             self._require_startable()
             current = self._store.load()
+            if current.active_project_id == project_id:
+                return self._restart_the_active(project, current)
             previous = self._previous_entry(current)
             updated = self._switch(lambda s: state.begin_switch(
                 s, project_id, kind="manual", transition_id=self._new_id(),
@@ -164,6 +166,21 @@ class Supervisor:
             self._codes.pop(project_id, None)
             self._awaiting.discard(project_id)
             return updated
+
+    def _restart_the_active(self, project: registry.Project, current: state.HubState
+                            ) -> state.HubState:
+        """"Запустить снова" for the active project whose child is gone: the restart table again.
+
+        Not a new transition: nothing is recorded and no flag is handed; the next `tick` starts
+        the child by the table of 4.1.7 once nothing stands in the way (a head left `opened` is
+        the person's to recover first, and is not started).
+        """
+        if self._seen(project).live:
+            raise SupervisorRefused("already_active", project.project_id)
+        for held in (self._failed, self._codes):
+            held.pop(project.project_id, None)
+        self._awaiting.add(project.project_id)
+        return current
 
     def view(self, project_id: str) -> None:
         """Open a project for viewing: a child in `view` mode, which starts nothing itself.

@@ -281,6 +281,31 @@ def test_activate_refuses_what_cannot_be_made_active_and_changes_nothing(world):
     assert _refused(world.supervisor.activate, id_of("a")) == "active_not_closed"
 
 
+def test_activating_the_active_project_whose_child_is_gone_starts_it_again_without_a_transition(
+        world):
+    _activate_and_start(world, "a")
+    world.spawner.children[0].leave(1)
+    world.gone("a", "serving", head="closed")            # it crashed and left nothing to recover
+    before = world.hub_state()
+    world.supervisor.activate(id_of("a"))                # "Запустить снова" / "Продолжить"
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 2
+    again = world.spawner.calls[-1]
+    assert (again["mode"], again["transition"], again["auto_continue"]) == ("active", None, None)
+    assert world.hub_state() == before, "a restart of the active project is not a new transition"
+
+
+def test_activating_the_active_project_whose_stop_was_not_confirmed_starts_nothing_until_recovered(
+        world):
+    _activate_and_start(world, "a")
+    world.spawner.children[0].leave(1)
+    world.gone("a", "stop_uncertain", head="opened")
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 1, "the table offers to recover it, and starts nothing"
+    assert world.supervisor.status(id_of("a")).lifecycle.state == "stop_uncertain"
+
+
 def test_switching_away_from_a_child_that_has_not_reported_yet_is_refused_and_changes_nothing(
         world):
     world.supervisor.activate(id_of("a"))
