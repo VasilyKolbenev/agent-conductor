@@ -247,8 +247,13 @@ class QueueService:
         return recovered
 
     def _hold_conditions(self, ask: Ask, recovered: Any, now: str) -> None:
-        """The terms still hold (spec 4.4.5 step 6): the preview, the history, one more action."""
+        """The terms still hold (spec 4.4.5 step 6): the preview, the history, one more action.
+
+        And the receipt of the start can be written: a key whose receipt is over the Windows path
+        budget would be accepted here and then refused by the pump on every pass.
+        """
         policy = self.policy
+        self.store.admit_receipt(ask.run_id, JOURNAL_KIND[ask.kind], ask.preauth.record_id)
         if ask.kind == "resume":
             policy._hold_resume(recovered)
             validate_authorization_history(recovered, _control_of(ask, recovered.envelope.run_id,

@@ -436,6 +436,23 @@ class QueueStore:
             raise StoreError("a receipt is kept under the journal kind of its record")
         return self.queue_dir / STARTED_DIR / parts[0] / kind / f"{parts[1]}.json"
 
+    def admit_receipt(self, run_id: str, kind: str, record_id: str) -> Path:
+        """The receipt path of this key, once the name and the Windows budget admit a write to it.
+
+        This is the one judgement of whether a receipt can ever be created: `_write_receipt` asks
+        it before any effect and the door of the queue asks it before an entry is accepted, so the
+        door can be neither looser nor stricter than the write it protects.
+
+        Raises:
+            WindowsNameError: The record id names a reserved Windows device.
+            WindowsPathError: The receipt, or its private temporary file, is over the budget.
+            StoreError: A name is not an id, or the kind is not a journal kind.
+        """
+        admit_name(record_id, "record_id")
+        path = self.receipt_path(run_id, kind, record_id)
+        admit_file(path, "queue receipt")
+        return path
+
     def _receipt_route(self, path: Path) -> Path:
         chain = tuple(reversed(path.parents[:5]))
         return self._owned(path, chain)
@@ -489,9 +506,7 @@ class QueueStore:
     def _write_receipt(self, receipt: Receipt, *, replace: bool) -> None:
         if type(receipt) is not Receipt:
             raise StoreError("a receipt write takes exactly a Receipt")
-        admit_name(receipt.record_id, "record_id")
-        path = self.receipt_path(receipt.run_id, receipt.kind, receipt.record_id)
-        admit_file(path, "queue receipt")
+        path = self.admit_receipt(receipt.run_id, receipt.kind, receipt.record_id)
         with self.transaction():
             path.parent.mkdir(parents=True, exist_ok=True)
             self._receipt_route(path)

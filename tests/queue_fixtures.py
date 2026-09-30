@@ -9,17 +9,19 @@ driver is used where a test is about the driver itself.
 """
 from __future__ import annotations
 
+from conductor.command import queue_store
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contract_values import ContractError
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
+from conductor.command.path_admission import WindowsPathError
 from conductor.command.policy_driver import NewWorkHeld, SlotBusy, SlotSnapshot
 from conductor.command.run_store import snapshot_digest
 from tests.test_policy_driver import ask
 from tests.test_policy_runtime import ARGS, NOW, Activation, setup
 
 __all__ = ["NOW", "ask", "add_run", "start_body", "resume_body", "Holder", "project",
-           "CONFIG_TEMPLATE"]
+           "CONFIG_TEMPLATE", "long_root", "refuse_receipt_budget"]
 
 CONFIG_TEMPLATE = {"cycle": {"id": "cycle"},
                    "instances": [{"id": "doer", "adapter": "claude-code"},
@@ -71,6 +73,31 @@ def resume_body(grant, control_id, expected, *, actor="vasily"):
     return {"control_id": control_id, "authorization_id": grant.authorization_id,
             "authorization_digest": grant.authorization_digest,
             "expected_control_id": expected, "actor": actor}
+
+
+def long_root(tmp_path, length):
+    """A real directory under `tmp_path` whose path is at least `length` characters long."""
+    root = tmp_path
+    while len(str(root)) < length:
+        root = root / "ordinary-parent"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def refuse_receipt_budget(monkeypatch, run_id):
+    """The receipts of this run are over the Windows path budget, on any platform.
+
+    The trigger is made up, the road is not: `admit_file` is what the store asks for every
+    receipt, and it raises here what it raises for a real path over the budget.
+    """
+    real = queue_store.admit_file
+
+    def budget(path, label):
+        if path.parent.parent.name == run_id:       # .../started/<run_id>/<kind>/<record>.json
+            raise WindowsPathError(f"{label} exceeds the Windows path budget")
+        real(path, label)
+
+    monkeypatch.setattr(queue_store, "admit_file", budget)
 
 
 class Holder(Activation):
