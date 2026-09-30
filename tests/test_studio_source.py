@@ -56,7 +56,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-           "studio-canvas-edges.js",
+           "studio-canvas-edges.js", "studio-canvas-flow.js",
            "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js", "studio-situation.js",
@@ -78,7 +78,11 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-wizard-launch.js", "desk-wizard-skip.js", "desk-wizard-run.js",
            "desk-wizard-copy.js",
            "desk-wizard-draw.js",
-           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js")
+           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js",
+           "desk-flow-shape.js", "desk-flow-loops.js", "desk-flow-branches.js",
+           "desk-flow-edits.js", "desk-flowwrite.js", "desk-quickcycle.js", "desk-flow-graph.js",
+           "desk-flow-fields.js", "desk-flow-model.js", "desk-flow-copy.js",
+           "desk-flow-draw.js", "desk-flow-diag.js", "desk-flow-inspector.js", "desk-flow.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"

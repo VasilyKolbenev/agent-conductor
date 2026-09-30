@@ -72,7 +72,7 @@ DESK_BOOT_ASSETS = {
     "studio-runform-copy.js": 200, "studio-runs-copy.js": 200,
     "studio-runstep-copy.js": 200, "studio-view-copy.js": 200,
     "studio-workflow-copy.js": 200, "studio-workflow-detail-copy.js": 200,
-    "desk-wizard-copy.js": 200,
+    "desk-wizard-copy.js": 200, "desk-flow-copy.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (

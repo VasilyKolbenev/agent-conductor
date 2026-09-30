@@ -90,7 +90,7 @@ BOOT_ASSETS = {
     "studio-model.js": 200, "studio-view.js": 200,
     "studio-runform.js": 200,
     "studio-canvas.js": 200, "studio-inspector.js": 200,
-    "studio-canvas-edges.js": 200,
+    "studio-canvas-edges.js": 200, "studio-canvas-flow.js": 200,
     "studio-orbit.js": 200,
     "studio-runs.js": 200, "studio-runwords.js": 200,
     "studio-runstep.js": 200, "studio-runwrite.js": 200,
@@ -132,6 +132,7 @@ BOOT_ASSETS = {
     # The wizard's catalogue and the desk's own words, spread into the shared table, so the
     # entry route fetches them too.
     "desk-wizard-copy.js": 200, "desk-copy.js": 200, "desk-status-copy.js": 200,
+    "desk-flow-copy.js": 200,
     # Readings, bounded automation and typed checker findings.
     "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
     "studio-automation.js": 200, "studio-automation-flow.js": 200,

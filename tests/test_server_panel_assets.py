@@ -13,6 +13,7 @@ import pytest
 
 from conductor import server, server_assets
 from conductor.command.http_transport import MAX_COMMAND_BODY_BYTES
+from conductor.hub.assets import HUB_ASSETS
 from tests.test_server import start
 from tests.test_store import good_lane, write_project
 
@@ -74,6 +75,7 @@ ASSETS = {
     "/panel/studio-runform.js": "text/javascript; charset=utf-8",
     "/panel/studio-canvas.js": "text/javascript; charset=utf-8",
     "/panel/studio-canvas-edges.js": "text/javascript; charset=utf-8",
+    "/panel/studio-canvas-flow.js": "text/javascript; charset=utf-8",
     "/panel/studio-inspector.js": "text/javascript; charset=utf-8",
     "/panel/studio-runs.js": "text/javascript; charset=utf-8",
     "/panel/studio-runwords.js": "text/javascript; charset=utf-8",
@@ -150,6 +152,20 @@ ASSETS = {
     "/panel/desk-wizard-card.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-copy.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-shape.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-loops.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-branches.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-edits.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flowwrite.js": "text/javascript; charset=utf-8",
+    "/panel/desk-quickcycle.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-graph.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-fields.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-model.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-copy.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-draw.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-diag.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-inspector.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.
@@ -312,7 +328,13 @@ REFUSED = (
 #: what keeps the list honest either way — every packaged resource must be
 #: allowlisted, named here, or be the entry the panel route itself serves, so
 #: a new file cannot appear unserved and unnoticed.
-UNSERVED: tuple[str, ...] = ()
+#:
+#: The hub page's own files are served by the hub (its registry, and its `GET /` for the entry
+#: page), never by this project server: they are named here, from the registry, so a file the hub
+#: gains is accounted for without a second list. The four modules the hub shares with the desk are
+#: served here too and are not listed.
+UNSERVED: tuple[str, ...] = tuple(sorted(
+    {name for _, name in HUB_ASSETS.values() if name.startswith("hub")} | {"hub.html"}))
 #: studio.html is neither: `GET /` serves it through `_serve_panel`, not
 #: through the asset allowlist, which is why it is refused under /panel/. The
 #: file that used to hold this position, index.html, joined the allowlist in
