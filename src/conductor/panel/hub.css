@@ -57,6 +57,9 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .hub-shell button,.hub-shell select,.hub-shell input,.hub-shell a{min-height:44px}
 .hub-shell select,.hub-shell input{font:inherit;padding:4px 8px;border:1px solid var(--line-strong);
   border-radius:6px;background:var(--panel);color:var(--ink)}
+.hub-shell a{color:inherit;text-decoration:none}
+.hub-blocked{display:inline-flex;flex-direction:column;align-items:flex-start;gap:2px}
+.hub-top__actions .hub-blocked{flex-direction:row;align-items:center;gap:8px}
 
 /* -- the frame -------------------------------------------------------------------------------- */
 /* The top bar, the notices and the confirmation span the page; the column of projects, the centre
@@ -128,8 +131,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .hub-project__line[data-tone="ion"]{color:var(--ion)}
 .hub-project__note{padding:0 10px;font-size:11.5px;color:var(--muted)}
 .hub-project__actions{display:flex;flex-wrap:wrap;gap:4px 6px;padding:0 6px}
-.hub-project__act{padding:0 12px;border:1px solid var(--line-strong);border-radius:22px;
-  font-size:12px}
+.hub-project__act{display:inline-flex;align-items:center;padding:0 12px;
+  border:1px solid var(--line-strong);border-radius:22px;font-size:12px}
 .hub-project__menu{min-width:44px;padding:0 10px;font-size:16px;color:var(--muted)}
 .hub-project__items{display:flex;flex-direction:column;flex-basis:100%;padding:0 4px}
 .hub-project__items button{width:100%;padding:0 10px;text-align:left;font-size:12.5px}
@@ -156,8 +159,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .hub-stub__line[data-tone="amber"]{color:var(--amber)}
 .hub-stub__drain{font:500 13px var(--mono);color:var(--amber)}
 .hub-stub__actions{display:flex;flex-wrap:wrap;gap:8px}
-.hub-stub__actions button,.hub-stub__actions a{padding:0 16px;border:1px solid var(--line-strong);
-  border-radius:22px}
+.hub-stub__actions button,.hub-stub__actions a{display:inline-flex;align-items:center;
+  padding:0 16px;border:1px solid var(--line-strong);border-radius:22px}
 .hub-stub__actions [data-primary="true"]{background:var(--ion);color:var(--on-ion);
   border-color:var(--ion);font-weight:600}
 .hub-center__choose{font-size:13px;color:var(--muted)}
