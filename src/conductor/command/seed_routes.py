@@ -12,8 +12,11 @@ the record that stands with its state read off the disk.
   reads back `requested`, an exact repeat is 200, other conditions are `seed_exists`, and no
   expected commit is taken. An empty seed needs no git and works as in an active project.
 - In an active project a fresh seed admits the repository, reads the base, checks the expected
-  commit (`base_moved`), stages the tree outside `work/` and writes the record, and answers 202
-  `staged`: the move under `work/` is a separate step (9.1.4).
+  commit (`base_moved`), stages the tree outside `work/`, writes the record, and tries the move
+  under `work/` (9.1.4): 201 `seeded` when it is made, 202 `staged` while another turn holds the
+  root. A repeat of a staged seed tries the move again; a task folder that holds anything is
+  `work_not_empty` (asked before anything is staged, and again at the move); a seed whose staging
+  and folder are both gone is `seed_lost`. A view server moves nothing.
 
 One seed is made at a time per project, so two requests for one task cannot stage over each other.
 Git failures and the plan's refusals are the words of `seed_refused`; a pinned git that cannot be
@@ -34,6 +37,7 @@ from .api_contracts import ApiRefusal
 from .api_refusals import TOOL_REASONS
 from .project_git import GitReadFailed, has_git_entry, repository_admission
 from .seed_plan import SeedRefusal
+from .adapters.harness_workspace import WorkspaceBusy
 from .seed_record import (
     SOURCES, WORK_ITEM_ID, SeedRecord, SeedRecordTooLarge, SeedRequest, read_request, read_seed,
     seed_state, write_request, write_seed)
@@ -79,7 +83,7 @@ def seed_task(api: CommandApi, task_id: str, body: object) -> _Reply:
     with _one_at_a_time(root):
         standing = read_seed(root, task_id)
         if standing is not None:
-            return _standing(root, standing, asked)
+            return _standing(root, standing, asked, viewing)
         if viewing and asked.source == "git":
             return _requested(root, task_id, asked, api._clock())
         return _made(api, root, binding.work_scope, task_id, asked)
@@ -99,12 +103,17 @@ def _parse(body: object, viewing: bool) -> _Asked:
     return _Asked(source, commit, include)
 
 
-def _standing(root: Path, standing: SeedRecord, asked: _Asked) -> _Reply:
+def _standing(root: Path, standing: SeedRecord, asked: _Asked, viewing: bool) -> _Reply:
     same = (standing.source == asked.source and standing.include_agent_instructions == asked.include
             and asked.expect_commit in (None, standing.base_commit))
     if not same:
         raise ApiRefusal.seed_refused("seed_exists", standing.base_commit)
-    return 200, {**standing.as_dict(), "state": seed_state(root, standing)}
+    state = seed_state(root, standing)
+    if state == "seed_lost":
+        raise ApiRefusal.seed_refused("seed_lost")
+    if state == "staged" and not viewing:
+        state = _moved(root, standing)
+    return 200, {**standing.as_dict(), "state": state}
 
 
 def _requested(root: Path, task_id: str, asked: _Asked, now: str) -> _Reply:
@@ -126,12 +135,23 @@ def _made(api: CommandApi, root: Path, scope: str, task_id: str, asked: _Asked) 
     if request is not None and request.include_agent_instructions != asked.include:
         raise ApiRefusal.seed_refused("seed_exists")
     now = api._clock()
+    _translated(lambda: seed_stage.hold_target_free(root, scope, WORK_ITEM_ID))
     if asked.source == "empty":
         record = _staged_empty(root, scope, task_id, asked, now)
     else:
         record = _staged_from_git(api, root, scope, task_id, asked, now)
     _record(root, record)
-    return 202, {**record.as_dict(), "state": seed_state(root, record)}
+    state = _moved(root, record)
+    return (201 if state == "seeded" else 202), {**record.as_dict(), "state": state}
+
+
+def _moved(root: Path, record: SeedRecord) -> str:
+    """Try the move under `work/`; the state after it. A busy root leaves the seed staged."""
+    try:
+        _translated(lambda: seed_stage.move_staged(root, record))
+    except WorkspaceBusy:
+        pass
+    return seed_state(root, record)
 
 
 def _staged_empty(root: Path, scope: str, task_id: str, asked: _Asked, now: str) -> SeedRecord:
@@ -161,7 +181,7 @@ def _staged_from_git(api: CommandApi, root: Path, scope: str, task_id: str, aske
             root, git, task_id=task_id, work_scope=scope, work_item_id=WORK_ITEM_ID, base=base,
             include_agent_instructions=asked.include, staged_at=now)
 
-    return _asking_git(stage)
+    return _translated(stage)
 
 
 def _record(root: Path, record: SeedRecord) -> None:
@@ -176,10 +196,12 @@ def _record(root: Path, record: SeedRecord) -> None:
         raise
 
 
-def _asking_git(call: Callable[[], _T]) -> _T:
-    """Run what asks git, saying a refusal or a failure in the words of the vocabulary."""
+def _translated(call: Callable[[], _T]) -> _T:
+    """Run what asks git or the disk, saying a refusal or a failure in the vocabulary's words."""
     try:
         return call()
+    except OSError:
+        raise ApiRefusal.fixed("store_error") from None
     except SeedRefusal as refused:
         raise ApiRefusal.seed_refused(refused.reason, refused.commit) from None
     except GitReadFailed as failed:

@@ -1197,12 +1197,15 @@ project's HEAD, once per task and work item. The body is exactly
 `{"work_item_id", "source", "expect_commit", "include_agent_instructions"}`:
 the one work item `work-001`, `git` or `empty`, the commit the desk showed or
 `null`, and whether the project's instruction files come along. A fresh seed
-stages the tree outside `work/` and answers 202 with the record and its state
-(`staged`); the same conditions again answer 200 with the record that stands,
-other conditions are `seed_refused` with reason `seed_exists` naming the base; a
-base that cannot be seeded, or a git that cannot be asked, is `seed_refused` with
-one reason of the closed list, and a pinned git that cannot be used is
-`tool_unavailable` (503). A server started to view the project asks git nothing:
+stages the tree outside `work/`, moves it into the task's folder and answers 201
+with the record and its state (`seeded`), or 202 (`staged`) while another turn
+holds the project's root; the same conditions again answer 200 with the record
+that stands (and try the move again while it is staged), other conditions are
+`seed_refused` with reason `seed_exists` naming the base; a base that cannot be
+seeded, a task folder that already holds anything (`work_not_empty`), a seed
+whose staging and folder are both gone (`seed_lost`), or a git that cannot be
+asked, is `seed_refused` with one reason of the closed list, and a pinned git
+that cannot be used is `tool_unavailable` (503). A server started to view the project asks git nothing:
 a `git` seed leaves a request (201, then 200 for the same request) read back as
 `requested`, and takes no `expect_commit`. The preparation read carries the same
 record or request under `seed`. The shapes are in the desk redesign

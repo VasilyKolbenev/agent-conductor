@@ -31,6 +31,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+from .adapters.harness_workspace import root_turn
 from .adapters.process import ProcessRunner
 from .containment import first_directory_violation, lstat_or_none, portal_violation
 from .product_names import SEED_STAGING_DIR
@@ -41,10 +42,12 @@ from .seed_plan import (
     plan_seed, shown)
 from .seed_record import SeedRecord, SeedWarning
 from .template_store import RouteNotOwned
-from .work_layout import TASKS_DIR, WORK_DIR
+from .work_layout import TASKS_DIR, WORK_DIR, work_parts
 
 #: A base whose listing is longer than this is too large to seed, whatever its count of files.
 LISTING_LIMIT = 4 * 1024 * 1024
+#: How long a move waits for the root's turn before it leaves the seed staged (spec 9.1.4).
+MOVE_WAIT_SECONDS = 2
 _NAME = re.compile(r"s-[0-9a-f]{8}\Z")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _FORMATS = ("sha1", "sha256")
@@ -155,6 +158,82 @@ def remove_staging(root: str | os.PathLike[str], name: str) -> None:
     folder = Path(root).resolve()
     with ProcessRunner.project_write_guard(folder):
         _discard(folder, name)
+
+
+def hold_target_free(root: str | os.PathLike[str], work_scope: str, work_item_id: str) -> None:
+    """Say `work_not_empty` when the task's folder already holds anything, changing nothing.
+
+    Asked before a seed is staged, so a record is never written for a seed that cannot be moved
+    (a task that worked in its folder before seeds existed).
+
+    Raises:
+        SeedRefusal: `work_not_empty`.
+    """
+    folder = Path(root).resolve()
+    _hold_free(folder.joinpath(*work_parts(work_item_id, work_scope)), remove=False)
+
+
+def move_staged(root: str | os.PathLike[str], record: SeedRecord, *,
+                wait: float | None = None) -> None:
+    """Move a staged seed into the task's folder with one rename, under the root's turn.
+
+    The staging folder must stand as a plain folder; the target must be absent, or an empty folder
+    (which is removed); the parents under `work/` are made as needed, each judged not to be a link
+    or a file. The turn is the one a dispatch takes, so no proof sees the change as foreign; it is
+    waited for `wait` seconds (`MOVE_WAIT_SECONDS` by default), after which the seed stays staged.
+    The seed folder goes with the last staging.
+
+    Raises:
+        WorkspaceBusy: The turn did not come in time; nothing changed.
+        SeedRefusal: `seed_lost` (no staging folder), `work_not_empty` (the target holds anything).
+        RouteNotOwned: The route to the target reaches a file or a link where a folder belongs.
+    """
+    folder = Path(root).resolve()
+    staging = folder / SEED_STAGING_DIR / record.staging
+    target = folder.joinpath(*work_parts(record.work_item_id, record.work_scope))
+    turn = root_turn(folder, wait=MOVE_WAIT_SECONDS if wait is None else wait)
+    with turn, ProcessRunner.project_write_guard(folder):
+        if not _plain_folder(staging):
+            raise SeedRefusal("seed_lost")
+        _make_parents(folder, target)
+        _hold_free(target, remove=True)
+        os.rename(staging, target)
+        _drop_empty_seed_folder(folder)
+
+
+def _plain_folder(path: Path) -> bool:
+    found = lstat_or_none(path)
+    return (found is not None and portal_violation(path, found) is None
+            and stat.S_ISDIR(found.st_mode))
+
+
+def _make_parents(folder: Path, target: Path) -> None:
+    chain = [folder / WORK_DIR, folder / WORK_DIR / TASKS_DIR, target.parent]
+    for number, directory in enumerate(chain, 1):
+        try:
+            os.mkdir(directory)
+        except FileExistsError:
+            pass
+        if first_directory_violation((folder, *chain[:number])) is not None:
+            raise RouteNotOwned("the work folder has a component this build cannot account for")
+
+
+def _hold_free(target: Path, *, remove: bool) -> None:
+    """The target is absent, or an empty folder (removed when `remove`); all else is refused."""
+    found = lstat_or_none(target)
+    if found is None:
+        return
+    if not _plain_folder(target) or any(True for _ in os.scandir(target)):
+        raise SeedRefusal("work_not_empty")
+    if remove:
+        os.rmdir(target)
+
+
+def _drop_empty_seed_folder(folder: Path) -> None:
+    try:
+        os.rmdir(folder / SEED_STAGING_DIR)
+    except OSError:
+        pass  # another pair's staging is in it
 
 
 # -- reading git -----------------------------------------------------------------------------------

@@ -1,7 +1,8 @@
 """`POST /command/tasks/<task_id>/seed`: the door of a task's seed, and the seed in its preparation.
 
 What the desk asks (spec 9.1.1) and what the server answers (9.1.3 to 9.1.6): a fresh seed
-stages the base of the project outside `work/` and answers 202 `staged` with the record; the same
+stages the base of the project outside `work/`, moves it and answers 201 `seeded` with the
+record; the same
 request again answers 200 with the record that stands; other conditions are `seed_exists`; a base
 that cannot be seeded, or a git that cannot be asked, is `seed_refused` or `tool_unavailable`; and
 a server started to view the project asks git nothing and leaves a request, read back as
@@ -61,9 +62,9 @@ def reason_of(answer):
     return answer.payload["error"]["detail"]["reason"]
 
 
-def staging_of(project, record=None):
-    record = record or read_seed(project.root, TASK)
-    return Path(project.root) / SEED_STAGING_DIR / record.staging
+def task_folder(project, task=TASK):
+    """Where a seeded task's files are: its own folder under `work/` (spec 9.1.4)."""
+    return Path(project.root) / "work" / "_tasks" / task / ITEM
 
 
 def add_task(project, task_id=OTHER):
@@ -149,22 +150,22 @@ def test_seed_writes_head_blobs_byte_exact_without_filters_or_export_ignore(tmp_
                                            b"ver.txt export-subst\n"})
     git("config", "core.autocrlf", "true", cwd=project.root)
     answer = seed(project)
-    assert answer.status == 202 and answer.payload["state"] == "staged"
+    assert answer.status == 201 and answer.payload["state"] == "seeded"
     record = read_seed(project.root, TASK)
     assert record.base_commit == git("rev-parse", "HEAD", cwd=project.root).stdout.decode().strip()
-    assert tree_of(staging_of(project, record)) == {
+    assert tree_of(task_folder(project)) == {
         "secret.txt": b"kept although export-ignore\n", "ver.txt": b"$Format:%H$\n",
         "mixed.txt": b"one\r\ntwo\nthree\r\n", "deep/er/x.bin": bytes(range(256)),
         ".gitattributes": b"* text=auto eol=crlf\nsecret.txt export-ignore\nver.txt export-subst\n"}
 
 
 @needs_git
-def test_a_fresh_seed_answers_202_with_the_record_and_its_state_and_a_repeat_answers_200(tmp_path):
+def test_a_fresh_seed_answers_201_with_the_record_and_its_state_and_a_repeat_answers_200(tmp_path):
     project = Project(tmp_path)
     first = seed(project)
     record = read_seed(project.root, TASK)
-    assert first.status == 202
-    assert first.payload == {**record.as_dict(), "state": "staged"}
+    assert first.status == 201
+    assert first.payload == {**record.as_dict(), "state": "seeded"}
     again = seed(project)
     assert (again.status, again.payload) == (200, first.payload)
     assert [p.name for p in (data_root(project.root) / "seeds" / TASK).iterdir()] == [
@@ -179,7 +180,7 @@ def test_a_repeat_while_head_has_moved_still_answers_the_standing_record_for_the
     first = seed(project, expect_commit=base)
     commit(project.root, {"later.txt": "after\n"})
     again = seed(project, expect_commit=base)
-    assert (first.status, again.status) == (202, 200) and again.payload == first.payload
+    assert (first.status, again.status) == (201, 200) and again.payload == first.payload
 
 
 @needs_git
@@ -208,15 +209,15 @@ def test_seed_records_symlink_submodule_unportable_and_long_path_skips(tmp_path)
     plumb(project.root, ("120000", "link", b"keep.txt"), ("160000", "vendor/sub", None),
           ("100644", "del\x7fname.txt", b"x\n"), ("100644", long_name, b"long\n"))
     answer = seed(project)
-    assert answer.status == 202
+    assert answer.status == 201
     record = read_seed(project.root, TASK)
     skipped = {row.path: row.reason for row in record.skipped}
     assert skipped["link"] == "symlink" and skipped["vendor/sub"] == "submodule"
     assert skipped[shown("del\x7fname.txt")] == "unportable_name"
     too_long = os.name == "nt" and len(long_name) > room
     assert skipped.get(long_name) == ("path_budget" if too_long else None)
-    assert ("keep.txt" in tree_of(staging_of(project))) and (
-        (long_name in tree_of(staging_of(project))) != too_long)
+    assert ("keep.txt" in tree_of(task_folder(project))) and (
+        (long_name in tree_of(task_folder(project))) != too_long)
 
 
 @needs_git
@@ -226,12 +227,11 @@ def test_seed_skips_agent_instruction_files_unless_the_project_includes_them(tmp
     seed(project)
     record = read_seed(project.root, TASK)
     assert record.agent_instructions_skipped == ("CLAUDE.md",)
-    assert "CLAUDE.md" not in tree_of(staging_of(project, record))
+    assert "CLAUDE.md" not in tree_of(task_folder(project))
     seed(project, path=f"/command/tasks/{OTHER}/seed", include_agent_instructions=True)
     other = read_seed(project.root, OTHER)
     assert other.agent_instructions_skipped == () and other.include_agent_instructions is True
-    assert tree_of(Path(project.root) / SEED_STAGING_DIR / other.staging)["CLAUDE.md"] == (
-        FILES["CLAUDE.md"].encode())
+    assert tree_of(task_folder(project, OTHER))["CLAUDE.md"] == FILES["CLAUDE.md"].encode()
 
 
 @needs_git
@@ -260,7 +260,7 @@ def test_seed_refuses_when_head_moved_from_the_expected_commit(tmp_path):
     assert answer.payload["error"]["detail"] == {"reason": "base_moved", "commit": new}
     assert not (project.root / SEED_STAGING_DIR).exists()
     assert read_seed(project.root, TASK) is None
-    assert seed(project, expect_commit=new).status == 202
+    assert seed(project, expect_commit=new).status == 201
 
 
 @needs_git
@@ -269,8 +269,10 @@ def test_abandoned_staging_without_a_record_is_removed_by_the_next_seed(tmp_path
     left = project.root / SEED_STAGING_DIR / seed_stage.staging_name(TASK, ITEM)
     (left / "half").mkdir(parents=True)
     (left / "half" / "old.bin").write_bytes(b"abandoned")
-    assert seed(project).status == 202
-    assert not (left / "half").exists() and (left / "README.md").read_bytes() == b"# Project\n"
+    assert seed(project).status == 201
+    assert not left.exists() and not (project.root / SEED_STAGING_DIR).exists()
+    assert (task_folder(project) / "README.md").read_bytes() == b"# Project\n"
+    assert not (task_folder(project) / "half").exists()
 
 
 # --- a folder that cannot be seeded -------------------------------------------------------------
@@ -307,9 +309,10 @@ def test_an_empty_seed_is_allowed_only_for_a_folder_that_is_not_git(tmp_path):
     folder = Folder(tmp_path)
     made = request(folder, "POST", PATH, body(source="empty"))
     record = read_seed(folder.root, TASK)
-    assert made.status == 202 and made.payload == {**record.as_dict(), "state": "staged"}
+    assert made.status == 201 and made.payload == {**record.as_dict(), "state": "seeded"}
     assert (record.source, record.base_commit, record.file_count) == ("empty", None, 0)
-    assert tree_of(Path(folder.root) / SEED_STAGING_DIR / record.staging) == {}
+    task = Path(folder.root) / "work" / "_tasks" / TASK / ITEM
+    assert task.is_dir() and tree_of(task) == {}
     project = Project(tmp_path, name="repo")
     refused = seed(project, source="empty")
     assert code_of(refused) == (409, "seed_refused") and reason_of(refused) == "empty_not_allowed"
@@ -393,7 +396,7 @@ def test_a_seed_that_stands_is_read_in_view_with_its_state_and_without_git(tmp_p
     seed(active)
     viewing = serving(active, "view", NoGit())
     answer = seed(viewing)
-    assert answer.status == 200 and answer.payload["state"] == "staged"
+    assert answer.status == 200 and answer.payload["state"] == "seeded"
     assert viewing.reader.asked == 0
 
 
@@ -401,7 +404,7 @@ def test_a_seed_that_stands_is_read_in_view_with_its_state_and_without_git(tmp_p
 def test_an_empty_seed_in_view_works_as_in_active_and_asks_no_git(tmp_path):
     folder = Folder(tmp_path, mode="view", reader=NoGit())
     answer = request(folder, "POST", PATH, body(source="empty"))
-    assert answer.status == 202 and answer.payload["source"] == "empty"
+    assert answer.status == 201 and answer.payload["source"] == "empty"
     assert folder.reader.asked == 0
 
 
@@ -420,12 +423,8 @@ def test_the_preparation_of_a_task_carries_its_seed_and_reads_the_state_off_the_
     assert preparation(project) is None
     made = seed(project)
     record = read_seed(project.root, TASK)
-    assert preparation(project) == made.payload
-    work = Path(project.root) / "work" / "_tasks" / TASK
-    work.mkdir(parents=True)
-    os.rename(staging_of(project, record), work / ITEM)
-    assert preparation(project) == {**record.as_dict(), "state": "seeded"}
-    shutil.rmtree(work / ITEM)
+    assert preparation(project) == made.payload == {**record.as_dict(), "state": "seeded"}
+    shutil.rmtree(task_folder(project))
     assert preparation(project) == {**record.as_dict(), "state": "seed_lost"}
 
 
@@ -444,7 +443,7 @@ def test_a_request_on_file_is_performed_by_the_active_server_and_the_record_then
     other = seed(project, include_agent_instructions=True)
     assert code_of(other) == (409, "seed_refused") and reason_of(other) == "seed_exists"
     made = seed(project)
-    assert made.status == 202 and preparation(project) == made.payload
+    assert made.status == 201 and preparation(project) == made.payload
     assert read_request(project.root, TASK) is not None, "the request stays as history"
 
 
@@ -475,7 +474,7 @@ def test_requests_racing_for_one_task_make_one_seed_and_answer_the_same_record(t
         thread.start()
     for thread in threads:
         thread.join(60)
-    assert sorted(answer.status for answer in answers) == [200, 200, 200, 200, 202]
+    assert sorted(answer.status for answer in answers) == [200, 200, 200, 200, 201]
     assert len({str(answer.payload) for answer in answers}) == 1
     assert [p.name for p in (data_root(project.root) / "seeds" / TASK).iterdir()] == [
         "work-001.json"]
@@ -501,6 +500,6 @@ def test_the_seed_route_asks_the_pinned_git_through_the_servers_own_reader(
         tmp_path, conduct_home):
     with _served(tmp_path, "active", repository=True) as subject:
         _send(subject, "POST", "/command/tasks", {"task_id": "task-1", "title": "Seed me"}, 201)
-        answer = _send(subject, "POST", "/command/tasks/task-1/seed", body(), 202)
-    assert answer["state"] == "staged" and answer["source"] == "git"
+        answer = _send(subject, "POST", "/command/tasks/task-1/seed", body(), 201)
+    assert answer["state"] == "seeded" and answer["source"] == "git"
     assert answer["file_count"] == 2
