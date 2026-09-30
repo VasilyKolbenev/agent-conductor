@@ -63,6 +63,8 @@ DESK_BOOT_ASSETS = {
     "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
     # What says whether a task was closed: the reads, and the model they ask.
     "desk-closing.js": 200, "desk-summary-model.js": 200,
+    # The summary: the module that draws it and the words it says.
+    "desk-summary.js": 200, "desk-summary-copy.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
@@ -101,15 +103,14 @@ PAGE_WORDS = """() => ({
 PAGE_LANGUAGES = {
     "en": {
         "lang": "en", "title": "December Command — Desk",
-        "note": "The desk is being built: the rail, the scene, the feed and the console are "
-                "live; the summary stays empty until its module lands.",
+        "note": "The desk is being built: the rail, the scene, the feed, the summary and the "
+                "console are live.",
         "link": "Classic panel",
         "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
         "said": "Read."},
     "ru": {
         "lang": "ru", "title": "December Command — Стол",
-        "note": "Стол в разработке: рельс, сцена, лента и пульт работают; выжимка "
-                "остаётся пустой, пока не появится её модуль.",
+        "note": "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают.",
         "link": "Прежняя панель",
         "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
         "said": "Данные прочитаны."},

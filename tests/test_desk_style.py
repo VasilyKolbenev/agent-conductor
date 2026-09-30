@@ -215,6 +215,41 @@ MEASURED[".desk-feed__text"] = [
 MEASURED[".desk-feed__finding p"] = [(FEED_FINDING + [E("p")], "color", TEXT_MIN, None)]
 MEASURED[".desk-feed__finding .desk-feed__where"] = [
     (FEED_FINDING + [E("p", "desk-feed__where")], "color", TEXT_MIN, None)]
+# -- the summary: the bar of counters and the panel of who did what --------------------------
+SUMMARY = CENTER + [E("section", "desk-summary")]
+SUM = SUMMARY + [E("div", "desk-sum")]
+SUM_BAR = SUM + [E("button", "desk-sum__bar")]
+SUM_PANEL = SUM + [E("section", "desk-sum__panel")]
+SUM_HOW = SUM_PANEL + [E("details", "desk-sum__how")]
+SUM_TASK = SUM_PANEL + [E("ul", "desk-sum__tasks"), E("li", "desk-sum__task")]
+SUM_PERSON = SUM_PANEL + [E("ul", "desk-sum__people"), E("li", "desk-sum__person")]
+for _tone in ("ion", "amber"):
+    MEASURED[f'.desk-sum__chip[data-tone="{_tone}"]'] = [
+        (SUM_BAR + [E("span", "desk-sum__chips"),
+                    E("span", "desk-sum__chip", **{"data-tone": _tone})],
+         "border-color", NONTEXT_MIN, None)]
+    MEASURED[f'.desk-sum__glyph[data-tone="{_tone}"]'] = [
+        (SUM_TASK + [E("span", "desk-sum__glyph", **{"data-tone": _tone})],
+         "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__now"] = [(SUM_BAR + [E("span", "desk-sum__now")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__more"] = [(SUM_BAR + [E("span", "desk-sum__more")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__close"] = [
+    (SUM_PANEL + [E("div", "desk-sum__head"), E("button", "desk-sum__close")],
+     "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__cap"] = [(SUM_PANEL + [E("h3", "desk-sum__cap")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__how summary"] = [(SUM_HOW + [E("summary")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__how p"] = [(SUM_HOW + [E("p")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__task-what"] = [
+    (SUM_TASK + [E("span", "desk-sum__task-what")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__task-note"] = [
+    (SUM_TASK + [E("span", "desk-sum__task-what"), E("span", "desk-sum__task-note")],
+     "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__person-role"] = [
+    (SUM_PERSON + [E("span", "desk-sum__person-role")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__facts"] = [
+    (SUM_PERSON + [E("span", "desk-sum__facts")], "color", TEXT_MIN, None)]
+MEASURED[".desk-sum__no-run"] = [
+    (SUM_PANEL + [E("p", "desk-sum__no-run")], "color", TEXT_MIN, None)]
 # -- the console: the actor line and its form, the queue block and the lines of a view ---
 CONSOLE = SHELL + [E("aside", "desk-pult")]
 ACTOR_LINE = CONSOLE + [E("p", "desk-pult__actor")]
@@ -262,6 +297,12 @@ EXEMPT = {
     ".desk-pult": NEUTRAL,
     ".desk-feed__row":
         "the edge of a row; its words carry the facts and its two tones are measured",
+    ".desk-sum__chip":
+        "the edge of a counter; its words and number carry the count, its two tones are measured",
+    ".desk-sum__panel":
+        "the edge of the panel over the feed; every word in it is measured on its surface",
+    ".desk-sum__task": "neutral separator between rows; the glyph, title and words identify each",
+    ".desk-sum__person": "neutral separator between rows; the name and role identify each",
     ".desk-scene .studio-trace__inner svg .studio-trace__horizon":
         "decorative horizon; the step words, glyphs and the measured route strokes carry the plan",
     ".desk-scene .studio-planet__orb::after":
@@ -293,6 +334,10 @@ CONTROLS = tuple(
       E("details", "studio-inspect-more"), E("summary")],
      [E("div", "desk-shell"), E("section", "desk-scene"),
       E("details", "studio-deck__about"), E("summary")],
+     # The explanation behind the mark of the summary's panel is a disclosure too.
+     [E("div", "desk-shell"), E("main", "desk-center"), E("section", "desk-summary"),
+      E("div", "desk-sum"), E("section", "desk-sum__panel"), E("details", "desk-sum__how"),
+      E("summary")],
      # A document opens in its row of the feed, and its summary is the control.
      [E("div", "desk-shell"), E("main", "desk-center"), E("section", "desk-feed"),
       E("ol", "desk-feed__log"), E("li", "desk-feed__row"), E("details", "desk-feed__doc"),

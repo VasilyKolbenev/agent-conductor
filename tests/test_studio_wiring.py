@@ -103,7 +103,7 @@ PERMITTED = {
     "studio-automation-flow.js": frozenset({"./studio-automation-model.js"}),
     "studio-workflowwrite.js": frozenset({"./studio-model.js", "./studio-store.js", "./command-projection.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),

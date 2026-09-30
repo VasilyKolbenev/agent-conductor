@@ -16,9 +16,10 @@ import pytest
 
 from tests.desk_node import PANEL, run_js
 
-MODULES = {"i18n": "studio-i18n.js", "feed": "desk-feed-model.js", "words": "studio-runwords.js"}
+MODULES = {"i18n": "studio-i18n.js", "feed": "desk-feed-model.js", "words": "studio-runwords.js",
+           "summary": "desk-summary-model.js"}
 #: Each region: the catalogue prefix and the module that draws the region.
-REGIONS = {"feed": "desk-feed.js"}
+REGIONS = {"feed": "desk-feed.js", "summary": "desk-summary.js"}
 QUOTED = re.compile(r'"((?:feed|summary)\.[a-z_.]+)"')
 FAMILY = re.compile(r"`((?:feed|summary)\.[a-z_]+_)\$\{[^}]+\}`")
 
@@ -53,11 +54,12 @@ def _said(prefix: str, module: str) -> set[str]:
     source = (PANEL / module).read_text(encoding="utf-8")
     words = run_js("""
       const checked = words.VERIFICATION_STATES.filter((word) => word !== "unverified");
-      console.log(JSON.stringify({verdict: checked, decision: feed.DECISION_WORDS}));
+      console.log(JSON.stringify({"feed.verdict_": checked, "feed.decision_": feed.DECISION_WORDS,
+        "summary.label_": summary.PLACES, "summary.caption_": summary.PLACES}));
     """, MODULES)
     stems = FAMILY.findall(source)
-    assert all(stem.startswith(f"{prefix}.") for stem in stems), stems
-    built = {f"{stem}{word}" for stem in stems for word in words[stem.split(".")[1][:-1]]}
+    assert all(stem.startswith(f"{prefix}.") and stem in words for stem in stems), stems
+    built = {f"{stem}{word}" for stem in stems for word in words[stem]}
     return set(QUOTED.findall(source)) | built
 
 

@@ -132,6 +132,8 @@ ASSETS = {
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
     # The reads that say whether a task was closed.
     "/panel/desk-closing.js": "text/javascript; charset=utf-8",
+    # The words of the summary.
+    "/panel/desk-summary-copy.js": "text/javascript; charset=utf-8",
     # The summary's counters, tasks and people.
     "/panel/desk-summary-model.js": "text/javascript; charset=utf-8",
     # The journal of a run read as the rows of the feed, and the words that say them.
@@ -141,6 +143,7 @@ ASSETS = {
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
     "/panel/desk-feed.js": "text/javascript; charset=utf-8",
+    "/panel/desk-summary.js": "text/javascript; charset=utf-8",
     "/panel/desk-pult.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
@@ -324,6 +327,15 @@ REFUSED = (
     "/panel/%2e%2e/desk-feed-model.js", "/panel/DESK-FEED-MODEL.JS",
     "/panel/Desk-feed-model.js", "/panel/desk-feed-model.js/",
     "/panel/desk-feed-model.js%00.txt",
+    # The summary's words and the summary itself, the same nine shapes each.
+    "/panel/desk-summary-copy.json", "/panel/desk-summary-copy.js?v=1",
+    "/panel/desk-summary-copy.js.map", "/panel/../desk-summary-copy.js",
+    "/panel/%2e%2e/desk-summary-copy.js", "/panel/DESK-SUMMARY-COPY.JS",
+    "/panel/Desk-summary-copy.js", "/panel/desk-summary-copy.js/",
+    "/panel/desk-summary-copy.js%00.txt",
+    "/panel/desk-summary.json", "/panel/desk-summary.js?v=1", "/panel/desk-summary.js.map",
+    "/panel/../desk-summary.js", "/panel/%2e%2e/desk-summary.js", "/panel/DESK-SUMMARY.JS",
+    "/panel/Desk-summary.js", "/panel/desk-summary.js/", "/panel/desk-summary.js%00.txt",
     # The closing reads, the same nine shapes.
     "/panel/desk-closing.json", "/panel/desk-closing.js?v=1", "/panel/desk-closing.js.map",
     "/panel/../desk-closing.js", "/panel/%2e%2e/desk-closing.js", "/panel/DESK-CLOSING.JS",

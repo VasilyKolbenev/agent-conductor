@@ -11,8 +11,9 @@
 // name of the person at this page (held here, in the page's memory), the project queue once a
 // read of it is wired (none is yet) and, in a project the claim says is in `view`, the lines
 // that say so. The feed is drawn from the run the scene is drawn from and stands in the word the
-// scene stands in. The summary's numbers still have no module: they stay `empty` until one is
-// written.
+// scene stands in. The summary is drawn from the lists, the automation of each task's newest run
+// and the reads that say which tasks were closed, and from the run on the scene; it stands in the
+// word of the runs read and is drawn when its numbers are known.
 //
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
@@ -53,6 +54,7 @@ import {focusTarget, restoreFocus} from "./studio-focus.js";
 import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
 import {mountFeed} from "./desk-feed.js";
+import {mountSummary} from "./desk-summary.js";
 import {mountPult} from "./desk-pult.js";
 import {readClosing} from "./desk-closing.js";
 import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
@@ -226,10 +228,12 @@ function render() {
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
-    refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView()};
+    refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView(),
+    closing: state.closing};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountFeed(byId("deskFeed"), view);
+  mountSummary(byId("deskSummary"), view);
   mountPult(byId("deskPult"), view, handlers);
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);

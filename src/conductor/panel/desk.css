@@ -311,6 +311,58 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-feed__finding p{margin:2px 0 0;font-size:12.5px;color:var(--ink)}
 .desk-feed__finding .desk-feed__where{font:11.5px var(--mono);color:var(--muted)}
 
+/* ── the summary ──────────────────────────────────────────────────────── */
+/* The bar at the foot of the centre: four counters, a strip with a segment for each task, what
+   is going on now, and the mark that opens the panel above it. Ion and amber edge the two
+   counters that ask for a look; the words and the numbers are in them as well, so no tone stands
+   alone. The panel stands over the feed, spans the centre and scrolls; a task in it is a glyph, a
+   title and what the records say, a participant a name, a role and its facts. */
+.desk-sum{position:relative}
+.desk-sum__bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;width:100%;
+  min-height:56px;padding:6px 0;text-align:left}
+.desk-sum__chips{display:flex;flex-wrap:wrap;gap:6px}
+.desk-sum__chip{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 11px;
+  border:1px solid var(--line-strong);border-radius:14px;font-size:12px}
+.desk-sum__chip[data-tone="ion"]{border-color:var(--ion)}
+.desk-sum__chip[data-tone="amber"]{border-color:var(--amber)}
+.desk-sum__chip b{font:500 12px var(--mono)}
+.desk-sum__track{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(4px,1fr);gap:3px;
+  width:150px;height:6px}
+.desk-sum__track i{border-radius:3px;background:var(--line)}
+.desk-sum__track i[data-tone="ion"]{background:var(--ion)}
+.desk-sum__track i[data-tone="amber"]{background:var(--amber)}
+.desk-sum__track i[data-tone="done"]{background:var(--faint)}
+.desk-sum__now{margin-left:auto;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__more{font-size:12px;color:var(--muted);white-space:nowrap}
+.desk-sum__panel{position:absolute;left:-22px;right:-22px;bottom:100%;z-index:5;
+  max-height:430px;padding:16px 22px 18px;overflow:auto;background:var(--panel);
+  border:1px solid var(--line-strong);border-bottom:0;border-radius:18px 18px 0 0;
+  box-shadow:0 -18px 40px rgba(0,0,0,.18)}
+.desk-sum__head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:0 0 10px}
+.desk-sum__title{margin:0;font:400 15px var(--display);letter-spacing:-.01em}
+.desk-sum__close{padding:0 14px;border-radius:8px;color:var(--ink)}
+.desk-sum__cap{margin:14px 0 4px;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-sum__how summary{display:flex;align-items:center;min-height:44px;font-size:12.5px;
+  color:var(--muted);cursor:pointer}
+.desk-sum__how p{margin:4px 0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__tasks,.desk-sum__people{margin:0;padding:0;list-style:none}
+.desk-sum__task{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1.7fr);
+  gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.desk-sum__glyph{font:12px var(--mono)}
+.desk-sum__glyph[data-tone="ion"]{color:var(--ion)}
+.desk-sum__glyph[data-tone="amber"]{color:var(--amber)}
+.desk-sum__task-title{font-weight:500;overflow-wrap:anywhere}
+.desk-sum__task-what{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__task-note{display:block;margin-top:2px;font-size:11.5px;color:var(--muted)}
+.desk-sum__person{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,2fr);
+  gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.desk-sum__person-name{overflow-wrap:anywhere}
+.desk-sum__person-role{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.desk-sum__no-run{margin:12px 0 0;font-size:12.5px;color:var(--muted)}
+
 /* ── the console ──────────────────────────────────────────────────────── */
 /* The name of the person at this page, the project queue as the server read it, and the two
    lines of a project in view. Amber asks for you, as in the rail; the words are in the row as
@@ -362,4 +414,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
   .desk-rail{border-right:0;border-bottom:1px solid var(--line)}
   .desk-pult{border-left:0;border-top:1px solid var(--line)}
   .desk-scene .studio-step-flow{grid-template-columns:minmax(0,1fr)}
+  .desk-sum__now{margin-left:0}
+  .desk-sum__task{grid-template-columns:22px minmax(0,1fr)}
+  .desk-sum__task-what{grid-column:2}
+  .desk-sum__person{grid-template-columns:minmax(0,1fr)}
 }
