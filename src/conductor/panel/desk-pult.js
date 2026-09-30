@@ -1,0 +1,152 @@
+"use strict";
+// The console of the project (spec 5.1 and 4.4.8): the name of the person at this page, the
+// project queue as the server read it, and the lines that say a project is in `view`. It draws
+// what the boot module hands it and reads nothing: a press is a call to a handler, and no
+// handler here writes to the wire. The queue is the read `desk-queue-model.js` already judged
+// (`null` while nobody has read it), so a queue that was not read is not drawn as an empty one.
+//
+// The name is the actor of everything a later write of this page will record in a person's
+// name (spec 5.2). It is asked for once and held in the boot module's state, in the page's
+// memory: never in storage, in the address or in a request. The boot module owns the rule that
+// says what a name may be; the form only asks it and shows the answer, in place, so the words
+// typed are never lost to a refusal.
+//
+// A row of the queue is up to three runs of words -- what the record is, why, and since when --
+// each a message of its own; the separators between them are punctuation and belong to no
+// language. Times are said by `desk-time.js`, the reasons are the words of `desk-status-copy.js`.
+import {element} from "./command-view.js";
+import {localize} from "./studio-i18n.js";
+import {instantText} from "./desk-time.js";
+
+//: What each state of a queue record says of itself, and the tone that asks for a person.
+const LEADS = Object.freeze({preauthorized: "desk.pult.entry_start",
+  confirmation_required: "desk.pult.entry_confirm", blocked: "desk.pult.entry_blocked"});
+//: What the slot says while a run holds it, or while nobody can.
+const SLOTS = Object.freeze({busy: "desk.pult.slot_busy", stuck: "desk.pult.slot_stuck"});
+
+// -- the name of the person -------------------------------------------------------------
+
+function actorRow(view, handlers) {
+  const named = view.actor !== null;
+  const change = element("button", {type: "button", className: "desk-pult__change",
+    "data-focus-key": "pult:actor-change",
+    text: localize(view, named ? "desk.pult.actor_change" : "desk.pult.actor_set")});
+  change.addEventListener("click", () => handlers.editActor());
+  return element("p", {className: "desk-pult__actor"}, [
+    element("span", {className: "desk-pult__who", text: named
+      ? localize(view, "desk.pult.actor", {name: view.actor})
+      : localize(view, "desk.pult.actor_none")}),
+    document.createTextNode(" · "), change]);
+}
+
+//: The form that asks for the name. A refused name is said in place and the typed words stay
+//: where they are; a name that was typed and not saved is carried across a redraw by the boot
+//: module's focus net, through the `data-focus-key` of the input.
+function actorForm(view, handlers) {
+  const input = element("input", {type: "text", name: "actor", maxlength: "128",
+    autocomplete: "off", spellcheck: "false", "data-focus-key": "pult:actor-name",
+    "aria-describedby": "deskActorHint"});
+  input.value = view.actor ?? "";
+  const hint = element("p", {className: "desk-pult__hint", id: "deskActorHint", role: "alert",
+    hidden: "", text: localize(view, "desk.pult.actor_hint")});
+  const cancel = element("button", {type: "button", "data-focus-key": "pult:actor-cancel",
+    text: localize(view, "desk.pult.actor_cancel")});
+  const form = element("form", {className: "desk-pult__form", novalidate: ""}, [
+    element("label", {className: "desk-pult__label"},
+      [element("span", {text: localize(view, "desk.pult.actor_label")}), input]),
+    hint,
+    element("div", {className: "desk-pult__buttons"}, [
+      element("button", {"data-focus-key": "pult:actor-save",
+        text: localize(view, "desk.pult.actor_save")}), cancel])]);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const accepted = handlers.setActor(input.value.trim());
+    hint.hidden = accepted;
+    if (!accepted) input.focus();
+  });
+  input.addEventListener("input", () => { hint.hidden = true; });
+  cancel.addEventListener("click", () => handlers.cancelActor());
+  return form;
+}
+
+// -- the project queue ------------------------------------------------------------------
+
+//: The task a run belongs to, by the desk's own lists; the run's own id when they do not say.
+function holderName(view, runId) {
+  const run = view.runs.list.find((row) => row.run_id === runId);
+  const task = run === undefined ? undefined
+    : view.tasks.list.find((row) => row.task_id === run.task_id);
+  return task !== undefined && !task.unreadable && task.title ? task.title : runId;
+}
+
+//: The first row: a project in `view` cannot start anything, so it says so; otherwise the slot.
+function firstRow(view) {
+  if (view.mode === "view") return localize(view, "desk.pult.inactive");
+  const {state, run_id: runId} = view.queue.slot;
+  if (Object.hasOwn(SLOTS, state)) {
+    return localize(view, SLOTS[state], {task: holderName(view, runId)});
+  }
+  return localize(view, state === "free" ? "desk.pult.slot_free" : "desk.pult.slot_unavailable");
+}
+
+//: "since when" for a record: a wait for a person is dated by the server's `state_since` (none:
+//: noticed, and the console has no instant to say it at); a blocked record by its enqueue time.
+function tail(view, entry) {
+  if (entry.state === "confirmation_required") {
+    const at = entry.state_since === null ? null : instantText(view.locale, entry.state_since);
+    return at !== null && at.known
+      ? localize(view, "desk_status.since_waiting", {time: at.short})
+      : localize(view, "desk_status.since_observed_unknown");
+  }
+  const queued = entry.state === "blocked" ? instantText(view.locale, entry.enqueued_at) : null;
+  return queued !== null && queued.known
+    ? localize(view, "desk.pult.entry_queued", {time: queued.short}) : null;
+}
+
+function entryRow(view, entry) {
+  const title = entry.title === "" ? entry.run_id : entry.title;
+  const said = [localize(view, LEADS[entry.state], {position: String(entry.position), title})];
+  if (entry.state !== "preauthorized" && entry.reason_code !== null) {
+    said.push(": ", localize(view, `desk_status.entry_${entry.reason_code}`));
+  }
+  const since = tail(view, entry);
+  if (since !== null) said.push(" · ", since);
+  return element("li", {className: "desk-queue__entry", "data-run-id": entry.run_id,
+    "data-queue-state": entry.state,
+    "data-tone": entry.state === "confirmation_required" ? "amber" : null},
+  said.map((part) => element("span", {text: part})));
+}
+
+function entryList(view) {
+  const {entries} = view.queue;
+  return entries.length === 0
+    ? element("p", {className: "desk-queue__none", text: localize(view, "desk.pult.queue_empty")})
+    : element("ul", {className: "desk-queue__list"},
+      entries.map((entry) => entryRow(view, entry)));
+}
+
+//: The block is drawn when the queue was read, and in `view` even when it was not: the mode is
+//: the server's word, and it says the project cannot start what the queue holds.
+function queueBlock(view) {
+  if (view.queue === null && view.mode !== "view") return [];
+  const kids = [
+    element("h3", {className: "desk-queue__head", text: localize(view, "desk.pult.queue")}),
+    element("p", {className: "desk-queue__now", text: firstRow(view)})];
+  if (view.queue !== null) kids.push(entryList(view));
+  if (view.mode === "view") {
+    kids.push(element("p", {className: "desk-pult__flag", text: localize(view, "desk.pult.flag")}));
+  }
+  return [element("section", {className: "desk-queue"}, kids)];
+}
+
+//: A desk open for another project draws nothing here: it holds no name and shows no queue.
+export function mountPult(mount, view, handlers) {
+  if (view.foreign) {
+    mount.replaceChildren();
+    return;
+  }
+  mount.replaceChildren(
+    element("h2", {className: "desk-pult__head", text: localize(view, "desk.pult.label")}),
+    view.editing ? actorForm(view, handlers) : actorRow(view, handlers),
+    ...queueBlock(view));
+}

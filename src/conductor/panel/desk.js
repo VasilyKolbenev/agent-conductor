@@ -7,8 +7,11 @@
 // rail is drawn from the project's task list and the runs list, and from the automation of
 // the newest run of each task, because the word of a task is a fact of all three (spec
 // 5.2.1). The scene is drawn from the newest run of the task a person chose, or from the run
-// the address names: choosing is a press or a hash, and the run is a read. The feed, the
-// summary's numbers and the pult still have no module: they stay `empty` until one is written.
+// the address names: choosing is a press or a hash, and the run is a read. The pult draws the
+// name of the person at this page (held here, in the page's memory), the project queue once a
+// read of it is wired (none is yet) and, in a project the claim says is in `view`, the lines
+// that say so. The feed and the summary's numbers still have no module: they stay `empty`
+// until one is written.
 //
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
@@ -40,6 +43,7 @@ import {projectControls, wireControls} from "./studio-controls.js";
 import {focusTarget, restoreFocus} from "./studio-focus.js";
 import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
+import {mountPult} from "./desk-pult.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -80,8 +84,15 @@ const UNANSWERED = Object.freeze([LATE, "store_error"]);
 //: for it; `foreign` is the terminal state of a desk open for another project. `choice`
 //: counts the choices made, so an answer that lands for a task a person has since left is
 //: dropped. `door` is this window's transport, made at boot.
+//:
+//: The console's facts: `actor` is the name of the person at this page (null until given) and
+//: `editing` says the form that asks for it is open -- both live in this page's memory only;
+//: `mode` is what the project claim said (`active`, `view`, or null when no claim was read or it
+//: named no mode this build knows); `queue` is the task-queue read once one is wired (null:
+//: not read).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
-  taskId: null, run: NO_RUN, foreign: false});
+  taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, mode: null,
+  queue: null});
 let choice = 0;
 let door = null;
 //: The project this desk bound to, from its first hash (null when that named none); the last
@@ -158,11 +169,15 @@ function render() {
   const said = words();
   const view = {locale: locale(), listed: said.rail === "ready", tasks: state.tasks,
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
-    connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null};
+    connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
+    foreign: state.foreign, actor: state.actor, editing: state.editing, mode: state.mode,
+    queue: state.queue};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
+  mountPult(byId("deskPult"), view, handlers);
   mark(byId("deskRail"), said.rail);
   mark(byId("deskScene"), said.scene);
+  mark(byId("deskPult"), state.foreign ? "empty" : "ready");
   mark(byId("deskSummary"), said.summary);
   mark(byId("deskShell"), said.shell);
   say(said.shell);
@@ -325,7 +340,37 @@ async function chooseTask(taskId, runId = null) {
   if (asked === choice) move({run: landed});
 }
 
-const handlers = Object.freeze({chooseTask});
+//: The name of a person, in the grammar every id of the routes has: it is what the routes will
+//: take as an actor, so the desk refuses here what they would refuse there.
+const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+//: Put the keyboard where a press that replaced its own control means it to be.
+function focusOn(key) {
+  byId("deskPult").querySelector(`[data-focus-key="${key}"]`)?.focus();
+}
+
+function editActor() {
+  if (state.foreign) return;
+  move({editing: true});
+  focusOn("pult:actor-name");
+}
+
+function cancelActor() {
+  if (state.foreign) return;
+  move({editing: false});
+  focusOn("pult:actor-change");
+}
+
+//: Keep the name of the person at this page, or say it was refused. It is held in this page's
+//: memory and nowhere else: no storage, no address, no request.
+function setActor(name) {
+  if (state.foreign || typeof name !== "string" || !ACTOR.test(name)) return false;
+  move({actor: name, editing: false});
+  focusOn("pult:actor-change");
+  return true;
+}
+
+const handlers = Object.freeze({chooseTask, editActor, cancelActor, setActor});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -354,7 +399,8 @@ function setAppearance(next) {
 //: dropped, one sentence says so, and `move` keeps nothing from then on.
 function enterForeign() {
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
-    taskId: null, run: NO_RUN, foreign: true});
+    taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, mode: null,
+    queue: null});
   render();
 }
 
@@ -402,6 +448,13 @@ async function start(address) {
   remember();
 }
 
+//: The mode the server's claim names: the only source of it (spec 4.5.1). A claim that names
+//: none this build knows, or no claim at all, is no mode -- never a guess of `active`.
+function claimMode(claim) {
+  const mode = claim !== null && typeof claim === "object" ? claim.mode : null;
+  return mode === "active" || mode === "view" ? mode : null;
+}
+
 //: Embed mode (spec 4.5.5), decided once, at load. Only a framed window whose hash asks for it
 //: reads the project claim. A claim that names another project than the one the desk bound to
 //: ends the desk (spec 4.5.1): it is open for another project, and says so. The desk embeds
@@ -422,6 +475,8 @@ async function enterEmbed(address) {
     enterForeign();
     return;
   }
+  const mode = claimMode(claim);
+  if (mode !== null) move({mode});
   const origin = embedTarget({framed, address, claim});
   if (origin === null) return;
   embedded = Object.freeze({origin});

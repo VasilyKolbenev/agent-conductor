@@ -71,6 +71,7 @@ DESK_ASSETS = {
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),
+    "/panel/desk-pult.js": ("text/javascript; charset=utf-8", "desk-pult.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
     "/panel/desk-wizard-materials.js": (

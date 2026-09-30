@@ -265,8 +265,35 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-scene .studio-deck__about summary{display:flex;align-items:center;min-height:44px;
   font-size:14px;cursor:pointer}
 .desk-scene .studio-deck__about .studio-note{max-width:70ch}
-.desk-shell select{font:inherit;padding:4px 8px;border:1px solid var(--faint);
+.desk-shell select,.desk-shell input{font:inherit;padding:4px 8px;border:1px solid var(--faint);
   border-radius:6px;background:var(--panel);color:var(--ink)}
+
+/* ── the console ──────────────────────────────────────────────────────── */
+/* The name of the person at this page, the project queue as the server read it, and the two
+   lines of a project in view. Amber asks for you, as in the rail; the words are in the row as
+   well, so no tone stands alone. Nothing here is a button that writes. */
+.desk-pult__head{margin:0 0 8px;padding:0 4px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-queue__head{margin:0 0 8px;padding:0 4px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-pult__actor{margin:0 0 12px;padding:0 4px;font-size:12.5px;color:var(--ink)}
+.desk-pult__who{overflow-wrap:anywhere}
+.desk-pult__change{display:inline-flex;align-items:center;padding:0 6px;font-size:12.5px;
+  color:var(--muted);text-decoration:underline}
+.desk-pult__form{display:flex;flex-direction:column;gap:8px;margin:0 0 12px;padding:0 4px}
+.desk-pult__label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+.desk-pult__hint{font-size:12px;color:var(--amber)}
+.desk-pult__buttons{display:flex;flex-wrap:wrap;gap:8px}
+.desk-pult__buttons button{padding:0 14px;border-radius:8px;background:var(--panel);
+  color:var(--ink)}
+.desk-queue{margin:0 0 12px}
+.desk-queue__now{padding:0 4px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__list{display:flex;flex-direction:column;gap:8px;margin:8px 0 0;padding:0;
+  list-style:none}
+.desk-queue__entry{padding:0 4px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__entry[data-tone="amber"]{color:var(--amber)}
+.desk-queue__none{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
+.desk-pult__flag{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
 
 @media (max-width:900px){
   .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
