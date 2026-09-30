@@ -220,12 +220,21 @@ class Facts:
     title: str | None
 
 
-def _pairing_of(item: Facts) -> str:
+def pairing_of(item: Facts) -> str:
+    """How the receipt and the journal stand to this entry's key (see `pairing`)."""
     pre, entry = item.entry.preauthorization, item.entry
     if pre is None or item.recovered is None:
         return "none"
     value = journal_value(item.recovered, JOURNAL_KIND[entry.kind], pre.record_id)
     return pairing(pre, JOURNAL_KIND[entry.kind], item.receipt, value)
+
+
+def done_reason(item: Facts, now: str) -> str | None:
+    """Why this entry is done and only waits to be removed, or None (none for an unreadable run)."""
+    if item.recovered is None:
+        return None
+    return processed_reason(item.entry, item.recovered, now, pairing=pairing_of(item),
+                            holds=item.holds)
 
 
 def _state(item: Facts, kind: str, *, slot: dict[str, Any], mode: str, ahead: bool,
@@ -277,7 +286,7 @@ def assemble(revision: int, facts: Sequence[Facts], *, slot: dict[str, Any], mod
     rows: list[dict[str, Any]] = []
     ahead = False
     for item in facts:
-        kind = _pairing_of(item)
+        kind = pairing_of(item)
         if item.recovered is not None and processed_reason(
                 item.entry, item.recovered, now, pairing=kind, holds=item.holds):
             continue
