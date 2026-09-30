@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import shutil
 import threading
-from http.client import RemoteDisconnected
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -492,10 +491,6 @@ def conduct_home(tmp_path_factory, monkeypatch):
 
 
 @needs_git
-@pytest.mark.xfail(
-    strict=True, raises=RemoteDisconnected,
-    reason="the server's reader (lane H's _LazyReader) takes no keywords yet: handoff "
-           "L8-to-H-git-reader-stdin; the marker goes the day the patch lands")
 def test_the_seed_route_asks_the_pinned_git_through_the_servers_own_reader(
         tmp_path, conduct_home):
     with _served(tmp_path, "active", repository=True) as subject:
