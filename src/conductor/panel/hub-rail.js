@@ -86,7 +86,10 @@ export function stateWord(project, ctx) {
 
 //: The words of the line, before they are joined. A project that is to be the active one while the
 //: former active one is still closing says so in place of «В работе»; one that could not become active
-//: because the former is not closed says that in place of everything.
+//: because the former is not closed says that in place of everything. A project that carries the
+//: code of an unreadable status file says it after its own state word, because its `state` is what
+//: the rest says (usually `stopped`) and no word of it would say why nothing starts; a failed one
+//: already says the clause of its code.
 function lineParts(project, ctx) {
   const blocking = other(ctx, project, ["stop_uncertain", "recovery_required"]);
   if (project.state_code === "active_not_closed" && blocking !== undefined) {
@@ -97,7 +100,9 @@ function lineParts(project, ctx) {
     && closing !== undefined;
   const first = waits ? hubText(ctx.locale, "hub.line.becomes_active",
     {name: String(closing.name ?? "")}) : workingWord(project, ctx);
-  return [first, stateWord(project, ctx)].filter((part) => part !== "");
+  const unreadable = project.state_code === "status_unreadable" && project.state !== "failed"
+    ? hubText(ctx.locale, "hub.state.status_unreadable") : "";
+  return [first, stateWord(project, ctx), unreadable].filter((part) => part !== "");
 }
 
 // -- the actions of a project -------------------------------------------------------------------

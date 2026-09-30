@@ -79,6 +79,8 @@ export const HUB_COPY = Object.freeze({
   "hub.state.identity_mismatch": ["A different project is in the folder now",
     "В папке теперь другой проект"],
   "hub.state.missing": ["The folder was not found or was replaced", "Папка не найдена или заменена"],
+  "hub.state.status_unreadable": ["The status file cannot be read, so no other project starts",
+    "Файл состояния не читается, другой проект не запустится"],
   "hub.line.becomes_active": ["Will become active after {name} stops",
     "Станет активным после остановки {name}"],
   "hub.line.not_active": ["Did not become active: {name} is not closed · the OS needs a restart",
@@ -253,6 +255,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.bind_failed": ["the port is taken", "порт занят"],
   "hub.code.start_failed": ["the process did not start", "процесс не запустился"],
   "hub.code.start_timeout": ["it did not answer in time", "не ответил вовремя"],
+  "hub.code.status_unreadable": ["the status file of a project cannot be read; no other project "
+    + "starts until it is", "файл состояния проекта не читается; пока он не исправлен, другой "
+    + "проект не запустится"],
   "hub.code.clone_timeout": ["cloning took too long", "клонирование заняло слишком много времени"],
   "hub.code.clone_failed": ["cloning failed", "клонирование не удалось"],
   "hub.code.clone_cleanup_incomplete": ["cloning failed and its folder could not be removed "

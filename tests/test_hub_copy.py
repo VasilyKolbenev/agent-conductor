@@ -41,13 +41,14 @@ ROUTE_CODES = (
     "project_busy", "project_running", "project_not_running", "project_unavailable",
     "already_active", "active_not_closed", "recovery_required", "recover_not_needed",
     "operation_not_cancellable", "project_queue_changed", "hub_in_kill_on_close_job")
-#: `state_code` of spec 4.1.5: the table of the start refusals and the two codes the hub adds.
+#: `state_code` of spec 4.1.5: the table of the start refusals and the three codes the hub adds
+#: (`status_unreadable` is the tech lead's rule of 30.09: a status file that is not the record).
 STATE_CODES = (
     "hub_flags_incomplete", "project_id_invalid", "hub_origin_invalid", "status_file_invalid",
     "stdin_is_terminal", "mode_invalid", "project_identity_changed", "hub_in_kill_on_close_job",
     "owner_busy", "recovery_required", "ownership_lost", "transition_conflict",
     "ownership_unavailable", "store_error", "providers_invalid", "bind_failed", "start_failed",
-    "start_timeout", "active_not_closed")
+    "start_timeout", "active_not_closed", "status_unreadable")
 #: `OPERATION_ERROR_CODES` of spec 4.6.5 by step (the `start` row is the state codes above).
 OPERATION_CODES = (
     "projects_home_invalid", "folder_exists", "gh_not_pinned", "gh_changed", "gh_not_logged_in",
@@ -169,7 +170,7 @@ def test_the_code_words_are_exactly_the_union_of_the_three_closed_lists_of_the_s
     held = sorted(key[len("hub.code."):] for key in rows if key.startswith("hub.code."))
     assert held == ALL_CODES, sorted(set(held) ^ set(ALL_CODES))
     assert len(ROUTE_CODES) == 48 and len(set(OPERATION_CODES)) == len(OPERATION_CODES)
-    assert len(ALL_CODES) == 89 and "hub.code.unknown" not in rows
+    assert len(ALL_CODES) == 90 and "hub.code.unknown" not in rows
 
 
 def _hub_refusals():
@@ -189,6 +190,12 @@ def test_the_hub_route_codes_equal_the_spec_table_and_no_hub_code_lies_outside_t
     named = set(refusals.HUB_ERROR_STATUS) | set(refusals.OPERATION_ERROR_CODES)
     assert named <= set(ALL_CODES), sorted(named - set(ALL_CODES))
     assert set(ROUTE_CODES) == set(refusals.HUB_ERROR_STATUS)
+
+
+def test_the_state_codes_the_page_has_words_for_are_exactly_those_the_hub_can_put_on_a_project():
+    lifecycle = importlib.import_module("conductor.hub.lifecycle")
+    assert set(STATE_CODES) == set(lifecycle.STATE_CODES), (
+        sorted(set(STATE_CODES) ^ set(lifecycle.STATE_CODES)))
 
 
 @pytest.mark.parametrize("key,russian", sorted(SPEC_WORDS.items()))

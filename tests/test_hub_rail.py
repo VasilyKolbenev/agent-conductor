@@ -156,6 +156,27 @@ def test_a_project_takes_the_seat_of_one_that_is_still_closing_and_names_it():
     assert out["stuckActions"] == ["recover"], "the way out stands on the project that blocks"
 
 
+def test_a_project_carrying_the_unreadable_status_code_says_so_whatever_its_state_and_only_once():
+    out = js("""
+      const code = "status_unreadable";
+      const said = (over, locale = "en") => line(row({stopped_at: null, ...over}), {locale}).text;
+      show({stopped: said({state: "stopped", working: "stopped", state_code: code}),
+        ru: said({state: "stopped", working: "stopped", state_code: code}, "ru"),
+        starting: said({state: "starting", working: "active", state_code: code}),
+        failed: said({state: "failed", working: "active", state_code: code}),
+        plain: said({state: "stopped", working: "stopped", state_code: null}),
+        actions: ids(line(row({state: "stopped", working: "stopped", state_code: code})).actions)});
+    """)
+    assert out["stopped"] == "Stopped · The status file cannot be read, so no other project starts"
+    assert out["ru"] == "Остановлен · Файл состояния не читается, другой проект не запустится"
+    assert out["starting"] == ("In progress · Starting… · The status file cannot be read, so no "
+                               "other project starts")
+    assert out["failed"].count("status file") == 1, (
+        "a failed project already says its code's clause: the line does not say it twice")
+    assert out["plain"] == "Stopped"
+    assert out["actions"] == ["activate"], "the action of the working state stands"
+
+
 def test_a_project_in_view_says_its_place_in_the_queue_and_a_queued_one_its_own():
     out = js("""
       const view = line(row({working: "view", state: "running", queue_position: 2}));
