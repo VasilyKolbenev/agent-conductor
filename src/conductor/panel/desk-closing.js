@@ -2,7 +2,7 @@
 // The reads that establish whether a task was closed (spec 5.4: "closed" is a run accepted at its
 // final gate). No list the desk reads carries that fact -- a plan that ended `complete` may have
 // been approved or refused -- so the run itself is read, and only when its row says it could have
-// been accepted (`mayBeClosed`: nothing open, no step asking a person, a last outcome of success)
+// been accepted (`mayBeClosed`: nothing open, no step asking a person, some action with a result)
 // and only for the newest run of a task. A finished project therefore costs one read per finished
 // task, once, and a project with nothing finished costs none.
 //

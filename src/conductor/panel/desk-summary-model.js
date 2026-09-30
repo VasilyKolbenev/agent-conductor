@@ -23,7 +23,9 @@
 // stands approved for the lap the plan is on (spec 5.4, 9.4 rules 3-4). `complete` alone is not
 // acceptance: a rejected run and an approved one both reach it. The fact is `digestOf(...).closed`;
 // `mayBeClosed` is the necessary condition on a run's ROW, so a caller reads a run only when it
-// could have been accepted (nothing open, nothing asks a person, its last outcome succeeded).
+// could have been accepted (nothing open, nothing asks a person, some action reached a result).
+// It does not ask for a success: a person may accept at the final gate a result that failed, and
+// that run is closed all the same, as the caption says.
 //
 // Nothing here reads a clock; an instant is compared as the time it names and left as the string
 // the record carried. No number is invented: a count is a count of records, and what a record
@@ -68,11 +70,11 @@ function newestOf(runs, task) {
 }
 
 //: Whether a run could have been accepted, judged on its row alone: nothing is open, no step
-//: asks a person, and its last outcome is a success. A run that fails any of the three cannot be
+//: asks a person, and some action reached a result. A run that fails any of the three cannot be
 //: closed, so it is never read to find out.
 export function mayBeClosed(row) {
   return isObject(row) && row.unreadable !== true && row.human_state === "not_required"
-    && row.open_actions === 0 && row.last_outcome === "succeeded";
+    && row.open_actions === 0 && text(row.last_outcome) !== null;
 }
 
 function taskRow(task, runs, automation, closing) {

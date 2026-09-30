@@ -208,7 +208,7 @@ def test_a_road_that_opens_only_on_a_change_does_not_stop_a_gate_from_being_the_
     assert closed_fact(edited("run-closed", routed)) is True
 
 
-def test_a_run_may_be_closed_only_when_nothing_is_open_nothing_asks_a_person_and_it_succeeded():
+def test_a_run_may_be_closed_only_when_nothing_is_open_nothing_asks_a_person_and_it_did_something():
     out = js("""
       const rows = Object.fromEntries(seeded.runs.runs.map((row) => [row.run_id, row]));
       const may = (row) => summary.mayBeClosed(row);
@@ -218,12 +218,13 @@ def test_a_run_may_be_closed_only_when_nothing_is_open_nothing_asks_a_person_and
         open: may({...closed, open_actions: 1}), asks: may({...closed, human_state: "required"}),
         unknown: may({...closed, human_state: "unknown"}),
         none: may({...closed, last_outcome: null}),
-        failed: may({...closed, last_outcome: "failed"}), lost: may({unreadable: true}),
-        nothing: may(null)}));
+        failed: may({...closed, last_outcome: "failed"}),
+        unverified: may({...closed, last_outcome: "verification_failed"}),
+        lost: may({unreadable: true}), nothing: may(null)}));
     """)
     assert out == {"closed": True, "working": False, "waiting": False, "open": False,
-                   "asks": False, "unknown": False, "none": False, "failed": False,
-                   "lost": False, "nothing": False}
+                   "asks": False, "unknown": False, "none": False, "failed": True,
+                   "unverified": True, "lost": False, "nothing": False}
 
 
 # -- who did, who checked, who accepted, and the people of a run -------------------------------
