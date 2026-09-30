@@ -201,6 +201,10 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "mutation": false, "csrf": false
   },
   {
+    "method": "POST", "path": "/command/tasks/<task_id>/seed",
+    "mutation": true, "csrf": true
+  },
+  {
     "method": "GET", "path": "/command/quotas", "mutation": false, "csrf": false
   },
   {
@@ -450,7 +454,9 @@ choose a code.
   { "code": "materials_refused",     "status": 409, "source": "service" },
   { "code": "queue_changed",         "status": 409, "source": "concurrency" },
   { "code": "queue_full",            "status": 409, "source": "service" },
-  { "code": "queue_not_ready",       "status": 409, "source": "plan" }
+  { "code": "queue_not_ready",       "status": 409, "source": "plan" },
+  { "code": "seed_refused",          "status": 409, "source": "service" },
+  { "code": "tool_unavailable",      "status": 503, "source": "service" }
 ]
 ```
 
@@ -1185,6 +1191,25 @@ project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
 that has a published revision, or unpins with `null`, under a human identity.
 The same pin by the same person writes nothing. The shapes are in the desk
 redesign specification, sections 6.4.2 and 7.10.
+
+`POST /command/tasks/<task_id>/seed` seeds the work folder of a task from the
+project's HEAD, once per task and work item. The body is exactly
+`{"work_item_id", "source", "expect_commit", "include_agent_instructions"}`:
+the one work item `work-001`, `git` or `empty`, the commit the desk showed or
+`null`, and whether the project's instruction files come along. A fresh seed
+stages the tree outside `work/`, moves it into the task's folder and answers 201
+with the record and its state (`seeded`), or 202 (`staged`) while another turn
+holds the project's root; the same conditions again answer 200 with the record
+that stands (and try the move again while it is staged), other conditions are
+`seed_refused` with reason `seed_exists` naming the base; a base that cannot be
+seeded, a task folder that already holds anything (`work_not_empty`), a seed
+whose staging and folder are both gone (`seed_lost`), or a git that cannot be
+asked, is `seed_refused` with one reason of the closed list, and a pinned git
+that cannot be used is `tool_unavailable` (503). A server started to view the project asks git nothing:
+a `git` seed leaves a request (201, then 200 for the same request) read back as
+`requested`, and takes no `expect_commit`. The preparation read carries the same
+record or request under `seed`. The shapes are in the desk redesign
+specification, sections 9.1.1 to 9.1.6.
 
 `GET /command/project` answers which project this server serves, in exactly four
 keys (`project_id`, the activation's nonce or `null`; `hub_origin`; `demo`; and

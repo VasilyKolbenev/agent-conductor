@@ -43,7 +43,7 @@ from threading import Thread
 import pytest
 
 from conductor import ownership, ownership_transition, server, tool_pins
-from conductor.command import http_writes, project_routes, providers, task_routes
+from conductor.command import http_writes, project_routes, providers, seed_routes, task_routes
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
@@ -302,9 +302,25 @@ def _walk_materials_and_documents(subject, mode: str) -> None:
               409 if viewing else 200)]
     if viewing:
         assert [a["error"]["code"] for a in answers] == ["project_not_active"] * 3, answers
+        _walk_the_request_of_a_seed(subject)
     else:
         assert [row["path"] for row in answers[1]["documents"]] == ["README.md", "docs/spec.md"]
         assert answers[2]["content"] == "# Project\n", answers[2]
+
+
+def _walk_the_request_of_a_seed(subject) -> None:
+    """The seed route in `view`: a request is left and read back, and no git is asked.
+
+    In `active` the same route asks the pinned git through the server's own reader; that walk is
+    `test_the_seed_route_asks_the_pinned_git_through_the_servers_own_reader`, in
+    `test_seed_routes.py`, which waits for the reader to take the keywords a seed needs.
+    """
+    path = "/command/tasks/task-1/seed"
+    wanted = {"work_item_id": "work-001", "source": "git", "expect_commit": None,
+              "include_agent_instructions": False}
+    made = _send(subject, "POST", path, wanted, 201)
+    assert made["state"] == "requested" and made["task_id"] == "task-1", made
+    assert _send(subject, "POST", path, wanted, 200) == made
 
 
 def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication_and_run_creation(
@@ -329,10 +345,11 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication
 #: The handler each route of the cycle and run walk goes through, one per route: the writes and
 #: then the three routes of materials and project documents, which are the ones that may ask git.
 ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
-         "_publish_template", "_open_run", "write_materials", "read_documents", "read_document")
+         "_publish_template", "_open_run", "write_materials", "read_documents", "read_document",
+         "seed_task")
 #: Where a road lives when it is not in `http_writes`.
 HOMES = {"create_task": task_routes, "read_documents": project_routes,
-         "read_document": project_routes}
+         "read_document": project_routes, "seed_task": seed_routes}
 
 
 @pytest.mark.parametrize("road", ROADS)
@@ -413,10 +430,11 @@ def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
     `active` the same ask starts one real child per runner and the same walk starts only the
     pinned git, which is what makes the empty spy mean something.
 
-    Not walked, because the build has no such route: the read of git state
-    (`GET /command/project/git`) and the request of a seed (`POST /command/tasks/<id>/seed`),
-    which the spec's text names. `test_the_walk_names_every_route_that_may_ask_git` fails the
-    day either appears without being walked.
+    The request of a seed (`POST /command/tasks/<id>/seed`) is walked in `view` here (a request
+    is left, read back, and no git is asked); in `active` it asks the pinned git through the
+    server's own reader, which is `test_seed_routes.py`. Not walked, because the build has no
+    such route: the read of git state (`GET /command/project/git`), which the spec's text names.
+    `test_the_walk_names_every_route_that_may_ask_git` fails the day it appears unwalked.
     """
     viewed = _prepare_flow(tmp_path / "view", "view", runners, spy)
     assert viewed["asked"] and set(viewed["asked"]) == {"refused"}, viewed
@@ -437,7 +455,8 @@ def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
 WALKED_GIT_ROUTES = frozenset({
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/project/documents"),
-    ("GET", "/command/project/documents/<doc_id>")})
+    ("GET", "/command/project/documents/<doc_id>"),
+    ("POST", "/command/tasks/<task_id>/seed")})
 GIT_WORDS = ("/materials", "/documents", "/project/git", "/seed", "/accept")
 
 
@@ -468,12 +487,9 @@ def test_the_view_walk_notices_a_git_route_that_no_longer_refuses_in_view(
 
 
 def test_the_route_guard_says_no_to_a_git_state_seed_or_accept_route_that_nothing_walks():
-    table = (*COMMAND_ROUTES, ("GET", "/command/project/git"),
-             ("POST", "/command/tasks/<task_id>/seed"),
-             ("POST", "/command/project/accept/preview"))
-    assert git_routes(table) - WALKED_GIT_ROUTES == {
-        ("GET", "/command/project/git"), ("POST", "/command/tasks/<task_id>/seed"),
-        ("POST", "/command/project/accept/preview")}
+    unwalked = {("GET", "/command/project/git"), ("POST", "/command/tasks/<task_id>/seed/again"),
+                ("POST", "/command/project/accept/preview")}
+    assert git_routes((*COMMAND_ROUTES, *unwalked)) - WALKED_GIT_ROUTES == unwalked
 
 
 def test_the_provider_resolver_builds_a_runner_that_refuses_when_spawning_is_not_allowed(

@@ -100,5 +100,7 @@ export const NOTICE_COPY = Object.freeze({
   "error.queue_changed": ["The queue changed while you were looking at it. Nothing was reordered; look at it again.", "Очередь изменилась, пока вы её смотрели. Ничего не переставлено; посмотрите её заново."],
   "error.queue_full": ["The project queue is full. Nothing was queued; take an entry out first.", "Очередь проекта заполнена. Ничего не поставлено; сначала уберите одну запись."],
   "error.queue_not_ready": ["This run cannot be queued now. Nothing was queued; the preparation of its task says why.", "Этот запуск сейчас нельзя поставить в очередь. Ничего не поставлено; причину показывает подготовка его задачи."],
+  "error.seed_refused": ["The task's work folder was not seeded from the project. Nothing was started; the reason is named beside this message.", "Рабочая папка задачи не засеяна из проекта. Ничего не запущено; причина названа рядом."],
+  "error.tool_unavailable": ["A tool the project needs is not available as pinned. Nothing was changed; pin the tool again and retry.", "Нужный проекту инструмент недоступен в закреплённой версии. Ничего не изменено; закрепите инструмент заново и повторите."],
   "error.store_error": ["The run store is unavailable.", "Хранилище запусков недоступно."],
 });

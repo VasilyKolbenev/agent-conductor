@@ -32,6 +32,7 @@ class PolicyService:
         self.previews = PreviewCache()
         self.driver = None
         self.queue = None  # the project queue (spec 4.4): told of a direct authorize or control
+        self.seeds = None  # what the driver asks before a run's first action (spec 9.1.4)
 
     def preview(self, run_id, body):
         """A candidate for the run: the caller's five fields, or, for `{}`, the server's own draft.
