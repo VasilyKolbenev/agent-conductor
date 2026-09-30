@@ -4,8 +4,10 @@ The path: `~/.december-command` unless `CONDUCT_HOME` names an absolute path, an
 empty override is refused rather than resolved against whatever the working folder happens to
 be. Making the folder: `conduct_home()` creates it (mode 0700 where the OS has modes) and leaves
 an existing one as it is. Placement: a home inside an activated project, or one that has become
-a project itself, is refused `conduct_home_invalid` with the reason in the detail, and a login
-folder that is the home or one of its parents is `conduct_home_overlaps_login`. Two claims of
+a project itself, is refused `conduct_home_invalid` with the reason in the detail, and so is a
+home that holds a login folder (rule 2: the home is not inside a login folder and does not
+contain one); a login folder that is the home or one of its parents is
+`conduct_home_overlaps_login`. Two claims of
 4.1.13 item 7 are measured against the rest of the product: the hub never makes a `.conduct` or
 a `conductor.v3` anywhere in its folder (`_hub_operations` lists what the hub does, and grows
 with each one), and a write of `<home>/providers.json` passes the `provider_write_guard` that
@@ -125,10 +127,29 @@ def test_a_login_folder_that_is_the_home_or_one_of_its_parents_overlaps_it(tmp_p
         assert str(login) in str(caught.value)
 
 
-def test_a_login_folder_beside_or_beneath_the_home_is_not_an_overlap_judged_here(tmp_path):
+def test_a_login_folder_beside_the_home_is_allowed_even_when_its_name_starts_like_the_homes(
+        tmp_path):
     folder = tmp_path / ".december-command"
-    beside, beneath = tmp_path / "logins" / "claude", folder / "logins" / "claude"
-    assert home.require_placement(folder, [beside, beneath]) == folder
+    beside = [tmp_path / "logins" / "claude", tmp_path / ".december-command-logins",
+              folder.with_name(".december-command2") / "claude"]
+    assert home.require_placement(folder, beside) == folder
+
+
+def test_a_login_folder_beneath_the_home_is_refused_with_its_reason(tmp_path):
+    folder = tmp_path / ".december-command"
+    for login in (folder / "claude", folder / "logins" / "claude"):
+        with pytest.raises(home.ConductHomeInvalid) as caught:
+            home.require_placement(folder, [login])
+        assert caught.value.code == "conduct_home_invalid"
+        assert str(login) in str(caught.value) and str(folder) in str(caught.value)
+        assert "login" in str(caught.value)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="only Windows names one folder in two cases")
+def test_a_login_folder_beneath_the_home_is_refused_whatever_the_case_of_its_name(tmp_path):
+    folder = tmp_path / ".december-command"
+    with pytest.raises(home.ConductHomeInvalid):
+        home.require_placement(folder, [Path(str(folder).upper()) / "logins" / "claude"])
 
 
 def test_a_login_folder_that_is_not_absolute_is_a_fault_of_the_caller(tmp_path):

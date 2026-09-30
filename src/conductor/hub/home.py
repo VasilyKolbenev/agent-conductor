@@ -5,8 +5,8 @@ ABSOLUTE path; a relative or empty override is refused instead of being resolved
 working folder of whichever process reads it. `conduct_home_path` only computes the path and
 creates nothing, so a child can judge `--status-file` against it before it does any IO;
 `conduct_home` makes the folder. `require_placement` is the two rules of where it may lie:
-not inside a project that is activated (or one it has become itself), and not inside a login
-folder.
+not inside a project that is activated (or one it has become itself), and neither inside a login
+folder nor holding one.
 """
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ PROJECT_MARKERS = (".conduct", "conductor.v3")
 
 
 class ConductHomeInvalid(ValueError):
-    """The folder the hub would use cannot be used: the override is not absolute, or it lies
-    inside a project. The text says which."""
+    """The folder the hub would use cannot be used: the override is not absolute, it lies inside
+    a project, or it holds a login folder. The text says which."""
 
     code = "conduct_home_invalid"
 
@@ -83,6 +83,9 @@ def require_placement(folder: Path, login_homes: Iterable[Path | str] = ()) -> P
             `conductor.v3`: it lies inside a project, or has become one, so the files of the
             hub would lie in a project's tree and `provider_write_guard` would refuse the
             profile. The text names the project folder and the marker.
+        ConductHomeInvalid: Rule 2, the other half. A login folder lies beneath the hub's
+            folder, so the folder holds one: a name that appears at the top of a login folder
+            while a child is started counts as login residue. The text names both folders.
         ConductHomeOverlapsLogin: Rule 2. A login folder is the hub's folder or one of its
             parents (a login folder the hub's folder lies beneath).
         ValueError: A login folder is not an absolute path; that is a fault of the caller.
@@ -107,7 +110,16 @@ def _refuse_an_overlapping_login(resolved: Path, login: Path | str) -> None:
     if not os.path.isabs(login):
         raise ValueError(f"a login folder must be an absolute path, not {str(login)!r}")
     found = Path(login).resolve()
-    same = os.path.normcase(str(found))
-    if same in {os.path.normcase(str(place)) for place in (resolved, *resolved.parents)}:
+    if _named(found) in {_named(place) for place in (resolved, *resolved.parents)}:
         raise ConductHomeOverlapsLogin(
             f"the login folder {found} is the hub's folder {resolved} or contains it")
+    if _named(resolved) in {_named(place) for place in found.parents}:
+        raise ConductHomeInvalid(
+            f"the login folder {found} lies inside the hub's folder {resolved}, which must not "
+            "contain a login folder: a name that appears at the top of a login folder while a "
+            "child is started counts as login residue")
+
+
+def _named(place: Path) -> str:
+    """The folder's name as the OS compares it (one folder is one name on Windows)."""
+    return os.path.normcase(str(place))
