@@ -151,8 +151,10 @@ class HeldDesk:
     page: Page
     held: list[Route]
     problems: list[str]
+    released: list[bool]
 
     def release(self) -> None:
+        self.released[0] = True
         while self.held:
             self.held.pop().continue_()
 
@@ -164,8 +166,12 @@ def held_desk(chromium, progress_url):
     page = context.new_page()
     held: list[Route] = []
     problems: list[str] = []
+    released = [False]
     page.on("pageerror", lambda error: problems.append(str(error)))
-    page.route("**/command/runs/run-closed", lambda route: held.append(route))
+    # Release opens the barrier for future SSE refreshes too, not only requests
+    # already observed when the owner presses it.
+    page.route("**/command/runs/run-closed", lambda route:
+               route.continue_() if released[0] else held.append(route))
 
     def open_at(address: str) -> HeldDesk:
         page.goto(f"{progress_url}{address}", wait_until="load")
@@ -174,7 +180,7 @@ def held_desk(chromium, progress_url):
                 break
             page.wait_for_timeout(50)
         assert held, "the closing read of the finished run was never asked"
-        return HeldDesk(page, held, problems)
+        return HeldDesk(page, held, problems, released)
 
     try:
         yield open_at
