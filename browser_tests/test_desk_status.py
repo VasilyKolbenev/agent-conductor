@@ -9,9 +9,12 @@ person would read. Each fact and its sentence are read in ONE evaluation.
 
 What this module holds:
 
-- one row per rule of spec 5.2.1 says its word in English and in Russian, and the hub's summary
-  fixture (lane H's `hub_projects.json`) and the desk's own route fields get the same key for the
-  same task; a snapshot adds one caption and no other word changes;
+- one row per rule of spec 5.2.1 says its word in English and in Russian; a snapshot adds one
+  caption and no other word changes;
+- the hub's summary fixture (lane H's `hub_projects.json`) and the desk give the same word to the
+  same task: the hub side is `taskStatus` over the fixture's rows, the desk side is a real desk
+  booted on a page whose three reads (tasks, runs, the automation of the newest run) are answered
+  with those same rows, and what is compared is the word its rail drew;
 - the journal fixture (`tests/fixtures/desk/journal_index.json`, the spec's 4.5.6 shape) gives the
   same projection and the same waiting instants in the page as under Node, for all five reasons;
 - an item of "waiting for you" says its reason and either "waiting since <time>", with the exact
@@ -25,9 +28,10 @@ import json
 import re
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 
 from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
 from tests.test_desk_attention import (
@@ -216,24 +220,80 @@ def test_a_snapshot_adds_one_caption_to_a_word_and_a_snapshot_with_no_moment_say
     assert not RAW.search(facts["text"])
 
 
-def test_the_hub_summary_and_the_desks_own_reads_give_one_key_to_every_task_of_the_fixture(
-        drawn):
-    """The hub embeds the routes' rows as they are, so the fields the desk reads itself are the
-    same task, run and automation: both say the same word, and only a snapshot adds a caption."""
-    hub, desk = [], []
-    for one in HUB["projects"]:
-        for tasked in one["tasks"]:
-            base = {"task": tasked["task"], "run": tasked["run"],
-                    "automation": tasked["automation"], "entry": None}
-            hub.append({**base, "mode": one["mode"], "data": one["data"],
-                        "snapshot_at": one["snapshot_at"]})
-            desk.append({**base, "mode": "active", "data": "live", "snapshot_at": None})
-    said_hub = drawn("en", statuses=hub)["words"]
-    said_desk = drawn("en", statuses=desk)["words"]
-    assert [word["key"] for word in said_hub] == [word["key"] for word in said_desk] == [
-        "running", "waiting_you", "checkpoint"]
-    assert [word["snap"] is not None for word in said_hub] == [False, False, True]
-    assert all(word["snap"] is None for word in said_desk)
+#: What the rail of the desk says, in ONE evaluation: the id and the word of each row.
+RAIL = """() => [...document.querySelectorAll("#deskRail .desk-task")].map((node) => ({
+  id: node.dataset.taskId, word: node.querySelector(".desk-task__state").textContent}))"""
+
+
+def _desk_reads(project: dict) -> dict[str, dict]:
+    """What the three routes a desk reads at boot answer for one project of the hub fixture: the
+    hub embeds the routes' rows as they are, so each body is those rows in the route's shape."""
+    rows = project["tasks"]
+    bodies = {"/command/tasks": {"tasks": [one["task"] for one in rows]},
+              "/command/runs": {"runs": [one["run"] for one in rows], "providers": []}}
+    for one in rows:
+        run_id = one["run"]["run_id"]
+        bodies[f"/command/runs/{run_id}/automation"] = {"run_id": run_id, **one["automation"]}
+    return bodies
+
+
+@pytest.fixture
+def desk_of(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., dict]]:  # noqa: F811
+    """A factory: boot the desk's page in a language with its reads answered from `bodies`, and
+    say what its rail drew, which routes it asked and what went wrong in the console."""
+    contexts = []
+
+    def make(language: str, bodies: dict[str, dict]) -> dict:
+        context = chromium.new_context(viewport={"width": 1280, "height": 900}, locale=language)
+        contexts.append(context)
+        page: Page = context.new_page()
+        problems: list[str] = []
+        asked: list[str] = []
+
+        def answer(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            asked.append(path)
+            body = bodies.get(path, {"error": {"code": "route_not_found"}})
+            route.fulfill(status=200 if path in bodies else 404,
+                          content_type="application/json", body=json.dumps(body))
+
+        for pattern in ("**/command/tasks", "**/command/runs", "**/command/runs/*/automation"):
+            page.route(pattern, answer)
+        page.on("pageerror", lambda error: problems.append(str(error)))
+        page.goto(f"{seeded_url}#lang={language}", wait_until="load")
+        page.wait_for_function(SETTLED)
+        return {"rail": page.evaluate(RAIL), "asked": sorted(asked), "problems": problems}
+
+    yield make
+    for context in contexts:
+        context.close()
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_the_rail_of_a_desk_fed_the_fixture_rows_says_the_word_the_hub_gives_each_task(
+        drawn, desk_of, language):
+    """Spec 5.2.1: the desk and the hub get one key per task from one fixture. The hub side is
+    `taskStatus` over a project's rows with the project's own mode, data and snapshot; the desk
+    side is a desk that reads the same rows through its own three routes, and the word compared
+    is the one its rail drew. Only a snapshot, which only the hub has, adds a caption."""
+    projects = [one for one in HUB["projects"] if one["tasks"]]
+    hub_words = []
+    for project in projects:
+        hub = [{"task": one["task"], "run": one["run"], "automation": one["automation"],
+                "entry": None, "mode": project["mode"], "data": project["data"],
+                "snapshot_at": project["snapshot_at"]} for one in project["tasks"]]
+        said = drawn(language, statuses=hub)["words"]
+        bodies = _desk_reads(project)
+        desk = desk_of(language, bodies)
+        assert desk["asked"] == sorted(bodies) and desk["problems"] == []
+        assert [row["id"] for row in desk["rail"]] == [
+            one["task"]["task_id"] for one in project["tasks"]]
+        assert [row["word"] for row in desk["rail"]] == [word["text"] for word in said]
+        assert [row["word"] for row in desk["rail"]] == [
+            _word(language, word["key"]) for word in said]
+        hub_words.extend(said)
+    assert [word["key"] for word in hub_words] == ["running", "waiting_you", "checkpoint"]
+    assert [word["snap"] is not None for word in hub_words] == [False, False, True]
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])
