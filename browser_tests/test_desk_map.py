@@ -5,8 +5,8 @@ draws it, has its module waiting for a mount, has none of it, or retired it; `te
 holds those words to the source. This module holds them to a desk in a real browser, on a real
 seeded one-project server: what the map says a booted desk draws IS drawn, in both languages, and
 what it says is not built is not there: the desk has exactly the five regions, no tab list, no panel
-and no wizard or editor however the address asks (the keys `panel`, `new`, `prepare` and `workflow`
-are read and none has a surface), opens no stream and reads no queue. The day one of them is built
+and no cycle editor or panel where the address has no surface, and opens no stream. The wizard
+and queue are now mounted; the day another surface is built
 a row here reds with it, and is moved by the lane that built it.
 
 A fact and its sentence are read in ONE evaluation.
@@ -29,10 +29,9 @@ from tests.test_store import good_lane, write_project
 #: The five regions of the desk (spec 5.1) and nothing else.
 REGIONS = ["rail", "scene", "feed", "summary", "pult"]
 #: Everything a wizard, an editor or a panel would leave on the page, by the names their modules use.
-SURFACES = '[class*="desk-wizard"], [class*="desk-flow"], [class*="desk-panel"], [data-panel], ' \
+SURFACES = '.desk-wizard-shell:not([hidden]), [class*="desk-flow"], [class*="desk-panel"], [data-panel], ' \
     '[role="tablist"], [role="tab"]'
-ASKS = ["#panel=cycle", "#panel=run", "#panel=people", "#new=task", "#task=task-fix&prepare=1",
-        "#workflow=desk-standard", "#new=task&starter=desk-starter-docs"]
+ASKS = ["#panel=cycle", "#panel=run", "#panel=people", "#workflow=desk-standard"]
 SHOWN = """(selectors) => Object.fromEntries(selectors.map(
   (selector) => [selector, document.querySelectorAll(selector).length]))"""
 FACTS = f"""() => ({{regions: [...document.querySelectorAll("[data-region]")].map(
@@ -91,7 +90,7 @@ def test_the_surface_check_sees_what_a_wizard_a_panel_a_tab_or_an_editor_would_l
     page, _asked = booted(chromium, desk_url, "#lang=en")
     try:
         assert page.evaluate(FACTS)["surfaces"] == 0
-        page.evaluate("""() => { for (const markup of ['<div class="desk-wizard"></div>',
+        page.evaluate("""() => { for (const markup of ['<div class="desk-wizard-shell"></div>',
           '<div class="desk-flow"></div>', '<div data-panel="run"></div>',
           '<div role="tablist"></div>', '<div class="desk-panel"></div>']) {
             document.body.insertAdjacentHTML("beforeend", markup); } }""")
@@ -113,7 +112,6 @@ def test_nothing_the_map_says_is_not_built_is_on_a_booted_desk_however_the_addre
             "no wizard, no editor, no panel, no tab: the address names a place the desk has no surface for")
         commands = [path for path in asked if path.startswith("/command/")]
         assert "/events" not in asked, "the map says the desk opens no stream yet"
-        assert not any("queue" in path for path in commands), "and reads no queue"
     finally:
         page.context.close()
 

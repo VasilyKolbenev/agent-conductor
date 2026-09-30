@@ -112,7 +112,7 @@ def test_the_map_has_each_function_of_spec_5_6_once_and_no_other():
 def test_every_row_of_the_map_is_true_of_the_source_today():
     closure = desk_closure()
     assert {"desk.js", "desk-rail.js", "desk-scene.js", "desk-pult.js"} <= closure
-    assert not closure & {"desk-wizard.js", "desk-flow.js"}, "a mounted editor is news to the map"
+    assert "desk-wizard.js" in closure and "desk-flow.js" not in closure
     faults = [fault for row in ROWS for fault in row_faults(row, closure)]
     assert faults == [], "\n".join(faults)
 
@@ -121,7 +121,7 @@ def test_the_map_counts_what_is_on_the_desk_and_what_is_not_yet_and_who_owes_it(
     states = Counter(row.state for row in ROWS)
     owners = Counter(row.owner for row in ROWS if row.state != "on_desk")
     assert sum(states.values()) == 70 and states["on_desk"] >= 10
-    assert states["module_only"] >= 18, "the wizard and the cycle editor wait for a mount"
+    assert states["module_only"] >= 10, "the cycle editor still waits for a mount"
     assert set(owners) <= {"D1", "D2"}, owners
     assert {row.owner for row in ROWS if row.state == "retired"} == {"D2"}, (
         "the deletion of the five tabs is the slice of lane D2")

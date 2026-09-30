@@ -66,8 +66,7 @@ def _in_module(file: str, token: str) -> tuple[str, str, str]:
 NO_STREAM = ("present", "desk.js", "NO_STREAM")
 #: A panel other than the flag's block: `desk.js` has no row for `cycle`, `run` or `people`.
 NO_PANEL = _absent("desk.js", "\"people\"")
-#: The mount of the wizard and of the cycle editor: no module of the desk imports them.
-WIZARD = _module("desk-wizard.js")
+#: The cycle editor still waits for its desk mount; the wizard now has one.
 FLOW = _module("desk-flow.js")
 
 ROWS: tuple[Row, ...] = (
@@ -96,7 +95,7 @@ ROWS: tuple[Row, ...] = (
         (_in("desk.html", "href=\"/panel/index.html\""),), selector="a[href=\"/panel/index.html\"]"),
     Row("5.6.1", "Навигация в hash", "desk-hash.js and the hashchange router", "on_desk",
         (_in("desk.js", "navigationChange"), _in("desk.js", "hashchange")),
-        owed=(("D1", "the keys panel, new, prepare, starter and workflow: no surface takes them"),)),
+        owed=(("D1", "the panel keys cycle, run and people, and workflow: no surface takes them"),)),
     Row("5.6.1", "Кто действует (actor)", "pult: «Вы: <имя> · изменить»", "on_desk",
         (_in("desk-pult.js", "desk.pult.actor"), _in("desk.js", "setActor")),
         selector=".desk-pult__actor"),
@@ -111,8 +110,8 @@ ROWS: tuple[Row, ...] = (
         (_absent("desk-pult.js", "attention"),), "D1"),
     Row("5.6.2", "«Что мешает»", "pult: the block with up to 12 rows", "not_built",
         (_absent("desk-pult.js", "blockingRows"),), "D1"),
-    Row("5.6.2", "Готовность к запуску", "wizard: the roles and preparation steps", "module_only",
-        (_module("desk-wizard-roles.js"), _module("desk-wizard-prep.js")), "D1"),
+    Row("5.6.2", "Готовность к запуску", "wizard: the roles and preparation steps", "on_desk",
+        (_in("desk-wizard-host.js", "mountWizard"), _in("desk-wizard.js", "prepareBody"))),
     Row("5.6.2", "«Что это за проект»", "the head of «Схема»: cycle, revisions, draft",
         "module_only", (FLOW, _in_module("desk-flow.js", "sourceLine")), "D1"),
     # -- 5.6.3 process (the editor) -----------------------------------------------------------
@@ -155,18 +154,20 @@ ROWS: tuple[Row, ...] = (
     Row("5.6.3", "Быстрый линейный ввод", "wizard «Цикл» → «＋ Собрать свой»", "module_only",
         (_module("desk-quickcycle.js"), _in_module("desk-quickcycle.js", "QUICK_KINDS")), "D1"),
     Row("5.6.3", "«Открыть запуск»: run_id, cycle_id, режим, роль → харнесс, модель",
-        "wizard: «Роли и указания»", "module_only", (WIZARD, _module("desk-wizard-roles.js")),
-        "D1", owed=(("D1", "the manual run with its modes: «Запуск подробно › Ручной запуск»"),)),
+        "wizard: «Роли и указания»", "on_desk",
+        (_in("desk-wizard-host.js", "stepWizard"), _in("desk-wizard.js", "rolesBody")),
+        owed=(("D1", "the manual run with its modes: «Запуск подробно › Ручной запуск»"),)),
     # -- 5.6.4 runs ---------------------------------------------------------------------------
     Row("5.6.4", "Задачи проекта, строка «Все задачи», статус задачи", "the rail", "on_desk",
         (_in("desk-rail.js", "taskStatus"),), selector="#deskRail [data-task-id]"),
     Row("5.6.4", "Выбор задачи", "the rail or the hash: task=<id>", "on_desk",
         (_in("desk.js", "chooseTask"),),
         owed=(("D2", "«Подготовить запуск» for a task with no run: prepare=1, the wizard"),)),
-    Row("5.6.4", "Создать задачу", "wizard: the «Задача» step", "module_only",
-        (WIZARD, _in_module("desk-wizard.js", "mountWizard")), "D1"),
+    Row("5.6.4", "Создать задачу", "wizard: the «Задача» step", "on_desk",
+        (_in("desk.js", "createWizardHost"), _in("desk-wizard.js", "taskBody"))),
     Row("5.6.4", "Исход создания задачи", "the wizard's result; a line in the centre heading",
-        "module_only", (WIZARD, _in_module("desk-wizard.js", "onWizardClose")), "D1"),
+        "on_desk", (_in("desk.js", "wizardExited"), _in("desk-wizard.js", "onWizardClose")),
+        owed=(("D1", "a result line in the centre heading"),)),
     Row("5.6.4", "Обновить задачи и запуски", "the «↻» of the rail and of the run panel",
         "not_built", (_absent("desk-rail.js", "refresh"),), "D1"),
     Row("5.6.4", "Карточка цикла", "centre, under the task heading: read only", "not_built",
@@ -204,14 +205,13 @@ ROWS: tuple[Row, ...] = (
         (_in("desk-feed.js", "desk-feed__finding"),),
         owed=(("D1", "the participant panel of the scene: findings beside the checker"),)),
     Row("5.6.4", "Bounded-запуск: лимиты, preview, условия, «Подтвердить»",
-        "wizard «Подготовка» and «Запуск»; the pult for an opened run", "module_only",
-        (WIZARD, _module("desk-wizard-launch.js")), "D1",
-        owed=(("D1", "the pult's confirmation for a run that is already open"),)),
+        "wizard «Подготовка» and «Запуск»; the pult for an opened run", "on_desk",
+        (_in("desk-wizard.js", "runBody"), _in("desk-pult-flow.js", "openConfirm"))),
     Row("5.6.4", "Пауза / возобновить / отозвать", "pult: «Освободить слот» and the holder's card",
-        "not_built", (_absent("desk-pult.js", "revoke"),), "D1"),
-    Row("5.6.4", "Очередь запусков проекта", "pult: the block «Очередь проекта»", "not_built",
-        (_in("desk-pult.js", "desk.pult.queue"), _absent("desk.js", "/command/queue")), "D1",
-        owed=(("D1", "the read of the queue in load() and the writes: order, withdraw, confirm"),)),
+        "on_desk", (_in("desk-pult-flow.js", "releaseOffer"),
+                    _in("desk-pult-flow.js", "resumeBody"))),
+    Row("5.6.4", "Очередь запусков проекта", "pult: the block «Очередь проекта»", "on_desk",
+        (_in("desk-pult.js", "desk.pult.queue"), _in("desk.js", "queueDoor.read()"))),
     Row("5.6.4", "«Ваш пульт», «Очередь внимания», «Ресурсы сейчас»", "the pult", "on_desk",
         (_in("desk.html", "desk.pult.label"),), selector="#deskPult",
         owed=(("D1", "«Очередь внимания» and «Ресурсы сейчас»"),)),

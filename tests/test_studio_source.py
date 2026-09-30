@@ -82,6 +82,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-wizard-copy.js",
            "desk-wizard-draw.js",
            "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js",
+           "desk-wizard-host.js",
            "desk-flow-shape.js", "desk-flow-loops.js", "desk-flow-branches.js",
            "desk-flow-edits.js", "desk-flowwrite.js", "desk-quickcycle.js", "desk-flow-graph.js",
            "desk-flow-fields.js", "desk-flow-model.js", "desk-flow-copy.js",

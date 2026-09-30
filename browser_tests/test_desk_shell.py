@@ -85,6 +85,16 @@ DESK_BOOT_ASSETS = {
     "studio-runstep-copy.js": 200, "studio-view-copy.js": 200,
     "studio-workflow-copy.js": 200, "studio-workflow-detail-copy.js": 200,
     "desk-wizard-copy.js": 200, "desk-flow-copy.js": 200,
+    # The live new-task overlay: host, reducer, renderer and their pure step modules.
+    "desk-wizard-host.js": 200, "desk-wizard.js": 200,
+    "desk-wizard-model.js": 200, "desk-wizard-materials.js": 200,
+    "desk-wizard-cycle.js": 200, "desk-wizard-roles.js": 200,
+    "desk-wizard-base.js": 200, "desk-wizard-team.js": 200,
+    "desk-wizard-digest.js": 200, "desk-wizard-input.js": 200,
+    "desk-wizard-prep.js": 200, "desk-wizard-launch.js": 200,
+    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200,
+    "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
+    "desk-wizard-card.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (

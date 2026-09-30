@@ -182,6 +182,8 @@ class CommandApi:
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
+        from .providers import PROVIDER_CATALOG
+        self._offered_provider_ids = frozenset(PROVIDER_CATALOG)
         self._quota_view = _quota_reader(quota_view, quota_service, quota_max_age)
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
@@ -294,7 +296,8 @@ class CommandApi:
     def _list_workflows(self) -> CommandResponse:
         return CommandResponse(
             *studio_routes.list_workflows(
-                self._templates, self._providers, self._project()))
+                self._templates, self._providers, self._project(),
+                registry=self._registry, offered_ids=self._offered_provider_ids))
 
     def _workflow_state(self, workflow_id: str) -> CommandResponse:
         return CommandResponse(
