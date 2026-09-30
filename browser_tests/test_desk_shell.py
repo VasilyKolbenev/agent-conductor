@@ -23,9 +23,9 @@ What this module holds, each as a measurement and not a reading of source:
   (`refused` or `failed`): a shell that wrote `ready` whatever came back would
   pass every check above, because the server answers both reads;
 - the shell of a project with no tasks reads exactly `/command/tasks`, `/command/runs` and the
-  project queue `/command/queue` and writes nothing -- no other route, no method but GET, nothing
-  in browser storage. The project route and its header are lane H's, and are not
-  faked here;
+  project queue `/command/queue` and writes nothing -- no other command route, no method but
+  GET, nothing in browser storage. The project route and its header are lane H's, and are not
+  faked here. The projection fixture closes `/events` after its first request;
 - the page never scrolls sideways, at the desk's width and stacked under 900px.
 
 A fact and its sentence are read in ONE evaluation: two round trips let a read
@@ -51,7 +51,8 @@ from tests.test_store import good_lane, write_project
 #: the element helper the region modules draw with, and the catalogue (with its
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
-    "desk.html": 200, "desk.css": 200, "desk.js": 200, "desk-transport.js": 200,
+    "desk.html": 200, "desk.css": 200, "desk-flow.css": 200,
+    "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
     "desk-hash.js": 200, "desk-embed.js": 200, "command-view.js": 200, "desk-copy.js": 200,
     "desk-status-copy.js": 200,
@@ -95,6 +96,16 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200,
     "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
     "desk-wizard-card.js": 200,
+    # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
+    "desk-flow-host.js": 200, "desk-flow.js": 200, "desk-flow-model.js": 200,
+    "desk-flow-draw.js": 200, "desk-flow-diag.js": 200, "desk-flow-edits.js": 200,
+    "desk-flow-fields.js": 200, "desk-flow-graph.js": 200, "desk-flow-inspector.js": 200,
+    "desk-flow-loops.js": 200, "desk-flow-shape.js": 200, "desk-flow-branches.js": 200,
+    "desk-flowwrite.js": 200, "desk-quickcycle.js": 200,
+    "studio-canvas.js": 200, "studio-canvas-flow.js": 200,
+    "studio-canvas-edges.js": 200, "studio-layout.js": 200, "studio-orbit.js": 200,
+    # The one live projection stream, which refreshes reads after a signal.
+    "desk-stream.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
@@ -232,9 +243,13 @@ def desk(chromium: Browser, desk_url: str) -> Iterator[Desk]:
     page.on("request", lambda request: window.asked.append(
         (request.method, urlsplit(request.url).path,
          "x-conduct-project" in request.headers)))
+    # The projection-only fixture records one SSE request and closes it without retrying.
+    # Live SSE and reconnect behavior have a separate browser witness.
+    page.route("**/events", lambda route: route.fulfill(status=204))
     page.goto(desk_url, wait_until="load")
     # A real signal that the reads settled -- the shell's own word -- never a clock.
     page.wait_for_selector('#deskShell[data-state="ready"]')
+    page.wait_for_selector('#deskShell[data-connection="closed"]')
     try:
         yield window
     finally:
@@ -246,6 +261,7 @@ def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answer
     served = {url.rsplit("/", 1)[1]: status for url, status in desk.served
               if "/panel/" in url}
     assert served == DESK_BOOT_ASSETS
+    assert any(path == "/events" and method == "GET" for method, path, _ in desk.asked)
     assert desk.problems == []
 
 
