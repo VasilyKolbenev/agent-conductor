@@ -457,6 +457,32 @@ def test_activate_and_view_refuse_by_the_rules_of_the_table_and_change_nothing(s
     _refused_and_unchanged(stack, f"/hub/projects/{B}/view", 409, "project_running")
 
 
+@pytest.mark.parametrize("route", ["activate", "view"])
+def test_activate_and_view_answer_409_registry_invalid_when_hub_state_cannot_be_read(
+        stack, route, capsys):
+    path = stack.world.home / "hub-state.json"
+    path.write_bytes(b"{not json")
+    reply = stack.post(f"/hub/projects/{A}/{route}")
+    assert _code(reply, 409) == "registry_invalid"
+    assert _envelope(reply)["detail"] == {"file": "hub-state.json"}
+    assert path.read_bytes() == b"{not json", "the unreadable file was written over"
+    assert stack.world.spawner.calls == [], "a child was started on a state nobody could read"
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_each_read_of_the_supervisors_status_refuses_a_hub_state_that_cannot_be_read(stack):
+    """A reorder of `_state()` ahead of `_status()` would leave these two reads exposed."""
+    assert stack.post(ACTIVATE.format(A)).status == 202
+    whole = stack.world.store.load()
+    (stack.world.home / "hub-state.json").write_bytes(b"{not json")
+    for read in (lambda: stack.service._status(stack.service._require(A)),
+                 lambda: stack.service._require_the_active_can_yield(whole, B)):
+        with pytest.raises(refusals.HubRefusal) as caught:
+            read()
+        assert (caught.value.code, dict(caught.value.detail)) == (
+            "registry_invalid", {"file": "hub-state.json"})
+
+
 def server_refusal():
     from conductor.hub import spawn
     return spawn.SpawnRefused("hub_in_kill_on_close_job", "a job")

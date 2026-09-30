@@ -196,9 +196,16 @@ class HubService:
             raise HubRefusal("project_not_found", {"project_id": project_id})
         return found
 
+    def _supervised(self, project_id: str) -> supervisor.ProjectStatus:
+        """The supervisor's status of a project; its read of `hub-state.json` refuses in words."""
+        try:
+            return self._sup.status(project_id)
+        except state.HubStateError as error:
+            raise HubRefusal("registry_invalid", {"file": state.FILE_NAME}) from error
+
     def _status(self, project: registry.Project) -> supervisor.ProjectStatus:
         try:
-            status = self._sup.status(project.project_id)
+            status = self._supervised(project.project_id)
         except supervisor.SupervisorRefused as refused:
             raise HubRefusal("project_not_found", {"project_id": project.project_id}) from refused
         if status.port is None and not self._folder_ok(project):
@@ -267,7 +274,7 @@ class HubService:
         if active is None or active == project_id:
             return
         try:
-            held = self._sup.status(active).lifecycle.state
+            held = self._supervised(active).lifecycle.state
         except supervisor.SupervisorRefused:
             return                          # left the list: its closing entry blocks by itself
         if held in _UNRECOVERED:
