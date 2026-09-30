@@ -1,12 +1,13 @@
-"""The refusal `project_not_active` in every place of the vocabulary (spec 4.3.1, 9.1.6, 11.1).
+"""The refusal `project_not_active` stands in every place of the vocabulary (spec 4.3.1, 11.1).
 
-A server started in `view` mode creates no child process, git included, so a door that needs git
-or starts work says so with this word: the request is well formed and there is nothing to correct,
-the project has to be made active first. By 11.1 the code is lane H's; it is introduced here, by
-the lane whose routes (the documents of the project) refuse with it first, and lane H's own doors
-(`authorize`, `resume`) will find it standing. It carries no detail, so it has no reviewed-fact
-row. The doors that refuse with it are tested where they are: the documents routes of
-`test_command_project_documents.py`.
+By 11.1 the code is lane H's and lane H writes it into the vocabulary. This branch carries the
+same lines, byte for byte, in the same order, so that merging the two lanes is a union of
+identical lines and the words stay the owner's; it adds no wording of its own. This file is a
+test of presence only: each place holds the code once (a label or a notice key written twice
+would merge cleanly and silently), the status is 409 and the source is `lifecycle`. The exact
+words are pinned where 11.1 puts them (`test_command_api_contracts.py`), and the doors that
+refuse with the code are tested where they are built: the documents and materials routes
+(`test_command_project_documents_routes.py`, `test_command_materials_routes.py`).
 """
 from __future__ import annotations
 
@@ -41,9 +42,10 @@ def test_project_not_active_stands_in_every_place_of_the_vocabulary_that_python_
 def test_project_not_active_stands_in_the_canon_the_labels_and_both_languages_of_the_notice():
     canon = (REPO / "docs" / "specs" / "2026-08-13-cockpit-command-api.md").read_text(
         encoding="utf-8")
-    assert re.search(rf'"code": "{CODE}",\s+"status": 409,\s+"source": "lifecycle"', canon)
+    row = rf'"code": "{CODE}",\s+"status": 409,\s+"source": "lifecycle"'
+    assert len(re.findall(row, canon)) == 1
     labels = (PANEL / "command-projection.js").read_text(encoding="utf-8")
-    assert re.search(rf"^  {CODE}: ", labels, re.MULTILINE)                              # 7
+    assert len(re.findall(rf"^  {CODE}: ", labels, re.MULTILINE)) == 1                   # 7
     notice = (PANEL / "studio-notice-copy.js").read_text(encoding="utf-8")
-    found = re.search(rf'"error\.{CODE}": \["([^"]+)", "([^"]+)"\]', notice)              # 8
-    assert found and all(found.groups()) and found.group(1) != found.group(2)
+    found = re.findall(rf'"error\.{CODE}": \["([^"]+)", "([^"]+)"\]', notice)             # 8
+    assert len(found) == 1 and all(found[0]) and found[0][0] != found[0][1]

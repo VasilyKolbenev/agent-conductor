@@ -129,11 +129,11 @@ export const ERROR_LABELS = Object.freeze({
   service_refused: "The command service refused the request.",
   preview_stale: "The conditions you reviewed are out of date. Nothing was started; "
     + "review them again.",
+  slot_busy: "Another run holds this project's slot. Nothing was started.",
+  project_not_active: "This project is open for viewing. Starting a run is only possible in "
+    + "the active project; nothing was started.",
   materials_refused: "The materials were not accepted. Nothing was published; correct "
     + "the list and try again.",
-  project_not_active: "This project is open for viewing. Nothing was started; "
-    + "make it the active project first.",
-  slot_busy: "Another run holds this project's slot. Nothing was started.",
   store_error: "The run store is unavailable.",
 });
 const RECORD_FIELDS = Object.freeze({

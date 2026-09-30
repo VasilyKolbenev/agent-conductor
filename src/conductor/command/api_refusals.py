@@ -149,12 +149,12 @@ _FIXED_MESSAGES = MappingProxyType({
     #: resends the same body; told this, it repeats the preview and shows what moved. It
     #: carries no detail, so it needs no `_REVIEWED_FACTS` row.
     "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
-    #: Its own code because nothing is wrong with the request and nothing about it can be
-    #: corrected by sending it again: this server was started to view the project and creates no
-    #: child process, git included, so what the request needs (git, or the start of work) is
-    #: only done by the project's active server. It carries no detail, so it needs no
-    #: `_REVIEWED_FACTS` row.
-    "project_not_active": "the project is open for viewing and this request needs it active",
+    #: Its own code because the request is well formed and nothing about it needs changing:
+    #: this process was opened for viewing, and a view process starts no agent and runs no
+    #: git, whichever write asks for one. It carries no detail, so it needs no
+    #: `_REVIEWED_FACTS` row; the desk knows the mode from `GET /command/project` and shows
+    #: this as a safety net, not as the way to learn it.
+    "project_not_active": "the project is open for viewing and starts no agent",
     #: Its own code rather than `contract_invalid`: the body is well formed, and what the
     #: server will not do is turn THESE materials into the one document the entry steps read
     #: (too many, too large, a file that is not text, a document the project or the seed does

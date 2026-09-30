@@ -151,8 +151,8 @@ EXPECTED_ERRORS = {
     #: The confirmation a human gave no longer stands on the run's facts: it moved, or the
     #: preview it named is gone. The request is well formed and nothing else is at fault.
     "preview_stale": (409, "authorization"),
-    #: The server was started to view the project: the request is fine, and what it needs is
-    #: done only by the active server.
+    #: The LIFECYCLE of the process: it was opened for viewing, so it starts nothing. The
+    #: request is well formed and nothing about the run or the plan is at fault.
     "project_not_active": (409, "lifecycle"),
     #: The list of materials is well formed and the server will not make a document of it; the
     #: reason, one word of a closed list, is the detail.
