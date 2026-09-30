@@ -104,8 +104,8 @@ def test_the_fake_hub_serves_the_registry_and_the_entry_and_nothing_else_under_i
     hub.faults.clear()
 
 
-SIDE = """() => ({center: document.querySelector("#hubCenter [data-case]")?.dataset.case ?? null,
-  centerText: document.getElementById("hubCenter").textContent,
+SIDE = """() => ({center: document.querySelector("#hubStub [data-case]")?.dataset.case ?? null,
+  centerText: document.getElementById("hubStub").textContent,
   queue: [...document.querySelectorAll("#hubSide [data-queue] > *")].map((n) => n.textContent),
   limits: [...document.querySelectorAll("#hubSide [data-limits] > *")].map(
     (n) => n.textContent)})"""

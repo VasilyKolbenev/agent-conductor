@@ -154,6 +154,10 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 /* -- the centre and the side ---------------------------------------------------------------------- */
 .hub-center{grid-area:center;display:flex;flex-direction:column;gap:12px;min-width:0;
   min-height:0;padding:22px}
+.hub-stub-mount:empty{display:none}
+.hub-desk{display:flex;flex:1 1 auto;min-height:0}
+.hub-frame{flex:1 1 auto;width:100%;min-height:70vh;border:0;border-radius:12px;
+  background:var(--ground)}
 .hub-stub{display:flex;flex-direction:column;gap:10px;max-width:60ch}
 .hub-stub__line{font-size:15px;font-weight:500;overflow-wrap:anywhere}
 .hub-stub__line[data-tone="amber"]{color:var(--amber)}

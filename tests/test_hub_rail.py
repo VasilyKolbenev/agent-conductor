@@ -156,6 +156,50 @@ def test_a_project_takes_the_seat_of_one_that_is_still_closing_and_names_it():
     assert out["stuckActions"] == ["recover"], "the way out stands on the project that blocks"
 
 
+def test_a_project_carrying_the_unreadable_status_code_says_so_whatever_its_state_and_only_once():
+    out = js("""
+      const code = "status_unreadable";
+      const said = (over, locale = "en") => line(row({stopped_at: null, ...over}), {locale}).text;
+      show({stopped: said({state: "stopped", working: "stopped", state_code: code}),
+        ru: said({state: "stopped", working: "stopped", state_code: code}, "ru"),
+        starting: said({state: "starting", working: "active", state_code: code}),
+        failed: said({state: "failed", working: "active", state_code: code}),
+        plain: said({state: "stopped", working: "stopped", state_code: null}),
+        actions: ids(line(row({state: "stopped", working: "stopped", state_code: code})).actions)});
+    """)
+    assert out["stopped"] == "Stopped · The status file cannot be read, so no other project starts"
+    assert out["ru"] == "Остановлен · Файл состояния не читается, другой проект не запустится"
+    assert out["starting"] == ("In progress · Starting… · The status file cannot be read, so no "
+                               "other project starts")
+    assert out["failed"].count("status file") == 1, (
+        "a failed project already says its code's clause: the line does not say it twice")
+    assert out["plain"] == "Stopped"
+    assert out["actions"] == ["activate"], "the action of the working state stands"
+
+
+def test_a_project_taken_off_the_list_that_still_owes_its_closing_is_named_with_its_moment():
+    out = js("""
+      const owed = page.unlisted_closing;
+      const en = rail.unlistedNotes(owed, ctx());
+      const ru = rail.unlistedNotes(owed, ctx({locale: "ru"}));
+      const odd = rail.unlistedNotes([{project_id: "a".repeat(32), since: "not a time",
+        action: "relist"}, {project_id: null, since: null, action: "relist"}, 7, null,
+        {project_id: "b".repeat(32), since: "2026-09-29T08:30:00Z", action: "elsewhere"}], ctx());
+      show({en, ru: ru.map((one) => one.text), odd, at: when(owed[0].since)});
+    """)
+    [note] = out["en"]
+    assert note["project_id"] == PAGE["unlisted_closing"][0]["project_id"]
+    assert note["text"] == (f"A project taken off the list is not closed yet (since {out['at']}): "
+                            "no other project starts until it is.")
+    assert note["exact"] == "2026-09-29T08:30:00Z" and note["relist"] is True
+    assert out["ru"][0].startswith("Проект, убранный из списка, ещё не закрыт (с ")
+    assert [(one["relist"], one["exact"]) for one in out["odd"]] == [
+        (True, ""), (True, ""), (False, "2026-09-29T08:30:00Z")], (
+        "a time that is no time is not said; an entry that is not an object is no entry; an action "
+        "other than the one the hub names is not offered")
+    assert "since" not in out["odd"][0]["text"], "no time is said where there is none"
+
+
 def test_a_project_in_view_says_its_place_in_the_queue_and_a_queued_one_its_own():
     out = js("""
       const view = line(row({working: "view", state: "running", queue_position: 2}));
@@ -257,21 +301,33 @@ def test_two_tasks_with_one_title_carry_their_id_tails_and_a_task_with_no_run_is
                    ["Same · task-002", "Not started", None]]
 
 
+def test_the_fixtures_gate_decision_names_its_source_by_a_node_id_its_own_gate_rows_have():
+    """Spec 4.5.6: the `sources` of a `gate_decision` are node ids, and `gates` give the gate id of
+    each node. The fixture once said the gate's id where the node's belongs (lane H's handoff of
+    30.09 names it a mistake of the fixture); the shared module matches node ids, so such a row found
+    no gate."""
+    held = 0
+    for project in PAGE["projects"]:
+        for one in project["tasks"]:
+            attention = one["attention"] or {"reasons": [], "gates": []}
+            nodes = {gate["node_id"] for gate in attention["gates"]}
+            for reason in attention["reasons"]:
+                if reason["reason"] == "gate_decision":
+                    held += 1
+                    assert set(reason["sources"]) <= nodes, (reason["sources"], sorted(nodes))
+    assert held >= 1
+
+
 def test_what_waits_for_you_is_listed_with_the_ids_of_its_row_and_counted_per_project():
     out = js("""
-      const named = structuredClone(page.projects);
-      named[0].tasks[1].attention.reasons[0].sources = ["review"];
-      const list = rail.attentionList(named, {}, ctx());
-      const raw = rail.attentionList(page.projects, {}, ctx());
-      show({list, raw: raw.map((one) => one.gate_id), count: rail.waitingCount(list),
-        byProject: rail.waitingByProject(list)});
+      const list = rail.attentionList(page.projects, {}, ctx());
+      show({list, count: rail.waitingCount(list), byProject: rail.waitingByProject(list)});
     """)
     [item] = out["list"]
     assert (item["project_id"], item["task_id"], item["run_id"], item["gate_id"]) == (
-        PAGE["projects"][0]["project_id"], "task-002", "run-002", "gate-review")
-    assert out["raw"] == [None], (
-        "the fixture names the source by the gate id where its own gate row has the node id, and "
-        "the shared module matches node ids: so the gate is not found, and none is invented")
+        PAGE["projects"][0]["project_id"], "task-002", "run-002", "gate-review"), (
+        "the gate id is found from the row: the reason's source is the node id `review`, and the "
+        "row's own gate list gives that node's gate")
     assert item["text"].startswith("web-app · Add a dark theme · Gate decision · noticed at ")
     assert item["exact"] == "2026-09-29T10:00:00Z"
     assert out["count"] == 1

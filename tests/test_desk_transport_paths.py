@@ -40,6 +40,30 @@ def test_the_materials_and_document_paths_are_the_three_rows_of_route_canon_3():
     assert match_route("POST", materials).run_id == RUN
 
 
+def test_every_added_wizard_target_uses_its_canonical_command_route():
+    rows = [
+        ("projectCycle", "", "/command/project/cycle", "GET", "project_cycle"),
+        ("quotas", "", "/command/quotas", "GET", "quotas"),
+        ("preparation", "task-t1", "/command/tasks/task-t1/preparation", "GET",
+         "task_preparation"),
+        ("seed", "task-t1", "/command/tasks/task-t1/seed", "POST", "task_seed"),
+        ("flowRead", "desk-standard", "/command/workflows/desk-standard/flow", "GET",
+         "workflow_flow"),
+        ("flow", "desk-standard", "/command/workflows/desk-standard/flow", "POST",
+         "workflow_flow"),
+        ("documents", "", "/command/project/documents", "GET", "project_documents"),
+        ("document", DOC, f"/command/project/documents/{DOC}", "GET", "project_document"),
+        ("queue", "", "/command/queue", "GET", "queue"),
+        ("queue", "", "/command/queue", "POST", "queue"),
+        ("queueOrder", "", "/command/queue/order", "POST", "queue_order"),
+    ]
+    paths = _paths([[name, arg] for name, arg, *_ in rows])
+    for path, (_, _, expected, method, route) in zip(paths, rows, strict=True):
+        assert path == expected
+        assert match_route(method, path).name == route
+    assert _paths([["git", ""]]) == ["/command/project/git"]
+
+
 def test_the_flag_path_is_the_one_spec_4_3_4_gives_and_is_the_canons_once_it_has_the_row():
     """One path, read and written. Its canon row is lane H's, handed to lane L with a patch that
     lane L had not applied when this was written, so until then the canon does not know it; the

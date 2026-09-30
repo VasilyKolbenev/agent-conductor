@@ -4,16 +4,18 @@
 // When no project is chosen, or the chosen one has no running desk, the centre is a stub: the
 // project's line and its one main action (the rail's own words for the same project: one rule for a
 // project's line wherever it is drawn), and the countdown of a stop that is under way. A project
-// whose desk runs is opened by a link to the address the hub gave, in a tab of its own. Beside the
-// stub stand the queue of projects and the limits of the active project, one card per account.
+// whose desk runs has no stub: its centre is the desk itself, in the frame `hub-frame.js` mounts, and
+// the right column is the desk's own. Beside the stub stand the queue of projects and the limits of
+// the active project, one card per account.
 //
 // The first half is pure. The countdown is handed the clock and never reads it; a limit that has no
 // reading is «no data» and never a zero; an account the hub could not confirm is a card of its own and
 // says so; nothing here compares a run's state, because the words of a run are the shared module's.
 // The second half draws that as text nodes and elements; a press is a call to a handler.
 import {instantText} from "./desk-time.js";
+import {frameAddress} from "./hub-frame.js";
 import {hubText} from "./hub-copy.js";
-import {actionControl, deskLink, mutedNote, node, projectLine, queueActions, stateWord}
+import {actionControl, mutedNote, node, projectLine, queueActions, stateWord}
   from "./hub-rail.js";
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -49,13 +51,12 @@ export function stubModel(project, ctx, nowMs) {
 
 /**
  * Which of the three things the centre shows: `choose` (no project, or one the hub does not list),
- * `running` (a desk the hub gave an address for) or `stub`.
+ * `running` (a desk the hub gave an address for, which the frame shows) or `stub`.
  */
 export function centerCase(view) {
   const project = rows(view.projects).find((one) => one.project_id === view.selection.project_id);
   if (project === undefined) return "choose";
-  const link = deskLink(project, {}, {locale: view.locale, theme: view.theme}, view.hubPort);
-  return link === null ? "stub" : "running";
+  return frameAddress(project, view.hubPort) === null ? "stub" : "running";
 }
 
 // -- the queue of projects -----------------------------------------------------------------------------
@@ -157,33 +158,31 @@ export function limitsModel(limits, locale) {
 
 function stubBlock(view, project, ctx, handlers) {
   const said = stubModel(project, ctx, view.now);
-  const link = deskLink(project, {task: view.selection.task_id, run: view.selection.run_id,
-    gate: view.selection.gate_id}, {locale: view.locale, theme: view.theme}, view.hubPort);
-  const open = link === null ? [] : [node("a", {href: link, target: "_blank", rel: "noopener",
-    "data-primary": "true", "data-open-desk": "", text: hubText(view.locale, "hub.act.open_desk")})];
   const controls = said.actions.map((action) => actionControl(view, project, action, handlers,
     "stub"));
-  return node("section", {className: "hub-stub", "data-case": link === null ? "stub" : "running",
+  return node("section", {className: "hub-stub", "data-case": "stub",
     "data-project-id": project.project_id}, [
     node("p", {className: "hub-stub__line", "data-tone": said.tone, title: said.hint, text: said.line}),
-    node("p", {className: "hub-center__choose", text: hubText(view.locale,
-      link === null ? "hub.center.stub" : "hub.center.running")}),
+    node("p", {className: "hub-center__choose", text: hubText(view.locale, "hub.center.stub")}),
     ...(said.note === null ? [] : [node("p", {className: "hub-project__note", text: said.note})]),
     ...(said.drain === null ? [] : [node("p", {className: "hub-stub__drain", "data-drain": "",
       text: said.drain})]),
-    node("div", {className: "hub-stub__actions"}, [...open, ...controls])]);
+    node("div", {className: "hub-stub__actions"}, controls)]);
 }
 
-/** Draw the centre: a choice, a running desk's link, or the stub of a project without one. */
+/**
+ * Draw the stub of the centre: a choice, or the stub of a project that has no running desk. A project
+ * whose desk runs is drawn by nothing here: the frame is its centre.
+ */
 export function mountCenter(mount, view, handlers) {
   const ctx = {locale: view.locale, projects: view.projects, activeId: view.activeId,
     queue: view.queue};
   const project = rows(view.projects).find((one) => one.project_id
     === view.selection.project_id);
-  mount.replaceChildren(project === undefined
-    ? node("p", {className: "hub-center__choose", "data-case": "choose",
-      text: hubText(view.locale, "hub.center.choose")})
-    : stubBlock(view, project, ctx, handlers));
+  const shown = centerCase(view);
+  mount.replaceChildren(...(shown === "running" ? []
+    : [shown === "choose" ? node("p", {className: "hub-center__choose", "data-case": "choose",
+      text: hubText(view.locale, "hub.center.choose")}) : stubBlock(view, project, ctx, handlers)]));
 }
 
 function queueBlock(view, handlers) {

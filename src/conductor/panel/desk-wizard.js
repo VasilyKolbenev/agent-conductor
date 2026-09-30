@@ -143,6 +143,8 @@ function commandBlock(ctx, command) {
 function exitButton(ctx, id) {
   const key = `wizard:git:${id}`, label = ctx.t(`wizard.exit.${id}`);
   const node = id === "reread" ? action(key, label, () => ctx.send({type: "reread", name: "git"}))
+    : id === "run_without_git" ? choice(key, label, "switch",
+      ctx.wizard.materials.withoutGit, () => ctx.send({type: "run-without-git"}))
     : later(ctx, id, key, label);
   return element("span", {"data-git-exit": id}, [node]);
 }

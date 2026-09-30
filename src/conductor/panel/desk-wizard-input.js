@@ -58,10 +58,16 @@ function seedFacts(state) {
   const row = instructionsRow(read, state.materials.includeInstructions);
   const include = row === null ? false : row.include;
   if (git?.state === "repo" && typeof git.head?.commit === "string") {
-    return {blocked: null, commit: git.head.commit, include};
+    return {blocked: null, source: "git", commit: git.head.commit, include};
   }
-  if (git?.state === "not_active") return {blocked: null, commit: null, include};
-  return {blocked: "seed_needs_git", commit: null, include};
+  if (git?.state === "not_active") {
+    return {blocked: null, source: "git", commit: null, include};
+  }
+  if (git?.state === "not_git" && state.mode.starterId === null
+      && state.materials.withoutGit === true) {
+    return {blocked: null, source: "empty", commit: null, include};
+  }
+  return {blocked: "seed_needs_git", source: null, commit: null, include};
 }
 
 //: The instance a role runs on is named for the role, so the same assignment is always the same

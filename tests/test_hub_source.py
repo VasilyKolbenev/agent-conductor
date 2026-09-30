@@ -31,8 +31,8 @@ PAGE = PANEL / "hub.html"
 STYLE = PANEL / "hub.css"
 LINE_CAP = 800
 #: The hub's own files by name, grown by the commit that adds one (the registry is held to exactly
-#: these and the four shared modules). `hub-frame.js` and `hub-add.js` are not written yet.
-OWN = ("hub.js", "hub-copy.js", "hub-rail.js", "hub-stub.js")
+#: these and the four shared modules). `hub-add.js` is not written yet.
+OWN = ("hub.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
 SHARED = tuple(sorted(SHARED_MODULES))
 JS_TYPE = "text/javascript; charset=utf-8"
 CSS_TYPE = "text/css; charset=utf-8"
@@ -48,9 +48,11 @@ IMPORTS = r'from "(\./[a-z0-9-]+\.js)";'
 #: other (the desk's guard holds them), so the hub's closure is these plus those.
 PERMITTED = {
     "hub-copy.js": {"./desk-status-copy.js"},
-    "hub-rail.js": {"./desk-hash.js", "./desk-status.js", "./desk-time.js", "./hub-copy.js"},
-    "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-rail.js"},
-    "hub.js": {"./desk-hash.js", "./hub-copy.js", "./hub-rail.js", "./hub-stub.js"},
+    "hub-rail.js": {"./desk-status.js", "./desk-time.js", "./hub-copy.js"},
+    "hub-frame.js": {"./desk-hash.js"},
+    "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js"},
+    "hub.js": {"./desk-hash.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
+               "./hub-stub.js"},
 }
 REGIONS = (("top", "hubTop"), ("banners", "hubBanners"), ("confirm", "hubConfirm"),
            ("rail", "hubRail"), ("center", "hubCenter"), ("side", "hubSide"))
@@ -260,13 +262,29 @@ SEALED = ("innerhtml", "outerhtml", "insertadjacenthtml", "localstorage", "sessi
 #: What only the boot and transport module may use: a door, a clock, a timer, the platform.
 ONLY_HUB_JS = ("fetch(", "eventsource", "settimeout(", "setinterval(", "date.now", "new date(",
                "navigator.", "performance.")
-#: What only the frame module (not yet written) may use.
-ONLY_FRAME = ("postmessage(", "location.replace", "window.open(", 'addeventlistener("message"')
+#: What only the frame module may use: the navigation of a frame, and the ONE listener for its message.
+ONLY_FRAME = ("location.replace", 'addeventlistener("message"')
+#: What no hub file may use, the frame included: the hub says nothing to the desk (spec 4.5.5: there
+#: is no message from the hub to the desk; navigation and settings go through the hash) and opens no
+#: window of its own.
+NEVER = ("postmessage(", "window.open(")
 DOM_WORDS = ("document.", "window.", "globalthis.")
 #: What a hub file may never compare or name: the state of a run (the shared module says it), a
 #: path of a child's (the page never asks a child), the automation's state.
 BANNED_NAMES = (r"human_state", r"last_outcome", r"reason_code", r"/command\b",
                 r"automation\??\.state", r"automation\[")
+
+
+def frame_faults(lowered: str) -> list[str]:
+    """The rules only the frame module is held to (`lowered` is its code, comments stripped)."""
+    faults = []
+    if lowered.count('addeventlistener("message"') != 1:
+        faults.append("the frame has not exactly one message listener")
+    faults += [f"the frame's message check never reads {word}" for word in
+               ("event.source", "event.origin") if word not in lowered]
+    if lowered.count("location.replace") != 1:
+        faults.append("the frame has not exactly one location.replace")
+    return faults
 
 
 def hub_module_faults(name: str, code: str) -> list[str]:
@@ -275,7 +293,12 @@ def hub_module_faults(name: str, code: str) -> list[str]:
     faults = [f"sealed word: {word}" for word in SEALED if word in lowered]
     if name != "hub.js":
         faults += [f"only hub.js may use {word}" for word in ONLY_HUB_JS if word in lowered]
-    faults += [f"only the frame may use {word}" for word in ONLY_FRAME if word in lowered]
+    if name != "hub-frame.js":
+        faults += [f"only the frame may use {word}" for word in ONLY_FRAME if word in lowered]
+    else:
+        faults += frame_faults(lowered)
+    faults += [f"the hub says nothing to the desk and opens no window: {word}" for word in NEVER
+               if word in lowered]
     if name == "hub-copy.js":
         faults += [f"the copy is data and reaches for {word}" for word in DOM_WORDS
                    if word in lowered]
@@ -300,8 +323,24 @@ PLANTED = {
     "a timer in the rail": ("hub-rail.js", "setTimeout(f, 1);", "only hub.js may use settimeout("),
     "the platform in the rail": ("hub-rail.js", "navigator.language;", "only hub.js may use"),
     "a message from elsewhere": ("hub.js", "window.postMessage(1, u);",
-                                 "only the frame may use postmessage("),
+                                 "says nothing to the desk"),
+    "a message to the desk": ("hub-frame.js", "frame.contentWindow.postMessage(1, u);",
+                              "says nothing to the desk"),
+    "a window of its own": ("hub-frame.js", "window.open(u);", "opens no window"),
     "a navigation": ("hub-rail.js", "location.replace(u);", "only the frame may use location"),
+    "a navigation in the boot module": ("hub.js", "frame.location.replace(u);",
+                                        "only the frame may use location.replace"),
+    "a listener in the boot module": ("hub.js", 'window.addEventListener("message", f);',
+                                      'only the frame may use addeventlistener("message"'),
+    "a second message listener": ("hub-frame.js", 'window.addEventListener("message", f);',
+                                  "not exactly one message listener"),
+    "a second replacement": ("hub-frame.js", "a.location.replace(u);",
+                             "not exactly one location.replace"),
+    "a door in the frame": ("hub-frame.js", "await fetch(u);", "only hub.js may use fetch("),
+    "a timer in the frame": ("hub-frame.js", "setTimeout(f, 1);",
+                             "only hub.js may use settimeout("),
+    "a clock in the frame": ("hub-frame.js", "const a = Date.now();",
+                             "only hub.js may use date.now"),
     "the DOM in the copy": ("hub-copy.js", "document.title = 1;", "the copy is data"),
     "a human state": ("hub-rail.js", "if (run.human_state === 1) {}", "banned name: human_state"),
     "an outcome": ("hub-rail.js", "run.last_outcome;", "banned name: last_outcome"),
@@ -321,6 +360,24 @@ PLANTED = {
 def test_the_hub_module_check_refuses_each_planted_defect_and_names_it(name, plant, needle):
     faults = hub_module_faults(name, _code(name) + "\n" + plant)
     assert any(needle in fault for fault in faults), faults
+
+
+def test_the_frame_check_names_a_listener_that_never_reads_the_origin_or_the_source():
+    bare = 'window.addEventListener("message", f); a.location.replace(u);'
+    said = frame_faults(bare.lower())
+    assert any("event.source" in fault for fault in said), said
+    assert any("event.origin" in fault for fault in said), said
+    checked = bare + " const ok = event.source === w && event.origin === o;"
+    assert frame_faults(checked.lower()) == []
+    assert frame_faults(_code("hub-frame.js").lower()) == [], "the frame meets its own rules"
+
+
+def test_no_hub_file_but_the_frame_holds_a_listener_a_navigation_or_a_message_to_the_desk():
+    for name in OWN:
+        lowered = _code(name).lower()
+        assert ("location.replace" in lowered) == (name == "hub-frame.js"), name
+        assert ('addeventlistener("message"' in lowered) == (name == "hub-frame.js"), name
+        assert "postmessage(" not in lowered and "window.open(" not in lowered, name
 
 
 def test_the_hub_module_check_reads_code_and_not_the_prose_around_it():

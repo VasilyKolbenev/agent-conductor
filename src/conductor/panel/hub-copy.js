@@ -79,6 +79,8 @@ export const HUB_COPY = Object.freeze({
   "hub.state.identity_mismatch": ["A different project is in the folder now",
     "В папке теперь другой проект"],
   "hub.state.missing": ["The folder was not found or was replaced", "Папка не найдена или заменена"],
+  "hub.state.status_unreadable": ["The status file cannot be read, so no other project starts",
+    "Файл состояния не читается, другой проект не запустится"],
   "hub.line.becomes_active": ["Will become active after {name} stops",
     "Станет активным после остановки {name}"],
   "hub.line.not_active": ["Did not become active: {name} is not closed · the OS needs a restart",
@@ -98,9 +100,6 @@ export const HUB_COPY = Object.freeze({
   "hub.act.clear_flag": ["Clear the flag", "Снять флаг"],
   "hub.act.recover_login": ["Recover the login", "Восстановить вход"],
   "hub.act.menu": ["⋯", "⋯"],
-  "hub.act.clear_flag_blocked": ["The project's desk is not running: open it for viewing first.",
-    "Стол проекта не запущен: сначала откройте его на просмотр."],
-  "hub.act.open_desk": ["Open the project's desk", "Открыть стол проекта"],
   "hub.confirm.switch": ["{name} is in progress now: it will stop at a checkpoint — its current step "
     + "will finish on its own.", "Сейчас в работе {name}: он остановится на контрольной точке — "
     + "текущий шаг закончится сам."],
@@ -111,6 +110,8 @@ export const HUB_COPY = Object.freeze({
   "hub.confirm.cancel": ["Cancel", "Отмена"],
   "hub.notice.refused": ["The hub refused: {reason}.", "Hub отказал: {reason}."],
   "hub.notice.accepted": ["The hub took it and is doing it.", "Hub принял и выполняет."],
+  "hub.notice.not_built": ["The hub does not have this action in this build yet.",
+    "В этой сборке hub этого действия пока нет."],
   "hub.notice.unknown": ["The hub did not answer. Read the state again before pressing twice.",
     "Hub не ответил. Прочитайте состояние ещё раз, прежде чем нажимать повторно."],
   // -- banners ---------------------------------------------------------------------------------
@@ -124,6 +125,16 @@ export const HUB_COPY = Object.freeze({
   "hub.banner.home_invalid": ["The folder for new projects cannot be used",
     "Папку для новых проектов нельзя использовать"],
   "hub.banner.registry": ["The project registry cannot be read", "Реестр не читается"],
+  "hub.unlisted.note": ["A project taken off the list is not closed yet (since {time}): no other "
+    + "project starts until it is.", "Проект, убранный из списка, ещё не закрыт (с {time}): другой "
+    + "проект не запустится, пока он не будет закрыт."],
+  "hub.unlisted.note_open": ["A project taken off the list is not closed yet: no other project "
+    + "starts until it is.", "Проект, убранный из списка, ещё не закрыт: другой проект не "
+    + "запустится, пока он не будет закрыт."],
+  "hub.unlisted.relist_blocked": ["Putting it back needs the add-project dialog, which is not in "
+    + "this build yet.", "Чтобы вернуть проект, нужно окно добавления проекта, его в этой сборке "
+    + "пока нет."],
+  "hub.act.relist": ["Put back on the list", "Вернуть в список"],
   "hub.banner.job": ["Projects do not start from this hub: it runs inside a Windows job",
     "Проекты из этого hub не запускаются: он внутри задания Windows"],
   "hub.banner.job_how": ["Stop the hub (Ctrl+C) and start conduct hub from a separate terminal "
@@ -134,7 +145,7 @@ export const HUB_COPY = Object.freeze({
   "hub.view.with_active": ["View · {name} is in progress", "Просмотр · в работе {name}"],
   "hub.view.no_active": ["View · there is no active project", "Просмотр · активного проекта нет"],
   "hub.center.choose": ["Choose a project on the left.", "Выберите проект слева."],
-  "hub.center.running": ["This project's desk is running.", "Стол этого проекта работает."],
+  "hub.frame.title": ["Desk of {name}", "Стол проекта {name}"],
   "hub.center.stub": ["This project has no running desk.", "У этого проекта нет работающего стола."],
   "hub.center.drain": ["Stopping: {time} left", "Остановка: осталось {time}"],
   // -- the queue of projects and the limits of the active one ----------------------------------
@@ -253,6 +264,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.bind_failed": ["the port is taken", "порт занят"],
   "hub.code.start_failed": ["the process did not start", "процесс не запустился"],
   "hub.code.start_timeout": ["it did not answer in time", "не ответил вовремя"],
+  "hub.code.status_unreadable": ["the status file of a project cannot be read; no other project "
+    + "starts until it is", "файл состояния проекта не читается; пока он не исправлен, другой "
+    + "проект не запустится"],
   "hub.code.clone_timeout": ["cloning took too long", "клонирование заняло слишком много времени"],
   "hub.code.clone_failed": ["cloning failed", "клонирование не удалось"],
   "hub.code.clone_cleanup_incomplete": ["cloning failed and its folder could not be removed "

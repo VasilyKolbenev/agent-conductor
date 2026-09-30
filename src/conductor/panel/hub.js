@@ -13,12 +13,19 @@
 // more, not once each). A press is shown as done only after the hub's answer and the read that follows
 // it. The page never asks a child's server: that is the desk's business, in a window of its own.
 //
+// A project whose desk runs is shown by that desk, in the one frame `hub-frame.js` holds (spec
+// 4.5.5). The page moves it only by the hash (`location.replace` inside the frame host): a task
+// chosen in the column, a new task, the block of the flag, a change of language or theme. What the
+// desk says of where it is (`desk-location`) is for display: it sets the selection the page draws
+// and writes into its own address, and it starts, stops, writes and reads nothing.
+//
 // The address holds identifiers and interface words only (spec 4.5.2): `project`, `task`, `run`,
 // `gate`, `lang` and `theme`, written by the shared grammar with `history.replaceState` (which does
 // not fire a `hashchange`), and never a token, a path or a line of text.
 import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
 import {codeWords, hubText} from "./hub-copy.js";
-import {confirmWords, deskLink, mountRail, node, noticedMap, projectLine} from "./hub-rail.js";
+import {createFrameHost, frameAddress} from "./hub-frame.js";
+import {confirmWords, mountRail, node, noticedMap, projectLine, unlistedNotes} from "./hub-rail.js";
 import {mountCenter, mountSide} from "./hub-stub.js";
 
 const byId = (id) => document.getElementById(id);
@@ -63,12 +70,14 @@ const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable
 
 //: What the page holds. The lists are what the hub last said, and stay as they were when a read fails.
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], computedAt: null,
-  noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
+  unlisted: [], noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
   stream: "connecting", selection: {project_id: null, task_id: null, run_id: null, gate_id: null},
-  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false};
+  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null};
 let token = null;
 let tick = null;
 let reopen = REOPEN_MS.first;
+//: The host of the one frame of the page, made at boot (it holds the ONE listener for the desk's message).
+let host = null;
 
 // -- the wire: one door to read, one to write, one stream ---------------------------------------
 
@@ -145,6 +154,7 @@ function landProjects(answer) {
   Object.assign(state, {projects, activeId: held.active_project_id ?? null,
     queue: held.project_queue.filter((id) => typeof id === "string"),
     computedAt: held.computed_at ?? null, readState: "ready", registryBad: false,
+    unlisted: isList(held.unlisted_closing) ? held.unlisted_closing.filter(isObject) : [],
     noticed: noticedMap(state.noticed, projects, held.computed_at)});
   if (state.selection.project_id !== null
       && !projects.some((one) => one.project_id === state.selection.project_id)) {
@@ -234,14 +244,41 @@ function applyAppearance() {
   }
 }
 
+const prefs = () => ({locale: state.locale, theme: state.theme});
+
+//: A language or theme chosen on the page reaches the mounted desk as the minimal hash: it names no
+//: navigation key, so what a person chose inside the desk stays.
 function choose(change) {
   Object.assign(state, change);
   writeAddress();
+  if (host.current() !== null) host.navigate(host.current(), {}, prefs());
   render();
 }
 
-function select(selection) {
-  Object.assign(state, {selection, menu: null, notice: null});
+//: The navigation a frame is given for a selection, with the one-shot keys of a press (`new`, `panel`).
+const navOf = (selection, extra = {}) => ({task: selection.task_id, run: selection.run_id,
+  gate: selection.gate_id, ...extra});
+
+/**
+ * Choose what the page shows. The desk already mounted for this project is moved by the hash; for a
+ * project whose desk is not mounted yet the keys of a press (`extra`) wait as the `intent` and are
+ * given to the frame that is mounted for it, once, whenever the hub says it runs.
+ */
+function select(selection, extra = {}) {
+  const mounted = host.current() === selection.project_id;
+  Object.assign(state, {selection, menu: null, notice: null,
+    intent: Object.keys(extra).length === 0 || mounted ? null
+      : {project_id: selection.project_id, extra}});
+  writeAddress();
+  if (mounted) host.navigate(selection.project_id, navOf(selection, extra), prefs());
+  render();
+}
+
+//: Where the desk says it is. It is for display: the selection the page draws and writes into its own
+//: address follows it, and nothing else happens (no write, no start, no stop, no read, no move).
+function onDeskLocation(at) {
+  Object.assign(state, {selection: {...state.selection, task_id: at.task_id, run_id: at.run_id,
+    gate_id: null}});
   writeAddress();
   render();
 }
@@ -251,11 +288,29 @@ function select(selection) {
 const asked = () => ({locale: state.locale, projects: state.projects, activeId: state.activeId,
   queue: state.queue});
 
+//: How the hub says a route of its table is not built yet: `route_not_found` with this reason in its
+//: detail. It is no fault of the page's address, so it is said as what it is.
+const NOT_BUILT = "not in this build";
+
 //: The notice that follows a write: what the hub said, in words; a refusal in the clause of its code.
 function noticeOf(answer) {
   if (answer.status === "accepted") return {key: "hub.notice.accepted", code: null};
-  if (answer.status === "refused") return {key: "hub.notice.refused", code: answer.code};
-  return {key: "hub.notice.unknown", code: null};
+  if (answer.status !== "refused") return {key: "hub.notice.unknown", code: null};
+  const reason = answer.payload?.error?.detail?.reason;
+  return answer.code === "route_not_found" && reason === NOT_BUILT
+    ? {key: "hub.notice.not_built", code: null} : {key: "hub.notice.refused", code: answer.code};
+}
+
+//: «Продолжить» (spec 4.1.10): once the hub has taken the activation, the page chooses the project
+//: and its run to resume, and the desk is mounted there, at the panel of that run, when the hub says
+//: the project runs. The task that holds the run is found in the hub's own row, never from a word.
+function followResume(project, runId) {
+  const row = (isList(project.tasks) ? project.tasks : []).find((one) => isObject(one.run)
+    && one.run.run_id === runId && isObject(one.task));
+  Object.assign(state, {selection: {project_id: project.project_id,
+    task_id: row === undefined ? null : row.task.task_id ?? null, run_id: runId, gate_id: null},
+  intent: {project_id: project.project_id, extra: {panel: "run"}}});
+  writeAddress();
 }
 
 async function perform(action, project) {
@@ -265,6 +320,8 @@ async function perform(action, project) {
   const params = action.params ?? {project: project.project_id};
   const answer = await write(action.target, params, action.order ? {order: action.order} : {});
   Object.assign(state, {busy: false, notice: noticeOf(answer)});
+  if (answer.status !== "accepted") state.intent = null;
+  else if (action.resume) followResume(project, action.resume);
   render();
   await refreshAll();
 }
@@ -281,10 +338,31 @@ function act(action, project) {
   perform(action, project);
 }
 
+//: How the page opens a project for viewing when a press needs its desk and it has none.
+const OPEN_FOR_VIEWING = Object.freeze({id: "view_open", target: "projectView", confirm: null});
+
+//: «Снять флаг» and «Поставить флаг» are done in the project's desk, at the block of the flag (spec
+//: 4.1.10, 4.3.4). A desk that runs is moved there; a project with none is opened for viewing first
+//: (`POST …/view`), and its desk is mounted at the flag once the hub says it runs.
+function openFlag(project) {
+  const id = project.project_id;
+  select(state.selection.project_id === id ? state.selection : {...NOTHING, project_id: id},
+    {panel: "continue"});
+  if (frameAddress(project, location.port) === null) perform(OPEN_FOR_VIEWING, project);
+}
+
 const handlers = Object.freeze({
-  onSelect: (id) => select({project_id: id, task_id: null, run_id: null, gate_id: null}),
+  onSelect: (id) => {
+    if (id !== state.selection.project_id) {
+      select({...NOTHING, project_id: id});
+      return;
+    }
+    Object.assign(state, {menu: null, notice: null});
+    render();
+  },
   onOpen: (nav) => select(nav),
   onAct: act,
+  onClearFlag: openFlag,
   onMenu: (id) => {
     state.menu = id;
     render();
@@ -312,14 +390,19 @@ function blocked(key, label, reason) {
     text: label}), node("small", {className: "hub-why", text: reason})]);
 }
 
+//: «＋ Новая задача» moves the mounted desk to the wizard (spec 4.5.5: the current navigation with
+//: `new=task`). It is blocked, with its reason, while the chosen project has no running desk; a
+//: project in view has one, and a task there is a record without a start (spec 4.3.1).
 function newTaskControl() {
   const {locale} = state, project = selected();
-  const link = project === undefined ? null : deskLink(project, {new: "task"},
-    {locale, theme: state.theme}, location.port);
-  return link === null ? blocked("new-task", hubText(locale, "hub.new_task"),
-    hubText(locale, "hub.new_task.blocked"))
-    : node("a", {href: link, target: "_blank", rel: "noopener", className: "hub-action",
-      "data-primary": "true", "data-focus": "new-task", text: hubText(locale, "hub.new_task")});
+  if (project === undefined || frameAddress(project, location.port) === null) {
+    return blocked("new-task", hubText(locale, "hub.new_task"), hubText(locale, "hub.new_task.blocked"));
+  }
+  const press = node("button", {type: "button", className: "hub-action", "data-primary": "true",
+    "data-focus": "new-task", text: hubText(locale, "hub.new_task")});
+  press.addEventListener("click", () => host.navigate(project.project_id,
+    navOf(state.selection, {new: "task"}), prefs()));
+  return press;
 }
 
 //: The bar over a project opened for viewing: who is in progress, and the way to make this one so.
@@ -361,9 +444,9 @@ function topActions() {
 
 // -- notices, the confirmation and the status line -------------------------------------------------
 
-function banner(name, words, extras = []) {
+function banner(name, words, extras = [], exact = "") {
   return node("div", {className: "hub-banner", "data-banner": name}, [node("span",
-    {text: words}), ...extras]);
+    {text: words, title: exact === "" ? null : exact}), ...extras]);
 }
 
 function loginBanner(one) {
@@ -401,10 +484,20 @@ function setupBanners() {
   return list;
 }
 
+//: A project taken off the list that still owes its closing has no row to say so, yet it keeps every
+//: next active project from starting. The action the hub names for it has no route (it is the add
+//: dialog on the same folder), so it is drawn blocked beside the reason, like «＋ Добавить проект».
+function unlistedBanners() {
+  const {locale} = state, why = hubText(locale, "hub.unlisted.relist_blocked");
+  return unlistedNotes(state.unlisted, {locale}).map((one) => banner("unlisted", one.text,
+    one.relist ? [blocked(`unlisted:${one.key}`, hubText(locale, "hub.act.relist"), why)] : [],
+    one.exact));
+}
+
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
-  byId("hubBanners").replaceChildren(...registry, ...setupBanners());
+  byId("hubBanners").replaceChildren(...registry, ...setupBanners(), ...unlistedBanners());
 }
 
 function confirmation() {
@@ -454,17 +547,33 @@ function countdown() {
   if (at > Date.now()) tick = setTimeout(render, 1000);
 }
 
+//: The desk of the chosen project, in the frame, or none. The frame is never redrawn with the page:
+//: it is kept while the hub's row describes the same desk, made new when it does not (a new instance,
+//: another address), and removed when the project does not run. A new frame is opened where the
+//: desk last said it was (the selection), with the keys of a press that waited for it.
+function drawDesk() {
+  const project = selected();
+  const waiting = state.intent !== null && project !== undefined
+    && state.intent.project_id === project.project_id ? state.intent.extra : {};
+  const made = project === undefined ? (host.close(), null) : host.ensure(project,
+    navOf(state.selection, waiting), prefs(), location.port,
+    hubText(state.locale, "hub.frame.title", {name: String(project.name ?? project.folder ?? "")}));
+  byId("hubDesk").hidden = made === null;
+  if (made === "mounted") state.intent = null;
+}
+
 //: A pass replaces what it draws, so the control that had focus is found again by its key.
 function render() {
   const held = document.activeElement?.dataset?.focus ?? null;
   applyAppearance();
   topActions();
-  const view = {locale: state.locale, theme: state.theme, prefs: {locale: state.locale,
-    theme: state.theme}, hubPort: location.port, projects: state.projects,
-  activeId: state.activeId, queue: state.queue, selection: state.selection, menu: state.menu,
-  noticed: state.noticed, limits: state.limits, now: Date.now()};
+  const view = {locale: state.locale, theme: state.theme, prefs: prefs(), hubPort: location.port,
+    projects: state.projects, activeId: state.activeId, queue: state.queue,
+    selection: state.selection, menu: state.menu, noticed: state.noticed, limits: state.limits,
+    now: Date.now()};
   mountRail(byId("hubRail"), view, handlers);
-  mountCenter(byId("hubCenter"), view, handlers);
+  mountCenter(byId("hubStub"), view, handlers);
+  drawDesk();
   mountSide(byId("hubSide"), view, handlers);
   banners();
   confirmation();
@@ -482,6 +591,7 @@ async function boot() {
   Object.assign(state, {locale: preferences.locale, theme: preferences.theme,
     selection: {project_id: address.project, task_id: address.task, run_id: address.run,
       gate_id: address.gate}});
+  host = createFrameHost(byId("hubDesk"), onDeskLocation);
   render();
   await ensureSession();
   await refreshAll();

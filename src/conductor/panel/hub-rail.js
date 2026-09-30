@@ -13,7 +13,6 @@
 //
 // The second half draws that, as text nodes and elements, and sends what a person does to its
 // handlers: a press is a call, never a write made here.
-import {deskHash, preferenceHash} from "./desk-hash.js";
 import {attentionItems, taskStatus} from "./desk-status.js";
 import {instantText} from "./desk-time.js";
 import {codeWords, hubText, paramsOf} from "./hub-copy.js";
@@ -86,7 +85,10 @@ export function stateWord(project, ctx) {
 
 //: The words of the line, before they are joined. A project that is to be the active one while the
 //: former active one is still closing says so in place of «В работе»; one that could not become active
-//: because the former is not closed says that in place of everything.
+//: because the former is not closed says that in place of everything. A project that carries the
+//: code of an unreadable status file says it after its own state word, because its `state` is what
+//: the rest says (usually `stopped`) and no word of it would say why nothing starts; a failed one
+//: already says the clause of its code.
 function lineParts(project, ctx) {
   const blocking = other(ctx, project, ["stop_uncertain", "recovery_required"]);
   if (project.state_code === "active_not_closed" && blocking !== undefined) {
@@ -97,7 +99,9 @@ function lineParts(project, ctx) {
     && closing !== undefined;
   const first = waits ? hubText(ctx.locale, "hub.line.becomes_active",
     {name: String(closing.name ?? "")}) : workingWord(project, ctx);
-  return [first, stateWord(project, ctx)].filter((part) => part !== "");
+  const unreadable = project.state_code === "status_unreadable" && project.state !== "failed"
+    ? hubText(ctx.locale, "hub.state.status_unreadable") : "";
+  return [first, stateWord(project, ctx), unreadable].filter((part) => part !== "");
 }
 
 // -- the actions of a project -------------------------------------------------------------------
@@ -155,7 +159,7 @@ function workingActions(project, ctx) {
   //: active whatever it holds (spec 4.1.10).
   const resumes = project.working === "stopped" && text(project.resume_run_id) !== null;
   const start = act("activate", "projectActivate", resumes ? "hub.act.resume"
-    : "hub.act.activate", locale, {confirm: ask});
+    : "hub.act.activate", locale, {confirm: ask, resume: resumes ? text(project.resume_run_id) : null});
   if (project.working === "view") {
     return [start, act("close_view", "projectStop", "hub.act.view_close", locale)];
   }
@@ -207,22 +211,23 @@ export function confirmWords(kind, project, ctx) {
     : [hubText(locale, "hub.confirm.stop_next", {name: String(after.name ?? "")})])];
 }
 
-//: The one shape an address of a desk may have (spec 4.5.5): a loopback address, a port, the desk's page.
-const DESK_URL = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/panel\/desk\.html$/;
+// -- a project that left the list and still owes its closing ---------------------------------------
 
 /**
- * The address a project's running desk is opened at, in a tab of its own: the `desk_url` the hub gave
- * (never one typed into the page's address), held to the rule of 4.5.5 (a port up to 65535 that is
- * not the hub's own), with the navigation (`task`, `run`, `gate`, `panel`, `new`) and the language and
- * theme as its address words. Null when the project has no running desk or its address is not one.
+ * The notes for the projects the hub says were taken off the list while they still owed their
+ * closing (`unlisted_closing` of `GET /hub/projects`): `{key, project_id, text, exact, relist}`. Such
+ * a project has no row (it is not in the registry), so nothing else on the page names it, yet it
+ * blocks every next active project. `exact` is the moment the hub gave, for a hint, and `relist` is
+ * whether the hub names the one action there is for it; a value that is not an entry is no entry.
  */
-export function deskLink(project, nav, prefs, hubPort) {
-  const found = isObject(project) && project.state === "running"
-    ? DESK_URL.exec(text(project.desk_url) ?? "") : null;
-  if (found === null || Number(found[1]) > 65535 || found[1] === String(hubPort)) return null;
-  const address = {project: project.project_id, task: nav.task ?? null, run: nav.run ?? null,
-    gate: nav.gate ?? null, panel: nav.panel ?? null, new: nav.new ?? null};
-  return `${project.desk_url}${preferenceHash(deskHash(address), prefs)}`;
+export function unlistedNotes(entries, ctx) {
+  return rows(entries).map((entry, at) => {
+    const since = clock(ctx.locale, entry.since);
+    return {key: `${text(entry.project_id) ?? "unlisted"}/${at}`, project_id: text(entry.project_id),
+      text: since.known ? hubText(ctx.locale, "hub.unlisted.note", {time: since.short})
+        : hubText(ctx.locale, "hub.unlisted.note_open"),
+      exact: since.known ? since.exact : "", relist: entry.action === "relist"};
+  });
 }
 
 // -- tasks, and the note of a project read from a snapshot ------------------------------------------
@@ -373,30 +378,16 @@ const button = (key, label, onClick, extra = {}) => {
   return made;
 };
 
-//: An action that cannot be done now is drawn beside the reason, never as a button that does nothing.
-function blockedControl(view, action, reason) {
-  return node("span", {className: "hub-blocked"}, [node("button", {type: "button",
-    className: "hub-project__act", disabled: "", "aria-disabled": "true", "data-action": action.id,
-    text: action.label}), node("small", {className: "hub-why", text: reason})]);
-}
-
 /**
- * The control of one action of a project. «Снять флаг» is not a write of the hub's: it is a link to the
- * project's own desk at the block that holds the flag (spec 4.3.4), so it is a link when the desk runs
- * and is blocked, with its reason, when it does not. Every other action is a press and a call to
- * `handlers.onAct`; `view` is `{locale, prefs, hubPort}`.
+ * The control of one action of a project: a press and a call to a handler. «Снять флаг» is not a write of
+ * the hub's: it is a move into the project's own desk, at the block that holds the flag (spec 4.3.4,
+ * 4.1.10), so its press is `handlers.onClearFlag`; every other action is `handlers.onAct`.
  */
 export function actionControl(view, project, action, handlers, prefix) {
-  if (action.id === "clear_flag") {
-    const link = deskLink(project, {panel: "continue"}, view.prefs, view.hubPort);
-    return link === null
-      ? blockedControl(view, action, hubText(view.locale, "hub.act.clear_flag_blocked"))
-      : node("a", {href: link, target: "_blank", rel: "noopener", className: "hub-project__act",
-        "data-action": action.id, text: action.label});
-  }
-  return button(`${prefix}:${project.project_id}:${action.id}`, action.label,
-    () => handlers.onAct(action, project), {className: "hub-project__act",
-      "data-action": action.id});
+  const press = action.id === "clear_flag" ? () => handlers.onClearFlag(project)
+    : () => handlers.onAct(action, project);
+  return button(`${prefix}:${project.project_id}:${action.id}`, action.label, press,
+    {className: "hub-project__act", "data-action": action.id});
 }
 
 function actionButtons(view, project, said, handlers) {

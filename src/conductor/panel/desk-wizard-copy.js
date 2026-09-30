@@ -498,6 +498,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.seed_request": ["a copy of HEAD at the moment of the start; the active "
     + "project will make the seed", "копия HEAD на момент старта; засев сделает активный "
     + "проект"],
+  "wizard.launch.seed_empty": ["an empty work folder", "пустая рабочая папка"],
   "wizard.launch.countdown": ["The terms are valid for another {left}",
     "Условия действуют ещё {left}"],
   "wizard.launch.countdown_over": ["The terms have run out: asking the server again…",

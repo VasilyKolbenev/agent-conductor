@@ -36,15 +36,16 @@ RAIL = """() => ({
   status: document.getElementById("hubStatus").textContent,
   shell: document.getElementById("hubShell").dataset.state})"""
 CENTER = """() => ({
-  center: document.querySelector("#hubCenter [data-case]")?.dataset.case ?? null,
-  line: document.querySelector("#hubCenter .hub-stub__line")?.textContent ?? null,
-  link: document.querySelector("#hubCenter [data-open-desk]")?.getAttribute("href") ?? null,
-  note: document.querySelector("#hubCenter .hub-project__note")?.textContent ?? null,
-  actions: [...document.querySelectorAll("#hubCenter .hub-project__act")].map(
+  center: document.querySelector("#hubStub [data-case]")?.dataset.case ?? null,
+  frames: document.querySelectorAll("#hubDesk iframe").length,
+  src: document.querySelector("#hubDesk iframe")?.getAttribute("src") ?? null,
+  line: document.querySelector("#hubStub .hub-stub__line")?.textContent ?? null,
+  note: document.querySelector("#hubStub .hub-project__note")?.textContent ?? null,
+  actions: [...document.querySelectorAll("#hubStub .hub-project__act")].map(
     (b) => b.dataset.action),
   path: document.getElementById("hubPath").textContent,
   newTask: [...document.querySelectorAll("#hubActions > *")].slice(0, 1).map((n) => [n.tagName,
-    n.getAttribute("href")]),
+    n.querySelector("button")?.disabled ?? n.disabled ?? null]),
   side: [...document.querySelectorAll("#hubSide > *")].map((n) => n.dataset.queue === undefined
     ? "limits" : "queue"),
   hash: location.hash})"""
@@ -95,7 +96,7 @@ def test_the_projects_the_hub_reads_are_drawn_with_the_words_of_their_states(hub
     assert page.hub.streams_opened == 1
 
 
-def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_a_link_to_it(hub_page, lang):
+def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_its_frame(hub_page, lang):
     page = hub_page
     ready(page)
     page.page.locator(f'[data-focus="project:{WEB}"]').click()
@@ -107,14 +108,13 @@ def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_a_link_to_i
         ["task-002", "Add a dark theme", say(page, "desk_status.waiting_you")]]
     assert facts["projects"][1]["selected"] == "false"
     centre = page.page.evaluate(CENTER)
-    assert centre["center"] == "running" and centre["path"] == "web-app"
-    assert centre["link"].startswith("http://127.0.0.1:7701/panel/desk.html#")
-    assert fields(centre["link"].split("#")[1]) == {"project": WEB, "lang": lang}
+    assert (centre["center"], centre["frames"], centre["path"]) == (None, 1, "web-app"), (
+        "a running desk has no stub: the frame is the centre")
+    assert centre["src"].startswith(page.hub.stand_in.url + "#")
+    assert fields(centre["src"].split("#")[1]) == {"project": WEB, "embed": "hub", "lang": lang}
     assert fields(centre["hash"]) == {"project": WEB, "lang": lang}
     assert centre["side"] == [], "beside a running desk the column is that desk's own"
-    assert centre["newTask"][0][0] == "A"
-    assert fields(centre["newTask"][0][1].split("#")[1]) == {"project": WEB, "new": "task",
-                                                             "lang": lang}
+    assert centre["newTask"] == [["BUTTON", False]], "a new task is a press and is not blocked"
 
 
 def test_a_task_or_a_waiting_item_chosen_writes_its_ids_to_the_address_and_nothing_else(
@@ -127,13 +127,21 @@ def test_a_task_or_a_waiting_item_chosen_writes_its_ids_to_the_address_and_nothi
     assert fields(centre["hash"]) == {"project": WEB, "task": "task-002", "run": "run-002",
                                       "lang": lang}
     assert centre["path"] == "web-app › Add a dark theme › run-002"
-    assert fields(centre["link"].split("#")[1]) == fields(centre["hash"])
+    frame = page.page.query_selector("#hubDesk iframe").content_frame()
+    frame.wait_for_function("() => location.hash.includes('task=task-002')")
+    assert fields(frame.url.split("#")[1]) == {**fields(centre["hash"]), "embed": "hub"}, (
+        "the desk is moved to what the page chose, by the same words")
     page.page.locator(f'[data-focus="task:{WEB}:task-001"]').click()
     assert fields(page.page.evaluate("location.hash"))["run"] == "run-001"
+    frame.wait_for_function("() => location.hash.includes('run=run-001')")
     page.page.locator(".hub-waiting__item").click()
     again = fields(page.page.evaluate("location.hash"))
-    assert again == {"project": WEB, "task": "task-002", "run": "run-002", "lang": lang}, (
-        "the ids come from the row the hub gave; no text and no path is ever written")
+    assert again == {"project": WEB, "task": "task-002", "run": "run-002", "gate": "gate-review",
+                     "lang": lang}, (
+        "the ids come from the row the hub gave, the gate's from the row's own gate list by the "
+        "node id its reason names; no text and no path is ever written")
+    frame.wait_for_function("() => location.hash.includes('gate=gate-review')")
+    assert fields(frame.url.split("#")[1]) == {**again, "embed": "hub"}
     page.page.reload()
     ready(page)
     assert page.page.evaluate(CENTER)["path"] == "web-app › Add a dark theme › run-002", (
@@ -145,7 +153,7 @@ def test_a_project_with_no_running_desk_shows_its_stub_the_queue_and_the_limits(
     ready(page)
     page.page.locator(f'[data-focus="project:{BOT}"]').click()
     centre = page.page.evaluate(CENTER)
-    assert centre["center"] == "stub" and centre["link"] is None
+    assert centre["center"] == "stub" and centre["frames"] == 0
     assert centre["line"] == say(page, "hub.working.stopped_since", time=short(
         page, PROJECTS["projects"][2]["stopped_at"]))
     assert centre["actions"] == ["activate"] and centre["side"] == ["queue", "limits"]
@@ -186,7 +194,8 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
     page.page.reload()
     ready(page)
     banners = page.page.evaluate(BANNERS)
-    assert [name for name, _ in banners] == ["profile", "tools", "login", "home", "job"]
+    assert [name for name, _ in banners] == ["profile", "tools", "login", "home", "job",
+                                             "unlisted"]
     assert banners[0][1] == [say(page, "hub.banner.profile_absent"),
                              say(page, "hub.banner.profile_how")]
     assert banners[1][1] == [say(page, "hub.banner.tools")]
@@ -196,6 +205,32 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
     page.page.locator(f'[data-focus="login:{LOGIN}"]').click()
     expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.accepted"))
     assert page.hub.posts == [{"path": f"/hub/logins/{LOGIN}/recover", "body": {}}]
+
+
+UNLISTED = """() => [...document.querySelectorAll('#hubBanners [data-banner="unlisted"]')].map((n) => {
+  const control = n.querySelector(".hub-blocked");
+  return {text: n.firstElementChild.textContent, title: n.firstElementChild.title,
+    label: control.querySelector("button").textContent,
+    disabled: control.querySelector("button").disabled,
+    why: control.querySelector("small").textContent};
+})"""
+
+
+def test_a_project_taken_off_the_list_that_still_owes_its_closing_is_named_with_its_action_blocked(
+        hub_page):
+    page = hub_page
+    ready(page)
+    [fact] = page.page.evaluate(UNLISTED)
+    at = short(page, "2026-09-29T08:30:00Z")
+    assert fact == {"text": say(page, "hub.unlisted.note", time=at), "title": "2026-09-29T08:30:00Z",
+                    "label": say(page, "hub.act.relist"), "disabled": True,
+                    "why": say(page, "hub.unlisted.relist_blocked")}
+    assert page.hub.posts == [], "the action has no route: it is drawn, never sent"
+    clear = fixture("hub_projects.json")
+    clear["unlisted_closing"] = []
+    page.hub.answer("/hub/projects", clear)
+    page.hub.push({"kind": "projects"})
+    expect(page.page.locator('#hubBanners [data-banner="unlisted"]')).to_have_count(0)
 
 
 def test_a_frame_is_an_id_that_makes_the_page_read_again_and_carries_no_fact(hub_page):
@@ -236,5 +271,7 @@ def test_a_read_the_hub_refuses_is_said_and_what_was_read_stays_until_a_read_lan
     assert facts["shell"] == "failed"
     page.hub.answer("/hub/projects", fixture("hub_projects.json"))
     page.hub.push({"kind": "projects"})
-    expect(page.page.locator("#hubBanners [data-banner]")).to_have_count(1)
+    expect(page.page.locator('#hubBanners [data-banner="registry"]')).to_have_count(0)
     ready(page)
+    assert [name for name, _ in page.page.evaluate(BANNERS)] == ["tools", "unlisted"], (
+        "what setup and the list say stays; only the registry's complaint goes")

@@ -119,6 +119,41 @@ def test_a_refusal_is_said_in_the_clause_of_its_code_and_the_page_reads_again(hu
         "one post went out, and once")
 
 
+def _stuck_project(page: HubPage) -> None:
+    """The third project is one whose stop was not confirmed: its main action is «Recover»."""
+    stuck = fixture("hub_projects.json")
+    stuck["projects"][2].update(state="stop_uncertain", working="stopped")
+    page.hub.answer("/hub/projects", stuck)
+    page.page.reload()
+    ready(page)
+
+
+def test_an_action_the_hub_does_not_have_in_this_build_is_said_as_that_and_not_as_a_bad_address(
+        hub_page):
+    page = hub_page
+    _stuck_project(page)
+    page.hub.refuse(f"/hub/projects/{BOT}/recover", 404, "route_not_found",
+                    {"reason": "not in this build"})
+    reads = page.hub.requests("/hub/projects")
+    press(page, f"act:{BOT}:recover")
+    expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.not_built"))
+    assert page.hub.posts == [{"path": f"/hub/projects/{BOT}/recover", "body": {}}], (
+        "one post went out, once, and the hub refused it")
+    wait_read_beyond(page, "/hub/projects", reads, "a refusal is followed by a read")
+
+
+def test_a_route_that_is_not_found_for_any_other_reason_keeps_the_clause_of_its_code(hub_page):
+    page = hub_page
+    _stuck_project(page)
+    page.hub.refuse(f"/hub/projects/{BOT}/recover", 404, "route_not_found",
+                    {"reason": "a path nobody has"})
+    press(page, f"act:{BOT}:recover")
+    clause = page.page.evaluate("""async () => (await import("/hub/hub-copy.js"))
+      .codeWords(document.documentElement.lang, "route_not_found")""")
+    expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.refused",
+                                                            reason=clause))
+
+
 def test_raising_a_queued_project_posts_the_whole_new_order_of_the_queue(hub_page):
     page = hub_page
     two = fixture("hub_projects.json")
