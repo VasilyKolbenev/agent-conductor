@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from conductor import up_status
-from conductor.hub import spawn
+from conductor.hub import job, spawn
 from tests._drain_harness import CHILD, WAIT, DrainProject, _kill_tree, wait_until
 
 PROJECT_ID = "3f9c0d5a7b2e4c168a90d3e1f4b7a625"
@@ -52,6 +52,7 @@ class _FakeProcess:
 def _spawner(tmp_path: Path, launches: Launches, **options) -> spawn.Spawner:
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
+    options.setdefault("job_policy", lambda: "none")      # the job of this machine is not judged
     return spawn.Spawner(home, hub_origin=ORIGIN, popen=launches, **options)
 
 
@@ -218,6 +219,36 @@ def test_a_caller_can_ask_whether_a_start_is_possible_without_starting_anything(
     assert launches.calls == [] and not (tmp_path / "home" / "logs").exists()
 
 
+def test_a_spawner_given_no_policy_reads_the_job_of_the_hub_it_runs_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(job, "own_policy", lambda: "kill_on_close")
+    launches = Launches()
+    spawner = spawn.Spawner(tmp_path, hub_origin=ORIGIN, popen=launches)
+    with pytest.raises(spawn.SpawnRefused) as caught:
+        _start(spawner)
+    assert caught.value.code == "hub_in_kill_on_close_job" and launches.calls == []
+    monkeypatch.setattr(job, "own_policy", lambda: "none")
+    _start(spawner)
+    assert len(launches.calls) == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="ERROR_ACCESS_DENIED for a breakaway is Windows'")
+def test_a_breakaway_the_os_refuses_is_the_same_refusal_as_a_job_that_does_not_allow_it(
+        tmp_path):
+    def denied(argv, **options):
+        raise PermissionError(13, "Access is denied", None, 5)
+
+    spawner = _spawner(tmp_path, Launches(), job_policy=lambda: "breakaway")
+    spawner._popen = denied
+    with pytest.raises(spawn.SpawnRefused) as caught:
+        _start(spawner)
+    assert caught.value.code == "hub_in_kill_on_close_job"
+    plain = _spawner(tmp_path, Launches(), job_policy=lambda: "none")
+    plain._popen = denied
+    with pytest.raises(spawn.SpawnRefused) as other:
+        _start(plain)
+    assert other.value.code == "start_failed", "only a refused breakaway is a job's refusal"
+
+
 def test_a_job_policy_that_is_not_one_of_the_three_is_a_fault_of_the_caller(tmp_path):
     with pytest.raises(ValueError, match="job"):
         _start(_spawner(tmp_path, Launches(), job_policy=lambda: "maybe"))
@@ -243,7 +274,8 @@ def test_an_operating_system_that_cannot_start_the_process_is_start_failed(tmp_p
     def cannot(argv, **options):
         raise FileNotFoundError("no interpreter")
 
-    spawner = spawn.Spawner(tmp_path, hub_origin=ORIGIN, popen=cannot)
+    spawner = spawn.Spawner(tmp_path, hub_origin=ORIGIN, popen=cannot,
+                            job_policy=lambda: "none")
     with pytest.raises(spawn.SpawnRefused) as caught:
         _start(spawner)
     assert caught.value.code == "start_failed" and "no interpreter" in caught.value.detail
@@ -272,7 +304,7 @@ def test_a_real_child_reaches_serving_and_leaves_cleanly_when_its_stdin_ends(tmp
     project = DrainProject.build(tmp_path)
     environment = project._environment(False, None, None, "none", 0.0, None)
     spawner = spawn.Spawner(project.home, hub_origin=ORIGIN, head=(sys.executable, str(CHILD)),
-                            environ=environment)
+                            environ=environment, job_policy=lambda: "none")
     child = spawner.start(project_id=project.project_id, root=project.root, port=0,
                           mode="active")
     try:

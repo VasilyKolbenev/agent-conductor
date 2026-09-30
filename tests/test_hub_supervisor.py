@@ -458,7 +458,8 @@ class RealHub:
         self.store = state.HubStateStore(project.home, self.instance)
         self.spawner = RecordingSpawner(
             project.home, hub_origin=ORIGIN, head=(sys.executable, str(CHILD)),
-            environ=project._environment(False, None, None, "none", LINGER, None))
+            environ=project._environment(False, None, None, "none", LINGER, None),
+            job_policy=lambda: "none")         # the job of this machine is not what is judged
         self.supervisor = supervisor.Supervisor(project.home, self.store, self.spawner,
                                                 hub_port=hub_port)
 
@@ -621,7 +622,8 @@ def _two_children(tmp_path, popen_of_second=None):
             children[0])}
         spawner = spawn.Spawner(
             project.home, hub_origin=ORIGIN, head=(sys.executable, str(CHILD)),
-            environ=project._environment(True, None, None, "none", 0.0, None), **options)
+            environ=project._environment(True, None, None, "none", 0.0, None),
+            job_policy=lambda: "none", **options)
         child = spawner.start(project_id=project.project_id, root=project.root, port=0,
                               mode="active")
         projects.append(project)

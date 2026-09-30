@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from conductor import up_flags
+from conductor.hub import job
 
 #: The command every child is started with; a test may replace it by the head of a fake-dispatch
 #: child, and nothing else does.
@@ -32,6 +33,7 @@ HEAD = (sys.executable, "-m", "conductor")
 JOB_POLICIES = ("none", "breakaway", "kill_on_close")
 #: `CREATE_BREAKAWAY_FROM_JOB`: a child of a job that allows it may leave the job.
 _BREAKAWAY = 0x01000000
+_ACCESS_DENIED = 5
 
 _PROJECT_ID = re.compile(r"[0-9a-f]{32}")
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -136,7 +138,7 @@ class Spawner:
         self._origin, self._head = hub_origin, tuple(head)
         self._environ = dict(os.environ if environ is None else environ)
         self._popen = popen
-        self._job_policy = job_policy or (lambda: "none")
+        self._job_policy = job_policy or (lambda: job.own_policy())
 
     def start(self, *, project_id: str, root: Path | str, port: int, mode: str,
               transition: str | None = None, auto_continue: str | None = None) -> Child:
@@ -164,8 +166,7 @@ class Spawner:
             with log:
                 process = self._popen(argv, **options)
         except OSError as error:
-            raise SpawnRefused("start_failed", f"the process could not be started: {error}"
-                               ) from error
+            raise _refusal_for(error, bool(extra)) from error
         return Child(process, argv, project_id, mode, uuid.uuid4().hex, time.monotonic(),
                      Path(log.name))
 
@@ -186,6 +187,19 @@ class Spawner:
                                "this hub runs inside a job that ends its children with it, "
                                "and the job does not let them leave")
         return _BREAKAWAY if policy == "breakaway" else 0
+
+
+def _refusal_for(error: OSError, asked_to_break_away: bool) -> SpawnRefused:
+    """A start the OS refused. `ERROR_ACCESS_DENIED` for a breakaway is the job saying no.
+
+    The job the hub reads is the one the OS names for a process with no handle, and with jobs
+    nested that may not be the one that decides; a breakaway the OS refuses is the answer that
+    does.
+    """
+    if asked_to_break_away and getattr(error, "winerror", None) == _ACCESS_DENIED:
+        return SpawnRefused("hub_in_kill_on_close_job",
+                            "the job this hub runs in does not let a child leave it")
+    return SpawnRefused("start_failed", f"the process could not be started: {error}")
 
 
 def _isolation(extra_flags: int) -> dict:

@@ -166,6 +166,7 @@ def _hub_operations(folder: Path) -> None:
     spawn.Spawner(
         made, hub_origin="http://127.0.0.1:7700",
         popen=lambda argv, **options: SimpleNamespace(pid=1, stdin=None, poll=lambda: None),
+        job_policy=lambda: "none",
     ).start(project_id="b" * 32, root=folder.parent / "project", port=0, mode="view")
     up_status.StatusFile(made / "run" / f"{'b' * 32}.json", "b" * 32, "view", 0).write("starting")
 
