@@ -36,15 +36,16 @@ RAIL = """() => ({
   status: document.getElementById("hubStatus").textContent,
   shell: document.getElementById("hubShell").dataset.state})"""
 CENTER = """() => ({
-  center: document.querySelector("#hubCenter [data-case]")?.dataset.case ?? null,
-  line: document.querySelector("#hubCenter .hub-stub__line")?.textContent ?? null,
-  link: document.querySelector("#hubCenter [data-open-desk]")?.getAttribute("href") ?? null,
-  note: document.querySelector("#hubCenter .hub-project__note")?.textContent ?? null,
-  actions: [...document.querySelectorAll("#hubCenter .hub-project__act")].map(
+  center: document.querySelector("#hubStub [data-case]")?.dataset.case ?? null,
+  frames: document.querySelectorAll("#hubDesk iframe").length,
+  src: document.querySelector("#hubDesk iframe")?.getAttribute("src") ?? null,
+  line: document.querySelector("#hubStub .hub-stub__line")?.textContent ?? null,
+  note: document.querySelector("#hubStub .hub-project__note")?.textContent ?? null,
+  actions: [...document.querySelectorAll("#hubStub .hub-project__act")].map(
     (b) => b.dataset.action),
   path: document.getElementById("hubPath").textContent,
   newTask: [...document.querySelectorAll("#hubActions > *")].slice(0, 1).map((n) => [n.tagName,
-    n.getAttribute("href")]),
+    n.querySelector("button")?.disabled ?? n.disabled ?? null]),
   side: [...document.querySelectorAll("#hubSide > *")].map((n) => n.dataset.queue === undefined
     ? "limits" : "queue"),
   hash: location.hash})"""
@@ -95,7 +96,7 @@ def test_the_projects_the_hub_reads_are_drawn_with_the_words_of_their_states(hub
     assert page.hub.streams_opened == 1
 
 
-def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_a_link_to_it(hub_page, lang):
+def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_its_frame(hub_page, lang):
     page = hub_page
     ready(page)
     page.page.locator(f'[data-focus="project:{WEB}"]').click()
@@ -107,14 +108,13 @@ def test_a_project_chosen_opens_into_its_tasks_and_a_running_desk_is_a_link_to_i
         ["task-002", "Add a dark theme", say(page, "desk_status.waiting_you")]]
     assert facts["projects"][1]["selected"] == "false"
     centre = page.page.evaluate(CENTER)
-    assert centre["center"] == "running" and centre["path"] == "web-app"
-    assert centre["link"].startswith("http://127.0.0.1:7701/panel/desk.html#")
-    assert fields(centre["link"].split("#")[1]) == {"project": WEB, "lang": lang}
+    assert (centre["center"], centre["frames"], centre["path"]) == (None, 1, "web-app"), (
+        "a running desk has no stub: the frame is the centre")
+    assert centre["src"].startswith(page.hub.stand_in.url + "#")
+    assert fields(centre["src"].split("#")[1]) == {"project": WEB, "embed": "hub", "lang": lang}
     assert fields(centre["hash"]) == {"project": WEB, "lang": lang}
     assert centre["side"] == [], "beside a running desk the column is that desk's own"
-    assert centre["newTask"][0][0] == "A"
-    assert fields(centre["newTask"][0][1].split("#")[1]) == {"project": WEB, "new": "task",
-                                                             "lang": lang}
+    assert centre["newTask"] == [["BUTTON", False]], "a new task is a press and is not blocked"
 
 
 def test_a_task_or_a_waiting_item_chosen_writes_its_ids_to_the_address_and_nothing_else(
@@ -127,15 +127,21 @@ def test_a_task_or_a_waiting_item_chosen_writes_its_ids_to_the_address_and_nothi
     assert fields(centre["hash"]) == {"project": WEB, "task": "task-002", "run": "run-002",
                                       "lang": lang}
     assert centre["path"] == "web-app › Add a dark theme › run-002"
-    assert fields(centre["link"].split("#")[1]) == fields(centre["hash"])
+    frame = page.page.query_selector("#hubDesk iframe").content_frame()
+    frame.wait_for_function("() => location.hash.includes('task=task-002')")
+    assert fields(frame.url.split("#")[1]) == {**fields(centre["hash"]), "embed": "hub"}, (
+        "the desk is moved to what the page chose, by the same words")
     page.page.locator(f'[data-focus="task:{WEB}:task-001"]').click()
     assert fields(page.page.evaluate("location.hash"))["run"] == "run-001"
+    frame.wait_for_function("() => location.hash.includes('run=run-001')")
     page.page.locator(".hub-waiting__item").click()
     again = fields(page.page.evaluate("location.hash"))
     assert again == {"project": WEB, "task": "task-002", "run": "run-002", "gate": "gate-review",
                      "lang": lang}, (
         "the ids come from the row the hub gave, the gate's from the row's own gate list by the "
         "node id its reason names; no text and no path is ever written")
+    frame.wait_for_function("() => location.hash.includes('gate=gate-review')")
+    assert fields(frame.url.split("#")[1]) == {**again, "embed": "hub"}
     page.page.reload()
     ready(page)
     assert page.page.evaluate(CENTER)["path"] == "web-app › Add a dark theme › run-002", (
@@ -147,7 +153,7 @@ def test_a_project_with_no_running_desk_shows_its_stub_the_queue_and_the_limits(
     ready(page)
     page.page.locator(f'[data-focus="project:{BOT}"]').click()
     centre = page.page.evaluate(CENTER)
-    assert centre["center"] == "stub" and centre["link"] is None
+    assert centre["center"] == "stub" and centre["frames"] == 0
     assert centre["line"] == say(page, "hub.working.stopped_since", time=short(
         page, PROJECTS["projects"][2]["stopped_at"]))
     assert centre["actions"] == ["activate"] and centre["side"] == ["queue", "limits"]

@@ -49,20 +49,66 @@ def fixture(name: str) -> dict[str, Any]:
     return document["response"] if "response" in document else document
 
 
+#: The addresses the contract fixtures give a desk (the ports 7701 and 7702): nothing listens there.
+DESK_URL = re.compile(r"^http://127\.0\.0\.1:770[0-9]/panel/desk\.html$")
+
+
+class StandInDesk:
+    """A blank page at `/panel/desk.html` where the fixtures' running projects say their desk is.
+
+    The fixtures name a desk at a port nobody listens on; a frame of the page would fail to load it.
+    This answers that path on a port of its own, framed by the hub only (the policy a child sends),
+    so the fixture bench can show a running project's frame. It is a stand-in and nothing more: the
+    frame tests that need a desk that draws and speaks use real ones (`hub_live.py`).
+    """
+
+    def __init__(self, hub_url_of) -> None:
+        self._hub_url_of = hub_url_of
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        self.server.daemon_threads = True
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.server.server_address[1]}/panel/desk.html"
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args: Any) -> None:
+                return
+
+            def do_GET(self) -> None:  # noqa: N802
+                found = self.path.split("#")[0] == "/panel/desk.html"
+                body = b"<!doctype html><title>desk</title><p>a desk</p>" if found else b"no"
+                self.send_response(200 if found else 404)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Security-Policy",
+                                 f"frame-ancestors 'self' {owner._hub_url_of()}")
+                self.end_headers()
+                self.wfile.write(body)
+
+        return Handler
+
+
 class FakeHub:
     """One running fake hub: its address, what it answered, what it was asked, and its stream."""
 
     def __init__(self) -> None:
-        self.answers: dict[str, tuple[int, Any]] = {
-            path: (200, fixture(name)) for path, name in FIXTURE_ROUTES.items()}
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self))
+        self.stand_in = StandInDesk(lambda: self.url)
+        self.lock = threading.Lock()
+        self.answers: dict[str, tuple[int, Any]] = {}
+        for path, name in FIXTURE_ROUTES.items():
+            self.answer(path, fixture(name))
         self.posts: list[dict[str, Any]] = []
         self.gets: list[str] = []
         self.faults: list[str] = []
         self.refusals: dict[str, tuple[int, dict[str, Any]]] = {}
         self.stream: queue.Queue[bytes | None] = queue.Queue()
         self.streams_opened = 0
-        self.lock = threading.Lock()
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _handler(self))
         self.server.daemon_threads = True
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -76,16 +122,27 @@ class FakeHub:
 
     def start(self) -> None:
         self.thread.start()
+        self.stand_in.thread.start()
 
     def stop(self) -> None:
         self.stream.put(None)
-        self.server.shutdown()
-        self.server.server_close()
+        for httpd in (self.server, self.stand_in.server):
+            httpd.shutdown()
+            httpd.server_close()
 
     def answer(self, path: str, body: Any, status: int = 200) -> None:
-        """Replace what a GET route answers (a test's own copy of a fixture, or a refusal)."""
+        """Replace what a GET route answers (a test's own copy of a fixture, or a refusal).
+
+        On the projects route every `desk_url` of the fixture is the stand-in desk's, so a frame of
+        the page loads something; a test that wants a real desk writes its own address after.
+        """
+        body = copy.deepcopy(body)
+        if path == "/hub/projects" and isinstance(body, dict):
+            for row in body.get("projects", []):
+                if isinstance(row.get("desk_url"), str) and DESK_URL.match(row["desk_url"]):
+                    row["desk_url"] = self.stand_in.url
         with self.lock:
-            self.answers[path] = (status, copy.deepcopy(body))
+            self.answers[path] = (status, body)
 
     def refuse(self, path: str, status: int, code: str,
                detail: dict[str, str] | None = None) -> None:

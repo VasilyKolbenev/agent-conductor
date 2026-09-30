@@ -66,7 +66,7 @@ def test_a_stub_says_the_rails_words_for_its_project_and_a_stop_under_way_its_co
     assert out["muted"]["note"].startswith("snapshot from ") and out["muted"]["tone"] is None
 
 
-def test_the_centre_is_a_choice_a_link_to_a_running_desk_or_a_stub_and_nothing_else():
+def test_the_centre_is_a_choice_the_frame_of_a_running_desk_or_a_stub_and_nothing_else():
     out = js("""
       const sel = (id) => ({project_id: id, task_id: null, run_id: null, gate_id: null});
       const view = (selection, over = {}) => ({locale: "en", projects: page.projects,
@@ -170,31 +170,3 @@ def test_a_balance_and_the_windows_of_a_subscription_are_said_as_the_server_gave
         ["openai", ["45 min: 12% left · out of date"]],
         ["glm-1", ["the source is unavailable"]],
         ["x", ["no data"]]]
-
-
-def test_the_address_of_a_running_desk_is_the_one_the_hub_gave_and_judged_by_the_rule_of_the_spec():
-    out = js("""
-      const prefs = {locale: "ru", theme: "dark"};
-      const at = (desk_url, over = {}) => rail.deskLink(row({state: "running", desk_url,
-        project_id: "a".repeat(32), ...over}), {task: "task-1", run: "run-1", gate: null,
-        panel: "continue"}, prefs, "7700");
-      const ok = "http://127.0.0.1:7701/panel/desk.html";
-      show({ok: at(ok), hubPort: at("http://127.0.0.1:7700/panel/desk.html"),
-        big: at("http://127.0.0.1:65536/panel/desk.html"),
-        zero: at("http://127.0.0.1:0/panel/desk.html"),
-        host: at("http://localhost:7701/panel/desk.html"),
-        path: at("http://127.0.0.1:7701/panel/desk.html?x=1"),
-        other: at("http://127.0.0.1:7701/panel/studio.html"), none: at(null),
-        notRunning: at(ok, {state: "stopped"}),
-        scheme: at("https://127.0.0.1:7701/panel/desk.html"),
-        maxPort: at("http://127.0.0.1:65535/panel/desk.html") !== null});
-    """)
-    link = out["ok"]
-    assert link.startswith("http://127.0.0.1:7701/panel/desk.html#")
-    fields = dict(part.split("=") for part in link.split("#")[1].split("&"))
-    assert fields == {"project": "a" * 32, "task": "task-1", "run": "run-1", "panel": "continue",
-                      "lang": "ru", "theme": "dark"}, "identifiers and interface words only"
-    assert "embed" not in fields, "opened in a tab of its own, not framed"
-    assert all(out[name] is None for name in ("hubPort", "big", "zero", "host", "path", "other",
-                                              "none", "notRunning", "scheme"))
-    assert out["maxPort"] is True

@@ -19,8 +19,11 @@
 
      The six mounts below are the regions of the page (spec 4.5.4): the top bar, the notices, the
      confirmation of an action that asks first, the column of projects, the centre (the chosen
-     project) and the side (the queue of projects and the limits of the active one). The status line
-     is the one sentence that says whether the hub was read. -->
+     project) and the side (the queue of projects and the limits of the active one). The centre holds
+     two nodes: the stub, which the page redraws, and the desk, which it never does: the frame of the
+     chosen project's desk lives there and is only ever added or removed by hub-frame.js, because a
+     redraw of the node would load the desk again. The status line is the one sentence that says
+     whether the hub was read. -->
 </head>
 <body>
 <div class="hub-shell" id="hubShell" data-state="loading">
@@ -32,7 +35,10 @@
   <div class="hub-banners" id="hubBanners" data-region="banners" data-i18n-label="hub.banners.label"></div>
   <div class="hub-confirm" id="hubConfirm" data-region="confirm" data-i18n-label="hub.confirm.label"></div>
   <nav class="hub-rail" id="hubRail" data-region="rail" data-i18n-label="hub.rail.label"></nav>
-  <main class="hub-center" id="hubCenter" data-region="center" data-i18n-label="hub.center.label"></main>
+  <main class="hub-center" id="hubCenter" data-region="center" data-i18n-label="hub.center.label">
+    <div class="hub-stub-mount" id="hubStub"></div>
+    <div class="hub-desk" id="hubDesk" hidden></div>
+  </main>
   <aside class="hub-side" id="hubSide" data-region="side" data-i18n-label="hub.side.label"></aside>
   <p class="hub-status" id="hubStatus" role="status" aria-live="polite"></p>
 </div>
