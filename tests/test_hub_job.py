@@ -146,7 +146,11 @@ class _Standin:
         self.report = json.loads(self.result.read_text(encoding="utf-8"))
 
     def sleeper(self) -> int:
-        wait_until(self.pidfile.exists, WAIT, "the sleeper to write its pid")
+        """The pid the sleeper wrote; the file is made before it is filled, so wait for digits."""
+        def written() -> bool:
+            return self.pidfile.exists() and self.pidfile.read_text(encoding="ascii").isdigit()
+
+        wait_until(written, WAIT, "the sleeper to write its pid")
         return int(self.pidfile.read_text(encoding="ascii"))
 
     def close_the_job(self) -> None:

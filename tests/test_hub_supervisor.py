@@ -269,6 +269,19 @@ def test_activate_refuses_what_cannot_be_made_active_and_changes_nothing(world):
     assert _refused(world.supervisor.activate, id_of("a")) == "active_not_closed"
 
 
+def test_switching_away_from_a_child_that_has_not_reported_yet_is_refused_and_changes_nothing(
+        world):
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()                  # A's child is started and has written no status yet
+    before = world.hub_state()
+    assert _refused(world.supervisor.activate, id_of("b")) == "project_busy"
+    assert world.hub_state() == before and not world.spawner.children[0].closed
+    world.running("a")
+    world.supervisor.activate(id_of("b"))    # once it has reported, the switch goes through
+    assert [entry.project_id for entry in world.hub_state().closing] == [id_of("a")]
+    assert world.spawner.children[0].closed
+
+
 def test_view_starts_a_view_child_and_refuses_a_project_that_is_running_or_active(world):
     world.supervisor.view(id_of("b"))
     (call,) = world.spawner.calls

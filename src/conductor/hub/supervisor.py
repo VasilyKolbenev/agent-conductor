@@ -292,8 +292,12 @@ class Supervisor:
         except SupervisorRefused:
             return None
         seen = self._seen(project)
+        own_alive = seen.own is not None and seen.own.poll() is None
+        if own_alive and not seen.fresh:
+            # Nothing names this child's process yet, so nothing could be put on `closing`.
+            raise SupervisorRefused("project_busy", "the active child has not reported yet")
         entry = self._entry(project, seen)
-        if entry is None or seen.own is not None and seen.own.poll() is None:
+        if entry is None or own_alive:
             return entry
         if seen.liveness == "dead" and state.proven_closed(
                 entry, project.root, probe=self._probe, head_of=self._head_of).closed:
