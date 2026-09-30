@@ -204,6 +204,12 @@ PERMITTED_IMPORTS = {
     #: The rows of the inspector and the way a typed text becomes one edit: the shape's facts and
     #: nothing else, so the model can flush a typed text without reaching the drawing.
     "desk-flow-fields.js": frozenset({"./desk-flow-shape.js"}),
+    #: The panel's state and its one table of events: the write chain, the edits, the quick mode,
+    #: the rows of the inspector and what a publication changes. It draws nothing and reaches no wire.
+    "desk-flow-model.js": frozenset({"./desk-flow-edits.js", "./desk-flow-fields.js",
+                                     "./desk-flow-branches.js", "./desk-flow-graph.js",
+                                     "./desk-quickcycle.js", "./desk-flowwrite.js",
+                                     "./desk-flow-shape.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),

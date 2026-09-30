@@ -55,6 +55,11 @@ function minted(state) {
   return {...state, minted: count + 1, workflowId: cycleId(state.nonce, count)};
 }
 
+/** Whether an id is a ready cycle of the product's own: it is never written, only copied. */
+export function isReadyId(id) {
+  return typeof id === "string" && id.startsWith(RESERVED);
+}
+
 /** Whether an answer is the `FlowState` of the workflow asked about (`none` only when allowed). */
 export function isFlowState(payload, workflowId, allowNone) {
   if (!record(payload) || payload.workflow_id !== workflowId) return false;
