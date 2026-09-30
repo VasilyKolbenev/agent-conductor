@@ -297,6 +297,25 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-queue__none{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
 .desk-pult__flag{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
 
+/* The "continue after" block: closed until a person opens it, then a switch, the runs whose
+   grant can still be continued (one mark each), the queue start, and the one line that says what
+   the flag is. A run whose grant expired has no mark and says why; every control is a 44px
+   target, the label being the target of the mark inside it. */
+.desk-flag{margin:0 0 12px;padding:0 4px}
+.desk-flag__head{display:flex;align-items:center;cursor:pointer;
+  font:500 11px var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-flag summary{min-height:44px}
+.desk-flag__check{display:flex;align-items:center;gap:8px;min-height:44px;font-size:12.5px;
+  color:var(--ink);overflow-wrap:anywhere}
+.desk-flag__runs{margin:8px 0 0;padding:0;border:0}
+.desk-flag__runs legend{padding:0;font-size:12px;color:var(--muted)}
+.desk-flag__runs ul{display:flex;flex-direction:column;gap:2px;margin:4px 0 0;padding:0;
+  list-style:none}
+.desk-flag__runs li{font-size:12.5px;overflow-wrap:anywhere}
+.desk-flag__note{margin:4px 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.desk-flag__line{margin:8px 0;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-flag__info{margin:8px 0 0}
+
 @media (max-width:900px){
   .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
   .desk-rail{border-right:0;border-bottom:1px solid var(--line)}

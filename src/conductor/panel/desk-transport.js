@@ -64,11 +64,14 @@ export const path = Object.freeze({
   materials: (id) => `/command/runs/${encodeURIComponent(id)}/materials`,
   projectDocuments: () => "/command/project/documents",
   projectDocument: (id) => `/command/project/documents/${encodeURIComponent(id)}`,
+  // The continue-after flag (spec 4.3.4): one path, read with a GET and written with a POST.
+  autoContinue: () => "/command/project/auto-continue",
 });
 // Closed mutation targets share the same CSRF and refusal door.
 const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
-  "automationPreview", "automationAuthorize", "automationControl", "materials"]);
+  "automationPreview", "automationAuthorize", "automationControl", "materials",
+  "autoContinue"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

@@ -89,8 +89,9 @@ export function resumableRuns({tasks, runs, automation}) {
     const run = answer === null ? undefined : runs.list.find((row) => row.run_id === answer.run_id);
     const kind = answer === null || run === undefined ? null : continuable(answer);
     if (kind !== null) {
-      rows.push(Object.freeze({run_id: run.run_id, task_id: task.task_id, expired: kind === "expired",
-        title: task.title || task.task_id, created_at: run.created_at}));
+      rows.push(Object.freeze({run_id: run.run_id, task_id: task.task_id,
+        expired: kind === "expired", title: task.title || task.task_id,
+        created_at: run.created_at}));
     }
   }
   const order = (a, b) => (a.created_at === b.created_at ? (a.run_id < b.run_id ? -1 : 1)

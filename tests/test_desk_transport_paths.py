@@ -40,6 +40,21 @@ def test_the_materials_and_document_paths_are_the_three_rows_of_route_canon_3():
     assert match_route("POST", materials).run_id == RUN
 
 
+def test_the_flag_path_is_the_one_spec_4_3_4_gives_and_is_the_canons_once_it_has_the_row():
+    """One path, read and written. Its canon row is lane H's, handed to lane L with a patch that
+    lane L had not applied when this was written, so until then the canon does not know it; the
+    day it does, this holds the route it names."""
+    (path,) = _paths([["autoContinue", ""]])
+    assert path == "/command/project/auto-continue"
+    try:
+        reached = match_route("GET", path)
+    except ApiRefusal as refused:
+        assert refused.code == "route_not_found"
+    else:
+        assert reached.name == "project_auto_continue"
+        assert match_route("POST", path).name == "project_auto_continue"
+
+
 def test_each_of_the_three_is_refused_under_the_other_verb():
     materials, listing, one = _paths([["materials", RUN], ["projectDocuments", ""],
                                       ["projectDocument", DOC]])

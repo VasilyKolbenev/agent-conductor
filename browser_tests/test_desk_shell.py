@@ -57,6 +57,8 @@ DESK_BOOT_ASSETS = {
     "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
     "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
     "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
+    # The continue-after flag: its model, and the door that reads and writes it.
+    "desk-flag-model.js": 200, "desk-flag.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,

@@ -1,9 +1,10 @@
 "use strict";
 // The console of the project (spec 5.1 and 4.4.8): the name of the person at this page, the
-// project queue as the server read it, and the lines that say a project is in `view`. It draws
-// what the boot module hands it and reads nothing: a press is a call to a handler, and no
-// handler here writes to the wire. The queue is the read `desk-queue-model.js` already judged
-// (`null` while nobody has read it), so a queue that was not read is not drawn as an empty one.
+// project queue as the server read it, the lines that say a project is in `view`, and, in a desk
+// a hub frames, the "Continue after" block of spec 5.8. It draws what the boot module hands it
+// and reads nothing: a press is a call to a handler, and no handler here writes to the wire.
+// The queue is the read `desk-queue-model.js` already judged (`null` while nobody has read it),
+// so a queue that was not read is not drawn as an empty one.
 //
 // The name is the actor of everything a later write of this page will record in a person's
 // name (spec 5.2). It is asked for once and held in the boot module's state, in the page's
@@ -16,7 +17,7 @@
 // each a message of its own; the separators between them are punctuation and belong to no
 // language. Times are said by `desk-time.js`, the reasons are the words of `desk-status-copy.js`.
 import {element} from "./command-view.js";
-import {localize} from "./studio-i18n.js";
+import {MESSAGES, localize} from "./studio-i18n.js";
 import {instantText} from "./desk-time.js";
 
 //: What each state of a queue record says of itself, and the tone that asks for a person.
@@ -145,6 +146,102 @@ function queueBlock(view) {
   return [element("section", {className: "desk-queue"}, kids)];
 }
 
+// -- the "continue after" block ---------------------------------------------------------
+
+//: A checkbox that says its words and, on a change, hands the boot module what changed. It
+//: redraws nothing: the control already shows it, and the boot module keeps it in its state.
+function check(view, handlers, {key, label, on, change}) {
+  const box = element("input", {type: "checkbox", "data-focus-key": key});
+  box.checked = on;
+  box.addEventListener("change", () => {
+    handlers.draftFlag(change(box.checked));
+    view.hint.hidden = true;
+  });
+  return element("label", {className: "desk-flag__check"}, [box,
+    element("span", {"data-flag-title": "", text: label})]);
+}
+
+//: A run the flag may continue has a mark; a run whose grant expired has none, and says why.
+function runRow(view, handlers, row) {
+  if (row.expired) {
+    return element("li", {"data-run-id": row.run_id, "data-expired": ""}, [
+      element("span", {"data-flag-title": "", text: row.title}),
+      element("span", {className: "desk-flag__note", "data-flag-note": "",
+        text: localize(view, "desk.flag.expired")})]);
+  }
+  return element("li", {"data-run-id": row.run_id}, [check(view, handlers, {
+    key: `flag:run:${row.run_id}`, label: row.title, on: view.flag.form.marked.includes(row.run_id),
+    change: (on) => ({run: row.run_id, on})})]);
+}
+
+function runList(view, handlers) {
+  const {rows} = view.flag;
+  if (rows.length === 0) {
+    return element("p", {className: "desk-flag__note",
+      text: localize(view, "desk.flag.runs_none")});
+  }
+  return element("fieldset", {className: "desk-flag__runs"}, [
+    element("legend", {text: localize(view, "desk.flag.runs")}),
+    element("ul", {}, rows.map((row) => runRow(view, handlers, row)))]);
+}
+
+//: The one line that says what the flag is: it stands since a time, or an activation spent it.
+function lineOfFlag(view) {
+  const {line} = view.flag;
+  if (line.kind === "none") return [];
+  const words = localize(view, line.kind === "standing" ? "desk.flag.standing"
+    : "desk.flag.consumed", {time: instantText(view.locale, line.at).short, actor: line.actor});
+  return [element("p", {className: "desk-flag__line", "data-flag-line": "", text: words})];
+}
+
+//: A refusal, or an unconfirmed save, said in place: the catalogue's words for the code.
+function hintText(view) {
+  const {refused} = view.flag;
+  if (refused === null) return "";
+  if (refused === "unknown") return localize(view, "desk.flag.unknown");
+  const key = `error.${refused}`;
+  return localize(view, Object.hasOwn(MESSAGES, key) ? key : "error.store_error");
+}
+
+function flagButtons(view, handlers) {
+  const blocked = view.actor === null || view.flag.saving;
+  const save = element("button", {type: "button", "data-focus-key": "flag:save",
+    text: localize(view, "desk.flag.save")});
+  const clear = element("button", {type: "button", "data-focus-key": "flag:clear",
+    text: localize(view, "desk.flag.clear")});
+  for (const button of [save, clear]) if (blocked) button.setAttribute("disabled", "");
+  save.addEventListener("click", () => handlers.saveFlag());
+  clear.addEventListener("click", () => handlers.clearFlag());
+  return element("div", {className: "desk-pult__buttons"}, [save, clear]);
+}
+
+//: The block, closed until a person (or the address) opens it. Only a desk a hub frames has one,
+//: and only once the flag has been read as a record the desk can vouch for.
+function flagBlock(view, handlers) {
+  const {flag = null} = view;
+  if (flag === null) return [];
+  const hint = element("p", {className: "desk-pult__hint", role: "alert", "data-flag-hint": "",
+    text: view.actor === null ? localize(view, "desk.flag.need_name") : hintText(view)});
+  hint.hidden = view.actor !== null && flag.refused === null;
+  const shown = {...view, hint};
+  const details = element("details", {className: "desk-flag", open: flag.open ? "" : null}, [
+    element("summary", {className: "desk-flag__head", "data-focus-key": "flag:summary",
+      text: localize(view, "desk.flag.head")}),
+    check(shown, handlers, {key: "flag:enabled", label: localize(view, "desk.flag.switch"),
+      on: flag.form.enabled, change: (enabled) => ({enabled})}),
+    runList(shown, handlers),
+    check(shown, handlers, {key: "flag:queue", label: localize(view, "desk.flag.queue"),
+      on: flag.form.queue, change: (queue) => ({queue})}),
+    element("p", {className: "desk-flag__note", text: localize(view, "desk.flag.queue_note")}),
+    ...lineOfFlag(view), hint, flagButtons(view, handlers),
+    element("details", {className: "desk-flag__info"}, [
+      element("summary", {"data-focus-key": "flag:info", "aria-label": localize(view,
+        "desk.flag.info"), text: "ⓘ"}),
+      element("p", {className: "desk-flag__note", text: localize(view, "desk.flag.help")})])]);
+  details.addEventListener("toggle", () => handlers.openFlag(details.open));
+  return [details];
+}
+
 //: A desk open for another project draws nothing here: it holds no name and shows no queue.
 export function mountPult(mount, view, handlers) {
   if (view.foreign) {
@@ -154,5 +251,5 @@ export function mountPult(mount, view, handlers) {
   mount.replaceChildren(
     element("h2", {className: "desk-pult__head", text: localize(view, "desk.pult.label")}),
     view.editing ? actorForm(view, handlers) : actorRow(view, handlers),
-    ...queueBlock(view));
+    ...queueBlock(view), ...flagBlock(view, handlers));
 }

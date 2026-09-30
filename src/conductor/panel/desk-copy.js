@@ -66,6 +66,41 @@ export const DESK_COPY = Object.freeze({
   "desk.pult.entry_blocked": ["{position}. {title} · cannot start",
     "{position}. {title} · не может начаться"],
   "desk.pult.entry_queued": ["in the queue since {time}", "в очереди с {time}"],
+  // -- the console: the "continue after" block (spec 5.8, 4.3.4) -------------------------------
+  "desk.flag.head": ["Continue after", "Продолжить после"],
+  "desk.flag.switch": [
+    "When the project's turn in the queue comes, it becomes active by itself",
+    "Когда до проекта дойдёт очередь, он станет активным сам"],
+  "desk.flag.runs": ["Continue runs", "Продолжить запуски"],
+  "desk.flag.runs_none": ["No run is waiting to be continued.",
+    "Ни один запуск не ждёт продолжения."],
+  "desk.flag.expired": ["permission expired — a new confirmation of terms is needed",
+    "разрешение истекло — нужно новое подтверждение условий"],
+  "desk.flag.queue": ["The task queue starts by itself", "Очередь задач стартует сама"],
+  "desk.flag.queue_note": [
+    "entries start on their own pre-authorizations; the terms are checked again",
+    "записи очереди начнутся по своим предразрешениям; условия сверяются заново"],
+  "desk.flag.standing": ["Flag set since {time} · {actor}", "Флаг стоит с {time} · {actor}"],
+  "desk.flag.consumed": ["Flag executed on activation {time} · {actor}",
+    "Флаг исполнен при активации {time} · {actor}"],
+  "desk.flag.need_name": ["Give your name above to record the flag in it.",
+    "Укажите имя выше, чтобы записать флаг от вашего имени."],
+  "desk.flag.save": ["Save", "Сохранить"],
+  "desk.flag.clear": ["Remove the flag", "Снять флаг"],
+  "desk.flag.unknown": [
+    "The save could not be confirmed. The line above is what the server holds.",
+    "Запись не удалось подтвердить. Строка выше — то, что хранит сервер."],
+  "desk.flag.info": ["What the flag does", "Что делает флаг"],
+  "desk.flag.help": [
+    "When the project starts as the active one, the marked runs continue in your name, marked "
+      + "“by the continue flag”, one per free slot in the order of the list; the others wait for "
+      + "your “Continue”. The flag is executed once: on activation it is spent and the project "
+      + "leaves the queue. To put the project in the queue again, set the flag again.",
+    "При старте проекта в активном режиме отмеченные запуски продолжатся от вашего имени с "
+      + "отметкой «по флагу продолжения», по одному на свободный слот в порядке списка; "
+      + "остальные ждут вашего «Продолжить». Флаг исполняется один раз: при активации он "
+      + "гасится, и проект уходит из очереди. Чтобы проект снова встал в очередь, флаг ставят "
+      + "заново."],
   // -- the console: a project in view (spec 4.4.8, 5.8) ------------------------------------
   "desk.pult.inactive": [
     "Project not active · the queue starts when the project becomes active",

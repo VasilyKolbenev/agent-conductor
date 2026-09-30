@@ -52,6 +52,8 @@ import {focusTarget, restoreFocus} from "./studio-focus.js";
 import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
 import {mountPult} from "./desk-pult.js";
+import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
+import {createFlagDoor} from "./desk-flag.js";
 
 //: The reads the desk makes, each named for the route it asks. A route is only ever
 //: `path.<name>` of the transport module.
@@ -101,11 +103,18 @@ const MISMATCH = "project_mismatch";
 //: memory only, and the draft is what a redraw draws back into the field; `mode` is what the
 //: project claim said (`active`, `view`, or null when no claim was read or it named no mode
 //: this build knows); `queue` is the task-queue read once one is wired (null: not read).
+//:
+//: The continue-after block's memory is `flag` (spec 5.8): null where there is no block (a desk
+//: nobody framed, or one whose read of the flag gave no record this desk can vouch for);
+//: otherwise `record` is the flag the server holds, `draft` what a person changed and did not
+//: save (null: nothing), `open` says the block is open, `saving` a write is out, and `refused`
+//: is the code of the last refusal (or `unknown`).
 let state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
   taskId: null, run: NO_RUN, foreign: false, actor: null, editing: false, draft: null,
-  mode: null, queue: null});
+  mode: null, queue: null, flag: null});
 let choice = 0;
 let door = null;
+let flagDoor = null;
 //: The project this desk is bound to: the one its first hash named, or else the one the claim
 //: named (null when neither named one), and what the doors claim from then on. `hashProject`
 //: is only what the first hash named: it is what the address the desk writes says, so a project
@@ -189,6 +198,19 @@ function words() {
     shell: worst([rail, state.runs.phase, ...fed])};
 }
 
+//: What the console draws of the block: the memory above, the runs the desk may offer from what
+//: it already holds, what the controls say now (a person's change, else the flag the server holds)
+//: and the line the record reads as.
+function flagView() {
+  const {flag} = state;
+  if (flag === null) return null;
+  const rows = resumableRuns({tasks: state.tasks, runs: state.runs, automation: state.automation});
+  const {record} = flag;
+  const form = flag.draft ?? Object.freeze({enabled: record.enabled,
+    marked: initialMarks(record, rows), queue: record.enabled && record.start_task_queue});
+  return Object.freeze({...flag, rows, form, line: flagLine(flag.record)});
+}
+
 function render() {
   const held = focusTarget();
   const said = words();
@@ -196,7 +218,7 @@ function render() {
     runs: state.runs, automation: state.automation, taskId: state.taskId, run: state.run,
     connection: NO_STREAM, task: state.tasks.list.find((row) => row.task_id === state.taskId) ?? null,
     foreign: state.foreign, actor: state.actor, editing: state.editing, draft: state.draft,
-    mode: state.mode, queue: state.queue};
+    mode: state.mode, queue: state.queue, flag: flagView()};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountPult(byId("deskPult"), view, handlers);
@@ -406,12 +428,81 @@ function setActor(name) {
   return true;
 }
 
+// -- the continue-after block -----------------------------------------------------------
+
+function patchFlag(changes) {
+  if (state.foreign || state.flag === null) return;
+  move({flag: Object.freeze({...state.flag, ...changes})});
+}
+
+//: A change a person made to one control of the block. It is kept, and drawn from the next
+//: redraw on; nothing is drawn now, because the control already shows it.
+function draftFlag(change) {
+  if (state.foreign || state.flag === null) return;
+  const {form} = flagView();
+  let marked = form.marked;
+  if ("run" in change) {
+    const others = marked.filter((id) => id !== change.run);
+    marked = change.on ? [...others, change.run] : others;
+  }
+  const draft = Object.freeze({enabled: "enabled" in change ? change.enabled : form.enabled,
+    marked: Object.freeze(marked), queue: "queue" in change ? change.queue : form.queue});
+  state = Object.freeze({...state, flag: Object.freeze({...state.flag, draft, refused: null})});
+}
+
+//: Whether the block is open is kept for the next redraw; nothing is drawn now.
+function openFlag(open) {
+  if (state.foreign || state.flag === null || state.flag.open === open) return;
+  state = Object.freeze({...state, flag: Object.freeze({...state.flag, open})});
+}
+
+//: A save that is not a record to keep. A refusal is said in place with its code. A save this
+//: desk cannot vouch for is said so, and the flag is read again: what the server holds is what
+//: the line of the block says.
+async function unconfirmed(done) {
+  if (done.status === "refused") {
+    patchFlag({saving: false, refused: done.code});
+    return;
+  }
+  const record = await flagDoor.read();
+  patchFlag(record === null ? {saving: false, refused: "unknown"}
+    : {record, saving: false, refused: "unknown"});
+}
+
+//: The one write of the block, in the name of the person at this page: the runs marked, in the
+//: order of the list, and the queue start. It waits for a name and for the save before it.
+async function writeFlag(enabled) {
+  const view = flagView();
+  if (view === null || state.foreign || state.actor === null || view.saving) return;
+  const runIds = view.rows.filter((row) => view.form.marked.includes(row.run_id))
+    .map((row) => row.run_id);
+  patchFlag({saving: true});
+  const done = await flagDoor.save(
+    flagBody({enabled, actor: state.actor, runIds, startQueue: view.form.queue}));
+  if (state.foreign) return;
+  if (done.status === "saved" && done.flag !== null) {
+    patchFlag({record: done.flag, draft: null, saving: false, refused: null});
+  } else await unconfirmed(done);
+}
+
+const saveFlag = () => writeFlag(flagView()?.form.enabled ?? false);
+const clearFlag = () => writeFlag(false);
+
+//: The read of the flag, made once by a desk a hub frames: a record it can vouch for makes the
+//: block; anything else leaves the console without one.
+async function loadFlag() {
+  const record = await flagDoor.read();
+  if (record === null || state.foreign) return;
+  move({flag: Object.freeze({record, draft: null, open: false, saving: false, refused: null})});
+}
+
 //: The one way out of the terminal state: the page is loaded again and binds afresh.
 function reload() {
   location.reload();
 }
 
-const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload});
+const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload,
+  draftFlag, openFlag, saveFlag, clearFlag});
 
 // -- the address ------------------------------------------------------------------------
 
@@ -444,7 +535,7 @@ function enterForeign() {
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
     taskId: null, run: NO_RUN, foreign: true, actor: null, editing: false, draft: null,
-    mode: null, queue: null});
+    mode: null, queue: null, flag: null});
   render();
 }
 
@@ -546,6 +637,7 @@ async function settle(address) {
   const mode = claimMode(claim);
   if (mode !== null) move({mode});
   enterEmbed(address, claim);
+  if (embedded !== null) loadFlag();
   await load();
   await start(address);
 }
@@ -560,6 +652,7 @@ function boot() {
   paintAppearance(readPreferences(seen, document.documentElement.lang));
   bound = hashProject = address.project;
   door = createTransport(locale, () => bound);
+  flagDoor = createFlagDoor(door, enterForeign);
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {
     enterForeign();

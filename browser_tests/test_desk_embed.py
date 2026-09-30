@@ -40,6 +40,7 @@ from urllib.parse import quote, urlsplit
 import pytest
 from playwright.sync_api import Browser, Frame, Page, Request, Route
 
+from browser_tests.desk_flag_fake import FlagServer
 from browser_tests.desk_identity import identify
 from browser_tests.test_desk_hash import (
     FACTS, INIT, ON_RUN, QUIET, PROJECT_A as PROJECT, PROJECT_B, _foreign)
@@ -172,8 +173,11 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
     opened: list[Embedded] = []
 
     def make(fragment: str, claim: Callable[[Route], None] | None = None, *,
-             before: Callable[[Page], None] | None = None, wait: bool = True) -> Embedded:
-        context = chromium.new_context(viewport={"width": 1400, "height": 1000})
+             before: Callable[[Page], None] | None = None, wait: bool = True,
+             flag: FlagServer | None = None,
+             automations: dict[str, dict] | None = None) -> Embedded:
+        context = chromium.new_context(viewport={"width": 1400, "height": 1000},
+                                       timezone_id="UTC")
         page = context.new_page()
         problems, asked = _listen(page, rig)
         page.add_init_script(INIT)
@@ -181,6 +185,10 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
             before(page)
         if claim is not None:
             page.route("**/command/project", claim)
+        # The flag's routes are answered in the page: they are not served by this branch yet.
+        page.route("**/command/project/auto-continue", (flag or FlagServer()).handle)
+        for run, body in (automations or {}).items():
+            page.route(f"**/command/runs/{run}/automation", _answering(body))
         page.goto(f"{rig.host_url}#{quote(rig.desk_url + fragment, safe='')}",
                   wait_until="load")
         frame = page.query_selector("#desk").content_frame()
