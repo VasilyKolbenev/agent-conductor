@@ -8,7 +8,10 @@ answer the fixtures of `tests/fixtures/hub/` (one response per route, as lane H'
 them), each replaceable by a test; `GET /hub/events` is a live stream a test pushes frames into;
 every POST is checked as the hub checks it (the CSRF token of `GET /hub/session`, an exact Origin, a
 JSON body) and recorded, then answered with what the test configured. Nothing here is a child's
-server: the page reads no `/command/*` path, and a request for one is recorded as a fault.
+server: the page reads no `/command/*` path, and a request for one of the hub is recorded as a
+fault. The one thing that stands in for a child is `StandInDesk`, a blank page at the address the
+fixtures give a running project's desk, so that the frame the page mounts for it has something to
+load (the tests that need a desk that draws and speaks use real ones: `hub_live.py`).
 
 Not a test module: pytest does not collect it (no `test_` prefix). The fixtures live here and each
 test file imports them, because the conftest's surface is pinned by a guard.

@@ -204,6 +204,8 @@ def test_a_language_chosen_on_the_page_reaches_the_desk_and_keeps_what_was_chose
     assert (desk["lang"], desk["chosen"], desk["marker"]) == (other, ["task-docs"], "first document"), (
         "the language moved, the choice inside the desk stayed, and it is the same document")
     assert one.page.evaluate("document.querySelectorAll('#hubDesk iframe').length") == 1
+    assert one.page.evaluate("document.querySelector('#hubDesk iframe').getAttribute('title')") == (
+        say(one, "hub.frame.title", name="a")), "the frame's name is said in the new language too"
 
 
 def test_a_changed_instance_replaces_the_frame_with_a_new_element_and_a_stopped_project_removes_it(
