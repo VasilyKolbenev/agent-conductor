@@ -27,6 +27,7 @@ REFUSALS = {
     "slot_busy": 409,
     "preview_stale": 409,
     "project_not_active": 409,
+    "materials_refused": 409,
 }
 #: The login each frozen provider row carries now that a row can pin one. Three
 #: of them were configured before the field existed, so they carry the login that

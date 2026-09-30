@@ -20,6 +20,7 @@ from conductor.command.http_api import CommandApi
 from conductor.command.http_transport import CommandSession
 from conductor.command.plan_budget import product_limits
 from conductor.command.policy_preview import PREVIEW_FIELDS
+from conductor.command.runtime import Budget
 from tests.test_command_http_api import PORT, TOKEN, post
 from tests.test_policy_driver import authorize as authorize_both_steps
 from tests.test_policy_runtime import ASK, NOW, PD, propose, setup
@@ -148,7 +149,8 @@ def ready_bundled_run(project, name):
 
 
 @pytest.mark.parametrize("name", [name for name in BUNDLED if name not in NEVER_BOUND])
-def test_every_bundled_template_draft_passes_build_preview_on_fake_providers(project, name):
+def test_every_bundled_template_but_the_first_dalio_cycle_has_a_draft_build_preview_passes(
+        project, name):
     answer = drafted(project, ready_bundled_run(project, name))
     assert {key: answer["terms"][key] for key in PREVIEW_FIELDS} == answer["budget"]["terms_draft"]
     assert answer["terms"]["max_actions"] <= 8
@@ -167,8 +169,17 @@ def test_a_run_that_follows_no_plan_cannot_be_drafted():
         preview_draft.drafted_preview([], LIMITS)
 
 
-def test_the_limits_take_their_total_from_the_actions_times_the_longest_action(project):
+def test_the_products_budget_gives_limits_of_eight_actions_of_3600_seconds_and_28800_in_all(
+        project):
     assert product_limits(project.policy.budget) == LIMITS
+
+
+@pytest.mark.parametrize("actions,seconds", [(8, 3600), (3, 100), (1, 1)])
+def test_the_limits_take_their_total_from_the_actions_times_the_longest_action(
+        actions, seconds):
+    assert product_limits(Budget(actions, seconds, 300)) == {
+        "max_actions": actions, "max_action_seconds": seconds,
+        "max_total_task_seconds": actions * seconds}
 
 
 # --- the grant that replaces one ------------------------------------------------------------------

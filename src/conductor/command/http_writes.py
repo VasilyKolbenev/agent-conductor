@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from .adapters.provider import provider_projection
 from .api_contracts import (
     ApiRefusal,
+    ArtifactInput,
     GraphInput,
     TemplateRef,
     canonical_arguments,
@@ -41,7 +42,7 @@ from .http_holds import (
 from .plan_admission import _gated, _plan, _servable_pair, _task, work_scope_admits
 from .run_closing import close_if_terminal
 from .run_store import RecordConflict
-from . import flow_routes, studio_routes, task_routes
+from . import flow_routes, project_routes, studio_routes, task_routes
 from .studio_routes import standing_graph as _standing_graph
 
 if TYPE_CHECKING:
@@ -93,6 +94,8 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
         return _write_graph(api, route.run_id, body)
     if route.name == "artifacts":
         return _write_artifact(api, route.run_id, body)
+    if route.name == "materials":
+        return write_materials(api, route.run_id, body)
     return _decide(api, route.run_id, body)
 
 
@@ -117,7 +120,23 @@ def _write_flow(
 def _write_artifact(
         api: CommandApi, run_id: str, body: Mapping[str, Any]) -> _Reply:
     """Append one immutable handoff, return its exact retry, or refuse an end."""
-    submitted = parse_artifact(body)
+    return append_artifact(api, run_id, parse_artifact(body))
+
+
+def write_materials(api: CommandApi, run_id: str, body: Mapping[str, Any]) -> _Reply:
+    """Compose the materials of a run into `artifact-materials` and append it (spec 6.2.3).
+
+    The composing is `project_routes`'; the append is the artifacts door's own function.
+    """
+    return append_artifact(api, run_id, project_routes.materials_document(api, run_id, body))
+
+
+def append_artifact(api: CommandApi, run_id: str, submitted: ArtifactInput) -> _Reply:
+    """The one door through which a document reaches a run's journal from a request.
+
+    The artifacts route and the materials route both end here, so "the same transaction and the
+    same refusal of an ended run" is one function and not two copies of it.
+    """
     api._hold_route(run_id)
     with api._store.transaction():
         api._hold_route(run_id)

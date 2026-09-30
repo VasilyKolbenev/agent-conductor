@@ -154,6 +154,9 @@ EXPECTED_ERRORS = {
     #: The LIFECYCLE of the process: it was opened for viewing, so it starts nothing. The
     #: request is well formed and nothing about the run or the plan is at fault.
     "project_not_active": (409, "lifecycle"),
+    #: The list of materials is well formed and the server will not make a document of it; the
+    #: reason, one word of a closed list, is the detail.
+    "materials_refused": (409, "service"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
@@ -188,6 +191,10 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/preview", False, True),
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),
     ("POST", "/command/runs/<run_id>/automation/control", True, True),
+    ("GET", "/command/project", False, False),
+    ("POST", "/command/runs/<run_id>/materials", True, True),
+    ("GET", "/command/project/documents", False, False),
+    ("GET", "/command/project/documents/<doc_id>", False, False),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly

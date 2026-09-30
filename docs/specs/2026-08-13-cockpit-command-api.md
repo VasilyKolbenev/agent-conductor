@@ -214,7 +214,11 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/runs/<run_id>/automation", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
-  {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true}
+  {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false}
 ]
 ```
 3. Every **mutating** request (any method other than GET/HEAD on a `/command/*`
@@ -430,7 +434,8 @@ choose a code.
   { "code": "project_mismatch",      "status": 409, "source": "identity" },
   { "code": "slot_busy",             "status": 409, "source": "concurrency" },
   { "code": "preview_stale",         "status": 409, "source": "authorization" },
-  { "code": "project_not_active",    "status": 409, "source": "lifecycle" }
+  { "code": "project_not_active",    "status": 409, "source": "lifecycle" },
+  { "code": "materials_refused",     "status": 409, "source": "service" }
 ]
 ```
 
@@ -1089,27 +1094,6 @@ every other part of this contract is built on. Publishing goes through
 next revision number so two editors cannot silently overwrite each other's
 intent; `POST /command/templates` is unchanged.
 
-A workflow can also be read and written as a **flow**, the desk's own model of
-steps, roads and loops: `GET /command/workflows/<workflow_id>/flow` answers the
-flow being edited (or the latest revision's) with the diagnostics, the
-publishability and the budget the server computed, and `POST` of the same path
-saves it as a draft under the draft route's own expectation
-(`expected_digest` or `expected_absent`) and, when `publish_revision` is given,
-publishes a revision under the revision route's own lock. A document equal to
-the latest revision answers 200 and creates nothing. Both verbs are on one path,
-and no other frozen route changes. The shapes are in the desk redesign
-specification, section 7.1.
-
-Three more routes serve the desk's preparation and its project cycle, each with
-one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
-task, its runs and what each still lacks before it may start (its stage, the
-documents it misses, its grant and its queue entry) and only reads;
-`GET /command/project/cycle` answers which workflow the human pinned as the
-project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
-that has a published revision, or unpins with `null`, under a human identity.
-The same pin by the same person writes nothing. The shapes are in the desk
-redesign specification, sections 6.4.2 and 7.10.
-
 The body is the canonical `GraphTemplate` document and nothing else — closed to
 exactly `schema_version`, `template_id`, `revision`, `title`, `nodes` and
 `edges`. Any other field is `contract_invalid` (422), `run_id` and `created_at`
@@ -1165,6 +1149,56 @@ write, judged with `lstat` and following nothing, over every directory it writes
 through and the leaf it writes at. A portal or a second hard link answers
 `route_unsafe` (409) and the refusal names the KIND and never the path — the
 location is this server's directory layout, which is not the caller's to learn.
+
+A workflow can also be read and written as a **flow**, the desk's own model of
+steps, roads and loops: `GET /command/workflows/<workflow_id>/flow` answers the
+flow being edited (or the latest revision's) with the diagnostics, the
+publishability and the budget the server computed, and `POST` of the same path
+saves it as a draft under the draft route's own expectation
+(`expected_digest` or `expected_absent`) and, when `publish_revision` is given,
+publishes a revision under the revision route's own lock. A document equal to
+the latest revision answers 200 and creates nothing. Both verbs are on one path,
+and no other frozen route changes. The shapes are in the desk redesign
+specification, section 7.1.
+
+Three more routes serve the desk's preparation and its project cycle, each with
+one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
+task, its runs and what each still lacks before it may start (its stage, the
+documents it misses, its grant and its queue entry) and only reads;
+`GET /command/project/cycle` answers which workflow the human pinned as the
+project's cycle, if any; and `POST /command/project/cycle/pin` pins a workflow
+that has a published revision, or unpins with `null`, under a human identity.
+The same pin by the same person writes nothing. The shapes are in the desk
+redesign specification, sections 6.4.2 and 7.10.
+
+`GET /command/project` answers which project this server serves, in exactly four
+keys (`project_id`, the activation's nonce or `null`; `hub_origin`; `demo`; and
+`mode`, `active` or `view`), and only reads. Every `/command/*` request may carry
+the header `X-Conduct-Project` naming the project it means to reach: a request
+that names another project, names one of a server that has none, or names it
+twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
+checks and before its route is handled, and a request without the header is
+answered as before. The shapes are in the desk redesign specification, section
+4.5.1.
+
+Three more routes serve the materials of a run and the documents of the project.
+`POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
+composes the items into the one document `artifact-materials` and appends it
+through the same function as `POST /command/runs/<run_id>/artifacts`, so a new
+document answers 201, the exact same list again answers 200 and the standing
+document, and a run that has ended refuses `run_terminal` unless the request is
+such a retry. `GET /command/project/documents` answers `{"base", "documents",
+"truncated"}` for the tracked text documents of HEAD (at most 500, 49 152 bytes
+each), and `GET /command/project/documents/<doc_id>` answers `{"doc_id", "path",
+"git_oid", "content"}` for one; a document id is `d-` and 32 lowercase hex, and
+any other tail is a path no row names. The materials route refuses
+`materials_refused` (409) with one `detail.reason` of the closed list
+`too_many_materials`, `materials_too_large`, `document_not_text`, `doc_unknown`,
+`doc_not_seeded`, `materials_base_moved` and `seed_missing`; a server that was
+started to view the project asks git nothing, so both documents routes, a copy
+of a project document and a link judged against a seed that has a base refuse
+`project_not_active` (409) there. The shapes are in the desk redesign
+specification, sections 6.2.2, 6.2.3 and 9.1.6.
 
 ### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
 

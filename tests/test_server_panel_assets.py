@@ -120,9 +120,14 @@ ASSETS = {
     "/panel/desk-hash.js": "text/javascript; charset=utf-8",
     # Embed mode: whether a hub frames the desk, and the one message it says.
     "/panel/desk-embed.js": "text/javascript; charset=utf-8",
+    # The time of an instant, short and exact: shared with the hub's page.
+    "/panel/desk-time.js": "text/javascript; charset=utf-8",
+    # The task-queue read judged against its shape.
+    "/panel/desk-queue-model.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
+    "/panel/desk-pult.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",
@@ -265,6 +270,16 @@ REFUSED = (
     "/panel/desk-embed.json", "/panel/desk-embed.js?v=1", "/panel/desk-embed.js.map",
     "/panel/../desk-embed.js", "/panel/%2e%2e/desk-embed.js", "/panel/DESK-EMBED.JS",
     "/panel/Desk-embed.js", "/panel/desk-embed.js/", "/panel/desk-embed.js%00.txt",
+    # The time module, the same nine shapes.
+    "/panel/desk-time.json", "/panel/desk-time.js?v=1", "/panel/desk-time.js.map",
+    "/panel/../desk-time.js", "/panel/%2e%2e/desk-time.js", "/panel/DESK-TIME.JS",
+    "/panel/Desk-time.js", "/panel/desk-time.js/", "/panel/desk-time.js%00.txt",
+    # The queue model, the same nine shapes.
+    "/panel/desk-queue-model.json", "/panel/desk-queue-model.js?v=1",
+    "/panel/desk-queue-model.js.map", "/panel/../desk-queue-model.js",
+    "/panel/%2e%2e/desk-queue-model.js", "/panel/DESK-QUEUE-MODEL.JS",
+    "/panel/Desk-queue-model.js", "/panel/desk-queue-model.js/",
+    "/panel/desk-queue-model.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",
@@ -273,6 +288,10 @@ REFUSED = (
     "/panel/desk-scene.json", "/panel/desk-scene.js?v=1", "/panel/desk-scene.js.map",
     "/panel/../desk-scene.js", "/panel/%2e%2e/desk-scene.js", "/panel/DESK-SCENE.JS",
     "/panel/Desk-scene.js", "/panel/desk-scene.js/", "/panel/desk-scene.js%00.txt",
+    # The console, the same nine shapes.
+    "/panel/desk-pult.json", "/panel/desk-pult.js?v=1", "/panel/desk-pult.js.map",
+    "/panel/../desk-pult.js", "/panel/%2e%2e/desk-pult.js", "/panel/DESK-PULT.JS",
+    "/panel/Desk-pult.js", "/panel/desk-pult.js/", "/panel/desk-pult.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is

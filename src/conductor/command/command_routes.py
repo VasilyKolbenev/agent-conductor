@@ -54,6 +54,10 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/preview"),
     ("POST", "/command/runs/<run_id>/automation/authorize"),
     ("POST", "/command/runs/<run_id>/automation/control"),
+    ("GET", "/command/project"),
+    ("POST", "/command/runs/<run_id>/materials"),
+    ("GET", "/command/project/documents"),
+    ("GET", "/command/project/documents/<doc_id>"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -61,7 +65,8 @@ _RUN_ROUTE = re.compile(
     # The longer tail is spelled FIRST: alternation is leftmost-first, and a
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
-    r"(?:/(automation/preview|automation/authorize|automation/control|automation|controls|proposals|actions|decisions|graph/from-template|artifacts|graph))?\Z")
+    r"(?:/(automation/preview|automation/authorize|automation/control|automation|"
+    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|graph))?\Z")
 _WORKFLOW_ROUTE = re.compile(
     r"/command/workflows/(?P<workflow_id>[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The revision number is a tail of the `revisions` tail rather than a fourth
@@ -78,11 +83,17 @@ _WORKFLOW_ROUTE = re.compile(
 _TASK_ROUTE = re.compile(
     rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
-#: pinned, and the write that pins or unpins. The bare `project` path and the flag of "continue
-#: after" are other lanes' rows and join this pattern with their own canon commit.
+#: pinned, and the write that pins or unpins. The bare `project` path is `_PROJECT_PATH` below; the
+#: flag of "continue after" is another lane's row and joins this pattern with its own canon commit.
 _PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
+#: The documents of the project's HEAD (spec 6.2.2): the list, and one by its id. The id grammar is
+#: the one the server mints, `d-` and 32 lowercase hex, so anything else is a path no row names and
+#: never a document the reader is then asked about.
+_DOCUMENTS_ROUTE = re.compile(r"/command/project/documents(?:/(d-[0-9a-f]{32}))?\Z")
 _SESSION_PATH = "/command/session"
 _QUOTAS_PATH = "/command/quotas"
+#: The identity of the project this server serves (spec 4.5.1): GET only, and lane H's handler.
+_PROJECT_PATH = "/command/project"
 _WORKFLOWS_PATH = "/command/workflows"
 #: The one run route that names no run: the list, and the door that opens one.
 _RUNS_PATH = "/command/runs"
@@ -93,6 +104,15 @@ _TASKS_PATH = "/command/tasks"
 #: that first materialized it, so a run id in its path would be a lie about
 #: what it is.
 _TEMPLATES_PATH = "/command/templates"
+#: The routes whose path names no identity and that have ONE verb: the path, the verb its row
+#: allows, and the name the handlers dispatch on.
+_FIXED_ROUTES = {
+    _SESSION_PATH: ("GET", "session"),
+    _QUOTAS_PATH: ("GET", "quotas"),
+    _PROJECT_PATH: ("GET", "project"),
+    _TEMPLATES_PATH: ("POST", "templates"),
+    _WORKFLOWS_PATH: ("GET", "workflows"),
+}
 
 
 @dataclass(frozen=True)
@@ -104,6 +124,7 @@ class Route:
     workflow_id: str | None = None
     revision: int | None = None
     task_id: str | None = None
+    doc_id: str | None = None
 
 
 def target_path(target: str) -> str:
@@ -133,28 +154,18 @@ def match_route(method: str, path: str) -> Route:
     if method not in {"GET", "POST"}:
         raise ApiRefusal.fixed(
             "method_not_allowed" if _known(path) else "route_not_found")
-    if path in {_SESSION_PATH, _QUOTAS_PATH}:
-        if method != "GET":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("session" if path == _SESSION_PATH else "quotas")
-    if path == _TEMPLATES_PATH:
-        if method != "POST":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("templates")
-    if path == _WORKFLOWS_PATH:
-        if method != "GET":
-            raise ApiRefusal.fixed("method_not_allowed")
-        return Route("workflows")
-    if path == _RUNS_PATH:
-        # The one path this table admits under BOTH methods, because listing
-        # runs and opening one are the same noun asked two ways.
-        return Route("runs")
+    fixed = _fixed_route(method, path)
+    if fixed is not None:
+        return fixed
     task = _task_route(method, path)
     if task is not None:
         return task
     project = _PROJECT_ROUTE.fullmatch(path)
     if project is not None:
         return _project_route(method, project.group(1))
+    documents = _DOCUMENTS_ROUTE.fullmatch(path)
+    if documents is not None:
+        return _documents_route(method, documents.group(1))
     workflow = _WORKFLOW_ROUTE.fullmatch(path)
     if workflow is not None:
         return _workflow_route(method, workflow)
@@ -169,14 +180,32 @@ def match_route(method: str, path: str) -> Route:
     return Route(name, run_id)
 
 
+def _fixed_route(method: str, path: str) -> Route | None:
+    """Name a route whose path carries no identity, or ``None`` for a path that carries one.
+
+    ``/command/runs`` is the one of these the table admits under BOTH methods, because listing
+    runs and opening one are the same noun asked two ways; every other row is one verb, and the
+    other verb is ``method_not_allowed``.
+    """
+    if path == _RUNS_PATH:
+        return Route("runs")
+    fixed = _FIXED_ROUTES.get(path)
+    if fixed is None:
+        return None
+    verb, name = fixed
+    if method != verb:
+        raise ApiRefusal.fixed("method_not_allowed")
+    return Route(name)
+
+
 def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
-    return (path in {_SESSION_PATH, _QUOTAS_PATH, _TEMPLATES_PATH, _WORKFLOWS_PATH,
-                     _RUNS_PATH, _TASKS_PATH}
+    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
             or _TASK_ROUTE.fullmatch(path) is not None
-            or _PROJECT_ROUTE.fullmatch(path) is not None)
+            or _PROJECT_ROUTE.fullmatch(path) is not None
+            or _DOCUMENTS_ROUTE.fullmatch(path) is not None)
 
 
 def _task_route(method: str, path: str) -> Route | None:
@@ -205,6 +234,15 @@ def _project_route(method: str, tail: str) -> Route:
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return Route(name)
+
+
+def _documents_route(method: str, doc_id: str | None) -> Route:
+    """Name the read of the document list or of one document; both are GET only."""
+    if method != "GET":
+        raise ApiRefusal.fixed("method_not_allowed")
+    if doc_id is None:
+        return Route("project_documents")
+    return Route("project_document", doc_id=doc_id)
 
 
 def _workflow_route(method: str, matched: "re.Match[str]") -> Route:

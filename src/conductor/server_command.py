@@ -31,7 +31,8 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         session=subject.command_session, budget=budget, clock=clock, ids=ids,
         publish_run=subject.clients.publish_run, providers=subject.command_providers,
         quota_service=subject.command_quotas,
-        project=subject.broker.project_name, provider_configs=providers)
+        project=subject.broker.project_name, provider_configs=providers,
+        identity=subject.project_identity)
     if launch.mode == "view":
         _answer_quotas_from_the_hub(subject)
     # The effect belongs to server-owned workers, never to a request thread:

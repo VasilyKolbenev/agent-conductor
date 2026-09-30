@@ -71,7 +71,9 @@ from .http_transport import (
 )
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
+from .project_claim import UNCLAIMED, ProjectIdentity
 from .project_cycle import ProjectCycleStore
+from .project_git import GitRead
 from .task_store import TaskStore
 from .template_store import TemplateStore
 from .runtime import Budget, ControlRuntime
@@ -105,6 +107,39 @@ class CommandResponse:
     payload: Mapping[str, Any]
 
 
+def _admit_parts(
+        store: object, registry: object, templates: object, tasks: object, identity: object,
+        session: object, budget: object, calls: Iterable[object]) -> None:
+    """The type of every collaborator, judged before the API keeps one of them."""
+    if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
+        raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
+    if templates is not None and not isinstance(templates, TemplateStore):
+        raise TypeError("CommandApi templates must be a TemplateStore")
+    if tasks is not None and not isinstance(tasks, TaskStore):
+        raise TypeError("CommandApi tasks must be a TaskStore")
+    if not isinstance(identity, ProjectIdentity):
+        raise TypeError("CommandApi identity must be a ProjectIdentity")
+    if not isinstance(session, CommandSession) or type(budget) is not Budget:
+        raise TypeError("CommandApi requires a CommandSession and Budget")
+    if not all(callable(value) for value in calls):
+        raise TypeError("CommandApi providers must be callable")
+
+
+def _project_stores(
+        store: RunStore, templates: TemplateStore | None,
+        tasks: TaskStore | None) -> tuple[TemplateStore, TaskStore, ProjectCycleStore]:
+    """The reusable plans, the tasks and the pinned cycle of the project the run store serves.
+
+    All are rooted at the same project as the run store, because one project owns one set of
+    each; the task store holds the SAME process-local gate the run store holds for that root, and
+    so does the cycle store (spec 7.10, one small file). A caller may hand in its own templates
+    or tasks for a test.
+    """
+    return (TemplateStore(store.project_root) if templates is None else templates,
+            TaskStore(store.project_root) if tasks is None else tasks,
+            ProjectCycleStore(store.project_root))
+
+
 class CommandApi:
     """Bind transport, typed route authority, store, service, and authorization."""
 
@@ -119,18 +154,13 @@ class CommandApi:
             quota_max_age: timedelta = DEFAULT_QUOTA_MAX_AGE,
             templates: TemplateStore | None = None,
             tasks: TaskStore | None = None,
-            project: Callable[[], str | None] = lambda: None) -> None:
-        if not isinstance(store, RunStore) or not isinstance(registry, AdapterRegistry):
-            raise TypeError("CommandApi requires a RunStore and AdapterRegistry")
-        if templates is not None and not isinstance(templates, TemplateStore):
-            raise TypeError("CommandApi templates must be a TemplateStore")
-        if tasks is not None and not isinstance(tasks, TaskStore):
-            raise TypeError("CommandApi tasks must be a TaskStore")
-        if not isinstance(session, CommandSession) or type(budget) is not Budget:
-            raise TypeError("CommandApi requires a CommandSession and Budget")
-        if not all(callable(value)
-                   for value in (clock, ids, publish_run, project)):
-            raise TypeError("CommandApi providers must be callable")
+            project: Callable[[], str | None] = lambda: None,
+            identity: ProjectIdentity = UNCLAIMED,
+            project_git: GitRead | None = None) -> None:
+        _admit_parts(store, registry, templates, tasks, identity, session, budget,
+                     (clock, ids, publish_run, project))
+        if project_git is not None and not callable(project_git):
+            raise TypeError("CommandApi project_git must be a git reader")
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
@@ -138,16 +168,12 @@ class CommandApi:
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
         self._project = project
+        # What this server is, and the claim a request may make on it (spec 4.5.1).
+        self._identity = identity
+        # The reader of the project's git (spec 9.3), or None for a server that has none.
+        self._project_git = project_git
         self._store = store
-        # Rooted at the same project as the run store, because one project owns
-        # one set of reusable plans; a caller may hand in its own for a test.
-        self._templates = (
-            TemplateStore(store.project_root) if templates is None else templates)
-        # Rooted at the same project for the same reason, and holding the SAME
-        # process-local gate the run store holds for that root.
-        self._tasks = TaskStore(store.project_root) if tasks is None else tasks
-        # The project's pinned cycle (spec 7.10): the same root, the same gate, one small file.
-        self._cycle = ProjectCycleStore(store.project_root)
+        self._templates, self._tasks, self._cycle = _project_stores(store, templates, tasks)
         self._registry = registry
         self._session = session
         self._budget = Budget(
@@ -200,10 +226,12 @@ class CommandApi:
             pairs = tuple(raw_headers)
             if method == "GET":
                 host = validate_command_host(pairs, self._session.allowed_hosts)
+                self._identity.check(pairs)
                 if route.name == "quotas":
                     _quota_get(target, pairs, raw_body)
                 return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
+            self._identity.check(pairs)
             return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())

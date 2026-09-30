@@ -132,6 +132,8 @@ export const ERROR_LABELS = Object.freeze({
   slot_busy: "Another run holds this project's slot. Nothing was started.",
   project_not_active: "This project is open for viewing. Starting a run is only possible in "
     + "the active project; nothing was started.",
+  materials_refused: "The materials were not accepted. Nothing was published; correct "
+    + "the list and try again.",
   store_error: "The run store is unavailable.",
 });
 const RECORD_FIELDS = Object.freeze({

@@ -64,9 +64,14 @@ DESK_ASSETS = {
     "/panel/desk-hash.js": ("text/javascript; charset=utf-8", "desk-hash.js"),
     # Embed mode: whether a hub frames the desk, and the one message it says.
     "/panel/desk-embed.js": ("text/javascript; charset=utf-8", "desk-embed.js"),
+    # The time of an instant, short and exact: shared with the hub's page.
+    "/panel/desk-time.js": ("text/javascript; charset=utf-8", "desk-time.js"),
+    # The task-queue read judged against its shape, for the console that draws it.
+    "/panel/desk-queue-model.js": ("text/javascript; charset=utf-8", "desk-queue-model.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),
+    "/panel/desk-pult.js": ("text/javascript; charset=utf-8", "desk-pult.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
     "/panel/desk-wizard-materials.js": (
