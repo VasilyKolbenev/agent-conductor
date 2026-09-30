@@ -125,6 +125,21 @@ def _admit_parts(
         raise TypeError("CommandApi providers must be callable")
 
 
+def _quota_reader(quota_view: object, service: QuotaService | None,
+                  max_age: timedelta) -> object:
+    """The reader of `GET /command/quotas`: the one handed in, or the cache-only default.
+
+    A process opened for viewing is given a reader of the hub's last snapshot (spec 4.3.1); it
+    only has to answer `payload(contracts, now)` as the default does. The service and the
+    maximum age build the default and nothing else.
+    """
+    if quota_view is None:
+        return QuotaView(service, max_age)
+    if not callable(getattr(quota_view, "payload", None)):
+        raise TypeError("CommandApi quota_view must have a payload method")
+    return quota_view
+
+
 def _project_stores(
         store: RunStore, templates: TemplateStore | None,
         tasks: TaskStore | None) -> tuple[TemplateStore, TaskStore, ProjectCycleStore]:
@@ -152,6 +167,7 @@ class CommandApi:
             provider_configs=(),
             quota_service: QuotaService | None = None,
             quota_max_age: timedelta = DEFAULT_QUOTA_MAX_AGE,
+            quota_view: object | None = None,
             templates: TemplateStore | None = None,
             tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None,
@@ -164,7 +180,7 @@ class CommandApi:
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
-        self._quota_view = QuotaView(quota_service, quota_max_age)
+        self._quota_view = _quota_reader(quota_view, quota_service, quota_max_age)
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
         self._project = project
