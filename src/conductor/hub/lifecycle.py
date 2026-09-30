@@ -22,8 +22,10 @@ from conductor import up_flags, up_status
 
 STATES = ("stopped", "starting", "running", "stopping", "stop_overdue", "stop_uncertain",
           "failed", "busy_elsewhere", "recovery_required", "identity_mismatch", "missing")
-#: The codes the hub itself adds to those of the start table (4.1.5).
-HUB_CODES = frozenset({"start_timeout", "active_not_closed"})
+#: The codes the hub itself adds to those of the start table (4.1.5). `status_unreadable` is the
+#: tech lead's of 30.09: a `run/<id>.json` that is not the record blocks a new active child and
+#: is said on the project whose file it is and on the one that waits behind it.
+HUB_CODES = frozenset({"start_timeout", "active_not_closed", "status_unreadable"})
 STATE_CODES = frozenset(up_flags.START_CODES) | HUB_CODES
 _FAILED_CODES = STATE_CODES - {"project_identity_changed", "owner_busy", "recovery_required",
                                "ownership_lost"} - HUB_CODES
@@ -51,7 +53,8 @@ def derive(record: up_status.StatusRecord | None, liveness: str, *, pending: str
         head_phase: The phase of the ownership head, for a process that died in its work.
         prior_alive: Whether the hub's own earlier child of this project is still alive (an
             `owner_busy` refusal then means it is still stopping).
-        hub_code: A code the hub put on the project (`start_timeout`, `active_not_closed`).
+        hub_code: A code the hub put on the project (`start_timeout`, `active_not_closed`,
+            `status_unreadable`).
 
     Raises:
         ValueError: `hub_code` is not one of the hub's codes.

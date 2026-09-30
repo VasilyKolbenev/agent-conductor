@@ -8,9 +8,11 @@ cannot carry: there is no child client yet.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from conductor.hub import instance, registry, state
+from conductor.hub import instance, registry, state, supervisor
 from tests._hub_world import FakeSpawner, World, id_of, iso
 
 A, B, C = "a" * 32, "b" * 32, "c" * 32
@@ -279,3 +281,130 @@ def test_a_waiting_transition_whose_project_left_the_registry_is_not_consumed(wo
     (call,) = world.spawner.calls
     assert call["transition"] == world.hub_state().transition.id
     assert call["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"
+
+
+# -- a status file that is not the record blocks; a closing entry of an unlisted project is named --
+
+
+def _corrupt_status(world: World, name: str, *, stem: str | None = None) -> Path:
+    folder = world.home / "run"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{stem or id_of(name)}.json"
+    path.write_text("{this is not the status record", encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize("how", ["activate", "restart"])
+def test_a_status_file_that_is_not_the_record_blocks_a_new_active_child_and_says_why(world, how):
+    broken = _corrupt_status(world, "b")              # a file nobody can read, of a project
+    if how == "activate":
+        world.supervisor.activate(id_of("a"))
+    else:
+        _with_a_spawned_transition(world, "a")
+        world.supervisor.restart()
+    for _ in range(3):
+        world.supervisor.tick()
+    assert world.spawner.calls == [], "an active child started beside a file that may be a live one"
+    waiting, owner = (world.supervisor.status(id_of(name)).lifecycle for name in "ab")
+    assert waiting.state_code == "status_unreadable" and owner.state_code == "status_unreadable"
+    broken.unlink()                                   # the file is gone: nothing is in the way
+    world.supervisor.tick()
+    (call,) = world.spawner.calls
+    assert call["project_id"] == id_of("a") and call["mode"] == "active"
+    assert world.supervisor.status(id_of("a")).lifecycle.state_code is None
+
+
+def test_a_file_under_run_that_no_child_could_have_written_does_not_block(world):
+    _corrupt_status(world, "b", stem="notes")          # a child writes only <project id>.json
+    _corrupt_status(world, "b", stem="B" * 32)
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    assert len(world.spawner.started("a")) == 1
+
+
+def test_a_status_file_that_is_not_the_record_does_not_keep_a_project_from_opening_for_view(world):
+    _corrupt_status(world, "b")
+    world.supervisor.view(id_of("a"))                  # a view child spawns nothing itself
+    (call,) = world.spawner.calls
+    assert call["mode"] == "view" and call["project_id"] == id_of("a")
+
+
+def test_a_stuck_closure_is_named_before_an_unreadable_file(world):
+    _activate_and_start(world, "a")
+    world.supervisor.activate(id_of("b"))
+    world.gone("a", "stop_uncertain", head="opened")
+    _corrupt_status(world, "c")
+    world.supervisor.tick()
+    assert world.supervisor.status(id_of("b")).lifecycle.state_code == "active_not_closed"
+
+
+def _stop_and_forget(world: World, name: str = "a") -> None:
+    """The active project stops (nobody queued), is gone, and the owner takes it off the list."""
+    _activate_and_start(world, name)
+    world.supervisor.stop(id_of(name))
+    world.gone(name)
+    _leave_the_registry(world, name)
+    world.supervisor.tick()
+
+
+def test_a_closing_entry_of_a_project_off_the_list_is_named_and_blocks_until_it_is_back(world):
+    _stop_and_forget(world)
+    (owed,) = world.supervisor.unlisted_closing()
+    assert (owed.project_id, owed.action) == (id_of("a"), "relist")
+    assert owed.since == world.hub_state().closing[0].since
+    world.supervisor.activate(id_of("b"))
+    for _ in range(3):
+        world.supervisor.tick()
+    assert world.spawner.started("b") == [] and len(world.hub_state().closing) == 1
+    assert world.supervisor.status(id_of("b")).lifecycle.state_code == "active_not_closed"
+    _register_again(world, "a")                        # listed again: the rule can judge it
+    world.supervisor.tick()
+    assert len(world.spawner.started("b")) == 1
+    assert world.supervisor.unlisted_closing() == () and world.hub_state().closing == ()
+
+
+def test_an_unlisted_entry_whose_head_is_opened_leaves_only_after_it_is_listed_and_recovered(world):
+    _activate_and_start(world, "a")
+    world.supervisor.activate(id_of("b"))
+    world.gone("a", "serving", head="opened")          # the old child died in its work
+    _leave_the_registry(world, "a")
+    for _ in range(2):
+        world.supervisor.tick()
+    _register_again(world, "a")
+    world.supervisor.tick()
+    assert world.spawner.started("b") == [], "an opened head was taken as closed"
+    assert world.supervisor.status(id_of("a")).lifecycle.state == "recovery_required"
+    assert world.supervisor.unlisted_closing() == (), "listed again, so no longer unlisted"
+    world.gone("a", "stopped", head="recovered")       # after "Восстановить"
+    world.supervisor.tick()
+    assert len(world.spawner.started("b")) == 1 and world.hub_state().closing == ()
+
+
+def test_forgetting_an_active_project_that_is_not_proven_closed_leaves_its_obligation(world):
+    _with_a_spawned_transition(world, "a")
+    world.gone("a", "serving", head="opened")
+    world.supervisor.forget(id_of("a"))
+    current = world.hub_state()
+    assert current.active_project_id is None and current.transition is None
+    assert [entry.project_id for entry in current.closing] == [id_of("a")]
+    assert registry.load(world.home).project(id_of("a")) is None
+    assert [owed.project_id for owed in world.supervisor.unlisted_closing()] == [id_of("a")]
+
+
+def test_forgetting_a_project_proven_closed_leaves_no_obligation_and_clears_queue_and_flags(world):
+    world.supervisor.activate(id_of("b"), flag=FLAG)
+    world.supervisor.tick()
+    world.running("b")
+    world.store.update(lambda s: state.enqueue(s, id_of("b"), F2))    # a new flag while active
+    assert world.hub_state().handed_flags == {id_of("b"): F1} and world.hub_state().queue == (B,)
+    with pytest.raises(supervisor.SupervisorRefused) as running:
+        world.supervisor.forget(id_of("b"))
+    assert running.value.code == "project_running"
+    world.gone("b")                                    # stopped and closed
+    world.supervisor.forget(id_of("b"))
+    current = world.hub_state()
+    assert (current.active_project_id, current.queue, dict(current.handed_flags),
+            current.closing) == (None, (), {}, ())
+    with pytest.raises(supervisor.SupervisorRefused) as unknown:
+        world.supervisor.forget(id_of("b"))
+    assert unknown.value.code == "project_not_found"
