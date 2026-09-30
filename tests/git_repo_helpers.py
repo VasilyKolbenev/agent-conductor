@@ -68,12 +68,16 @@ def repository(tmp_path, name="repo"):
 
 
 def commit(folder, files, message="commit"):
-    """Write `files` (path to text or bytes), stage them all, commit, return the commit oid."""
+    """Write `files` (path to text or bytes), stage exactly those, commit, return the commit oid.
+
+    Only the named files are staged: the folder may hold the product's own run store by now, and
+    a repository that tracked it would be one the product refuses.
+    """
     for relative, content in files.items():
         target = folder / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content if isinstance(content, bytes) else content.encode("utf-8"))
-    git("add", "-A", cwd=folder)
+    git("add", "--", *files, cwd=folder)
     git("commit", "-q", "-m", message, cwd=folder)
     return git("rev-parse", "HEAD", cwd=folder).stdout.decode().strip()
 
