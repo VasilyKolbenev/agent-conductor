@@ -39,8 +39,8 @@ from .project_git import GitReadFailed, has_git_entry, repository_admission
 from .seed_plan import SeedRefusal
 from .adapters.harness_workspace import WorkspaceBusy
 from .seed_record import (
-    SOURCES, WORK_ITEM_ID, SeedRecord, SeedRecordTooLarge, SeedRequest, read_request, read_seed,
-    seed_state, write_request, write_seed)
+    SOURCES, WORK_ITEM_ID, CorruptSeed, SeedRecord, SeedRecordTooLarge, SeedRequest, read_request,
+    read_seed, seed_state, write_request, write_seed)
 from .store_errors import StoreError
 from .task_contracts import frozen_config_task
 from .task_routes import resolve_task_binding
@@ -85,6 +85,7 @@ def seed_task(api: CommandApi, task_id: str, body: object) -> _Reply:
     with _one_at_a_time(root):
         standing = read_seed(root, task_id)
         if standing is not None:
+            _hold_scope(standing, binding.work_scope)
             return _standing(root, standing, asked, viewing)
         if viewing and asked.source == "git":
             return _requested(root, task_id, asked, api._clock())
@@ -103,6 +104,12 @@ def _parse(body: object, viewing: bool) -> _Asked:
     if not lawful or (commit is not None and (source != "git" or viewing)):
         raise ApiRefusal.fixed("contract_invalid")
     return _Asked(source, commit, include)
+
+
+def _hold_scope(record: SeedRecord, scope: str) -> None:
+    """A stored seed must name the scope bound to the task or frozen in the run."""
+    if record.work_scope != scope:
+        raise CorruptSeed("a seed record names another scope than its task binding")
 
 
 def _standing(root: Path, standing: SeedRecord, asked: _Asked, viewing: bool) -> _Reply:
@@ -268,6 +275,7 @@ class SeedSettler:
             _translated(lambda: seed_stage.hold_target_free(root, scope, WORK_ITEM_ID))
             record = _staged_from_git(self._api, root, scope, task_id, asked, self._api._clock())
             _record(root, record)
+        _hold_scope(record, scope)
         state = seed_state(root, record)
         if state == "staged":
             seed_stage.move_staged(root, record)
