@@ -193,6 +193,7 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
                   wait_until="load")
         frame = page.query_selector("#desk").content_frame()
         if wait:
+            frame.wait_for_selector("#deskShell")
             frame.wait_for_function(SETTLED)
         opened.append(Embedded(page, frame, problems, asked))
         return opened[-1]
@@ -207,6 +208,9 @@ def _listen(page: Page, rig: Rig) -> tuple[list[str], list[tuple[str, str, bool]
     answered (its method, path and whether it carried the project header)."""
     problems: list[str] = []
     asked: list[tuple[str, str, bool]] = []
+    # These cases attribute reads to host messages and hash navigation. Keep SSE
+    # deliberately closed; live refresh/reconnect has separate server witnesses.
+    page.route("**/events", lambda route: route.fulfill(status=204))
     page.on("console", lambda message: problems.append(message.text)
             if message.type == "error" else None)
     page.on("pageerror", lambda error: problems.append(str(error)))

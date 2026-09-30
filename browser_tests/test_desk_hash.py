@@ -126,6 +126,9 @@ def open_desk(chromium: Browser, seeded_url: str,  # noqa: F811
         page.on("pageerror", lambda error: window.problems.append(str(error)))
         page.on("request", lambda request: _note(window, request))
         page.add_init_script(INIT)
+        # Attribute reads to navigation only. Live SSE is checked separately;
+        # HTTP 204 deliberately ends the stream without background retries.
+        page.route("**/events", lambda route: route.fulfill(status=204))
         if before is not None:
             before(page)
         page.goto(f"{identified_url if identified else seeded_url}{fragment}",
