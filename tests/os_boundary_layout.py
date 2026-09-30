@@ -52,6 +52,19 @@ class Layout:
         }
 
 
+def published_pid(pid_file: Path) -> int:
+    """The process id a child published in ``pid_file``, or a failure that shows what it wrote.
+
+    The child publishes by renaming a finished file into place, so what is here is whole: a
+    file that is empty or not one number is the child's own result (a launch that could not
+    build the grandchild), and the failure says so instead of raising ``ValueError``.
+    """
+    text = pid_file.read_text().strip()
+    if not text.isdigit():
+        raise AssertionError(f"the child published {text!r} in {pid_file.name}, not a process id")
+    return int(text)
+
+
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(text.encode("utf-8"))

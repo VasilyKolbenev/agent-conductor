@@ -492,7 +492,8 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
 def _resolved_providers(
         registry: AdapterRegistry | None,
         providers: Sequence[ProviderConfig], root: Path,
-        clock: Callable[[], str], ids: Callable[[str], str]) -> ProviderResolution:
+        clock: Callable[[], str], ids: Callable[[str], str],
+        spawns_allowed: bool = True) -> ProviderResolution:
     """Take an explicit registry OR the operator provider config, never both.
 
     An explicitly injected registry is a test/embedding seam and is used verbatim,
@@ -507,7 +508,8 @@ def _resolved_providers(
             raise ProviderConfigError(
                 "pass either an explicit adapter registry or provider config, not both")
         return ProviderResolution(registry=registry, contracts=())
-    return resolve_providers(providers, root=root, clock=clock, ids=ids)
+    return resolve_providers(providers, root=root, clock=clock, ids=ids,
+                             spawns_allowed=spawns_allowed)
 
 
 class ServerBindError(OSError):
@@ -581,7 +583,8 @@ class ConductServer(ThreadingHTTPServer):
             self._start_command(root, registry, providers, budget, clock, ids, token_factory)
             self.broker.refresh()               # initial state before serving
             self.watcher.start()
-            self.quota_collector.start()
+            if self.quota_collector is not None:      # a view process has none (4.3.1)
+                self.quota_collector.start()
         except BaseException:
             self.server_close()
             raise

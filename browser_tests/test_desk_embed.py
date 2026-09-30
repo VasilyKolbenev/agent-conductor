@@ -1,10 +1,11 @@
 """Embed mode in a real Chromium: a desk framed by a page of another origin, as a hub frames it.
 
 A host page on one loopback origin frames the desk of a seeded one-project server (built with
-that origin as its `hub_origin`, so the frame policy admits it) in the sandbox spec 4.5.5 gives
-a hub's iframe. The desk's project claim (`GET /command/project`) is lane H's route and does not
-exist on this server yet, so the tests answer it in the page, each with the claim it is about;
-one test lets the real server answer it, which is a 404, to show what a desk does today.
+that origin as its `hub_origin`, so the frame policy admits it, and served AS the project the
+hashes name, so its own check of the claim header and its own answer to the claim read are the
+real ones) in the sandbox spec 4.5.5 gives a hub's iframe. The desk's project claim
+(`GET /command/project`) is the first read of every window (spec 4.5.1); the tests answer it in
+the page where a test is about a claim the real server would not give.
 
 What this module holds, each as a measurement of the page and not a reading of source:
 
@@ -18,11 +19,11 @@ What this module holds, each as a measurement of the page and not a reading of s
 - a hash the hub sets by `location.replace` selects without a reload and is announced;
 - every condition of embed alone keeps it off: no or a bad `hub_origin`, a refused read, a route
   that does not exist, no `project` in the hash, a repeated `embed`, and a window that is not
-  framed -- and when the hash could not ask for embed the claim is not read;
+  framed -- and the claim is read once, first, by every window, framed or not;
 - a claim that names another project (or none) is not one more reason for embed to stay off: it
   is the terminal state "open for another project" (spec 4.5.1), which the desk enters once,
-  asks and says nothing after, and never leaves; when the claim lands while the lists are still
-  out, the desk that is foreign by then asks for no automation read either;
+  asks and says nothing after, and never leaves; the lists are not even asked while the claim
+  is out;
 - the desk listens for nothing the host posts, and a desk that has gone foreign sends nothing.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -39,6 +40,8 @@ from urllib.parse import quote, urlsplit
 import pytest
 from playwright.sync_api import Browser, Frame, Page, Request, Route
 
+from browser_tests.desk_flag_fake import FlagServer
+from browser_tests.desk_identity import identify
 from browser_tests.test_desk_hash import (
     FACTS, INIT, ON_RUN, QUIET, PROJECT_A as PROJECT, PROJECT_B, _foreign)
 from browser_tests.test_desk_rail_scene import SETTLED, _seed
@@ -109,6 +112,7 @@ def rig(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Rig]:
     root = write_project(tmp_path_factory.mktemp("desk-embed"), lanes={"claude": good_lane()})
     _seed(root)
     desk = server.build(root, 0, hub_origin=host_origin)
+    identify(desk, PROJECT, hub_origin=host_origin)
     desk_thread = threading.Thread(target=desk.serve_forever, daemon=True)
     desk_thread.start()
     desk_origin = f"http://127.0.0.1:{desk.server_address[1]}"
@@ -158,6 +162,10 @@ class Embedded:
     def claim_reads(self) -> int:
         return sum(path == "/command/project" for _method, path, _header in self.asked)
 
+    def command_paths(self) -> list[str]:
+        """Every `/command/` route the desk asked, in order."""
+        return [path for _method, path, _header in self.asked if path.startswith("/command/")]
+
 
 @pytest.fixture
 def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
@@ -165,8 +173,11 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
     opened: list[Embedded] = []
 
     def make(fragment: str, claim: Callable[[Route], None] | None = None, *,
-             before: Callable[[Page], None] | None = None) -> Embedded:
-        context = chromium.new_context(viewport={"width": 1400, "height": 1000})
+             before: Callable[[Page], None] | None = None, wait: bool = True,
+             flag: FlagServer | None = None,
+             automations: dict[str, dict] | None = None) -> Embedded:
+        context = chromium.new_context(viewport={"width": 1400, "height": 1000},
+                                       timezone_id="UTC")
         page = context.new_page()
         problems, asked = _listen(page, rig)
         page.add_init_script(INIT)
@@ -174,10 +185,15 @@ def embed(chromium: Browser, rig: Rig) -> Iterator[Callable[..., Embedded]]:
             before(page)
         if claim is not None:
             page.route("**/command/project", claim)
+        # The flag's routes are answered in the page: they are not served by this branch yet.
+        page.route("**/command/project/auto-continue", (flag or FlagServer()).handle)
+        for run, body in (automations or {}).items():
+            page.route(f"**/command/runs/{run}/automation", _answering(body))
         page.goto(f"{rig.host_url}#{quote(rig.desk_url + fragment, safe='')}",
                   wait_until="load")
         frame = page.query_selector("#desk").content_frame()
-        frame.wait_for_function(SETTLED)
+        if wait:
+            frame.wait_for_function(SETTLED)
         opened.append(Embedded(page, frame, problems, asked))
         return opened[-1]
 
@@ -269,35 +285,35 @@ def test_the_message_goes_only_to_the_origin_the_claim_names(embed):
     assert window.problems == []
 
 
-#: (row, the address, the answer to the claim read, whether the read is asked at all). Each row
-#: is ONE reason embed stays off; the host must receive nothing and the desk must drop `embed`.
+#: (row, the address, the answer to the claim read). Each row is ONE reason embed stays off; the
+#: host must receive nothing and the desk must drop `embed`. The claim is read in every row.
 STAYS_OFF = (
     ("the-claim-has-no-hub-origin", f"#project={PROJECT}&embed=hub&lang=en",
-     lambda rig: _answering(_claim(hub_origin=None)), True),
+     lambda rig: _answering(_claim(hub_origin=None))),
     ("the-claim-has-a-badly-formed-origin", f"#project={PROJECT}&embed=hub&lang=en",
-     lambda rig: _answering(_claim(hub_origin="http://localhost:7700")), True),
+     lambda rig: _answering(_claim(hub_origin="http://localhost:7700"))),
     ("the-read-is-refused", f"#project={PROJECT}&embed=hub&lang=en",
-     lambda rig: _answering({"error": {"code": "same_origin_denied"}}, 403), True),
-    ("the-route-does-not-exist-yet", f"#project={PROJECT}&embed=hub&lang=en",
-     lambda rig: None, True),
+     lambda rig: _answering({"error": {"code": "same_origin_denied"}}, 403)),
+    ("the-route-does-not-exist", f"#project={PROJECT}&embed=hub&lang=en",
+     lambda rig: _answering({"error": {"code": "route_not_found"}}, 404)),
     ("the-address-carries-no-project", "#embed=hub&lang=en",
-     lambda rig: _answering(_claim(hub_origin=rig.host_origin)), False),
+     lambda rig: _answering(_claim(hub_origin=rig.host_origin))),
     ("the-address-repeats-embed", f"#project={PROJECT}&embed=hub&embed=hub&lang=en",
-     lambda rig: _answering(_claim(hub_origin=rig.host_origin)), False),
+     lambda rig: _answering(_claim(hub_origin=rig.host_origin))),
     ("the-address-asks-for-another-embed", f"#project={PROJECT}&embed=parent&lang=en",
-     lambda rig: _answering(_claim(hub_origin=rig.host_origin)), False),
+     lambda rig: _answering(_claim(hub_origin=rig.host_origin))),
 )
 
 
-@pytest.mark.parametrize("fragment,claim,asked", [pytest.param(row[1], row[2], row[3], id=row[0])
-                                                  for row in STAYS_OFF])
+@pytest.mark.parametrize("fragment,claim", [pytest.param(row[1], row[2], id=row[0])
+                                            for row in STAYS_OFF])
 def test_embed_stays_off_and_nothing_is_sent_when_any_one_of_its_conditions_fails(
-        embed, rig, fragment, claim, asked):
+        embed, rig, fragment, claim):
     window = embed(fragment, claim(rig))
     window.frame.locator('#deskRail [data-task-id="task-fix"]').click()
     window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
     assert window.settle() == []
-    assert window.claim_reads() == (1 if asked else 0)
+    assert window.claim_reads() == 1
     address, shell = window.frame.evaluate("""() => [location.hash,
       document.getElementById('deskShell').getAttribute('data-state')]""")
     assert "embed" not in address and shell == "ready"
@@ -313,54 +329,36 @@ REFUSED = ("() => document.getElementById('deskShell').getAttribute('data-state'
 @pytest.mark.parametrize("named", [PROJECT_B, None], ids=["another-project", "no-project"])
 def test_a_claim_naming_another_project_leaves_a_framed_desk_foreign_with_no_message_and_no_read(
         embed, rig, language, named):
-    """The stale-iframe-on-a-reused-port case (spec 4.5.1). The claim's answer is held until the
-    desk has drawn a task and its run, so nothing the desk asks while it loads can be taken for
-    a read after the claim; then it is released, naming a project that is not the hash's."""
+    """The stale-iframe-on-a-reused-port case (spec 4.5.1). The claim's answer is held: until it
+    is given the desk has asked for nothing else and said nothing to the hub. It is then
+    released, naming a project that is not the hash's, and the desk ends having asked for no
+    list at all."""
     held: list[Route] = []
-    window = embed(f"#project={PROJECT}&embed=hub&task=task-fix&lang={language}",
-                   lambda route: held.append(route))
-    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
-    assert len(held) == 1 and window.claim_reads() == 1 and window.settle() == []
-    asked = len(window.asked)
+    opened = f"#project={PROJECT}&embed=hub&task=task-fix&lang={language}"
+    window = embed(opened, lambda route: held.append(route), wait=False)
+    for _frames in range(30):  # a bounded wait for the request to be made
+        if held:
+            break
+        window.frame.evaluate(QUIET)
+    assert len(held) == 1 and window.settle() == []
+    assert window.command_paths() == ["/command/project"]
     held[0].fulfill(status=200, content_type="application/json",
                     body=json.dumps(_claim(project_id=named, hub_origin=rig.host_origin)))
     window.frame.wait_for_function(REFUSED)
     window.frame.evaluate(QUIET)
     facts = window.frame.evaluate(FACTS)
     _foreign(facts, language)
-    assert facts["hash"] == f"#project={PROJECT}&task=task-fix&run=run-fix-new&lang={language}"
+    assert facts["hash"] == opened
     # Terminal: a hash the same project's hub would send now moves nothing and asks nothing.
     window.frame.evaluate("(hash) => location.replace(location.href.split('#')[0] + hash)",
                           f"#project={PROJECT}&embed=hub&task=task-docs&lang={language}")
     window.frame.evaluate(QUIET)
     _foreign(window.frame.evaluate(FACTS), language)
-    assert window.settle() == [] and len(window.asked) == asked
-    assert window.claim_reads() == 1 and window.problems == []
+    assert window.settle() == [] and window.command_paths() == ["/command/project"]
+    assert window.problems == []
 
 
-@pytest.mark.parametrize("named", [PROJECT_B, None], ids=["another-project", "no-project"])
-def test_a_claim_that_ends_the_desk_while_its_lists_are_in_flight_costs_no_automation_read(
-        embed, rig, named):
-    """The claim lands first and names another project, while the runs list is still out. The
-    desk is then foreign; when the list lands, the newest run of each task is NOT asked about."""
-    held: list[Route] = []
-    window = embed(
-        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
-        _answering(_claim(project_id=named, hub_origin=rig.host_origin)),
-        before=lambda page: page.route("**/command/runs", lambda route: held.append(route)))
-    window.frame.wait_for_function(REFUSED)
-    assert len(held) == 1
-    with window.page.expect_response(
-            lambda response: response.url.endswith("/command/runs")):
-        held[0].continue_()
-    window.frame.evaluate(QUIET)
-    window.frame.evaluate(QUIET)
-    asked = [path for _method, path, _header in window.asked if path.startswith("/command/runs/")]
-    assert asked == []
-    assert window.settle() == [] and window.problems == []
-
-
-def test_a_desk_that_is_not_framed_never_asks_for_the_claim_and_drops_embed(
+def test_a_desk_that_is_not_framed_reads_the_claim_like_any_window_and_drops_embed(
         chromium: Browser, rig):
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     page = context.new_page()
@@ -375,17 +373,19 @@ def test_a_desk_that_is_not_framed_never_asks_for_the_claim_and_drops_embed(
             True, f"#project={PROJECT}&task=task-fix&run=run-fix-new&lang=en"]
     finally:
         context.close()
-    assert window.claim_reads() == 0 and problems == []
+    assert window.claim_reads() == 1 and problems == []
 
 
-def test_a_framed_desk_reads_the_claim_once_with_a_get_and_no_project_header(embed, rig):
+def test_a_framed_desk_reads_the_claim_once_with_a_get_and_every_command_carries_the_project(
+        embed, rig):
     window = embed(f"#project={PROJECT}&embed=hub&lang=en",
                    _answering(_claim(hub_origin=rig.host_origin)))
     window.wait_for_messages(1)
     window.frame.wait_for_function(SETTLED)
     assert window.claim_reads() == 1
     assert {method for method, _path, _header in window.asked} == {"GET"}
-    assert not any(header for _method, _path, header in window.asked)
+    commands = [header for _method, path, header in window.asked if path.startswith("/command/")]
+    assert commands and all(commands)
     assert window.frame.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]
 
 

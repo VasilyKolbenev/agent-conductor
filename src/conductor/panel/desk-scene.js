@@ -40,11 +40,24 @@ function nothingToShow(view) {
   return invite ? [note(view, "desk.scene.choose")] : [];
 }
 
+//: The terminal state of a desk open for another project (spec 4.5.1): the sentence that
+//: says so, and the one way out, a button that reloads the page. Nothing else is drawn.
+function foreignPlate(view, handlers) {
+  const reload = element("button", {type: "button", className: "desk-scene__reload",
+    "data-focus-key": "scene:reload", text: localize(view, "desk.reload")});
+  reload.addEventListener("click", () => handlers.reload());
+  return [note(view, "desk.foreign"), reload];
+}
+
 //: A redraw of the same run keeps the lens, the selection and the scroll a person left it
 //: in: the deck reads them off the mount before it is replaced and is handed them back.
 export function mountScene(mount, view, handlers) {
   const previous = participantSelection(mount);
   releaseParticipants(mount);
+  if (view.foreign) {
+    mount.replaceChildren(...foreignPlate(view, handlers));
+    return;
+  }
   const {phase, detail} = view.run;
   if (phase === "loading") mount.replaceChildren(note(view, "phase.loading"));
   else if (detail !== null) {

@@ -26,7 +26,7 @@ from playwright.sync_api import Browser, Page
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     Embedded, Rig, _answering, _claim, embed, rig)
 from browser_tests.test_desk_hash import (  # noqa: F401  (fixtures and helpers)
-    FACTS, ON_RUN, PROJECT_A, QUIET, _go, open_desk)
+    FACTS, ON_RUN, PROJECT_A, QUIET, _go, identified_url, open_desk)
 from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
 from browser_tests.test_desk_status import RAW
 
@@ -220,6 +220,32 @@ def test_a_name_outside_the_id_grammar_is_refused_in_place_and_the_typed_text_st
     assert window.problems == []
 
 
+def test_a_refused_name_is_still_said_after_a_redraw_until_the_person_types_again(open_desk):
+    """The hint of a refusal is part of what the form shows, not of one drawing of it: a redraw
+    (a task pressed, a language set) rebuilds the form with the hint where it was, and the next
+    keystroke ends it for good -- a later redraw does not bring it back."""
+    window = open_desk("#lang=en")
+    page = window.page
+    page.wait_for_function(SETTLED)
+    page.click(CHANGE)
+    page.fill(NAME, "a b")
+    page.click(SAVE)
+    assert page.evaluate(PULT)["hintHidden"] is False
+    page.locator('#deskRail [data-task-id="task-docs"]').click()
+    page.wait_for_function(ON_RUN, arg="run-docs")
+    again = page.evaluate(PULT)
+    assert (again["form"], again["hintHidden"], again["input"]) == (True, False, "a b")
+    _go(page, "#lang=ru")
+    page.wait_for_function("() => document.documentElement.lang === 'ru'")
+    assert page.evaluate(PULT)["hintHidden"] is False
+    page.press(NAME, "x")
+    assert page.evaluate(PULT)["hintHidden"] is True
+    page.locator('#deskRail [data-task-id="task-fix"]').click()
+    page.wait_for_function(ON_RUN, arg="run-fix-new")
+    assert page.evaluate(PULT)["hintHidden"] is True
+    assert window.problems == []
+
+
 def test_the_name_field_cuts_what_is_typed_at_128_characters(open_desk):
     window = open_desk("#lang=en")
     page = window.page
@@ -371,7 +397,7 @@ def test_words_typed_and_cancelled_are_not_carried_into_the_next_opening_of_the_
 
 
 def test_a_desk_that_went_foreign_draws_nothing_in_the_console_and_keeps_no_name(open_desk):
-    window = open_desk(f"#project={PROJECT_A}&lang=en")
+    window = open_desk(f"#project={PROJECT_A}&lang=en", identified=True)
     page = window.page
     page.wait_for_function(SETTLED)
     page.click(CHANGE)

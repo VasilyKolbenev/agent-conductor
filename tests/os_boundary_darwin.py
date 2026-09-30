@@ -57,16 +57,24 @@ def _filters(kind: str, paths: Iterable[str]) -> str:
 
 
 def seatbelt_profile(*, writable: Sequence, protected: Sequence = (),
-                     unreadable: Sequence = (), deny_links: Sequence = ()) -> str:
+                     unreadable: Sequence = (), deny_links: Sequence = (),
+                     removable: Sequence = ()) -> str:
     """The profile text: writes denied everywhere, allowed in ``writable``, denied again in
-    ``protected``; each writable directory made unremovable; optional read and link denies."""
+    ``protected``; each writable directory made unremovable unless it is named ``removable``
+    (the control profile: without it nothing shows that this rule is what stops a rename of
+    the directory that holds the protected entries); optional read and link denies."""
     roots = [_real(path) for path in writable]
+    exempt = [_real(path) for path in removable]
+    if any(path not in roots for path in exempt):
+        raise ProfileError("a directory named removable but not writable: "
+                           + ", ".join(path for path in exempt if path not in roots))
     lines = ["(version 1)", "(allow default)", "(deny file-write*)",
              "(allow file-write* " + _filters("subpath", roots) + ' (literal "/dev/null"))']
     if protected:
         lines.append("(deny file-write* "
                      + _filters("subpath", (_real(path) for path in protected)) + ")")
-    lines += [f'(deny file-write-unlink (literal "{root}"))' for root in roots]
+    lines += [f'(deny file-write-unlink (literal "{root}"))'
+              for root in roots if root not in exempt]
     if unreadable:
         lines.append("(deny file-read* "
                      + _filters("subpath", (_real(path) for path in unreadable)) + ")")

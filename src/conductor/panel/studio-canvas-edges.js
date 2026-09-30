@@ -70,7 +70,34 @@ function edgeHit(cells, edge, context) {
       select();
     }
   });
-  return [path, hit];
+  return [path, hit, ...flowMarks(cells, edge, id, context, path, hit)];
+}
+
+//: What only a flow's road carries (a Studio document never has these keys): the word it is
+//: drawn with and the mark a diagnostic row left at it. The word is text the caller already said in
+//: the reader's language, set in the middle of the road; the mark is an attribute and, on the road's
+//: label, a word, so no colour alone says a road is at fault.
+function flowMarks(cells, edge, id, context, path, hit) {
+  const severity = isObject(edge.mark) ? String(edge.mark.severity) : null;
+  if (severity !== null) {
+    path.setAttribute("data-diag", severity);
+    hit.setAttribute("data-diag", severity);
+  }
+  if (typeof edge.label !== "string" && severity === null) return [];
+  const from = cells[edge.from_node], to = cells[edge.to_node];
+  const x = (cellX(from) + CELL.width + cellX(to)) / 2;
+  const y = (cellMid(from, context.pitch) + cellMid(to, context.pitch)) / 2 - 4;
+  const said = [edge.label, isObject(edge.mark) ? edge.mark.text : null]
+    .filter((part) => typeof part === "string" && part !== "");
+  const label = document.createElementNS(SVG_NS, "text");
+  label.setAttribute("class", "studio-edge__label");
+  label.setAttribute("data-edge-label", id);
+  label.setAttribute("x", String(x));
+  label.setAttribute("y", String(y));
+  label.setAttribute("text-anchor", "middle");
+  label.setAttribute("pointer-events", "none");
+  label.textContent = said.join(" · ");
+  return said.length === 0 ? [] : [label];
 }
 
 //: The one edge a `loop` node states rather than draws. `back_to` is not in

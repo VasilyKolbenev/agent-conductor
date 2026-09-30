@@ -367,8 +367,11 @@ class DrainProject:
 
     def start(self, *, hub: bool, auto_release: bool = False, fault: str | None = None,
               margin: float | None = None, ctrl_c: str = "none",
-              settle_delay: float = LINGER, quota: str | None = None) -> DrainChild:
+              settle_delay: float = LINGER, quota: str | None = None,
+              mode: str | None = None) -> DrainChild:
         """Launch the child; `ctrl_c` is `none` (no console), `ignored` or `enabled` (its own).
+
+        `mode` is the `--mode` flag as a hub gives it (`view` needs the hub flags).
 
         `quota` gives the child a real collector polling a fake source every second:
         `poll` marks each poll, `hold-<n>` also holds poll `n` until it is released.
@@ -378,6 +381,8 @@ class DrainProject:
             argv += ["--project-id", self.project_id,
                      "--hub-origin", "http://127.0.0.1:7700",
                      "--status-file", str(self.status_file), "--stop-on-stdin-eof"]
+        if mode is not None:
+            argv += ["--mode", mode]
         stderr_path = self.base / f"child-{len(self.children)}.err"
         with stderr_path.open("wb") as stderr:
             proc = subprocess.Popen(

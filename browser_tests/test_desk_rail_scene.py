@@ -12,8 +12,9 @@ What this module holds, each as a measurement of the page and not a reading of s
 - the rail lists every task with the word the rules of spec 5.2.1 give its NEWEST run, in the
   reader's language, and the machine words never reach the screen;
 - `verification_failed` is never drawn without its sentence in the same row;
-- the desk reads `/command/tasks`, `/command/runs` and the automation of the newest run of each
-  task that has one -- no other route, no method but GET, no project header, nothing stored;
+- the desk reads the project claim first, then `/command/tasks`, `/command/runs` and the
+  automation of the newest run of each task that has one -- no other route, no method but GET,
+  no project header (this server serves no identified project), nothing stored;
 - a refused or unanswered list read empties the rail and says so, and an automation read that
   fails changes only the row it belongs to;
 - a record the server cannot read is never drawn as "not started": one unreadable run row makes
@@ -220,10 +221,12 @@ def test_the_tasks_waiting_for_a_person_carry_the_amber_tone_and_every_row_clear
 
 def test_the_desk_reads_the_lists_and_the_newest_run_of_each_task_and_writes_nothing(desk_in):
     window = desk_in("en")
-    command = sorted((method, path, header) for method, path, header in window.asked
-                     if path.startswith("/command/"))
-    assert command == sorted(
-        [("GET", "/command/tasks", False), ("GET", "/command/runs", False)]
+    asked = [(method, path, header) for method, path, header in window.asked
+             if path.startswith("/command/")]
+    assert asked[0] == ("GET", "/command/project", False), "the claim is the first read"
+    assert sorted(asked) == sorted(
+        [("GET", "/command/project", False), ("GET", "/command/tasks", False),
+         ("GET", "/command/runs", False)]
         + [("GET", f"/command/runs/{run}/automation", False) for run in NEWEST.values()])
     assert {method for method, _path, _header in window.asked} == {"GET"}
     assert window.page.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]

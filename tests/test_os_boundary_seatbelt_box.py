@@ -11,13 +11,16 @@ one, and without it a witness that always said "no" would pass the first.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 
 import pytest
 
 from tests import os_boundary_darwin as sb
 from tests.os_boundary_seatbelt_box import (  # noqa: F401
-    absent_box, implement_box, unprotected_box)
+    absent_box, implement_box, protected_box, unprotected_box)
+# The table sits beside the darwin tests that judge it; here it is only read, never run.
+from tests.test_os_boundary_darwin import PROTECTED_OPS
 
 pytestmark = pytest.mark.skipif(
     os.name == "nt", reason="needs POSIX paths: a Seatbelt profile names POSIX paths")
@@ -52,6 +55,34 @@ def test_the_box_that_protects_absent_names_starts_without_them_beside_a_box_tha
     for name in _ABSENT_NAMES:
         assert not (absent_box.layout.vendor_home / name).exists(), name
         assert (unprotected_box.layout.vendor_home / name).exists(), name
+
+
+def test_the_control_box_leaves_the_directory_that_holds_the_entries_removable_and_the_other_not(
+        protected_box, unprotected_box):
+    """Only the protected box may stop a rename of the holder: the control must not."""
+    holder_rule = 'file-write-unlink (literal "{}")'
+    assert holder_rule.format(protected_box.layout.vendor_home.resolve()) in protected_box.profile
+    assert holder_rule.format(
+        unprotected_box.layout.vendor_home.resolve()) not in unprotected_box.profile
+    assert holder_rule.format(unprotected_box.layout.tmp.resolve()) in unprotected_box.profile
+
+
+@pytest.mark.parametrize("operation", PROTECTED_OPS, ids=lambda op: op.name)
+def test_every_path_a_protected_operation_names_is_inside_a_root_the_control_profile_may_write(
+        unprotected_box, operation):
+    """An operation that lands outside every allowed root can never change anything there, so
+    its run without the protection would show nothing and could not tell the protection apart."""
+    allow = next(line for line in unprotected_box.profile.splitlines()
+                 if line.startswith("(allow file-write*"))
+    roots = re.findall(r'\(subpath "([^"]+)"\)', allow)
+    tokens = unprotected_box.tokens("vendor")
+    for step in operation.posix:
+        body = step.body
+        for key, value in tokens.items():
+            body = body.replace(f"@{key}@", os.path.realpath(value))
+        for path in re.findall(r'"(/[^"]*)"', body):
+            assert any(path == root or path.startswith(root + "/") for root in roots), (
+                f"{operation.name}: {path} is outside {roots}")
 
 
 def test_the_profile_of_the_absent_box_denies_both_names_after_the_allow_that_covers_them(

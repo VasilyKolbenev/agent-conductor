@@ -180,6 +180,11 @@ def http_checks(url: str, provenance: dict) -> int:
         checks += 1
     packaged = {name[len("panel/"):] for name in provenance["files"] if name.startswith("panel/")}
     served = {facts["file"] for facts in provenance["routes"].values()}
+    # The hub page's files are served by the hub, which this road does not start: they are
+    # accounted for by the registry the wheel carries, and each must be installed.
+    hub = set(provenance["hub_files"])
+    assert {"panel/" + name for name in hub} <= set(provenance["files"]), sorted(hub)
+    served |= hub
     assert packaged == served, {"unserved": sorted(packaged - served),
                                 "missing": sorted(served - packaged)}
     for route in ENDPOINTS:

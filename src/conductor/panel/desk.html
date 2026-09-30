@@ -27,7 +27,10 @@
      The five mounts below are the regions of the desk (spec 5.1): the rail of
      tasks, the scene, the feed, the summary and the pult. Each stands in the
      machine word `empty` until a module fills it and a read says otherwise; the
-     top bar's status line is the one sentence a person reads. -->
+     top bar's status line is the one sentence a person reads. The plate above
+     the centre is no region: it says one sentence, written in the reader's
+     language like every other word of the page, and is shown only in a project
+     the server's claim says is open for viewing (spec 5.8). -->
 </head>
 <body>
 <div class="desk-shell" id="deskShell">
@@ -39,6 +42,7 @@
   </header>
   <nav class="desk-rail" id="deskRail" data-i18n-label="desk.rail.label" data-region="rail" data-state="empty"></nav>
   <main class="desk-center" id="deskCenter">
+    <p class="desk-plate" id="deskPlate" role="note" data-i18n="desk.plate.view" hidden></p>
     <section class="desk-scene" id="deskScene" data-i18n-label="desk.scene.label" data-region="scene" data-state="empty"></section>
     <section class="desk-feed" id="deskFeed" data-i18n-label="desk.feed.label" data-region="feed" data-state="empty"></section>
     <section class="desk-summary" id="deskSummary" data-i18n-label="desk.summary.label" data-region="summary" data-state="empty"></section>

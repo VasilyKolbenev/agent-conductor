@@ -56,7 +56,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-           "studio-canvas-edges.js",
+           "studio-canvas-edges.js", "studio-canvas-flow.js",
            "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js",
            "studio-people.js", "studio-runread.js", "studio-review.js",
            "studio-layout.js", "studio-edits.js", "studio-situation.js",
@@ -70,14 +70,19 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-quotas-model.js", "studio-quotas.js", "studio-quotaflow.js",
            "desk-transport.js", "desk.js", "desk-copy.js", "desk-status.js",
            "desk-status-copy.js", "desk-rail.js", "desk-scene.js", "desk-hash.js", "desk-embed.js",
-           "desk-time.js", "desk-queue-model.js", "desk-pult.js",
+           "desk-time.js", "desk-queue-model.js", "desk-flag-model.js", "desk-flag.js",
+           "desk-pult.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-digest.js", "desk-wizard-input.js", "desk-wizard-prep.js",
            "desk-wizard-launch.js", "desk-wizard-skip.js", "desk-wizard-run.js",
            "desk-wizard-copy.js",
            "desk-wizard-draw.js",
-           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js")
+           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js",
+           "desk-flow-shape.js", "desk-flow-loops.js", "desk-flow-branches.js",
+           "desk-flow-edits.js", "desk-flowwrite.js", "desk-quickcycle.js", "desk-flow-graph.js",
+           "desk-flow-fields.js", "desk-flow-model.js", "desk-flow-copy.js",
+           "desk-flow-draw.js", "desk-flow-diag.js", "desk-flow-inspector.js", "desk-flow.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"

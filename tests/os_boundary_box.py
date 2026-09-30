@@ -13,6 +13,7 @@ import http.server
 import os
 import subprocess
 import threading
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,14 +24,31 @@ from tests import os_boundary_windows as ac
 from tests.os_boundary_layout import Layout, Operation, Step, make_layout, render, snapshot
 
 _STEP_TIMEOUT = 90.0
+#: Every launch of a probe script starts without PowerShell's own cmdlet modules. The CI
+#: host's container lost them (``Write-Output``, ``New-Object`` and ``Add-Type`` were "not
+#: recognized" there, while .NET calls ran), and a probe that quietly needed one passed on a
+#: desktop and failed on the runner. Removing them from the launch itself, for the confined
+#: run and its control alike, makes such a dependence fail on every host.
+WITHOUT_CMDLETS = (
+    "$PSModuleAutoLoadingPreference = 'None'; "
+    "Remove-Module Microsoft.PowerShell.Utility, Microsoft.PowerShell.Management, "
+    "Microsoft.PowerShell.Security, Microsoft.PowerShell.Diagnostics -Force "
+    "-ErrorAction SilentlyContinue; "
+)
+#: ``MoveFileExW(a, b, MOVEFILE_REPLACE_EXISTING)`` called through a P/Invoke method that the
+#: script emits into memory itself: ``Add-Type`` is a cmdlet and compiles C# with a helper
+#: process, and neither is needed to make one native call.
 _MOVE_REPLACE = (
-    "Add-Type -Namespace H -Name N -MemberDefinition "
-    "'[DllImport(\"kernel32.dll\",CharSet=CharSet.Unicode,SetLastError=true)] "
-    "public static extern bool MoveFileExW(string a,string b,int f);'; "
-    "Write-Output ('ok=' + [H.N]::MoveFileExW('@SRC_FILE@','@DST_FILE@',1))"
+    "$t = [AppDomain]::CurrentDomain.DefineDynamicAssembly("
+    "[Reflection.AssemblyName]::new('h'), [Reflection.Emit.AssemblyBuilderAccess]::Run)"
+    ".DefineDynamicModule('h').DefineType('N'); "
+    "$m = $t.DefinePInvokeMethod('MoveFileExW', 'kernel32.dll', 'Public,Static,PinvokeImpl', "
+    "'Standard', [bool], [Type[]]@([string], [string], [int]), 'Winapi', 'Unicode'); "
+    "$m.SetImplementationFlags('PreserveSig'); $n = $t.CreateType(); "
+    "[Console]::Out.Write('ok=' + $n::MoveFileExW('@SRC_FILE@','@DST_FILE@',1))"
 )
 _NESTED = (
-    "$i = New-Object Diagnostics.ProcessStartInfo; $i.FileName = '@POWERSHELL@'; "
+    "$i = [Diagnostics.ProcessStartInfo]::new(); $i.FileName = '@POWERSHELL@'; "
     "$i.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File @TMPD@\\inner.ps1'; "
     "$i.UseShellExecute = $false; [Diagnostics.Process]::Start($i).WaitForExit()"
 )
@@ -53,13 +71,48 @@ def base_environment(scratch: Path) -> dict[str, str]:
             "TEMP": str(scratch), "TMP": str(scratch)}
 
 
+_START_A_SHELL = (
+    "try { $i = [Diagnostics.ProcessStartInfo]::new(); $i.FileName = '@POWERSHELL@'; "
+    "$i.Arguments = '-NoProfile -NonInteractive -Command exit 0'; $i.UseShellExecute = $false; "
+    "[void][Diagnostics.Process]::Start($i).WaitForExit(); [Console]::Out.Write('started') } "
+    "catch { [Console]::Out.Write($_.Exception.Message) }"
+)
+
+
+def shell_start_problem(box) -> str:
+    """Empty when a confined PowerShell can start a PowerShell of its own, else what it said."""
+    result = box.run_script(_START_A_SHELL)
+    if result.started and result.output == "started":
+        return ""
+    return result.output.strip() or f"the shell printed nothing and exited {result.exit_code}"
+
+
+def require_child_shell(box) -> None:
+    """Skip the calling test, naming the fact, when the container cannot start a shell.
+
+    A test about what a confined child's own child may do measures nothing on a host where
+    the container cannot start that child; the reason is also a warning so a quiet run shows it.
+    """
+    problem = shell_start_problem(box)
+    if problem:
+        reason = ("a PowerShell in this host's container cannot start a PowerShell of its own: "
+                  + problem)
+        warnings.warn(f"OS-boundary host difference: {reason}", stacklevel=2)
+        pytest.skip(reason)
+
+
+def powershell_line(body: str) -> str:
+    """The command line that runs ``body`` in Windows PowerShell exactly as written."""
+    return subprocess.list2cmdline([
+        str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-Command", body])
+
+
 def command_line(step: Step, tokens: dict[str, str]) -> str:
     """The raw command line for one step, identical for the confined run and its control."""
     body = render(step.body, tokens)
     if step.tool == "ps":
-        return subprocess.list2cmdline([
-            str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-            "-Command", body])
+        return powershell_line(WITHOUT_CMDLETS + body)
     if step.tool == "cmd":
         return f'"{ac.CMD}" /d /s /c "{body}"'
     if step.tool == "icacls":
@@ -131,7 +184,8 @@ class Box:
         return self.launch(subprocess.list2cmdline(list(argv)), confined=confined, suspended=True)
 
     def write_inner_script(self, text: str) -> None:
-        (self.layout.tmp / "inner.ps1").write_bytes(render(text, self.tokens()).encode("utf-8"))
+        script = WITHOUT_CMDLETS + render(text, self.tokens())
+        (self.layout.tmp / "inner.ps1").write_bytes(script.encode("utf-8"))
 
     def run_nested(self, *, confined: bool) -> StepResult:
         return self.run_script(_NESTED, confined=confined)

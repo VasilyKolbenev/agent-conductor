@@ -78,6 +78,27 @@ def test_a_claim_that_names_another_project_or_none_is_told_from_one_that_names_
     assert got == [False, False, True, True, True, True, False, True, False, False, False, False]
 
 
+def test_the_project_a_claim_names_is_its_id_or_null_and_a_claim_that_binds_nothing_is_none():
+    rows = [
+        _claim(),                                # an id of the exact grammar
+        _claim(project_id=None),                 # no project
+        {"hub_origin": HUB},                     # no project_id key: the same as none
+        _claim(project_id=PROJECT.upper()),      # upper case is not the grammar
+        _claim(project_id=PROJECT[:-1]),         # too short
+        _claim(project_id=f"{PROJECT}0"),        # too long
+        _claim(project_id=7),                    # not text
+        _claim(project_id=[PROJECT]),            # not text
+        None, "http://127.0.0.1:7700", [PROJECT], 7,   # not a claim at all
+    ]
+    got = run_js("""
+      console.log(JSON.stringify(d.map((claim) => {
+        const named = embed.projectOf(claim);
+        return named === undefined ? "unusable" : named;
+      })));
+    """, MODULES, rows)
+    assert got == [PROJECT, None, None] + ["unusable"] * 9
+
+
 def test_the_hub_origin_must_be_exactly_a_loopback_origin_with_a_port_and_nothing_else():
     refused = ["http://localhost:7700", "https://127.0.0.1:7700", "http://127.0.0.1:7700/",
                "http://127.0.0.1:7700/x", "http://127.0.0.1:0", "http://127.0.0.1:65536",

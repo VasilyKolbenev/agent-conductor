@@ -15,7 +15,7 @@ _STUDIO_FILES = (
     "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
     "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",
     "studio-runform.js", "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
-    "studio-canvas-edges.js",
+    "studio-canvas-edges.js", "studio-canvas-flow.js",
     "studio-runwords.js", "studio-runstep.js", "studio-runwrite.js", "studio-people.js",
     "studio-rundocs.js", "studio-rundraft.js", "studio-runwrites.js", "studio-toolbardraft.js",
     "studio-controls.js", "studio-isolation.js", "studio-focus.js", "studio-participants.js",
@@ -68,6 +68,10 @@ DESK_ASSETS = {
     "/panel/desk-time.js": ("text/javascript; charset=utf-8", "desk-time.js"),
     # The task-queue read judged against its shape, for the console that draws it.
     "/panel/desk-queue-model.js": ("text/javascript; charset=utf-8", "desk-queue-model.js"),
+    # The continue-after flag judged against its shape, for the block that draws it.
+    "/panel/desk-flag-model.js": ("text/javascript; charset=utf-8", "desk-flag-model.js"),
+    # The one read and the one write of that flag: the only write the boot module hands on.
+    "/panel/desk-flag.js": ("text/javascript; charset=utf-8", "desk-flag.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),
@@ -92,6 +96,20 @@ DESK_ASSETS = {
     "/panel/desk-wizard-card.js": ("text/javascript; charset=utf-8", "desk-wizard-card.js"),
     "/panel/desk-wizard-copy.js": ("text/javascript; charset=utf-8", "desk-wizard-copy.js"),
     "/panel/desk-wizard.js": ("text/javascript; charset=utf-8", "desk-wizard.js"),
+    "/panel/desk-flow-shape.js": ("text/javascript; charset=utf-8", "desk-flow-shape.js"),
+    "/panel/desk-flow-loops.js": ("text/javascript; charset=utf-8", "desk-flow-loops.js"),
+    "/panel/desk-flow-branches.js": ("text/javascript; charset=utf-8", "desk-flow-branches.js"),
+    "/panel/desk-flow-edits.js": ("text/javascript; charset=utf-8", "desk-flow-edits.js"),
+    "/panel/desk-flowwrite.js": ("text/javascript; charset=utf-8", "desk-flowwrite.js"),
+    "/panel/desk-quickcycle.js": ("text/javascript; charset=utf-8", "desk-quickcycle.js"),
+    "/panel/desk-flow-graph.js": ("text/javascript; charset=utf-8", "desk-flow-graph.js"),
+    "/panel/desk-flow-fields.js": ("text/javascript; charset=utf-8", "desk-flow-fields.js"),
+    "/panel/desk-flow-model.js": ("text/javascript; charset=utf-8", "desk-flow-model.js"),
+    "/panel/desk-flow-copy.js": ("text/javascript; charset=utf-8", "desk-flow-copy.js"),
+    "/panel/desk-flow-draw.js": ("text/javascript; charset=utf-8", "desk-flow-draw.js"),
+    "/panel/desk-flow-diag.js": ("text/javascript; charset=utf-8", "desk-flow-diag.js"),
+    "/panel/desk-flow-inspector.js": ("text/javascript; charset=utf-8", "desk-flow-inspector.js"),
+    "/panel/desk-flow.js": ("text/javascript; charset=utf-8", "desk-flow.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

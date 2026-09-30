@@ -180,7 +180,10 @@ def test_the_edge_layer_is_drawn_by_its_own_module_and_the_canvas_only_calls_it(
 #: the ring both of these splits were drawn to open.
 _ALLOWED_IMPORTS = {
     "studio-canvas.js": ["./command-view.js", "./studio-layout.js", "./studio-orbit.js",
-                         "./studio-canvas-edges.js"],
+                         "./studio-canvas-edges.js", "./studio-canvas-flow.js"],
+    #: What only a flow draws, split off the canvas so it keeps its headroom: it builds elements
+    #: and reaches nothing else, and the canvas imports it.
+    "studio-canvas-flow.js": ["./command-view.js"],
     #: The edge layer reaches the placement arithmetic and, through the
     #: catalogue (outside this pattern, like the other copy imports), the words
     #: it labels an edge with. It may not reach the canvas that draws it.

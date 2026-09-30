@@ -46,7 +46,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -77,7 +77,10 @@ PERMITTED_IMPORTS = {
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
-                          "./desk-pult.js"}),
+                          "./desk-pult.js", "./desk-flag-model.js", "./desk-flag.js"}),
+    #: The door of the continue-after flag: the one read and the one write of it, through the
+    #: transport's own doors, judged by the flag's model. It names one target and opens no door.
+    "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
@@ -114,6 +117,10 @@ PERMITTED_IMPORTS = {
     #: The task-queue read judged against its shape: values in, a frozen cut or null out. The
     #: boot module reads the queue and hands the answer here, so it imports nothing.
     "desk-queue-model.js": frozenset(),
+    #: The continue-after flag judged against its shape, the runs a person may mark and the
+    #: body of a save: values in, values out. The boot module hands it what it read, so it
+    #: imports nothing.
+    "desk-flag-model.js": frozenset(),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
@@ -196,6 +203,48 @@ PERMITTED_IMPORTS = {
                                      "./desk-wizard-input.js", "./desk-wizard-launch.js",
                                      "./desk-wizard-prep.js", "./desk-wizard-skip.js",
                                      "./desk-wizard-team.js"}),
+    #: The «Схема» edits a flow (spec 7.2). The shape holds the facts of flow v1 and pure questions
+    #: over one, and imports nothing; the loop sugar, the branches and the edits stand on it and on
+    #: each other in one direction, and none of them reaches the wire, a store or the page.
+    "desk-flow-shape.js": frozenset(),
+    "desk-flow-loops.js": frozenset({"./desk-flow-shape.js"}),
+    "desk-flow-branches.js": frozenset({"./desk-flow-shape.js"}),
+    "desk-flow-edits.js": frozenset({"./desk-flow-shape.js", "./desk-flow-loops.js",
+                                     "./desk-flow-branches.js"}),
+    #: The write chain: reads and writes of a cycle through the flow door, one at a time. It applies
+    #: the edits and reaches the shape for an empty flow and the comparison of two; never the wire.
+    "desk-flowwrite.js": frozenset({"./desk-flow-edits.js", "./desk-flow-shape.js"}),
+    #: The quick straight-line mode: rows of role kinds turned into a flow by the edits and by
+    #: nothing else. It declares no vocabulary of its own.
+    "desk-quickcycle.js": frozenset({"./desk-flow-edits.js", "./desk-flow-shape.js"}),
+    #: The flow as the canvas draws it, and the summary before a revision: the branches and the
+    #: shape, nothing that touches the page.
+    "desk-flow-graph.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
+    #: The rows of the inspector and the way a typed text becomes one edit: the shape's facts and
+    #: the branches' numbering, so the model can flush a typed text without reaching the drawing.
+    "desk-flow-fields.js": frozenset({"./desk-flow-branches.js", "./desk-flow-shape.js"}),
+    #: The words of the «Схема»: data only, like every copy module.
+    "desk-flow-copy.js": frozenset(),
+    #: The «Схема» is drawn by four modules. The shared pieces reach the catalogue, the panel's model
+    #: (for its facts) and the shape; the counter and the rows, the inspector and the frame stand on
+    #: them in one direction, and only the frame reaches the canvas. None reaches the wire.
+    "desk-flow-draw.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-flow-model.js",
+                                    "./desk-flow-shape.js"}),
+    "desk-flow-diag.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                    "./desk-flow-draw.js"}),
+    "desk-flow-inspector.js": frozenset({"./command-view.js", "./desk-flow-fields.js",
+                                         "./desk-flow-model.js", "./desk-flow-shape.js",
+                                         "./desk-flow-draw.js"}),
+    "desk-flow.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-canvas.js",
+                               "./desk-flow-graph.js", "./desk-quickcycle.js",
+                               "./desk-flow-shape.js", "./desk-flow-draw.js",
+                               "./desk-flow-diag.js", "./desk-flow-inspector.js"}),
+    #: The panel's state and its one table of events: the write chain, the edits, the quick mode,
+    #: the rows of the inspector and what a publication changes. It draws nothing and reaches no wire.
+    "desk-flow-model.js": frozenset({"./desk-flow-edits.js", "./desk-flow-fields.js",
+                                     "./desk-flow-branches.js", "./desk-flow-graph.js",
+                                     "./desk-quickcycle.js", "./desk-flowwrite.js",
+                                     "./desk-flow-shape.js"}),
     # Pure S2 decoder; the actual store read door composes it with the base model.
     "studio-situation.js": frozenset({"./studio-model.js", "./studio-feedback-model.js",
                                       "./studio-runwords.js"}),
@@ -267,7 +316,11 @@ PERMITTED_IMPORTS = {
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-layout.js", "./studio-orbit.js",
-                                   "./studio-canvas-edges.js"}),
+                                   "./studio-canvas-edges.js", "./studio-canvas-flow.js"}),
+    #: What only a flow draws on the canvas (a step's branch and mark, the caller's palette, no
+    #: banner), split off it so the canvas keeps its headroom. It builds elements through the
+    #: view's helper and reaches nothing else; the canvas imports IT.
+    "studio-canvas-flow.js": frozenset({"./command-view.js"}),
     #: The canvas's edge layer, split off it at the line cap. It draws from the
     #: layout the canvas hands it and the words the catalogue holds, and reaches
     #: nothing else: the canvas imports IT, so a permission back would close a ring.

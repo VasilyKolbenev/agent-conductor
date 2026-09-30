@@ -29,7 +29,10 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Request, Route
 
-from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
+from browser_tests.desk_identity import identified_server
+from browser_tests.test_desk_rail_scene import (  # noqa: F401  (seeded_url is a fixture)
+    SETTLED, _seed, seeded_url)
+from tests.test_store import good_lane, write_project
 
 PROJECT_A, PROJECT_B = "a" * 32, "b" * 32
 FOREIGN = {"en": "This desk is open for another project. Reload the page to continue.",
@@ -95,12 +98,25 @@ def _note(window: Window, request: Request) -> None:
     window.languages.append((path, request.headers.get("accept-language", "")))
 
 
+@pytest.fixture(scope="session")
+def identified_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """The desk at its own address over the same seeded project, served AS the project
+    `PROJECT_A`: its claim read says so and it accepts a request that claims it."""
+    root = write_project(tmp_path_factory.mktemp("desk-claim"), lanes={"claude": good_lane()})
+    _seed(root)
+    with identified_server(root, PROJECT_A) as origin:
+        yield f"{origin}/panel/desk.html"
+
+
 @pytest.fixture
-def open_desk(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., Window]]:  # noqa: F811
-    """A factory of desk windows at a given fragment, each closed when the test is over."""
+def open_desk(chromium: Browser, seeded_url: str,  # noqa: F811
+              identified_url: str) -> Iterator[Callable[..., Window]]:
+    """A factory of desk windows at a given fragment, each closed when the test is over. A
+    window that names a project in its hash is opened on the server that is that project."""
     opened: list[Window] = []
 
-    def make(fragment: str = "", *, before: Callable[[Page], None] | None = None) -> Window:
+    def make(fragment: str = "", *, before: Callable[[Page], None] | None = None,
+             identified: bool = False) -> Window:
         context = chromium.new_context(viewport={"width": 1280, "height": 900})
         page = context.new_page()
         window = Window(page)
@@ -112,7 +128,8 @@ def open_desk(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., Wind
         page.add_init_script(INIT)
         if before is not None:
             before(page)
-        page.goto(f"{seeded_url}{fragment}", wait_until="load")
+        page.goto(f"{identified_url if identified else seeded_url}{fragment}",
+                  wait_until="load")
         return window
 
     yield make
@@ -308,7 +325,9 @@ def _foreign(facts: dict, language: str) -> None:
     words = (facts["shell"], facts["rail"], facts["scene"], facts["summary"])
     assert words == ("refused", "empty", "empty", "empty")
     assert facts["said"] == FOREIGN[language]
-    assert (facts["railChildren"], facts["sceneChildren"], facts["chosen"]) == (0, 0, [])
+    # The scene holds the plate: the sentence and the one button that reloads the page.
+    assert (facts["railChildren"], facts["sceneChildren"], facts["chosen"]) == (0, 2, [])
+    assert facts["run"] is None and facts["subject"] is None
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])
@@ -328,7 +347,7 @@ def test_a_repeated_project_at_boot_puts_the_desk_in_the_foreign_state_and_asks_
 @pytest.mark.parametrize("language", ["en", "ru"])
 def test_a_different_project_in_a_later_hash_stops_the_desk_and_nothing_after_it_applies(
         open_desk, language):
-    window = open_desk(f"#project={PROJECT_A}&task=task-fix&lang={language}")
+    window = open_desk(f"#project={PROJECT_A}&task=task-fix&lang={language}", identified=True)
     page = window.page
     page.wait_for_function(ON_RUN, arg="run-fix-new")
     assert page.evaluate(FACTS)["hash"] == (
@@ -349,7 +368,7 @@ def test_a_different_project_in_a_later_hash_stops_the_desk_and_nothing_after_it
 
 
 def test_a_hash_that_names_no_project_leaves_the_bound_one_in_the_address(open_desk):
-    window = open_desk(f"#project={PROJECT_A}&task=task-fix&lang=en")
+    window = open_desk(f"#project={PROJECT_A}&task=task-fix&lang=en", identified=True)
     window.page.wait_for_function(ON_RUN, arg="run-fix-new")
     _go(window.page, "#task=task-docs&lang=en")
     window.page.wait_for_function(ON_RUN, arg="run-docs")
