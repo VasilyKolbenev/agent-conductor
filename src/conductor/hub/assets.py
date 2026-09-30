@@ -4,9 +4,10 @@
 it is exactly the import closure of `hub.js` plus its stylesheet: the page's own files and the four
 modules the desk shares with it. The entry page `hub.html` is not a row: `GET /` answers it.
 
-The rows here are the page's; whoever owns the hub's HTTP surface adds the rows of any file the page
-gains (`tests/test_hub_source.py` holds the registry equal to the closure, so a file nobody imports
-cannot be served and a file the page needs cannot be left out).
+The rows here are the page's (spec 12.4): the lane that writes the page (D2) adds the rows of any
+file the page gains, and the lane that owns the rest of this package serves them.
+`tests/test_hub_source.py` holds the registry equal to the closure, so a file nobody imports cannot
+be served and a file the page needs cannot be left out.
 """
 from __future__ import annotations
 
