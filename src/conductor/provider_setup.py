@@ -503,13 +503,16 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
     Returns:
         0 when the file was written, 1 for every refusal.
     """
+    profile = getattr(args, "profile", False)
+    if getattr(args, "from_profile", False):
+        return _from_profile(args.dir, profile)
     if ask is None:
         if not _interactive():
             _say("conduct providers needs a terminal: every answer is a fact "
                  "about this machine and none of them has a default.")
             return 1
         ask = _console_ask
-    opened = _open_the_file(args.dir)
+    opened = _open_profile() if profile else _open_the_file(args.dir)
     if opened is None:
         return 1
     path, standing = opened
@@ -523,10 +526,35 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
     _summarise(config, path, [row.provider_id for row in standing])
     if not _confirmed(ask):
         return 1
-    return _write(path, standing, config, project_root=args.dir)
+    return _write(path, standing, config, project_root=args.dir, profile=profile)
 
 
-def _write(path, standing, config, *, project_root=None) -> int:
+def _open_profile():
+    from conductor.provider_profile import open_profile
+    from conductor.command.operator_config import OperatorConfigError
+    try:
+        return open_profile()
+    except OperatorConfigError as error:
+        _say(str(error))
+        return None
+
+
+def _from_profile(directory, profile) -> int:
+    if profile:
+        _say("--profile and --from-profile cannot be used together; nothing was written.")
+        return 1
+    from conductor.provider_profile import apply_profile
+    from conductor.command.operator_config import OperatorConfigError
+    try:
+        path = apply_profile(directory)
+    except (OperatorConfigError, store.StoreError) as error:
+        _say(str(error))
+        return 1
+    _say(f"applied the shared profile to {path}; login directories were not copied.")
+    return 0
+
+
+def _write(path, standing, config, *, project_root=None, profile=False) -> int:
     """Put the new row beside the ones already there, and say what happens next.
 
     Replace by identity rather than append: configuring a provider twice is
@@ -538,11 +566,17 @@ def _write(path, standing, config, *, project_root=None) -> int:
 
     kept = [row for row in standing if row.provider_id != config.provider_id]
     try:
-        operator_config.save_provider_configs(path, [*kept, config], project_root=project_root)
+        if profile:
+            operator_config.save_profile_configs(path, [*kept, config])
+        else:
+            operator_config.save_provider_configs(path, [*kept, config], project_root=project_root)
     except operator_config.OperatorConfigError as error:
         _say(str(error))
         return 1
     _say(f"\nwrote {path}")
-    _say("providers are read once at startup, so restart `conduct up` for this "
-         "to take effect.")
+    if profile:
+        _say("apply it to a stopped project with `conduct providers --dir ROOT --from-profile`.")
+    else:
+        _say("providers are read once at startup, so restart `conduct up` for this "
+             "to take effect.")
     return 0

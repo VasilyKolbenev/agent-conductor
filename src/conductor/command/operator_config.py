@@ -22,8 +22,9 @@ unreviewed protocol, a NUL byte, or an env VALUE masquerading as a name is
 refused. What this module adds is that every refusal, wherever it came from,
 names the exact file the operator has to go and fix.
 
-It opens no process, no socket, and no environment: the only doors it touches
-are one read and one write of one path the caller names.
+It opens no process or socket. Project configuration uses the caller's path;
+the shared-profile writer resolves the fixed conduct home before using the
+same guarded atomic write.
 
 The write is here rather than beside whoever collects the answers, and that is
 the whole reason it is here: a file with a reader in one module and a writer in
@@ -145,6 +146,22 @@ def save_provider_configs(
     except (OSError, OwnerRefused) as error:
         raise OperatorConfigError(f"{target}: cannot be written: {error}") from None
     return target
+
+
+def save_profile_configs(path: Path | str, configs) -> Path:
+    """Write only the shared profile, through the unchanged provider write guard."""
+    from ..provider_profile import profile_path
+
+    target = Path(path)
+    _rows_document(target, configs)
+    expected = profile_path(configs)
+    try:
+        if target.resolve() != expected:
+            raise OperatorConfigError("profile_target_invalid: the target is not the shared profile")
+        expected.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as error:
+        raise OperatorConfigError(f"{expected}: cannot be written: {error}") from None
+    return save_provider_configs(expected, configs)
 
 
 def _rows_document(target: Path, configs) -> list[dict[str, object]]:

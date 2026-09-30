@@ -293,7 +293,11 @@ def test_the_providers_command_takes_no_setting_as_a_flag():
                for action in chooser.choices["providers"]._actions
                for option in action.option_strings}
 
-    assert options <= {"-h", "--help", "--dir"}, sorted(options)
+    assert options <= {"-h", "--help", "--dir", "--profile", "--from-profile"}, sorted(options)
+    # Profile switches select a source/target; they cannot carry configuration values.
+    for action in chooser.choices["providers"]._actions:
+        if set(action.option_strings) & {"--profile", "--from-profile"}:
+            assert action.nargs == 0
 
 
 def test_a_non_terminal_is_refused_rather_than_defaulted(project, capsys):
