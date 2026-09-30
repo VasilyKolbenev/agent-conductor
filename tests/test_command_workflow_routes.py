@@ -92,6 +92,8 @@ BOTH_VERBS = frozenset({
     "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow"})
 #: The task every route pattern carrying ``<task_id>`` is filled with.
 TASK = "task-studio-1"
+#: The project document every route pattern carrying ``<doc_id>`` is filled with: `d-` and 32 hex.
+DOC_ID = "d-" + "0" * 32
 #: The two shipped files this module publishes documents derived from. Nothing
 #: any test does may move one byte of either.
 SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
@@ -104,7 +106,8 @@ SHIPPED = {"dalio-v1": REVISION_ONE_DIGEST, "dalio-v2": REVISION_TWO_DIGEST,
 def target(path):
     """One route pattern with every identity a path can carry substituted."""
     filled = (path.replace("<workflow_id>", WORKFLOW).replace("<revision>", "1")
-              .replace("<task_id>", TASK).replace("<run_id>", "run-studio-1"))
+              .replace("<task_id>", TASK).replace("<run_id>", "run-studio-1")
+              .replace("<doc_id>", DOC_ID))
     assert "<" not in filled, filled
     return filled
 

@@ -364,6 +364,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "project_mismatch": "this server serves another project",
         "slot_busy": "another bounded run holds this project's slot",
         "preview_stale": "the reviewed preview is absent, expired or no longer matches the run",
+        "project_not_active": "the project is open for viewing and starts no agent",
+        "materials_refused": "the materials could not be made into a document",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():
