@@ -556,7 +556,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "providers",
         help="configure a harness this machine can run; asks for paths and "
              "environment variable NAMES, never a credential")
-    _add_dir_and_func(p, _cmd_providers)
+    place = p.add_mutually_exclusive_group()
+    place.add_argument("--dir", default=".", metavar="ROOT", help="project directory")
+    place.add_argument("--profile", action="store_true",
+                       help="configure the shared harness profile once in this terminal")
+    p.add_argument("--from-profile", action="store_true",
+                   help="copy the shared profile into the project without asking questions")
+    p.set_defaults(func=_cmd_providers)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
     _add_port(p)

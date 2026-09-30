@@ -7,6 +7,8 @@ import sys
 
 def dispatch(args):
     writes = args.command in {"preview", "integration-smoke", "providers"}
+    if args.command == "providers" and getattr(args, "profile", False):
+        writes = False
     writes = writes or (args.command == "reconcile" and args.run is not None and args.action is not None)
     if not writes:
         return args.func(args)

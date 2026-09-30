@@ -113,6 +113,25 @@ Run the interactive wizard, once for each needed connection:
 | Grok Build | 1.0.5 | Native executable, subscription login, dedicated `GROK_HOME` with native login. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. |
 
+To reuse these connections in several projects, configure the shared profile once
+in a terminal with `conduct providers --profile` (repeat for each connection).
+It lives at `~/.december-command/providers.json`, or under your `CONDUCT_HOME`.
+Then apply it to each **stopped** project:
+
+```powershell
+& $conduct providers --dir $project --from-profile
+```
+
+```sh
+"$conduct" providers --dir "$project" --from-profile
+```
+
+Applying the profile asks no questions. It replaces connections with the same
+provider id and preserves other project connections. Login directories stay in
+place; credentials and login files are not copied. A malformed profile refuses
+the whole operation and leaves the project file unchanged. You can still use
+the project-specific wizard above for an individual project.
+
 For the four subscription tools, use the native executable, not a `.cmd` or PowerShell wrapper.
 The wizard checks paths; the native call checks the pinned version. A newer release is not automatically interchangeable.
 The DSH desktop application is not a substitute for the CLI entrypoint in this configuration.
