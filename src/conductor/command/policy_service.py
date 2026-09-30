@@ -1,17 +1,19 @@
 """Human preview/authorization/control, with exact retries before live checks."""
 from collections.abc import Mapping
 
+from .api_refusals import ApiRefusal
 from .authorization_terms import closed_fields
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError, _content_digest, _id
 from .contracts import ActionRequest, ActionResultReceipt
+from .flag_control_id import refuse_flag_control_id
 from .plan_budget import product_limits
 from .policy_history import current_authorization
 from .preview_draft import drafted_preview
 from .policy_preview import (PREVIEW_FIELDS, PreviewCache, PreviewStale, authorization_terms,
                              build_preview, from_terms)
 from .run_authorization import RunAuthorization, RunAuthorizationControl
-from .store_errors import RecordConflict
+from .store_errors import RecordConflict, StoreError
 
 
 AUTHORIZE_FIELDS = frozenset({"authorization_id", "preview_digest", "authorized_by",
@@ -29,6 +31,7 @@ class PolicyService:
         self.provider_facts = provider_facts
         self.previews = PreviewCache()
         self.driver = None
+        self.queue = None  # the project queue (spec 4.4): told of a direct authorize or control
 
     def preview(self, run_id, body):
         """A candidate for the run: the caller's five fields, or, for `{}`, the server's own draft.
@@ -60,8 +63,8 @@ class PolicyService:
                     raise RecordConflict("authorization identity is already used by different terms")
                 return previous, False
             self.owner_check()
-            if self.driver is None:
-                raise ContractError("automation driver is not available")
+            if self.driver is None:  # past the owner check, only a view process has none
+                raise ApiRefusal.fixed("project_not_active")
             self.driver.hold_activation(run_id)
             now = self.clock()
             # A body that contradicts itself is wrong in itself, and is judged before the cache
@@ -81,6 +84,7 @@ class PolicyService:
             self.previews.discard(self.session, run_id)
             if created:
                 self.driver.activate(run_id, candidate.authorization_id)
+                self._queue_acted(run_id, "authorize")
         self.notify(run_id)
         return candidate, created
 
@@ -99,6 +103,7 @@ class PolicyService:
 
     def control(self, run_id, body):
         body = closed_fields(body, CONTROL_FIELDS, "automation control")
+        refuse_flag_control_id(body["control_id"])  # the name of the flag's own resume (4.3.4)
         with self.store.transaction():
             recovered = self.store.read(run_id)
             previous = next((r.value for r in recovered.records if r.kind == "run_authorization_control"
@@ -112,8 +117,8 @@ class PolicyService:
             self.owner_check()
             if candidate.action == "resume":
                 self._hold_resume(recovered)
-                if self.driver is None:
-                    raise ContractError("automation driver is not available")
+                if self.driver is None:  # past the owner check, only a view process has none
+                    raise ApiRefusal.fixed("project_not_active")
                 self.driver.hold_activation(run_id)
             validate_authorization_history(recovered, candidate)
             created = self.store.append(candidate)
@@ -122,8 +127,24 @@ class PolicyService:
                     self.driver.activate(run_id, candidate.authorization_id)
                 else:
                     self.driver.deactivate(run_id)
+            if created and candidate.action != "pause":  # a pause takes no entry out
+                self._queue_acted(run_id, candidate.action)
         self.notify(run_id)
         return candidate, created
+
+    def _queue_acted(self, run_id, action):
+        """Tell the queue a human acted on a run directly; it removes the entry it now duplicates.
+
+        Called inside the transaction and only for a record the journal did not already hold. A
+        store error of the queue's own write is not the grant's: the read hides an entry whose
+        run was started and the next pass of the pump removes it (spec 4.4.5).
+        """
+        if self.queue is None:
+            return
+        try:
+            self.queue.run_acted(run_id, action)
+        except StoreError:
+            return
 
     @staticmethod
     def _hold_resume(recovered):

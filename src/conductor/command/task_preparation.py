@@ -9,7 +9,7 @@ instead of raising, and it lives here so the authorization module is not touched
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -41,12 +41,14 @@ class QueueView:
     """What the run queue says, handed in by whoever holds the queue (spec 4.4.6).
 
     `entries` maps a run id to its row (`position`, `state`, `reason_code`, `state_since`) and
-    `preauthorized_at` maps the id of a grant the queue started to the instant the human
-    pre-authorized it (the receipt of spec 4.4.3). Until the queue exists both are empty.
+    `preauthorized` answers, for a run and the grant it stands on, the instant the human
+    pre-authorized it when the queue started that grant (the receipt of spec 4.4.3), else None.
+    It takes the run as well as the grant because two runs may both hold a `grant-1`. Until the
+    queue exists the entries are empty and nothing was pre-authorized.
     """
 
     entries: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
-    preauthorized_at: Mapping[str, str] = field(default_factory=dict)
+    preauthorized: Callable[[str, Any], str | None] = lambda run_id, grant: None
 
 
 NO_QUEUE = QueueView()
@@ -115,7 +117,7 @@ def _run_row(store: "RunStore", run_id: str, task_id: str,
         "grant": None if grant is None else {
             "authorization_id": grant.authorization_id, "authorized_by": grant.authorized_by,
             "authorized_at": grant.authorized_at,
-            "preauthorized_at": queue.preauthorized_at.get(grant.authorization_id)},
+            "preauthorized_at": queue.preauthorized(run_id, grant)},
         "queue": None if entry is None else {key: entry[key] for key in _QUEUE_FACTS},
     }
 

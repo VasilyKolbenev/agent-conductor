@@ -50,6 +50,8 @@ COMMAND_ROUTES = (
     ("GET", "/command/quotas"),
     ("GET", "/command/project/cycle"),
     ("POST", "/command/project/cycle/pin"),
+    ("GET", "/command/project/auto-continue"),
+    ("POST", "/command/project/auto-continue"),
     ("GET", "/command/runs/<run_id>/automation"),
     ("POST", "/command/runs/<run_id>/automation/preview"),
     ("POST", "/command/runs/<run_id>/automation/authorize"),
@@ -58,6 +60,10 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
+    ("GET", "/command/queue"),
+    ("POST", "/command/queue"),
+    ("POST", "/command/queue/order"),
+    ("POST", "/command/queue/<run_id>/withdraw"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -83,13 +89,20 @@ _WORKFLOW_ROUTE = re.compile(
 _TASK_ROUTE = re.compile(
     rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
-#: pinned, and the write that pins or unpins. The bare `project` path is `_PROJECT_PATH` below; the
-#: flag of "continue after" is another lane's row and joins this pattern with its own canon commit.
-_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
+#: pinned, and the write that pins or unpins; and the flag of "continue after" (spec 4.3.4), which
+#: both verbs reach. The bare `project` path is `_PROJECT_PATH` below.
+_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle|auto-continue)\Z")
 #: The documents of the project's HEAD (spec 6.2.2): the list, and one by its id. The id grammar is
 #: the one the server mints, `d-` and 32 lowercase hex, so anything else is a path no row names and
 #: never a document the reader is then asked about.
 _DOCUMENTS_ROUTE = re.compile(r"/command/project/documents(?:/(d-[0-9a-f]{32}))?\Z")
+#: The project's task queue (spec 4.4.5): the path itself under BOTH verbs (reading the queue and
+#: putting a run in it are one noun asked two ways), and the two tails, POST only. The tails are
+#: `order` or a run id and `withdraw`; `queue` is no run id a run tail could swallow, because the
+#: run routes live under `/command/runs/`.
+_QUEUE_PATH = "/command/queue"
+_QUEUE_ROUTE = re.compile(
+    r"/command/queue/(?:(order)|([A-Za-z0-9][A-Za-z0-9._-]{0,127})/withdraw)\Z")
 _SESSION_PATH = "/command/session"
 _QUOTAS_PATH = "/command/quotas"
 #: The identity of the project this server serves (spec 4.5.1): GET only, and lane H's handler.
@@ -166,6 +179,9 @@ def match_route(method: str, path: str) -> Route:
     documents = _DOCUMENTS_ROUTE.fullmatch(path)
     if documents is not None:
         return _documents_route(method, documents.group(1))
+    queue = _QUEUE_ROUTE.fullmatch(path)
+    if queue is not None:
+        return _queue_route(method, queue.group(1), queue.group(2))
     workflow = _WORKFLOW_ROUTE.fullmatch(path)
     if workflow is not None:
         return _workflow_route(method, workflow)
@@ -189,6 +205,8 @@ def _fixed_route(method: str, path: str) -> Route | None:
     """
     if path == _RUNS_PATH:
         return Route("runs")
+    if path == _QUEUE_PATH:
+        return Route("queue")
     fixed = _FIXED_ROUTES.get(path)
     if fixed is None:
         return None
@@ -200,12 +218,13 @@ def _fixed_route(method: str, path: str) -> Route | None:
 
 def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
-    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH}
+    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH, _QUEUE_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
             or _TASK_ROUTE.fullmatch(path) is not None
             or _PROJECT_ROUTE.fullmatch(path) is not None
-            or _DOCUMENTS_ROUTE.fullmatch(path) is not None)
+            or _DOCUMENTS_ROUTE.fullmatch(path) is not None
+            or _QUEUE_ROUTE.fullmatch(path) is not None)
 
 
 def _task_route(method: str, path: str) -> Route | None:
@@ -228,12 +247,27 @@ def _task_route(method: str, path: str) -> Route | None:
 
 
 def _project_route(method: str, tail: str) -> Route:
-    """Name one of the two project-cycle routes: the read under GET, the pin under POST."""
+    """Name a project route: the cycle's read under GET and its pin under POST, or the flag.
+
+    `auto-continue` is the one project path both verbs reach, for the run list's reason: reading
+    the continue-after flag and writing it are one noun asked two ways.
+    """
+    if tail == "auto-continue":
+        return Route("project_auto_continue")
     name, expected = ("project_cycle", "GET") if tail == "cycle" else (
         "project_cycle_pin", "POST")
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return Route(name)
+
+
+def _queue_route(method: str, order: str | None, run_id: str | None) -> Route:
+    """Name the reorder or the withdraw of one run; both are POST only."""
+    if method != "POST":
+        raise ApiRefusal.fixed("method_not_allowed")
+    if order is not None:
+        return Route("queue_order")
+    return Route("queue_withdraw", run_id=run_id)
 
 
 def _documents_route(method: str, doc_id: str | None) -> Route:

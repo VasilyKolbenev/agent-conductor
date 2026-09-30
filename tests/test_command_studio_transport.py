@@ -45,7 +45,7 @@ from tests.test_command_workflow_routes import (
     target,
 )
 
-def test_the_new_routes_are_derived_from_the_live_table_and_are_the_twenty_four(tmp_path):
+def test_the_new_routes_are_derived_from_the_live_table_and_are_the_thirty(tmp_path):
     """What this file holds to the contract is what the allowlist actually says."""
     assert NEW_ROUTES == (
         ("GET", "/command/workflows"),
@@ -64,6 +64,8 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_twenty_four(
         ("GET", "/command/quotas"),
         ("GET", "/command/project/cycle"),
         ("POST", "/command/project/cycle/pin"),
+        ("GET", "/command/project/auto-continue"),
+        ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),
         ("POST", "/command/runs/<run_id>/automation/preview"),
         ("POST", "/command/runs/<run_id>/automation/authorize"),
@@ -72,6 +74,10 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_twenty_four(
         ("POST", "/command/runs/<run_id>/materials"),
         ("GET", "/command/project/documents"),
         ("GET", "/command/project/documents/<doc_id>"),
+        ("GET", "/command/queue"),
+        ("POST", "/command/queue"),
+        ("POST", "/command/queue/order"),
+        ("POST", "/command/queue/<run_id>/withdraw"),
     )
     assert set(FROZEN_TEN) < set(COMMAND_ROUTES)
 
@@ -124,13 +130,14 @@ def test_every_new_route_refuses_a_verb_the_table_does_not_name(
 
 
 @pytest.mark.parametrize("method,path", NEW_TARGETS)
-def test_every_new_route_but_the_three_dual_verb_paths_refuses_the_other_verb(
+def test_every_new_route_but_the_five_dual_verb_paths_refuses_the_other_verb(
         tmp_path, method, path):
     """A read road is not a write road under another name, and the reverse.
 
-    ``/command/runs``, ``/command/tasks`` and the ``flow`` of a workflow are the
-    three deliberate exceptions, named here rather than skipped, so a fourth
-    dual-verb route would have to be written down.
+    ``/command/runs``, ``/command/tasks``, the ``flow`` of a workflow, the
+    project queue and the continue-after flag are the five deliberate
+    exceptions, named here rather than skipped, so a sixth dual-verb route
+    would have to be written down.
     """
     subject, _store, _templates, events = api(tmp_path)
     if path in BOTH_VERBS:

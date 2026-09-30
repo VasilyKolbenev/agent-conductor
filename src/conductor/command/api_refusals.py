@@ -63,6 +63,9 @@ ERROR_STATUS = MappingProxyType({
     "preview_stale": 409,
     "project_not_active": 409,
     "materials_refused": 409,
+    "queue_changed": 409,
+    "queue_full": 409,
+    "queue_not_ready": 409,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -161,6 +164,15 @@ _FIXED_MESSAGES = MappingProxyType({
     #: not hold). The reason, one word of `MATERIALS_REASONS`, is the detail (`_REVIEWED_FACTS`);
     #: this fixed sentence is the vocabulary-completeness one.
     "materials_refused": "the materials could not be made into a document",
+    #: The three codes of the project queue (spec 4.4.7). Each is its own code rather than
+    #: `contract_invalid` because the body is well formed and nothing in it is wrong: the
+    #: list moved under the reader (`queue_changed`), the queue holds its 32 entries
+    #: (`queue_full`), or the run cannot be queued at this moment (`queue_not_ready`; the
+    #: reason is read from the preparation, not carried here). None carries a detail, so
+    #: none needs a `_REVIEWED_FACTS` row.
+    "queue_changed": "the project queue changed since it was read",
+    "queue_full": "the project queue is full",
+    "queue_not_ready": "the run cannot be put in the project queue now",
 })
 
 

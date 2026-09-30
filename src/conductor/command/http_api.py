@@ -72,6 +72,7 @@ from .http_transport import (
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
 from .project_claim import UNCLAIMED, ProjectIdentity
+from .auto_continue import AutoContinueStore
 from .project_cycle import ProjectCycleStore
 from .project_git import GitRead
 from .task_store import TaskStore
@@ -125,10 +126,26 @@ def _admit_parts(
         raise TypeError("CommandApi providers must be callable")
 
 
+def _quota_reader(quota_view: object, service: QuotaService | None,
+                  max_age: timedelta) -> object:
+    """The reader of `GET /command/quotas`: the one handed in, or the cache-only default.
+
+    A process opened for viewing is given a reader of the hub's last snapshot (spec 4.3.1); it
+    only has to answer `payload(contracts, now)` as the default does. The service and the
+    maximum age build the default and nothing else.
+    """
+    if quota_view is None:
+        return QuotaView(service, max_age)
+    if not callable(getattr(quota_view, "payload", None)):
+        raise TypeError("CommandApi quota_view must have a payload method")
+    return quota_view
+
+
 def _project_stores(
         store: RunStore, templates: TemplateStore | None,
-        tasks: TaskStore | None) -> tuple[TemplateStore, TaskStore, ProjectCycleStore]:
-    """The reusable plans, the tasks and the pinned cycle of the project the run store serves.
+        tasks: TaskStore | None
+) -> tuple[TemplateStore, TaskStore, ProjectCycleStore, AutoContinueStore]:
+    """The plans, the tasks, the pinned cycle and the continue-after flag of this project.
 
     All are rooted at the same project as the run store, because one project owns one set of
     each; the task store holds the SAME process-local gate the run store holds for that root, and
@@ -137,7 +154,7 @@ def _project_stores(
     """
     return (TemplateStore(store.project_root) if templates is None else templates,
             TaskStore(store.project_root) if tasks is None else tasks,
-            ProjectCycleStore(store.project_root))
+            ProjectCycleStore(store.project_root), AutoContinueStore(store.project_root))
 
 
 class CommandApi:
@@ -152,6 +169,7 @@ class CommandApi:
             provider_configs=(),
             quota_service: QuotaService | None = None,
             quota_max_age: timedelta = DEFAULT_QUOTA_MAX_AGE,
+            quota_view: object | None = None,
             templates: TemplateStore | None = None,
             tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None,
@@ -164,7 +182,7 @@ class CommandApi:
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
-        self._quota_view = QuotaView(quota_service, quota_max_age)
+        self._quota_view = _quota_reader(quota_view, quota_service, quota_max_age)
         # A CALLABLE, not a value: the map holding the name is re-read while the
         # server runs, so a name captured here would go stale against it.
         self._project = project
@@ -173,7 +191,8 @@ class CommandApi:
         # The reader of the project's git (spec 9.3), or None for a server that has none.
         self._project_git = project_git
         self._store = store
-        self._templates, self._tasks, self._cycle = _project_stores(store, templates, tasks)
+        self._templates, self._tasks, self._cycle, self._flag = _project_stores(
+            store, templates, tasks)
         self._registry = registry
         self._session = session
         self._budget = Budget(
@@ -182,12 +201,14 @@ class CommandApi:
         self._clock = clock
         self._ids = ids
         from .policy_wiring import notify_run, make_policy
+        from .queue_routes import make_queue
         self._publish_run = notify_run(self, publish_run)
         self._service = CommandService(store, registry, clock=clock, ids=ids)
         self._runtime = ControlRuntime(
             store, registry, clock=clock, ids=ids, notify=self._publish_run)
         self._execution: ExecutionCoordinator | None = None
         self._policy = make_policy(self, provider_configs)
+        self._queue = make_queue(self)
         self._runtime._policy = self._policy
 
     @property

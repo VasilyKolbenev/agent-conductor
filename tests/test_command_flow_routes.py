@@ -480,12 +480,12 @@ def test_the_pin_routes_reach_no_driver_no_policy_and_no_process(tmp_path, monke
     assert events == [] and not list(store.runs_root.glob("*")), "no run was opened or touched"
 
 
-def test_the_cycle_paths_under_project_are_the_two_cycle_tails_and_nothing_wider(tmp_path):
+def test_the_paths_under_project_are_the_cycle_tails_and_the_flag_and_nothing_wider(tmp_path):
     subject, *_ = api(tmp_path)
     assert write(subject, good(), publish=1).status == 201
     for path in ("/command/project/", "/command/project/cycle/",
                  "/command/project/cycle/pin/x", "/command/project/cycles",
-                 "/command/project/auto-continue", "/command/project/cycle/../cycle"):
+                 "/command/project/auto-continue/", "/command/project/cycle/../cycle"):
         assert code_of(get(subject, path)) == "route_not_found", path
     wrong = [post(subject, CYCLE, {}), get(subject, PIN)]
     assert [(row.status, code_of(row)) for row in wrong] == [(405, "method_not_allowed")] * 2

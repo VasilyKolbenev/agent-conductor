@@ -45,11 +45,16 @@ GitRead = Callable[..., GitAnswer]
 
 
 class GitReadFailed(Exception):
-    """git itself failed; `code` is `git_failed` or `git_timed_out` and no text is kept."""
+    """git itself failed; `code` is `git_failed`, `git_timed_out` or `tool_unavailable`.
 
-    def __init__(self, code: str, exit_code: int | None = None) -> None:
+    No text is kept. `reason` is set only with `tool_unavailable` (spec 9.3): `not_pinned`,
+    `version_changed` or `missing`.
+    """
+
+    def __init__(self, code: str, exit_code: int | None = None,
+                 reason: str | None = None) -> None:
         super().__init__(code)
-        self.code, self.exit_code = code, exit_code
+        self.code, self.exit_code, self.reason = code, exit_code, reason
 
 
 @dataclass(frozen=True)

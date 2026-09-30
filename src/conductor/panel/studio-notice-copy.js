@@ -97,5 +97,8 @@ export const NOTICE_COPY = Object.freeze({
   "error.slot_busy": ["Another run holds this project's slot. Nothing was started.", "Слот проекта занят другим запуском. Ничего не запущено."],
   "error.project_not_active": ["This project is open for viewing. Starting a run is only possible in the active project; nothing was started.", "Проект открыт на просмотр. Запуск возможен только в активном проекте; ничего не запущено."],
   "error.materials_refused": ["The materials were not accepted. Nothing was published; correct the list and try again.", "Материалы не приняты. Ничего не опубликовано; исправьте список и попробуйте снова."],
+  "error.queue_changed": ["The queue changed while you were looking at it. Nothing was reordered; look at it again.", "Очередь изменилась, пока вы её смотрели. Ничего не переставлено; посмотрите её заново."],
+  "error.queue_full": ["The project queue is full. Nothing was queued; take an entry out first.", "Очередь проекта заполнена. Ничего не поставлено; сначала уберите одну запись."],
+  "error.queue_not_ready": ["This run cannot be queued now. Nothing was queued; the preparation of its task says why.", "Этот запуск сейчас нельзя поставить в очередь. Ничего не поставлено; причину показывает подготовка его задачи."],
   "error.store_error": ["The run store is unavailable.", "Хранилище запусков недоступно."],
 });

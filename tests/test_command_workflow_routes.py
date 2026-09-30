@@ -85,11 +85,13 @@ NEW_GETS = tuple(row for row in NEW_ROUTES if row[0] == "GET")
 NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
 #: The paths the table admits under BOTH verbs, because listing runs and opening
 #: one -- listing tasks and creating one -- and reading a cycle as a flow and
-#: writing it are the same noun asked two ways. They are excluded from the
+#: writing it, and reading the project queue and putting a run in it, are the same noun asked
+#: two ways. They are excluded from the
 #: verb-swap claim by NAME rather than by silence. The values are filled paths, as
 #: `target()` gives them, because that is what the parametrized claims compare.
 BOTH_VERBS = frozenset({
-    "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow"})
+    "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow",
+    "/command/queue", "/command/project/auto-continue"})
 #: The task every route pattern carrying ``<task_id>`` is filled with.
 TASK = "task-studio-1"
 #: The project document every route pattern carrying ``<doc_id>`` is filled with: `d-` and 32 hex.

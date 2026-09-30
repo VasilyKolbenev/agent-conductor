@@ -262,8 +262,11 @@ def test_a_run_with_a_grant_shows_the_last_grant_and_no_receipt_time_without_the
 def test_preparation_shows_preauthorized_at_for_a_grant_started_by_the_queue(project):
     run_id = project.ready_run(1)
     project.grant(run_id)
-    view = task_preparation.QueueView(preauthorized_at={
-        f"grant-{run_id}": "2026-08-11T11:00:00Z", "another-grant": "2026-08-11T10:00:00Z"})
+    times = {(run_id, f"grant-{run_id}"): "2026-08-11T11:00:00Z",
+             (run_id, "another-grant"): "2026-08-11T10:00:00Z",
+             ("another-run", f"grant-{run_id}"): "2026-08-11T09:00:00Z"}
+    view = task_preparation.QueueView(
+        preauthorized=lambda run, grant: times.get((run, grant.authorization_id)))
     assert project.row(run_id, view)["grant"]["preauthorized_at"] == "2026-08-11T11:00:00Z"
     assert project.row(run_id)["grant"]["preauthorized_at"] is None
 

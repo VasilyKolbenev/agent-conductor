@@ -157,6 +157,10 @@ EXPECTED_ERRORS = {
     #: The list of materials is well formed and the server will not make a document of it; the
     #: reason, one word of a closed list, is the detail.
     "materials_refused": (409, "service"),
+    #: The queue moved under the reader; it holds its 32 entries; the run cannot be queued now.
+    "queue_changed": (409, "concurrency"),
+    "queue_full": (409, "service"),
+    "queue_not_ready": (409, "plan"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
@@ -187,6 +191,8 @@ EXPECTED_ROUTES = (
     ("GET", "/command/quotas", False, False),
     ("GET", "/command/project/cycle", False, False),
     ("POST", "/command/project/cycle/pin", True, True),
+    ("GET", "/command/project/auto-continue", False, False),
+    ("POST", "/command/project/auto-continue", True, True),
     ("GET", "/command/runs/<run_id>/automation", False, False),
     ("POST", "/command/runs/<run_id>/automation/preview", False, True),
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),
@@ -195,6 +201,10 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/materials", True, True),
     ("GET", "/command/project/documents", False, False),
     ("GET", "/command/project/documents/<doc_id>", False, False),
+    ("GET", "/command/queue", False, False),
+    ("POST", "/command/queue", True, True),
+    ("POST", "/command/queue/order", True, True),
+    ("POST", "/command/queue/<run_id>/withdraw", True, True),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly
