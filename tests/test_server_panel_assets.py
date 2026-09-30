@@ -130,6 +130,8 @@ ASSETS = {
     "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
     # The one read and the one write of that flag.
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
+    # The journal of a run read as the rows of the feed.
+    "/panel/desk-feed-model.js": "text/javascript; charset=utf-8",
     # The regions the desk draws.
     "/panel/desk-rail.js": "text/javascript; charset=utf-8",
     "/panel/desk-scene.js": "text/javascript; charset=utf-8",
@@ -310,6 +312,12 @@ REFUSED = (
     "/panel/desk-flag.json", "/panel/desk-flag.js?v=1", "/panel/desk-flag.js.map",
     "/panel/../desk-flag.js", "/panel/%2e%2e/desk-flag.js", "/panel/DESK-FLAG.JS",
     "/panel/Desk-flag.js", "/panel/desk-flag.js/", "/panel/desk-flag.js%00.txt",
+    # The feed's model, the same nine shapes.
+    "/panel/desk-feed-model.json", "/panel/desk-feed-model.js?v=1",
+    "/panel/desk-feed-model.js.map", "/panel/../desk-feed-model.js",
+    "/panel/%2e%2e/desk-feed-model.js", "/panel/DESK-FEED-MODEL.JS",
+    "/panel/Desk-feed-model.js", "/panel/desk-feed-model.js/",
+    "/panel/desk-feed-model.js%00.txt",
     # The rail, the same nine shapes.
     "/panel/desk-rail.json", "/panel/desk-rail.js?v=1", "/panel/desk-rail.js.map",
     "/panel/../desk-rail.js", "/panel/%2e%2e/desk-rail.js", "/panel/DESK-RAIL.JS",

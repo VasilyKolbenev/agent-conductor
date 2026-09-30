@@ -72,6 +72,8 @@ DESK_ASSETS = {
     "/panel/desk-flag-model.js": ("text/javascript; charset=utf-8", "desk-flag-model.js"),
     # The one read and the one write of that flag: the only write the boot module hands on.
     "/panel/desk-flag.js": ("text/javascript; charset=utf-8", "desk-flag.js"),
+    # The journal of a run read as the rows of the feed, for the region that draws them.
+    "/panel/desk-feed-model.js": ("text/javascript; charset=utf-8", "desk-feed-model.js"),
     # The regions the desk draws: one module each, `mountX` only.
     "/panel/desk-rail.js": ("text/javascript; charset=utf-8", "desk-rail.js"),
     "/panel/desk-scene.js": ("text/javascript; charset=utf-8", "desk-scene.js"),

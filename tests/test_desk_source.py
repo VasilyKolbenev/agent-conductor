@@ -520,7 +520,8 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
 READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js", "desk-hash.js",
-             "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js")
+             "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js",
+             "desk-feed-model.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
 RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene",
                   "desk-pult.js": "mountPult"}

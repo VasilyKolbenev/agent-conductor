@@ -121,6 +121,10 @@ PERMITTED_IMPORTS = {
     #: body of a save: values in, values out. The boot module hands it what it read, so it
     #: imports nothing.
     "desk-flag-model.js": frozenset(),
+    #: The journal of a run read as the rows of the feed: values in, frozen rows out. It takes
+    #: the Studio's closed vocabularies (record instants, outcomes, verification states, the
+    #: store's document limit) and nothing else; the boot module hands it the run it read.
+    "desk-feed-model.js": frozenset({"./studio-runwords.js"}),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,
