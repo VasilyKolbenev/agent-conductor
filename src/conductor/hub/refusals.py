@@ -177,4 +177,3 @@ class HubRefusal(Exception):
 def is_hub_code(code: object) -> bool:
     """Whether `code` is in either closed list."""
     return code in _ALL
-
