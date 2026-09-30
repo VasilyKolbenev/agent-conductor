@@ -24,7 +24,7 @@
 // State shape (all frozen):
 //   step, mode {starterId, view}, task {taskId, title, brief, hint, idea, written},
 //   reads {name: {status: "ok" | "failed", code, payload}}, asked [ask id], opened, closing,
-//   materials {items, counter, picker, refusal, includeInstructions},
+//   materials {items, counter, picker, refusal, includeInstructions, withoutGit},
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
 //   roles {owner, instructions}, history {runs, revisions},
@@ -82,7 +82,7 @@ export const REASONS = Object.freeze([
   "resume_pending", "prepare_not_done"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
-export const LATER = Object.freeze(["connect_git", "first_commit", "run_without_git",
+export const LATER = Object.freeze(["connect_git", "first_commit",
   "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle"]);
 
 export function isLater(control) {
@@ -142,7 +142,7 @@ export function initialWizard(opening) {
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
-      includeInstructions: null},
+      includeInstructions: null, withoutGit: false},
     cycle: {choice: starterId === null ? null : {kind: "starter", workflowId: starterId},
       chosenBy: starterId === null ? null : "starter", generation: starterId === null ? 0 : 1,
       flow: null, flowFor: null, flowGeneration: -1, draft: null, status: "idle",
@@ -693,6 +693,9 @@ const HANDLERS = {
     && state.materials.includeInstructions !== event.value
     ? evolve(state, {materials: {...state.materials, includeInstructions: event.value}})
     : state),
+  "run-without-git": (state) => (gitReading(state).state === "not_git"
+    && state.mode.starterId === null && !state.run.pressed
+    ? evolve(state, {materials: {...state.materials, withoutGit: true}}) : state),
   "prepare-start": (state, event) => runStart(state, event, gateOf),
   "prepare-retry": runRetry,
   "prepare-adopt": runAdopt,

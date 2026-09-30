@@ -249,6 +249,7 @@ function seedLine(run) {
   const seed = run.seed ?? run.prep?.seed ?? null;
   if (seed === null) return null;
   if (seed.state === "requested") return {kind: "request"};
+  if (seed.source === "empty") return {kind: "empty"};
   if (typeof seed.base_commit !== "string") return null;
   const ref = typeof seed.base_ref === "string" ? seed.base_ref.replace(/^refs\/heads\//, "")
     : null;

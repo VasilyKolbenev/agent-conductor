@@ -111,6 +111,7 @@ function receiveRow(ctx, facts, name, label, digest) {
 function seedLine(ctx, seed) {
   if (seed === null) return [];
   const text = seed.kind === "request" ? ctx.t("wizard.launch.seed_request")
+    : seed.kind === "empty" ? ctx.t("wizard.launch.seed_empty")
     : ctx.t("wizard.launch.seed_copy", {ref: seed.ref ?? "HEAD", commit: seed.commit});
   return [element("p", {"data-seed": seed.kind, text})];
 }

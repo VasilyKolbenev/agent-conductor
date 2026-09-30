@@ -207,7 +207,7 @@ def test_in_view_mode_git_is_unread_until_the_answer_lands_and_only_then_not_act
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_unwired_git_buttons_are_disabled_and_say_they_wait_for_a_later_step(bench, lang):
-    for state, ids in (("not_git", ["connect_git", "run_without_git"]),
+    for state, ids in (("not_git", ["connect_git"]),
                        ("unborn", ["first_commit"])):
         to_materials(bench, lang, git=state)
         for control in ids:

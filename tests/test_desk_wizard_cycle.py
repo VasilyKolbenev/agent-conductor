@@ -590,7 +590,7 @@ def test_every_control_whose_door_is_not_wired_is_named_and_none_is_a_silent_no_
       show({later: wiz.LATER, frozen: Object.isFrozen(wiz.LATER),
         wired: ["edit-title", "next", "material-add", "cycle-choose"].map(wiz.isLater)});
     """, DATA)
-    assert out["later"] == ["connect_git", "first_commit", "run_without_git", "from_starter_docs",
+    assert out["later"] == ["connect_git", "first_commit", "from_starter_docs",
                             "build_own", "make_project_cycle", "unpin_project_cycle"]
     assert out["frozen"] is True and out["wired"] == [False] * 4
 

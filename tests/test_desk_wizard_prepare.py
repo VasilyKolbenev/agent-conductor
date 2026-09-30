@@ -99,6 +99,45 @@ def test_the_step_may_be_left_only_when_every_step_before_it_is_complete_and_a_r
     assert out["no_git"] == {"ok": False, "reason": "seed_needs_git", "step": "prepare"}
 
 
+def test_empty_seed_requires_a_human_choice_on_a_non_git_project_in_active_or_view():
+    out = run_js(CHAIN + """
+      const plain = ready({}, d.flows.standard, d.git_not_git);
+      const choice = run(plain, {type: "run-without-git"});
+      const active = drive(press(choice));
+      const view = drive(press(run(ready({}, d.flows.standard, d.git_not_git,
+        {viewMode: true}), {type: "run-without-git"})));
+      const repo = ready();
+      show({before: wiz.prepareGate(plain), after: wiz.prepareGate(choice),
+        active: active.log.find((ask) => ask.name === "prep_seed")?.body,
+        view: view.log.find((ask) => ask.name === "prep_seed")?.body,
+        refused_repo: run(repo, {type: "run-without-git"}).materials.withoutGit,
+        repo_source: drive(press(repo)).log.find((ask) => ask.name === "prep_seed")?.body.source,
+        active_phase: active.state.run.phase, view_phase: view.state.run.phase});
+    """, DATA, modules=MODULES)
+    assert out["before"]["reason"] == "seed_needs_git"
+    assert out["after"]["ok"] is True
+    assert out["active"] == {"work_item_id": "work-001", "source": "empty",
+                             "expect_commit": None, "include_agent_instructions": False}
+    assert out["view"] == out["active"]
+    assert out["refused_repo"] is False and out["repo_source"] == "git"
+    assert out["active_phase"] == out["view_phase"] == "review"
+
+
+def test_preparation_read_recognizes_usable_seed_states_and_retries_seed_lost():
+    out = run_js(CHAIN + """
+      const namesFor = (state) => {
+        const prep = moved(d.prep_seeded);
+        prep.seed.state = state;
+        return names(drive(press(ready()), {prep_read: () => ok(prep)}).log);
+      };
+      show(Object.fromEntries(["seeded", "staged", "requested", "seed_lost"]
+        .map((state) => [state, namesFor(state)])));
+    """, DATA, modules=MODULES)
+    for state in ("seeded", "staged", "requested"):
+        assert "prep_seed" not in out[state]
+    assert "prep_seed" in out["seed_lost"]
+
+
 def test_nothing_is_asked_before_the_button_and_the_first_ask_is_the_task_with_its_hash():
     out = run_js(CHAIN + """
       const before = ready();

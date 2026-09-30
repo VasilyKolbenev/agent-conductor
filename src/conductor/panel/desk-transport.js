@@ -41,9 +41,16 @@ export const LATE = "read_late";
 
 export const path = Object.freeze({
   tasks: () => "/command/tasks",
+  preparation: (id) => `/command/tasks/${encodeURIComponent(id)}/preparation`,
+  seed: (id) => `/command/tasks/${encodeURIComponent(id)}/seed`,
   project: () => "/command/project",
+  git: () => "/command/project/git",
+  projectCycle: () => "/command/project/cycle",
+  quotas: () => "/command/quotas",
   workflows: () => "/command/workflows",
   workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
+  flowRead: (id) => `/command/workflows/${encodeURIComponent(id)}/flow`,
+  flow: (id) => `/command/workflows/${encodeURIComponent(id)}/flow`,
   revision: (id, n) => `/command/workflows/${encodeURIComponent(id)}`
     + `/revisions/${encodeURIComponent(String(n))}`,
   draft: (id) => `/command/workflows/${encodeURIComponent(id)}/draft`,
@@ -64,6 +71,10 @@ export const path = Object.freeze({
   materials: (id) => `/command/runs/${encodeURIComponent(id)}/materials`,
   projectDocuments: () => "/command/project/documents",
   projectDocument: (id) => `/command/project/documents/${encodeURIComponent(id)}`,
+  documents: () => "/command/project/documents",
+  document: (id) => `/command/project/documents/${encodeURIComponent(id)}`,
+  queue: () => "/command/queue",
+  queueOrder: () => "/command/queue/order",
   // The continue-after flag (spec 4.3.4): one path, read with a GET and written with a POST.
   autoContinue: () => "/command/project/auto-continue",
 });
@@ -71,7 +82,7 @@ export const path = Object.freeze({
 const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
-  "autoContinue"]);
+  "autoContinue", "seed", "flow", "queue", "queueOrder"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

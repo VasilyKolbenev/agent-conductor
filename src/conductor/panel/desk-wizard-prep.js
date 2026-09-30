@@ -106,6 +106,12 @@ function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+const READY_SEED_STATES = Object.freeze(["seeded", "staged", "requested"]);
+const SEED_STATES = Object.freeze([...READY_SEED_STATES, "seed_lost"]);
+function seedReady(seed) {
+  return record(seed) && READY_SEED_STATES.includes(seed.state);
+}
+
 // -- the links as jobs -------------------------------------------------------------------
 
 //: One write of the chain: what it is called, the ask it makes, and the key that says it is done.
@@ -120,7 +126,8 @@ function taskSpec(input) {
 }
 
 function seedSpec(input) {
-  const body = {work_item_id: WORK_ITEM, source: "git", expect_commit: input.seed.commit,
+  const body = {work_item_id: WORK_ITEM, source: input.seed.source,
+    expect_commit: input.seed.commit,
     include_agent_instructions: input.seed.include};
   return job("seed", "seed", "prep_seed", "seed", input.taskId, `seed:${stable(body)}`, body);
 }
@@ -172,7 +179,7 @@ function pendingSpecs(run, input) {
   if (input.resumed) return resumedSpecs(run, input).filter((spec) => !run.done.includes(spec.key));
   if (input.flowBody === null || run.prep === null) return [];
   const list = [];
-  if (input.dispatch && run.prep.seed === null) list.push(seedSpec(input));
+  if (input.dispatch && !seedReady(run.prep.seed)) list.push(seedSpec(input));
   list.push(flowSpec(input));
   if (run.runId !== null && run.revision !== null) {
     if (run.adopted !== run.runId) list.push(runSpec(input, run));
@@ -302,7 +309,9 @@ export function bumpRun(run) {
 
 function isPreparation(payload, taskId) {
   return record(payload) && record(payload.task) && payload.task.task_id === taskId
-    && (payload.seed === null || record(payload.seed)) && Array.isArray(payload.runs)
+    && (payload.seed === null || (record(payload.seed) && SEED_STATES.includes(payload.seed.state)
+      && payload.seed.task_id === taskId && payload.seed.work_item_id === WORK_ITEM))
+    && Array.isArray(payload.runs)
     && payload.runs.every((row) => record(row) && typeof row.run_id === "string")
     && Number.isSafeInteger(payload.next_run_number) && payload.next_run_number >= 1;
 }
@@ -318,7 +327,10 @@ function fixRun(run, input) {
 //: cycle means the cycle was published for it.
 function reconcile(run, input) {
   const done = new Set([...run.done, taskSpec(input).key]);
-  if (input.dispatch && run.prep.seed !== null) done.add(seedSpec(input).key);
+  if (input.dispatch) {
+    if (seedReady(run.prep.seed)) done.add(seedSpec(input).key);
+    else if (run.prep.seed?.state === "seed_lost") done.delete(seedSpec(input).key);
+  }
   const row = run.runId === null ? null : run.prep.runs.find((one) => one.run_id === run.runId);
   let next = {...run};
   if (row && row.workflow_id === input.workflowId && Number.isSafeInteger(row.revision)) {
@@ -380,7 +392,9 @@ function acceptedWrite(run, input, ask, payload) {
     if (!Number.isSafeInteger(revision)) return unreadable(run, ask);
     return fixRun({...run, done, revision, flowCheck: false}, input);
   }
-  if (ask.name === "prep_seed") return {...run, done, seed: record(payload) ? payload : null};
+  if (ask.name === "prep_seed") {
+    return seedReady(payload) ? {...run, done, seed: payload} : unreadable(run, ask);
+  }
   return ask.name === "preview" ? {...run, done, phase: "review", preview: payload}
     : {...run, done};
 }
@@ -432,7 +446,7 @@ function resumedDone(run, input, link) {
   if (run.prep === null) return false;
   const row = resumeRow(run);
   if (link === "task") return true;
-  if (link === "seed") return run.prep.seed !== null || row !== null;
+  if (link === "seed") return seedReady(run.prep.seed) || row !== null;
   if (row === null) return false;
   if (link === "flow" || link === "run") return true;
   const held = {...run, runId: row.run_id};
@@ -447,7 +461,7 @@ function linkDone(run, input, link) {
   if (link === "task") return run.done.includes(taskSpec(input).key);
   if (link === "seed") {
     return !input.dispatch || run.done.includes(seedSpec(input).key)
-      || (run.prep !== null && run.prep.seed !== null);
+      || (run.prep !== null && seedReady(run.prep.seed));
   }
   if (link === "flow") return input.flowBody !== null && run.done.includes(flowSpec(input).key);
   if (run.runId === null || run.revision === null) return false;
@@ -470,7 +484,8 @@ export function linkStates(run, input) {
   let current = null;
   return LINKS.map((link) => {
     const done = linkDone(run, input, link);
-    const noSeed = input.resumed ? run.prep === null || run.prep.seed === null : !input.dispatch;
+    const noSeed = input.resumed ? run.prep === null || !seedReady(run.prep.seed)
+      : !input.dispatch;
     if (done) return {link, status: link === "seed" && noSeed ? "skipped" : "done"};
     current = current ?? link;
     if (!run.pressed) return {link, status: input.resumed && run.prep !== null ? "needed" : "todo"};
