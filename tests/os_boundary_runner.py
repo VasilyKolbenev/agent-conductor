@@ -21,8 +21,8 @@ from conductor.command.adapters import _procgroup
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_ownership_values import ProcessLease, ProcessOwnership
 from tests import os_boundary_windows as ac
-from tests.os_boundary_box import base_environment
-from tests.os_boundary_layout import Layout, make_layout, render
+from tests.os_boundary_box import WITHOUT_CMDLETS, Box, base_environment, require_child_shell
+from tests.os_boundary_layout import Layout, make_layout, published_pid, render
 
 _WAIT = 60.0
 
@@ -76,8 +76,12 @@ class RunnerBox:
         for name in without:
             env.pop(name)
         argv = (str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
-                "Bypass", "-Command", render(script, self._tokens))
+                "Bypass", "-Command", WITHOUT_CMDLETS + render(script, self._tokens))
         return CommandSpec(argv=argv, cwd="work", env=env, timeout_seconds=timeout)
+
+    def require_child_shell(self) -> None:
+        """Skip the calling test when this host's container cannot start a shell of its own."""
+        require_child_shell(Box(self.layout, self.container))
 
     def use_container_sid(self, sid: str) -> None:
         self._sid = sid
@@ -120,7 +124,7 @@ class RunnerBox:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if pid_file.exists():
-                return self.watch(int(pid_file.read_text().strip()))
+                return self.watch(published_pid(pid_file))
             time.sleep(0.05)
         raise AssertionError("the confined child never published the grandchild's id")
 

@@ -87,6 +87,26 @@ def test_the_git_operations_apply_to_the_source_tree_only():
     assert {"create_file", "overwrite_file", "delete_file", "rename_root"} <= both
 
 
+def test_a_published_id_is_the_number_the_child_wrote(tmp_path):
+    from tests.os_boundary_layout import published_pid
+
+    pid_file = tmp_path / "gc.pid"
+    pid_file.write_bytes(b"4242\r\n")
+    assert published_pid(pid_file) == 4242
+
+
+@pytest.mark.parametrize("written", [b"", b"  \r\n", b"None", b"12 34"],
+                         ids=["empty", "blank", "word", "two-numbers"])
+def test_a_published_id_that_is_not_one_number_is_named_in_the_failure(tmp_path, written):
+    from tests.os_boundary_layout import published_pid
+
+    pid_file = tmp_path / "gc.pid"
+    pid_file.write_bytes(written)
+    with pytest.raises(AssertionError) as failure:
+        published_pid(pid_file)
+    assert repr(written.decode().strip()) in str(failure.value)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="needs a POSIX /bin/sh: this table is the POSIX one")
 @pytest.mark.parametrize("operation", OPERATIONS, ids=lambda op: op.name)
 def test_each_posix_operation_run_unconfined_changes_its_protected_root(operation, tmp_path):

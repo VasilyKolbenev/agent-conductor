@@ -24,7 +24,8 @@ import pytest
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_ownership_values import ProcessLease, ProcessOwnership
 from tests import os_boundary_darwin as sb
-from tests.os_boundary_layout import Layout, Operation, make_layout, render, snapshot
+from tests.os_boundary_layout import (
+    Layout, Operation, make_layout, published_pid, render, snapshot)
 
 _ENV = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
 _STEP_TIMEOUT = 90.0
@@ -235,7 +236,7 @@ class SeatbeltRunner:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if pid_file.exists():
-                return self.watch(int(pid_file.read_text().strip()))
+                return self.watch(published_pid(pid_file))
             time.sleep(0.05)
         raise AssertionError("the sandboxed child never published the grandchild's id")
 
