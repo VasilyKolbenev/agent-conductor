@@ -52,6 +52,7 @@ ENTRY_PAGE = "studio.html"
 DESK_ASSETS = {
     "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
     "/panel/desk.css": ("text/css; charset=utf-8", "desk.css"),
+    "/panel/desk-flow.css": ("text/css; charset=utf-8", "desk-flow.css"),
     "/panel/desk.js": ("text/javascript; charset=utf-8", "desk.js"),
     # The wire doors the Studio's boot module and, later, the desk share.
     "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
@@ -127,6 +128,7 @@ DESK_ASSETS = {
     "/panel/desk-flow-diag.js": ("text/javascript; charset=utf-8", "desk-flow-diag.js"),
     "/panel/desk-flow-inspector.js": ("text/javascript; charset=utf-8", "desk-flow-inspector.js"),
     "/panel/desk-flow.js": ("text/javascript; charset=utf-8", "desk-flow.js"),
+    "/panel/desk-flow-host.js": ("text/javascript; charset=utf-8", "desk-flow-host.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

@@ -42,6 +42,7 @@ def test_the_materials_and_document_paths_are_the_three_rows_of_route_canon_3():
 
 def test_every_added_wizard_target_uses_its_canonical_command_route():
     rows = [
+        ("git", "", "/command/project/git", "GET", "project_git"),
         ("projectCycle", "", "/command/project/cycle", "GET", "project_cycle"),
         ("quotas", "", "/command/quotas", "GET", "quotas"),
         ("preparation", "task-t1", "/command/tasks/task-t1/preparation", "GET",
@@ -61,7 +62,6 @@ def test_every_added_wizard_target_uses_its_canonical_command_route():
     for path, (_, _, expected, method, route) in zip(paths, rows, strict=True):
         assert path == expected
         assert match_route(method, path).name == route
-    assert _paths([["git", ""]]) == ["/command/project/git"]
 
 
 def test_the_flag_path_is_the_one_spec_4_3_4_gives_and_is_the_canons_once_it_has_the_row():

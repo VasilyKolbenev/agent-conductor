@@ -283,6 +283,8 @@ PERMITTED_IMPORTS = {
                                "./desk-flow-graph.js", "./desk-quickcycle.js",
                                "./desk-flow-shape.js", "./desk-flow-draw.js",
                                "./desk-flow-diag.js", "./desk-flow-inspector.js"}),
+    "desk-flow-host.js": frozenset({"./desk-transport.js", "./desk-flow-model.js",
+                                    "./desk-flow.js", "./studio-focus.js"}),
     #: The panel's state and its one table of events: the write chain, the edits, the quick mode,
     #: the rows of the inspector and what a publication changes. It draws nothing and reaches no wire.
     "desk-flow-model.js": frozenset({"./desk-flow-edits.js", "./desk-flow-fields.js",

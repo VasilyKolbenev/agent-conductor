@@ -110,6 +110,7 @@ ASSETS = {
     # studio.html, so the two documents are told apart by route alone.
     "/panel/desk.html": "text/html; charset=utf-8",
     "/panel/desk.css": "text/css; charset=utf-8",
+    "/panel/desk-flow.css": "text/css; charset=utf-8",
     "/panel/desk.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",
@@ -182,6 +183,7 @@ ASSETS = {
     "/panel/desk-flow-diag.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-inspector.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-host.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.
@@ -275,6 +277,9 @@ REFUSED = (
     "/panel/desk.json", "/panel/desk.css?v=1", "/panel/desk.css.map",
     "/panel/../desk.css", "/panel/%2e%2e/desk.css", "/panel/DESK.CSS",
     "/panel/Desk.css", "/panel/desk.css/", "/panel/desk.css%00.txt",
+    "/panel/desk-flow.json", "/panel/desk-flow.css?v=1", "/panel/desk-flow.css.map",
+    "/panel/../desk-flow.css", "/panel/%2e%2e/desk-flow.css", "/panel/DESK-FLOW.CSS",
+    "/panel/Desk-flow.css", "/panel/desk-flow.css/", "/panel/desk-flow.css%00.txt",
     # The desk's boot module: a guessed sibling and the eight spellings around it.
     "/panel/desk-boot.js", "/panel/desk.js?v=1", "/panel/desk.js.map",
     "/panel/../desk.js", "/panel/%2e%2e/desk.js", "/panel/DESK.JS",
@@ -384,6 +389,11 @@ REFUSED = (
     "/panel/desk-pult.json", "/panel/desk-pult.js?v=1", "/panel/desk-pult.js.map",
     "/panel/../desk-pult.js", "/panel/%2e%2e/desk-pult.js", "/panel/DESK-PULT.JS",
     "/panel/Desk-pult.js", "/panel/desk-pult.js/", "/panel/desk-pult.js%00.txt",
+    "/panel/desk-flow-host.json", "/panel/desk-flow-host.js?v=1",
+    "/panel/desk-flow-host.js.map", "/panel/../desk-flow-host.js",
+    "/panel/%2e%2e/desk-flow-host.js", "/panel/DESK-FLOW-HOST.JS",
+    "/panel/Desk-flow-host.js", "/panel/desk-flow-host.js/",
+    "/panel/desk-flow-host.js%00.txt",
 )
 #: Packaged panel resources served by NO route. The Graph window's files left
 #: this list when the route above became real; the partition check below is
