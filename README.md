@@ -136,6 +136,7 @@ Use the executable inside your virtual environment if it is not activated.
 | `conduct integration-smoke` | Exercise the synthetic execution road; not a live provider task. |
 | `conduct reconcile` | Inspect actions left uncertain after interruption. |
 | `conduct tools` | Pin the `git` and `gh` this product may run (`conduct tools pin git --path <absolute path>`). |
+| `conduct hub` | Serve the hub page on one loopback port (default 7700); it runs one server per project. |
 
 Project-map templates are different from Studio's workflow starters:
 
