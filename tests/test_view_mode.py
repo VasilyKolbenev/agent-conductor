@@ -21,9 +21,8 @@ What is here, in file order:
   runner all adapters share;
 * no `PolicyDriver` and no quota collector in `view` (and both in `active`), and the quota read
   answered from the hub's limits snapshot with `hub_snapshot`;
-* `authorize` and `resume` refused `project_not_active` in `view`. That test is strict xfail:
-  the door is lane L's (`command/policy_service.py`), delivered as
-  `handoffs/H-to-L-view-door.patch`, and the marker is removed in the commit that applies it;
+* `authorize` and `resume` refused `project_not_active` in `view` (the door is in
+  `command/policy_service.py`; the test was strict xfail until the door landed);
 * the code `project_not_active` in every place of 11.1 python and the text files can be read from.
 
 Not here: the read of git state and the request of a seed named in the spec's text (their
@@ -567,10 +566,6 @@ def _asked_in(mode: str, tmp_path) -> list:
             (granted, resumed)]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
-    "the door that throws the code is lane L's (command/policy_service.py, spec 4.4.1); the two "
-    "lines are in handoffs/H-to-L-view-door.patch. When they land this turns XPASS, which strict "
-    "reports as a failure: remove this marker then."))
 def test_view_mode_refuses_authorize_and_resume_with_project_not_active(tmp_path):
     """In view both writes are refused 409 `project_not_active`; in active neither is.
 
