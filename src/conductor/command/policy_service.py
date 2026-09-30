@@ -12,7 +12,7 @@ from .preview_draft import drafted_preview
 from .policy_preview import (PREVIEW_FIELDS, PreviewCache, PreviewStale, authorization_terms,
                              build_preview, from_terms)
 from .run_authorization import RunAuthorization, RunAuthorizationControl
-from .store_errors import RecordConflict
+from .store_errors import RecordConflict, StoreError
 
 
 AUTHORIZE_FIELDS = frozenset({"authorization_id", "preview_digest", "authorized_by",
@@ -30,6 +30,7 @@ class PolicyService:
         self.provider_facts = provider_facts
         self.previews = PreviewCache()
         self.driver = None
+        self.queue = None  # the project queue (spec 4.4): told of a direct authorize or control
 
     def preview(self, run_id, body):
         """A candidate for the run: the caller's five fields, or, for `{}`, the server's own draft.
@@ -82,6 +83,7 @@ class PolicyService:
             self.previews.discard(self.session, run_id)
             if created:
                 self.driver.activate(run_id, candidate.authorization_id)
+                self._queue_acted(run_id, "authorize")
         self.notify(run_id)
         return candidate, created
 
@@ -123,8 +125,24 @@ class PolicyService:
                     self.driver.activate(run_id, candidate.authorization_id)
                 else:
                     self.driver.deactivate(run_id)
+            if created and candidate.action != "pause":  # a pause takes no entry out
+                self._queue_acted(run_id, candidate.action)
         self.notify(run_id)
         return candidate, created
+
+    def _queue_acted(self, run_id, action):
+        """Tell the queue a human acted on a run directly; it removes the entry it now duplicates.
+
+        Called inside the transaction and only for a record the journal did not already hold. A
+        store error of the queue's own write is not the grant's: the read hides an entry whose
+        run was started and the next pass of the pump removes it (spec 4.4.5).
+        """
+        if self.queue is None:
+            return
+        try:
+            self.queue.run_acted(run_id, action)
+        except StoreError:
+            return
 
     @staticmethod
     def _hold_resume(recovered):
