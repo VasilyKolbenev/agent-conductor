@@ -342,6 +342,22 @@ def test_a_project_reads_its_lifecycle_its_working_state_and_its_mode(world):
         ("running", "active", "active"), ("running", "view", "view"), ("stopped", "queued", None)]
 
 
+def test_a_project_reports_its_port_a_stable_instance_per_process_and_when_it_stopped(world):
+    _activate_and_start(world, "a")
+    first = world.supervisor.status(id_of("a"))
+    assert first.port == 7701 and first.stopped_at is None
+    assert first.instance is not None and len(first.instance) == 32
+    assert world.supervisor.status(id_of("a")).instance == first.instance, "it is not re-minted"
+    world.put_status("a", "serving", started="windows:2")         # the same pid, a new process
+    restarted = world.supervisor.status(id_of("a"))
+    assert restarted.instance not in (None, first.instance), "a restart must be a new instance"
+    world.gone("a")
+    stopped = world.supervisor.status(id_of("a"))
+    assert (stopped.port, stopped.instance) == (None, None)
+    assert stopped.stopped_at == world.clock.now, "the stop time is the status file's own"
+    assert world.supervisor.status(id_of("b")).stopped_at is None
+
+
 def test_a_registry_that_is_not_the_schema_stops_the_loop_without_a_crash(world):
     _activate_and_start(world, "a")
     (world.home / "registry.json").write_text("{not json", encoding="utf-8")

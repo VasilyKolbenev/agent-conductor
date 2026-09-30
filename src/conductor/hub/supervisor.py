@@ -102,6 +102,12 @@ class ProjectStatus:
     working: str
     mode: str | None
     drain_deadline: datetime | None
+    #: The port the child reported, while its process lives (`desk_url` is made from it, 4.6.4).
+    port: int | None = None
+    #: A 32-hex id the hub mints for each process it sees, so a restart is a new value.
+    instance: str | None = None
+    #: When the child last wrote `stopped`; `None` while it is anything else.
+    stopped_at: datetime | None = None
 
 
 def _utc_now() -> datetime:
@@ -116,10 +122,13 @@ class Supervisor:
                  probe: Callable[[int, str | None], str] = process_identity.probe,
                  head_of: Callable[[Path | str], tuple] = ownership_records.state,
                  start_timeout: float = START_TIMEOUT_SECONDS,
-                 new_id: Callable[[], str] = lambda: str(uuid.uuid4())) -> None:
+                 new_id: Callable[[], str] = lambda: str(uuid.uuid4()),
+                 new_instance: Callable[[], str] = lambda: uuid.uuid4().hex) -> None:
         self._home, self._store, self._spawner = Path(home), store, spawner
         self._hub_port, self._clock, self._probe = hub_port, clock, probe
         self._head_of, self._timeout, self._new_id = head_of, start_timeout, new_id
+        self._new_instance = new_instance
+        self._instances: dict[tuple[int, str | None], str] = {}
         self._lock = threading.RLock()
         self._children: dict[str, spawn.Child] = {}
         self._prior: dict[str, spawn.Child] = {}
@@ -210,11 +219,17 @@ class Supervisor:
             project = self._project(project_id)
             seen = self._seen(project)
             current = self._store.load()
+            record = seen.record if seen.fresh else None
+            reported = record if record is not None and seen.live else None
             return ProjectStatus(
                 self._lifecycle(project, seen), words.working_of(
                     project_id, active=current.active_project_id, queue=current.queue,
                     viewing=(project_id,) if seen.live and seen.mode == "view" else ()),
-                seen.mode, seen.record.drain_deadline if seen.record and seen.live else None)
+                seen.mode, seen.record.drain_deadline if seen.record and seen.live else None,
+                port=(reported.port or None) if reported is not None else None,
+                instance=None if reported is None else self._instance_of(reported),
+                stopped_at=record.updated_at if record is not None
+                and record.state == "stopped" else None)
 
     def forget(self, project_id: str) -> None:
         """Take a project off the list ("Убрать из списка"); its files are not touched.
@@ -358,6 +373,13 @@ class Supervisor:
         if seen.unreadable and found.state_code is None:
             return replace(found, state_code="status_unreadable")
         return found
+
+    def _instance_of(self, record: up_status.StatusRecord) -> str:
+        """The id of this process of a child: new for each `(pid, process_started)` seen."""
+        key = (record.pid, record.process_started)
+        if key not in self._instances:
+            self._instances[key] = self._new_instance()
+        return self._instances[key]
 
     def _entry(self, project_id: str, seen: Seen) -> state.ClosingEntry | None:
         """The closing entry of a project by what its status file says; `None` with no file."""
