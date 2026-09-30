@@ -13,6 +13,7 @@
 //
 // The second half draws that, as text nodes and elements, and sends what a person does to its
 // handlers: a press is a call, never a write made here.
+import {deskHash, preferenceHash} from "./desk-hash.js";
 import {attentionItems, taskStatus} from "./desk-status.js";
 import {instantText} from "./desk-time.js";
 import {codeWords, hubText, paramsOf} from "./hub-copy.js";
@@ -64,7 +65,7 @@ function workingWord(project, ctx) {
 
 //: The word a process state has of its own (`stopped` and `running` have none: the working word is
 //: theirs).
-function stateWord(project, ctx) {
+export function stateWord(project, ctx) {
   const {locale} = ctx, at = clock(locale, project.drain_deadline);
   const timed = (name) => hubText(locale, at.known ? `hub.state.${name}` : `hub.state.${name}_open`,
     at.known ? {time: at.short} : {});
@@ -134,7 +135,8 @@ function ownAction(project, ctx) {
   return Object.hasOwn(by, project.state) ? by[project.state] : null;
 }
 
-function queueActions(project, ctx) {
+/** The moves a project waiting in the queue offers: raise, lower (where they can be made) and the flag. */
+export function queueActions(project, ctx) {
   const {locale, queue} = ctx, list = [];
   for (const [id, delta, key] of [["raise", -1, "hub.act.raise"], ["lower", 1, "hub.act.lower"]]) {
     const order = moveInQueue(queue, project.project_id, delta);
@@ -200,6 +202,24 @@ export function confirmWords(kind, project, ctx) {
   const after = rows(ctx.projects).find((one) => one.project_id === next);
   return [hubText(locale, "hub.confirm.stop"), ...(after === undefined ? []
     : [hubText(locale, "hub.confirm.stop_next", {name: String(after.name ?? "")})])];
+}
+
+//: The one shape an address of a desk may have (spec 4.5.5): a loopback address, a port, the desk's page.
+const DESK_URL = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/panel\/desk\.html$/;
+
+/**
+ * The address a project's running desk is opened at, in a tab of its own: the `desk_url` the hub gave
+ * (never one typed into the page's address), held to the rule of 4.5.5 (a port up to 65535 that is
+ * not the hub's own), with the navigation (`task`, `run`, `gate`, `panel`, `new`) and the language and
+ * theme as its address words. Null when the project has no running desk or its address is not one.
+ */
+export function deskLink(project, nav, prefs, hubPort) {
+  const found = isObject(project) && project.state === "running"
+    ? DESK_URL.exec(text(project.desk_url) ?? "") : null;
+  if (found === null || Number(found[1]) > 65535 || found[1] === String(hubPort)) return null;
+  const address = {project: project.project_id, task: nav.task ?? null, run: nav.run ?? null,
+    gate: nav.gate ?? null, panel: nav.panel ?? null, new: nav.new ?? null};
+  return `${project.desk_url}${preferenceHash(deskHash(address), prefs)}`;
 }
 
 // -- tasks, and the note of a project read from a snapshot ------------------------------------------
@@ -350,10 +370,34 @@ const button = (key, label, onClick, extra = {}) => {
   return made;
 };
 
-function actionButtons(project, said, handlers) {
-  return said.actions.map((action) => button(`act:${project.project_id}:${action.id}`,
-    action.label, () => handlers.onAct(action, project),
-    {className: "hub-project__act", "data-action": action.id}));
+//: An action that cannot be done now is drawn beside the reason, never as a button that does nothing.
+function blockedControl(view, action, reason) {
+  return node("span", {className: "hub-blocked"}, [node("button", {type: "button",
+    className: "hub-project__act", disabled: "", "aria-disabled": "true", "data-action": action.id,
+    text: action.label}), node("small", {className: "hub-why", text: reason})]);
+}
+
+/**
+ * The control of one action of a project. «Снять флаг» is not a write of the hub's: it is a link to the
+ * project's own desk at the block that holds the flag (spec 4.3.4), so it is a link when the desk runs
+ * and is blocked, with its reason, when it does not. Every other action is a press and a call to
+ * `handlers.onAct`; `view` is `{locale, prefs, hubPort}`.
+ */
+export function actionControl(view, project, action, handlers, prefix) {
+  if (action.id === "clear_flag") {
+    const link = deskLink(project, {panel: "continue"}, view.prefs, view.hubPort);
+    return link === null
+      ? blockedControl(view, action, hubText(view.locale, "hub.act.clear_flag_blocked"))
+      : node("a", {href: link, target: "_blank", rel: "noopener", className: "hub-project__act",
+        "data-action": action.id, text: action.label});
+  }
+  return button(`${prefix}:${project.project_id}:${action.id}`, action.label,
+    () => handlers.onAct(action, project), {className: "hub-project__act",
+      "data-action": action.id});
+}
+
+function actionButtons(view, project, said, handlers) {
+  return said.actions.map((action) => actionControl(view, project, action, handlers, "act"));
 }
 
 function menuBlock(view, ctx, project, handlers) {
@@ -416,7 +460,7 @@ function projectBlock(view, ctx, project, byProject, handlers) {
       title: said.hint}),
     ...(note === null ? [] : [node("p", {className: "hub-project__note", text: note})]),
     node("div", {className: "hub-project__actions"},
-      [...actionButtons(project, said, handlers), ...menuBlock(view, ctx, project, handlers)]),
+      [...actionButtons(view, project, said, handlers), ...menuBlock(view, ctx, project, handlers)]),
     ...(selected ? tasksBlock(view, ctx, project, handlers) : [])]);
 }
 

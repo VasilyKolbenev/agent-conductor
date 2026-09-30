@@ -101,3 +101,22 @@ def test_the_fake_hub_serves_the_registry_and_the_entry_and_nothing_else_under_i
     assert get("/hub/studio-i18n.js")[0] == 404 and get("/command/runs")[0] == 404
     assert hub.faults == ["the page asked a child's path: /command/runs"]
     hub.faults.clear()
+
+
+SIDE = """() => ({center: document.querySelector("#hubCenter [data-case]")?.dataset.case ?? null,
+  centerText: document.getElementById("hubCenter").textContent,
+  queue: [...document.querySelectorAll("#hubSide [data-queue] > *")].map((n) => n.textContent),
+  limits: [...document.querySelectorAll("#hubSide [data-limits] > *")].map(
+    (n) => n.textContent)})"""
+
+
+def test_with_nothing_read_the_centre_asks_for_a_project_and_the_side_says_no_queue_and_no_data(
+        hub_page):
+    page = hub_page
+    facts = page.page.evaluate(SIDE)
+    assert facts["center"] == "choose"
+    assert facts["centerText"] == say(page, "hub.center.choose")
+    assert facts["queue"] == [say(page, "hub.queue.heading"), say(page, "hub.queue.none_active"),
+                              say(page, "hub.queue.empty")]
+    assert facts["limits"] == [say(page, "hub.limits.heading"), say(page, "hub.limits.none")], (
+        "no reading is said as no data, and there is no card for an account nobody read")

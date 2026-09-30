@@ -11,6 +11,7 @@
 import {preferenceHash, readPreferences} from "./desk-hash.js";
 import {hubText} from "./hub-copy.js";
 import {mountRail, node} from "./hub-rail.js";
+import {mountCenter, mountSide} from "./hub-stub.js";
 
 const byId = (id) => document.getElementById(id);
 const THEMES = Object.freeze([null, "dark", "light"]);
@@ -18,7 +19,7 @@ const THEMES = Object.freeze([null, "dark", "light"]);
 //: What the page holds. The lists are what the hub last said, and stay empty until a read lands.
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], noticed: {},
   selection: {project_id: null, task_id: null, run_id: null, gate_id: null}, menu: null,
-  status: ""};
+  limits: null, status: ""};
 
 // -- the language and the theme ---------------------------------------------------------------
 
@@ -83,10 +84,14 @@ function render() {
   const held = document.activeElement?.dataset?.focus ?? null;
   applyAppearance();
   topActions();
-  mountRail(byId("hubRail"), {locale: state.locale, projects: state.projects,
-    activeId: state.activeId, queue: state.queue, selection: state.selection, menu: state.menu,
-    noticed: state.noticed}, {onSelect: () => {}, onOpen: () => {}, onAct: () => {},
-    onMenu: () => {}});
+  const view = {locale: state.locale, theme: state.theme, prefs: {locale: state.locale,
+    theme: state.theme}, hubPort: location.port, projects: state.projects, activeId: state.activeId,
+  queue: state.queue, selection: state.selection, menu: state.menu, noticed: state.noticed,
+  limits: state.limits, now: Date.now()};
+  const handlers = {onSelect: () => {}, onOpen: () => {}, onAct: () => {}, onMenu: () => {}};
+  mountRail(byId("hubRail"), view, handlers);
+  mountCenter(byId("hubCenter"), view, handlers);
+  mountSide(byId("hubSide"), view, handlers);
   byId("hubStatus").textContent = state.status;
   if (held !== null) {
     document.querySelector(`[data-focus="${CSS.escape(held)}"]`)?.focus();

@@ -32,7 +32,7 @@ STYLE = PANEL / "hub.css"
 LINE_CAP = 800
 #: The hub's own files by name, grown by the commit that adds one (the registry is held to exactly
 #: these and the four shared modules). `hub-frame.js` and `hub-add.js` are not written yet.
-OWN = ("hub.js", "hub-copy.js", "hub-rail.js")
+OWN = ("hub.js", "hub-copy.js", "hub-rail.js", "hub-stub.js")
 SHARED = tuple(sorted(SHARED_MODULES))
 JS_TYPE = "text/javascript; charset=utf-8"
 CSS_TYPE = "text/css; charset=utf-8"
@@ -48,8 +48,9 @@ IMPORTS = r'from "(\./[a-z0-9-]+\.js)";'
 #: other (the desk's guard holds them), so the hub's closure is these plus those.
 PERMITTED = {
     "hub-copy.js": {"./desk-status-copy.js"},
-    "hub-rail.js": {"./desk-status.js", "./desk-time.js", "./hub-copy.js"},
-    "hub.js": {"./desk-hash.js", "./hub-copy.js", "./hub-rail.js"},
+    "hub-rail.js": {"./desk-hash.js", "./desk-status.js", "./desk-time.js", "./hub-copy.js"},
+    "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-rail.js"},
+    "hub.js": {"./desk-hash.js", "./hub-copy.js", "./hub-rail.js", "./hub-stub.js"},
 }
 REGIONS = (("top", "hubTop"), ("banners", "hubBanners"), ("confirm", "hubConfirm"),
            ("rail", "hubRail"), ("center", "hubCenter"), ("side", "hubSide"))

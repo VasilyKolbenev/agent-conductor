@@ -99,6 +99,8 @@ export const HUB_COPY = Object.freeze({
   "hub.act.clear_flag": ["Clear the flag", "Снять флаг"],
   "hub.act.recover_login": ["Recover the login", "Восстановить вход"],
   "hub.act.menu": ["⋯", "⋯"],
+  "hub.act.clear_flag_blocked": ["The project's desk is not running: open it for viewing first.",
+    "Стол проекта не запущен: сначала откройте его на просмотр."],
   "hub.act.open_desk": ["Open the project's desk", "Открыть стол проекта"],
   "hub.confirm.switch": ["{name} is in progress now: it will stop at a checkpoint — its current step "
     + "will finish on its own.", "Сейчас в работе {name}: он остановится на контрольной точке — "
