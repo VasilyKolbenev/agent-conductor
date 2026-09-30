@@ -49,13 +49,16 @@ _INSTRUCTION_FOLDERS = frozenset(name.rstrip("/").casefold() for name in AGENT_I
 
 
 class SeedRefusal(Exception):
-    """The base cannot be seeded; `reason` is one word of the closed list of `seed_refused`."""
+    """The base cannot be seeded; `reason` is one word of the closed list of `seed_refused`.
 
-    def __init__(self, reason: str) -> None:
+    `commit` names the commit that explains `base_moved` and `seed_exists` and nothing else.
+    """
+
+    def __init__(self, reason: str, commit: str | None = None) -> None:
         if reason not in SEED_REASONS:
             raise ValueError(f"a seed refusal names one of the closed list, not {reason!r}")
         super().__init__(reason)
-        self.reason = reason
+        self.reason, self.commit = reason, commit
 
 
 class TreeRow(NamedTuple):

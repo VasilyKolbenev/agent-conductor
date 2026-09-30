@@ -62,6 +62,11 @@ def test_a_refusal_carries_a_reason_of_the_closed_list_and_no_other():
         SeedRefusal("not_a_reason")
 
 
+def test_a_refusal_carries_the_commit_that_explains_it_and_none_by_default():
+    assert SeedRefusal("git_failed").commit is None
+    assert SeedRefusal("base_moved", SHA1).commit == SHA1
+
+
 # --- the listing ----------------------------------------------------------------------------------
 
 

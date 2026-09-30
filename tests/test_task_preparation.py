@@ -555,7 +555,7 @@ def test_the_preparation_route_writes_nothing_and_publishes_no_frame(project):
 @pytest.mark.parametrize("path", [
     f"/command/tasks/{TASK}/preparation/", f"/command/tasks/{TASK}/preparation/x",
     f"/command/tasks/{TASK}/prepare", f"/command/tasks//preparation",
-    f"/command/tasks/{'t' * (MAX_TASK_ID + 1)}/preparation", f"/command/tasks/{TASK}/seed"])
+    f"/command/tasks/{'t' * (MAX_TASK_ID + 1)}/preparation", f"/command/tasks/{TASK}/seeds"])
 def test_a_task_id_past_its_bound_and_a_tail_beyond_preparation_are_no_route(project, path):
     api, _events = door(project)
     refused = api.handle("GET", path, get_headers())

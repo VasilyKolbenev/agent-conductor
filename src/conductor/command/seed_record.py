@@ -414,6 +414,24 @@ def seed_state(project_root: str | os.PathLike[str], record: SeedRecord) -> str:
     return "seed_lost"
 
 
+def read_seed_view(project_root: str | os.PathLike[str], task_id: str) -> dict[str, Any] | None:
+    """What the preparation of a task says of its seed (9.1.5): the record with its state, else
+    the request as `requested`, else None.
+
+    A record or a request that cannot be read reads as none: one bad file must not hide the task
+    from the page that would let its owner see what is wrong (the route that asks for a seed
+    answers a store error for it).
+    """
+    try:
+        record = read_seed(project_root, task_id)
+        if record is not None:
+            return {**record.as_dict(), "state": seed_state(project_root, record)}
+        request = read_request(project_root, task_id)
+    except (CorruptSeed, RouteNotOwned):
+        return None
+    return None if request is None else {**request.as_dict(), "state": "requested"}
+
+
 def _is_folder(path: Path) -> bool:
     found = lstat_or_none(path)
     return (found is not None and portal_violation(path, found) is None

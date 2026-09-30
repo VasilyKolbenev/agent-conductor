@@ -30,6 +30,7 @@ CAPPED = (
     "src/conductor/command/queue_store.py",
     "src/conductor/command/seed_plan.py",
     "src/conductor/command/seed_record.py",
+    "src/conductor/command/seed_routes.py",
     "src/conductor/command/seed_stage.py",
     "src/conductor/command/task_preparation.py",
     "src/conductor/command/workflow_flow.py",
@@ -79,6 +80,7 @@ CAPPED = (
     "tests/test_seed_stage.py",
     "tests/test_seed_writer.py",
     "tests/test_seed_refusals.py",
+    "tests/test_seed_routes.py",
     "tests/test_slot_busy_refusal.py",
     "tests/test_task_preparation.py",
 )

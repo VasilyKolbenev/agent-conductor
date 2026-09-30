@@ -137,6 +137,11 @@ def repository_admission(root: str | os.PathLike[str], git: GitRead) -> Reposito
     return RepositoryAdmission("unsupported", tracked) if tracked else RepositoryAdmission("repo")
 
 
+def has_git_entry(root: str | os.PathLike[str]) -> bool:
+    """Whether `root` or an ancestor holds a `.git` entry: the answer needs no process."""
+    return _under_git(Path(root))
+
+
 def _under_git(folder: Path) -> bool:
     """Whether `folder` or an ancestor holds a `.git` entry (looked at, never followed)."""
     return any(os.path.lexists(place / ".git") for place in (folder, *folder.parents))
