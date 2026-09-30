@@ -12,6 +12,10 @@ from .service import CommandService
 from .work_layout import work_route
 
 
+#: How long the driver's thread waits for a wake before it looks again.
+TICK_SECONDS = 1
+
+
 class NewWorkHeld(ContractError):
     """The driver is draining: what is in flight settles, nothing new is activated or started."""
 
@@ -126,6 +130,16 @@ class PolicyDriver:
                 self._pending = True
                 self._condition.notify()
 
+    def wake_queue(self):
+        """Ask for a pass of the queue now instead of at the next tick (spec 4.4.4).
+
+        It writes nothing and starts nothing: the thread looks, and the pass itself refuses
+        when the slot is taken or new work is held back.
+        """
+        with self._condition:
+            self._pending = True
+            self._condition.notify()
+
     def reason(self, run_id):
         with self._condition:
             return self._reason if self._active and self._active[0] == run_id else "restart_required"
@@ -133,12 +147,14 @@ class PolicyDriver:
     def _work(self):
         while True:
             with self._condition:
-                self._condition.wait_for(lambda: self._pending or self._stopping, timeout=1)
+                self._condition.wait_for(lambda: self._pending or self._stopping,
+                                         timeout=TICK_SECONDS)
                 if self._stopping:
                     return
                 active = self._active
                 self._pending = False
             if active is None:
+                self._pump_queue()
                 continue
             try:
                 self._tick(*active)
@@ -159,6 +175,27 @@ class PolicyDriver:
                 if self._inflight == inflight:
                     self._inflight = None
 
+    def _pump_queue(self):
+        """One pass of the project queue, when nothing is active, in flight or held back.
+
+        The pass runs inside `_admission`, exactly as a tick's admission does, so that
+        `hold_new_work` returns only after a pass that had begun has finished: nothing is
+        activated once a drain has been told to start nothing new. A fault of the pump is the
+        pump's: the thread survives it and the next pass reconciles what it left.
+        """
+        queue = getattr(self.policy, "queue", None)
+        if queue is None:
+            return
+        try:
+            self._settle_inflight()
+            with self._admission:
+                with self._condition:
+                    if self._holding_new_work or self._inflight is not None or self._stopping:
+                        return
+                queue.start_next()
+        except Exception:
+            return  # never put exception text into UI history; the next pass starts by reconciling
+
     def _tick(self, run_id, grant_id):
         self._settle_inflight()
         with self._admission:
@@ -168,23 +205,11 @@ class PolicyDriver:
             self._admit_next(run_id, grant_id)
 
     def _admit_next(self, run_id, grant_id):
-        with self.policy.store.transaction():
-            if not self.is_active(run_id, grant_id):
-                return
-            recovered = self.policy.store.read(run_id)
-            values = tuple(row.value for row in recovered.records)
-            grant = current_authorization(values)
-            if grant is None or grant.authorization_id != grant_id:
-                raise ContractError("driver authorization changed")
-            selected, reason = _next_node(recovered, grant)
-            with self._condition:
-                self._reason = reason
-            if selected is None:
-                if reason == "complete":
-                    self.deactivate(run_id)
-                return
-            proposal = self._proposal(recovered, grant, selected)
-            hold_live(self.runtime, recovered, grant, proposal)
+        proposal, ended = self._select_next(run_id, grant_id)
+        if ended:
+            self._publish_frame(run_id)
+        if proposal is None:
+            return
         claimed = []
         try:
             authorization = self.runtime.authorize_policy(run_id, proposal.proposal_id,
@@ -198,6 +223,35 @@ class PolicyDriver:
         finally:
             for slot in claimed:
                 slot.release()
+
+    def _select_next(self, run_id, grant_id):
+        """The proposal to admit next, and whether the plan just ended (and the slot was freed)."""
+        with self.policy.store.transaction():
+            if not self.is_active(run_id, grant_id):
+                return None, False
+            recovered = self.policy.store.read(run_id)
+            values = tuple(row.value for row in recovered.records)
+            grant = current_authorization(values)
+            if grant is None or grant.authorization_id != grant_id:
+                raise ContractError("driver authorization changed")
+            selected, reason = _next_node(recovered, grant)
+            with self._condition:
+                self._reason = reason
+            if selected is None:
+                if reason == "complete":
+                    self.deactivate(run_id)
+                return None, reason == "complete"
+            proposal = self._proposal(recovered, grant, selected)
+            hold_live(self.runtime, recovered, grant, proposal)
+            return proposal, False
+
+    def _publish_frame(self, run_id):
+        """Tell the desk the run left the slot: a read of the queue on the result frame must not
+        still see it busy (spec 4.4.4). Publishing is best effort and never changes the driver."""
+        try:
+            self.policy.notify(run_id)
+        except Exception:
+            return
 
     def _proposal(self, recovered, grant, node):
         values = tuple(row.value for row in recovered.records)
