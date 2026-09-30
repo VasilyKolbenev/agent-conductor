@@ -253,11 +253,17 @@ function select(selection) {
 const asked = () => ({locale: state.locale, projects: state.projects, activeId: state.activeId,
   queue: state.queue});
 
+//: How the hub says a route of its table is not built yet: `route_not_found` with this reason in its
+//: detail. It is no fault of the page's address, so it is said as what it is.
+const NOT_BUILT = "not in this build";
+
 //: The notice that follows a write: what the hub said, in words; a refusal in the clause of its code.
 function noticeOf(answer) {
   if (answer.status === "accepted") return {key: "hub.notice.accepted", code: null};
-  if (answer.status === "refused") return {key: "hub.notice.refused", code: answer.code};
-  return {key: "hub.notice.unknown", code: null};
+  if (answer.status !== "refused") return {key: "hub.notice.unknown", code: null};
+  const reason = answer.payload?.error?.detail?.reason;
+  return answer.code === "route_not_found" && reason === NOT_BUILT
+    ? {key: "hub.notice.not_built", code: null} : {key: "hub.notice.refused", code: answer.code};
 }
 
 async function perform(action, project) {

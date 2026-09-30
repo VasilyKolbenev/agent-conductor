@@ -87,9 +87,10 @@ class FakeHub:
         with self.lock:
             self.answers[path] = (status, copy.deepcopy(body))
 
-    def refuse(self, path: str, status: int, code: str) -> None:
+    def refuse(self, path: str, status: int, code: str,
+               detail: dict[str, str] | None = None) -> None:
         """Make a POST path answer a hub refusal, the envelope of spec 4.6.2."""
-        body = {"error": {"code": code, "message": "", "detail": None}}
+        body = {"error": {"code": code, "message": "", "detail": detail}}
         with self.lock:
             self.refusals[path] = (status, body)
 
@@ -236,7 +237,7 @@ def watch(page: Page) -> list[str]:
         #: The browser logs a refusal it was sent on purpose (a write the hub refuses, a read a
         #: test made fail); any other error is a problem.
         sent = "Failed to load resource" in message.text and any(
-            f"status of {code}" in message.text for code in (409, 500))
+            f"status of {code}" in message.text for code in (404, 409, 500))
         if message.type == "error" and not sent:
             problems.append(message.text)
 

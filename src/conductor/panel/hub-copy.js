@@ -113,6 +113,8 @@ export const HUB_COPY = Object.freeze({
   "hub.confirm.cancel": ["Cancel", "Отмена"],
   "hub.notice.refused": ["The hub refused: {reason}.", "Hub отказал: {reason}."],
   "hub.notice.accepted": ["The hub took it and is doing it.", "Hub принял и выполняет."],
+  "hub.notice.not_built": ["The hub does not have this action in this build yet.",
+    "В этой сборке hub этого действия пока нет."],
   "hub.notice.unknown": ["The hub did not answer. Read the state again before pressing twice.",
     "Hub не ответил. Прочитайте состояние ещё раз, прежде чем нажимать повторно."],
   // -- banners ---------------------------------------------------------------------------------
