@@ -19,6 +19,12 @@ export const DESK_COPY = Object.freeze({
     "This desk is open for another project. Reload the page to continue.",
     "Стол открыт для другого проекта. Перезагрузите страницу, чтобы продолжить."],
   "desk.reload": ["Reload", "Перезагрузить"],
+  // -- the plate of a project open for viewing (spec 5.8) ---------------------------------------
+  "desk.plate.view": [
+    "Preview · another project is running. Agents do not start here: tasks, materials, the "
+      + "cycle and the queue are recorded, the start belongs to the active project",
+    "Просмотр · в работе другой проект. Агенты здесь не запускаются: задачи, материалы, цикл и "
+      + "очередь записываются, старт — у активного проекта"],
   // -- the names of the five regions, as a screen reader hears them --------------------
   "desk.rail.label": ["Tasks", "Задачи"],
   "desk.scene.label": ["Scene", "Сцена"],

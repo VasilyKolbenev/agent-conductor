@@ -132,6 +132,7 @@ def _in(chains, *tail, prop: str = "color", floor: float = TEXT_MIN) -> list[tup
 
 
 MEASURED[".desk-scene__note"] = _in([SCENE], E("p", "desk-scene__note"))
+MEASURED[".desk-plate"] = [(CENTER + [E("p", "desk-plate")], "color", TEXT_MIN, None)]
 MEASURED[".desk-scene__subject"] = _in([SCENE], E("p", "desk-scene__subject"))
 MEASURED[".desk-scene__reload"] = _in([SCENE], E("button", "desk-scene__reload"))
 MEASURED[".desk-scene .studio-deck h3"] = _in([DECK], E("h3"))

@@ -131,6 +131,9 @@ let shown = Object.freeze({task: null, run: null});
 let booted = Promise.resolve();
 let embedded = null;
 let announced = null;
+//: Whether the address has asked for the continue-after block (`panel=continue`), which a read of
+//: the flag still to land must then open.
+let wantContinue = false;
 
 const byId = (id) => document.getElementById(id);
 //: The page's own language is the language of record: `<html lang>` says it, and anything
@@ -222,6 +225,7 @@ function render() {
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
   mountPult(byId("deskPult"), view, handlers);
+  byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
   mark(byId("deskScene"), said.scene);
   mark(byId("deskPult"), state.foreign ? "empty" : "ready");
@@ -247,8 +251,9 @@ function remember() {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
+  const panel = state.flag !== null && state.flag.open ? "continue" : null;
   const address = preferenceHash(
-    deskHash({project: hashProject, embed, task: at.task, run: at.run}),
+    deskHash({project: hashProject, embed, task: at.task, run: at.run, panel}),
     {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
   history.replaceState(null, "", address);
   seen = location.hash;
@@ -450,10 +455,23 @@ function draftFlag(change) {
   state = Object.freeze({...state, flag: Object.freeze({...state.flag, draft, refused: null})});
 }
 
-//: Whether the block is open is kept for the next redraw; nothing is drawn now.
+//: Whether the block is open is kept for the next redraw, and said in the address (spec 4.5.2:
+//: `panel=continue`); nothing is drawn now, because a person opening it has done that.
 function openFlag(open) {
   if (state.foreign || state.flag === null || state.flag.open === open) return;
   state = Object.freeze({...state, flag: Object.freeze({...state.flag, open})});
+  remember();
+}
+
+//: The address says `panel=continue` (spec 4.5.3, 5.8): open the block and put the keyboard in it
+//: -- at once if it stands, and when the read of the flag lands if it does not. This only
+//: selects and focuses: nothing is written.
+function showContinue() {
+  wantContinue = true;
+  if (state.flag === null) return;
+  move({flag: Object.freeze({...state.flag, open: true})});
+  focusOn("flag:summary");
+  remember();
 }
 
 //: A save that is not a record to keep. A refusal is said in place with its code. A save this
@@ -493,7 +511,12 @@ const clearFlag = () => writeFlag(false);
 async function loadFlag() {
   const record = await flagDoor.read();
   if (record === null || state.foreign) return;
-  move({flag: Object.freeze({record, draft: null, open: false, saving: false, refused: null})});
+  move({flag: Object.freeze({record, draft: null, open: wantContinue, saving: false,
+    refused: null})});
+  if (wantContinue) {
+    focusOn("flag:summary");
+    remember();
+  }
 }
 
 //: The one way out of the terminal state: the page is loaded again and binds afresh.
@@ -539,17 +562,25 @@ function enterForeign() {
   render();
 }
 
-//: Apply the steps of a hash the desk did not write, top to bottom. The task and its run are
-//: the only navigation the desk has a surface for today (the pult, the panels and the wizard
-//: come with their modules), so no other step has a row here. A task the lists do not hold,
-//: or a run with no task to belong to, is dropped. Says whether it opened a run.
-async function navigate(change, address) {
-  const keys = change.steps.map((step) => step.key);
+//: The selection steps: the task and its run. A task the lists do not hold, or a run with no
+//: task to belong to, is dropped. Says whether it opened a run.
+async function navigateSelection(keys, address) {
   if (!keys.includes("task") && !keys.includes("run")) return false;
   const taskId = keys.includes("task") ? address.task : state.taskId;
   if (taskId === null || !state.tasks.list.some((row) => row.task_id === taskId)) return false;
   await chooseTask(taskId, keys.includes("run") ? address.run : null);
   return true;
+}
+
+//: Apply the steps of a hash the desk did not write, top to bottom. The task and its run, and
+//: the one panel the desk has a surface for, `continue`, are the only navigation it has today
+//: (the wizard and the other panels come with their modules), so no other step has a row here.
+//: The panel step follows the selection, as in spec 4.5.3. Says whether it opened a run.
+async function navigate(change, address) {
+  const keys = change.steps.map((step) => step.key);
+  const opened = await navigateSelection(keys, address);
+  if (keys.includes("panel") && address.panel === "continue") showContinue();
+  return opened;
 }
 
 //: The run on the scene, read again -- for a language that changed under it.

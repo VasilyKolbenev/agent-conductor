@@ -251,3 +251,130 @@ def test_a_desk_nobody_framed_has_no_block_and_never_reads_the_flag(chromium, ri
     finally:
         context.close()
     assert json.dumps(server.posts) == "[]"
+
+
+# -- the view plate, and the address that opens the block ------------------------------------
+
+PLATE_WORDS = {
+    "en": "Preview · another project is running. Agents do not start here: tasks, materials, "
+          "the cycle and the queue are recorded, the start belongs to the active project",
+    "ru": "Просмотр · в работе другой проект. Агенты здесь не запускаются: задачи, материалы, "
+          "цикл и очередь записываются, старт — у активного проекта"}
+#: The plate and where it stands, in one evaluation: its words as a person reads them, whether it
+#: is hidden, and whether it is entirely above the scene, inside the centre.
+PLATE = """() => {
+  const plate = document.getElementById("deskPlate");
+  const scene = document.getElementById("deskScene").getBoundingClientRect();
+  const box = plate.getBoundingClientRect();
+  return {shown: !plate.hidden, text: plate.hidden ? null : plate.innerText.trim(),
+    above: !plate.hidden && box.bottom <= scene.top && box.height > 0,
+    inCentre: document.getElementById("deskCenter").contains(plate),
+    pult: document.getElementById("deskPult").innerText};
+}"""
+
+
+def _claim_of(mode: str, rig: Rig) -> dict:
+    return {**_claim(hub_origin=rig.host_origin), "mode": mode}
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_a_desk_whose_claim_says_view_shows_the_plate_above_the_centre(embed, rig, language):
+    window = embed(FRAMED.format(project=PROJECT, language=language),
+                   _answering(_claim_of("view", rig)))
+    facts = window.frame.evaluate(PLATE)
+    assert facts["shown"] and facts["text"] == PLATE_WORDS[language]
+    assert facts["above"] and facts["inCentre"]
+    assert not RAW.search(facts["pult"]) and window.problems == []
+
+
+@pytest.mark.parametrize("mode", ["active", "paused"])
+def test_a_desk_whose_claim_says_active_or_nothing_it_knows_shows_no_plate(embed, rig, mode):
+    window = embed(FRAMED.format(project=PROJECT, language="en"),
+                   _answering(_claim_of(mode, rig)))
+    facts = window.frame.evaluate(PLATE)
+    assert (facts["shown"], facts["text"]) == (False, None)
+
+
+def test_a_desk_nobody_framed_shows_the_plate_when_its_claim_says_view(chromium, rig):
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    try:
+        page = context.new_page()
+        page.route("**/command/project", _answering(_claim_of("view", rig)))
+        page.route("**/command/project/auto-continue", fake.FlagServer().handle)
+        page.goto(f"{rig.desk_url}#project={PROJECT}&lang=ru", wait_until="load")
+        page.wait_for_function(SETTLED)
+        facts = page.evaluate(PLATE)
+    finally:
+        context.close()
+    assert facts["text"] == PLATE_WORDS["ru"] and facts["above"]
+
+
+def test_a_desk_that_went_foreign_shows_no_plate(embed, rig):
+    window = embed(FRAMED.format(project=PROJECT, language="en"),
+                   _answering(_claim(project_id="b" * 32, hub_origin=rig.host_origin)))
+    assert window.frame.evaluate(PLATE)["shown"] is False
+
+
+#: Where the keyboard is, and what the address says, in one evaluation.
+WHERE = """() => ({hash: location.hash,
+  focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
+  open: document.querySelector("#deskPult .desk-flag")?.open ?? null,
+  changes: window.__hashchanges ?? 0})"""
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_panel_continue_opens_the_block_and_the_router_writes_nothing(embed, rig, language):
+    server = fake.FlagServer()
+    window = embed(f"#project={PROJECT}&embed=hub&panel=continue&lang={language}",
+                   _answering(_claim(hub_origin=rig.host_origin)), flag=server)
+    window.frame.wait_for_selector("#deskPult .desk-flag[open]", timeout=6000)
+    window.frame.wait_for_function(SETTLED)
+    facts = window.frame.evaluate(WHERE)
+    assert (facts["open"], facts["focus"]) == (True, "flag:summary")
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&panel=continue&lang={language}"
+    assert server.posts == [] and server.reads == 1 and window.problems == []
+
+
+def test_a_hash_the_hub_sends_later_opens_the_block_without_a_reload_and_writes_nothing(
+        embed, rig):
+    server = fake.FlagServer()
+    window, server = _open(embed, rig, "en", server=server)
+    window.frame.wait_for_function(SETTLED)
+    assert window.frame.evaluate(WHERE)["open"] is False
+    marker = window.frame.evaluate("window.__marker")
+    window.frame.evaluate("(hash) => location.replace(location.href.split('#')[0] + hash)",
+                          f"#project={PROJECT}&embed=hub&panel=continue&lang=en")
+    window.frame.wait_for_selector("#deskPult .desk-flag[open]", timeout=6000)
+    facts = window.frame.evaluate(WHERE)
+    assert (facts["open"], facts["focus"], facts["changes"]) == (True, "flag:summary", 1)
+    assert window.frame.evaluate("window.__marker") == marker
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&panel=continue&lang=en"
+    assert server.posts == [] and window.problems == []
+
+
+def test_the_address_follows_a_person_who_opens_and_closes_the_block(embed, rig):
+    window, server = _open(embed, rig, "en")
+    window.frame.wait_for_function(SETTLED)
+    closed = f"#project={PROJECT}&embed=hub&lang=en"
+    assert window.frame.evaluate(WHERE)["hash"] == closed
+    _open_block(window)
+    window.frame.wait_for_function("(hash) => location.hash === hash",
+                                   arg=f"#project={PROJECT}&embed=hub&panel=continue&lang=en")
+    assert window.frame.evaluate(WHERE)["changes"] == 0, "the desk's own write fires no event"
+    _open_block(window)
+    window.frame.wait_for_function("(hash) => location.hash === hash", arg=closed)
+    assert server.posts == [] and window.problems == []
+
+
+def test_a_desk_nobody_framed_drops_panel_continue_from_its_address(chromium, rig):
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    try:
+        page = context.new_page()
+        page.route("**/command/project/auto-continue", fake.FlagServer().handle)
+        page.goto(f"{rig.desk_url}#project={PROJECT}&panel=continue&lang=en", wait_until="load")
+        page.wait_for_function(SETTLED)
+        page.wait_for_function("(hash) => location.hash === hash",
+                               arg=f"#project={PROJECT}&lang=en")
+        assert page.evaluate(BLOCK) is None
+    finally:
+        context.close()
