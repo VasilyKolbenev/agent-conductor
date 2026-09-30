@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from conductor import ownership, tool_pins
-from conductor.hub import home
+from conductor.hub import home, registry
 from conductor.ownership_errors import OwnerRefused
 
 
@@ -151,6 +151,9 @@ def _hub_operations(folder: Path) -> None:
     assert made == folder
     tool_pins.pin_tool("git", str(Path(sys.executable).resolve()), folder=made,
                        run=lambda argv, env: "git version 2.47.1")
+    registry.add_project(project_id="3f9c0d5a7b2e4c168a90d3e1f4b7a625",
+                         root=str(folder.parent / "project"), root_identity=(1, 1), folder=made)
+    registry.set_projects_home(str(folder.parent / "ConductProjects"), folder=made)
 
 
 def _markers_at_or_above(folder: Path) -> list[str]:
