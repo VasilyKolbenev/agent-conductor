@@ -11,9 +11,11 @@
 // checker's findings), and never the body of an action (`arguments`) or the free text a result
 // may carry. Who a row belongs to is the participant the plan gives the step -- the run's frozen
 // `instances` name its harness -- or the person who decided; the records carry no role name, so
-// the duty (performs, verifies) is the only role said. The time is the instant the record states
-// in the field `studio-runwords.js` names for its kind, and is left null when there is none.
-// Rows keep the journal's order: a record dated later is not moved down the feed.
+// the duty (performs, verifies) is the only role said, and a check is a verifier's only when the
+// evidence names one: a step with no verifier is checked by its own adapter, which the row
+// attributes to the step's performer and marks as its own check. The time is the instant the
+// record states in the field `studio-runwords.js` names for its kind, and is left null when
+// there is none. Rows keep the journal's order: a record dated later is not moved down the feed.
 //
 // Kinds the feed does not draw are the run's grant and its controls, the requests, an adapter's
 // health, the plan, the second boundary of an attempt and the ending: they are the journal of
@@ -128,13 +130,30 @@ function checkedAction(ctx, record) {
   return found === null ? null : found[1];
 }
 
+//: Who made a check. Evidence names the participant that made it (`verifier_instance_id`) only
+//: for an independent checker, and then the author is that checker, in the duty of verifying. A
+//: step with no verifier is checked by its own adapter over its own evidence: the record names no
+//: participant then, so the author is the step's performer, in the duty of performing, and the row
+//: says the check is its own (`ownCheck`). Evidence that names neither a checker nor an adapter
+//: says nobody made it.
+function verdictAuthor(ctx, record, action) {
+  if (text(record.verifier_instance_id) !== null) {
+    return {who: participant(ctx, record.verifier_instance_id, "verify", record.verified_by),
+      ownCheck: false};
+  }
+  if (text(record.verified_by) === null) return {who: UNKNOWN, ownCheck: false};
+  const performer = ctx.requests.get(action)?.instance_id;
+  return {who: participant(ctx, performer, "perform", record.verified_by), ownCheck: true};
+}
+
 function verdict(ctx, record) {
   if (!VERDICTS.includes(record.verification)) return null;
+  const action = checkedAction(ctx, record);
+  const author = verdictAuthor(ctx, record, action);
   return {kind: "verdict", word: record.verification,
-    needsNote: OWES_NOTE.includes(record.verification),
-    at: text(record.verified_at) ?? at("evidence", record),
-    who: participant(ctx, record.verifier_instance_id, "verify", record.verified_by),
-    step: stepOfAction(ctx, checkedAction(ctx, record))};
+    needsNote: OWES_NOTE.includes(record.verification), ownCheck: author.ownCheck,
+    at: text(record.verified_at) ?? at("evidence", record), who: author.who,
+    step: stepOfAction(ctx, action)};
 }
 
 function decision(ctx, record) {
@@ -183,7 +202,7 @@ const BUILDERS = Object.freeze({action_proposal: proposed, attempt_event: starte
   correction_feedback: findings});
 //: What every row carries, whatever its kind: a fact it does not state is null or false.
 const BLANK = Object.freeze({at: null, who: UNKNOWN, step: null, word: null, needsNote: false,
-  live: false, pass: null, doc: null, findings: null, reason: null});
+  ownCheck: false, live: false, pass: null, doc: null, findings: null, reason: null});
 
 //: The rows of a run read, in the journal's order. A read that is not a run read, and a record
 //: that does not state its fact, make no row and throw nothing.

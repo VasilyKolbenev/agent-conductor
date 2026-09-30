@@ -8,7 +8,8 @@ run whose check did not pass. What this module holds, each as a measurement of t
   with its author (harness and what it did), in the reader's language;
 - every row says its time in the zone of the browser and keeps the exact value in its hint;
 - a check that did not pass carries its sentence in its own row; an attempt in flight is the
-  live row;
+  live row; a check a step's own adapter made (no verifier is named) is its performer's and says
+  the Studio's sentence, and only such a check does;
 - no machine word reaches the feed, nothing is stored, nothing but GET is sent, and the page
   throws and logs nothing.
 
@@ -48,7 +49,7 @@ CLOSED = {
         ("proposed", "claude-code · Performs", "Step “Analyse the brief” proposed", None),
         ("started", "claude-code · Performs", "Started step “Analyse the brief”", None),
         ("document", "claude-code · Performs", "Document “artifact-plan” published", None),
-        ("verdict", "claude-code · Verifies", "Check of step “Analyse the brief”: passed", None),
+        ("verdict", "claude-code · Performs", "Check of step “Analyse the brief”: passed", None),
         ("result", "claude-code · Performs",
          "Result of step “Analyse the brief”: Succeeded", None),
         ("decision", "release-owner · Human decision",
@@ -65,7 +66,7 @@ CLOSED = {
         ("proposed", "claude-code · Выполняет", "Предложен шаг «Analyse the brief»", None),
         ("started", "claude-code · Выполняет", "Начат шаг «Analyse the brief»", None),
         ("document", "claude-code · Выполняет", "Опубликован документ «artifact-plan»", None),
-        ("verdict", "claude-code · Проверяет",
+        ("verdict", "claude-code · Выполняет",
          "Проверка шага «Analyse the brief»: пройдена", None),
         ("result", "claude-code · Выполняет",
          "Результат шага «Analyse the brief»: Успешно", None),
@@ -84,6 +85,13 @@ HEADS = {"en": ("Progress · run run-closed", "newest at the bottom"),
 NOTES = {"en": "Process exit 0 proves the process finished, not that the work was verified.",
          "ru": "Код завершения 0 подтверждает окончание процесса, "
                "но не независимую проверку результата."}
+#: The Studio's own sentence (`runstep.same_adapter`) for a step whose check was made by its own
+#: adapter: the one row of the accepted run that carries it is the check of "Analyse the brief".
+SAME = {"en": "Verified by the same participant's adapter over its own post-observation "
+              "evidence; no independent checker is named by this step.",
+        "ru": "Проверяет адаптер того же участника по собственным данным после исполнения. "
+              "Независимый проверяющий для этого шага не назначен."}
+OWN_CHECK_ROW = 4
 #: The short time of the first row, where the page reads in UTC: the day and month in the
 #: language's own order, then the clock.
 FIRST_TIME = {"en": "08/19 08:03", "ru": "19.08 08:03"}
@@ -100,7 +108,8 @@ def test_the_feed_says_the_journal_of_the_run_as_its_facts_in_each_language(desk
     assert facts["state"] == "ready"
     assert (facts["title"], facts["order"]) == HEADS[language]
     assert _summary(facts) == CLOSED[language]
-    assert all(row["note"] is None for row in facts["rows"])
+    assert [row["note"] for row in facts["rows"]] == [
+        SAME[language] if place == OWN_CHECK_ROW else None for place in range(12)]
     assert window.problems == []
 
 
@@ -130,6 +139,57 @@ def test_a_check_that_did_not_pass_carries_its_sentence_in_its_own_row_and_is_am
     lead = {"en": "Result of step “Do the work”: ", "ru": "Результат шага «Do the work»: "}
     assert (last["kind"], last["what"], last["note"], last["tone"]) == (
         "result", lead[language] + word, NOTES[language], "amber")
+    assert window.problems == []
+
+
+#: The verdict rows the page drew: who each is by and every sentence it carries; and the Studio's
+#: own message the wording of `SAME` is held equal to.
+VERDICT_ROWS = """async (language) => {
+  const {message} = await import("/panel/studio-i18n.js");
+  const rows = [...document.querySelectorAll("#deskFeed .desk-feed__row")]
+    .filter((row) => row.dataset.kind === "verdict");
+  return {studio: message(language, "runstep.same_adapter"),
+    rows: rows.map((row) => [row.querySelector(".desk-feed__who").textContent,
+      [...row.querySelectorAll(".desk-feed__note")].map((note) => note.textContent)])};
+}"""
+VERDICT_WHO = {"en": ["claude-code · Performs", "codex-cli · Verifies"],
+               "ru": ["claude-code · Выполняет", "codex-cli · Проверяет"]}
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_only_a_check_by_the_steps_own_adapter_names_its_performer_and_says_the_studios_sentence(
+        desk_in, language):
+    window = desk_in(language, task="task-closed")
+    found = window.page.evaluate(VERDICT_ROWS, language)
+    assert found["studio"] == SAME[language]
+    assert found["rows"] == [[VERDICT_WHO[language][0], [SAME[language]]],
+                             [VERDICT_WHO[language][1], []]]
+    assert window.problems == []
+
+
+#: The real run with every check it holds turned into "not passed": the module in the page draws
+#: it, and what comes back is every sentence each verdict row carries.
+NOT_PASSED = """async (language) => {
+  const read = await (await fetch("/command/runs/run-closed")).json();
+  const {mountFeed} = await import("/panel/desk-feed.js");
+  for (const row of read.records) {
+    if (row.record_type === "evidence") row.record.verification = "mismatch";
+  }
+  const mount = document.createElement("section");
+  document.body.append(mount);
+  mountFeed(mount, {locale: language, foreign: false, run: {detail: read}});
+  return [...mount.querySelectorAll(".desk-feed__row")]
+    .filter((row) => row.dataset.kind === "verdict")
+    .map((row) => [...row.querySelectorAll(".desk-feed__note")].map((note) => note.textContent));
+}"""
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_an_own_check_that_did_not_pass_says_both_sentences_and_an_independent_one_only_its_own(
+        desk_in, language):
+    window = desk_in(language)
+    found = window.page.evaluate(NOT_PASSED, language)
+    assert found == [[NOTES[language], SAME[language]], [NOTES[language]]]
     assert window.problems == []
 
 
@@ -241,17 +301,19 @@ UNPLACED = """async (language) => {
   const said = (kind, part) => rows.filter((row) => row.dataset.kind === kind)
     .map((row) => row.querySelector(part).textContent);
   return {proposed: said("proposed", ".desk-feed__what"),
-    decision: said("decision", ".desk-feed__what"), verdict: said("verdict", ".desk-feed__who")};
+    decision: said("decision", ".desk-feed__what"), verdict: said("verdict", ".desk-feed__who"),
+    verdictNotes: rows.filter((row) => row.dataset.kind === "verdict")
+      .map((row) => row.querySelectorAll(".desk-feed__note").length)};
 }"""
 
 
 @pytest.mark.parametrize("language,expected", [
     ("en", {"proposed": ["Step “a step the plan does not name” proposed"] * 2,
             "decision": ["Decision on “a gate the plan does not name”: approved"] * 2,
-            "verdict": ["Unknown participant"] * 2}),
+            "verdict": ["Unknown participant"] * 2, "verdictNotes": [0, 0]}),
     ("ru", {"proposed": ["Предложен шаг «шаг, которого нет в плане»"] * 2,
             "decision": ["Решение на точке «точка, которой нет в плане»: одобрено"] * 2,
-            "verdict": ["Неизвестный участник"] * 2})])
+            "verdict": ["Неизвестный участник"] * 2, "verdictNotes": [0, 0]})])
 def test_a_row_the_plan_cannot_place_says_so_in_words_and_draws_no_blank(
         desk_in, language, expected):
     window = desk_in(language)

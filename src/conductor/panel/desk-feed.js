@@ -7,7 +7,8 @@
 //
 // A row is an author line (the harness and what it did, or the person who decided), one sentence
 // about one step, the reason a person gave, the sentence a check that did not pass owes in the
-// SAME row, the exact time in a hint, and, for a document, its text -- as text, never as markup.
+// SAME row, the Studio's sentence that a check made by the step's own adapter names no independent
+// checker, the exact time in a hint, and, for a document, its text -- as text, never as markup.
 // The newest row is at the bottom and is the current one (`aria-current`), and the list scrolls.
 //
 // A redraw keeps what a person did to it, read off the mount before it is replaced (the way the
@@ -125,11 +126,14 @@ function rowItem(view, row) {
   const note = row.needsNote
     ? [element("p", {className: "desk-feed__note", text: localize(view, "view.verification_note")})]
     : [];
+  const own = row.ownCheck
+    ? [element("p", {className: "desk-feed__note", text: localize(view, "runstep.same_adapter")})]
+    : [];
   return element("li", {className: "desk-feed__row", "data-kind": row.kind, "data-tone": tone(row)},
     [whoLine(view, row), timeOf(view, row),
       element("p", {className: "desk-feed__what",
         text: SAYS[row.kind](view, row) + liveWords(view, row)}),
-      ...reason, ...note, ...disclosure(view, row)]);
+      ...reason, ...note, ...own, ...disclosure(view, row)]);
 }
 
 //: What the mount held before this pass, or null when it held no list.

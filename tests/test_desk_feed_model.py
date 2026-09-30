@@ -39,7 +39,7 @@ CLOSED = [
     ["proposed", "claude-code/perform", "Analyse the brief", None],
     ["started", "claude-code/perform", "Analyse the brief", None],
     ["document", "claude-code/perform", "Analyse the brief", None],
-    ["verdict", "claude-code/verify", "Analyse the brief", "verified"],
+    ["verdict", "claude-code/perform", "Analyse the brief", "verified"],
     ["result", "claude-code/perform", "Analyse the brief", "succeeded"],
     ["decision", "release-owner", "Confirm the plan", "approve"],
     ["proposed", "claude-code/perform", "Do the work", None],
@@ -160,7 +160,8 @@ def test_every_row_carries_the_same_keys_and_is_frozen_all_the_way_down():
         unique: new Set(made.map((row) => row.key)).size === made.length}));
     """, MODULES, READS["run-closed"])
     assert out["all"] and out["list"] and out["unique"]
-    assert out["keys"] == ["at,doc,findings,key,kind,live,needsNote,pass,reason,step,who,word"]
+    assert out["keys"] == [
+        "at,doc,findings,key,kind,live,needsNote,ownCheck,pass,reason,step,who,word"]
 
 
 def test_the_closed_list_of_row_kinds_is_the_six_facts_and_the_findings_document():
@@ -205,6 +206,61 @@ def test_the_words_of_a_verification_are_the_verdict_and_an_unchecked_claim_is_n
     assert verdicts("error") == [("verdict", "error", False)] * 2
     assert verdicts("unavailable") == [("verdict", "unavailable", False)] * 2
     assert verdicts("unverified") == []
+
+
+def _verdicts(read: Any) -> list[dict]:
+    return [row for row in rows(read) if row["kind"] == "verdict"]
+
+
+def test_a_check_by_the_steps_own_adapter_is_its_performers_and_one_by_a_checker_is_the_checkers():
+    """The records give a step's own check no verifier instance, so no duty of verifying: it is
+    the performer's, said so in its row. An evidence that names a checker is that checker's."""
+    found = _verdicts(READS["run-closed"])
+    assert [(row["who"]["instance"], row["who"]["harness"], row["who"]["duty"], row["ownCheck"])
+            for row in found] == [("claude-dev", "claude-code", "perform", True),
+                                  ("codex-check", "codex-cli", "verify", False)]
+    assert [row["step"]["node_id"] for row in found] == ["analyse", "do"]
+    assert {row["ownCheck"] for row in rows(READS["run-closed"]) if row["kind"] != "verdict"} == {
+        False}
+
+
+def test_a_step_the_plan_gave_no_verifier_has_no_row_in_the_duty_of_verifying():
+    read = READS["run-closed"]
+    nodes = {node["node_id"]: node for node in read["graph"]["definition"]["nodes"]}
+    assert [name for name, node in nodes.items()
+            if node["kind"] == "task" and "verifier_instance_id" not in node] == ["analyse"]
+    duties = {row["step"]["node_id"]: row["who"]["duty"] for row in _verdicts(read)}
+    assert duties == {"analyse": "perform", "do": "verify"}
+
+
+def test_an_own_check_of_an_action_no_request_names_is_its_adapters_and_places_no_step():
+    def unrequested(read):
+        read["records"] = [row for row in read["records"] if row["record_type"] != "action_request"]
+    found = _verdicts(edited("run-closed", unrequested))[0]
+    assert found["who"] == {"kind": "participant", "instance": None, "harness": "claude-code",
+                            "model": None, "duty": "perform"}
+    assert (found["ownCheck"], found["step"]) == (True, None)
+
+
+def test_a_check_that_names_neither_a_checker_nor_the_adapter_that_made_it_is_nobodys():
+    def nameless(read):
+        for row in read["records"]:
+            if row["record_type"] == "evidence":
+                row["record"].pop("verifier_instance_id", None)
+                row["record"]["verified_by"] = None
+    found = _verdicts(edited("run-closed", nameless))
+    assert [(row["who"], row["ownCheck"], row["word"]) for row in found] == [
+        ({"kind": "unknown"}, False, "verified")] * 2
+
+
+def test_a_checker_that_is_null_or_empty_is_none_as_an_absent_one_is_and_the_check_is_the_own():
+    for value in (None, ""):
+        def emptied(read, value=value):
+            first = next(row for row in read["records"] if row["record_type"] == "evidence")
+            first["record"]["verifier_instance_id"] = value
+        found = _verdicts(edited("run-closed", emptied))
+        assert [(row["ownCheck"], row["who"]["duty"]) for row in found] == [
+            (True, "perform"), (False, "verify")], repr(value)
 
 
 def test_a_document_is_shown_up_to_49152_bytes_of_its_text_and_not_a_byte_over():

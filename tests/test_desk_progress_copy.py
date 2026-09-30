@@ -76,7 +76,7 @@ def test_the_studio_words_the_feed_borrows_exist_for_every_word_the_model_can_ha
       console.log(JSON.stringify([
         ...words.RESULT_OUTCOMES.map((w) => `scene.outcome_${w}`),
         "scene.duty_perform", "scene.duty_verify", "scene.gate", "scene.pass",
-        "view.verification_note",
+        "view.verification_note", "runstep.same_adapter",
         ...["defect", "missing_requirement", "verification_gap"].map((k) => `feedback.${k}`)]
         .filter((key) => !Object.hasOwn(i18n.MESSAGES, key))));
     """, MODULES)
