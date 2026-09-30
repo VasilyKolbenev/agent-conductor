@@ -1,6 +1,7 @@
 """Human preview/authorization/control, with exact retries before live checks."""
 from collections.abc import Mapping
 
+from .api_refusals import ApiRefusal
 from .authorization_terms import closed_fields
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError, _content_digest, _id
@@ -60,8 +61,8 @@ class PolicyService:
                     raise RecordConflict("authorization identity is already used by different terms")
                 return previous, False
             self.owner_check()
-            if self.driver is None:
-                raise ContractError("automation driver is not available")
+            if self.driver is None:  # past the owner check, only a view process has none
+                raise ApiRefusal.fixed("project_not_active")
             self.driver.hold_activation(run_id)
             now = self.clock()
             # A body that contradicts itself is wrong in itself, and is judged before the cache
@@ -112,8 +113,8 @@ class PolicyService:
             self.owner_check()
             if candidate.action == "resume":
                 self._hold_resume(recovered)
-                if self.driver is None:
-                    raise ContractError("automation driver is not available")
+                if self.driver is None:  # past the owner check, only a view process has none
+                    raise ApiRefusal.fixed("project_not_active")
                 self.driver.hold_activation(run_id)
             validate_authorization_history(recovered, candidate)
             created = self.store.append(candidate)
