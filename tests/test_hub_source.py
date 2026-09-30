@@ -334,6 +334,110 @@ def test_each_hub_module_meets_its_own_contract(name):
     assert set(re.findall(IMPORTS, _source(name))) == PERMITTED[name], name
 
 
+# -- the doors and the targets of hub.js -----------------------------------------------------------
+
+#: What `hub.js` carries, exactly (the rule the desk's boot module is held to): a door is counted,
+#: not merely permitted, because a second `fetch(` is a second door that nobody reviewed.
+DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
+#: `HUB_WRITE_TARGETS` of spec 4.6.3: each target of a write the page may make and the route it
+#: writes, in the spec's own words. The page's table is held equal to it in both directions.
+SPEC_TARGETS = {
+    "pickFolder": "/hub/dialogs/folder", "pickCancel": "/hub/dialogs/{pick}/cancel",
+    "projectAdd": "/hub/projects", "projectsHome": "/hub/setup/projects-home",
+    "toolPin": "/hub/tools/{tool}/pin", "projectActivate": "/hub/projects/{project}/activate",
+    "projectView": "/hub/projects/{project}/view", "projectStop": "/hub/projects/{project}/stop",
+    "projectRecover": "/hub/projects/{project}/recover",
+    "projectProviders": "/hub/projects/{project}/providers",
+    "projectForget": "/hub/projects/{project}/forget",
+    "loginRecover": "/hub/logins/{login}/recover",
+    "operationCancel": "/hub/operations/{operation}/cancel", "queueOrder": "/hub/queue/order"}
+#: The reads the page may make, by path.
+SPEC_READS = {"session": "/hub/session", "projects": "/hub/projects", "limits": "/hub/limits",
+              "setup": "/hub/setup"}
+TOKEN_NAMES = ("csrfToken", "csrf_token", "session.token")
+TOKEN_SINKS = ("textContent", "setAttribute", "node(", "dataset", "localStorage", "sessionStorage",
+               "cookie", "encodeURIComponent", "querySelector", "append(", "/command", "?",
+               "location.", "history.")
+
+
+def _table(code: str, name: str) -> dict[str, str]:
+    body = re.search(rf"^const {name} = Object\.freeze\(\{{(.*?)^\}}\);", code,
+                     re.MULTILINE | re.DOTALL)
+    assert body is not None, f"hub.js has no table called {name}"
+    return dict(re.findall(r'^\s+(\w+): "(/hub/[^"]*)"', body.group(1), re.MULTILINE))
+
+
+def door_faults(code: str) -> list[str]:
+    """Every door count `code` does not carry exactly."""
+    return [f"{word!r} is carried {code.count(word)} times, not {count}"
+            for word, count in DOOR_COUNTS if code.count(word) != count]
+
+
+def token_faults(code: str) -> list[str]:
+    """Every line on which the page's write token meets a place it could leak from."""
+    return [f"the token meets {sink!r}: {line.strip()}" for line in code.splitlines()
+            if any(name in line for name in TOKEN_NAMES)
+            for sink in TOKEN_SINKS if sink in line]
+
+
+DOOR_CLEAN = 'await fetch(a);\nawait fetch(b, {method: "POST"});\nnew EventSource(c);\n'
+DOOR_BROKEN = {
+    "a third fetch": (DOOR_CLEAN + "await fetch(d);", "'fetch(' is carried 3 times"),
+    "a second stream": (DOOR_CLEAN + "new EventSource(e);", "'new EventSource(' is carried 2"),
+    "a second write door": (DOOR_CLEAN + 'const x = {method: "POST"};', "'method: \"POST\"' is"),
+    "no stream": ('await fetch(a);\nawait fetch(b, {method: "POST"});\n', "'new EventSource(' is"),
+}
+TOKEN_BROKEN = {
+    "the token in the text": ("node.textContent = csrf_token;", "textContent"),
+    "the token in an attribute": ("el.setAttribute('x', session.token);", "setAttribute"),
+    "the token in the address": ("const a = `${csrfToken}?x`;", "'?'"),
+    "the token in storage": ("localStorage.set(csrfToken);", "localStorage"),
+    "the token to a child": ("fetch('/command/x', csrfToken);", "/command"),
+}
+
+
+def test_the_door_check_passes_the_counts_and_refuses_each_planted_change():
+    assert door_faults(DOOR_CLEAN) == []
+    for source, needle in DOOR_BROKEN.values():
+        assert any(needle in fault for fault in door_faults(source)), needle
+
+
+def test_the_token_check_refuses_each_place_a_token_could_leak_from_and_only_those():
+    assert token_faults("token = payload.csrf_token;\nheaders[X] = token;") == []
+    for source, needle in TOKEN_BROKEN.values():
+        assert any(needle in fault for fault in token_faults(source)), needle
+
+
+def test_hub_js_opens_one_door_to_read_one_to_write_and_one_stream():
+    assert door_faults(_code("hub.js")) == []
+
+
+def test_the_token_the_hub_gives_the_page_meets_no_place_it_could_leak_from():
+    assert token_faults(_code("hub.js")) == []
+
+
+def test_the_write_targets_of_the_page_are_the_fourteen_of_the_spec_and_no_other_route_is_written():
+    code = _code("hub.js")
+    assert _table(code, "WRITE_TARGETS") == SPEC_TARGETS
+    assert _table(code, "READS") == SPEC_READS
+    assert len(re.findall(r'"/hub/[^"]*"', code)) == len(SPEC_TARGETS) + len(SPEC_READS) + 1, (
+        "no route is named outside the two tables but the stream's")
+    assert code.count('"/hub/events"') == 1
+
+
+def test_the_bodies_the_page_sends_name_no_path_no_root_and_no_folder():
+    code = _code("hub.js")
+    assert not re.search(r"""["']?\b(?:root|path|dir)["']?\s*:""", code)
+    assert "JSON.stringify" in code and code.count("JSON.stringify") == 1
+
+
+def test_the_hash_the_page_writes_is_made_by_the_shared_grammar_and_nothing_else():
+    code = _code("hub.js")
+    assert len(re.findall(r"history\.replaceState\(", code)) == 1
+    assert "preferenceHash(deskHash(" in code and "location.hash +" not in code
+    assert "location.hash =" not in code and "location.href" not in code
+
+
 FUNCTION_CAP = 50
 FUNCTION = re.compile(r"^(?:export )?function \w+\([^)]*\) \{\n(.*?)^\}$",
                       re.MULTILINE | re.DOTALL)

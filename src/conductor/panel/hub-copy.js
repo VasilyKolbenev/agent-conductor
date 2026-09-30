@@ -39,7 +39,6 @@ export const HUB_COPY = Object.freeze({
   "hub.status.loading": ["Reading the hub…", "Читаем hub…"],
   "hub.status.ready": ["Read.", "Прочитано."],
   "hub.status.failed": ["The hub could not be read.", "Hub не удалось прочитать."],
-  "hub.status.stream_open": ["Live updates are on.", "Живые обновления включены."],
   "hub.status.stream_lost": ["Live updates were lost; trying again.",
     "Живые обновления прерваны; пробуем снова."],
   // -- the column of projects --------------------------------------------------------------

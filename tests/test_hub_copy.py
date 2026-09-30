@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import importlib
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 from tests.desk_wizard_node import run_js
+from tests.test_panel_cascade import strip_comments
 
 MODULES = {"copy": "hub-copy.js"}
 #: `HUB_ERROR_STATUS` of spec 4.6.5, group by group.
@@ -223,3 +225,35 @@ def test_a_code_is_said_by_its_clause_and_a_code_the_page_has_no_word_for_is_sai
     assert out["known"] and out["knownRu"] and out["known"] != out["knownRu"]
     assert out["unknown"] == out["notText"] and "a_code_from_the_future" not in out["unknown"]
     assert out["none"] and "a_code" not in out["none"]
+
+
+# -- every word of the catalogue is said by something ----------------------------------------------
+
+PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
+#: The modules that say a message. The catalogue's own table is not one of them (it would name every
+#: key); its functions, after the table, are.
+SAYERS = ("hub.js", "hub-rail.js", "hub-stub.js")
+LITERAL = re.compile(r'"((?:hub|desk_status)\.[a-z0-9_.]+)"')
+FAMILY = re.compile(r"`((?:hub|desk_status)\.[a-z0-9_.]+\.)\$\{")
+
+
+def test_every_hub_message_is_named_by_a_module_or_belongs_to_a_family_one_names():
+    tail = (PANEL / "hub-copy.js").read_text(encoding="utf-8").split("export const HUB_LOCALES")[1]
+    source = "\n".join([strip_comments((PANEL / name).read_text(encoding="utf-8"))
+                        for name in SAYERS] + [strip_comments(tail)])
+    page = (PANEL / "hub.html").read_text(encoding="utf-8")
+    labels = set(re.findall(r'data-i18n-label="(hub\.[a-z.]+)"', page))
+    literals, families = set(LITERAL.findall(source)) | labels, set(FAMILY.findall(source))
+    keys = {key for key in _rows() if key.startswith("hub.")}
+    orphans = sorted(key for key in keys if key not in literals
+                     and not any(key.startswith(prefix) for prefix in families))
+    assert orphans == [], "a message nothing says is a word the catalogue keeps for nobody"
+    wanted = {key for key in literals if key.startswith("hub.")}
+    assert sorted(wanted - keys) == [], "a module names a message the catalogue does not have"
+
+
+def test_the_orphan_check_names_a_message_nothing_says_and_a_key_no_catalogue_has():
+    said = 'const a = "hub.one"; const b = `hub.fam.${x}`;'
+    literals, families = set(LITERAL.findall(said)), set(FAMILY.findall(said))
+    assert literals == {"hub.one"} and families == {"hub.fam."}
+    assert "hub.fam.other".startswith("hub.fam.") and "hub.two" not in literals

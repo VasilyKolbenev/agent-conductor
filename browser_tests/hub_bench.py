@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, expect
 
 from conductor.hub.assets import HUB_ASSETS
 
@@ -143,6 +143,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 status, body = hub.answers[path]
                 self._json(status, body)
             else:
+                hub.faults.append(f"a path the hub does not serve: {path}")
                 self._refuse(404, "route_not_found")
 
         def _events(self) -> None:
@@ -203,12 +204,40 @@ class HubPage:
         self.problems = problems
 
 
+def say(page: HubPage, key: str, **params: str) -> str:
+    """A message of the page's own catalogue, in the language the page is in."""
+    return page.page.evaluate("""async ([key, params]) => {
+      const copy = await import("/hub/hub-copy.js");
+      return copy.hubText(document.documentElement.lang, key, params);
+    }""", [key, params])
+
+
+def short(page: HubPage, iso: str) -> str:
+    """The short text of an instant, in the page's language and zone."""
+    return page.page.evaluate("""async (iso) => (await import("/hub/desk-time.js"))
+      .instantText(document.documentElement.lang, iso).short""", iso)
+
+
+def ready(page: HubPage) -> None:
+    """Wait until the page has read the hub once and says so."""
+    expect(page.page.locator("#hubShell")).to_have_attribute("data-state", "ready")
+
+
+def fields(hash_text: str) -> dict[str, str]:
+    """The key and value pairs of an address hash."""
+    return dict(part.split("=", 1) for part in hash_text.lstrip("#").split("&") if part)
+
+
 def watch(page: Page) -> list[str]:
     """Every error the page raised or logged, and every violation of the hub's own policy."""
     problems: list[str] = []
 
     def heard(message: Any) -> None:
-        if message.type == "error":
+        #: The browser logs a refusal it was sent on purpose (a write the hub refuses, a read a
+        #: test made fail); any other error is a problem.
+        sent = "Failed to load resource" in message.text and any(
+            f"status of {code}" in message.text for code in (409, 500))
+        if message.type == "error" and not sent:
             problems.append(message.text)
 
     page.on("console", heard)

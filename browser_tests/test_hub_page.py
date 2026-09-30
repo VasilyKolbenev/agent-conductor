@@ -16,7 +16,8 @@ import urllib.request
 
 from playwright.sync_api import expect
 
-from browser_tests.hub_bench import CSP, FakeHub, HubPage, hub, hub_page, lang  # noqa: F401
+from browser_tests.hub_bench import (CSP, FakeHub, HubPage, hub,  # noqa: F401
+                                     hub_page, lang, ready, say)
 from conductor.hub.assets import HUB_ASSETS
 
 FRAME = """() => {
@@ -35,18 +36,10 @@ FRAME = """() => {
 }"""
 
 
-def say(page: HubPage, key: str, **params: str) -> str:
-    """A message of the page's own catalogue, in the language the page is in."""
-    return page.page.evaluate("""async ([key, params]) => {
-      const copy = await import("/hub/hub-copy.js");
-      return copy.hubText(document.documentElement.lang, key, params);
-    }""", [key, params])
-
-
 def test_the_page_boots_under_the_hubs_own_policy_and_says_its_frame_in_its_language(
         hub_page, lang):
     page = hub_page
-    expect(page.page.locator("#hubActions .hub-blocked").first).to_be_visible()
+    ready(page)
     facts = page.page.evaluate(FRAME)
     assert facts["lang"] == lang and facts["title"] == say(page, "hub.page_title")
     assert facts["brand"] == "December Command"
@@ -56,8 +49,8 @@ def test_the_page_boots_under_the_hubs_own_policy_and_says_its_frame_in_its_lang
     assert facts["actions"] == [
         [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")],
         [say(page, "hub.add_project"), True, say(page, "hub.add_project.blocked")]]
-    assert facts["rail"].startswith(say(page, "hub.rail.heading", count="0"))
-    assert facts["status"] == "", "nothing was read, so nothing is said to have been"
+    assert facts["rail"].startswith(say(page, "hub.rail.heading", count="3"))
+    assert facts["status"] == say(page, "hub.status.ready")
     assert dict(facts["pressed"])[f"seg:lang:{lang}"] == "true"
 
 
@@ -83,7 +76,9 @@ def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_an
 def test_the_page_asks_only_for_the_entry_and_the_files_of_the_registry(hub_page):
     page = hub_page
     page.page.wait_for_load_state("networkidle")
-    assert set(page.hub.gets) == {"/", *HUB_ASSETS}, "every file of the registry is used, none else"
+    doors = {"/hub/session", "/hub/projects", "/hub/limits", "/hub/setup", "/hub/events"}
+    assert set(page.hub.gets) == {"/", *HUB_ASSETS, *doors}, (
+        "every file of the registry is used; the reads and the stream are the doors; none else")
     assert page.hub.posts == []
 
 
@@ -99,7 +94,13 @@ def test_the_fake_hub_serves_the_registry_and_the_entry_and_nothing_else_under_i
     assert get("/hub/hub.html")[0] == 404, "the entry page is not a row of the registry"
     assert get("/hub/desk-flow.js")[0] == 404 and get("/panel/desk.html")[0] == 404
     assert get("/hub/studio-i18n.js")[0] == 404 and get("/command/runs")[0] == 404
-    assert hub.faults == ["the page asked a child's path: /command/runs"]
+    assert hub.faults == [
+        "a path the hub does not serve: /hub/hub.html",
+        "a path the hub does not serve: /hub/desk-flow.js",
+        "a path the hub does not serve: /panel/desk.html",
+        "a path the hub does not serve: /hub/studio-i18n.js",
+        "the page asked a child's path: /command/runs",
+        "a path the hub does not serve: /command/runs"]
     hub.faults.clear()
 
 
@@ -111,12 +112,26 @@ SIDE = """() => ({center: document.querySelector("#hubCenter [data-case]")?.data
 
 
 def test_with_nothing_read_the_centre_asks_for_a_project_and_the_side_says_no_queue_and_no_data(
-        hub_page):
-    page = hub_page
-    facts = page.page.evaluate(SIDE)
-    assert facts["center"] == "choose"
-    assert facts["centerText"] == say(page, "hub.center.choose")
-    assert facts["queue"] == [say(page, "hub.queue.heading"), say(page, "hub.queue.none_active"),
-                              say(page, "hub.queue.empty")]
-    assert facts["limits"] == [say(page, "hub.limits.heading"), say(page, "hub.limits.none")], (
-        "no reading is said as no data, and there is no card for an account nobody read")
+        hub, chromium, lang):
+    for path in ("/hub/projects", "/hub/limits", "/hub/setup"):
+        hub.answer(path, {"error": {"code": "registry_invalid", "message": "", "detail": None}},
+                   status=500)
+    context = chromium.new_context(viewport={"width": 1300, "height": 1000}, locale=lang)
+    try:
+        page = context.new_page()
+        page.goto(f"{hub.url}/#lang={lang}", wait_until="load")
+        opened = HubPage(page, hub, [])
+        expect(page.locator("#hubShell")).to_have_attribute("data-state", "failed")
+        facts = page.evaluate(SIDE)
+        assert facts["center"] == "choose"
+        assert facts["centerText"] == say(opened, "hub.center.choose")
+        assert facts["queue"] == [say(opened, "hub.queue.heading"),
+                                  say(opened, "hub.queue.none_active"),
+                                  say(opened, "hub.queue.empty")]
+        assert facts["limits"] == [say(opened, "hub.limits.heading"),
+                                   say(opened, "hub.limits.none")], (
+            "no reading is said as no data, and there is no card for an account nobody read")
+        assert page.evaluate("document.getElementById('hubStatus').textContent") == say(
+            opened, "hub.status.failed")
+    finally:
+        context.close()
