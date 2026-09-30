@@ -281,6 +281,31 @@ def test_activate_refuses_what_cannot_be_made_active_and_changes_nothing(world):
     assert _refused(world.supervisor.activate, id_of("a")) == "active_not_closed"
 
 
+def test_activating_the_active_project_whose_child_is_gone_starts_it_again_without_a_transition(
+        world):
+    _activate_and_start(world, "a")
+    world.spawner.children[0].leave(1)
+    world.gone("a", "serving", head="closed")            # it crashed and left nothing to recover
+    before = world.hub_state()
+    world.supervisor.activate(id_of("a"))                # "Запустить снова" / "Продолжить"
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 2
+    again = world.spawner.calls[-1]
+    assert (again["mode"], again["transition"], again["auto_continue"]) == ("active", None, None)
+    assert world.hub_state() == before, "a restart of the active project is not a new transition"
+
+
+def test_activating_the_active_project_whose_stop_was_not_confirmed_starts_nothing_until_recovered(
+        world):
+    _activate_and_start(world, "a")
+    world.spawner.children[0].leave(1)
+    world.gone("a", "stop_uncertain", head="opened")
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    assert len(world.spawner.calls) == 1, "the table offers to recover it, and starts nothing"
+    assert world.supervisor.status(id_of("a")).lifecycle.state == "stop_uncertain"
+
+
 def test_switching_away_from_a_child_that_has_not_reported_yet_is_refused_and_changes_nothing(
         world):
     world.supervisor.activate(id_of("a"))
@@ -340,6 +365,42 @@ def test_a_project_reads_its_lifecycle_its_working_state_and_its_mode(world):
     found = {name: world.supervisor.status(id_of(name)) for name in "abc"}
     assert [(found[n].lifecycle.state, found[n].working, found[n].mode) for n in "abc"] == [
         ("running", "active", "active"), ("running", "view", "view"), ("stopped", "queued", None)]
+
+
+def test_a_project_reports_its_port_a_stable_instance_per_process_and_when_it_stopped(world):
+    _activate_and_start(world, "a")
+    first = world.supervisor.status(id_of("a"))
+    assert first.port == 7701 and first.stopped_at is None
+    assert first.instance is not None and len(first.instance) == 32
+    assert world.supervisor.status(id_of("a")).instance == first.instance, "it is not re-minted"
+    world.put_status("a", "serving", started="windows:2")         # the same pid, a new process
+    restarted = world.supervisor.status(id_of("a"))
+    assert restarted.instance not in (None, first.instance), "a restart must be a new instance"
+    world.put_status("a", "stopped")                 # said `stopped`, the process not yet gone
+    lingering = world.supervisor.status(id_of("a"))
+    assert (lingering.port, lingering.instance) == (None, None), \
+        "a child that says it stopped is not offered as a desk to open"
+    assert lingering.stopped_at == world.clock.now
+    world.gone("a")
+    stopped = world.supervisor.status(id_of("a"))
+    assert (stopped.port, stopped.instance) == (None, None)
+    assert stopped.stopped_at == world.clock.now, "the stop time is the status file's own"
+    assert world.supervisor.status(id_of("b")).stopped_at is None
+
+
+def test_the_exit_of_the_hub_asks_every_child_it_started_to_drain_and_reports_each(world):
+    _activate_and_start(world, "a")
+    world.supervisor.view(id_of("b"))
+    world.running("b", mode="view")
+    world.supervisor.drain_all()
+    assert all(child.closed for child in world.spawner.children)
+    report = {one.project_id: one for one in world.supervisor.children_report()}
+    assert set(report) == {id_of("a"), id_of("b")}
+    assert not report[id_of("a")].done and not report[id_of("b")].done
+    world.spawner.children[1].leave(0)
+    later = {one.project_id: one for one in world.supervisor.children_report()}
+    assert later[id_of("b")].done and not later[id_of("a")].done
+    assert later[id_of("b")].drain_deadline is None
 
 
 def test_a_registry_that_is_not_the_schema_stops_the_loop_without_a_crash(world):

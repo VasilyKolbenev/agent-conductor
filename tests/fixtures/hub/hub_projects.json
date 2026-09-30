@@ -205,6 +205,13 @@
         "tasks": [],
         "task_queue": null
       }
+    ],
+    "unlisted_closing": [
+      {
+        "project_id": "e5f60718293a4b6c8d9e0f1a2b3c4d5e",
+        "since": "2026-09-29T08:30:00Z",
+        "action": "relist"
+      }
     ]
   }
 }

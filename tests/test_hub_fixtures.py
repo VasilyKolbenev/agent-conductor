@@ -20,7 +20,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "hub"
 FORMS = {
     "GET /hub/session": {"csrf_token", "origin"},
     "GET /hub/projects": {"computed_at", "active_project_id", "project_queue",
-                          "projects_home", "projects"},
+                          "projects_home", "projects", "unlisted_closing"},
     "GET /hub/limits": {"computed_at", "project_id", "source", "taken_at", "as_of",
                         "max_age_seconds", "accounts"},
     "GET /hub/setup": {"profile", "projects_home", "tools", "logins", "hub_job"},
@@ -47,6 +47,9 @@ PROJECT_ROW = {
     "drain_deadline", "instance", "desk_url", "data", "snapshot_at", "tasks", "task_queue"}
 TASK_ROW = {"task", "run", "automation", "attention"}
 ATTENTION = {"reasons", "gates", "runtime", "journal", "observed_at", "unreadable"}
+#: A closing entry of a project off the list (tech lead, 30.09, rule b): the one key that 4.6.4 does
+#: not have, added to `GET /hub/projects` so the page can offer to put the project back.
+UNLISTED = {"project_id", "since", "action"}
 ACCOUNT_CARD = {"key", "verified", "row"}
 REPO_ROW = {"full_name", "description", "visibility", "updated_at", "archived", "fork"}
 FRAMES = {"projects": {"kind"}, "project": {"kind", "project_id"}, "limits": {"kind"},
@@ -97,6 +100,8 @@ def test_each_response_has_exactly_the_keys_of_its_spec_form():
     tasks = [task for row in projects for task in row["tasks"]]
     assert tasks and all(set(task) == TASK_ROW for task in tasks)
     assert any(task["attention"] and set(task["attention"]) == ATTENTION for task in tasks)
+    owed = documents["GET /hub/projects"]["response"]["unlisted_closing"]
+    assert owed and all(set(row) == UNLISTED and row["action"] == "relist" for row in owed)
     cards = documents["GET /hub/limits"]["response"]["accounts"]
     assert cards and all(set(card) == ACCOUNT_CARD for card in cards)
     for route in ("GET /hub/github/repos", "GET /hub/github/repos/<owner>"):

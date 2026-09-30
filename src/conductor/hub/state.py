@@ -425,6 +425,31 @@ def dequeue(current: HubState, project_id: str) -> HubState:
     return replace(current, queue=tuple(p for p in current.queue if p != project_id))
 
 
+def forget(current: HubState, project_id: str, *,
+           closing: ClosingEntry | None = None) -> HubState:
+    """A project leaves the list: out of the queue, the handed flags and the active place.
+
+    A closing entry that already stands stays (the hub cannot prove a closure of a project it
+    no longer lists, so the entry keeps blocking until the project is listed again). `closing`
+    is the entry the caller judged the forgotten ACTIVE project owes: it is added when the project
+    was active and is not on the list yet, so that forgetting cannot shed the obligation.
+
+    Raises:
+        ValueError: `closing` names another project.
+    """
+    if closing is not None and closing.project_id != project_id:
+        raise ValueError("closing must be the entry of the project that is forgotten")
+    was_active = current.active_project_id == project_id
+    owed = was_active and closing is not None and all(
+        entry.project_id != project_id for entry in current.closing)
+    return replace(
+        current, active_project_id=None if was_active else current.active_project_id,
+        queue=tuple(p for p in current.queue if p != project_id),
+        handed_flags={k: v for k, v in current.handed_flags.items() if k != project_id},
+        transition=None if was_active else current.transition,
+        closing=(*current.closing, *((closing,) if owed else ())))
+
+
 def reorder(current: HubState, order: Sequence[str]) -> HubState:
     """The queue in `order`, which must be a permutation of the queue as it stands.
 
