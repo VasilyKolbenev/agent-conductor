@@ -30,8 +30,17 @@ PURE = {"desk-flow-shape.js": set(),
                                "./desk-flow-branches.js", "./desk-flow-graph.js",
                                "./desk-quickcycle.js", "./desk-flowwrite.js",
                                "./desk-flow-shape.js"}}
-#: Modules that draw. None yet: the drawing lands with the panel.
-DRAWN: dict[str, set[str]] = {}
+#: Modules that draw: they build text nodes from what the model says, and each has the one set of
+#: siblings (and of the panel's shared modules) it may import.
+DRAWN: dict[str, set[str]] = {
+    "desk-flow-draw.js": {"./command-view.js", "./studio-i18n.js", "./desk-flow-model.js",
+                          "./desk-flow-shape.js"},
+    "desk-flow-diag.js": {"./command-view.js", "./desk-wizard-draw.js", "./desk-flow-draw.js"},
+    "desk-flow-inspector.js": {"./command-view.js", "./desk-flow-fields.js", "./desk-flow-model.js",
+                               "./desk-flow-shape.js", "./desk-flow-draw.js"},
+    "desk-flow.js": {"./command-view.js", "./studio-i18n.js", "./studio-canvas.js",
+                     "./desk-flow-graph.js", "./desk-quickcycle.js", "./desk-flow-shape.js",
+                     "./desk-flow-draw.js", "./desk-flow-diag.js", "./desk-flow-inspector.js"}}
 #: Data only.
 DATA: tuple[str, ...] = ("desk-flow-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'

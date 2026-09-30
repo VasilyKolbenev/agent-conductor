@@ -206,6 +206,20 @@ PERMITTED_IMPORTS = {
     "desk-flow-fields.js": frozenset({"./desk-flow-shape.js"}),
     #: The words of the «Схема»: data only, like every copy module.
     "desk-flow-copy.js": frozenset(),
+    #: The «Схема» is drawn by four modules. The shared pieces reach the catalogue, the panel's model
+    #: (for its facts) and the shape; the counter and the rows, the inspector and the frame stand on
+    #: them in one direction, and only the frame reaches the canvas. None reaches the wire.
+    "desk-flow-draw.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-flow-model.js",
+                                    "./desk-flow-shape.js"}),
+    "desk-flow-diag.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                    "./desk-flow-draw.js"}),
+    "desk-flow-inspector.js": frozenset({"./command-view.js", "./desk-flow-fields.js",
+                                         "./desk-flow-model.js", "./desk-flow-shape.js",
+                                         "./desk-flow-draw.js"}),
+    "desk-flow.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-canvas.js",
+                               "./desk-flow-graph.js", "./desk-quickcycle.js",
+                               "./desk-flow-shape.js", "./desk-flow-draw.js",
+                               "./desk-flow-diag.js", "./desk-flow-inspector.js"}),
     #: The panel's state and its one table of events: the write chain, the edits, the quick mode,
     #: the rows of the inspector and what a publication changes. It draws nothing and reaches no wire.
     "desk-flow-model.js": frozenset({"./desk-flow-edits.js", "./desk-flow-fields.js",
