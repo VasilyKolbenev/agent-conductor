@@ -12,14 +12,21 @@ transition that is spawned once, the start that times out, the bind that is trie
 """
 from __future__ import annotations
 
+import os
+import socket
 import subprocess
 import sys
+import time
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
 
-from conductor import ownership, ownership_records, ownership_transition, process_identity
-from conductor.hub import registry, spawn, state, supervisor
+from conductor import (ownership, ownership_native, ownership_records, ownership_transition,
+                       process_identity, up_status)
+from conductor.hub import instance, registry, spawn, state, supervisor
+from tests._drain_harness import (CHILD, LINGER, PROBE, RUN_ID, WAIT, DrainChild, DrainProject,
+                                  _kill_tree, wait_until)
 from tests._hub_world import FakeSpawner, World, id_of, iso
 from tests.test_store import good_lane, write_project
 
@@ -412,3 +419,253 @@ def test_a_registry_that_is_not_the_schema_stops_the_loop_without_a_crash(world)
     (world.home / "registry.json").write_text("{not json", encoding="utf-8")
     world.supervisor.tick()
     assert len(world.spawner.calls) == 1
+
+
+# -- real children: the real `conduct up` with fake dispatch, started by a real spawner ------------
+
+ORIGIN = "http://127.0.0.1:7700"
+
+
+class RecordingSpawner(spawn.Spawner):
+    """The real spawner, which remembers what it started."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.calls: list[dict] = []
+        self.children: list[spawn.Child] = []
+
+    def start(self, **arguments) -> spawn.Child:
+        self.calls.append(arguments)
+        child = super().start(**arguments)
+        self.children.append(child)
+        return child
+
+
+class RealHub:
+    """A hub's parts over the drain harness's project: its home, its registry, its children."""
+
+    def __init__(self, project: DrainProject, *, port: int | None = None,
+                 registered: bool = True, hub_port: int = 7700) -> None:
+        self.project = project
+        if registered:
+            registry.add_project(
+                project_id=project.project_id, root=str(project.root), name="drain",
+                root_identity=ownership_native.identity(project.root), folder=project.home)
+            if port is not None:
+                registry.mutate(lambda current: registry.Registry(None, tuple(
+                    replace(p, port=port) for p in current.projects)), project.home)
+        self.instance = instance.HubInstance.acquire(project.home)
+        self.store = state.HubStateStore(project.home, self.instance)
+        self.spawner = RecordingSpawner(
+            project.home, hub_origin=ORIGIN, head=(sys.executable, str(CHILD)),
+            environ=project._environment(False, None, None, "none", LINGER, None))
+        self.supervisor = supervisor.Supervisor(project.home, self.store, self.spawner,
+                                                hub_port=hub_port)
+
+    def pump(self) -> list[dict]:
+        """One tick, and what has been started so far."""
+        self.supervisor.tick()
+        return self.spawner.calls
+
+    def close(self) -> None:
+        self.instance.close()
+
+
+def _record(project: DrainProject):
+    try:
+        return up_status.read_status(project.status_file)
+    except up_status.StatusInvalid:
+        return None
+
+
+def _state_of(project: DrainProject) -> str | None:
+    found = _record(project)
+    return None if found is None else found.state
+
+
+def _talk_to(project: DrainProject, hub: RealHub) -> DrainChild:
+    """The harness's helper for the HTTP door of the child the hub last started."""
+    port = _record(project).port
+    return DrainChild(project, hub.spawner.children[-1].popen, True,
+                      project.home / "logs" / f"{project.project_id}.log",
+                      lines=[f"http://127.0.0.1:{port}/"])
+
+
+def _forget_the_markers(project: DrainProject) -> None:
+    """The markers of attempt `n` have the same name in every process: clear them between."""
+    for marker in (*project.control.glob("entered-*"), *project.control.glob("release-*")):
+        marker.unlink()
+
+
+@pytest.fixture
+def real(tmp_path):
+    made = DrainProject.build(tmp_path)
+    hubs: list[RealHub] = []
+    yield made, hubs
+    for hub in hubs:
+        for child in hub.spawner.children:
+            child.close_stdin()
+    for marker in made.control.glob("release-*"):
+        marker.unlink()
+    for number in range(1, 5):
+        (made.control / f"release-{number}").write_text("1", encoding="ascii")
+    for hub in hubs:
+        for child in hub.spawner.children:
+            try:
+                child.wait(30)
+            except subprocess.TimeoutExpired:
+                _kill_tree(child.popen)
+        hub.close()
+
+
+def _the_new_hub_waits_and_starts_nothing(second: RealHub, project: DrainProject) -> None:
+    """For longer than a probe window: no child is started and the drain is not disturbed."""
+    deadline = time.monotonic() + PROBE + 1.0
+    while time.monotonic() < deadline:
+        second.pump()
+        assert second.spawner.calls == [], "a second child was started during the drain"
+        assert _state_of(project) == "stopping", "the drain was disturbed"
+        time.sleep(0.1)
+    assert second.supervisor.status(project.project_id).lifecycle.state == "stopping"
+
+
+def _a_human_resumes_the_run_and_it_finishes(project: DrainProject, second: RealHub) -> None:
+    """The restarted run waits for a person; one `resume` carries it to its end."""
+    again = _talk_to(project, second)
+    status, automation = again.http("GET", f"/command/runs/{RUN_ID}/automation")
+    assert (status, automation["state"], automation["reason_code"]) == (
+        200, "restart_required", "explicit_resume_required")
+    status, resumed = again.http("POST", f"/command/runs/{RUN_ID}/automation/control", {
+        "control_id": "resume-1", "authorization_id": "grant", "action": "resume",
+        "authorization_digest": automation["authorization"]["authorization_digest"],
+        "actor": "owner", "expected_control_id": None})
+    assert status == 201, resumed
+    again.wait_attempt(1)
+    again.release(1)
+    project.wait_run_terminal(again)
+    assert project.results() == ["succeeded", "succeeded"]
+    assert project.proposal_nodes() == ["do", "next"], "each step was proposed once"
+
+
+def test_hub_restart_during_a_child_drain_starts_no_second_child_and_meets_no_owner_busy(real):
+    project, hubs = real
+    first = RealHub(project)
+    hubs.append(first)
+    first.supervisor.activate(project.project_id)
+    first.pump()
+    wait_until(lambda: _state_of(project) == "serving", WAIT, "the first child to serve")
+    old_pid = _record(project).pid
+    child = _talk_to(project, first)
+    child.authorize()
+    child.wait_attempt(1)                      # an attempt is inside its effect, holding on
+    first.spawner.children[0].close_stdin()    # the hub dies: its end of the pipe goes
+    first.close()
+    wait_until(lambda: _state_of(project) == "stopping", WAIT, "the child to begin draining")
+    second = RealHub(project, registered=False)
+    hubs.append(second)
+    second.supervisor.restart()
+    _the_new_hub_waits_and_starts_nothing(second, project)
+    child.release(1)                           # the attempt ends, the drain completes
+    wait_until(lambda: _state_of(project) == "stopped", WAIT, "the first child to stop")
+    assert project.head_phase() == "closed"
+    _forget_the_markers(project)
+    wait_until(lambda: bool(second.pump()), WAIT, "the new hub to start the child")
+    (call,) = second.spawner.calls
+    assert (call["mode"], call["transition"], call["auto_continue"]) == ("active", None, None)
+    wait_until(lambda: _state_of(project) == "serving" and _record(project).pid != old_pid,
+               WAIT, "the second child to serve")
+    log = project.home / "logs" / f"{project.project_id}.log"
+    assert "owner_busy" not in log.read_text(encoding="utf-8", errors="replace")
+    _a_human_resumes_the_run_and_it_finishes(project, second)
+
+
+def _a_port_of_the_range_held_by_a_socket() -> socket.socket:
+    for port in (p for p in range(7701, 7800) if p != 7777):
+        holder = socket.socket()
+        try:
+            holder.bind(("127.0.0.1", port))
+            holder.listen(1)
+            return holder
+        except OSError:
+            holder.close()
+    pytest.skip("every port of 7701-7799 is in use on this machine")
+
+
+def test_a_busy_port_falls_back_to_port_zero_once_and_the_registry_keeps_its_port(real):
+    project, hubs = real
+    holder = _a_port_of_the_range_held_by_a_socket()
+    try:
+        port = holder.getsockname()[1]
+        hub = RealHub(project, port=port)
+        hubs.append(hub)
+        hub.supervisor.activate(project.project_id)
+        hub.pump()
+        wait_until(lambda: len(hub.pump()) == 2, WAIT, "the hub to try the port 0")
+        first, second = hub.spawner.calls
+        assert (first["port"], second["port"]) == (port, 0)
+        wait_until(lambda: _state_of(project) == "serving", WAIT, "the child to serve on 0")
+        assert _record(project).port not in (0, port)
+        assert registry.load(project.home).project(project.project_id).port == port
+        assert hub.supervisor.status(project.project_id).lifecycle.state == "running"
+    finally:
+        holder.close()
+
+
+def _two_children(tmp_path, popen_of_second=None):
+    """Two real children of two projects, each by a spawner of its own; both serving."""
+    projects, spawners, children = [], [], []
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        project = DrainProject.build(tmp_path / name)
+        options = {} if popen_of_second is None or name == "a" else {"popen": popen_of_second(
+            children[0])}
+        spawner = spawn.Spawner(
+            project.home, hub_origin=ORIGIN, head=(sys.executable, str(CHILD)),
+            environ=project._environment(True, None, None, "none", 0.0, None), **options)
+        child = spawner.start(project_id=project.project_id, root=project.root, port=0,
+                              mode="active")
+        projects.append(project)
+        spawners.append(spawner)
+        children.append(child)
+        wait_until(lambda project=project: _state_of(project) == "serving", WAIT,
+                   f"the child of {name} to serve")
+    return projects, children
+
+
+def _leaking(first: spawn.Child):
+    """A `Popen` that lets the next child inherit the write end of another child's stdin."""
+    def popen(argv, **options):
+        if os.name == "nt":
+            import msvcrt
+            os.set_handle_inheritable(msvcrt.get_osfhandle(first.popen.stdin.fileno()), True)
+        else:
+            os.set_inheritable(first.popen.stdin.fileno(), True)
+        return subprocess.Popen(argv, **{**options, "close_fds": False})
+    return popen
+
+
+def test_the_instrument_sees_a_pipe_that_leaks_into_a_second_child(tmp_path):
+    (a, b), (first, second) = _two_children(tmp_path, popen_of_second=_leaking)
+    try:
+        first.close_stdin()
+        time.sleep(2.0)
+        assert _state_of(a) == "serving" and first.poll() is None, (
+            "the write end of A's pipe leaked into B, so A must not have seen end of file")
+    finally:
+        _kill_tree(second.popen)
+        first.wait(WAIT)
+        _kill_tree(first.popen)
+
+
+def test_closing_the_pipe_of_one_child_gives_another_child_no_end_of_file(tmp_path):
+    (a, b), (first, second) = _two_children(tmp_path)
+    try:
+        first.close_stdin()
+        assert first.wait(WAIT) == 0 and _state_of(a) == "stopped"
+        assert second.poll() is None and _state_of(b) == "serving", "B saw the end of A's pipe"
+        second.close_stdin()
+        assert second.wait(WAIT) == 0 and _state_of(b) == "stopped"
+    finally:
+        for child in (first, second):
+            if child.poll() is None:
+                _kill_tree(child.popen)

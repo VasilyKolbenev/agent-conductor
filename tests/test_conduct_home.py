@@ -19,11 +19,12 @@ import os
 import stat
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from conductor import ownership, tool_pins
-from conductor.hub import home, instance, registry, state
+from conductor import ownership, tool_pins, up_status
+from conductor.hub import home, instance, registry, spawn, state
 from conductor.ownership_errors import OwnerRefused
 
 
@@ -162,6 +163,11 @@ def _hub_operations(folder: Path) -> None:
             lambda current: state.enqueue(current, "b" * 32, flag_id))
     finally:
         live.close()
+    spawn.Spawner(
+        made, hub_origin="http://127.0.0.1:7700",
+        popen=lambda argv, **options: SimpleNamespace(pid=1, stdin=None, poll=lambda: None),
+    ).start(project_id="b" * 32, root=folder.parent / "project", port=0, mode="view")
+    up_status.StatusFile(made / "run" / f"{'b' * 32}.json", "b" * 32, "view", 0).write("starting")
 
 
 def _markers_at_or_above(folder: Path) -> list[str]:
