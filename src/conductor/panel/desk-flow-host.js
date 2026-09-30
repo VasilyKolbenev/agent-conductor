@@ -18,13 +18,15 @@ function readPath(ask) {
 
 /** Connect one flow panel to the desk's existing, project-bound transport. */
 export function createFlowHost({mount, door, locale, nonce, onForeign, onState = () => {}}) {
-  let schema = initialFlow({nonce}), epoch = 0, live = true, opened = false;
+  let schema = initialFlow({nonce}), epoch = 0, live = true, opened = false, paused = false;
   const stops = new Set();
+  const held = [];
 
   function invalidate() {
     if (!live) return false;
     live = false;
     epoch += 1;
+    held.length = 0;
     for (const stop of stops) stop.abort();
     stops.clear();
     return true;
@@ -35,6 +37,7 @@ export function createFlowHost({mount, door, locale, nonce, onForeign, onState =
   }
 
   function render() {
+    if (!live || paused) return;
     const focused = focusTarget();
     mountFlow(mount, {schema, locale: locale()}, {onFlow: dispatch});
     restoreFocus(mount, focused);
@@ -42,6 +45,7 @@ export function createFlowHost({mount, door, locale, nonce, onForeign, onState =
 
   async function perform(ask) {
     if (!live) return;
+    if (paused) { held.push(() => { void perform(ask); }); return; }
     const pending = epoch;
     let result;
     if (ask.door === "read") {
@@ -72,6 +76,7 @@ export function createFlowHost({mount, door, locale, nonce, onForeign, onState =
 
   function dispatch(event) {
     if (!live || !opened) return;
+    if (paused) { held.push(() => dispatch(event)); return; }
     const pending = epoch;
     const step = stepFlow(schema, event);
     schema = step.state;
@@ -92,5 +97,18 @@ export function createFlowHost({mount, door, locale, nonce, onForeign, onState =
     mount.replaceChildren();
   }
 
-  return Object.freeze({open, dispatch, dispose, state: () => schema});
+  // A cached page retains its draft and in-flight answers, but does no new work until shown.
+  function suspend() {
+    if (live) paused = true;
+  }
+
+  function resume() {
+    if (!live || !paused) return;
+    paused = false;
+    while (live && !paused && held.length > 0) held.shift()();
+    render();
+  }
+
+  return Object.freeze({open, dispatch, dispose, suspend, resume, refresh: render,
+    state: () => schema});
 }
