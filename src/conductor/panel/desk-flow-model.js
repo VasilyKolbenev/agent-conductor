@@ -95,7 +95,8 @@ function viaWrite(state, event, adding = false) {
   return {state: settled(state, out.state, adding), asks: out.asks};
 }
 
-const draftKey = (nodeId, field) => `${nodeId ?? ""}\u0000${field}`;
+/** The key a typed text is kept under: the step (or none, for the cycle) and the field. */
+export const draftKey = (nodeId, field) => `${nodeId ?? ""}\u0000${field}`;
 
 function fieldInput(state, event) {
   const {field, text} = event, nodeId = event.nodeId ?? null, held = state.write.held;
@@ -246,9 +247,9 @@ export const FLOW_EVENTS = Object.freeze([...WRITE_EVENTS, "select", "view", "st
   "field-input", "field-commit", "cycles", "quick-open", "quick-close", "quick-title", "quick-add",
   "quick-remove", "quick-build"]);
 
-//: A panel notice lives for one event, like a message on a line; `view`, a typed letter and a fold
-//: do not wipe it.
-const KEEPS_NOTICE = Object.freeze(["view", "field-input", "section", "status"]);
+//: A panel notice lives until the person's next move, like a message on a line. An answer landing is
+//: not their move, and neither are `view`, a typed letter or a fold: none of them wipes it.
+const KEEPS_NOTICE = Object.freeze(["view", "field-input", "section", "status", "answered"]);
 
 /** One event in; the new state and the asks that are due out. An event not in the table is nothing. */
 export function stepFlow(state, event) {

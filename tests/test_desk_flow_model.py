@@ -3,9 +3,9 @@
 The model is the write chain plus what only a panel keeps: the list of cycles, which step or road is
 selected, the text typed into rows and not yet committed, the open sections, the quick form and the
 canvas view. It is a pure function of its state and one event, in the shape of the wizard's model:
-an event goes in, a state and the asks that are due come out, and a host that owns the doors performs
-each ask and answers it. The tests run the packaged modules under Node; the drawing is proved in the
-browser (`browser_tests/test_desk_flow.py`).
+an event goes in, a state and the asks that are due come out, and a host that owns the doors
+performs each ask and answers it. The tests run the packaged modules under Node; the drawing is
+proved in the browser (`browser_tests/test_desk_flow.py`).
 """
 from __future__ import annotations
 
@@ -27,7 +27,8 @@ const D = (letter) => "sha256:" + letter.repeat(64);
 const show = (value) => console.log(JSON.stringify(value));
 const fresh = () => model.initialFlow({nonce: NONCE});
 const send = (out, event) => model.stepFlow(out.state, event);
-const fs = (name, id, over = {}) => ({...structuredClone(d.states[name]), workflow_id: id, ...over});
+const fs = (name, id, over = {}) => ({...structuredClone(d.states[name]), workflow_id: id,
+  ...over});
 const reply = (out, ask, payload, over = {}) => send(out, {type: "answered", ask,
   result: {status: over.status ?? "accepted", code: over.code ?? null, payload}});
 const named = (out, name) => out.asks.find((ask) => ask.name === name);
@@ -220,6 +221,26 @@ def test_a_text_that_means_no_edit_stays_typed_and_says_why_and_a_same_text_leav
     assert out["same"][:2] == [0, []] and out["same"][2] is None
 
 
+def test_an_answer_that_lands_later_does_not_wipe_a_notice_the_person_has_not_yet_read():
+    out = js("""
+      const ready = opened();
+      const wrote = send(ready, edit("do", "title", "Build"));
+      const noted = send(wrote, {type: "field-commit", nodeId: "do", field: "timeout_seconds",
+        text: "ten"});
+      const ask = named(wrote, "schema_write");
+      const done = reply(noted, ask, fs("tester", "cycle-x1", {source: "draft",
+        flow: ask.body.source.flow, draft_digest: D("1")}));
+      const listed = reply(done, done.asks[0], d.list);
+      const moved = send(listed, {type: "select", selection: null});
+      show({before: model.flowView(noted.state).notice, written: model.flowView(done.state).notice,
+        listed: model.flowView(listed.state).notice, moved: model.flowView(moved.state).notice});
+    """)
+    assert out["before"] == {"key": "schema.model.field_int"}
+    assert out["written"] == out["before"] and out["listed"] == out["before"], (
+        "a write's answer and the list's answer are not the person's next move")
+    assert out["moved"] is None, "the next thing the person does is what clears it"
+
+
 def test_saving_commits_every_typed_text_first_and_then_asks_one_write():
     out = js("""
       const ready = opened();
@@ -264,7 +285,9 @@ def test_the_quick_form_collects_rows_and_builds_the_flow_the_same_edits_build()
       const ready = opened();
       let form = send(ready, {type: "quick-open"});
       form = send(form, {type: "quick-title", value: "Mine"});
-      for (const kind of ["analyst", "doer", "tester"]) form = send(form, {type: "quick-add", kind});
+      for (const kind of ["analyst", "doer", "tester"]) {
+        form = send(form, {type: "quick-add", kind});
+      }
       const bad = send(form, {type: "quick-add", kind: "nonsense"});
       form = send(form, {type: "quick-remove", index: 0});
       const before = model.flowView(form.state).quick;
@@ -333,7 +356,8 @@ def test_publishing_shows_what_changes_against_the_last_revision_before_it_write
       const ready = opened("cycle-p1", "tester");
       const revision = structuredClone(d.states.tester.flow);
       revision.steps[1].title = "Old";
-      const state = {...ready.state, write: {...ready.state.write, server: {...ready.state.write.server,
+      const held = ready.state.write;
+      const state = {...ready.state, write: {...held, server: {...held.server,
         revision_flow: revision, publishable: true, next_revision: 3}}};
       const asked = model.stepFlow(state, {type: "publish-request"});
       const view = model.flowView(asked.state);
