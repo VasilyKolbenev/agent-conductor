@@ -180,7 +180,9 @@ def test_every_field_a_row_writes_is_a_word_of_the_edit_vocabulary():
       const named = new Set(edits.EDIT_FIELDS), bad = [];
       for (const flow of [d.tester, d.dalio]) {
         for (const step of flow.steps) {
-          for (const row of fields.stepRows(flow, step)) if (!named.has(row.field)) bad.push(row.field);
+          for (const row of fields.stepRows(flow, step)) {
+            if (!named.has(row.field)) bad.push(row.field);
+          }
         }
         for (const row of fields.flowRows(flow)) if (!named.has(row.field)) bad.push(row.field);
       }

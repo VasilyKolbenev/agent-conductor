@@ -1,12 +1,12 @@
-"""The «Схема»'s catalogue: complete in both languages, the spec's own words, no bare code on screen.
+"""The «Схема»'s catalogue: complete in both languages, the spec's own words, no bare code.
 
 `studio-i18n.js` spreads `desk-flow-copy.js` into the one table, so the parity guards of
 `tests/test_studio_i18n.py` already cover it as a whole; these read the `schema.` keys alone and add
 what only the panel can claim: every closed word its modules can say (an edit's refusal, a write's
 notice, a model's notice, a field, a road word, a section) has its message in both languages, the
-parameters of a message are the ones the code really passes, and the spec's strings stand as the spec
-gives them. A diagnostic row's text is the wizard's (`wizard.diag.*`), held to the server's own list
-of codes in `tests/test_desk_flow_guards.py`.
+parameters of a message are the ones the code really passes, and the spec's strings stand as the
+spec gives them. A diagnostic row's text is the wizard's (`wizard.diag.*`), held to the server's
+own list of codes in `tests/test_desk_flow_guards.py`.
 """
 from __future__ import annotations
 
@@ -60,7 +60,9 @@ def test_every_closed_word_the_flow_modules_can_say_has_a_message_in_both_langua
           .map((name) => `schema.change.${name}`)];
       const sections = new Set();
       for (const flow of [d.tester, d.dalio]) {
-        for (const step of flow.steps) fields.stepRows(flow, step).forEach((row) => sections.add(row.section));
+        for (const step of flow.steps) {
+          fields.stepRows(flow, step).forEach((row) => sections.add(row.section));
+        }
         fields.flowRows(flow).forEach((row) => sections.add(row.section));
       }
       for (const name of sections) want.push(`schema.section.${name}`);
