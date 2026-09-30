@@ -13,7 +13,8 @@
 // that say so. The feed is drawn from the run the scene is drawn from and stands in the word the
 // scene stands in. The summary is drawn from the lists, the automation of each task's newest run
 // and the reads that say which tasks were closed, and from the run on the scene; it stands in the
-// word of the runs read and is drawn when its numbers are known.
+// word of the runs read and is drawn when its numbers are known. Nothing else waits for the reads
+// that say which tasks were closed: a slow one holds the summary and nothing more.
 //
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
@@ -347,16 +348,25 @@ async function readAutomation(tasks, runs) {
   return found;
 }
 
-//: The lists, the automation of each task's newest run, and, beside them, the reads that say
-//: which tasks were closed (`desk-closing.js`): the rail is drawn when its words are known and
-//: the summary when its numbers are.
+//: The reads that say which tasks were closed (`desk-closing.js`) are one run read per finished
+//: task and may take as long as a read may (`READ_DEADLINE`). Only the summary needs their
+//: answer, so nothing waits for them: not the scene of the task an address names, not the hash
+//: that comes next. The answer is kept when it lands, unless the desk has ended by then (`move`
+//: keeps nothing for one that has).
+function learnClosing(reads) {
+  reads.then((found) => move({closing: found}));
+}
+
+//: The lists and the automation of each task's newest run, which the rail's words are made of, so
+//: the desk is settled when they have landed. The reads that say which tasks were closed are
+//: started beside them and are not waited for (`learnClosing`): the summary is drawn when its
+//: numbers are known.
 async function load() {
   move({tasks: READING, runs: READING});
   const [tasks, runs] = await Promise.all([readTasks(), readRuns()]);
-  const closing = readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
-    stopped: () => state.foreign});
+  learnClosing(readClosing({read: (runId) => readJson(READS.run(runId)), tasks, runs,
+    stopped: () => state.foreign}));
   move({tasks, runs, automation: await readAutomation(tasks, runs)});
-  move({closing: await closing});
 }
 
 //: The newest run of one task, read whole: the run and, beside it, what protects it. A run
