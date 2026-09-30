@@ -35,6 +35,9 @@ class Pump:
             raise RuntimeError("a pump pass that fails")
         return False
 
+    def run_acted(self, run_id, action):
+        """The hook of a direct authorize or control; these tests make no claim on it."""
+
 
 @pytest.fixture
 def slow_tick(monkeypatch):
