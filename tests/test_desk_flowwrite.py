@@ -275,6 +275,24 @@ def test_a_new_cycle_from_a_starter_or_a_copy_is_written_by_its_source_into_a_ne
     assert out["empty"] == [0, "cycle-a1b2c3d4", "Мой цикл", 0, True]
 
 
+def test_a_flow_built_elsewhere_is_written_into_a_new_cycle_under_a_new_id():
+    out = js("""
+      const built = d.states.tester.flow;
+      const out = send({state: fresh()}, {type: "new", from: "flow", flow: built});
+      const done = reply(out, out.asks[0], fs("tester", out.asks[0].subject));
+      const none = send({state: fresh()}, {type: "new", from: "flow", flow: null});
+      const body = out.asks[0].body;
+      show({ask: [asksOf(out), Object.keys(body.source), body.expected_absent,
+        JSON.stringify(body.source.flow) === JSON.stringify(built)],
+        aliased: body.source.flow === built, state: [out.state.fresh, out.state.save],
+        done: [done.state.phase, done.state.fresh, done.state.save], none: none.asks.length});
+    """)
+    assert out["ask"] == [[["write:schema:1", *DOOR, "cycle-a1b2c3d4"]], ["flow"], True, True]
+    assert out["aliased"] is False, "the flow is copied, never shared with the caller"
+    assert out["state"] == [True, "saving"] and out["done"] == ["ready", False, "saved"]
+    assert out["none"] == 0, "no flow, nothing to write"
+
+
 SAVED = """
 const one = send(opened(), {type: "edit", edit: title("Build")});
 const saved = reply(one, one.asks[0], landed(one.asks[0], D("1")));

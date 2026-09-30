@@ -265,6 +265,11 @@ function begin(state, event) {
   if (event.from === "empty") {
     return {state: {...minted(base), held: emptyFlow(event.title ?? ""), fresh: true}, asks: []};
   }
+  if (event.from === "flow") {
+    if (!record(event.flow)) return {state, asks: []};
+    return flush({...minted(base), held: structuredClone(event.flow), fresh: true, dirty: true,
+      save: "pending"});
+  }
   if (event.from === "starter") {
     const seed = {starter_id: event.id};
     const own = event.same === true ? {workflowId: event.id} : {...minted(base), fresh: true};
