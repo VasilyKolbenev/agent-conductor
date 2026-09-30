@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from . import (
-    flow_routes, project_claim, project_routes, studio_routes, task_preparation, task_routes)
+    flow_routes, project_claim, project_routes, queue_routes, studio_routes, task_preparation,
+    task_routes)
 from .command_routes import Route
 
 if TYPE_CHECKING:
@@ -31,6 +32,8 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
         return project_routes.read_document(api, route.doc_id)
     if route.name == "quotas":
         return 200, api._quota_view.payload(api._providers, api._clock())
+    if route.name == "queue":
+        return queue_routes.read_queue(api)
     if route.name == "workflows":
         return studio_routes.list_workflows(api._templates, api._providers, api._project())
     if route.name == "runs":

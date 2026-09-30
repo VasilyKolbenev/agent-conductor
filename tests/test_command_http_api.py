@@ -156,6 +156,10 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/runs/<run_id>/materials"),
         ("GET", "/command/project/documents"),
         ("GET", "/command/project/documents/<doc_id>"),
+        ("GET", "/command/queue"),
+        ("POST", "/command/queue"),
+        ("POST", "/command/queue/order"),
+        ("POST", "/command/queue/<run_id>/withdraw"),
     )
     subject, _, _ = api(tmp_path)
     wrong = subject.handle("POST", "/command/session", (), b"")
@@ -190,7 +194,9 @@ def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
     target = path.replace("<run_id>", RUN_ID).replace(
         "<workflow_id>", WORKFLOW_ID)
     assert "<" not in target, target
-    refused = post(subject, target, {})
+    # `{}` is the one body a withdraw takes (spec 4.4.5: it names its run in the path), so the body
+    # this class hands it is one field it does not have.
+    refused = post(subject, target, {"unknown": 0} if target.endswith("/withdraw") else {})
 
     assert (refused.status, refused.payload["error"]["code"]) == (
         ERROR_STATUS["contract_invalid"], "contract_invalid")

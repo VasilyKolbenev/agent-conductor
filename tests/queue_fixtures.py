@@ -105,4 +105,3 @@ class Holder(Activation):
 
     def wake(self, run_id):
         pass
-

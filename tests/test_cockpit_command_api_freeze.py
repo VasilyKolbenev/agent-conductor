@@ -199,6 +199,10 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/materials", True, True),
     ("GET", "/command/project/documents", False, False),
     ("GET", "/command/project/documents/<doc_id>", False, False),
+    ("GET", "/command/queue", False, False),
+    ("POST", "/command/queue", True, True),
+    ("POST", "/command/queue/order", True, True),
+    ("POST", "/command/queue/<run_id>/withdraw", True, True),
 )
 
 #: `step_purpose` is the plan's own sentence about a step, and it is on exactly

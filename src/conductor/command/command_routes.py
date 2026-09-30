@@ -58,6 +58,10 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
+    ("GET", "/command/queue"),
+    ("POST", "/command/queue"),
+    ("POST", "/command/queue/order"),
+    ("POST", "/command/queue/<run_id>/withdraw"),
 )
 
 _RUN_ROUTE = re.compile(
@@ -90,6 +94,13 @@ _PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle)\Z")
 #: the one the server mints, `d-` and 32 lowercase hex, so anything else is a path no row names and
 #: never a document the reader is then asked about.
 _DOCUMENTS_ROUTE = re.compile(r"/command/project/documents(?:/(d-[0-9a-f]{32}))?\Z")
+#: The project's task queue (spec 4.4.5): the path itself under BOTH verbs (reading the queue and
+#: putting a run in it are one noun asked two ways), and the two tails, POST only. The tails are
+#: `order` or a run id and `withdraw`; `queue` is no run id a run tail could swallow, because the
+#: run routes live under `/command/runs/`.
+_QUEUE_PATH = "/command/queue"
+_QUEUE_ROUTE = re.compile(
+    r"/command/queue/(?:(order)|([A-Za-z0-9][A-Za-z0-9._-]{0,127})/withdraw)\Z")
 _SESSION_PATH = "/command/session"
 _QUOTAS_PATH = "/command/quotas"
 #: The identity of the project this server serves (spec 4.5.1): GET only, and lane H's handler.
@@ -166,6 +177,9 @@ def match_route(method: str, path: str) -> Route:
     documents = _DOCUMENTS_ROUTE.fullmatch(path)
     if documents is not None:
         return _documents_route(method, documents.group(1))
+    queue = _QUEUE_ROUTE.fullmatch(path)
+    if queue is not None:
+        return _queue_route(method, queue.group(1), queue.group(2))
     workflow = _WORKFLOW_ROUTE.fullmatch(path)
     if workflow is not None:
         return _workflow_route(method, workflow)
@@ -189,6 +203,8 @@ def _fixed_route(method: str, path: str) -> Route | None:
     """
     if path == _RUNS_PATH:
         return Route("runs")
+    if path == _QUEUE_PATH:
+        return Route("queue")
     fixed = _FIXED_ROUTES.get(path)
     if fixed is None:
         return None
@@ -200,12 +216,13 @@ def _fixed_route(method: str, path: str) -> Route | None:
 
 def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
-    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH}
+    return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH, _QUEUE_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
             or _TASK_ROUTE.fullmatch(path) is not None
             or _PROJECT_ROUTE.fullmatch(path) is not None
-            or _DOCUMENTS_ROUTE.fullmatch(path) is not None)
+            or _DOCUMENTS_ROUTE.fullmatch(path) is not None
+            or _QUEUE_ROUTE.fullmatch(path) is not None)
 
 
 def _task_route(method: str, path: str) -> Route | None:
@@ -234,6 +251,15 @@ def _project_route(method: str, tail: str) -> Route:
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return Route(name)
+
+
+def _queue_route(method: str, order: str | None, run_id: str | None) -> Route:
+    """Name the reorder or the withdraw of one run; both are POST only."""
+    if method != "POST":
+        raise ApiRefusal.fixed("method_not_allowed")
+    if order is not None:
+        return Route("queue_order")
+    return Route("queue_withdraw", run_id=run_id)
 
 
 def _documents_route(method: str, doc_id: str | None) -> Route:

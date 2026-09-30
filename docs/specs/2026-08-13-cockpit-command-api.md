@@ -218,7 +218,11 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
-  {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false}
+  {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/queue", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/queue/order", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/queue/<run_id>/withdraw", "mutation": true, "csrf": true}
 ]
 ```
 3. Every **mutating** request (any method other than GET/HEAD on a `/command/*`
@@ -1202,6 +1206,23 @@ started to view the project asks git nothing, so both documents routes, a copy
 of a project document and a link judged against a seed that has a base refuse
 `project_not_active` (409) there. The shapes are in the desk redesign
 specification, sections 6.2.2, 6.2.3 and 9.1.6.
+
+Four more routes serve the project's task queue, in both modes of the server.
+`GET /command/queue` answers the slot (`free`, `busy`, `stuck` or `unavailable`, with the run that
+holds it and a reason) and the entries the queue shows, each with its position, its kind, its
+state (`preauthorized`, `confirmation_required` or `blocked`), the reason and since when.
+`POST /command/queue` takes `{"run_id", "start"}` (the body of an authorize) or `{"run_id",
+"resume"}` (the body of a control without its action): it writes an entry, or renews the
+preauthorization of the entry the run already holds and keeps its place, and answers 201 with the
+read for a new entry and 200 for the rest, an exact repeat included. `POST /command/queue/order`
+takes `{"expected_revision", "run_ids"}` and `POST /command/queue/<run_id>/withdraw` takes `{}`; both
+answer 200 with the read, and either writes nothing when there is nothing to change. The queue path
+is the fourth path that both verbs reach. A body that names anything else, a `root`, a `path` or a
+`dir` included, is `contract_invalid`; `queue_not_ready` (409) says the run cannot be queued now,
+`queue_full` (409) the 33rd entry, `queue_changed` (409) an order made on a revision that is no
+longer the file's, and a preview that is gone or no longer describes the run is `preview_stale`.
+None of the four refuses `project_not_active`: in a process opened for viewing a put-in-queue is
+only a write. The shapes are in the desk redesign specification, sections 4.4.5 to 4.4.7.
 
 ### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
 
