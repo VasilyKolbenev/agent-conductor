@@ -419,6 +419,23 @@ def test_a_source_whose_record_has_no_instant_is_not_found_and_the_others_still_
     assert _since(reason="confirmation", sources=["p1"], journal=journal, runtime=[]) is None
 
 
+@pytest.mark.parametrize("unreadable", [None, "yesterday", ""])
+def test_a_step_opened_by_several_is_not_dated_when_the_result_of_one_opener_has_no_instant(
+        unreadable):
+    """The time is the maximum over ALL openers: one whose last result cannot say when it
+    happened may have closed last, so the others' times must not stand in for it."""
+    journal = [_row("action_request", "2026-09-29T09:00:00Z", action_id="a1", node_id="do"),
+               _row("action_result", "2026-09-29T09:10:00Z", action_id="a1"),
+               _row("action_request", "2026-09-29T09:01:00Z", action_id="a2", node_id="check"),
+               _row("action_result", unreadable, action_id="a2")]
+    runtime = [{"node_id": "gate", "opened_by": ["do", "check"]},
+               {"node_id": "done", "opened_by": ["do"]}]
+    for reason in ("gate_decision", "input_document"):
+        assert _since(reason=reason, sources=["gate"], journal=journal, runtime=runtime) is None
+        assert _since(reason=reason, sources=["done"], journal=journal,
+                      runtime=runtime) == "2026-09-29T09:10:00Z"
+
+
 def test_a_journal_that_lost_its_first_rows_cannot_date_a_step_that_nothing_opened():
     """The graph record is older than the 256 rows the projection keeps: not found."""
     records = [{"record_type": "graph_definition",

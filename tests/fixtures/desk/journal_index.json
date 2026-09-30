@@ -41,7 +41,9 @@
         {"node_id": "do", "opened_by": ["intake"]},
         {"node_id": "check", "opened_by": ["do"]},
         {"node_id": "review", "opened_by": ["do", "check"]},
-        {"node_id": "orphan", "opened_by": ["silent"]}
+        {"node_id": "orphan", "opened_by": ["silent"]},
+        {"node_id": "mixed", "opened_by": ["do", "silent"]},
+        {"node_id": "pending", "opened_by": ["check", "wait"]}
       ],
       "waiting": [
         {"name": "a confirmation is waiting since its proposal", "reason": "confirmation", "sources": ["proposal-1"], "at": "2026-09-29T09:05:00Z"},
@@ -56,10 +58,14 @@
         {"name": "a gate opened by one step", "reason": "gate_decision", "sources": ["check"], "at": "2026-09-29T09:15:00Z"},
         {"name": "two gates: the earliest of the two", "reason": "gate_decision", "sources": ["review", "check"], "at": "2026-09-29T09:15:00Z"},
         {"name": "a gate whose openers have no result", "reason": "gate_decision", "sources": ["orphan"], "at": null},
+        {"name": "a gate one of whose openers closed without an action: not found", "reason": "gate_decision", "sources": ["mixed"], "at": null},
+        {"name": "a gate one of whose openers has a request and no result: not found", "reason": "gate_decision", "sources": ["pending"], "at": null},
+        {"name": "two gates, one of them not found: the other still dates the wait", "reason": "gate_decision", "sources": ["mixed", "check"], "at": "2026-09-29T09:15:00Z"},
         {"name": "a gate the runtime does not list", "reason": "gate_decision", "sources": ["nowhere"], "at": null},
         {"name": "an input step nothing opened: since the graph was defined", "reason": "input_document", "sources": ["intake"], "at": "2026-09-29T09:00:00Z"},
         {"name": "an input step opened by a step with a result", "reason": "input_document", "sources": ["check"], "at": "2026-09-29T09:15:00Z"},
         {"name": "an input step opened by a step with no result", "reason": "input_document", "sources": ["do"], "at": null},
+        {"name": "an input step one of whose openers closed without an action: not found", "reason": "input_document", "sources": ["mixed"], "at": null},
         {"name": "reconcile has no source the server gives", "reason": "reconcile", "sources": ["do"], "at": null},
         {"name": "reconcile with nothing", "reason": "reconcile", "sources": [], "at": null},
         {"name": "reconcile even when the source names a proposal that is there", "reason": "reconcile", "sources": ["proposal-1"], "at": null},

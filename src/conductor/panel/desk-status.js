@@ -184,15 +184,18 @@ function lastResult(journal, nodeId) {
   return results.length === 0 ? null : results.at(-1).instant;
 }
 
-//: When a step was opened: the latest last-result among the steps that opened it, and for a
-//: step nothing opened (an input step) the moment the graph was defined.
+//: When a step was opened: the latest last-result among ALL the steps that opened it, and for a
+//: step nothing opened (an input step) the moment the graph was defined. An opener that closed
+//: without an action, or whose last result carries no instant, may have closed last, so no
+//: other opener's time stands in for it: the step is not found.
 function openedAt(journal, runtime, nodeId) {
   const node = runtime.find((row) => row.node_id === nodeId);
   if (!node || !Array.isArray(node.opened_by)) return null;
   if (node.opened_by.length === 0) {
     return journal.find((row) => row.record_type === "graph_definition")?.instant ?? null;
   }
-  return pick(node.opened_by.map((step) => lastResult(journal, step)), true);
+  const closed = node.opened_by.map((step) => lastResult(journal, step));
+  return closed.some((at) => Number.isNaN(instantMs(at))) ? null : pick(closed, true);
 }
 
 const proposedAt = (journal, _runtime, proposal) => journal.find(
