@@ -75,6 +75,9 @@ MODULE_GLOBALS = {
     "studio-trace.js": frozenset({"ResizeObserver"}),
     "studio-orbit.js": frozenset({"ResizeObserver"}),
     "studio-participants.js": frozenset({"ResizeObserver"}),
+    # The date formatter of an instant's short text. Held to this one module and to the one
+    # constructor: `GLOBALS` above does not carry `Intl`, so no other module may reach it.
+    "desk-time.js": frozenset({"Intl"}),
 }
 #: A call is `name(`, with the name not preceded by a dot -- `a.map(` is a
 #: method on a value and says nothing about this module's scope.
@@ -193,8 +196,11 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
     for module in blind:
         assert _unreachable(source, module) == [
             "ResizeObserver", "missingHelper"], module
-    assert all(names == frozenset({"ResizeObserver"})
-               for names in MODULE_GLOBALS.values()), MODULE_GLOBALS
+    assert MODULE_GLOBALS == {
+        "studio-trace.js": frozenset({"ResizeObserver"}),
+        "studio-orbit.js": frozenset({"ResizeObserver"}),
+        "studio-participants.js": frozenset({"ResizeObserver"}),
+        "desk-time.js": frozenset({"Intl"})}, MODULE_GLOBALS
     # And every admission is SPENT: a module listed here that never calls the
     # name it was admitted for is a forgiveness nobody argued for, which is the
     # one widening the rest of this test cannot see -- each of its claims holds
@@ -203,6 +209,20 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
                               if name not in _code(PANEL / module))
                for module, names in MODULE_GLOBALS.items()}
     assert not any(unspent.values()), unspent
+
+
+def test_intl_is_admitted_for_the_time_module_alone_and_no_other_module_names_it():
+    """`Intl` reads the platform's language and zone, so it is one module's, by name.
+
+    The call resolver above cannot see `new Intl.DateTimeFormat(` (the name is not followed
+    by a parenthesis), so this reads the code of every module for the word: the shared roster
+    does not carry it, and the one module that argued for it is the only one that says it.
+    """
+    assert "Intl" not in GLOBALS
+    assert [module for module, names in MODULE_GLOBALS.items() if "Intl" in names] == [
+        "desk-time.js"]
+    users = [name for name in MODULES if re.search(r"\bIntl\b", _code(PANEL / name))]
+    assert users == ["desk-time.js"], users
 
 
 def test_this_guard_catches_the_break_that_produced_it():
