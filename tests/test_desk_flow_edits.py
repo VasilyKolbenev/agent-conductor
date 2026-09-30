@@ -412,6 +412,24 @@ def test_an_extension_field_is_set_by_its_value_and_removed_by_clear():
     assert out["fn"] == "field_invalid"
 
 
+def test_writing_the_value_a_field_already_holds_changes_nothing_and_a_new_value_does():
+    out = js("""
+      const flow = put(d.flows.standard, {type: "set-field", nodeId: "do", field: "arguments",
+        value: {b: 2, a: {c: [1]}}});
+      const write = (value, field = "arguments", node = "do") => why(flow, {type: "set-field",
+        nodeId: node, field, value});
+      show({same: write({b: 2, a: {c: [1]}}), reordered: write({a: {c: [1]}, b: 2}),
+        other: write({b: 3}), absentNull: write(null, "success_requires", "result"),
+        title: why(flow, {type: "set-field", nodeId: null, field: "flow_title",
+          value: flow.title}),
+        renamed: why(flow, {type: "set-field", nodeId: null, field: "flow_title", value: "New"})});
+    """)
+    assert out["same"] == "unchanged" and out["reordered"] == "unchanged"
+    assert out["other"] == "applied", "a different value is a change"
+    assert out["absentNull"] == "applied", "a null on a missing key adds the key"
+    assert out["title"] == "unchanged" and out["renamed"] == "applied"
+
+
 def test_the_role_a_gate_or_a_loop_is_bound_to_lives_in_its_extension_and_an_agents_in_the_step():
     out = js("""
       const flow = d.flows.standard;

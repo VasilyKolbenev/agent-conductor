@@ -13,7 +13,7 @@
 // of its own about what a good cycle is: an edit keeps the flow in the closed shape the server takes,
 // and whether it is a good cycle is the server's diagnostics.
 import {BOUND_EXT_FIELDS, DEFAULT_TIMEOUT, EXT_FIELDS, LIMITS, LINK_WHENS, REVIEW_PROFILES,
-  ROLE_KINDS, blockEnd, defaultWhen, freshId, isLoop, loopOf, notice, refused,
+  ROLE_KINDS, blockEnd, canonical, defaultWhen, freshId, isLoop, loopOf, notice, refused,
   stepOf} from "./desk-flow-shape.js";
 import {putReworkFirst, reworkIndex, withPasses, withRework, withoutStep} from "./desk-flow-loops.js";
 import {branchFirst} from "./desk-flow-branches.js";
@@ -252,6 +252,9 @@ function withExt(flow, step, name, edit) {
   } else {
     const value = plain(edit.value);
     if (value === undefined) return refused("field_invalid");
+    if (Object.hasOwn(held, name) && canonical(held[name]) === canonical(value)) {
+      return refused("unchanged");
+    }
     held[name] = value;
   }
   return replaceStep(flow, step, {ext: held});
@@ -271,7 +274,8 @@ function typedField(flow, step, edit) {
 
 function flowField(flow, edit) {
   if (edit.field === "flow_title") {
-    return required(edit.value) === undefined ? refused("title_required")
+    if (required(edit.value) === undefined) return refused("title_required");
+    return edit.value === flow.title ? refused("unchanged")
       : {flow: {...flow, title: edit.value}, notice: ""};
   }
   const ext = {...flow.ext};
