@@ -57,6 +57,17 @@ def _is_rows(value: object) -> bool:
     return isinstance(value, list) and all(isinstance(row, dict) for row in value)
 
 
+def is_answer(quotas: object) -> bool:
+    """Whether `quotas` is exactly the four-key answer of an active child, each key of its kind.
+
+    The one test of the stored form: the hub writes only what passes it, and this module's
+    reader admits only what passes it, so the file never holds what its own reader turns away.
+    """
+    return (isinstance(quotas, dict) and set(quotas) == set(_ANSWER_KEYS)
+            and isinstance(quotas["as_of"], str) and _is_number(quotas["max_age_seconds"])
+            and _is_rows(quotas["providers"]) and _is_rows(quotas["snapshots"]))
+
+
 def _admitted(document: object) -> dict[str, Any] | None:
     """The stored answer with its `hub_snapshot`, or `None` when the file is not the hub's."""
     if not isinstance(document, dict) or set(document) != _FILE_KEYS:
@@ -67,10 +78,7 @@ def _admitted(document: object) -> dict[str, Any] | None:
     if not _is_project_id(document["project_id"]) or not _is_time(document["taken_at"]):
         return None
     quotas = document["quotas"]
-    if not isinstance(quotas, dict) or set(quotas) != set(_ANSWER_KEYS):
-        return None
-    if not (isinstance(quotas["as_of"], str) and _is_number(quotas["max_age_seconds"])
-            and _is_rows(quotas["providers"]) and _is_rows(quotas["snapshots"])):
+    if not is_answer(quotas):
         return None
     return {**{key: copy.deepcopy(quotas[key]) for key in _ANSWER_KEYS},
             "hub_snapshot": {"project_id": document["project_id"],

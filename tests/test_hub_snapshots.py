@@ -250,6 +250,38 @@ def test_a_limits_file_that_is_not_the_form_is_no_data_and_is_left_alone(tmp_pat
     assert store.get_limits() is not None
 
 
+NOT_THE_FOUR_KEYS = {
+    "the echo of a view child": {**_quotas(), "hub_snapshot": {"project_id": A, "taken_at": TAKEN}},
+    "a key missing": {"as_of": TAKEN, "max_age_seconds": 300, "providers": []},
+    "max_age_seconds a string": {**_quotas(), "max_age_seconds": "300"},
+    "max_age_seconds not finite": {**_quotas(), "max_age_seconds": float("nan")},
+    "providers not a list": {**_quotas(), "providers": {}},
+    "a row that is not an object": _quotas(rows=["x"]),
+    "not an object at all": ["as_of", "max_age_seconds", "providers", "snapshots"],
+}
+
+
+@pytest.mark.parametrize("answer", list(NOT_THE_FOUR_KEYS.values()), ids=list(NOT_THE_FOUR_KEYS))
+def test_a_quotas_answer_that_is_not_the_four_key_form_is_refused_and_the_good_file_stands(
+        tmp_path, clock, answer):
+    store = snapshots.SnapshotStore(tmp_path, clock=clock)
+    assert store.put_limits(A, taken_at=TAKEN, quotas=_quotas()) == "written"
+    before = (tmp_path / "limits.json").read_bytes()
+    clock.now += 60
+    assert store.put_limits(B, taken_at="2026-09-30T10:01:00Z", quotas=answer) == "refused"
+    assert (tmp_path / "limits.json").read_bytes() == before
+    assert store.get_limits().project_id == A, "a refused answer replaced the good file"
+
+
+def test_a_refused_quotas_answer_makes_no_file_and_the_next_good_one_is_written_at_once(
+        tmp_path, clock):
+    store = snapshots.SnapshotStore(tmp_path, clock=clock)
+    echo = NOT_THE_FOUR_KEYS["the echo of a view child"]
+    assert store.put_limits(A, taken_at=TAKEN, quotas=echo) == "refused"
+    assert not (tmp_path / "limits.json").exists()
+    assert store.put_limits(A, taken_at=TAKEN, quotas=_quotas()) == "written"
+
+
 def test_the_moment_a_snapshot_was_taken_reads_as_a_utc_instant_the_spec_writes(store):
     datetime.strptime(TAKEN, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     with pytest.raises(ValueError):

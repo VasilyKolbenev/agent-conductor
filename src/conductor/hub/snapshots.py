@@ -17,7 +17,8 @@
   replaces it.
 
 `limits.json` is the quotas answer of the ACTIVE project under the same rule, in the exact form
-`HubLimitsView` (the reader of a `view` child) admits.
+`HubLimitsView` (the reader of a `view` child) admits: an answer in another form is refused, so
+the file never holds what its own reader would turn away.
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from conductor import atomic_replace, ownership_records
-from conductor.command.quota_snapshot_view import LIMITS_FILE, HubLimitsView
+from conductor.command.quota_snapshot_view import LIMITS_FILE, HubLimitsView, is_answer
 
 SCHEMA_VERSION = 1
 MAX_TASKS = 200
@@ -180,9 +181,15 @@ class SnapshotStore:
                              _without_journals)
 
     def put_limits(self, project_id: str, *, taken_at: str, quotas: dict[str, Any]) -> str:
-        """Offer the quotas answer of the ACTIVE project by the same rule; the same results."""
+        """Offer the quotas answer of the ACTIVE project by the same rule; the same results.
+
+        `refused` is the result for an answer that is not exactly the four-key form of an active
+        child (the echo of a view child has a fifth key): nothing is written, the file stands.
+        """
         _project_id(project_id)
         _instant(taken_at)
+        if not is_answer(quotas):
+            return "refused"
         return self._publish("limits", self._folder / LIMITS_FILE,
                              {"project_id": project_id, "quotas": quotas}, taken_at, None)
 
