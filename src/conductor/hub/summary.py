@@ -23,7 +23,8 @@ from conductor.hub import attention, child_client, registry, snapshots, supervis
 
 #: The states of the automation of a run in which its grant is still standing (4.1.9).
 HOLDING = frozenset({"running", "waiting", "ready", "stalled", "restart_required"})
-_STOPPING_VERDICTS = ("identity_mismatch", "busy_elsewhere")
+#: The verdicts that stop a pass: the child is another project, or another hub's or mode.
+STOPPING_VERDICTS = ("identity_mismatch", "busy_elsewhere")
 _INSTANT = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -207,7 +208,7 @@ def _resume_run(rows: Iterable[dict[str, Any]]) -> str | None:
 
 def _data(live: Live | None, snapshot: snapshots.Snapshot | None) -> tuple[str, list, Any, Any]:
     """`(data, rows, task_queue, auto_continue)`: live, else the snapshot, else nothing."""
-    if live is not None and live.cycle.verdict in _STOPPING_VERDICTS:
+    if live is not None and live.cycle.verdict in STOPPING_VERDICTS:
         return "none", [], None, None
     if live is not None and live.cycle.verdict == "live":
         return "live", list(live.rows), live.cycle.queue, live.cycle.auto_continue
@@ -222,7 +223,7 @@ def project_row(project: registry.Project, status: supervisor.ProjectStatus, *,
     """One project of `GET /hub/projects` (4.6.4): the raw fields the page turns into words."""
     data, rows, task_queue, flag = _data(live, snapshot)
     state = status.lifecycle.state
-    if live is not None and live.cycle.verdict in _STOPPING_VERDICTS and state == "running":
+    if live is not None and live.cycle.verdict in STOPPING_VERDICTS and state == "running":
         state = live.cycle.verdict
     running = state == "running" and status.port is not None
     return {
