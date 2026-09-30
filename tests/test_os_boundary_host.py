@@ -27,7 +27,7 @@ if os.name == "nt":
 
 _DESKTOP = HostFacts(
     dotnet_answered=True, cmdlets_confined=True, cmdlets_unconfined=True, import_error="",
-    start_seconds=0.6, modules_readable_by_containers=True,
+    start_seconds=0.6, cmdlet_seconds=0.7, modules_readable_by_containers=True,
     powershell_readable_by_containers=True)
 _WITH_APP_PACKAGES = "D:PAI(A;;0x1200a9;;;BU)(A;;0x1200a9;;;AC)(A;;0x1200a9;;;S-1-15-2-2)"
 _WITHOUT_APP_PACKAGES = "D:PAI(A;;0x1200a9;;;BU)(A;;0x1200a9;;;S-1-15-2-2)"
@@ -57,6 +57,12 @@ def test_a_slow_first_answer_is_named_with_its_seconds():
     facts = HostFacts(**{**_DESKTOP.__dict__, "start_seconds": SLOW_START_SECONDS + 7.5})
     [named] = differences(facts)
     assert "12.5 s" in named
+
+
+def test_a_slow_cmdlet_lookup_is_named_with_its_seconds_apart_from_a_slow_start():
+    facts = HostFacts(**{**_DESKTOP.__dict__, "cmdlet_seconds": SLOW_START_SECONDS + 31.0})
+    [named] = differences(facts)
+    assert "36.0 s" in named and "cmdlet lookup" in named and "module search" in named
 
 
 def test_a_module_directory_and_a_shell_that_containers_may_not_read_are_named_apart():
@@ -159,11 +165,13 @@ def _measure(box) -> HostFacts:
     started = time.monotonic()
     dotnet = box.run_line(powershell_line("[Console]::Out.Write('dotnet-ran')"))
     elapsed = time.monotonic() - started
+    started = time.monotonic()
     resolved = "cmdlet-ran" in box.run_line(cmdlet).output
+    lookup = time.monotonic() - started
     return HostFacts(
         dotnet_answered=dotnet.output == "dotnet-ran", cmdlets_confined=resolved,
         cmdlets_unconfined="cmdlet-ran" in box.run_line(cmdlet, confined=False).output,
         import_error="" if resolved else box.run_line(import_probe).output.strip()[:300],
-        start_seconds=elapsed,
+        start_seconds=elapsed, cmdlet_seconds=lookup,
         modules_readable_by_containers=app_packages_may_read(ac.acl_text(modules)),
         powershell_readable_by_containers=app_packages_may_read(ac.acl_text(ac.POWERSHELL)))

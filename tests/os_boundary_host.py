@@ -31,6 +31,7 @@ class HostFacts:
     cmdlets_unconfined: bool
     import_error: str
     start_seconds: float
+    cmdlet_seconds: float
     modules_readable_by_containers: bool
     powershell_readable_by_containers: bool
 
@@ -48,6 +49,10 @@ def differences(facts: HostFacts) -> list[str]:
         found.append(
             f"a confined PowerShell took {facts.start_seconds:.1f} s to answer one .NET call "
             f"(more than {SLOW_START_SECONDS:.0f} s)")
+    if facts.cmdlet_seconds > SLOW_START_SECONDS:
+        found.append(
+            f"one cmdlet lookup in the container took {facts.cmdlet_seconds:.1f} s "
+            "(a command the session does not know starts the module search)")
     if not facts.modules_readable_by_containers:
         found.append("ALL APPLICATION PACKAGES has no allow entry on PowerShell's module "
                      "directory, so a container may not read its modules")
