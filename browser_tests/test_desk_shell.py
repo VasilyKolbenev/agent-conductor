@@ -59,6 +59,8 @@ DESK_BOOT_ASSETS = {
     "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
     # The continue-after flag: its model, and the door that reads and writes it.
     "desk-flag-model.js": 200, "desk-flag.js": 200,
+    # The feed: what it draws from, the words it says and the module that draws it.
+    "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
     # The scene, and the Studio's run deck it hands one frozen run read to, with what the
     # deck and the run-read judges are built from.
     "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
@@ -97,15 +99,15 @@ PAGE_WORDS = """() => ({
 PAGE_LANGUAGES = {
     "en": {
         "lang": "en", "title": "December Command — Desk",
-        "note": "The desk is being built: the rail, the scene and the console are live; "
-                "the feed and the summary stay empty until their modules land.",
+        "note": "The desk is being built: the rail, the scene, the feed and the console are "
+                "live; the summary stays empty until its module lands.",
         "link": "Classic panel",
         "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
         "said": "Read."},
     "ru": {
         "lang": "ru", "title": "December Command — Стол",
-        "note": "Стол в разработке: рельс, сцена и пульт работают; лента и выжимка "
-                "остаются пустыми, пока не появятся их модули.",
+        "note": "Стол в разработке: рельс, сцена, лента и пульт работают; выжимка "
+                "остаётся пустой, пока не появится её модуль.",
         "link": "Прежняя панель",
         "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
         "said": "Данные прочитаны."},

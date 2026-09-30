@@ -375,7 +375,8 @@ BOOT_BROKEN = {
     "a read nobody argued for": (_edit("path.runs()", "path.workflows()"), "not argued for"),
     "a read that was dropped": (_edit("path.tasks()", "path.runs()"), "no longer reads"),
     "an id the page does not carry": (_edit('"deskFeed"', '"deskFeeds"'), "does not carry"),
-    "a mount the module forgot": (_edit('"deskFeed"', '"deskShell"'), "does not mount"),
+    "a mount the module forgot": (
+        lambda text: text.replace('"deskFeed"', '"deskShell"'), "does not mount"),
     "a read the scene never argued for": (
         _edit("path.controls(runId)", "path.decisions(runId)"), "not argued for"),
     "a scene read that was dropped": (
@@ -521,10 +522,10 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 #: none says a state word outside the seven. A module joins this list the day it is written.
 READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js", "desk-hash.js",
              "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js",
-             "desk-feed-model.js")
+             "desk-feed-model.js", "desk-feed.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
 RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene",
-                  "desk-pult.js": "mountPult"}
+                  "desk-feed.js": "mountFeed", "desk-pult.js": "mountPult"}
 #: The modules that draw a form and so name its event, `"submit"`: they are held to the same
 #: guard with that one quoted word taken out, so a call to the transport's `submit` still
 #: reds. A form of the console is not a door: its handler asks the boot module, which writes

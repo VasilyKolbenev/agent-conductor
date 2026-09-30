@@ -10,8 +10,9 @@
 // the address names: choosing is a press or a hash, and the run is a read. The pult draws the
 // name of the person at this page (held here, in the page's memory), the project queue once a
 // read of it is wired (none is yet) and, in a project the claim says is in `view`, the lines
-// that say so. The feed and the summary's numbers still have no module: they stay `empty`
-// until one is written.
+// that say so. The feed is drawn from the run the scene is drawn from and stands in the word the
+// scene stands in. The summary's numbers still have no module: they stay `empty` until one is
+// written.
 //
 // The address (spec 4.5.2 and 4.5.3) is read by `desk-hash.js` and moved by one function here,
 // `remember`, which writes the canonical hash by `replaceState` and so fires no `hashchange`.
@@ -51,6 +52,7 @@ import {projectControls, wireControls} from "./studio-controls.js";
 import {focusTarget, restoreFocus} from "./studio-focus.js";
 import {mountRail} from "./desk-rail.js";
 import {mountScene} from "./desk-scene.js";
+import {mountFeed} from "./desk-feed.js";
 import {mountPult} from "./desk-pult.js";
 import {flagBody, flagLine, initialMarks, resumableRuns} from "./desk-flag-model.js";
 import {createFlagDoor} from "./desk-flag.js";
@@ -224,10 +226,12 @@ function render() {
     refused: state.refused, mode: state.mode, queue: state.queue, flag: flagView()};
   mountRail(byId("deskRail"), view, handlers);
   mountScene(byId("deskScene"), view, handlers);
+  mountFeed(byId("deskFeed"), view);
   mountPult(byId("deskPult"), view, handlers);
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
   mark(byId("deskScene"), said.scene);
+  mark(byId("deskFeed"), said.scene);
   mark(byId("deskPult"), state.foreign ? "empty" : "ready");
   mark(byId("deskSummary"), said.summary);
   mark(byId("deskShell"), said.shell);

@@ -71,7 +71,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-transport.js", "desk.js", "desk-copy.js", "desk-status.js",
            "desk-status-copy.js", "desk-rail.js", "desk-scene.js", "desk-hash.js", "desk-embed.js",
            "desk-time.js", "desk-queue-model.js", "desk-flag-model.js", "desk-flag.js",
-           "desk-feed-model.js", "desk-pult.js",
+           "desk-feed-model.js", "desk-feed-copy.js", "desk-feed.js", "desk-pult.js",
            "desk-wizard-model.js", "desk-wizard-materials.js", "desk-wizard-cycle.js",
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-digest.js", "desk-wizard-input.js", "desk-wizard-prep.js",

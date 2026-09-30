@@ -183,6 +183,38 @@ MEASURED[".desk-scene .studio-note"] = (
 MEASURED[".desk-scene .studio-step-flow__stage svg"] = _in(
     [INSPECTOR], E("section", "studio-step-flow__stage"), E("svg"), prop="stroke",
     floor=NONTEXT_MIN)
+# -- the feed: the journal of the run on the scene, one bubble per fact ------------------------
+FEED = CENTER + [E("section", "desk-feed")]
+FEED_HEAD = FEED + [E("div", "desk-feed__head")]
+FEED_LOG = FEED + [E("ol", "desk-feed__log")]
+FEED_ROW = FEED_LOG + [E("li", "desk-feed__row")]
+FEED_WHO = FEED_ROW + [E("p", "desk-feed__who")]
+FEED_DOC = FEED_ROW + [E("details", "desk-feed__doc")]
+FEED_FINDING = FEED_DOC + [E("ul", "desk-feed__findings"), E("li", "desk-feed__finding")]
+MEASURED[".desk-feed__title"] = [
+    (FEED_HEAD + [E("h2", "desk-feed__title")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__order"] = [
+    (FEED_HEAD + [E("span", "desk-feed__order")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__none"] = [(FEED + [E("p", "desk-feed__none")], "color", TEXT_MIN, None)]
+for _tone in ("ion", "amber"):
+    MEASURED[f'.desk-feed__row[data-tone="{_tone}"]'] = [
+        (FEED_LOG + [E("li", "desk-feed__row", **{"data-tone": _tone})], "border-color",
+         NONTEXT_MIN, None)]
+MEASURED[".desk-feed__who"] = [(FEED_WHO, "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__name"] = [
+    (FEED_WHO + [E("strong", "desk-feed__name")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__at"] = [(FEED_ROW + [E("time", "desk-feed__at")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__what"] = [
+    (FEED_ROW + [E("p", "desk-feed__what")], "color", TEXT_MIN, None)]
+for _name in ("reason", "note"):
+    MEASURED[f".desk-feed__{_name}"] = [
+        (FEED_ROW + [E("p", f"desk-feed__{_name}")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__doc summary"] = [(FEED_DOC + [E("summary")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__text"] = [
+    (FEED_DOC + [E("pre", "desk-feed__text")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__finding p"] = [(FEED_FINDING + [E("p")], "color", TEXT_MIN, None)]
+MEASURED[".desk-feed__finding .desk-feed__where"] = [
+    (FEED_FINDING + [E("p", "desk-feed__where")], "color", TEXT_MIN, None)]
 # -- the console: the actor line and its form, the queue block and the lines of a view ---
 CONSOLE = SHELL + [E("aside", "desk-pult")]
 ACTOR_LINE = CONSOLE + [E("p", "desk-pult__actor")]
@@ -228,6 +260,8 @@ NEUTRAL = "neutral separator between regions; it identifies no state and carries
 EXEMPT = {
     ".desk-top": NEUTRAL, ".desk-rail": NEUTRAL, ".desk-summary": NEUTRAL,
     ".desk-pult": NEUTRAL,
+    ".desk-feed__row":
+        "the edge of a row; its words carry the facts and its two tones are measured",
     ".desk-scene .studio-trace__inner svg .studio-trace__horizon":
         "decorative horizon; the step words, glyphs and the measured route strokes carry the plan",
     ".desk-scene .studio-planet__orb::after":
@@ -258,7 +292,11 @@ CONTROLS = tuple(
      [E("div", "desk-shell"), E("section", "desk-scene"),
       E("details", "studio-inspect-more"), E("summary")],
      [E("div", "desk-shell"), E("section", "desk-scene"),
-      E("details", "studio-deck__about"), E("summary")])
+      E("details", "studio-deck__about"), E("summary")],
+     # A document opens in its row of the feed, and its summary is the control.
+     [E("div", "desk-shell"), E("main", "desk-center"), E("section", "desk-feed"),
+      E("ol", "desk-feed__log"), E("li", "desk-feed__row"), E("details", "desk-feed__doc"),
+      E("summary")])
 
 
 def _wrap(css: str) -> str:

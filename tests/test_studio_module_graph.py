@@ -46,7 +46,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -77,7 +77,8 @@ PERMITTED_IMPORTS = {
                           "./studio-model.js", "./studio-taskruns.js", "./studio-draft.js",
                           "./studio-situation.js", "./studio-controls.js",
                           "./studio-focus.js", "./desk-rail.js", "./desk-scene.js",
-                          "./desk-pult.js", "./desk-flag-model.js", "./desk-flag.js"}),
+                          "./desk-feed.js", "./desk-pult.js", "./desk-flag-model.js",
+                          "./desk-flag.js"}),
     #: The door of the continue-after flag: the one read and the one write of it, through the
     #: transport's own doors, judged by the flag's model. It names one target and opens no door.
     "desk-flag.js": frozenset({"./desk-transport.js", "./desk-flag-model.js"}),
@@ -125,6 +126,14 @@ PERMITTED_IMPORTS = {
     #: the Studio's closed vocabularies (record instants, outcomes, verification states, the
     #: store's document limit) and nothing else; the boot module hands it the run it read.
     "desk-feed-model.js": frozenset({"./studio-runwords.js"}),
+    #: The words of the feed: a frozen catalogue that imports nothing, spread into the one table
+    #: by `studio-i18n.js`.
+    "desk-feed-copy.js": frozenset(),
+    #: The feed, drawn: `mountFeed` only. It draws the rows of the run read the boot module
+    #: hands it, in the catalogue's words and the desk's own time text, through the shared DOM
+    #: builder; it reads nothing, names no door and holds no state of its own.
+    "desk-feed.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-time.js",
+                               "./desk-feed-model.js"}),
     #: The wizard's whole state and every way it changes, as pure functions. It
     #: reaches the task model for the one rule that judges a task title, and the
     #: step modules that answer its questions, and nothing else: no DOM builder,

@@ -275,6 +275,42 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-shell select,.desk-shell input{font:inherit;padding:4px 8px;border:1px solid var(--faint);
   border-radius:6px;background:var(--panel);color:var(--ink)}
 
+/* ── the feed ─────────────────────────────────────────────────────────── */
+/* The journal of the run on the scene, newest at the bottom, in a list that scrolls. A row is
+   a bubble on a panel: who and when on its first line, then one sentence, and, when it has
+   them, the reason a person gave, the sentence a check that did not pass owes, and a document
+   that opens in the row as plain text. Ion marks the attempt that is going and amber a result
+   that asks for a look; the words are in the row as well, so no tone stands alone. */
+.desk-feed__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:4px 16px;margin:0 0 8px}
+.desk-feed__title{margin:0;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-feed__order{font-size:11px;color:var(--muted)}
+.desk-feed__none{margin:0;font-size:12px;color:var(--muted)}
+.desk-feed__log{display:flex;flex-direction:column;gap:8px;max-height:260px;margin:0;
+  padding:0 4px 4px 0;overflow:auto;list-style:none}
+.desk-feed__row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;
+  padding:8px 12px;border:1px solid var(--line);border-radius:4px 14px 14px 14px;
+  background:var(--panel);font-size:13px;overflow-wrap:anywhere}
+.desk-feed__row[data-tone="ion"]{border-color:var(--ion)}
+.desk-feed__row[data-tone="amber"]{border-color:var(--amber)}
+.desk-feed__who{grid-column:1;margin:0;font-size:11.5px;color:var(--muted)}
+.desk-feed__name{font-weight:500;color:var(--ink)}
+.desk-feed__at{grid-column:2;grid-row:1;font:11px var(--mono);color:var(--muted)}
+.desk-feed__what,.desk-feed__reason,.desk-feed__note{grid-column:1/-1;margin:0}
+.desk-feed__what{color:var(--ink)}
+.desk-feed__reason,.desk-feed__note{font-size:12px;color:var(--muted)}
+.desk-feed__doc{grid-column:1/-1}
+.desk-feed__doc summary{display:flex;align-items:center;min-height:44px;font-size:12.5px;
+  color:var(--ink);cursor:pointer}
+.desk-feed__text{max-height:280px;margin:4px 0 0;padding:10px 12px;border-radius:10px;
+  overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--mono);
+  background:var(--ground);color:var(--ink)}
+.desk-feed__findings{display:flex;flex-direction:column;gap:8px;margin:4px 0 0;padding:0;
+  list-style:none}
+.desk-feed__finding p{margin:2px 0 0;font-size:12.5px;color:var(--ink)}
+.desk-feed__finding .desk-feed__where{font:11.5px var(--mono);color:var(--muted)}
+
 /* ── the console ──────────────────────────────────────────────────────── */
 /* The name of the person at this page, the project queue as the server read it, and the two
    lines of a project in view. Amber asks for you, as in the rail; the words are in the row as
