@@ -11,11 +11,13 @@ from __future__ import annotations
 import json
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from queue import Queue
 
 import pytest
 
-from conductor.command import seed_record
+from conductor.command import run_files, run_store, seed_record
 from conductor.command.path_admission import WindowsPathError
 from conductor.command.seed_record import (
     CorruptSeed, SeedExists, SeedRecord, SeedRecordTooLarge, SeedRequest, Skip, read_request,
@@ -86,25 +88,79 @@ def test_two_work_items_and_two_tasks_do_not_meet(tmp_path):
         f"seeds/{TASK}/work-002.json"]
 
 
-def test_writers_racing_for_one_task_leave_exactly_one_record_and_no_leftover(tmp_path):
-    outcomes, gate = [], threading.Barrier(8)
+def test_writers_racing_for_one_task_leave_exactly_one_record_and_no_leftover(
+        tmp_path, monkeypatch):
+    linked, release = threading.Event(), threading.Event()
+    checkpoints, worker = Queue(), threading.local()
+    target = seed_path(tmp_path)
+    link = run_files.os.link
+    gate = run_store._root_gate(tmp_path.resolve())
+    lock = gate.lock
+
+    class ObservedLock:
+        def __enter__(self):
+            if getattr(worker, "number", 0):
+                checkpoints.put(worker.number)
+            lock.acquire()
+
+        def __exit__(self, *_error):
+            lock.release()
+
+    def held_link(source, destination, *args, **kwargs):
+        link(source, destination, *args, **kwargs)
+        if Path(destination) == target:
+            linked.set()
+            assert release.wait(10), "the published seed's temporary name was never released"
 
     def race(number):
-        gate.wait()
+        worker.number = number
         try:
             write_seed(tmp_path, record(file_count=number))
-            outcomes.append("won")
+            return "won"
         except SeedExists:
-            outcomes.append("lost")
+            return "lost"
+        except Exception as error:
+            return type(error).__name__
+        finally:
+            if number:
+                checkpoints.put(number)
 
-    threads = [threading.Thread(target=race, args=(number,)) for number in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(30)
+    monkeypatch.setattr(run_files.os, "link", held_link)
+    monkeypatch.setattr(gate, "lock", ObservedLock())
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(race, 0)]
+        try:
+            assert linked.wait(10), "the first writer never reached its real publication"
+            assert target.stat().st_nlink == 2
+            futures.extend(pool.submit(race, number) for number in range(1, 8))
+            # Each contender has either reached the shared gate or answered while the
+            # publisher still has two names. No scheduling delay chooses the interleaving.
+            arrived = set()
+            while len(arrived) < 7:
+                arrived.add(checkpoints.get(timeout=10))
+        finally:
+            release.set()
+        outcomes = [future.result(timeout=10) for future in futures]
     assert sorted(outcomes) == ["lost"] * 7 + ["won"]
     assert files_under(data_root(tmp_path)) == [f"seeds/{TASK}/work-001.json"]
-    assert read_seed(tmp_path, TASK).file_count in range(8)
+    assert read_seed(tmp_path, TASK).file_count == 0
+    assert target.stat().st_nlink == 1
+
+
+@pytest.mark.parametrize("kind", ["record", "request"])
+def test_a_standing_document_with_an_external_hardlink_is_still_refused(tmp_path, kind):
+    writer, value, suffix = ((write_seed, record(), ".json") if kind == "record" else
+                             (write_request, request(), ".request.json"))
+    writer(tmp_path, value)
+    target = seed_path(tmp_path, suffix=suffix)
+    before = target.read_bytes()
+    outside = tmp_path / "external-name.json"
+    os.link(target, outside)
+    with pytest.raises(RouteNotOwned):
+        writer(tmp_path, value)
+    assert target.read_bytes() == outside.read_bytes() == before
+    assert target.stat().st_nlink == 2
+    assert files_under(data_root(tmp_path)) == [f"seeds/{TASK}/work-001{suffix}"]
 
 
 def test_no_temporary_file_is_left_after_a_write_or_a_refused_write(tmp_path):
