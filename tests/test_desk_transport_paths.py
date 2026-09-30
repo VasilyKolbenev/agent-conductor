@@ -79,3 +79,32 @@ def test_an_id_that_is_no_id_of_the_grammar_reaches_no_route(hostile):
             assert reached.name in {"materials", "project_document"}
             assert reached.run_id == hostile or reached.doc_id == hostile
             assert "/" not in hostile and "?" not in hostile and ".." not in hostile
+
+
+def test_the_queue_paths_are_the_four_rows_of_route_canon_4_and_the_verbs_the_canon_gives():
+    """One path read and written, its two tails POST only, and a run called `order` a run."""
+    read, order, withdraw = _paths([["queue", ""], ["queueOrder", ""], ["queueWithdraw", RUN]])
+    assert (read, order) == ("/command/queue", "/command/queue/order")
+    assert withdraw == f"/command/queue/{RUN}/withdraw"
+    assert match_route("GET", read).name == match_route("POST", read).name == "queue"
+    assert match_route("POST", order).name == "queue_order"
+    reached = match_route("POST", withdraw)
+    assert (reached.name, reached.run_id) == ("queue_withdraw", RUN)
+    for method, path in (("GET", order), ("GET", withdraw)):
+        with pytest.raises(ApiRefusal) as refused:
+            match_route(method, path)
+        assert refused.value.code == "method_not_allowed", (method, path)
+
+
+@pytest.mark.parametrize("hostile", ["../x", "a/b", "a%2Fb", "..", "", "a b", "a?b=1",
+                                     "x/withdraw"])
+def test_a_run_id_that_is_no_id_never_becomes_part_of_the_withdraw_path(hostile):
+    """The id is encoded, so a slash or a dot run cannot turn a withdraw into another route."""
+    (path,) = _paths([["queueWithdraw", hostile]])
+    try:
+        reached = match_route("POST", path)
+    except ApiRefusal as refused:
+        assert refused.code == "route_not_found", (path, refused.code)
+    else:
+        assert reached.name == "queue_withdraw" and reached.run_id == hostile
+        assert "/" not in hostile and ".." not in hostile
