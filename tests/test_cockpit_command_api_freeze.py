@@ -203,6 +203,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/authorize", True, True),
     ("POST", "/command/runs/<run_id>/automation/control", True, True),
     ("GET", "/command/project", False, False),
+    ("GET", "/command/project/git", False, False),
     ("POST", "/command/runs/<run_id>/materials", True, True),
     ("GET", "/command/project/documents", False, False),
     ("GET", "/command/project/documents/<doc_id>", False, False),

@@ -25,10 +25,8 @@ What is here, in file order:
   `command/policy_service.py`; the test was strict xfail until the door landed);
 * the code `project_not_active` in every place of 11.1 python and the text files can be read from.
 
-Not here: the read of git state and the request of a seed named in the spec's text (their
-routes are lane L's and are not in this build's route table; the guard above names them when
-they arrive), `test_standalone_up_never_executes_auto_continue` (the queue pump that executes a
-flag is lane L's), and the real-process witness, which is `tests/test_view_child.py`.
+The Git-state read and seed request are included in the walk. The standalone queue witness
+belongs to lane L; the separate real-process witness is `tests/test_view_child.py`.
 """
 from __future__ import annotations
 
@@ -43,7 +41,8 @@ from threading import Thread
 import pytest
 
 from conductor import ownership, ownership_transition, server, tool_pins
-from conductor.command import http_writes, project_routes, providers, seed_routes, task_routes
+from conductor.command import (
+    http_writes, project_git_state, project_routes, providers, seed_routes, task_routes)
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
@@ -291,6 +290,10 @@ def _walk_materials_and_documents(subject, mode: str) -> None:
     note = {"kind": "note", "title": "Plan", "content": "Do it."}
     _send(subject, "POST", f"/command/runs/{RUN}/materials", {"lang": "en", "items": [note]}, 201)
     viewing = mode == "view"
+    facts = _send(subject, "GET", "/command/project/git", None, 200)["git"]
+    local_git = os.path.lexists(subject.command_store.project_root / ".git")
+    view_state = "not_active" if local_git else "not_git"
+    assert facts["state"] == (view_state if viewing else "repo"), facts
     oid = "0" * 40 if viewing else blob_oid(subject.command_store.project_root, "README.md")
     copy = {"kind": "project_doc", "doc_id": doc_id, "git_oid": oid, "mode": "copy",
             "content": "Edited by the owner.\n"}
@@ -346,10 +349,10 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication
 #: then the three routes of materials and project documents, which are the ones that may ask git.
 ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
          "_publish_template", "_open_run", "write_materials", "read_documents", "read_document",
-         "seed_task")
+         "seed_task", "read_git")
 #: Where a road lives when it is not in `http_writes`.
 HOMES = {"create_task": task_routes, "read_documents": project_routes,
-         "read_document": project_routes, "seed_task": seed_routes}
+         "read_document": project_routes, "seed_task": seed_routes, "read_git": project_git_state}
 
 
 @pytest.mark.parametrize("road", ROADS)
@@ -398,13 +401,13 @@ def _ask_for_a_child(runner: ProcessRunner) -> str:
 def _prepare_flow(base: Path, mode: str, runners, spy) -> dict:
     """Both prepare roads on servers launched in `mode`, then a child asked of every runner.
 
-    The second server is a git repository with a pinned git in `active`, so that the walk's
-    routes of project documents have something to ask; what the setup itself spawns is not
+    The second server has a repository and pinned git in both modes, so view's zero has the
+    same available Git as active's positive control; what the setup itself spawns is not
     counted, only what happens from the moment the server stands.
     """
     _walk_reads_and_preview(base / "reads", mode)
     made = len(runners)
-    with _served(base / "cycle", mode, repository=mode == "active") as subject:
+    with _served(base / "cycle", mode, repository=True) as subject:
         begun = len(spy.calls)
         _walk_cycle_and_run(subject, mode)
         by_the_walks = spy.calls[begun:]
@@ -432,9 +435,8 @@ def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
 
     The request of a seed (`POST /command/tasks/<id>/seed`) is walked in `view` here (a request
     is left, read back, and no git is asked); in `active` it asks the pinned git through the
-    server's own reader, which is `test_seed_routes.py`. Not walked, because the build has no
-    such route: the read of git state (`GET /command/project/git`), which the spec's text names.
-    `test_the_walk_names_every_route_that_may_ask_git` fails the day it appears unwalked.
+    server's own reader, which is `test_seed_routes.py`. The Git-state read is walked in both
+    modes: local facts in view, the pinned reader in active.
     """
     viewed = _prepare_flow(tmp_path / "view", "view", runners, spy)
     assert viewed["asked"] and set(viewed["asked"]) == {"refused"}, viewed
@@ -450,12 +452,12 @@ def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
 
 #: The routes of this build that read the project's git or make a copy from it, and so are the
 #: ones a view process must refuse or never answer with a child: the walk above goes through
-#: each. The spec also names the read of git state, the setup of git, the seed request and the
-#: acceptance routes (9.1.6); none is in `COMMAND_ROUTES` yet.
+#: each. The setup and acceptance routes of 9.1.6 join this walk when implemented.
 WALKED_GIT_ROUTES = frozenset({
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
+    ("GET", "/command/project/git"),
     ("POST", "/command/tasks/<task_id>/seed")})
 GIT_WORDS = ("/materials", "/documents", "/project/git", "/seed", "/accept")
 
@@ -487,7 +489,7 @@ def test_the_view_walk_notices_a_git_route_that_no_longer_refuses_in_view(
 
 
 def test_the_route_guard_says_no_to_a_git_state_seed_or_accept_route_that_nothing_walks():
-    unwalked = {("GET", "/command/project/git"), ("POST", "/command/tasks/<task_id>/seed/again"),
+    unwalked = {("POST", "/command/project/git/setup"), ("POST", "/command/tasks/<task_id>/seed/again"),
                 ("POST", "/command/project/accept/preview")}
     assert git_routes((*COMMAND_ROUTES, *unwalked)) - WALKED_GIT_ROUTES == unwalked
 

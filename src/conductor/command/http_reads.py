@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from . import (
-    auto_continue, flow_routes, project_claim, project_routes, queue_routes, studio_routes,
-    task_preparation, task_routes)
+    auto_continue, flow_routes, project_claim, project_git_state, project_routes, queue_routes,
+    studio_routes, task_preparation, task_routes)
 from .command_routes import Route
 
 if TYPE_CHECKING:
@@ -25,6 +25,8 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
         return 200, api._session.session_response(host)
     if route.name == "project":
         return project_claim.read_project(api._identity)
+    if route.name == "project_git":
+        return project_git_state.read_git(api)
     if route.name == "project_documents":
         return project_routes.read_documents(api)
     if route.name == "project_document":

@@ -228,6 +228,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/project/git", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
@@ -1220,6 +1221,16 @@ twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
 checks and before its route is handled, and a request without the header is
 answered as before. The shapes are in the desk redesign specification, section
 4.5.1.
+
+`GET /command/project/git` reads the repository facts for the task wizard:
+admission state, HEAD and object format, changed-path count excluding product
+files, instruction-file count, the last saved instruction choice, signing and
+the pinned Git version. A status timeout leaves `dirty_paths` unknown (`null`).
+Remotes expose only their names, a GitHub `owner/repo` when recognized, and a
+credential-presence flag; raw remote URLs are never returned. In view mode the
+route starts no Git process and reports only the local Git-entry state and the
+saved instruction choice. It does not write Git metadata. The response is the
+`{"git": ...}` shape in desk redesign specification section 6.2.1.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
