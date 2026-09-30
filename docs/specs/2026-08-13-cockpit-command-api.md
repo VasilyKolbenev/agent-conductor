@@ -450,7 +450,9 @@ choose a code.
   { "code": "materials_refused",     "status": 409, "source": "service" },
   { "code": "queue_changed",         "status": 409, "source": "concurrency" },
   { "code": "queue_full",            "status": 409, "source": "service" },
-  { "code": "queue_not_ready",       "status": 409, "source": "plan" }
+  { "code": "queue_not_ready",       "status": 409, "source": "plan" },
+  { "code": "seed_refused",          "status": 409, "source": "service" },
+  { "code": "tool_unavailable",      "status": 503, "source": "service" }
 ]
 ```
 

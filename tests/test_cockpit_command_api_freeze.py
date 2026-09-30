@@ -161,6 +161,10 @@ EXPECTED_ERRORS = {
     "queue_changed": (409, "concurrency"),
     "queue_full": (409, "service"),
     "queue_not_ready": (409, "plan"),
+    #: A seed that was not made (one reason of a closed list of fourteen is the detail), and a
+    #: pinned tool that cannot be used: the first status outside the old set, a 503.
+    "seed_refused": (409, "service"),
+    "tool_unavailable": (503, "service"),
 }
 EXPECTED_ERROR_CODES = frozenset(EXPECTED_ERRORS)
 
@@ -659,7 +663,7 @@ def test_frozen_error_code_vocabulary_matches_the_spec():
     assert actual == EXPECTED_ERRORS
     for row in rows:
         assert set(row) == {"code", "status", "source"}
-        assert row["status"] in {400, 403, 404, 405, 409, 422, 500}
+        assert row["status"] in {400, 403, 404, 405, 409, 422, 500, 503}
         assert isinstance(row["source"], str) and row["source"]
 
 

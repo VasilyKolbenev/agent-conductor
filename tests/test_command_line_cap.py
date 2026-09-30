@@ -72,6 +72,7 @@ CAPPED = (
     "tests/test_queue_routes.py",
     "tests/test_queue_store.py",
     "tests/test_seed_record.py",
+    "tests/test_seed_refusals.py",
     "tests/test_slot_busy_refusal.py",
     "tests/test_task_preparation.py",
 )
