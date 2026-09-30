@@ -214,6 +214,7 @@ FACTS = """() => {
     none: text(block && block.querySelector(".desk-queue__none")),
     notice: text(block && block.querySelector("[data-pult-notice]")),
     release: text(block && block.querySelector('[data-focus-key="queue:release"]')),
+    skip: text(block && block.querySelector('[data-focus-key="queue:skip"]')),
     slotHint: text(block && block.querySelector("[data-pult-slot-hint]")),
     dialog: (() => {
       const dialog = block && block.querySelector("[data-pult-dialog]");
@@ -295,7 +296,7 @@ def _note(window: Window, served: Project, request: Any) -> None:
 def open_desk(browser: Any, served: Project, language: str = "en", *, width: int = 1280,
               extra: str = "", before: Callable[[Any], None] | None = None) -> Window:
     """A desk on the project, waited until it is settled; `before` may route the page first."""
-    context = browser.new_context(viewport={"width": width, "height": 900})
+    context = browser.new_context(viewport={"width": width, "height": 900}, timezone_id="UTC")
     page = context.new_page()
     page.set_default_timeout(8000)
     window = Window(page)

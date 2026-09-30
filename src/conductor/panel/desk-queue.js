@@ -18,7 +18,7 @@
 // control's answer is the control it recorded and says nothing of the queue. A refusal
 // `project_mismatch` from any call tells the boot module, which ends the desk.
 import {path} from "./desk-transport.js";
-import {projectHolder, projectQueue} from "./desk-queue-model.js";
+import {confirmPreview, projectHolder, projectQueue} from "./desk-queue-model.js";
 
 const MISMATCH = "project_mismatch";
 
@@ -56,5 +56,15 @@ export function createQueueDoor(door, ended) {
   async function control(runId, body) {
     return outcome(await door.submit("automationControl", runId, body), ended, null);
   }
-  return Object.freeze({read: queue, automation, order, withdraw, control});
+  async function enqueue(body) {
+    return outcome(await door.submit("queue", null, body), ended, projectQueue);
+  }
+  async function preview(runId) {
+    const answer = await door.submit("automationPreview", runId, {});
+    if (answer.code === MISMATCH) ended();
+    return Object.freeze({status: answer.status === "accepted" ? "saved" : answer.status,
+      code: answer.code ?? null,
+      preview: answer.status === "accepted" ? confirmPreview(answer.payload) : null});
+  }
+  return Object.freeze({read: queue, automation, order, withdraw, control, enqueue, preview});
 }

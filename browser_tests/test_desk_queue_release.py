@@ -153,6 +153,8 @@ def test_a_stopped_holder_offers_the_release_and_the_dialog_has_two_choices_and_
         assert window.facts()["release"] == words["release"]
         assert window.facts()["dialog"] is None
         window.press("queue:release")
+        window.until("the slot read behind the dialog", lambda: window.facts()["dialog"]
+                     is not None)
         facts = window.facts()
         assert facts["dialog"]["kind"] == "release" and facts["dialog"]["lines"] == words["lines"]
         assert [button["text"] for button in facts["dialog"]["buttons"]] == words["buttons"]
@@ -175,6 +177,8 @@ def test_a_run_that_needs_a_correction_the_desk_cannot_make_says_so_in_the_dialo
             "**/command/queue", _slot_as("stuck", "feedback_required", A)))
         window.name("vasya")
         window.press("queue:release")
+        window.until("the slot read behind the dialog", lambda: window.facts()["dialog"]
+                     is not None)
         lines = window.facts()["dialog"]["lines"]
         assert lines == [*words["lines"][:2], words["feedback"], *words["lines"][2:]]
 
@@ -272,6 +276,28 @@ def test_a_refused_control_is_said_in_place_and_the_slot_stays_stuck(
         assert facts["notice"] == REFUSED[language] and facts["dialog"] is None
         assert served.queue()["slot"]["state"] == "stuck"
         assert window.errors(ignore=("422",)) == []
+
+
+def test_a_control_by_another_window_after_the_dialog_prevents_its_stale_revoke(
+        chromium, tmp_path: Path):
+    with rig.project(tmp_path, RUNS) as served:
+        _stuck(served)
+        window = rig.open_desk(chromium, served, "en")
+        window.name("vasya")
+        window.press("queue:release")
+        window.until("the holder read behind the dialog", lambda: window.facts()["dialog"]
+                     is not None)
+        grant = served.automation(A)["authorization"]
+        body = {"control_id": "control-other-pause",
+                "authorization_id": grant["authorization_id"],
+                "authorization_digest": grant["authorization_digest"],
+                "expected_control_id": None, "action": "pause", "actor": "other"}
+        status, _answer = served.call("POST", CONTROL, body)
+        assert status in (200, 201)
+        window.press("queue:release:revoke")
+        window.until("the stale dialog closes", lambda: window.facts()["dialog"] is None)
+        assert window.requests("POST", CONTROL) == 0
+        assert served.automation(A)["control"]["control_id"] == "control-other-pause"
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])

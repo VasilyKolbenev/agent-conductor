@@ -2,7 +2,7 @@
 // The task-queue read of the project (spec 4.4.6, `GET /command/queue`), judged against its
 // shape. A body this module cannot vouch for is `null`, so the console draws no queue rather
 // than one it cannot trust; a body it can is returned frozen and cut to the fields the desk
-// reads -- the preauthorization's digest and every field a later server may add stay out.
+// reads, including the preauthorization digest needed to verify a confirmation.
 //
 // The judgement is the boundary's, as `studio-model.js` is for the runs list: it says only
 // whether the answer is well formed and what the desk may read from it. The words a record
@@ -28,6 +28,7 @@ const REASONS = Object.freeze({
 });
 //: A run or task id, the grammar the routes accept.
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
 //: The 33rd record is refused by the server (`queue_full`), so no read holds more.
 const MAX_ENTRIES = 32;
 
@@ -55,10 +56,15 @@ function judgeEntry(entry, place) {
     && (entry.reason_code === null || REASONS[entry.state].includes(entry.reason_code))
     && orNull(isText)(entry.state_since);
   if (!fine) return null;
+  const pre = entry.preauthorization;
+  if (pre !== null && (!isObject(pre) || !isText(pre.authorized_by)
+      || !isText(pre.preauthorized_at) || !DIGEST.test(pre.digest))) return null;
   return Object.freeze({run_id: entry.run_id, task_id: entry.task_id, title: entry.title,
     position: entry.position, kind: entry.kind, enqueued_at: entry.enqueued_at,
     enqueued_by: entry.enqueued_by, state: entry.state, reason_code: entry.reason_code,
-    state_since: entry.state_since});
+    state_since: entry.state_since,
+    preauthorization: pre === null ? null : Object.freeze({authorized_by: pre.authorized_by,
+      preauthorized_at: pre.preauthorized_at, digest: pre.digest})});
 }
 
 //: `GET /command/queue` as the desk may read it, or null. Positions are 1..n in order and a
@@ -117,18 +123,18 @@ export function holdsRun(queue, runId) {
 
 // -- freeing the slot: the holder, the control that stops it, the offer --------------------------
 
-const DIGEST = /^sha256:[0-9a-f]{64}$/;
 //: What the desk writes to a holder: a pause (it can be continued while its grant lasts) and a
 //: revoke (it cannot be undone). A resume is the Studio's and the queue's, never this door's.
 const CONTROLS = Object.freeze(["pause", "revoke"]);
 
 //: The holder of the slot as `GET /command/runs/<run_id>/automation` tells it, cut to what a
-//: control needs: the state and its reason, the grant (null for a run that has none) and the id of
-//: the last control written to it. A read of another run, or one that does not say these, is null:
-//: nothing is written to a grant the desk could not read.
+//: control needs: the state and its reason, the grant (null for a run that has none), the id of
+//: the last control written to it and the instant its window ends (null for no grant). A read of
+//: another run, or one that does not say these, is null: nothing is written to a grant the desk
+//: could not read.
 export function projectHolder(read, runId) {
   if (!isObject(read) || read.run_id !== runId || !isText(read.state)
-      || !isText(read.reason_code)) return null;
+      || !isText(read.reason_code) || !orNull(isText)(read.expires_at)) return null;
   const {authorization: grant, control} = read;
   const grantOk = grant === null || (isObject(grant) && isId(grant.authorization_id)
     && isText(grant.authorization_digest) && DIGEST.test(grant.authorization_digest));
@@ -137,7 +143,8 @@ export function projectHolder(read, runId) {
   return Object.freeze({run_id: runId, state: read.state, reason_code: read.reason_code,
     grant: grant === null ? null : Object.freeze({authorization_id: grant.authorization_id,
       authorization_digest: grant.authorization_digest}),
-    last_control_id: control === null ? null : control.control_id});
+    last_control_id: control === null ? null : control.control_id,
+    expires_at: read.expires_at});
 }
 
 //: The body of `POST /command/runs/<run_id>/automation/control` for a pause or a revoke: the grant
@@ -165,4 +172,69 @@ export function releaseOffer(queue, {mode, actor}) {
   if (queue === null || mode === "view" || queue.slot.state !== "stuck") return null;
   return Object.freeze({run_id: queue.slot.run_id, reason: queue.slot.reason_code,
     named: actor !== null});
+}
+
+// -- skipping ahead: a holder that waits for a person steps aside for the queue -------------------
+
+//: What the console offers for a holder that waits for a person (`busy` at its gate) while the
+//: queue is not empty: the run that holds the slot, and whether a person is named to write in.
+//: Nothing in a project opened for viewing (it has no slot), for any other slot, or for a queue
+//: that was not read.
+export function skipOffer(queue, {mode, actor}) {
+  const waits = queue !== null && queue.slot.state === "busy"
+    && queue.slot.reason_code === "plan_waiting";
+  if (!waits || mode === "view" || queue.entries.length === 0) return null;
+  return Object.freeze({run_id: queue.slot.run_id, named: actor !== null});
+}
+
+//: The body of `POST /command/queue` that puts a paused holder back in the queue to continue: the
+//: run, the grant, the pause it follows (its `expected_control_id`, which the server checks
+//: against the grant's last control) and the person. Null without a grant, a person, and ids in
+//: the grammar -- a continuation with no pause to follow is not a continuation.
+export function resumeBody(holder, {actor, controlId, expectedControlId}) {
+  if (holder === null || holder.grant === null || !isText(actor) || actor === "") return null;
+  if (!isId(controlId) || !isId(expectedControlId)) return null;
+  return Object.freeze({run_id: holder.run_id, resume: Object.freeze({control_id: controlId,
+    authorization_id: holder.grant.authorization_id,
+    authorization_digest: holder.grant.authorization_digest,
+    expected_control_id: expectedControlId, actor})});
+}
+
+//: What a skip has done so far, read and never remembered: the pause is done when the holder's
+//: last control is the pause this press wrote (`pauseId`), and the continuation is done when the
+//: queue holds a RESUME entry of the holder (a start entry is not one).
+export function skipProgress({holder, queue, runId, pauseId}) {
+  return Object.freeze({paused: controlRecorded(holder, pauseId),
+    queued: queue !== null && queue.entries.some((entry) => entry.run_id === runId
+      && entry.kind === "resume")});
+}
+
+//: The first step a skip has not done: `pause`, then `queue`, then none.
+export function skipStep({paused, queued}) {
+  if (!paused) return "pause";
+  return queued ? null : "queue";
+}
+
+//: The server's reviewed terms are carried through unchanged. The desk reads their numbers for
+//: display and does not reconstruct them from an earlier grant or a client's budget guess.
+export function confirmPreview(read) {
+  if (!isObject(read) || !isObject(read.terms) || !DIGEST.test(read.preview_digest)) return null;
+  const {max_actions: actions, max_total_task_seconds: seconds,
+    duration_seconds: duration} = read.terms;
+  if (![actions, seconds, duration].every((n) => Number.isInteger(n) && n > 0)) return null;
+  return Object.freeze({terms: read.terms, preview_digest: read.preview_digest,
+    max_actions: actions, max_total_task_seconds: seconds, duration_seconds: duration});
+}
+
+export function confirmBody(entry, preview, holder, {actor, authorizationId}) {
+  if (entry === null || !isText(actor) || actor === "" || !isId(authorizationId)) return null;
+  if (entry.kind === "resume" && entry.reason_code !== "grant_expired") {
+    return resumeBody(holder, {actor, controlId: authorizationId,
+      expectedControlId: holder?.last_control_id});
+  }
+  if (preview === null) return null;
+  return Object.freeze({run_id: entry.run_id, start: Object.freeze({
+    authorization_id: authorizationId, preview_digest: preview.preview_digest,
+    terms: preview.terms, authorized_by: actor,
+    supersedes: holder?.grant?.authorization_id ?? null})});
 }

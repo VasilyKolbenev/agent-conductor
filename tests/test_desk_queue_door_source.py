@@ -18,7 +18,8 @@ from tests.test_panel_cascade import strip_comments
 QUEUE_DOOR = PANEL / "desk-queue.js"
 #: The targets of the mutation door the queue's door names, in the order it names them: the two
 #: writes that change the order of what waits, and the control that frees a stopped holder's slot.
-WRITTEN = ("queueOrder", "queueWithdraw", "automationControl")
+WRITTEN = ("queueOrder", "queueWithdraw", "automationControl", "queue",
+           "automationPreview")
 #: The routes it reads, and no other: the queue, and the automation of the holder.
 READ = {"queue", "automation"}
 #: Everything else that reaches the wire or a session, which the queue's door does not do.

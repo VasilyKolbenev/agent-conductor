@@ -570,7 +570,9 @@ const press = (name) => (...args) => pultFlow[name](...args);
 const handlers = Object.freeze({chooseTask, editActor, cancelActor, typeActor, setActor, reload,
   draftFlag, openFlag, saveFlag, clearFlag, orderEntry: press("order"),
   withdrawEntry: press("withdraw"), openRelease: press("openRelease"),
-  closeDialog: press("closeDialog"), release: press("release")});
+  closeDialog: press("closeDialog"), release: press("release"),
+  openSkip: press("openSkip"), skip: press("skip"),
+  openConfirm: press("openConfirm"), confirm: press("confirm")});
 
 // -- the address ------------------------------------------------------------------------
 

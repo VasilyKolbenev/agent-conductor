@@ -17,8 +17,8 @@
 // the last write left: a refusal with its code, or an unconfirmed change), what is in flight, and
 // the dialog that is open (null, or `{kind, run_id, nonce}`: the nonce makes the ids of what the
 // dialog writes, so a press that is repeated is the same write and not a second one).
-import {controlBody, controlRecorded, holdsOrder, holdsRun, orderBody, releaseOffer,
-  withdrawBody} from "./desk-queue-model.js";
+import {confirmBody, controlBody, controlRecorded, holdsOrder, holdsRun, orderBody,
+  releaseOffer, resumeBody, skipOffer, skipProgress, skipStep, withdrawBody} from "./desk-queue-model.js";
 
 export const NO_PULT = Object.freeze({notice: null, busy: null, dialog: null});
 
@@ -71,12 +71,22 @@ export function createPultFlow({door, host}) {
   // -- freeing the slot of a holder that stopped -------------------------------------------
 
   //: Open the dialog, for the holder the queue names, when the console offers it.
-  function openRelease() {
+  async function openRelease() {
     const {queue, mode, actor} = host.state();
     const offer = releaseOffer(queue, {mode, actor});
-    if (offer === null || !offer.named || held().busy !== null) return;
-    show({notice: null, dialog: Object.freeze({kind: "release", run_id: offer.run_id,
-      nonce: host.nonce()})});
+    if (offer === null || !offer.named || held().busy !== null || held().dialog !== null) return;
+    const nonce = host.nonce();
+    show({busy: "release-read", notice: null});
+    const [fresh, snapshot] = await Promise.all([door.read(), door.automation(offer.run_id)]);
+    if (host.state().foreign) return;
+    land(fresh);
+    if (snapshot === null || host.state().actor !== actor || host.state().mode !== mode
+        || releaseOffer(fresh, {mode, actor})?.run_id !== offer.run_id) {
+      show({busy: null, notice: UNCONFIRMED});
+      return;
+    }
+    show({busy: null, dialog: Object.freeze({kind: "release", run_id: offer.run_id,
+      nonce, snapshot})});
   }
 
   const closeDialog = () => show({dialog: null});
@@ -102,12 +112,155 @@ export function createPultFlow({door, host}) {
       return;
     }
     show({busy: "slot", notice: null});
-    const holder = await door.automation(dialog.run_id);
+    const before = dialog.snapshot;
+    const [freshQueue, holder] = await Promise.all([door.read(), door.automation(dialog.run_id)]);
+    if (host.state().foreign) return;
+    land(freshQueue);
+    const same = before !== null && holder !== null
+      && releaseOffer(freshQueue, {mode, actor})?.run_id === dialog.run_id
+      && before.state === holder.state && before.reason_code === holder.reason_code
+      && before.last_control_id === holder.last_control_id
+      && before.grant?.authorization_id === holder.grant?.authorization_id
+      && before.grant?.authorization_digest === holder.grant?.authorization_digest;
+    if (!same) {
+      show({busy: null, dialog: null, notice: UNCONFIRMED});
+      return;
+    }
     const controlId = `control-${dialog.nonce}-${action}`;
     const body = controlBody(holder, {action, actor, controlId});
     const answer = body === null ? UNSENT : await door.control(dialog.run_id, body);
     show({busy: null, dialog: null, notice: await settleControl(answer, dialog.run_id, body)});
   }
 
-  return Object.freeze({order, withdraw, openRelease, closeDialog, release});
+  //: A skip holds one nonce across retries. The dialog is kept when a lost queue answer cannot
+  //: be settled; the next press reads the holder and queue before deciding which step remains.
+  function openSkip() {
+    const {queue, mode, actor} = host.state();
+    const offer = skipOffer(queue, {mode, actor});
+    if (offer === null || !offer.named || held().busy !== null || held().dialog !== null) return;
+    const nonce = host.nonce();
+    show({notice: null, dialog: Object.freeze({kind: "skip", run_id: offer.run_id,
+      nonce, expires_at: null})});
+    void door.automation(offer.run_id).then((holder) => {
+      if (host.state().foreign || held().dialog?.nonce !== nonce) return;
+      show({dialog: Object.freeze({...held().dialog, expires_at: holder?.expires_at ?? null})});
+    });
+  }
+
+  async function skip() {
+    const {foreign, actor, queue, mode} = host.state();
+    const dialog = held().dialog;
+    if (foreign || actor === null || held().busy !== null || dialog?.kind !== "skip") return;
+    show({busy: "skip", notice: null});
+    const pauseId = `control-${dialog.nonce}-pause`;
+    const resumeId = `control-${dialog.nonce}-resume`;
+    let holder = await door.automation(dialog.run_id);
+    let fresh = await door.read();
+    if (host.state().foreign) return;
+    land(fresh);
+    let step = skipStep(skipProgress({holder, queue: fresh, runId: dialog.run_id, pauseId}));
+    if (step === "pause") {
+      if (skipOffer(fresh, {mode, actor})?.run_id !== dialog.run_id) {
+        show({busy: null, dialog: null});
+        return;
+      }
+      const body = controlBody(holder, {action: "pause", actor, controlId: pauseId});
+      const answer = body === null ? UNSENT : await door.control(dialog.run_id, body);
+      holder = await door.automation(dialog.run_id);
+      fresh = await door.read();
+      if (host.state().foreign) return;
+      land(fresh);
+      const recorded = controlRecorded(holder, pauseId);
+      if (!recorded) {
+        show({busy: null, dialog: answer.status === "refused" ? null : dialog,
+          notice: answer.status === "refused" ? refused(answer.code) : UNCONFIRMED});
+        return;
+      }
+      step = "queue";
+    }
+    if (step === "queue") {
+      const body = resumeBody(holder, {actor, controlId: resumeId,
+        expectedControlId: pauseId});
+      const answer = body === null ? UNSENT : await door.enqueue(body);
+      fresh = await door.read();
+      if (host.state().foreign) return;
+      land(fresh);
+      const queued = skipProgress({holder, queue: fresh, runId: dialog.run_id, pauseId}).queued;
+      if (!queued) {
+        const note = answer.status === "refused"
+          ? Object.freeze({kind: "partial", code: answer.code, run_id: dialog.run_id})
+          : UNCONFIRMED;
+        show({busy: null, dialog: answer.status === "refused" ? null : dialog, notice: note});
+        return;
+      }
+    }
+    show({busy: null, dialog: null, notice: null});
+  }
+
+  //: A changed entry asks for a new human confirmation. The preview is read from the server
+  //: after opening, and the dialog holds exactly those terms until the person confirms them.
+  async function openConfirm(runId) {
+    const {queue, actor, foreign} = host.state();
+    const entry = queue?.entries.find((row) => row.run_id === runId);
+    if (foreign || actor === null || held().busy !== null || held().dialog !== null
+        || entry?.state !== "confirmation_required") return;
+    const nonce = host.nonce();
+    show({busy: "preview", notice: null,
+      dialog: Object.freeze({kind: "confirm", run_id: runId, nonce, preview: null,
+        resume: entry.kind === "resume" && entry.reason_code !== "grant_expired"})});
+    if (held().dialog.resume) {
+      show({busy: null});
+      return;
+    }
+    const answer = await door.preview(runId);
+    if (host.state().foreign || held().dialog?.nonce !== nonce) return;
+    if (answer.status !== "saved" || answer.preview === null) {
+      show({busy: null, dialog: null, notice: answer.status === "refused"
+        ? refused(answer.code) : UNCONFIRMED});
+      return;
+    }
+    show({busy: null, dialog: Object.freeze({...held().dialog, preview: answer.preview})});
+  }
+
+  async function confirm() {
+    const {foreign, actor} = host.state();
+    const dialog = held().dialog;
+    if (foreign || actor === null || held().busy !== null || dialog?.kind !== "confirm"
+        || (!dialog.resume && dialog.preview === null)) return;
+    const entry = host.state().queue?.entries.find((row) => row.run_id === dialog.run_id);
+    if (entry?.state !== "confirmation_required") {
+      show({dialog: null});
+      return;
+    }
+    show({busy: "confirm", notice: null});
+    const holder = await door.automation(dialog.run_id);
+    const body = confirmBody(entry, dialog.preview, holder,
+      {actor, authorizationId: `auth-${dialog.nonce}`});
+    const answer = body === null ? UNSENT : await door.enqueue(body);
+    const fresh = await door.read();
+    if (host.state().foreign) return;
+    land(fresh);
+    const current = fresh?.entries.find((row) => row.run_id === dialog.run_id);
+    const expectedDigest = body?.start?.preview_digest ?? body?.resume?.authorization_digest;
+    const confirmed = current?.state === "preauthorized"
+      && current.preauthorization?.digest === expectedDigest
+      && current.preauthorization.authorized_by === actor;
+    const readBack = current === undefined && fresh !== null
+      ? await door.automation(dialog.run_id) : null;
+    const started = body !== null && (body.start !== undefined
+      ? readBack?.grant?.authorization_id === body.start.authorization_id
+      : readBack?.last_control_id === body.resume.control_id);
+    if (host.state().foreign) return;
+    if (answer.status === "refused") {
+      show({busy: null, dialog: null, notice: refused(answer.code)});
+    } else if (fresh !== null && (confirmed || started)) {
+      show({busy: null, dialog: null, notice: null});
+    } else {
+      show({busy: null, dialog: fresh !== null && current === undefined ? null : dialog,
+        notice: UNCONFIRMED});
+    }
+  }
+
+  return Object.freeze({order, withdraw, openRelease, closeDialog, release, openSkip, skip,
+    openConfirm, confirm});
 }
