@@ -143,7 +143,7 @@ def protected_box(tmp_path):
 def unprotected_box(tmp_path):
     layout = _layout(tmp_path)
     _vendor_entries(layout)
-    return SeatbeltBox(layout, writable=_writable(layout))
+    return SeatbeltBox(layout, writable=_writable(layout), removable=[layout.vendor_home])
 
 
 @pytest.fixture
