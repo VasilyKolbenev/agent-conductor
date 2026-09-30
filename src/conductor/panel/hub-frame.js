@@ -48,8 +48,9 @@ export function frameAddress(project, hubPort) {
   const found = isObject(project) && project.state === "running" && fits("project",
     project.project_id) ? DESK_URL.exec(typeof project.desk_url === "string" ? project.desk_url
       : "") : null;
-  if (found === null || Number(found[1]) > 65535 || found[1] === String(hubPort)) return null;
-  return Object.freeze({url: project.desk_url, origin: `http://127.0.0.1:${found[1]}`});
+  const effectiveHubPort = hubPort === "" ? 80 : Number(hubPort);
+  if (found === null || Number(found[1]) > 65535 || Number(found[1]) === effectiveHubPort) return null;
+  return Object.freeze({url: project.desk_url, origin: new URL(project.desk_url).origin});
 }
 
 /**

@@ -37,6 +37,8 @@ def test_the_address_of_a_running_desk_is_the_one_the_hub_gave_and_judged_by_the
         frame.frameAddress(row({desk_url, ...over}), port);
       const ok = "http://127.0.0.1:7701/panel/desk.html";
       show({ok: at(ok), hubPort: at("http://127.0.0.1:7700/panel/desk.html"),
+        defaultPort: at("http://127.0.0.1:80/panel/desk.html"),
+        defaultHubPort: at("http://127.0.0.1:80/panel/desk.html", {}, ""),
         big: at("http://127.0.0.1:65536/panel/desk.html"),
         zero: at("http://127.0.0.1:0/panel/desk.html"),
         lead: at("http://127.0.0.1:07701/panel/desk.html"),
@@ -53,7 +55,9 @@ def test_the_address_of_a_running_desk_is_the_one_the_hub_gave_and_judged_by_the
     assert out["ok"] == {"url": "http://127.0.0.1:7701/panel/desk.html",
                          "origin": "http://127.0.0.1:7701"}
     assert out["maxPort"]["origin"] == "http://127.0.0.1:65535"
-    refused = [name for name in out if name not in ("ok", "maxPort")]
+    assert out["defaultPort"] == {"url": "http://127.0.0.1:80/panel/desk.html",
+                                  "origin": "http://127.0.0.1"}
+    refused = [name for name in out if name not in ("ok", "maxPort", "defaultPort")]
     assert all(out[name] is None for name in refused), [n for n in refused if out[n] is not None]
 
 
