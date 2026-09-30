@@ -333,6 +333,22 @@ def test_editing_a_shipped_cycle_writes_only_a_copy_under_a_new_cycle_id():
     assert "desk-standard" not in out["subjects"]
 
 
+def test_a_check_of_a_shipped_cycle_still_out_when_it_is_copied_does_not_hold_the_copys_write():
+    out = js("""
+      const shipped = begin("desk-standard");
+      const ready = reply(shipped, shipped.asks[0], fs("standard", "desk-standard"));
+      const checking = send(ready, {type: "check"});
+      const edit = send(checking, {type: "edit", edit: title("Mine")});
+      const late = reply(edit, checking.asks[0], fs("standard", "desk-standard"));
+      show({checking: asksOf(checking), edit: [asksOf(edit), edit.state.reading],
+        late: [late.state === edit.state, late.asks.length]});
+    """)
+    assert out["checking"] == [["read:schema:2", *READ, "desk-standard"]]
+    assert out["edit"] == [[["write:schema:3", *DOOR, "cycle-a1b2c3d4"]], None], (
+        "the read was of the shipped cycle, which the edit has left: it is not waited for")
+    assert out["late"] == [True, 0], "and its answer, when it comes, changes nothing in the copy"
+
+
 def test_a_new_cycle_from_a_starter_or_a_copy_is_written_by_its_source_into_a_new_id():
     out = js("""
       const start = send({state: fresh()}, {type: "new", from: "starter", id: "dalio-v5"});

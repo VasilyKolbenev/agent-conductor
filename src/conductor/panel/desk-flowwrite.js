@@ -253,10 +253,11 @@ function answered(state, event) {
 }
 
 //: The first edit of a ready cycle makes a copy: the held flow is written under a new id, the
-//: ready cycle is never written to.
+//: ready cycle is never written to. A read still out is of the ready cycle the edit leaves: it is
+//: not waited for, and its answer lands nowhere.
 function copyOnEdit(state) {
   if (!state.workflowId.startsWith(RESERVED)) return state;
-  return {...minted(state), origin: {workflowId: state.workflowId,
+  return {...minted(state), reading: null, origin: {workflowId: state.workflowId,
     revision: state.server?.latest_revision ?? null}, digest: null, fresh: true, conflicts: 0};
 }
 
