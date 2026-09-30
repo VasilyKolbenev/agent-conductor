@@ -20,6 +20,8 @@ from conductor.command.flag_control_id import is_flag_control_id, refuse_flag_co
 from conductor.command.queue_bodies import parse_write
 from conductor.command.queue_store import QueueEntry, ResumePreauth
 from tests.queue_fixtures import Holder, NOW, project, resume_body, start_body
+from tests.test_command_http_api import post
+from tests.test_command_queue_wire import error, wire
 from tests.test_queue_pump import controls, paused_grant, q  # noqa: F401  (q is the fixture)
 
 NAME = "flag-0123456789abcdef0123456789abcdef"
@@ -102,3 +104,22 @@ def test_an_entry_already_on_file_with_the_flags_name_is_dropped_and_writes_no_c
     dropped, = q.service.store.read().entries
     assert dropped.preauthorization is None and dropped.dropped.reason_code == "preview_refused"
     assert q.service.store.read_receipt("run", "run_authorization_control", NAME) is None
+
+
+@pytest.mark.parametrize("door", ["/command/runs/run/automation/control", "/command/queue"])
+def test_the_wire_refuses_the_flags_name_at_both_doors_422_contract_invalid_and_writes_nothing(
+        tmp_path, door):
+    w = wire(tmp_path)
+    granted, _ = w.f.policy.authorize("run", start_body(w.f, "run", "grant-1"))
+    w.f.policy.control("run", {"control_id": "pause", "authorization_id": "grant-1",
+        "authorization_digest": granted.authorization_digest, "action": "pause",
+        "actor": "owner", "expected_control_id": None})
+    w.events.clear()
+    records = w.f.store.read("run").records
+    resume = {"control_id": NAME, "authorization_id": "grant-1", "actor": "vasily",
+              "authorization_digest": granted.authorization_digest, "expected_control_id": "pause"}
+    body = {"run_id": "run", "resume": resume} if door == "/command/queue" else {
+        **resume, "action": "resume", "actor": "owner"}
+    assert error(post(w.api, door, body)) == (422, "contract_invalid", {})
+    assert w.f.store.read("run").records == records and w.events == []
+    assert not w.api._queue.store.path.exists()

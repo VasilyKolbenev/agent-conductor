@@ -23,6 +23,7 @@ from conductor.command.queue_service import QueueService
 from conductor.command.queue_store import JOURNAL_KIND, Dropped, QueueStore
 from conductor.command.task_store import TaskStore
 from tests.queue_fixtures import Holder, long_root, project, refuse_receipt_budget, start_body
+from tests.test_command_queue_wire import error, put as wire_put, wire
 from tests.test_queue_pump import (  # noqa: F401  (q is the fixture)
     LATER, controls, grants, paused_grant, put, put_resume, q)
 
@@ -135,3 +136,14 @@ def test_at_a_real_root_an_entry_the_door_never_judged_no_longer_holds_the_queue
     assert f.policy.driver.active == ("run-b", "grant-b")
     entry, = real.service.store.read().entries
     assert (entry.run_id, entry.dropped.reason_code) == ("run", "preview_refused")
+
+
+def test_the_wire_answers_a_key_over_the_budget_422_windows_path_too_long_and_writes_nothing(
+        tmp_path, monkeypatch):
+    w = wire(tmp_path, "run-b")
+    refuse_receipt_budget(monkeypatch, "run")
+    records = w.f.store.read("run").records
+    assert error(wire_put(w, "run")) == (422, "windows_path_too_long", {})
+    assert not w.api._queue.store.queue_dir.exists() and w.events == []
+    assert w.f.store.read("run").records == records
+    assert wire_put(w, "run-b").status == 201              # a key that fits goes in
