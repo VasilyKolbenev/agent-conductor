@@ -1,6 +1,7 @@
 """Construct the command workers from one resolved operator configuration."""
 from datetime import datetime
 
+from . import server_git
 from .command.project_claim import ProjectIdentity
 from .command.quota_snapshot_view import LIMITS_FILE, HubLimitsView
 from .hub.home import ConductHomeInvalid, conduct_home_path
@@ -26,13 +27,15 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
     subject.quota_collector = None if launch.mode == "view" else QuotaCollector(
         subject.command_quotas, resolution.quota_plans,
         clock=lambda: datetime.fromisoformat(clock().replace("Z", "+00:00")))
+    # A view process starts no child, git included (9.1.6): it passes no reader and builds none.
+    git_reader = None if launch.mode == "view" else server_git.project_git_reader(root)
     subject.command_api = CommandApi(
         subject.command_store, subject.command_registry,
         session=subject.command_session, budget=budget, clock=clock, ids=ids,
         publish_run=subject.clients.publish_run, providers=subject.command_providers,
         quota_service=subject.command_quotas,
         project=subject.broker.project_name, provider_configs=providers,
-        identity=subject.project_identity)
+        identity=subject.project_identity, project_git=git_reader)
     if launch.mode == "view":
         _answer_quotas_from_the_hub(subject)
     # The effect belongs to server-owned workers, never to a request thread:
