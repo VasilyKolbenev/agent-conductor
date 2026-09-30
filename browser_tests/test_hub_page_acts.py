@@ -37,6 +37,21 @@ def wait_posts(page: HubPage, count: int) -> None:
     raise AssertionError(f"{len(page.hub.posts)} posts, not {count}")
 
 
+def wait_read_beyond(page: HubPage, path: str, reads: int, why: str) -> None:
+    """Wait until the hub has been asked `path` more than `reads` times.
+
+    The notice is drawn and the read is started in the same task, but the status text reaches the
+    test over the browser's channel and the read reaches the fake hub over HTTP: neither is ahead of
+    the other, so a count taken right after the notice may still be the old one.
+    """
+    for _ in range(80):
+        if page.hub.requests(path) > reads:
+            return
+        page.page.wait_for_timeout(50)
+    raise AssertionError(f"{why}: {path} was asked {page.hub.requests(path)} times, not more "
+                         f"than {reads}")
+
+
 def test_make_active_asks_first_when_another_project_works_and_posts_nothing_until_confirmed(
         hub_page):
     page = hub_page
@@ -55,7 +70,7 @@ def test_make_active_asks_first_when_another_project_works_and_posts_nothing_unt
     press(page, "confirm:yes")
     expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.accepted"))
     assert page.hub.posts == [{"path": f"/hub/projects/{BOT}/activate", "body": {}}]
-    assert page.hub.requests("/hub/projects") > reads, "what was done is read, not assumed"
+    wait_read_beyond(page, "/hub/projects", reads, "what was done is read, not assumed")
     expect(page.page.locator("#hubConfirm .hub-confirm__box")).to_have_count(0)
 
 
@@ -99,7 +114,7 @@ def test_a_refusal_is_said_in_the_clause_of_its_code_and_the_page_reads_again(hu
       .codeWords(document.documentElement.lang, "project_busy")""")
     expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.notice.refused",
                                                             reason=clause))
-    assert page.hub.requests("/hub/projects") > reads
+    wait_read_beyond(page, "/hub/projects", reads, "a refusal is followed by a read")
     assert page.hub.posts == [{"path": f"/hub/projects/{WEB}/stop", "body": {}}], (
         "one post went out, and once")
 
