@@ -58,14 +58,16 @@ function context(detail, records) {
       .filter((ref) => text(ref)).map((ref) => [ref, one.action_id]))),
     instances: new Map(list(detail?.config?.instances).filter((one) => isObject(one)
       && text(one.id)).map((one) => [one.id, one])),
-    pass: loopPass(nodes, list(graph.runtime?.nodes)),
+    pass: runPass(detail),
   };
 }
 
 //: The pass the run's bounded return stands on, or null when the plan has no loop or the run
-//: states no number: `{pass, bound}`.
-function loopPass(nodes, runtime) {
-  for (const node of nodes) {
+//: states no number: `{pass, bound}`. The feed and the summary both say it.
+export function runPass(detail) {
+  const graph = isObject(detail) && isObject(detail.graph) ? detail.graph : {};
+  const runtime = list(graph.runtime?.nodes);
+  for (const node of list(graph.definition?.nodes).filter(isObject)) {
     const bound = isObject(node.loop) ? node.loop.bound : null;
     const row = runtime.find((one) => isObject(one) && one.node_id === node.node_id);
     if (Number.isSafeInteger(bound) && Number.isSafeInteger(row?.pass) && row.pass >= 1) {

@@ -74,6 +74,8 @@ DESK_ASSETS = {
     "/panel/desk-flag.js": ("text/javascript; charset=utf-8", "desk-flag.js"),
     # The journal of a run read as the rows of the feed, for the region that draws them.
     "/panel/desk-feed-model.js": ("text/javascript; charset=utf-8", "desk-feed-model.js"),
+    # The summary's counters, tasks and people, judged from the reads the desk holds.
+    "/panel/desk-summary-model.js": ("text/javascript; charset=utf-8", "desk-summary-model.js"),
     # The words of the feed, RU and EN.
     "/panel/desk-feed-copy.js": ("text/javascript; charset=utf-8", "desk-feed-copy.js"),
     # The regions the desk draws: one module each, `mountX` only.

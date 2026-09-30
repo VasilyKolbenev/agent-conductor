@@ -126,6 +126,12 @@ PERMITTED_IMPORTS = {
     #: the Studio's closed vocabularies (record instants, outcomes, verification states, the
     #: store's document limit) and nothing else; the boot module hands it the run it read.
     "desk-feed-model.js": frozenset({"./studio-runwords.js"}),
+    #: The summary's counters, tasks and people: values in, frozen values out. It asks the rail's
+    #: own rule for a task's word, the newest-run rule, the scene's reading of a run and the
+    #: decision rows of a run read, and shares the feed's reading of the loop pass.
+    "desk-summary-model.js": frozenset({"./desk-status.js", "./studio-taskruns.js",
+                                        "./studio-scene-model.js", "./studio-runread.js",
+                                        "./desk-feed-model.js"}),
     #: The words of the feed: a frozen catalogue that imports nothing, spread into the one table
     #: by `studio-i18n.js`.
     "desk-feed-copy.js": frozenset(),

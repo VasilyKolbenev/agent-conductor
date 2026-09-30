@@ -130,6 +130,8 @@ ASSETS = {
     "/panel/desk-flag-model.js": "text/javascript; charset=utf-8",
     # The one read and the one write of that flag.
     "/panel/desk-flag.js": "text/javascript; charset=utf-8",
+    # The summary's counters, tasks and people.
+    "/panel/desk-summary-model.js": "text/javascript; charset=utf-8",
     # The journal of a run read as the rows of the feed, and the words that say them.
     "/panel/desk-feed-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-feed-copy.js": "text/javascript; charset=utf-8",
@@ -320,6 +322,12 @@ REFUSED = (
     "/panel/%2e%2e/desk-feed-model.js", "/panel/DESK-FEED-MODEL.JS",
     "/panel/Desk-feed-model.js", "/panel/desk-feed-model.js/",
     "/panel/desk-feed-model.js%00.txt",
+    # The summary's model, the same nine shapes.
+    "/panel/desk-summary-model.json", "/panel/desk-summary-model.js?v=1",
+    "/panel/desk-summary-model.js.map", "/panel/../desk-summary-model.js",
+    "/panel/%2e%2e/desk-summary-model.js", "/panel/DESK-SUMMARY-MODEL.JS",
+    "/panel/Desk-summary-model.js", "/panel/desk-summary-model.js/",
+    "/panel/desk-summary-model.js%00.txt",
     # The feed's words and the feed itself, the same nine shapes each.
     "/panel/desk-feed-copy.json", "/panel/desk-feed-copy.js?v=1",
     "/panel/desk-feed-copy.js.map", "/panel/../desk-feed-copy.js",
