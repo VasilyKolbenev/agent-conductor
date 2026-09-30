@@ -30,10 +30,12 @@ class Script:
     """A git reader that answers from a table and records what it was asked."""
 
     def __init__(self, *answers):
-        self.answers, self.calls = list(answers), []
+        self.answers, self.calls, self.keywords = list(answers), [], []
 
-    def __call__(self, args, separate_stderr=False):
+    def __call__(self, args, separate_stderr=False, **keywords):
+        """`keywords` (`stdin`, `output_limit`, `timeout`) are kept beside `calls`, not in it."""
         self.calls.append((tuple(args), separate_stderr))
+        self.keywords.append(keywords)
         return self.answers.pop(0)
 
 

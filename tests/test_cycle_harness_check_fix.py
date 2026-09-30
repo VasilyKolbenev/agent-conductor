@@ -34,6 +34,7 @@ from tests import _fakeclaude, _fakecodex
 from tests.test_command_codex_transport import CODEX_PROVIDER_ID
 from tests.test_command_run_socket import request
 from tests.test_store import good_lane, write_project
+from tests import _store_error_probe as store_error_probe
 
 WORKFLOW = "workflow-checked-fix"
 RUN = "run-cycle-001"
@@ -117,7 +118,11 @@ class _Cycle:
 
     def call(self, method: str, path: str, body: dict | None = None):
         token = self.token if body is not None else None
-        return request(self.base, method, path, token=token, body=body)
+        with store_error_probe.watching() as seen:
+            status, payload = request(self.base, method, path, token=token, body=body)
+        if status == 500 and seen:
+            payload = {**payload, "diagnostic": store_error_probe.describe(seen)}
+        return status, payload
 
     def run(self) -> dict:
         status, body = self.call("GET", f"/command/runs/{RUN}")

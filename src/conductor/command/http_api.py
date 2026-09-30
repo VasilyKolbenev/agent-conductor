@@ -202,6 +202,7 @@ class CommandApi:
         self._ids = ids
         from .policy_wiring import notify_run, make_policy
         from .queue_routes import make_queue
+        from .seed_routes import make_seeds
         self._publish_run = notify_run(self, publish_run)
         self._service = CommandService(store, registry, clock=clock, ids=ids)
         self._runtime = ControlRuntime(
@@ -209,6 +210,7 @@ class CommandApi:
         self._execution: ExecutionCoordinator | None = None
         self._policy = make_policy(self, provider_configs)
         self._queue = make_queue(self)
+        self._policy.seeds = make_seeds(self)
         self._runtime._policy = self._policy
 
     @property

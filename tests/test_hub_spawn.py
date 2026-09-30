@@ -16,6 +16,7 @@ import ast
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -192,6 +193,66 @@ def test_the_previous_log_is_kept_once_as_dot_one_at_every_start(tmp_path):
         f"{PROJECT_ID}.log", f"{PROJECT_ID}.log.1"]
 
 
+class HeldThenLetGo:
+    """An `os.replace` refused `holds` times the way a log still open in a dying child is."""
+
+    def __init__(self, holds: int) -> None:
+        self.holds, self.calls, self._real = holds, 0, os.replace
+
+    def __call__(self, source, target) -> None:
+        self.calls += 1
+        if self.calls <= self.holds:
+            error = PermissionError(13, "the log is held by the previous child")
+            error.winerror = 32
+            raise error
+        self._real(source, target)
+
+
+def test_a_log_held_for_a_moment_by_the_previous_child_is_kept_when_it_lets_go(
+        tmp_path, monkeypatch):
+    launches, pauses = Launches(), []
+    spawner = _spawner(tmp_path, launches)
+    logs = tmp_path / "home" / "logs"
+    _start(spawner)
+    (logs / f"{PROJECT_ID}.log").write_text("first run", encoding="utf-8")
+    held = HeldThenLetGo(holds=3)
+    monkeypatch.setattr(os, "replace", held)
+    monkeypatch.setattr(spawn.time, "sleep", pauses.append)
+    _start(spawner)
+    assert len(launches.calls) == 2, "the start was refused for a hold that lasted milliseconds"
+    assert (logs / f"{PROJECT_ID}.log.1").read_text(encoding="utf-8") == "first run"
+    assert held.calls == 4 and pauses == [spawn.ROTATE_PAUSE_SECONDS] * 3
+
+
+@pytest.mark.skipif(os.name != "nt", reason="an open file blocks a rename only on Windows")
+def test_a_log_really_held_open_for_a_moment_does_not_refuse_the_start(tmp_path):
+    launches = Launches()
+    spawner = _spawner(tmp_path, launches)
+    log = tmp_path / "home" / "logs" / f"{PROJECT_ID}.log"
+    _start(spawner)
+    log.write_text("first run", encoding="utf-8")
+    holding, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with log.open("rb"):                 # shared for read and write, not for delete
+            holding.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    assert holding.wait(5)
+    try:
+        with pytest.raises(PermissionError):      # the instrument: the hold really blocks it
+            os.replace(log, log.with_name(log.name + ".1"))
+        threading.Timer(0.15, release.set).start()
+        _start(spawner)
+    finally:
+        release.set()
+        holder.join(5)
+    assert len(launches.calls) == 2
+    assert log.with_name(log.name + ".1").read_text(encoding="utf-8") == "first run"
+
+
 # -- the policy of the hub's own job -------------------------------------------------------------
 
 
@@ -260,14 +321,14 @@ def test_a_log_that_cannot_be_rotated_because_another_process_holds_it_is_start_
     spawner = _spawner(tmp_path, launches)
     _start(spawner)
 
-    def held(source, target):
-        raise PermissionError(13, "the log is held by the previous child")
-
+    held = HeldThenLetGo(holds=10**6)
     monkeypatch.setattr(os, "replace", held)
+    monkeypatch.setattr(spawn.time, "sleep", lambda seconds: None)
     with pytest.raises(spawn.SpawnRefused) as caught:
         _start(spawner)
     assert caught.value.code == "start_failed" and "log" in caught.value.detail
     assert len(launches.calls) == 1, "a child was started without a log of its own"
+    assert held.calls == spawn.ROTATE_ATTEMPTS, "the hold was given up on before its bound"
 
 
 def test_an_operating_system_that_cannot_start_the_process_is_start_failed(tmp_path):

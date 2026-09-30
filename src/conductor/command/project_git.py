@@ -39,8 +39,12 @@ class GitAnswer:
     timed_out: bool = False
 
 
-#: One call: `git(args, separate_stderr=False)`. `separate_stderr` keeps the child's diagnostics
-#: out of `output`, for a caller that parses stdout as data.
+#: One call: `git(args, separate_stderr=False, *, stdin=None, output_limit=None, timeout=None)`.
+#: `separate_stderr` keeps the child's diagnostics out of `output`, for a caller that parses
+#: stdout as data. `stdin` is what the child reads (`cat-file --batch` takes its names there;
+#: the runner refuses more than 256 KiB and any NUL), `output_limit` is how many bytes of answer
+#: are kept before it is cut and says so, `timeout` is the seconds the call may take. A call that
+#: names none of the three is the one-line read this type always meant.
 GitRead = Callable[..., GitAnswer]
 
 
@@ -83,11 +87,14 @@ def process_git_read(runner: ProcessRunner, git_path: str, cwd: str, *,
     The runner refuses a `cwd` that is not strictly beneath its own root, so the caller chooses a
     folder of its own for it; the repository is named by `-C` in each call, not by `cwd`.
     """
-    def read(args: Sequence[str], separate_stderr: bool = False) -> GitAnswer:
+    def read(args: Sequence[str], separate_stderr: bool = False, *, stdin: bytes | None = None,
+             output_limit: int | None = None, timeout: float | None = None) -> GitAnswer:
         outcome = runner.run(CommandSpec(
             argv=(git_path, *GIT_FLAGS, *args), cwd=cwd, env_allow=tuple(env_allow),
-            env=dict(env or {}), output_limit=READ_OUTPUT_LIMIT,
-            timeout_seconds=READ_TIMEOUT_SECONDS, separate_stderr=separate_stderr))
+            env=dict(env or {}), stdin_bytes=stdin,
+            output_limit=READ_OUTPUT_LIMIT if output_limit is None else output_limit,
+            timeout_seconds=READ_TIMEOUT_SECONDS if timeout is None else timeout,
+            separate_stderr=separate_stderr))
         return GitAnswer(exit_code=outcome.exit_code, output=outcome.output,
                          truncated=outcome.output_truncated,
                          timed_out=outcome.status == "timed_out")
@@ -128,6 +135,11 @@ def repository_admission(root: str | os.PathLike[str], git: GitRead) -> Reposito
         raise GitReadFailed("git_failed", listing.exit_code)
     tracked = _top_names(listing.output)
     return RepositoryAdmission("unsupported", tracked) if tracked else RepositoryAdmission("repo")
+
+
+def has_git_entry(root: str | os.PathLike[str]) -> bool:
+    """Whether `root` or an ancestor holds a `.git` entry: the answer needs no process."""
+    return _under_git(Path(root))
 
 
 def _under_git(folder: Path) -> bool:

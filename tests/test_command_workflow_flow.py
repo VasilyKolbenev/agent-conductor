@@ -595,6 +595,8 @@ def looped_flows():
     two_passes["links"] += [{"from": "do", "to": "do-fix", "when": "failed"},
                             {"from": "test", "to": "test-fix", "when": "failed"}]
     middle = chain(review("analyst"), step("approve-plan", "human"), doer, step("result", "human"))
+    # A gate's road onward says `approved`; `success` is a word no gate can produce.
+    middle["links"][1] = {"from": "approve-plan", "to": "do", "when": "approved"}
     middle["steps"].append(step("redo", "loop", back_to="analyst", bound=2))
     middle["links"].append({"from": "approve-plan", "to": "redo", "when": "changes_requested"})
     return {"tester": with_tester, "nested loops": nested, "two pass loops": two_passes,

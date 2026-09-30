@@ -104,6 +104,17 @@ def test_the_first_call_checks_the_pin_once_and_builds_one_runner_that_may_spawn
     assert len(runners.specs) == 3
 
 
+def test_the_keywords_of_a_seed_read_reach_the_runner_as_the_specs_own_fields(tmp_path, pins):
+    """`cat-file --batch` names its objects on stdin and answers with their bytes (spec 9.1.2)."""
+    root, runners = _root(tmp_path), Runners()
+    reader = _reader(root, runners)
+    reader(["cat-file", "--batch"], True, stdin=b"abc\n", output_limit=4096, timeout=30)
+    reader(["rev-parse", "HEAD"])
+    batch, plain = runners.specs
+    assert (batch.stdin_bytes, batch.output_limit, batch.timeout_seconds) == (b"abc\n", 4096, 30)
+    assert (plain.stdin_bytes, plain.output_limit) == (None, project_git.READ_OUTPUT_LIMIT)
+
+
 def test_the_command_runs_the_pinned_path_in_a_folder_of_its_own_beneath_the_root(tmp_path, pins):
     root, runners = _root(tmp_path), Runners()
     _reader(root, runners)(["rev-parse", "HEAD"], separate_stderr=True)

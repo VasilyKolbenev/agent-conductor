@@ -369,6 +369,8 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "queue_changed": "the project queue changed since it was read",
         "queue_full": "the project queue is full",
         "queue_not_ready": "the run cannot be put in the project queue now",
+        "seed_refused": "the work folder of the task could not be seeded",
+        "tool_unavailable": "a tool this project needs cannot be used as pinned",
     }
     assert set(expected) == set(ERROR_STATUS)
     for code, message in expected.items():

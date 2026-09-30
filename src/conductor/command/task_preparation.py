@@ -21,6 +21,7 @@ from .contract_values import ContractError
 from .contracts import frozen_config_workflow
 from .graph_schedule import schedule
 from .policy_history import current_authorization
+from .seed_record import read_seed_view
 from .store_errors import StoreError
 from .task_contracts import frozen_config_task
 
@@ -76,7 +77,7 @@ def read_preparation(tasks: "TaskStore", store: "RunStore", task_id: str,
         raise ApiRefusal.missing_task(task_id)
     ids = studio_routes.run_ids(store)
     rows = (_run_row(store, run_id, task_id, queue) for run_id in ids)
-    return 200, {"task": record.as_dict(), "seed": None,
+    return 200, {"task": record.as_dict(), "seed": read_seed_view(tasks.project_root, task_id),
                  "next_run_number": _next_number(ids, task_id),
                  "runs": [row for row in rows if row is not None]}
 

@@ -145,6 +145,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/tasks"),
         ("GET", "/command/tasks/<task_id>"),
         ("GET", "/command/tasks/<task_id>/preparation"),
+        ("POST", "/command/tasks/<task_id>/seed"),
         ("GET", "/command/quotas"),
         ("GET", "/command/project/cycle"),
         ("POST", "/command/project/cycle/pin"),
@@ -194,7 +195,7 @@ def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
     # would be refused as an unknown ROUTE, which says nothing about what the
     # handler does and would quietly excuse the route from this class.
     target = path.replace("<run_id>", RUN_ID).replace(
-        "<workflow_id>", WORKFLOW_ID)
+        "<workflow_id>", WORKFLOW_ID).replace("<task_id>", "task-001")
     assert "<" not in target, target
     # `{}` is the one body a withdraw takes (spec 4.4.5: it names its run in the path), so the body
     # this class hands it is one field it does not have.

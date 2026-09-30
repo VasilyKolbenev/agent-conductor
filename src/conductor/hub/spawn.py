@@ -34,6 +34,8 @@ JOB_POLICIES = ("none", "breakaway", "kill_on_close")
 #: `CREATE_BREAKAWAY_FROM_JOB`: a child of a job that allows it may leave the job.
 _BREAKAWAY = 0x01000000
 _ACCESS_DENIED = 5
+ROTATE_ATTEMPTS = 100
+ROTATE_PAUSE_SECONDS = 0.02
 
 _PROJECT_ID = re.compile(r"[0-9a-f]{32}")
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -218,5 +220,15 @@ def _rotate(path: Path):
     """Keep the previous log once as `.log.1` and open a new one for the child's stderr."""
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     if path.exists():
-        os.replace(path, path.with_name(path.name + ".1"))
+        # A just-exited Windows child can still hold its stderr handle briefly.
+        # Retry sharing/lock violations only; permission and other failures stand.
+        for attempt in range(ROTATE_ATTEMPTS):
+            try:
+                os.replace(path, path.with_name(path.name + ".1"))
+                break
+            except PermissionError as error:
+                if (getattr(error, "winerror", None) not in (32, 33)
+                        or attempt == ROTATE_ATTEMPTS - 1):
+                    raise
+                time.sleep(ROTATE_PAUSE_SECONDS)
     return path.open("wb")

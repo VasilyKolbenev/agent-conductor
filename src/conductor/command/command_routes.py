@@ -47,6 +47,7 @@ COMMAND_ROUTES = (
     ("POST", "/command/tasks"),
     ("GET", "/command/tasks/<task_id>"),
     ("GET", "/command/tasks/<task_id>/preparation"),
+    ("POST", "/command/tasks/<task_id>/seed"),
     ("GET", "/command/quotas"),
     ("GET", "/command/project/cycle"),
     ("POST", "/command/project/cycle/pin"),
@@ -85,9 +86,11 @@ _WORKFLOW_ROUTE = re.compile(
 #: A task id is bounded at `MAX_TASK_ID`, and this grammar admits exactly the
 #: names the task store can address -- as `_RUN_ROUTE` admits exactly what
 #: `run_path` admits -- so a name past the bound is a path no row names rather
-#: than a task the store is then asked about and cannot hold.
+#: than a task the store is then asked about and cannot hold. The two tails are
+#: `preparation` (GET) and `seed` (POST, spec 9.1.1).
 _TASK_ROUTE = re.compile(
-    rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})(?:/(preparation))?\Z")
+    rf"/command/tasks/([A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_TASK_ID - 1}}})"
+    r"(?:/(preparation|seed))?\Z")
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
 #: pinned, and the write that pins or unpins; and the flag of "continue after" (spec 4.3.4), which
 #: both verbs reach. The bare `project` path is `_PROJECT_PATH` below.
@@ -228,22 +231,24 @@ def _known(path: str) -> bool:
 
 
 def _task_route(method: str, path: str) -> Route | None:
-    """Name one of the four task routes, or ``None`` when the path is not one.
+    """Name one of the five task routes, or ``None`` when the path is not one.
 
     ``/command/tasks`` is the second path the table admits under BOTH verbs,
     for the run list's reason. The read of one task, and the read of what it
-    still lacks (`preparation`), are GET only, and a name past the task bound
-    matched nothing above, so it is no route at all.
+    still lacks (`preparation`), are GET only; the `seed` of its work folder is
+    POST only; and a name past the task bound matched nothing above, so it is
+    no route at all.
     """
     if path == _TASKS_PATH:
         return Route("tasks")
     matched = _TASK_ROUTE.fullmatch(path)
     if matched is None:
         return None
-    if method != "GET":
-        raise ApiRefusal.fixed("method_not_allowed")
     task_id, tail = matched.groups()
-    return Route("task" if tail is None else "task_preparation", task_id=task_id)
+    name = {None: "task", "preparation": "task_preparation", "seed": "task_seed"}[tail]
+    if method != ("POST" if tail == "seed" else "GET"):
+        raise ApiRefusal.fixed("method_not_allowed")
+    return Route(name, task_id=task_id)
 
 
 def _project_route(method: str, tail: str) -> Route:

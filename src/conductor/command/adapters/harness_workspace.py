@@ -270,6 +270,30 @@ def _root_gate(key: Path) -> _RootGate:
         key, guard=_ROOT_GATES_GUARD, gates=_ROOT_GATES, lock_factory=RLock)
 
 
+@contextmanager
+def root_turn(root: str | os.PathLike[str], *, wait: float | None = None):
+    """Hold the turn over one ROOT, the one a dispatch holds, without a workspace.
+
+    The gate a dispatch takes (`HarnessWorkspace.owned`) as a function of the root alone: what
+    moves a seed under `work/` must take this same turn, or another dispatch's proof would see a
+    change outside its own subtree (spec 9.1.4). The key is what the root resolves to, so two
+    spellings of one tree are one gate and two trees never meet; the same thread may take it
+    again. `wait` bounds the acquire for a caller that must not queue behind a whole dispatch.
+
+    Raises:
+        WorkspaceBusy: The turn did not come within `wait` seconds.
+    """
+    gate = _root_gate(Path(root).resolve())
+    # The gate is bound to a NAME, and that binding is load-bearing: the table indexes gates
+    # weakly, so holding only the lock would let the gate be collected and a second minted.
+    if not gate.lock.acquire(timeout=-1 if wait is None else wait):
+        raise WorkspaceBusy("the harness root is held by another turn")
+    try:
+        yield
+    finally:
+        gate.lock.release()
+
+
 def _owned_effect(method):
     @wraps(method)
     def guarded(self, *args, **kwargs):
@@ -373,15 +397,10 @@ class HarnessWorkspace:
         both run at once. A holder must keep the gate alive for as long as it
         holds its turn.
         """
-        gate = _root_gate(self._gate_key())
         # `wait` bounds the acquire for a reader that must not queue behind a
         # whole dispatch (a quota read); a dispatch's own turn is unbounded.
-        if not gate.lock.acquire(timeout=-1 if wait is None else wait):
-            raise WorkspaceBusy("the harness root is held by another turn")
-        try:
+        with root_turn(self._gate_key(), wait=wait):
             yield
-        finally:
-            gate.lock.release()
 
     # -- the one containment relation every road below goes through -------------
 

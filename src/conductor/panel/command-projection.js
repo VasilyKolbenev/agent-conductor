@@ -139,6 +139,10 @@ export const ERROR_LABELS = Object.freeze({
   queue_full: "The project queue is full. Nothing was queued; take an entry out first.",
   queue_not_ready: "This run cannot be queued now. Nothing was queued; the preparation of "
     + "its task says why.",
+  seed_refused: "The task's work folder was not seeded from the project. Nothing was "
+    + "started; the reason is named beside this message.",
+  tool_unavailable: "A tool the project needs is not available as pinned. Nothing was "
+    + "changed; pin the tool again and retry.",
   store_error: "The run store is unavailable.",
 });
 const RECORD_FIELDS = Object.freeze({

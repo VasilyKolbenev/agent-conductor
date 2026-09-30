@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from . import project_documents
 from .api_contracts import ApiRefusal, ArtifactInput
+from .api_refusals import TOOL_REASONS
 from .materials import MAX_MATERIALS, PROJECT_DOC, BaseFile, MaterialsRefused, compose_materials
 from .plan_admission import _task
 from .project_git import GitReadFailed
@@ -125,7 +126,9 @@ def _hold_git_allowed(api: CommandApi) -> None:
 def _git_read(call: Callable[[], _T]) -> _T:
     try:
         return call()
-    except GitReadFailed:
+    except GitReadFailed as failed:
+        if failed.code == "tool_unavailable" and failed.reason in TOOL_REASONS:
+            raise ApiRefusal.tool_unavailable("git", failed.reason) from None
         raise ApiRefusal.fixed("store_error") from None
 
 

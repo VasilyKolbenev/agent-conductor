@@ -66,6 +66,8 @@ ERROR_STATUS = MappingProxyType({
     "queue_changed": 409,
     "queue_full": 409,
     "queue_not_ready": 409,
+    "seed_refused": 409,
+    "tool_unavailable": 503,
 })
 
 _FIXED_MESSAGES = MappingProxyType({
@@ -173,6 +175,11 @@ _FIXED_MESSAGES = MappingProxyType({
     "queue_changed": "the project queue changed since it was read",
     "queue_full": "the project queue is full",
     "queue_not_ready": "the run cannot be put in the project queue now",
+    #: The two codes of the seed and of the tools it runs (spec 9.1.3, 9.3). Both carry a
+    #: detail on the road (`_REVIEWED_FACTS`), so these are the vocabulary-complete sentences
+    #: only: a seed that was not made, a tool the pin no longer stands behind.
+    "seed_refused": "the work folder of the task could not be seeded",
+    "tool_unavailable": "a tool this project needs cannot be used as pinned",
 })
 
 
@@ -227,6 +234,19 @@ def _safe_detail(value: object) -> bool:
 MATERIALS_REASONS = (
     "too_many_materials", "materials_too_large", "document_not_text", "doc_unknown",
     "doc_not_seeded", "materials_base_moved", "seed_missing")
+
+#: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
+#: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that
+#: stands.
+SEED_REASONS = (
+    "not_a_git_repository", "unborn_head", "project_not_repo_root", "tracks_product_dir",
+    "empty_not_allowed", "base_moved", "seed_exists", "work_not_empty", "seed_lost",
+    "seed_too_large", "too_many_skips", "case_collision", "git_failed", "git_timed_out")
+SEED_COMMIT_REASONS = ("base_moved", "seed_exists")
+#: The tools of `tool_unavailable` and the three reasons a pin no longer stands (spec 9.3).
+TOOLS = ("git", "gh")
+TOOL_REASONS = ("not_pinned", "version_changed", "missing")
+_OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
 #: Every refusal that may carry a detail, as `(code, fields, sentence)`. A
 #: closed table rather than a condition, because the closure is the point: a
@@ -293,6 +313,16 @@ _REVIEWED_FACTS = (
     ("contract_invalid", ("run_id",),
      lambda facts: (f"run '{facts['run_id']}' cannot be carried on: it needs a standing "
                     "grant and no open action")),
+    # A seed that was not made: one word of `SEED_REASONS`, and for the two reasons that have
+    # one the commit that explains it. The field sets differ, which keeps the two rows apart.
+    ("seed_refused", ("reason",),
+     lambda facts: f"the work folder was not seeded: {facts['reason']}"),
+    ("seed_refused", ("reason", "commit"),
+     lambda facts: (f"the work folder was not seeded: {facts['reason']} at "
+                    f"{facts['commit']}")),
+    # A tool the pin no longer stands behind: which tool and why, two words this build wrote.
+    ("tool_unavailable", ("tool", "reason"),
+     lambda facts: f"{facts['tool']} cannot be used: {facts['reason']}"),
 )
 
 
@@ -434,6 +464,37 @@ class ApiRefusal(Exception):
             raise ValueError("materials refusal reason must be one of the closed list") from None
         return cls(_REFUSAL_BUILD, "materials_refused",
                    f"the materials were not accepted: {reason}", {"reason": reason})
+
+    @classmethod
+    def seed_refused(cls, reason: str, commit: str | None = None) -> "ApiRefusal":
+        """Say why the work folder was not seeded: one reason of `SEED_REASONS`.
+
+        Only `base_moved` and `seed_exists` have a commit to name (the head now, and the base
+        that stands); the commit is an object id this build read from git, never the caller's
+        word, and any other reason given one is a fault of the caller of this factory.
+        """
+        if type(reason) is not str or reason not in SEED_REASONS:
+            raise ValueError("seed refusal reason must be one of the closed list") from None
+        detail = {"reason": reason}
+        message = f"the work folder was not seeded: {reason}"
+        if commit is not None:
+            if reason not in SEED_COMMIT_REASONS:
+                raise ValueError("seed refusal commit belongs to two reasons only") from None
+            if type(commit) is not str or _OBJECT_ID.match(commit) is None:
+                raise ValueError("seed refusal commit must be an object id") from None
+            detail["commit"] = commit
+            message += f" at {commit}"
+        return cls(_REFUSAL_BUILD, "seed_refused", message, detail)
+
+    @classmethod
+    def tool_unavailable(cls, tool: str, reason: str) -> "ApiRefusal":
+        """Say which tool cannot be used as pinned, and why (spec 9.3): two closed words."""
+        if type(tool) is not str or tool not in TOOLS:
+            raise ValueError("tool refusal tool must be one of the closed list") from None
+        if type(reason) is not str or reason not in TOOL_REASONS:
+            raise ValueError("tool refusal reason must be one of the closed list") from None
+        return cls(_REFUSAL_BUILD, "tool_unavailable", f"{tool} cannot be used: {reason}",
+                   {"tool": tool, "reason": reason})
 
     @classmethod
     def service_no_providers(cls) -> "ApiRefusal":
