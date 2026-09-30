@@ -578,14 +578,28 @@ async function navigateSelection(keys, address) {
   return true;
 }
 
+//: The address no longer asks for the block: a task changed and the same hash carries no panel
+//: (spec 4.5.3, step 2.1), or it names a panel other than `continue`. The block closes, and a read
+//: of the flag still to land opens nothing, so `remember` has no `panel` left to write back.
+function closeContinue() {
+  wantContinue = false;
+  if (state.flag === null || !state.flag.open) return;
+  move({flag: Object.freeze({...state.flag, open: false})});
+}
+
 //: Apply the steps of a hash the desk did not write, top to bottom. The task and its run, and
 //: the one panel the desk has a surface for, `continue`, are the only navigation it has today
-//: (the wizard and the other panels come with their modules), so no other step has a row here.
-//: The panel step follows the selection, as in spec 4.5.3. Says whether it opened a run.
+//: (the wizard and the other panels come with their modules), so no other step has a row here;
+//: a panel step that names another panel closes the block, since one panel is open at a time. A
+//: changed task resets the panel with it, before its run is read (spec 4.5.3, step 2.1). The
+//: panel step follows the selection, as in spec 4.5.3. Says whether it opened a run.
 async function navigate(change, address) {
   const keys = change.steps.map((step) => step.key);
+  if (change.reset.includes("panel")) closeContinue();
   const opened = await navigateSelection(keys, address);
-  if (keys.includes("panel") && address.panel === "continue") showContinue();
+  if (!keys.includes("panel")) return opened;
+  if (address.panel === "continue") showContinue();
+  else closeContinue();
   return opened;
 }
 

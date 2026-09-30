@@ -20,6 +20,10 @@ each as a measurement of the page:
   off, and a refused save says so in place and keeps the marks; a `project_mismatch` on the
   write ends the desk;
 - a desk nobody framed has no block and never reads the flag;
+- a hash the hub sends closes the block when it moves the desk away from it (spec 4.5.3, step 2.1):
+  a changed task with no panel in the same hash -- even while the read of the flag is still out --
+  or a panel other than `continue`, and the address the desk then keeps says no `panel`; a task
+  sent together with `panel=continue` leaves the block open;
 - no raw token in the words of the console, and nothing in any storage.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -33,7 +37,7 @@ import pytest
 from browser_tests import desk_flag_fake as fake
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     PROJECT, Embedded, Rig, _answering, _claim, _listen, embed, rig)
-from browser_tests.test_desk_hash import QUIET
+from browser_tests.test_desk_hash import ON_RUN, QUIET
 from browser_tests.test_desk_rail_scene import SETTLED
 from browser_tests.test_desk_status import RAW
 
@@ -350,6 +354,97 @@ def test_a_hash_the_hub_sends_later_opens_the_block_without_a_reload_and_writes_
     assert window.frame.evaluate("window.__marker") == marker
     assert facts["hash"] == f"#project={PROJECT}&embed=hub&panel=continue&lang=en"
     assert server.posts == [] and window.problems == []
+
+
+#: What the hub does to a desk it frames: it sets the hash of the frame and does not reload it.
+HUB_SENDS = "(hash) => location.replace(location.href.split('#')[0] + hash)"
+OPEN_BY_ADDRESS = f"#project={PROJECT}&embed=hub&panel=continue&lang=en"
+
+
+def _hub_sends(window, hash_: str) -> None:
+    """The hub sets the hash of its frame, and the desk's router has read it."""
+    before = window.frame.evaluate("window.__hashchanges")
+    window.frame.evaluate(HUB_SENDS, hash_)
+    window.frame.wait_for_function("(count) => window.__hashchanges > count", arg=before)
+    window.frame.evaluate(QUIET)
+
+
+def _open_by_address(embed, rig, server=None):
+    """A framed desk whose address asked for the block, and the block is open."""
+    window = embed(OPEN_BY_ADDRESS, _answering(_claim(hub_origin=rig.host_origin)),
+                   flag=server or fake.FlagServer())
+    window.frame.wait_for_selector("#deskPult .desk-flag[open]", timeout=6000)
+    window.frame.wait_for_function(SETTLED)
+    return window
+
+
+def test_a_task_the_hub_sends_alone_closes_the_block_and_the_address_loses_its_panel(embed, rig):
+    window = _open_by_address(embed, rig)
+    assert window.frame.evaluate(WHERE)["open"] is True
+    _hub_sends(window, f"#project={PROJECT}&embed=hub&task=task-docs&lang=en")
+    window.frame.wait_for_function(ON_RUN, arg="run-docs")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&task=task-docs&run=run-docs&lang=en"
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("panel", ["run", "cycle", "people"])
+def test_a_panel_the_hub_sends_other_than_continue_closes_the_block_and_continue_leaves_the_address(
+        embed, rig, panel):
+    server = fake.FlagServer()
+    window = _open_by_address(embed, rig, server)
+    _hub_sends(window, f"#project={PROJECT}&embed=hub&panel={panel}&lang=en")
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&lang=en"
+    assert server.posts == [] and window.problems == []
+
+
+def test_a_task_the_hub_sends_with_panel_continue_leaves_the_block_open(embed, rig):
+    window = _open_by_address(embed, rig)
+    hub = f"#project={PROJECT}&embed=hub&task=task-docs&panel=continue&lang=en"
+    _hub_sends(window, hub)
+    window.frame.wait_for_function(ON_RUN, arg="run-docs")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is True
+    assert facts["hash"] == (f"#project={PROJECT}&embed=hub&task=task-docs&run=run-docs"
+                             "&panel=continue&lang=en")
+
+
+class _HeldRead(fake.FlagServer):
+    """A flag door whose first read waits, for the test to let it answer."""
+
+    waiting = None
+
+    def handle(self, route) -> None:
+        if route.request.method == "GET" and self.waiting is None and self.reads == 0:
+            self.reads += 1
+            self.waiting = route
+            return
+        super().handle(route)
+
+    def release(self) -> None:
+        self._say(self.waiting, 200, self.record)
+
+
+def test_a_task_the_hub_sends_before_the_flag_is_read_keeps_the_block_closed_when_it_lands(
+        embed, rig):
+    held = _HeldRead()
+    window = embed(OPEN_BY_ADDRESS, _answering(_claim(hub_origin=rig.host_origin)), flag=held)
+    window.frame.wait_for_function(SETTLED)
+    assert held.waiting is not None and window.frame.evaluate(BLOCK) is None
+    _hub_sends(window, f"#project={PROJECT}&embed=hub&task=task-docs&lang=en")
+    window.frame.wait_for_function(ON_RUN, arg="run-docs")
+    held.release()
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&task=task-docs&run=run-docs&lang=en"
+    assert held.posts == [] and window.problems == []
 
 
 def test_the_address_follows_a_person_who_opens_and_closes_the_block(embed, rig):
