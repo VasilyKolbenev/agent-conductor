@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from conductor.hub import instance, state
-from tests._hub_world import FakeSpawner, World, id_of
+from conductor.hub import instance, registry, state
+from tests._hub_world import FakeSpawner, World, id_of, iso
 
 A, B, C = "a" * 32, "b" * 32, "c" * 32
 NONCE = "0123456789abcdef0123456789abcdef"
@@ -214,3 +214,68 @@ def test_manual_stop_of_the_active_starts_the_next_queued_project_and_not_itself
     (started,) = world.spawner.started("c")
     assert started["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"
     assert len(world.spawner.started("a")) == 1, "the project just stopped was started again"
+
+
+# -- a project that left the registry still counts (4.1.7, restart steps 1 and 2) ----------------
+
+
+def _leave_the_registry(world: World, name: str) -> None:
+    registry.remove_project(id_of(name), world.home)
+
+
+def _register_again(world: World, name: str) -> None:
+    registry.add_project(project_id=id_of(name), root=world.roots[name],
+                         root_identity=("abc".index(name) + 1, 1), name=name, folder=world.home,
+                         now=iso(world.clock.now))
+
+
+@pytest.mark.parametrize("how", ["activate", "restart"])
+def test_no_active_child_starts_while_an_active_process_of_an_unregistered_project_lives(
+        world, how):
+    world.running("b")                               # an active child that nobody's state names
+    _leave_the_registry(world, "b")
+    if how == "activate":
+        world.supervisor.activate(id_of("a"))
+    else:
+        _with_a_spawned_transition(world, "a")
+        world.supervisor.restart()
+    for _ in range(3):
+        world.supervisor.tick()
+    assert world.spawner.calls == [], "a second active child was started beside a live one"
+    world.gone("b")
+    world.supervisor.tick()
+    (call,) = world.spawner.calls
+    assert call["project_id"] == id_of("a") and call["mode"] == "active"
+
+
+def test_a_switch_away_from_an_active_project_that_left_the_registry_still_closes_it_first(world):
+    _activate_and_start(world, "a")
+    _leave_the_registry(world, "a")
+    world.supervisor.activate(id_of("b"))
+    assert world.spawner.children[0].closed, "the old child was not asked to drain"
+    (owed,) = world.hub_state().closing
+    assert (owed.project_id, owed.pid) == (id_of("a"), 101), "the closing obligation was dropped"
+    for _ in range(3):
+        world.supervisor.tick()
+    assert world.spawner.started("b") == [], "the new child started while the old one lives"
+    world.gone("a")                                  # dead and closed, but the hub cannot prove it
+    world.supervisor.tick()
+    assert world.spawner.started("b") == [], "a closure the hub cannot judge was taken as proven"
+    assert world.supervisor.status(id_of("b")).lifecycle.state_code == "active_not_closed"
+    _register_again(world, "a")                      # judged again, it is proven closed
+    world.supervisor.tick()
+    assert len(world.spawner.started("b")) == 1 and world.hub_state().closing == ()
+
+
+def test_a_waiting_transition_whose_project_left_the_registry_is_not_consumed(world):
+    world.supervisor.activate(id_of("a"), flag=FLAG)
+    _leave_the_registry(world, "a")
+    for _ in range(2):
+        world.supervisor.tick()                      # must not raise
+    assert world.spawner.calls == []
+    assert world.hub_state().transition.spawned_at is None, "the transition was consumed"
+    _register_again(world, "a")
+    world.supervisor.tick()
+    (call,) = world.spawner.calls
+    assert call["transition"] == world.hub_state().transition.id
+    assert call["auto_continue"] == f"{FLAG.flag_id}@{FLAG.revision}"

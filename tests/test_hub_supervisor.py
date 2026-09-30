@@ -118,6 +118,18 @@ def test_a_view_child_never_stands_in_the_way_of_the_active_one(world):
     assert [call["mode"] for call in world.spawner.calls] == ["view", "active"]
 
 
+def test_a_view_child_of_the_project_itself_is_awaited_before_its_active_child_even_unreported(
+        world):
+    world.supervisor.view(id_of("a"))                # alive, and it has written no status file
+    assert not list((world.home / "run").glob("*.json"))
+    world.supervisor.activate(id_of("a"))
+    world.supervisor.tick()
+    assert [call["mode"] for call in world.spawner.calls] == ["view"], "started beside its view"
+    world.spawner.children[0].leave(0)
+    world.supervisor.tick()
+    assert [call["mode"] for call in world.spawner.calls] == ["view", "active"]
+
+
 # -- the restart of the hub (4.1.7) -------------------------------------------------------------
 
 

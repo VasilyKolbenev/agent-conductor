@@ -9,10 +9,14 @@ to the HTTP hub, which does not exist yet, and every decision here is judged on 
 Two rules carry the invariant "at most one active child", and both are here in one place, `_busy`
 and `_can_begin`: a child is started in `active` only when no `active` process of any project is
 alive, no process of that same project is alive in any mode, and `closing` is empty, which is to
-say every project that stopped being active is proven closed. Starting is then one decision
-carried out in two writes that cannot be told apart by a crash: the state records the start
-(`spawned_at`, with the closure settled in the same write) and only then the child is started, so
-that a restart of the hub never starts the same transition twice and never hands the flag again.
+say every project that stopped being active is proven closed. "Any project" is every status file
+under `run/` and every child of the hub, whether or not the registry still lists the project: a
+project taken off the list keeps its process, and keeps its place on `closing` until it is
+proven closed (it can be only once it is listed again, for its root is what says its head).
+Starting is then one decision carried out in two writes that cannot be told apart by a crash: the
+state records the start (`spawned_at`, with the closure settled in the same write) and only then
+the child is started, so that a restart of the hub never starts the same transition twice and
+never hands the flag again.
 
 The hub does not start a dead child again. A child that died left its owner session `opened`, so
 any start of it reads `recovery_required`; the hub's loop leaves it, and only the restart of the
@@ -161,7 +165,7 @@ class Supervisor:
             if current.active_project_id != project_id:
                 self._drain(project_id)
                 return
-            entry = self._entry(project, seen) if seen.fresh else None
+            entry = self._entry(project_id, seen) if seen.fresh else None
             if entry is None:
                 raise SupervisorRefused("project_busy", "the child has not reported yet")
             self._switch(lambda s: state.stop_active(
@@ -214,8 +218,12 @@ class Supervisor:
             verdicts = self._verdicts(current, projects)
             closed = [pid for pid, verdict in verdicts.items() if verdict.closed]
             waiting = self._waiting(current)
-            if waiting is not None and self._can_begin(current, closed, waiting, projects):
-                self._begin(waiting, closed, projects)
+            # A project that left the registry while it waited is not started, and the transition
+            # is not stamped: its flag is not spent on a child that was never started.
+            registered = None if waiting is None else next(
+                (p for p in projects if p.project_id == waiting.project_id), None)
+            if registered is not None and self._can_begin(current, closed, waiting):
+                self._begin(waiting, closed, registered)
             elif closed:
                 self._store.update(lambda s: state.settle_closed(s, closed))
             self._mark_stuck(current, verdicts, waiting)
@@ -236,7 +244,10 @@ class Supervisor:
         return found
 
     def _seen(self, project: registry.Project) -> Seen:
-        pid = project.project_id
+        return self._seen_id(project.project_id)
+
+    def _seen_id(self, pid: str) -> Seen:
+        """One look at a project by its id; the project need not be in the registry."""
         own = self._children.get(pid)
         try:
             record = up_status.read_status(spawn.status_path(self._home, pid))
@@ -274,30 +285,34 @@ class Supervisor:
                             prior_alive=prior is not None and prior.poll() is None,
                             hub_code=self._codes.get(pid))
 
-    def _entry(self, project: registry.Project, seen: Seen) -> state.ClosingEntry | None:
+    def _entry(self, project_id: str, seen: Seen) -> state.ClosingEntry | None:
         """The closing entry of a project by what its status file says; `None` with no file."""
         if seen.record is None:
             return None
-        return state.ClosingEntry(project.project_id, seen.record.pid,
-                                  seen.record.process_started, project.project_id,
-                                  self._now_iso())
+        return state.ClosingEntry(project_id, seen.record.pid, seen.record.process_started,
+                                  project_id, self._now_iso())
 
     def _previous_entry(self, current: state.HubState) -> state.ClosingEntry | None:
-        """What the active project leaves to close: an entry, or `None` for nothing to close."""
+        """What the active project leaves to close: an entry, or `None` for nothing to close.
+
+        A project that left the registry still leaves its entry (its process may live): with no
+        root to read its ownership head from, the entry can never be proven closed here, which
+        blocks the next child (`project_unknown`) until the project is registered again.
+        """
         active = current.active_project_id
         if active is None:
             return None
-        try:
-            project = self._project(active)
-        except SupervisorRefused:
-            return None
-        seen = self._seen(project)
+        seen = self._seen_id(active)
         own_alive = seen.own is not None and seen.own.poll() is None
         if own_alive and not seen.fresh:
             # Nothing names this child's process yet, so nothing could be put on `closing`.
             raise SupervisorRefused("project_busy", "the active child has not reported yet")
-        entry = self._entry(project, seen)
+        entry = self._entry(active, seen)
         if entry is None or own_alive:
+            return entry
+        try:
+            project = self._project(active)
+        except SupervisorRefused:
             return entry
         if seen.liveness == "dead" and state.proven_closed(
                 entry, project.root, probe=self._probe, head_of=self._head_of).closed:
@@ -322,13 +337,28 @@ class Supervisor:
             return found
         return None
 
-    def _busy(self, project_id: str, projects: tuple[registry.Project, ...]) -> bool:
+    def _live_modes(self) -> dict[str, str]:
+        """The mode of every project that has a live process, registered or not.
+
+        The hub's own children, and every status file under `run/` (4.1.7, restart steps 1
+        and 2: all `run/*.json`, not the files of the projects the registry happens to list). A
+        file that is not the record is skipped, as `_seen` reads it: no process it names.
+        """
+        live = {pid: child.mode for pid, child in self._children.items() if child.poll() is None}
+        for path in sorted((self._home / "run").glob("*.json")):
+            try:
+                record = up_status.read_status(path)
+            except up_status.StatusInvalid:
+                continue
+            if record is not None and record.project_id not in live and self._probe(
+                    record.pid, record.process_started) != "dead":
+                live[record.project_id] = record.mode
+        return live
+
+    def _busy(self, project_id: str) -> bool:
         """Whether a process stands in the way of starting this project in `active`."""
-        for project in projects:
-            seen = self._seen(project)
-            if seen.live and (seen.mode == "active" or project.project_id == project_id):
-                return True
-        return False
+        live = self._live_modes()
+        return project_id in live or "active" in live.values()
 
     # -- carrying out ----------------------------------------------------------------------------
 
@@ -351,17 +381,16 @@ class Supervisor:
                 child.close_stdin()
 
     def _can_begin(self, current: state.HubState, closed: list[str],
-                   waiting: state.Transition, projects: tuple[registry.Project, ...]) -> bool:
+                   waiting: state.Transition) -> bool:
         still_closing = [e for e in current.closing if e.project_id not in closed]
-        return not still_closing and not self._busy(waiting.project_id, projects)
+        return not still_closing and not self._busy(waiting.project_id)
 
     def _begin(self, waiting: state.Transition, closed: list[str],
-               projects: tuple[registry.Project, ...]) -> None:
+               project: registry.Project) -> None:
         """Settle the closure and stamp the spawn in one write, then start the child."""
         self._store.update(lambda s: state.settle_closed(
             s, closed, spawned_at=self._now_iso(), transition_id=waiting.id))
         flag = waiting.flag
-        project = next(p for p in projects if p.project_id == waiting.project_id)
         self._launch(project, mode="active", transition=waiting.id,
                      auto_continue=None if flag is None else f"{flag.flag_id}@{flag.revision}")
 
@@ -378,8 +407,7 @@ class Supervisor:
             action = words.restart_action(seen.record, seen.liveness)
             if action == "offer_recover":
                 self._awaiting.discard(project_id)
-            elif action == "start" and not current.closing and not self._busy(
-                    project_id, projects):
+            elif action == "start" and not current.closing and not self._busy(project_id):
                 self._awaiting.discard(project_id)
                 self._launch(project, mode="active")
 
