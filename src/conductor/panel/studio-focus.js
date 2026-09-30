@@ -59,7 +59,9 @@ export function restoreFocus(shell, held) {
   const typing = held.value !== null && typeof successor.setSelectionRange === "function";
   // The same field of another thing is not handed the caret: the typing would go on into it.
   if (typing && ownerOf(successor) !== held.owner) return;
-  successor.focus();
+  // A redraw did not move the control, so nothing is scrolled to show it: a reader who scrolled a
+  // list away from the control they last pressed stays where they scrolled to.
+  successor.focus({preventScroll: true});
   if (!typing) return;
   // Controls that commit every input own their text in state. Restoring a
   // spent draft's old DOM value would resurrect text the state just cleared.

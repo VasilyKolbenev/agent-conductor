@@ -21,7 +21,7 @@ import re
 import pytest
 
 from browser_tests.desk_progress_bench import RAW_TOKENS, desk_in, progress_url  # noqa: F401
-from tests.test_desk_feed_model import READS, _instant
+from tests.test_desk_feed_model import READS, REJECTED, _instant
 
 #: One evaluation: the feed as the page draws it.
 FEED_FACTS = """() => {
@@ -257,3 +257,183 @@ def test_a_row_the_plan_cannot_place_says_so_in_words_and_draws_no_blank(
     window = desk_in(language)
     assert window.page.evaluate(UNPLACED, language) == expected
     assert window.problems == []
+
+
+# -- documents in their rows, and the place of the list --------------------------------------
+
+#: One evaluation: the documents of the feed, the list's place and the newest row.
+PLACE_FACTS = """() => {
+  const log = document.querySelector("#deskFeed .desk-feed__log");
+  const rows = [...log.querySelectorAll(".desk-feed__row")];
+  const box = log.getBoundingClientRect(), last = rows.at(-1).getBoundingClientRect();
+  return {
+    top: log.scrollTop, height: log.scrollHeight, client: log.clientHeight,
+    atBottom: log.scrollHeight - log.scrollTop - log.clientHeight <= 4,
+    current: rows.map((row) => row.getAttribute("aria-current")),
+    lastInView: last.bottom <= box.bottom + 1 && last.top >= box.top - 1,
+    open: [...log.querySelectorAll("details")].map((node) => node.open),
+    summaries: [...log.querySelectorAll("summary")].map((node) => node.textContent),
+    texts: [...log.querySelectorAll("details[open] .desk-feed__text")].map((node) => ({
+      text: node.textContent, markup: node.children.length, tag: node.tagName})),
+    focusable: log.getAttribute("tabindex"), run: log.dataset.run};
+}"""
+#: The documents of the seeded run: the person's brief and the action's plan.
+BRIEF_TEXT = "Ship the landing page by Friday.\nKeep the hero copy short."
+PLAN_TEXT = "# Plan\n\n1. Draft the hero copy\n2. Put <b>bold</b> in the footer\n"
+
+
+@pytest.mark.parametrize("language,label", [("en", "Show the text"), ("ru", "Показать текст")])
+def test_a_document_opens_in_its_row_and_its_text_is_text_and_never_markup(
+        desk_in, language, label):
+    window = desk_in(language, task="task-closed")
+    before = window.page.evaluate(PLACE_FACTS)
+    assert before["summaries"] == [label, label] and before["open"] == [False, False]
+    window.page.locator("#deskFeed summary").nth(1).click()
+    after = window.page.evaluate(PLACE_FACTS)
+    assert after["open"] == [False, True]
+    assert after["texts"] == [{"text": PLAN_TEXT, "markup": 0, "tag": "PRE"}]
+    window.page.locator("#deskFeed summary").nth(0).click()
+    both = window.page.evaluate(PLACE_FACTS)
+    assert [one["text"] for one in both["texts"]] == [BRIEF_TEXT, PLAN_TEXT]
+    assert window.problems == []
+
+
+def test_the_newest_row_is_the_current_one_stands_in_view_and_the_list_can_be_reached_by_key(
+        desk_in):
+    facts = desk_in("en", task="task-closed").page.evaluate(PLACE_FACTS)
+    assert facts["current"] == [None] * 11 + ["true"]
+    assert facts["lastInView"] and facts["atBottom"]
+    assert facts["height"] > facts["client"], "the list scrolls"
+    assert facts["focusable"] == "0"
+
+
+#: A redraw of the same run: the theme is set by the address, which draws every region again.
+REDRAW = """(theme) => {
+  location.hash = `#lang=${document.documentElement.lang}&task=task-closed&theme=${theme}`;
+}"""
+DRAWN = """(theme) => document.documentElement.getAttribute("data-theme") === theme"""
+
+
+def _redraw(window, theme: str = "dark") -> None:
+    window.page.evaluate(REDRAW, theme)
+    window.page.wait_for_function(DRAWN, arg=theme)
+
+
+def test_an_open_document_and_the_place_of_the_list_survive_a_redraw_of_the_same_run(desk_in):
+    window = desk_in("en", task="task-closed")
+    window.page.locator("#deskFeed summary").nth(1).click()
+    window.page.evaluate("""() => { const log = document.querySelector("#deskFeed .desk-feed__log");
+      log.scrollTop = 40; }""")
+    before = window.page.evaluate(PLACE_FACTS)
+    _redraw(window)
+    after = window.page.evaluate(PLACE_FACTS)
+    assert (after["open"], after["top"], after["run"]) == (
+        before["open"], before["top"], "run-closed") == ([False, True], 40, "run-closed")
+    assert window.problems == []
+
+
+def test_a_language_set_by_the_address_keeps_the_open_document_and_says_the_rest_anew(desk_in):
+    window = desk_in("en", task="task-closed")
+    window.page.locator("#deskFeed summary").nth(1).click()
+    window.page.evaluate("() => { location.hash = '#lang=ru&task=task-closed'; }")
+    window.page.wait_for_function("() => document.documentElement.lang === 'ru'")
+    window.page.wait_for_function(
+        "() => document.querySelector('#deskFeed .desk-feed__title').textContent.includes('Ход')")
+    after = window.page.evaluate(PLACE_FACTS)
+    assert after["open"] == [False, True] and after["summaries"] == ["Показать текст"] * 2
+    assert window.problems == []
+
+
+def test_a_reader_who_scrolled_up_is_not_pulled_down_and_one_at_the_bottom_stays_there(desk_in):
+    window = desk_in("en", task="task-closed")
+    assert window.page.evaluate(PLACE_FACTS)["atBottom"]
+    _redraw(window, "dark")
+    assert window.page.evaluate(PLACE_FACTS)["atBottom"]
+    window.page.evaluate("""() => { document.querySelector("#deskFeed .desk-feed__log")
+      .scrollTop = 0; }""")
+    _redraw(window, "light")
+    stayed = window.page.evaluate(PLACE_FACTS)
+    assert stayed["top"] == 0 and not stayed["atBottom"]
+
+
+def test_another_run_starts_at_the_bottom_even_when_the_last_one_was_left_at_the_top(desk_in):
+    window = desk_in("en", task="task-closed")
+    window.page.evaluate("""() => { document.querySelector("#deskFeed .desk-feed__log")
+      .scrollTop = 0; }""")
+    window.page.locator('#deskRail [data-task-id="task-waiting"]').click()
+    window.page.wait_for_function(
+        "() => document.querySelector('#deskFeed .desk-feed__log')?.dataset.run === 'run-waiting'")
+    facts = window.page.evaluate(PLACE_FACTS)
+    assert facts["run"] == "run-waiting" and facts["atBottom"] and facts["lastInView"]
+
+
+#: The module in the page, handed a real read: the rows of one kind, and what opens in them.
+ROWS_OF = """async ([language, read, kind, edit]) => {
+  const {mountFeed} = await import("/panel/desk-feed.js");
+  if (edit === "large") {
+    read.records.find((row) => row.record_type === "artifact").record.content = "x".repeat(49153);
+  }
+  const mount = document.createElement("section");
+  document.body.append(mount);
+  mountFeed(mount, {locale: language, foreign: false, run: {detail: read}});
+  const part = (row, selector) => row.querySelector(selector)?.textContent ?? null;
+  return [...mount.querySelectorAll(".desk-feed__row")]
+    .filter((row) => row.dataset.kind === kind).map((row) => ({
+      who: part(row, ".desk-feed__who"), what: part(row, ".desk-feed__what"),
+      summary: part(row, "summary"), note: part(row, ".desk-feed__note"),
+      findings: [...row.querySelectorAll(".desk-feed__finding")].map((one) => ({
+        kind: part(one, "strong"), summary: part(one, "p"),
+        where: part(one, ".desk-feed__where")}))}));
+}"""
+FINDINGS = {
+    "en": {"who": "codex-cli · Verifies", "what": "Findings of the check of step “do”",
+           "summary": "Show the text", "kind": "Defect"},
+    "ru": {"who": "codex-cli · Проверяет", "what": "Замечания проверки шага «do»",
+           "summary": "Показать текст", "kind": "Дефект"}}
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_the_typed_findings_of_a_checker_are_a_row_with_the_kind_the_words_and_the_place(
+        desk_in, language):
+    window = desk_in(language)
+    (found,) = window.page.evaluate(ROWS_OF, [language, REJECTED, "findings", None])
+    said = FINDINGS[language]
+    assert (found["who"], found["what"], found["summary"]) == (
+        said["who"], said["what"], said["summary"])
+    assert found["findings"] == [{"kind": said["kind"], "where": "answer.py:2",
+                                  "summary": "answer() must return 1 instead of 2"}]
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("language,words", [
+    ("en", "This document is too large to show here."),
+    ("ru", "Документ слишком велик, чтобы показать его здесь.")])
+def test_a_document_past_the_limit_says_so_in_its_row_and_offers_no_text(
+        desk_in, language, words):
+    window = desk_in(language)
+    first = window.page.evaluate(ROWS_OF, [language, READS["run-closed"], "document", "large"])[0]
+    assert (first["note"], first["summary"]) == (words, None)
+    assert window.problems == []
+
+
+#: The module in the page: one run drawn, the list scrolled to its top, another run drawn on the
+#: same mount -- as when the address names another run of the task on the scene.
+ANOTHER_RUN = """async () => {
+  const {mountFeed} = await import("/panel/desk-feed.js");
+  const read = async (id) => (await fetch(`/command/runs/${id}`)).json();
+  const mount = document.createElement("section");
+  document.body.append(mount);
+  const view = async (id) => ({locale: "en", foreign: false, run: {detail: await read(id)}});
+  mountFeed(mount, await view("run-closed"));
+  mount.querySelector(".desk-feed__log").scrollTop = 0;
+  mountFeed(mount, await view("run-waiting"));
+  const log = mount.querySelector(".desk-feed__log");
+  return {run: log.dataset.run, bottom: log.scrollHeight - log.scrollTop - log.clientHeight};
+}"""
+
+
+def test_a_list_that_held_another_run_draws_the_new_one_at_its_bottom(desk_in):
+    window = desk_in("en")
+    window.page.set_viewport_size({"width": 1280, "height": 900})
+    facts = window.page.evaluate(ANOTHER_RUN)
+    assert facts["run"] == "run-waiting" and facts["bottom"] <= 4
