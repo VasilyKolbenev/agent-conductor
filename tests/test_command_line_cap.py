@@ -34,6 +34,8 @@ CAPPED = (
     "tests/git_repo_helpers.py",
     "tests/queue_fixtures.py",
     "tests/test_command_line_cap.py",
+    "tests/flow_driver_bench.py",
+    "tests/test_command_flow_driver.py",
     "tests/test_command_flow_fixtures.py",
     "tests/test_command_flow_import_corners.py",
     "tests/test_command_flow_routes.py",
