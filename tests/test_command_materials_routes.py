@@ -6,7 +6,7 @@ repository, judges a link against what the seed really copied and a copy against
 the words of `materials_refused`, and publishes the result as `artifact-materials` through the
 door the artifacts route uses, so a repeat finds the document standing. Nothing here goes through
 the router: the handler `http_writes.write_materials` is the function the route calls, and the
-door tests of the route are in `test_command_project_routes.py`.
+door tests of the route are in `test_command_project_doors.py`.
 
 A spy reader that fails when it is asked anything stands for "no git was run", which is the
 claim of every list that needs none and of every request in `view`.

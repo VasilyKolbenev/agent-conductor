@@ -4,7 +4,7 @@
 wire shape, the refusals in the words of the vocabulary, a server that has no git reader, and the
 rule of `view` that no git is asked. As for the materials, the spy reader stands for "no git was
 run". The door tests of the two routes (paths, verbs, the id grammar) are in
-`test_command_project_routes.py`.
+`test_command_project_doors.py`.
 """
 from __future__ import annotations
 

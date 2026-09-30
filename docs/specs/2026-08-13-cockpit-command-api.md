@@ -215,7 +215,10 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/runs/<run_id>/automation/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/authorize", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true},
-  {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false}
+  {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false}
 ]
 ```
 3. Every **mutating** request (any method other than GET/HEAD on a `/command/*`
@@ -1177,6 +1180,25 @@ twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
 checks and before its route is handled, and a request without the header is
 answered as before. The shapes are in the desk redesign specification, section
 4.5.1.
+
+Three more routes serve the materials of a run and the documents of the project.
+`POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
+composes the items into the one document `artifact-materials` and appends it
+through the same function as `POST /command/runs/<run_id>/artifacts`, so a new
+document answers 201, the exact same list again answers 200 and the standing
+document, and a run that has ended refuses `run_terminal` unless the request is
+such a retry. `GET /command/project/documents` answers `{"base", "documents",
+"truncated"}` for the tracked text documents of HEAD (at most 500, 49 152 bytes
+each), and `GET /command/project/documents/<doc_id>` answers `{"doc_id", "path",
+"git_oid", "content"}` for one; a document id is `d-` and 32 lowercase hex, and
+any other tail is a path no row names. The materials route refuses
+`materials_refused` (409) with one `detail.reason` of the closed list
+`too_many_materials`, `materials_too_large`, `document_not_text`, `doc_unknown`,
+`doc_not_seeded`, `materials_base_moved` and `seed_missing`; a server that was
+started to view the project asks git nothing, so both documents routes, a copy
+of a project document and a link judged against a seed that has a base refuse
+`project_not_active` (409) there. The shapes are in the desk redesign
+specification, sections 6.2.2, 6.2.3 and 9.1.6.
 
 ### 4.6 `POST /command/runs/<run_id>/graph/from-template` — materialize one plan
 

@@ -94,6 +94,8 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
         return _write_graph(api, route.run_id, body)
     if route.name == "artifacts":
         return _write_artifact(api, route.run_id, body)
+    if route.name == "materials":
+        return write_materials(api, route.run_id, body)
     return _decide(api, route.run_id, body)
 
 
