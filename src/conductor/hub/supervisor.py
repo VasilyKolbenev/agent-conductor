@@ -246,7 +246,8 @@ class Supervisor:
             seen = self._seen(project)
             current = self._store.load()
             record = seen.record if seen.fresh else None
-            reported = record if record is not None and seen.live else None
+            reported = record if record is not None and seen.live and record.state in (
+                "starting", *_WORKING) else None
             return ProjectStatus(
                 self._lifecycle(project, seen), words.working_of(
                     project_id, active=current.active_project_id, queue=current.queue,

@@ -376,6 +376,11 @@ def test_a_project_reports_its_port_a_stable_instance_per_process_and_when_it_st
     world.put_status("a", "serving", started="windows:2")         # the same pid, a new process
     restarted = world.supervisor.status(id_of("a"))
     assert restarted.instance not in (None, first.instance), "a restart must be a new instance"
+    world.put_status("a", "stopped")                 # said `stopped`, the process not yet gone
+    lingering = world.supervisor.status(id_of("a"))
+    assert (lingering.port, lingering.instance) == (None, None), \
+        "a child that says it stopped is not offered as a desk to open"
+    assert lingering.stopped_at == world.clock.now
     world.gone("a")
     stopped = world.supervisor.status(id_of("a"))
     assert (stopped.port, stopped.instance) == (None, None)
