@@ -89,4 +89,6 @@ export const AUTOMATION_COPY = Object.freeze({
   "automation.admission_refused": ["The next action did not pass execution checks.", "Следующее действие не прошло проверки допуска."],
   "automation.plan_stalled": ["The plan has no eligible next step.", "В плане нет допустимого следующего шага."],
   "automation.plan_waiting": ["The plan is waiting for a decision, document or other prerequisite.", "План ждёт решения, документа или другого условия."],
+  "automation.project_not_active": ["The project is open for viewing: a run starts only in the active project.", "Проект открыт для просмотра: запуск возможен только в активном проекте."],
+  "automation.seed_blocked": ["The run's working folder could not be seeded; see the seed note.", "Рабочую папку запуска не удалось засеять; смотрите запись о засеве."],
 });
