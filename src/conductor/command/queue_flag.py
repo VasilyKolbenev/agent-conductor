@@ -99,7 +99,9 @@ def _carry_out(svc: Any, bound: Any, recovered: Any, now: str) -> bool:
     """Receipt, control, activation, frame; False when the run was struck instead.
 
     A retry after a fault never writes a second control: once the control is in the journal the
-    last control of the grant is no longer the one the flag recorded, so the run is struck.
+    last control of the grant is no longer the one the flag recorded, so the run is struck. So is
+    a run whose receipt the store refuses to create (a path over the Windows budget, judged before
+    any effect): it can never be written, and left first in the list it would stop the queue.
     """
     flag, policy = svc.flag_record, svc.policy
     control_id = control_id_of(flag.flag_id, bound.run_id)
@@ -115,7 +117,11 @@ def _carry_out(svc: Any, bound: Any, recovered: Any, now: str) -> bool:
     receipt = Receipt(bound.run_id, JOURNAL_KIND["resume"], control_id, flag.actor, flag.set_at,
                       bound.authorization_digest, record_digest(control), now, "auto_continue",
                       flag.flag_id, svc.transition_id)
-    svc.store.put_receipt(receipt)
+    try:
+        svc.store.put_receipt(receipt)
+    except ContractError:
+        svc.flag_runs.pop(0)
+        return False
     policy.store.append(control)
     policy.driver.activate(bound.run_id, bound.authorization_id)
     svc.flag_runs.pop(0)

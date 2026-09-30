@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from pathlib import PureWindowsPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,10 +20,11 @@ from conductor.command.api_contracts import refusal_from_exception
 from conductor.command.path_admission import WindowsNameError, WindowsPathError
 from conductor.command.queue_bodies import parse_write
 from conductor.command.queue_service import QueueService
-from conductor.command.queue_store import JOURNAL_KIND, QueueStore
+from conductor.command.queue_store import JOURNAL_KIND, Dropped, QueueStore
 from conductor.command.task_store import TaskStore
 from tests.queue_fixtures import Holder, long_root, project, refuse_receipt_budget, start_body
-from tests.test_queue_pump import paused_grant, put, put_resume, q  # noqa: F401  (the fixture)
+from tests.test_queue_pump import (  # noqa: F401  (q is the fixture)
+    LATER, controls, grants, paused_grant, put, put_resume, q)
 
 KIND = JOURNAL_KIND["start"]
 
@@ -35,8 +37,8 @@ def test_the_store_judges_the_name_and_then_the_budget_of_a_receipt_before_any_e
     store.admit_receipt("run", KIND, "g" * 20)
     with pytest.raises(WindowsPathError):
         store.admit_receipt("run", KIND, "g" * 100)
-    with pytest.raises(WindowsNameError):
-        store.admit_receipt("run", KIND, "nul")
+    with pytest.raises(WindowsNameError):                  # a device name, and over the budget too
+        store.admit_receipt("run", KIND, "nul." + "g" * 100)
     assert list(tmp_path.iterdir()) == []
 
 
@@ -77,3 +79,59 @@ def test_at_a_root_where_the_run_fits_the_door_refuses_the_grant_whose_receipt_d
     assert not service.store.queue_dir.exists()
     fits = start_body(f, "run-b", "grant-b")
     assert service.enqueue(parse_write({"run_id": "run-b", "start": fits}, f.policy.clock()))
+
+
+# --- an entry that is already on file: the pump withdraws it and goes on --------------------------
+
+
+def test_a_start_whose_receipt_cannot_be_written_is_dropped_and_the_entry_behind_it_starts(
+        q, monkeypatch):
+    put(q, "run"), put(q, "run-b")                         # the door had not yet judged the path
+    refuse_receipt_budget(monkeypatch, "run")
+    q.f.ticks[0] = LATER
+    assert q.service.start_next() is True
+    assert grants(q, "run") == [] and [row.authorization_id for row in grants(q, "run-b")] == [
+        "grant-1"]
+    assert q.driver.active == ("run-b", "grant-1")
+    assert q.service.store.read_receipt("run", KIND, "grant-1") is None
+    entry, = q.service.store.read().entries
+    assert entry.run_id == "run" and entry.preauthorization is None
+    assert entry.dropped == Dropped("preview_refused", LATER)
+    row, = q.service.read()["entries"]
+    assert (row["state"], row["reason_code"]) == ("confirmation_required", "preview_refused")
+    q.driver.active = None
+    before = q.service.store.path.read_bytes()
+    assert q.service.start_next() is False                 # nothing is tried again, nothing moves
+    assert q.service.store.path.read_bytes() == before
+
+
+def test_a_resume_whose_receipt_cannot_be_written_is_dropped_and_the_entry_behind_it_starts(
+        q, monkeypatch):
+    put_resume(q, paused_grant(q, "run"))
+    put(q, "run-b")
+    refuse_receipt_budget(monkeypatch, "run")
+    q.f.ticks[0] = LATER
+    assert q.service.start_next() is True
+    assert [row.control_id for row in controls(q)] == ["pause"]      # no resume was written
+    assert q.driver.active == ("run-b", "grant-1")
+    entry, = q.service.store.read().entries
+    assert entry.run_id == "run" and entry.dropped == Dropped("preview_refused", LATER)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Windows path budget applies to Windows paths")
+def test_at_a_real_root_an_entry_the_door_never_judged_no_longer_holds_the_queue(
+        tmp_path, monkeypatch):
+    grant_id = "g" * 100
+    probe = QueueStore(tmp_path).receipt_path("run", KIND, grant_id)
+    root = long_root(tmp_path, 262 - 14 - (len(str(probe)) - len(str(tmp_path))))
+    f = project(root, "run-b")
+    f.policy.driver = Holder()
+    real = SimpleNamespace(f=f, service=QueueService(f.policy, TaskStore(root), mode="active"))
+    f.policy.queue = real.service
+    with monkeypatch.context() as before_the_door:         # how such an entry came in
+        before_the_door.setattr(QueueStore, "admit_receipt", lambda self, *key: None)
+        put(real, "run", grant_id), put(real, "run-b", "grant-b")
+    assert real.service.start_next() is True
+    assert f.policy.driver.active == ("run-b", "grant-b")
+    entry, = real.service.store.read().entries
+    assert (entry.run_id, entry.dropped.reason_code) == ("run", "preview_refused")

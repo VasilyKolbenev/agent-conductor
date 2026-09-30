@@ -11,6 +11,7 @@ nothing: the list lives in this process alone.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timedelta
 from itertools import count
@@ -24,9 +25,11 @@ from conductor.command.auto_continue import AutoContinueStore
 from conductor.command.queue_bodies import parse_write
 from conductor.command.queue_reading import record_digest
 from conductor.command.queue_service import QueueService
+from conductor.command.queue_store import QueueStore
 from conductor.command.store_errors import StoreError
 from conductor.command.task_store import TaskStore
-from tests.queue_fixtures import Holder, NOW, project, start_body
+from tests.queue_fixtures import (
+    Holder, NOW, long_root, project, refuse_receipt_budget, start_body)
 from tests.test_policy_runtime import ARGS
 from tests.test_queue_pump import grants, paused_grant, queued
 
@@ -37,17 +40,21 @@ ACTOR = "Вы: Анна"
 LATER = "2026-08-11T12:01:00Z"
 
 
-@pytest.fixture
-def q(tmp_path):
-    f = project(tmp_path, "run-b", "run-c")
+def make_q(root, *more):
+    f = project(root, "run-b", "run-c", *more)
     f.policy.driver = Holder()
     frames = []
     f.policy.notify = frames.append
-    q = SimpleNamespace(f=f, frames=frames, root=tmp_path, flags=AutoContinueStore(tmp_path),
+    q = SimpleNamespace(f=f, frames=frames, root=root, flags=AutoContinueStore(root),
                         driver=f.policy.driver, service=None)
     q.service = child(q)
     f.policy.queue = q.service
     return q
+
+
+@pytest.fixture
+def q(tmp_path):
+    return make_q(tmp_path)
 
 
 def set_flag(q, runs=(), *, queue=False, actor=ACTOR, enabled=True):
@@ -335,3 +342,34 @@ def test_a_flag_resume_control_is_named_flag_and_thirty_two_hex_by_the_flag_and_
     assert all(re.fullmatch(r"flag-[0-9a-f]{32}", name) for name in names) and names[0] != names[1]
     assert names == [queue_flag.control_id_of(record["flag_id"], run) for run in ("run", "run-b")]
     assert queue_flag.control_id_of("another-flag", "run") != names[0]
+
+
+def test_a_listed_run_whose_receipt_cannot_be_written_is_struck_and_what_is_behind_it_goes_on(
+        q, monkeypatch):
+    for run_id in ("run", "run-c"):
+        paused_grant(q, run_id, f"grant-{run_id}")
+        q.driver.active = None
+    enqueue_in_view(q, ("run-b", "queued-b"))
+    service = activate(q, set_flag(q, ["run", "run-c"], queue=True))
+    refuse_receipt_budget(monkeypatch, "run")
+    assert service.start_next() is True                    # `run` is struck, `run-c` is resumed
+    assert service.flag_runs == [] and resumed(q, "run") == []
+    assert q.driver.active[0] == "run-c" and len(resumed(q, "run-c")) == 1
+    q.driver.active = None
+    assert service.start_next() is True                    # and the queue behind the flag starts
+    assert [row.authorization_id for row in grants(q, "run-b")] == ["queued-b"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the Windows path budget applies to Windows paths")
+def test_at_a_real_root_a_listed_run_whose_flag_receipt_is_over_the_budget_is_struck(tmp_path):
+    long_run = "run-" + "x" * 40
+    kind = "run_authorization_control"
+    probe = QueueStore(tmp_path).receipt_path(long_run, kind, queue_flag.control_id_of("f", "f"))
+    q = make_q(long_root(tmp_path, 262 - 14 - (len(str(probe)) - len(str(tmp_path)))), long_run)
+    for run_id in (long_run, "run"):
+        paused_grant(q, run_id, f"grant-{run_id}")
+        q.driver.active = None
+    service = activate(q, set_flag(q, [long_run, "run"]))
+    assert service.start_next() is True                    # the long id is struck, `run` resumes
+    assert service.flag_runs == [] and resumed(q, long_run) == []
+    assert q.driver.active[0] == "run" and len(resumed(q, "run")) == 1

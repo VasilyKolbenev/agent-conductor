@@ -146,9 +146,17 @@ def _resume_refusal(pre: Any, run: Any, now: str) -> str | None:
 
 
 def _carry_out(svc: Any, item: Facts, receipt: Receipt, record: Any, grant_id: str) -> str:
-    """Receipt, journal record, activation, removal, frame: in that order, each one recoverable."""
+    """Receipt, journal record, activation, removal, frame: in that order, each one recoverable.
+
+    A receipt the store refuses to create (a path over the Windows budget: the store judges it
+    before any effect) can never be written, so its entry is dropped like any permission the pump
+    cannot honour; left in place it would be tried, and would fail, at the head of every pass.
+    """
     run_id = item.entry.run_id
-    svc.store.put_receipt(receipt)
+    try:
+        svc.store.put_receipt(receipt)
+    except ContractError:
+        return _drop(svc, item, "preview_refused", receipt.started_at)
     svc.policy.store.append(record)
     svc.policy.driver.activate(run_id, grant_id)
     _remove(svc, item.entry)
