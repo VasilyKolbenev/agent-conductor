@@ -17,6 +17,7 @@ A fact and its sentence are read in ONE evaluation.
 """
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -370,3 +371,92 @@ def test_the_page_does_not_scroll_sideways_with_the_summary_shut_or_open_at_any_
             page.set_viewport_size({"width": width, "height": 900})
             assert page.evaluate(OVERFLOW) <= 0, (opened, width)
     assert window.problems == []
+
+
+# -- a check that did not pass, and the guard of spec 5.6.8 over the four regions -----------------
+
+NOTE = {"en": "Process exit 0 proves the process finished, not that the work was verified.",
+        "ru": "Код завершения 0 подтверждает окончание процесса, "
+              "но не независимую проверку результата."}
+UNVERIFIED = {"en": "Verification failed", "ru": "Проверка не пройдена"}
+
+
+def _made_to_say_unverified(route: Route) -> None:
+    """The real list, with the waiting run's row saying it finished with a check that failed."""
+    body = route.fetch().json()
+    for row in body["runs"]:
+        if row["run_id"] == "run-waiting":
+            row.update(human_state="not_required", last_outcome="verification_failed")
+    route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_a_check_that_did_not_pass_carries_its_sentence_in_the_same_row_of_the_panel(
+        chromium, progress_url, language):
+    context = chromium.new_context(viewport={"width": 1280, "height": 900}, timezone_id=ZONE)
+    page = context.new_page()
+    page.route("**/command/runs", _made_to_say_unverified)
+    try:
+        page.goto(f"{progress_url}#lang={language}", wait_until="load")
+        page.wait_for_function(WAIT_BAR)
+        page.locator("#deskSummary .desk-sum__bar").click()
+        row = page.evaluate("""() => {
+          const item = [...document.querySelectorAll("#deskSummary .desk-sum__task")]
+            .find((one) => one.querySelector(".desk-sum__task-title").textContent
+              === "Import the export");
+          return {what: item.querySelector(".desk-sum__task-what").textContent,
+            note: item.querySelector(".desk-sum__task-note")?.textContent ?? null};
+        }""")
+    finally:
+        context.close()
+    assert row["note"] == NOTE[language]
+    assert row["what"].startswith(UNVERIFIED[language])
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+@pytest.mark.parametrize("task", [None, "task-closed", "task-waiting"])
+def test_no_region_of_the_desk_carries_a_machine_word_with_every_panel_and_document_open(
+        desk_in, language, task):
+    """Spec 5.6.8, guard 3: the rail, the feed, the summary and the console."""
+    window = _open(desk_in, language, task)
+    window.page.locator("#deskSummary .desk-sum__bar").click()
+    window.page.evaluate("""() => document
+      .querySelectorAll("#deskSummary details, #deskFeed details")
+      .forEach((one) => { one.open = true; })""")
+    said = window.page.evaluate("""() => Object.fromEntries(
+      ["deskRail", "deskFeed", "deskSummary", "deskPult"].map(
+        (id) => [id, document.getElementById(id).innerText]))""")
+    assert all(text for region, text in said.items() if region != "deskFeed" or task), said
+    for region, text in said.items():
+        assert not re.search(RAW_TOKENS, text, re.I), (region, text)
+    assert window.problems == []
+
+
+#: The module in the page, handed a finished task whose run was done by two instances of one
+#: harness and checked by a third: the panel names a harness once.
+SAME_HARNESS = """async (language) => {
+  const {mountSummary} = await import("/panel/desk-summary.js");
+  const mount = document.createElement("section");
+  document.body.append(mount);
+  const task = {task_id: "task-one", title: "One", unreadable: false, schema_version: 1,
+    created_at: "2026-08-19T08:00:00Z", work_scope: "task-one"};
+  const row = {run_id: "run-one", unreadable: false, task_id: "task-one",
+    created_at: "2026-08-19T08:00:00Z", human_state: "not_required", open_actions: 0,
+    last_outcome: "succeeded"};
+  const digest = {run_id: "run-one", closed: true, pass: {pass: 2, bound: 3},
+    did: [{instance: "a", harness: "claude-code"}, {instance: "b", harness: "claude-code"}],
+    verified: [{instance: "c", harness: "codex-cli"}], accepted: ["owner", "owner-two"]};
+  mountSummary(mount, {locale: language, foreign: false, listed: true, taskId: null,
+    tasks: {phase: "ready", list: [task]}, runs: {phase: "ready", list: [row]},
+    automation: new Map(), closing: new Map([["task-one", digest]]), run: {detail: null}});
+  return mount.querySelector(".desk-sum__task-what").textContent;
+}"""
+
+
+@pytest.mark.parametrize("language,said", [
+    ("en", "Succeeded · Pass 2 of 3 · Did: claude-code · Checked: codex-cli · "
+           "Accepted: owner, owner-two"),
+    ("ru", "Успешно · Проход 2 из 3 · Сделал: claude-code · Проверил: codex-cli · "
+           "Принял: owner, owner-two")])
+def test_a_harness_is_named_once_however_many_instances_of_it_took_part(desk_in, language, said):
+    assert desk_in(language).page.evaluate(SAME_HARNESS, language) == said
