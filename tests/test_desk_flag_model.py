@@ -124,13 +124,24 @@ def _run_row(run_id: str, task_id: str, created: str) -> dict:
     return {"run_id": run_id, "task_id": task_id, "created_at": created}
 
 
-def _answer(run_id: str, state: str, reason: str) -> dict:
-    return {"run_id": run_id, "state": state, "reason_code": reason}
+def _answer(run_id: str, state: str, reason: str, **more: Any) -> dict:
+    return {"run_id": run_id, "state": state, "reason_code": reason, **more}
 
 
 #: (task id, the run of it, created, the automation answer or None): one task per case of the
-#: table of spec 5.8 -- and the runs a flag can never continue.
+#: table of spec 5.8 -- and the runs a flag can never continue. The read judges a pause before it
+#: looks at the expiry, so a paused grant that has expired reads `paused`; the module reads no
+#: clock, so it is told apart only by the fact `expired` the read is asked to give beside the state.
 WORLD = (
+    ("t-paused-expired", "r-paused-expired", "2026-09-30T04:00:00Z",
+     _answer("r-paused-expired", "paused", "paused", expires_at="2026-09-30T03:00:00Z",
+             expired=True)),
+    ("t-revoked-expired", "r-revoked-expired", "2026-09-30T05:07:00Z",
+     _answer("r-revoked-expired", "revoked", "revoked", expires_at="2026-09-30T03:00:00Z",
+             expired=True)),
+    ("t-paused-fresh", "r-paused-fresh", "2026-09-30T10:00:00Z",
+     _answer("r-paused-fresh", "paused", "paused", expires_at="2026-10-01T03:00:00Z",
+             expired=False)),
     ("t-paused", "r-paused", "2026-09-30T08:00:00Z", _answer("r-paused", "paused", "paused")),
     ("t-explicit", "r-explicit", "2026-09-30T09:00:00Z",
      _answer("r-explicit", "restart_required", "explicit_resume_required")),
@@ -168,11 +179,25 @@ def test_only_a_paused_or_waiting_for_a_resume_run_is_offered_oldest_first_and_e
     got = _resumable()
     assert got["frozen"] is True
     assert [(row["run_id"], row["expired"]) for row in got["rows"]] == [
-        ("r-expired", True), ("r-inactive", False), ("r-paused", False), ("r-explicit", False)]
-    first = got["rows"][1]
+        ("r-paused-expired", True), ("r-expired", True), ("r-inactive", False),
+        ("r-paused", False), ("r-explicit", False), ("r-paused-fresh", False)]
+    first = next(row for row in got["rows"] if row["run_id"] == "r-inactive")
     assert first == {"run_id": "r-inactive", "task_id": "t-inactive",
                      "title": "Title of t-inactive", "created_at": "2026-09-30T07:00:00Z",
                      "expired": False}
+
+
+def test_a_paused_answer_is_marked_expired_only_by_the_fact_the_read_gives_not_by_its_time():
+    past = "2026-09-30T03:00:00Z"
+    world = (("t-a", "r-a", "2026-09-30T08:00:00Z",
+              _answer("r-a", "paused", "paused", expires_at=past)),
+             ("t-b", "r-b", "2026-09-30T08:01:00Z",
+              _answer("r-b", "paused", "paused", expires_at=past, expired="true")),
+             ("t-c", "r-c", "2026-09-30T08:02:00Z",
+              _answer("r-c", "paused", "paused", expires_at=past, expired=True)))
+    got = _resumable(world, unreadable=())["rows"]
+    assert [(row["run_id"], row["expired"]) for row in got] == [
+        ("r-a", False), ("r-b", False), ("r-c", True)]
 
 
 def test_two_runs_made_at_the_same_instant_are_listed_by_their_ids():

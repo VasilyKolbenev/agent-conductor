@@ -69,12 +69,17 @@ export function flagLine(flag) {
 
 //: Whether a run's automation read says its grant can be continued: paused, or waiting for an
 //: explicit resume because the project started again or is not active. An expired grant is told
-//: apart, not folded into "no": it has no mark and says why (spec 5.8).
+//: apart, not folded into "no": it has no mark and says why (spec 5.8). The read says so in two
+//: ways. It gives the state `expired` over a wait. It judges a pause before it looks at the
+//: expiry, so a paused grant that expired still reads `paused`; this module reads no clock, and
+//: only the fact `expired: true` beside the state tells it apart. A read that does not give that
+//: fact leaves an expired paused grant offered, and the server then refuses the save.
 function continuable(answer) {
   if (answer.state === "expired") return "expired";
   const waits = answer.state === "restart_required"
     && RESUMABLE_REASONS.includes(answer.reason_code);
-  return answer.state === "paused" || waits ? "resumable" : null;
+  if (answer.state !== "paused" && !waits) return null;
+  return answer.expired === true ? "expired" : "resumable";
 }
 
 //: The runs the block may list, from what the desk already holds: the automation read of the
