@@ -151,6 +151,7 @@ ASSETS = {
     "/panel/desk-flow-graph.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-fields.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-model.js": "text/javascript; charset=utf-8",
+    "/panel/desk-flow-copy.js": "text/javascript; charset=utf-8",
     # The classic panel, at the route that now reaches it. This target was a
     # deliberate 404 while `GET /` served index.html; the Studio took the front
     # door, so the near-miss that used to assert the 404 became this row.

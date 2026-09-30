@@ -33,7 +33,7 @@ PURE = {"desk-flow-shape.js": set(),
 #: Modules that draw. None yet: the drawing lands with the panel.
 DRAWN: dict[str, set[str]] = {}
 #: Data only.
-DATA: tuple[str, ...] = ()
+DATA: tuple[str, ...] = ("desk-flow-copy.js",)
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 FUNCTION_CAP = 50
 #: A clock, a random source, storage and the DOM: what a pure module must never reach for. The timer
