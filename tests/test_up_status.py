@@ -255,6 +255,61 @@ def test_a_file_that_is_not_there_reads_as_none(tmp_path):
     assert up_status.read_status(tmp_path / "run" / "missing.json") is None
 
 
+class DeniedThenReadable:
+    """A read refused `denials` times the way a file in the middle of a replace refuses it."""
+
+    def __init__(self, denials: int, payload: bytes = b"whole") -> None:
+        self.denials, self.payload, self.calls = denials, payload, 0
+
+    def __call__(self, path) -> bytes:
+        self.calls += 1
+        if self.calls <= self.denials:
+            raise PermissionError(13, "the file is being replaced")
+        return self.payload
+
+
+def test_read_bytes_retries_while_the_file_is_being_replaced_and_then_returns_it(tmp_path):
+    read, pauses = DeniedThenReadable(denials=3), []
+    found = atomic_replace.read_bytes(tmp_path / "s.json", read=read, sleep=pauses.append)
+    assert found == b"whole"
+    assert read.calls == 4 and pauses == [atomic_replace.READ_PAUSE_SECONDS] * 3
+
+
+def test_read_bytes_gives_up_with_the_last_permission_error_after_its_bounded_retries(tmp_path):
+    read, pauses = DeniedThenReadable(denials=10**6), []
+    with pytest.raises(PermissionError, match="being replaced"):
+        atomic_replace.read_bytes(tmp_path / "s.json", read=read, sleep=pauses.append)
+    assert read.calls == atomic_replace.READ_ATTEMPTS
+    assert len(pauses) == atomic_replace.READ_ATTEMPTS - 1
+    assert sum(pauses) < 0.5, "a file that stays refused must not cost a hub pass a second"
+
+
+def test_read_bytes_does_not_retry_an_error_that_waiting_cannot_cure(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        atomic_replace.read_bytes(tmp_path / "absent.json", sleep=lambda _: pytest.fail("slept"))
+
+
+def test_a_status_read_refused_while_the_file_is_replaced_reads_the_record_after_it(
+        tmp_path, monkeypatch):
+    path = _publish(tmp_path, _good_record())
+    denied = DeniedThenReadable(denials=2, payload=path.read_bytes())
+    monkeypatch.setattr(Path, "read_bytes", lambda self: denied(self))
+    monkeypatch.setattr(atomic_replace.time, "sleep", lambda seconds: None)
+    found = up_status.read_status(path)
+    assert (found.project_id, found.state) == (PROJECT_ID, "serving") and denied.calls == 3
+
+
+def test_a_status_file_that_stays_refused_is_still_a_named_invalid_status(
+        tmp_path, monkeypatch):
+    path = _publish(tmp_path, _good_record())
+    denied = DeniedThenReadable(denials=10**6)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: denied(self))
+    monkeypatch.setattr(atomic_replace.time, "sleep", lambda seconds: None)
+    with pytest.raises(up_status.StatusInvalid) as caught:
+        up_status.read_status(path)
+    assert path.name in str(caught.value) and denied.calls == atomic_replace.READ_ATTEMPTS
+
+
 BAD_RECORDS = {
     "an unknown key": {**_good_record(), "extra": 1},
     "a missing key": {k: v for k, v in _good_record().items() if k != "code"},
