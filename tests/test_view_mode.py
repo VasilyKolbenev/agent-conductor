@@ -9,12 +9,14 @@ What is here, in file order:
 
 * the runner's refusal, with a control, so a spy that sees nothing cannot pass;
 * two walks of a server launched with `Launch(mode="view")` that start no child (task, reads
-  and preview on a hand registry; flow, draft, revision, template and run creation on a
-  resolved provider), a calibration that plants a child in each road of the second walk and
-  requires the spy to see it, and the witness under the spec's name, which runs both walks in
-  `view` and in `active` and then asks a real command of every runner the resolver built: in
-  `view` each refuses before a child exists, in `active` each starts one. A zero that could
-  not have been anything else is not what it reports;
+  and preview on a hand registry; flow, draft, revision, template, run creation, materials and
+  project documents on a resolved provider), a calibration that plants a child in each road of
+  the second walk and requires the spy to see it, and the witness under the spec's name, which
+  runs both walks in `view` and in `active` (a real repository and a pinned git) and then asks a
+  real command of every runner the resolver built: in `view` each refuses before a child exists
+  and the routes of git are refused `project_not_active`, in `active` each starts one and the
+  walk starts the pinned git. A zero that could not have been anything else is not what it
+  reports. A guard over the route table fails the day a route that asks git is not walked;
 * that the launch mode is what decides it: the resolver's `spawns_allowed` reaches the one
   runner all adapters share;
 * no `PolicyDriver` and no quota collector in `view` (and both in `active`), and the quota read
@@ -25,13 +27,14 @@ What is here, in file order:
 * the code `project_not_active` in every place of 11.1 python and the text files can be read from.
 
 Not here: the read of git state and the request of a seed named in the spec's text (their
-routes are lane L's and do not exist in this build),
-`test_standalone_up_never_executes_auto_continue` (the queue pump that executes a flag is lane
-L's), and the real-process witness, which is `tests/test_view_child.py`.
+routes are lane L's and are not in this build's route table; the guard above names them when
+they arrive), `test_standalone_up_never_executes_auto_continue` (the queue pump that executes a
+flag is lane L's), and the real-process witness, which is `tests/test_view_child.py`.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from contextlib import contextmanager
@@ -40,14 +43,17 @@ from threading import Thread
 
 import pytest
 
-from conductor import ownership, ownership_transition, server
-from conductor.command import http_writes, providers, task_routes
+from conductor import ownership, ownership_transition, server, tool_pins
+from conductor.command import http_writes, project_routes, providers, task_routes
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
 from conductor.command.graph_template import load_template
+from conductor.command.command_routes import COMMAND_ROUTES
 from conductor.command.project_claim import Launch
+from conductor.command.project_documents import doc_id_of
 from tests._fakeproc import fake_argv
+from tests.git_repo_helpers import GIT, blob_oid, commit, git, needs_git
 from tests.alpha1_live_extensions import REFUSALS
 from tests.test_cockpit_command_api_freeze import EXPECTED_ERRORS
 from tests.test_command_http_api import TOKEN
@@ -61,6 +67,14 @@ from tests.test_server_command_http import _request
 from tests.test_store import good_lane, write_project
 
 REAL_POPEN = subprocess.Popen
+
+
+@pytest.fixture(autouse=True)
+def hub_home(tmp_path_factory, monkeypatch) -> Path:
+    """The hub's folder of every test here is an empty one of its own, never the machine's."""
+    home = tmp_path_factory.mktemp("hub-home")
+    monkeypatch.setenv("CONDUCT_HOME", str(home))
+    return home
 
 
 class PopenSpy:
@@ -194,11 +208,24 @@ FLOW_CYCLE = "cycle-0a1b2c3d"
 RUN = "run-view-1"
 
 
+def _make_a_repository(root: Path) -> None:
+    """The root becomes a git repository with one commit, and the machine's git is pinned."""
+    git("init", "-q", cwd=root)
+    commit(root, {"README.md": "# Project\n", "docs/spec.md": "The spec.\n"})
+    tool_pins.pin_tool("git", GIT, folder=Path(os.environ["CONDUCT_HOME"]))
+
+
 @contextmanager
-def _served(tmp_path, mode: str = "view"):
-    """A project on an activated root, with one provider resolved, launched in `mode`."""
+def _served(tmp_path, mode: str = "view", *, repository: bool = False):
+    """A project on an activated root, with one provider resolved, launched in `mode`.
+
+    `repository` is what an active child needs to answer a read of the project's documents: a
+    git repository with a commit, and a git pinned in the hub's folder.
+    """
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     (root / "work").mkdir()          # a runner refuses a working folder that is the root itself
+    if repository:
+        _make_a_repository(root)
     ownership_transition.activate(root, legacy_writers_stopped=True)
     subject = server.build(root, 0, providers=pinned(tmp_path), clock=lambda: NOW,
                            token_factory=lambda _: TOKEN, launch=Launch(mode=mode))
@@ -219,8 +246,11 @@ def _send(subject, method, path, body, expected):
     return payload
 
 
-def _walk_cycle_and_run(subject) -> None:
-    """A task, two cycles, a template and a run bound to the task, then the reads that show them."""
+def _walk_cycle_and_run(subject, mode: str = "view") -> None:
+    """A task, two cycles, a template and a run bound to the task, then the reads that show them.
+
+    Then the three routes that may ask git (`_walk_materials_and_documents`), in `mode`.
+    """
     _send(subject, "GET", "/command/session", None, 200)
     _send(subject, "POST", "/command/tasks", {"task_id": "task-1", "title": "Look around"}, 201)
     flow_path = f"/command/workflows/{FLOW_CYCLE}/flow"
@@ -247,6 +277,35 @@ def _walk_cycle_and_run(subject) -> None:
     assert [row["run_id"] for row in listed["runs"]] == [RUN], listed
     _send(subject, "GET", f"/command/runs/{RUN}", None, 200)
     _send(subject, "GET", "/command/tasks/task-1", None, 200)
+    _walk_materials_and_documents(subject, mode)
+
+
+def _walk_materials_and_documents(subject, mode: str) -> None:
+    """The routes of materials and project documents, the ones whose handler may ask git.
+
+    Text materials need no git and are published in both modes. A copy of a project document,
+    the list of documents and one document need it: in `view` each is refused
+    `project_not_active` before any reader is touched (spec 9.1.6), in `active` each is
+    answered from the repository the project is, through the runner that may spawn.
+    """
+    doc_id = doc_id_of("README.md")
+    note = {"kind": "note", "title": "Plan", "content": "Do it."}
+    _send(subject, "POST", f"/command/runs/{RUN}/materials", {"lang": "en", "items": [note]}, 201)
+    viewing = mode == "view"
+    oid = "0" * 40 if viewing else blob_oid(subject.command_store.project_root, "README.md")
+    copy = {"kind": "project_doc", "doc_id": doc_id, "git_oid": oid, "mode": "copy",
+            "content": "Edited by the owner.\n"}
+    answers = [
+        _send(subject, "POST", f"/command/runs/{RUN}/materials",
+              {"lang": "en", "items": [copy]}, 409 if viewing else 201),
+        _send(subject, "GET", "/command/project/documents", None, 409 if viewing else 200),
+        _send(subject, "GET", f"/command/project/documents/{doc_id}", None,
+              409 if viewing else 200)]
+    if viewing:
+        assert [a["error"]["code"] for a in answers] == ["project_not_active"] * 3, answers
+    else:
+        assert [row["path"] for row in answers[1]["documents"]] == ["README.md", "docs/spec.md"]
+        assert answers[2]["content"] == "# Project\n", answers[2]
 
 
 def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication_and_run_creation(
@@ -268,16 +327,20 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication
 
 # -- the calibration: the walk above must be able to say no --------------------------
 
-#: The handler each write of the cycle and run walk goes through, one per POST route.
+#: The handler each route of the cycle and run walk goes through, one per route: the writes and
+#: then the three routes of materials and project documents, which are the ones that may ask git.
 ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
-         "_publish_template", "_open_run")
+         "_publish_template", "_open_run", "write_materials", "read_documents", "read_document")
+#: Where a road lives when it is not in `http_writes`.
+HOMES = {"create_task": task_routes, "read_documents": project_routes,
+         "read_document": project_routes}
 
 
 @pytest.mark.parametrize("road", ROADS)
 def test_the_cycle_and_run_walk_sees_a_spawn_planted_in_each_road_it_walks(
         tmp_path, spy, monkeypatch, road):
     """A witness that cannot say no is a number: plant a child in one road, expect to see it."""
-    home = task_routes if road == "create_task" else http_writes
+    home = HOMES.get(road, http_writes)
     real, planted = getattr(home, road), []
 
     def plant(*args, **kwargs):
@@ -317,37 +380,101 @@ def _ask_for_a_child(runner: ProcessRunner) -> str:
 
 
 def _prepare_flow(base: Path, mode: str, runners, spy) -> dict:
-    """Both prepare roads on servers launched in `mode`, then a child asked of every runner."""
+    """Both prepare roads on servers launched in `mode`, then a child asked of every runner.
+
+    The second server is a git repository with a pinned git in `active`, so that the walk's
+    routes of project documents have something to ask; what the setup itself spawns is not
+    counted, only what happens from the moment the server stands.
+    """
     _walk_reads_and_preview(base / "reads", mode)
     made = len(runners)
-    with _served(base / "cycle", mode) as subject:
-        _walk_cycle_and_run(subject)
-        by_the_walks = len(spy.calls)
+    with _served(base / "cycle", mode, repository=mode == "active") as subject:
+        begun = len(spy.calls)
+        _walk_cycle_and_run(subject, mode)
+        by_the_walks = spy.calls[begun:]
         asked = [_ask_for_a_child(runner) for runner in runners[made:]]
-    return {"children_by_the_walks": by_the_walks, "asked": asked, "children": len(spy.calls)}
+        everything = spy.calls[begun:]
+    # A `Popen` call is recorded as its positional arguments: the argv list comes first.
+    by_git = [call for call in by_the_walks if call[0][0] == GIT]
+    return {"children_by_the_walks": len(by_the_walks), "git_children": len(by_git),
+            "asked": asked, "children": len(everything)}
 
 
+@needs_git
 def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
         tmp_path, spy, runners):
-    """View: no child in the prepare flow and every runner refuses one. Active: a runner spawns.
+    """View: no child in the prepare flow and every runner refuses one. Active: children spawn.
 
-    Both walks (task, reads and preview on a hand registry; flow, draft, revision, template and
-    run creation on a resolved provider) run on servers launched in the mode under test. Then a
-    real command is asked of every runner the resolver built for that server. In `view` each
-    is refused before a child exists and the `Popen` spy stays empty; in `active` the same ask
-    starts one real child per runner, which is what makes the empty spy mean something.
+    Walked: the task, the reads and the preview on a hand registry; then on a resolved provider
+    the flow, draft, revision, template and run creation, and the three routes that may ask git
+    (text materials, a copy of a project document, the list of documents and one document).
+    The servers are launched in the mode under test. Then a real command is asked of every
+    runner the resolver built for that server. In `view` each is refused before a child exists,
+    the routes of git are refused `project_not_active` and the `Popen` spy stays empty; in
+    `active` the same ask starts one real child per runner and the same walk starts only the
+    pinned git, which is what makes the empty spy mean something.
 
-    Not walked: the read of git state and the request of a seed, which the spec's text names.
-    Their routes are lane L's and do not exist in this build; their own tests are L's
-    (`test_view_mode_git_routes_refuse_project_not_active_and_spawn_nothing`, 9.12).
+    Not walked, because the build has no such route: the read of git state
+    (`GET /command/project/git`) and the request of a seed (`POST /command/tasks/<id>/seed`),
+    which the spec's text names. `test_the_walk_names_every_route_that_may_ask_git` fails the
+    day either appears without being walked.
     """
     viewed = _prepare_flow(tmp_path / "view", "view", runners, spy)
     assert viewed["asked"] and set(viewed["asked"]) == {"refused"}, viewed
     assert (viewed["children_by_the_walks"], viewed["children"]) == (0, 0), viewed
     active = _prepare_flow(tmp_path / "active", "active", runners, spy)
     assert active["asked"] == ["completed"] * len(active["asked"]) and active["asked"], active
-    assert active["children_by_the_walks"] == 0, active
-    assert active["children"] == len(active["asked"]), active
+    assert active["git_children"] >= 1, active
+    assert active["children_by_the_walks"] == active["git_children"], active
+    assert active["children"] == active["git_children"] + len(active["asked"]), active
+
+
+# -- the routes the walk must name ---------------------------------------------------------
+
+#: The routes of this build that read the project's git or make a copy from it, and so are the
+#: ones a view process must refuse or never answer with a child: the walk above goes through
+#: each. The spec also names the read of git state, the setup of git, the seed request and the
+#: acceptance routes (9.1.6); none is in `COMMAND_ROUTES` yet.
+WALKED_GIT_ROUTES = frozenset({
+    ("POST", "/command/runs/<run_id>/materials"),
+    ("GET", "/command/project/documents"),
+    ("GET", "/command/project/documents/<doc_id>")})
+GIT_WORDS = ("/materials", "/documents", "/project/git", "/seed", "/accept")
+
+
+def git_routes(table) -> frozenset:
+    """The rows of a route table whose path is one the spec of 9.1.6 names."""
+    return frozenset((method, path) for method, path in table
+                     if any(word in path for word in GIT_WORDS))
+
+
+def test_the_walk_names_every_route_that_may_ask_git():
+    assert git_routes(COMMAND_ROUTES) == WALKED_GIT_ROUTES, (
+        "a route that asks git, or makes a seed, is in the table and the view walk does not go "
+        "through it: walk it in `_walk_materials_and_documents` and add it to the set above")
+
+
+def test_the_view_walk_notices_a_git_route_that_no_longer_refuses_in_view(
+        tmp_path, spy, monkeypatch):
+    """Broken on purpose: the routes that hold git back in `view` stop doing it.
+
+    The walk must say so through the answers it expects (409 `project_not_active` from each of
+    the three), not wait for a child that, in `view`, has no reader to start it from.
+    """
+    monkeypatch.setattr(project_routes, "_hold_git_allowed", lambda api: None)
+    with pytest.raises(AssertionError, match="materials|documents|project_not_active"):
+        with _served(tmp_path) as subject:
+            _walk_cycle_and_run(subject)
+    assert spy.calls == []
+
+
+def test_the_route_guard_says_no_to_a_git_state_seed_or_accept_route_that_nothing_walks():
+    table = (*COMMAND_ROUTES, ("GET", "/command/project/git"),
+             ("POST", "/command/tasks/<task_id>/seed"),
+             ("POST", "/command/project/accept/preview"))
+    assert git_routes(table) - WALKED_GIT_ROUTES == {
+        ("GET", "/command/project/git"), ("POST", "/command/tasks/<task_id>/seed"),
+        ("POST", "/command/project/accept/preview")}
 
 
 def test_the_provider_resolver_builds_a_runner_that_refuses_when_spawning_is_not_allowed(
