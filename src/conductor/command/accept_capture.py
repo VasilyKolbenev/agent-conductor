@@ -54,12 +54,12 @@ def capture_dispatch(store, request, args, workspace, git_factory, *, sensitive=
     task = frozen_config_task(recovered.config)
     if task is None:
         return None
-    if args.task_scope != task.work_scope or args.work_item_id != WORK_ITEM_ID:
+    if args.task_scope != task.work_scope:
         raise SnapshotRefused("material_unavailable")
     seed = read_seed(store.project_root, task.task_id)
     if seed is None:
         return None
-    if (seed.task_id, seed.work_scope, seed.work_item_id) != (
+    if args.work_item_id != WORK_ITEM_ID or (seed.task_id, seed.work_scope, seed.work_item_id) != (
             task.task_id, task.work_scope, args.work_item_id):
         raise SnapshotRefused("material_unavailable")
     base, fmt = _base(store.project_root, seed, git_factory)

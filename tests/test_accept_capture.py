@@ -71,7 +71,7 @@ class Checker(IndependentCheckTransport):
                                    state=state, evidence_refs=refs, detail=detail, observed_at=NOW)
 
 
-def prepared(root, *, seed=None, reader=None):
+def prepared(root, *, seed=None, reader=None, seeded=True):
     config = {**CONFIG, "task": {"id": TASK, "work_scope": SCOPE}}
     store = RunStore(root)
     store.create_run(a_run(config_digest=snapshot_digest(config)), config)
@@ -84,7 +84,8 @@ def prepared(root, *, seed=None, reader=None):
         checker._handoff._accept_git = reader
     if seed is None:
         seed = SeedRecord.from_dict(an_empty_seed(task_id=TASK, work_scope=SCOPE))
-    write_seed(root, seed)
+    if seeded:
+        write_seed(root, seed)
     work = checker._workspace.work_dir("work-001", SCOPE)
     return checker, store, request, work
 
@@ -96,6 +97,24 @@ def published(checker, changed=("b.py",)):
 
 def frame(checker, request, value):
     return checker._check_frame(request, checker._dispatch_args(request.arguments), value)
+
+
+def test_unseeded_legacy_item_keeps_attempt_check_but_cannot_claim_seeded_r6(tmp_path):
+    checker, _, request, _ = prepared(tmp_path, seeded=False)
+    request = replace(request, arguments={**dict(request.arguments), "work_item_id": "item-legacy"})
+    work = checker._workspace.work_dir("item-legacy", SCOPE)
+    (work / "b.py").write_bytes(b"done")
+    changed = (f"_tasks/{SCOPE}/item-legacy/b.py",)
+    value = Published(None, changed, checker._evidence(), (), (), "Check the exact result.")
+    result = frame(checker, request, value)
+    assert b'{"content":"done","encoding":"utf-8","path":"_tasks/scope-one/item-legacy/b.py"}' in result.payload
+    assert result.work_tree_digest is result.accept_manifest_digest is result.work_modes is None
+    # A real standing seed makes the canonical work item mandatory; legacy fallback
+    # cannot borrow a different item's saved base or publish acceptance evidence.
+    write_seed(tmp_path, SeedRecord.from_dict(an_empty_seed(task_id=TASK, work_scope=SCOPE)))
+    with pytest.raises(CheckFrameError, match="material_unavailable"):
+        frame(checker, request, value)
+    assert not (tmp_path / "conductor/accept").exists()
 
 
 @needs_git
