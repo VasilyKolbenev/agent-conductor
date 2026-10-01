@@ -43,7 +43,9 @@ FORBIDDEN_CALLS = frozenset({
 FORBIDDEN_NAMES = frozenset({"__import__", "eval", "exec", "compile"})
 # The one reviewed execution door: the owned-process runner and the helper that
 # terminates only the group it started. Every other module stays fenced.
-EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
+# _winlaunch is the runner's suspended CreateProcess helper, not another runner.
+# The caller guard below confines its use to process.py.
+EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
 
 
 def _package_sources():
@@ -117,3 +119,18 @@ def test_the_execution_door_is_confined_to_the_owned_process_runner():
     escaped = sorted(door_holders - EXECUTION_DOOR)
     assert escaped == [], f"an execution door appeared outside the runner: {escaped}"
     assert "process.py" in door_holders, "the runner's execution door has vanished"
+
+
+def test_native_creation_helper_has_only_the_owned_runner_as_a_caller():
+    _, sources = _package_sources()
+    callers = set()
+    for path in sources:
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and (
+                    node.module and node.module.endswith("_winlaunch")
+                    or any(alias.name == "_winlaunch" for alias in node.names)):
+                callers.add(path.name)
+            if isinstance(node, ast.Import) and any(
+                    alias.name.endswith("_winlaunch") for alias in node.names):
+                callers.add(path.name)
+    assert callers == {"process.py"}

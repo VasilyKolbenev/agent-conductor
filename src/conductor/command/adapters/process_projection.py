@@ -26,6 +26,8 @@ def _spec_from_arguments(
 
 def _payload_from_spec(spec: CommandSpec) -> dict[str, object]:
     """The adapter payload: a plain-JSON echo of the validated command."""
+    if spec.boundary is not None:
+        raise AdapterContractError("native policy cannot be projected into dispatch arguments")
     return {
         "argv": list(spec.argv), "cwd": spec.cwd,
         "env_allow": list(spec.env_allow),

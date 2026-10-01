@@ -62,6 +62,7 @@ from . import _procgroup
 from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
+from .process_boundary import WindowsContainer
 from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
 from .base import (
     AdapterContractError,
@@ -263,6 +264,7 @@ class CommandSpec:
     sensitive_extra: tuple[bytes, ...] = field(default=(), repr=False)
     # A finite RPC batch keeps stdin open until this stdout response arrives.
     stdin_completion_id: int | None = None
+    boundary: WindowsContainer | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "argv", _argv(self.argv))
@@ -281,6 +283,8 @@ class CommandSpec:
         if type(self.separate_stderr) is not bool:
             raise CommandSpecError("separate_stderr must be a boolean")
         object.__setattr__(self, "stdin_bytes", _stdin(self.stdin_bytes))
+        if self.boundary is not None and type(self.boundary) is not WindowsContainer:
+            raise CommandSpecError("boundary must be a trusted native policy")
         if self.stdin_completion_id is not None and (
                 type(self.stdin_completion_id) is not int or self.stdin_completion_id < 0
                 or self.stdin_bytes is None or not self.separate_stderr
@@ -590,6 +594,9 @@ class ProcessRunner:
                 loan.retire(False)
             raise
         try:
+            if spec.boundary is not None:
+                from . import _winlaunch
+                _winlaunch.require_policy(proc, spec.boundary.sid)
             group = _procgroup.make_group(proc)
         except BaseException:
             try:
@@ -617,10 +624,15 @@ class ProcessRunner:
 
     @staticmethod
     def _launch(spec, cwd, env, payload, loan):
+        if loan is not None and type(loan) is not ProcessLease:
+            raise OwnershipError("invalid native ownership loan")
+        if spec.boundary is not None:
+            if os.name != "nt":
+                raise CommandSpecError("Windows boundary is unavailable on this platform")
+            from . import _winlaunch
+            return _winlaunch.launch(spec, cwd, env, payload, loan)
         options = _procgroup.popen_kwargs()
         if loan is not None:
-            if type(loan) is not ProcessLease:
-                raise OwnershipError("invalid native ownership loan")
             if os.name == "nt":
                 info = subprocess.STARTUPINFO()
                 info.lpAttributeList = {"handle_list": list(loan.handles)}
@@ -643,36 +655,7 @@ class ProcessRunner:
             proc: "subprocess.Popen[bytes]",
             group: _procgroup.ProcessGroup | None) -> None:
         """Bounded fail-closed cleanup after Popen but before ownership publish."""
-        try:
-            if group is not None:
-                try:
-                    group.terminate()
-                except BaseException:
-                    pass  # direct handle kill below remains mandatory
-            if proc.poll() is None:
-                proc.kill()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
-        finally:
-            if group is not None:
-                group.close()
-            if proc.stdout is not None:
-                proc.stdout.close()
-            if proc.stderr is not None:
-                proc.stderr.close()
-            # And the input, which `Popen(stdin=PIPE)` opened on this side. A
-            # spawn that fails between `Popen` and the ownership publish has no
-            # `_Owned` to close it later and no token anyone could stop, so the
-            # parent's write handle would live until the garbage collector
-            # happened to notice -- holding a pipe to a child already killed.
-            if proc.stdin is not None:
-                try:
-                    proc.stdin.close()
-                except (OSError, ValueError):
-                    pass
+        _procgroup.cleanup_failed_spawn(proc, group)
 
     def _release(self, owned: _Owned) -> None:
         with self._lock:
@@ -685,6 +668,9 @@ class ProcessRunner:
             if loan is not None:
                 loan.retire(False)
             raise
+        finally:
+            if release := getattr(owned.proc, "release_handle", None):
+                release()
         if loan is not None:
             loan.retire(retired)
 

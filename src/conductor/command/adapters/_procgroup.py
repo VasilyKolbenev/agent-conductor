@@ -34,6 +34,40 @@ class ProcessGroup(Protocol):
     def retired(self, *, timeout: float) -> bool: ...
 
 
+def cleanup_failed_spawn(proc, group):
+    """Reap a child that never received an ownership token, then close its streams.
+
+    Applies equally to Popen and native suspended creation. The caller retires
+    the ownership loan as unproven on this failure road.
+    """
+    try:
+        if group is not None:
+            try:
+                group.terminate()
+            except BaseException:
+                pass  # the direct handle kill below remains mandatory
+        if proc.poll() is None:
+            proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    finally:
+        try:
+            if group is not None:
+                group.close()
+        finally:
+            for stream in (proc.stdout, proc.stderr, proc.stdin):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except (OSError, ValueError):
+                        pass
+            if release := getattr(proc, "release_handle", None):
+                release()
+
+
 def popen_kwargs() -> dict[str, object]:
     """Spawn flags that put the child in its own killable group on each platform."""
     if os.name == "nt":
