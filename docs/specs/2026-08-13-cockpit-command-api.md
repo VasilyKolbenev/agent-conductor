@@ -230,6 +230,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/git", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
@@ -1231,6 +1232,15 @@ credential-presence flag; raw remote URLs are never returned. In view mode the
 route starts no Git process and reports only the local Git-entry state and the
 saved instruction choice. It does not write Git metadata. The response is the
 `{"git": ...}` shape in desk redesign specification section 6.2.1.
+
+`GET /command/runs/<run_id>/accept` reads the complete durable run inventory, frozen
+workflow revision, queue and current driver facts. It works in view mode without
+reading the work tree or starting Git. The response contains `kind`, `basis`,
+`commit`, `push` and `pull_request`; an absent durable record is null. A refused
+basis contains only `refused`. A successful files basis explicitly retains
+`pending_checks: ["snapshot_integrity", "current_work_tree"]` alongside its final
+gate, decision time, verified action and manifest digest. This read does not grant
+acceptance authority; damaged or ambiguously bound inventory fails closed.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,

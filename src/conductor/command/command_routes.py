@@ -60,6 +60,7 @@ COMMAND_ROUTES = (
     ("GET", "/command/project"),
     ("GET", "/command/project/git"),
     ("POST", "/command/runs/<run_id>/materials"),
+    ("GET", "/command/runs/<run_id>/accept"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
     ("GET", "/command/queue"),
@@ -74,7 +75,7 @@ _RUN_ROUTE = re.compile(
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
     r"(?:/(automation/preview|automation/authorize|automation/control|automation|"
-    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|graph))?\Z")
+    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|accept|graph))?\Z")
 _WORKFLOW_ROUTE = re.compile(
     r"/command/workflows/(?P<workflow_id>[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The revision number is a tail of the `revisions` tail rather than a fourth
@@ -195,7 +196,7 @@ def match_route(method: str, path: str) -> Route:
         raise ApiRefusal.fixed("route_not_found")
     run_id, tail = matched.groups()
     name = (tail or "run").replace("/", "_").replace("-", "_")
-    expected = "GET" if name in {"run", "controls", "automation"} else "POST"
+    expected = "GET" if name in {"run", "controls", "automation", "accept"} else "POST"
     if method != expected:
         raise ApiRefusal.fixed("method_not_allowed")
     return Route(name, run_id)

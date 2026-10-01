@@ -158,6 +158,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("GET", "/command/project"),
         ("GET", "/command/project/git"),
         ("POST", "/command/runs/<run_id>/materials"),
+        ("GET", "/command/runs/<run_id>/accept"),
         ("GET", "/command/project/documents"),
         ("GET", "/command/project/documents/<doc_id>"),
         ("GET", "/command/queue"),

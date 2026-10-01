@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 
 def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str, Any]]:
+    if route.name == "accept":
+        from .accept_context import read_accept
+        return read_accept(api, route.run_id)
     if route.name == "automation":
         from .policy_routes import route as policy_route
         return policy_route(api, route.name, route.run_id)
