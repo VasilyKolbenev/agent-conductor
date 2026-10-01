@@ -63,6 +63,7 @@ ERROR_STATUS = MappingProxyType({
     "preview_stale": 409,
     "project_not_active": 409,
     "materials_refused": 409,
+    "accept_refused": 409,
     "queue_changed": 409,
     "queue_full": 409,
     "queue_not_ready": 409,
@@ -166,6 +167,7 @@ _FIXED_MESSAGES = MappingProxyType({
     #: not hold). The reason, one word of `MATERIALS_REASONS`, is the detail (`_REVIEWED_FACTS`);
     #: this fixed sentence is the vocabulary-completeness one.
     "materials_refused": "the materials could not be made into a document",
+    "accept_refused": "the reviewed result cannot be accepted into the project",
     #: The three codes of the project queue (spec 4.4.7). Each is its own code rather than
     #: `contract_invalid` because the body is well formed and nothing in it is wrong: the
     #: list moved under the reader (`queue_changed`), the queue holds its 32 entries
@@ -234,6 +236,16 @@ def _safe_detail(value: object) -> bool:
 MATERIALS_REASONS = (
     "too_many_materials", "materials_too_large", "document_not_text", "doc_unknown",
     "doc_not_seeded", "materials_base_moved", "seed_missing")
+
+ACCEPT_REASONS = (
+    "run_has_no_task", "seed_missing", "run_not_complete", "final_gate_not_approved",
+    "result_not_verified", "decision_precedes_result", "superseded_by_later_run", "task_run_active",
+    "final_check_missing", "snapshot_damaged", "work_changed_since_verification", "base_missing",
+    "irregular_result", "reserved_path", "unportable_name", "result_too_large", "nothing_to_accept",
+    "git_identity_missing", "branch_name_invalid", "branch_exists", "branch_namespace_blocked",
+    "document_name_collision", "accept_terms_changed", "case_collision",
+    "not_a_git_repository", "unborn_head", "project_not_repo_root", "tracks_product_dir",
+    "unsafe_directory", "object_format_changed", "git_failed", "git_timed_out")
 
 #: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
 #: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that
@@ -308,6 +320,8 @@ _REVIEWED_FACTS = (
     # The one word that says why the materials were not accepted, from `MATERIALS_REASONS`.
     ("materials_refused", ("reason",),
      lambda facts: f"the materials were not accepted: {facts['reason']}"),
+    ("accept_refused", ("reason",),
+     lambda facts: f"the result cannot be accepted: {facts['reason']}"),
     # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
     # it is is the one fact a person can act on (spec 4.3.4).
     ("contract_invalid", ("run_id",),
@@ -452,6 +466,13 @@ class ApiRefusal(Exception):
         message = (f"no draft of '{workflow_id}' stands to publish as revision "
                    f"{revision}")
         return cls(_REFUSAL_BUILD, "draft_conflict", message, detail)
+
+    @classmethod
+    def accept_refused(cls, reason: str) -> "ApiRefusal":
+        if type(reason) is not str or reason not in ACCEPT_REASONS:
+            raise ValueError("acceptance refusal reason must be one of the closed list") from None
+        return cls(_REFUSAL_BUILD, "accept_refused",
+                   f"the result cannot be accepted: {reason}", {"reason": reason})
 
     @classmethod
     def materials_refused(cls, reason: str) -> "ApiRefusal":

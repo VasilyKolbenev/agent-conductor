@@ -28,6 +28,7 @@ REFUSALS = {
     "preview_stale": 409,
     "project_not_active": 409,
     "materials_refused": 409,
+    "accept_refused": 409,
     "queue_changed": 409,
     "queue_full": 409,
     "queue_not_ready": 409,

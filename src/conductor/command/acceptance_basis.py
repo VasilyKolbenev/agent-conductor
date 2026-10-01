@@ -18,6 +18,10 @@ from .run_terminal import RunTerminal
 from .seed_record import SeedRecord, WORK_ITEM_ID
 from .task_contracts import TaskBinding
 
+STARTER_DOC_PATHS = {"desk-starter-docs": {
+    "artifact-brief": "docs/idea.md", "artifact-plan": "docs/plan.md",
+    "artifact-ideas": "docs/ideas.md", "artifact-scheme": "docs/scheme.md"}}
+
 
 @dataclass(frozen=True)
 class AcceptanceRun:
