@@ -50,3 +50,36 @@ def test_reexport_shadow_does_not_borrow_another_symbols_origin():
     row = resolver.resolve("middle").containers["FORWARDED"]
     assert row.held == ("kimi-code",)
     assert row.origin == ("middle", "FORWARDED")
+
+
+def test_only_imports_needed_by_a_compared_symbol_enter_cycle_context(monkeypatch):
+    trees = {"leaf": ast.parse('TOKEN = "codex-cli"\n')}
+    previous = "leaf"
+    for depth in range(18):
+        name = f"layer{depth}"
+        trees[name] = ast.parse(
+            f"from {previous} import TOKEN\n"
+            f"from layer{(depth + 1) % 18} import NOISE\n")
+        previous = name
+    calls = []
+    original = source._settled
+    def counted(module, *args):
+        calls.append(module)
+        return original(module, *args)
+    monkeypatch.setattr(source, "_settled", counted)
+    found = source._compared_strings("reader", ast.parse(
+        "from layer17 import TOKEN as ID\n"
+        "def route(provider_id):\n    return provider_id == ID\n"), trees=trees)
+    assert ("codex-cli", 3, ("leaf", "TOKEN")) in found
+    assert len(calls) <= len(trees) + 1, calls  # the reader is settled too
+
+
+def test_requested_symbol_still_obeys_the_ancestor_cycle_cut():
+    trees = {
+        "a": ast.parse("from b import TOKEN\nALIAS = TOKEN\n"),
+        "b": ast.parse('from a import ALIAS\nTOKEN = "codex-cli"\n'),
+    }
+    resolver = source._OfferResolver(trees)
+    wanted = frozenset({"ALIAS"})
+    assert resolver.resolve("a", wanted=wanted).strings["ALIAS"] == "codex-cli"
+    assert "ALIAS" not in resolver.resolve("b", wanted=wanted).strings

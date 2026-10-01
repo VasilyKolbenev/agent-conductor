@@ -83,13 +83,15 @@ def test_the_purity_check_refuses_each_planted_reach_and_names_it(edit, needle):
 # -- one listener, no inbound message, and an address moved only by replaceState -------
 #
 # The router is the one place a hash the desk did not write is read (spec 4.5.3), and the
-# desk listens to nothing else that could move it: no `message` (the hub speaks to the desk
-# through the hash alone) and no second `hashchange`. The router selects, reads and sets the
+# desk listens to nothing else that could move it: no window `message` (the hub speaks to the desk
+# through the hash alone) and no second `hashchange`. The project stream alone listens for SSE
+# `message` on its EventSource. The router selects, reads and sets the
 # appearance; it reaches no write door. The desk's own address is moved by one function, by
 # `replaceState`, which fires no `hashchange`, so no write of its own can start a loop.
 BOOT_MODULE = "desk.js"
 ROUTER = "onHashChange"
-LISTENER = re.compile(r"""addEventListener\(\s*["']([a-z]+)["']""")
+LISTENER = re.compile(
+    r"""(?:\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.)?addEventListener\(\s*["']([a-z]+)["']""")
 LISTENING = re.compile(rf"""addEventListener\(\s*["']hashchange["']\s*,\s*{ROUTER}\s*\)""")
 #: The one function that calls `replaceState`, and the ways a module could move the address
 #: any other way: a new history entry, an assignment that fires `hashchange`, a navigation.
@@ -111,16 +113,17 @@ def listener_faults(sources: dict[str, str]) -> list[str]:
         sources: Each desk module's name and text.
 
     Returns:
-        One sentence per fault; empty when exactly the boot module listens for `hashchange`
-        (with the router) and nobody listens for `message`.
+        One sentence per fault; empty when only the boot module listens for `hashchange`
+        and only the project EventSource listens for `message`.
     """
-    heard = [(name, event) for name, text in sources.items()
-             for event in LISTENER.findall(strip_comments(text))]
-    homes = [name for name, event in heard if event == "hashchange"]
+    heard = [(name, receiver, event) for name, text in sources.items()
+             for receiver, event in LISTENER.findall(strip_comments(text))]
+    homes = [name for name, _receiver, event in heard if event == "hashchange"]
     faults = [] if homes == [BOOT_MODULE] else [
         f"hashchange is heard by {homes or 'nobody'}, not by {BOOT_MODULE} alone"]
-    faults += [f"{name} listens for message: the desk has no inbound channel"
-               for name, event in heard if event == "message"]
+    faults += [f"{name} listens for message outside the project event stream"
+               for name, receiver, event in heard if event == "message"
+               and (name, receiver) != ("desk-stream.js", "source")]
     if not LISTENING.search(strip_comments(sources.get(BOOT_MODULE, ""))):
         faults.append(f"the listener is not {ROUTER}")
     return faults
@@ -206,6 +209,15 @@ LISTENER_BROKEN = {
         _grown(BOOT_MODULE, '\nwindow.addEventListener("message", () => 1);\n'), "message"),
     "a message listener in single quotes": (
         _grown("desk-scene.js", "\nwindow.addEventListener('message', () => 1);\n"), "message"),
+    "an unrelated stream-like message listener": (
+        _grown("desk-rail.js", '\nsource.addEventListener("message", () => 1);\n'),
+        "outside the project event stream"),
+    "a parent message listener": (
+        _grown("desk-rail.js", '\nwindow.parent.addEventListener("message", () => 1);\n'),
+        "outside the project event stream"),
+    "a bare message listener": (
+        _grown("desk-rail.js", '\naddEventListener("message", () => 1);\n'),
+        "outside the project event stream"),
     "the listener that is not the router": (
         lambda sources: {**sources, BOOT_MODULE: sources[BOOT_MODULE].replace(
             f'addEventListener("hashchange", {ROUTER})',
@@ -213,7 +225,7 @@ LISTENER_BROKEN = {
 }
 
 
-def test_the_desk_listens_for_one_hashchange_in_its_boot_module_and_for_no_message():
+def test_the_desk_listens_for_one_hashchange_and_only_the_project_stream_message():
     sources = _sources()
     assert BOOT_MODULE in sources and len(sources) > 10, "the desk's modules are not all read"
     assert listener_faults(sources) == []

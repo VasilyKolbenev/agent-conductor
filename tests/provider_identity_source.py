@@ -292,6 +292,37 @@ def _bind_imported(alias: ast.alias, target: str, source: Offer,
                 alias.name, (target, alias.name))
 
 
+@lru_cache(maxsize=None)
+def _required_names(tree: ast.AST, wanted: frozenset[str] | None
+                    ) -> frozenset[str] | None:
+    """Names a requested export may read through local assignment aliases."""
+    if wanted is None:
+        return None
+    required = set(wanted)
+    changed = True
+    while changed:
+        changed = False
+        for _, targets, value in _assignments(tree):
+            if not any(isinstance(target, ast.Name) and target.id in required
+                       for target in targets):
+                continue
+            before = len(required)
+            required.update(node.id for node in ast.walk(value)
+                            if isinstance(node, ast.Name))
+            changed |= len(required) != before
+    return frozenset(required)
+
+
+def _needed_imports(tree: ast.AST, wanted: frozenset[str] | None
+                    ) -> Iterator[tuple[ast.ImportFrom, tuple[ast.alias, ...]]]:
+    required = _required_names(tree, wanted)
+    for node in _import_froms(tree):
+        aliases = tuple(alias for alias in node.names
+                        if required is None or (alias.asname or alias.name) in required)
+        if aliases:
+            yield node, aliases
+
+
 class _OfferResolver:
     """Memoize identical source resolutions, preserving cycle-cut provenance.
 
@@ -302,48 +333,56 @@ class _OfferResolver:
 
     def __init__(self, trees: Mapping[str, ast.Module]):
         self.trees = trees
-        self.memo: dict[tuple[str, frozenset[str]], Offer] = {}
-        self.reachable: dict[str, frozenset[str]] = {}
+        self.memo: dict[tuple[str, frozenset[str] | None, frozenset[str]], Offer] = {}
+        self.reachable: dict[tuple[str, frozenset[str] | None], frozenset[str]] = {}
 
-    def _targets(self, module: str) -> frozenset[str]:
-        if module not in self.reachable:
+    def _targets(self, module: str, wanted: frozenset[str] | None) -> frozenset[str]:
+        key = module, wanted
+        if key not in self.reachable:
             reached: set[str] = set()
-            pending = [module]
+            visited: set[tuple[str, frozenset[str] | None]] = set()
+            pending = [key]
             while pending:
-                name = pending.pop()
-                if name in reached:
+                name, needed = pending.pop()
+                if (name, needed) in visited:
                     continue
+                visited.add((name, needed))
                 reached.add(name)
                 file_name = _file_of(name, self.trees)
                 if file_name is not None:
-                    pending.extend(_absolute(node, file_name)
-                                   for node in _import_froms(self.trees[file_name]))
-            self.reachable[module] = frozenset(reached)
-        return self.reachable[module]
+                    pending.extend((_absolute(node, file_name),
+                                    frozenset(alias.name for alias in aliases))
+                                   for node, aliases in _needed_imports(
+                                       self.trees[file_name], needed))
+            self.reachable[key] = frozenset(reached)
+        return self.reachable[key]
 
-    def resolve(self, module: str, seen: frozenset[str] = frozenset()) -> Offer:
+    def resolve(self, module: str, seen: frozenset[str] = frozenset(),
+                wanted: frozenset[str] | None = None) -> Offer:
         file_name = _file_of(module, self.trees)
         if file_name is None or module in seen:
             return EMPTY_OFFER
-        relevant = seen & self._targets(module)
-        key = module, relevant
+        relevant = seen & self._targets(module, wanted)
+        key = module, wanted, relevant
         if key in self.memo:
             return self.memo[key]
         tree = self.trees[file_name]
         held = Offer({}, {}, {}, {})
-        for node in _import_froms(tree):
+        for node, aliases in _needed_imports(tree, wanted):
             target = _absolute(node, file_name)
-            source = self.resolve(target, relevant | {module})
-            for alias in node.names:
+            source = self.resolve(target, relevant | {module},
+                                  frozenset(alias.name for alias in aliases))
+            for alias in aliases:
                 _bind_imported(alias, target, source, held)
         self.memo[key] = _settled(module, tree, *held)
         return self.memo[key]
 
 
 def _exported_offer(module: str, trees: Mapping[str, ast.Module],
-                    seen: frozenset[str] = frozenset()) -> Offer:
+                    seen: frozenset[str] = frozenset(),
+                    wanted: frozenset[str] | None = None) -> Offer:
     """Resolve one source map without sharing its facts with another map."""
-    return _OfferResolver(trees).resolve(module, seen)
+    return _OfferResolver(trees).resolve(module, seen, wanted)
 
 
 @lru_cache(maxsize=1)
@@ -352,12 +391,13 @@ def _shipped_resolver() -> _OfferResolver:
 
 
 @lru_cache(maxsize=None)
-def _shipped_offer(module: str) -> Offer:
+def _shipped_offer(module: str, wanted: frozenset[str] | None = None) -> Offer:
     """The shipped graph shares resolution work, including shared DAG tails."""
-    return _shipped_resolver().resolve(module)
+    return _shipped_resolver().resolve(module, wanted=wanted)
 
 
-def _offered(module: str, trees: Mapping[str, ast.Module]) -> Offer:
+def _offered(module: str, trees: Mapping[str, ast.Module],
+             wanted: frozenset[str] | None = None) -> Offer:
     """What a module offers, by whatever route it offers it.
 
     Kept for the shipped tree, because every module in it is imported many
@@ -365,8 +405,8 @@ def _offered(module: str, trees: Mapping[str, ast.Module]) -> Offer:
     this gate would otherwise spend its time doing. A synthetic probe map is
     small and short-lived, so it is simply computed.
     """
-    return _shipped_offer(module) if trees is _trees() else _exported_offer(
-        module, trees)
+    return _shipped_offer(module, wanted) if trees is _trees() else _exported_offer(
+        module, trees, wanted=wanted)
 
 
 def _dotted(node: ast.AST) -> str:
@@ -411,7 +451,8 @@ def _settled(module: str, tree: ast.AST, strings: dict[str, str],
 
 
 def _local_names(module: str, tree: ast.AST,
-                 trees: Mapping[str, ast.Module]) -> tuple[Offer, dict[str, str]]:
+                 trees: Mapping[str, ast.Module], wanted: frozenset[str] | None = None
+                 ) -> tuple[Offer, dict[str, str]]:
     """What ONE file's names mean, and which modules its aliases point at.
 
     An import binds a name to something another file declared, so a comparison
@@ -425,14 +466,18 @@ def _local_names(module: str, tree: ast.AST,
     origins: dict[str, tuple[str, str]] = {}
     held = Offer(strings, classes, containers, origins)
     modules: dict[str, str] = {}
+    imports = {id(node): aliases for node, aliases in _needed_imports(tree, wanted)}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 modules[alias.asname or alias.name] = alias.name
         elif isinstance(node, ast.ImportFrom):
             target = _absolute(node, module)
-            source = _offered(target, trees)
-            for alias in node.names:
+            aliases = imports.get(id(node), ())
+            if not aliases:
+                continue
+            source = _offered(target, trees, frozenset(alias.name for alias in aliases))
+            for alias in aliases:
                 _bind_imported(alias, target, source, held)
                 if _file_of(f"{target}.{alias.name}", trees) is not None:
                     modules[alias.asname or alias.name] = f"{target}.{alias.name}"
@@ -458,7 +503,7 @@ def _referenced(node: ast.AST, local: Offer, modules: Mapping[str, str],
             prefix, _, key = _dotted(inner).rpartition(".")
             target = modules.get(prefix, "")
             if target:
-                reached = _offered(target, trees)
+                reached = _offered(target, trees, frozenset({key}))
                 origin = reached.origins.get(key, (target, key))
             else:
                 held = local.classes.get(prefix, {})
@@ -501,7 +546,10 @@ def _compared_strings(module: str, tree: ast.AST, *,
     old as the literal half of this gate.
     """
     trees = _trees() if trees is None else trees
-    local, modules = _local_names(module, tree, trees)
+    wanted = frozenset(inner.id for node in ast.walk(tree)
+                       if isinstance(node, (ast.Compare, ast.MatchValue))
+                       for inner in ast.walk(node) if isinstance(inner, ast.Name))
+    local, modules = _local_names(module, tree, trees, wanted)
     found: list[tuple[str, int, tuple[str, str]]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
