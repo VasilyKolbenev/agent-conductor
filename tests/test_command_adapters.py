@@ -39,8 +39,8 @@ ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
 # import guard exempts it. Its safety is proven behaviourally by
 # tests/test_command_process_*.py, and tests/test_command_package_doors.py proves
 # the door is confined to exactly these two modules.
-SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
-# Two durability doors are explicit. ``harness_workspace`` owns attempt homes,
+SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
+# Durability doors are explicit. ``harness_workspace`` owns attempt homes,
 # markers and work-tree digests. ``artifact_transport`` joins those snapshots to
 # the run's immutable artifact/evidence store. Neither owns execution: the
 # subprocess/network/exec ban still applies to both without exemption.
@@ -51,9 +51,11 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py"})
 # ``work_seed`` is the work-tree half of ``harness_workspace``, split off when
 # that module reached its line cap: it walks the tree the door proved contained
 # and hands back digests and bounded contents. It holds no execution door either.
+# ``process_profile`` journals owned AppContainer profile identities before the
+# runner changes OS state. Native profile callbacks remain confined to process.py.
 SDK_WORKSPACE_DOOR = frozenset({
     "artifact_transport.py", "harness_workspace.py", "login_home.py",
-    "work_seed.py"})
+    "work_seed.py", "process_profile.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({

@@ -63,6 +63,7 @@ from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
+from .process_profile import ProfileJournal
 from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
 from .base import (
     AdapterContractError,
@@ -512,6 +513,13 @@ class ProcessRunner:
         self._spawns_allowed = spawns_allowed        # False: a project opened for viewing
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
+
+    def container_profile(self, *, internet_client: bool = False):
+        from . import _winlaunch
+        return ProfileJournal.for_project(self._root, _winlaunch).container(internet_client=internet_client)
+    def recover_container_profiles(self) -> None:
+        from . import _winlaunch
+        ProfileJournal.for_project(self._root, _winlaunch).recover()
 
     def start(self, spec: CommandSpec) -> OwnedProcess:
         """Spawn and return an ownership token that must be explicitly stopped.

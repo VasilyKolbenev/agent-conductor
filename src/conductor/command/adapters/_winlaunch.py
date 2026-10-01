@@ -16,9 +16,11 @@ if os.name != "nt":
     raise ImportError("Windows process creation is unavailable on this platform")
 
 import msvcrt
+import winreg
 
 _kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 _adv = ctypes.WinDLL("advapi32", use_last_error=True)
+_userenv = ctypes.WinDLL("userenv", use_last_error=True)
 
 
 class _SidAttributes(ctypes.Structure):
@@ -72,6 +74,71 @@ _declare(_adv, "ConvertSidToStringSidW", w.BOOL, ctypes.c_void_p, ctypes.POINTER
 _declare(_adv, "OpenProcessToken", w.BOOL, w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE))
 _declare(_adv, "GetTokenInformation", w.BOOL, w.HANDLE, ctypes.c_int,
          ctypes.c_void_p, w.DWORD, ctypes.POINTER(w.DWORD))
+_declare(_adv, "FreeSid", ctypes.c_void_p, ctypes.c_void_p)
+_declare(_userenv, "DeriveAppContainerSidFromAppContainerName", w.LONG,
+         w.LPCWSTR, ctypes.POINTER(ctypes.c_void_p))
+_declare(_userenv, "CreateAppContainerProfile", w.LONG, w.LPCWSTR, w.LPCWSTR,
+         w.LPCWSTR, ctypes.c_void_p, w.DWORD, ctypes.POINTER(ctypes.c_void_p))
+_declare(_userenv, "DeleteAppContainerProfile", w.LONG, w.LPCWSTR)
+
+
+def _profile_sid(pointer):
+    result = w.LPWSTR()
+    if not _adv.ConvertSidToStringSidW(pointer, ctypes.byref(result)):
+        raise _error("ConvertSidToStringSidW")
+    try:
+        return result.value
+    finally:
+        _kernel.LocalFree(result)
+
+
+def derive_profile_sid(moniker):
+    sid = ctypes.c_void_p()
+    result = _userenv.DeriveAppContainerSidFromAppContainerName(moniker, ctypes.byref(sid))
+    if result:
+        raise OSError(result & 0xFFFFFFFF, "DeriveAppContainerSidFromAppContainerName failed")
+    try:
+        return _profile_sid(sid)
+    finally:
+        _adv.FreeSid(sid)
+
+
+def create_profile(moniker, display):
+    sid = ctypes.c_void_p()
+    result = _userenv.CreateAppContainerProfile(moniker, display, display,
+                                                None, 0, ctypes.byref(sid))
+    if result:
+        raise OSError(result & 0xFFFFFFFF, "CreateAppContainerProfile failed")
+    try:
+        return _profile_sid(sid)
+    finally:
+        _adv.FreeSid(sid)
+
+
+def inspect_profile(sid):
+    """Read only the exact SID mapping; never enumerate profile namespaces."""
+    route = (r"Software\Classes\Local Settings\Software\Microsoft\Windows"
+             "\\CurrentVersion\\AppContainer\\Mappings\\" + sid)
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, route)
+    except FileNotFoundError:
+        return None
+    with key:
+        try:
+            moniker, moniker_type = winreg.QueryValueEx(key, "Moniker")
+            display, display_type = winreg.QueryValueEx(key, "DisplayName")
+        except FileNotFoundError as error:
+            raise OSError("AppContainer mapping lacks ownership metadata") from error
+    if (moniker_type != winreg.REG_SZ or display_type != winreg.REG_SZ
+            or type(moniker) is not str or type(display) is not str):
+        raise OSError("AppContainer mapping metadata is invalid")
+    return moniker, display
+
+
+def delete_profile(moniker):
+    result = _userenv.DeleteAppContainerProfile(moniker)
+    if result:
+        raise OSError(result & 0xFFFFFFFF, "DeleteAppContainerProfile failed")
 
 
 def _error(name):
