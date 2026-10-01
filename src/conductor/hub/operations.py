@@ -43,18 +43,20 @@ class Operations:
         self._lock = threading.RLock()
         self._rows: OrderedDict[str, dict] = OrderedDict()
 
-    def begin(self, pick: FolderPick, name: str, confirmed: bool) -> str:
+    def begin(self, pick: FolderPick, name: str, confirmed: bool, *, source="folder",
+              prepare=None) -> str:
         with self._lock:
             if any(row["state"] == "running" for row in self._rows.values()):
                 raise refusals.HubRefusal("operation_busy")
             ident = f"operation-{secrets.token_hex(16)}"
-            row = {"operation_id": ident, "kind": "add", "source": "folder", "state": "running",
+            row = {"operation_id": ident, "kind": "add", "source": source, "state": "running",
                    "step": "admit", "project_id": None, "code": None, "result": None}
             self._rows[ident] = row
             while len(self._rows) > LIMIT:
                 self._rows.popitem(last=False)
         self._publish(ident)
         thread = threading.Thread(target=self._run, args=(ident, pick, name, confirmed),
+                                  kwargs={"source": source, "prepare": prepare},
                                   name=f"hub-add-{ident[-8:]}", daemon=True)
         thread.start()
         return ident
@@ -66,6 +68,13 @@ class Operations:
                 raise refusals.HubRefusal("operation_not_found", {"operation_id": ident})
             return dict(row)
 
+    def configure_parent(self, change):
+        """Serialize the selected parent with admission of a new add operation."""
+        with self._lock:
+            if any(row["state"] == "running" for row in self._rows.values()):
+                raise refusals.HubRefusal("operation_busy")
+            return change()
+
     def _publish(self, ident: str) -> None:
         self._bus.publish("operation", operation_id=ident)
 
@@ -74,9 +83,15 @@ class Operations:
             self._rows[ident].update(fields)
         self._publish(ident)
 
-    def _run(self, ident: str, pick: FolderPick, name: str, confirmed: bool) -> None:
+    def _run(self, ident: str, pick: FolderPick, name: str, confirmed: bool, *,
+             source="folder", prepare=None) -> None:
         try:
-            result, code = self._cli(ident, pick.path, name, confirmed)
+            made_home = False
+            if prepare is not None:
+                path, made_home = prepare()
+                pick = FolderPick(str(path), "none")
+            result, code = (self._cli(ident, pick.path, name, confirmed) if source == "folder"
+                            else self._cli(ident, pick.path, name, confirmed, source=source))
             if code is not None:
                 self._change(ident, state="failed", code=code)
                 return
@@ -90,6 +105,7 @@ class Operations:
             visible = {key: result.get(key) for key in (
                 "folder", "activated", "providers", "git", "exclude", "exclude_names",
                 "agent_instructions", "projects_home_created")}
+            visible["projects_home_created"] = made_home or visible["projects_home_created"]
             self._change(ident, project_id=project_id, result=visible, step="start")
             try:
                 self._start(project_id)
@@ -108,6 +124,8 @@ class Operations:
                     return
                 time.sleep(0.1)
             self._change(ident, state="failed", code="start_timeout")
+        except refusals.HubRefusal as error:
+            self._change(ident, state="failed", code=self._known(error.code))
         except Exception:  # a background operation must end in its closed vocabulary
             self._change(ident, state="failed", code="subprocess_failed")
 
@@ -115,7 +133,8 @@ class Operations:
     def _known(code: str) -> str:
         return code if code in refusals.OPERATION_ERROR_CODES else "subprocess_failed"
 
-    def _cli(self, ident: str, path: str, name: str, confirmed: bool) -> tuple[dict | None, str | None]:
+    def _cli(self, ident: str, path: str, name: str, confirmed: bool, *,
+             source="folder") -> tuple[dict | None, str | None]:
         # A file, rather than an anonymous pipe, lets the short ownership command finish if the
         # hub exits mid-step. The child has its own process group/session and is not killed by hub.
         fd, output_path = tempfile.mkstemp(prefix="hub-add-out-", dir=self._folder)
@@ -124,18 +143,21 @@ class Operations:
             fd, error_path = tempfile.mkstemp(prefix="hub-add-err-", dir=self._folder)
             os.close(fd)
             try:
-                return self._cli_files(ident, path, name, confirmed, output_path, error_path)
+                return self._cli_files(ident, path, name, confirmed, output_path, error_path,
+                                       source=source)
             finally:
                 os.unlink(error_path)
         finally:
             os.unlink(output_path)
 
     def _cli_files(self, ident: str, path: str, name: str, confirmed: bool,
-                   output_path: str, error_path: str) -> tuple[dict | None, str | None]:
+                   output_path: str, error_path: str, *, source="folder") -> tuple[dict | None, str | None]:
         argv = [sys.executable, "-m", "conductor", "projects", "add", "--dir", path,
                 "--name", name]
         if confirmed:
             argv.append("--legacy-writers-stopped")
+        if source != "folder":
+            argv.extend(("--source", source))
         # Writer and reader must be independently opened: a duplicated handle shares the
         # file position, allowing the next CLI line to overwrite a line already inspected.
         with open(output_path, "wb", buffering=0) as writer, open(output_path, "rb", buffering=0) as output, \

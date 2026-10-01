@@ -51,6 +51,7 @@ _GET: dict[str, Callable[[HubService], tuple[int, Any]]] = {
     "/hub/github/repos": lambda service: (200, service.github_repos()),
 }
 _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
+    "/hub/setup/projects-home": lambda service, _params, body: service.projects_home(body),
     "/hub/dialogs/folder": lambda service, _params, body: service.folder_dialog(body),
     "/hub/dialogs/<pick_id>/cancel":
         lambda service, params, _body: service.cancel_dialog(params["pick_id"]),

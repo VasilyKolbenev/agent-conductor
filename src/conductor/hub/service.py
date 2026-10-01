@@ -25,10 +25,10 @@ from pathlib import Path
 from typing import Any
 
 from conductor import ownership_native, ownership_records, tool_pins
-from conductor.command import project_git
+from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
     dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
-    supervisor)
+    supervisor, project_targets)
 from conductor.hub.refusals import HubRefusal
 
 DEFAULT_PROJECTS_HOME = "ConductProjects"
@@ -162,10 +162,14 @@ class HubService:
             return self._add_project(body)
 
     def _add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
-        if body["source"] not in {"folder", "github", "scratch"}:
+        if type(body["source"]) is not str or body["source"] not in {"folder", "github", "scratch"}:
             raise HubRefusal("contract_invalid")
+        if body["source"] == "scratch":
+            return self._scratch_project(body)
         if body["source"] != "folder":
             raise HubRefusal("route_not_found", {"reason": "source not in this build"})
+        if set(body) != {"source", "pick_id", "name", "legacy_writers_stopped"}:
+            raise HubRefusal("contract_invalid")
         if (not isinstance(body["pick_id"], str)
                 or re.fullmatch(r"pick-[0-9a-f]{32}", body["pick_id"]) is None
                 or type(body["legacy_writers_stopped"]) is not bool):
@@ -197,6 +201,51 @@ class HubService:
         confirmed = body["legacy_writers_stopped"] is True or not legacy
         ident = self._operations.begin(pick, body["name"], confirmed)
         self._consume_pick(body["pick_id"])
+        return 202, {"operation_id": ident}
+
+    def projects_home(self, body):
+        if set(body) == {"default"} and body["default"] is True:
+            value = None
+        elif set(body) == {"pick_id"} and type(body["pick_id"]) is str:
+            selected = self._dialogs.resolve_home(body["pick_id"])
+            if selected is None:
+                raise HubRefusal("pick_invalid")
+            value = str(project_targets.admit_home(selected, self._home))
+        else:
+            raise HubRefusal("contract_invalid")
+        try:
+            self._operations.configure_parent(lambda: registry.set_projects_home(value, self._home))
+        except registry.RegistryError as error:
+            raise HubRefusal("registry_invalid") from error
+        if value is not None:
+            self._dialogs.consume(body["pick_id"])
+        self._bus.publish("setup")
+        return 200, {"projects_home": self._projects_home(value)}
+
+    def _scratch_project(self, body):
+        if set(body) != {"source", "folder", "name"}:
+            raise HubRefusal("contract_invalid")
+        problem = registry.name_problem(body["name"])
+        if problem is not None:
+            raise HubRefusal("name_invalid", {"reason": problem})
+        admitted = project_targets.ticket(self._home, body["folder"])
+        state = self._tool("git")["state"]
+        code = {"not_pinned": "git_not_pinned", "changed": "git_changed",
+                "too_old": "git_too_old", "unreadable": "tool_version_unreadable"}.get(state)
+        if code:
+            raise HubRefusal(code)
+        try:
+            configs = operator_config.load_provider_configs(self._home / PROFILE_FILE)
+        except operator_config.OperatorConfigError:
+            configs = ()
+        if not any(row.provider_id in providers.PROVIDER_CATALOG
+                   and "review" in providers.PROVIDER_CATALOG[row.provider_id].capabilities
+                   and row.protocol == providers.PROVIDER_CATALOG[row.provider_id].protocol
+                   for row in configs):
+            raise HubRefusal("review_harness_missing")
+        ident = self._operations.begin(operations.FolderPick(str(admitted.path), "none"),
+            body["name"], True, source="scratch",
+            prepare=lambda: project_targets.create(self._home, body["folder"], expected=admitted))
         return 202, {"operation_id": ident}
 
     def _start_added(self, project_id: str) -> None:

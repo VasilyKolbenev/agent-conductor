@@ -62,7 +62,7 @@ export function frameAddress(project, hubPort) {
 export function frameHash(projectId, nav, prefs) {
   const at = (key) => nav[key] ?? null;
   return preferenceHash(deskHash({project: projectId, embed: "hub", task: at("task"),
-    run: at("run"), gate: at("gate"), panel: at("panel"), new: at("new")}), prefs);
+    run: at("run"), gate: at("gate"), panel: at("panel"), new: at("new"), starter: at("starter")}), prefs);
 }
 
 /** Whether a mounted frame (`{project_id, desk_url, instance}`) is still the one the row describes. */

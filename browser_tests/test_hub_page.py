@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
+import copy
+import json
+import re
 import threading
 import time
 
@@ -129,6 +132,65 @@ def test_closing_during_a_held_pick_response_cancels_only_that_late_pick(hub_pag
     assert hub.posts == [
         {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
         {"path": f"/hub/dialogs/{pick}/cancel", "body": {}}]
+
+
+def test_scratch_add_sends_only_name_and_folder_and_selects_starter(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    before = copy.deepcopy(hub.answers["/hub/projects"][1])
+    after = copy.deepcopy(before)
+    project = copy.deepcopy(after["projects"][0])
+    project.update(project_id="a" * 32, name="Fresh project", source="scratch", tasks=[])
+    after["projects"].append(project)
+    operation = "operation-" + "4" * 32
+    hub.post_answers["/hub/projects"] = (202, {"operation_id": operation})
+    hub.answer(f"/hub/operations/{operation}", {"operation_id": operation, "kind": "add",
+        "source": "scratch", "state": "succeeded", "step": "start", "project_id": "a" * 32,
+        "code": None, "result": {"folder": "fresh", "git": "not_git", "providers": "copied",
+                                  "exclude": "not_git", "projects_home_created": True}})
+    ready(page)
+    held = []
+    def hold_old_read(route):
+        if not held:
+            held.append(route)
+        else:
+            route.continue_()
+    page.page.route("**/hub/projects", hold_old_read)
+    with page.page.expect_request(lambda req: req.url.endswith("/hub/projects")):
+        hub.push({"kind": "projects"})
+    hub.answer("/hub/projects", after)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="source-scratch"]').click()
+    page.page.locator('[data-focus="scratch-folder"]').fill("fresh")
+    page.page.locator('[data-focus="folder-name"]').fill("Fresh project")
+    page.page.locator('[data-focus="folder-submit"]').click()
+    expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(say(page, "hub.add.serving"))
+    held[0].fulfill(status=200, content_type="application/json", body=json.dumps(before))
+    assert hub.posts == [{"path": "/hub/projects",
+        "body": {"source": "scratch", "folder": "fresh", "name": "Fresh project"}}]
+    expect(page.page.locator("#hubDesk iframe")).to_have_attribute("src",
+        re.compile(r"project=a{32}.*new=task.*starter=desk-starter-docs"))
+    assert "project=" + "a" * 32 in page.page.evaluate("location.hash")
+
+
+def test_scratch_parent_choice_preserves_draft_and_sends_only_the_pick(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "5" * 32
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    hub.answer(f"/hub/dialogs/{pick}", {"pick_id": pick, "purpose": "projects_home",
+        "state": "picked", "folder": "Projects", "project": None, "code": None})
+    hub.post_answers["/hub/setup/projects-home"] = (200,
+        {"projects_home": {"state": "chosen", "name": "Projects"}})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="source-scratch"]').click()
+    page.page.locator('[data-focus="scratch-folder"]').fill("keep-folder")
+    page.page.locator('[data-focus="folder-name"]').fill("Keep name")
+    page.page.locator('[data-focus="projects-home"]').click()
+    expect(page.page.locator('[data-focus="scratch-folder"]')).to_have_value("keep-folder")
+    expect(page.page.locator('[data-focus="folder-name"]')).to_have_value("Keep name")
+    assert hub.posts == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "projects_home"}},
+        {"path": "/hub/setup/projects-home", "body": {"pick_id": pick}}]
 
 
 def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(

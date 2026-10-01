@@ -42,6 +42,7 @@ CSP = ("default-src 'self'; frame-src http://127.0.0.1:*; frame-ancestors 'none'
 FIXTURE_ROUTES = {"/hub/projects": "hub_projects.json", "/hub/limits": "hub_limits.json",
                   "/hub/setup": "hub_setup.json", "/hub/session": "hub_session.json"}
 POST_ROUTE = re.compile(r"^/hub/(?:projects|dialogs/folder|dialogs/pick-[0-9a-f]{32}/cancel|"
+                        r"setup/projects-home|"
                         r"projects/[0-9a-f]{32}/(?:activate|view|stop|recover|forget|"
                         r"providers)|queue/order|logins/[0-9a-f]{64}/recover)$")
 KEEPALIVE_SECONDS = 0.2
