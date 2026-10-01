@@ -1,9 +1,8 @@
-"""Windows creation helper of ProcessRunner: suspended, explicit handles, verified token.
+"""Windows native helper of ProcessRunner: profiles, held ACLs and verified launch.
 
-It neither owns profiles nor grants filesystem rights. Only ProcessRunner calls
-launch and verifies the token before its existing Job helper resumes the child.
-No ordinary Popen fallback exists here. Native shapes derive from the previously
-exercised AppContainer probe; stdin now uses the runner's normal streaming pipe.
+Only ProcessRunner supplies profile and ACL lifecycle callbacks. Launch is
+suspended with explicit handles; the runner verifies policy before its existing
+Job helper resumes the child. No ordinary Popen fallback exists here.
 """
 from __future__ import annotations
 
@@ -139,6 +138,109 @@ def delete_profile(moniker):
     result = _userenv.DeleteAppContainerProfile(moniker)
     if result:
         raise OSError(result & 0xFFFFFFFF, "DeleteAppContainerProfile failed")
+
+
+_DACL = 0x4
+_OWNER = 0x1
+_PROTECTED_DACL = 0x80000000
+_UNPROTECTED_DACL = 0x20000000
+_SE_FILE_OBJECT = 1
+_SE_DACL_PROTECTED = 0x1000
+_declare(_adv, "GetSecurityInfo", w.DWORD, w.HANDLE, w.DWORD, w.DWORD,
+         ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_void_p,
+         ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))
+_declare(_adv, "SetSecurityInfo", w.DWORD, w.HANDLE, w.DWORD, w.DWORD,
+         ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+_declare(_adv, "ConvertSecurityDescriptorToStringSecurityDescriptorW", w.BOOL,
+         ctypes.c_void_p, w.DWORD, w.DWORD, ctypes.POINTER(w.LPWSTR), ctypes.c_void_p)
+_declare(_adv, "ConvertStringSecurityDescriptorToSecurityDescriptorW", w.BOOL,
+         w.LPCWSTR, w.DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p)
+_declare(_adv, "GetSecurityDescriptorDacl", w.BOOL, ctypes.c_void_p,
+         ctypes.POINTER(w.BOOL), ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(w.BOOL))
+_declare(_adv, "GetSecurityDescriptorControl", w.BOOL, ctypes.c_void_p,
+         ctypes.POINTER(w.WORD), ctypes.POINTER(w.DWORD))
+
+
+def acl_snapshot(hold):
+    """Return (DACL SDDL, protected, owner SID) for one caller-proven own path."""
+    hold.check()
+    owner, descriptor = ctypes.c_void_p(), ctypes.c_void_p()
+    status = _adv.GetSecurityInfo(hold.handle, _SE_FILE_OBJECT, _OWNER | _DACL,
+                                        ctypes.byref(owner), None, None, None,
+                                        ctypes.byref(descriptor))
+    if status:
+        raise OSError(status, "GetSecurityInfo failed")
+    try:
+        present, dacl, defaulted = w.BOOL(), ctypes.c_void_p(), w.BOOL()
+        if not _adv.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                                             ctypes.byref(dacl), ctypes.byref(defaulted)):
+            raise _error("GetSecurityDescriptorDacl")
+        if not present.value or not dacl.value:
+            raise OSError("owned directory has an absent or NULL DACL")
+        result = w.LPWSTR()
+        if not _adv.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor, 1, _OWNER | _DACL, ctypes.byref(result), None):
+            raise _error("ConvertSecurityDescriptorToStringSecurityDescriptorW")
+        try:
+            sddl = result.value
+        finally:
+            _kernel.LocalFree(result)
+        control, revision = w.WORD(), w.DWORD()
+        if not _adv.GetSecurityDescriptorControl(descriptor, ctypes.byref(control),
+                                                 ctypes.byref(revision)):
+            raise _error("GetSecurityDescriptorControl")
+        result = sddl, bool(control.value & _SE_DACL_PROTECTED), _profile_sid(owner)
+        hold.check()
+        return result
+    finally:
+        _kernel.LocalFree(descriptor)
+
+
+def acl_set(hold, sddl, *, protected):
+    """Set only a DACL on an already-verified product-owned directory."""
+    hold.check()
+    descriptor = ctypes.c_void_p()
+    if not _adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl, 1, ctypes.byref(descriptor), None):
+        raise _error("ConvertStringSecurityDescriptorToSecurityDescriptorW")
+    try:
+        present, dacl, defaulted = w.BOOL(), ctypes.c_void_p(), w.BOOL()
+        if not _adv.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                                             ctypes.byref(dacl), ctypes.byref(defaulted)):
+            raise _error("GetSecurityDescriptorDacl")
+        if not present.value or not dacl.value:
+            raise OSError("refusing to set an absent or NULL DACL")
+        information = _DACL | (_PROTECTED_DACL if protected else _UNPROTECTED_DACL)
+        status = _adv.SetSecurityInfo(hold.handle, _SE_FILE_OBJECT,
+                                      information, None, None, dacl, None)
+        if status:
+            raise OSError(status, "SetSecurityInfo failed")
+        hold.check()
+    finally:
+        _kernel.LocalFree(descriptor)
+
+
+def acl_equal(observed_sddl, expected_sddl):
+    """Compare parsed DACL bytes, not SDDL formatting or owner spellings."""
+    def dacl_bytes(sddl):
+        descriptor = ctypes.c_void_p()
+        if not _adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl, 1, ctypes.byref(descriptor), None):
+            raise _error("ConvertStringSecurityDescriptorToSecurityDescriptorW")
+        try:
+            present, dacl, defaulted = w.BOOL(), ctypes.c_void_p(), w.BOOL()
+            if not _adv.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present),
+                                                 ctypes.byref(dacl), ctypes.byref(defaulted)):
+                raise _error("GetSecurityDescriptorDacl")
+            if not present.value or not dacl.value:
+                raise OSError("ACL comparison requires a non-null DACL")
+            size = ctypes.c_ushort.from_address(dacl.value + 2).value
+            if size < 8 or size > 65535:
+                raise OSError("ACL size is invalid")
+            return ctypes.string_at(dacl, size)
+        finally:
+            _kernel.LocalFree(descriptor)
+    return dacl_bytes(observed_sddl) == dacl_bytes(expected_sddl)
 
 
 def _error(name):

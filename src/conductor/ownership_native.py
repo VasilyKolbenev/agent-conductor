@@ -87,9 +87,10 @@ if os.name == "nt":
         return _facts(msvcrt.get_osfhandle(stream.fileno()))[0]
 
     class NativeHold:
-        def __init__(self, path, *, directory=False, exclusive=False, tree=False, movable=False):
+        def __init__(self, path, *, directory=False, exclusive=False, tree=False,
+                     movable=False, security=False):
             self.path, self.closed = path, False
-            access = _read | (_delete if movable else 0)
+            access = _read | (_delete if movable or security else 0) | (0x00040000 if security else 0)
             share = 1 if tree else (3 if directory or exclusive else 1)
             if tree:
                 probe = _open(path, _read | _write, 3)
@@ -142,6 +143,15 @@ if os.name == "nt":
                 raise _error("cannot publish ownership rename without replacement")
             self.path = destination
             self.check()
+
+        def delete(self):
+            """Delete this held, empty object by identity, never by a reopened name."""
+            self.check()
+            disposition = ctypes.c_ubyte(1)  # FILE_DISPOSITION_INFO.DeleteFile is BOOLEAN
+            if not _k32.SetFileInformationByHandle(self.handle, 4,
+                    ctypes.byref(disposition), ctypes.sizeof(disposition)):
+                raise _error("cannot delete owned object by handle")
+            self.close()
 
         def close(self):
             if not self.closed:
