@@ -55,6 +55,7 @@ OPERATION_CODES = (
     "gh_unreachable", "gh_failed", "clone_timeout", "clone_failed", "clone_cleanup_incomplete",
     "root_invalid", "root_too_broad", "root_nested", "root_in_login_home",
     "root_already_registered", "root_path_too_long", "windows_name_unsafe", "conduct_home_invalid",
+    "name_invalid",
     "git_not_pinned", "git_changed", "git_too_old", "tool_version_unreadable",
     "project_not_repo_root", "tracks_product_dir",
     "legacy_writers_must_stop", "unsettled_action", "recovery_required", "transition_conflict",

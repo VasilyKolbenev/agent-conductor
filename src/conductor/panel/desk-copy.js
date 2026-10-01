@@ -23,6 +23,7 @@ export const DESK_COPY = Object.freeze({
   "desk.quota.head": ["Harness limits", "Лимиты харнессов"],
   "desk.quota.no_data": ["No data", "Нет данных"],
   "desk.quota.remaining": ["Remaining", "Осталось"],
+  "desk.quota.lowest_remaining": ["Lowest remaining", "Наименьший остаток"],
   "desk.quota.resets": ["Resets", "Сброс"],
   "desk.quota.balance": ["Balance", "Баланс"],
   "desk.quota.stale": ["Stale", "Устарело"],

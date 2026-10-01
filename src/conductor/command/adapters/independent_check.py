@@ -24,11 +24,14 @@ REASONS = frozenset({
     "verified", "homes_refused", "preflight_refused", "marker_standing",
     "no_verdict", "tree_changed", "rejected", "frame_over_limit", "frame_env_echo",
     "material_unavailable", "login_residue", "rejected_findings_refused",
+    "snapshot_damaged", "object_format_changed", "base_missing", "reserved_path",
+    "irregular_result", "result_too_large", "unportable_name", "case_collision",
 })
 #: The whole serialized frame -- JSON, hex and service fields included -- the same number as
 #: process.STDIN_LIMIT, which carries it (pinned equal by a test). Codex ruling K, 23.09.2026:
 #: live, a 43-49 KiB plan plus a 19,538-byte file could not be judged under 64 KiB.
 FRAME_LIMIT = 256 * 1024
+TREE_LISTING_LIMIT = 64 * 1024
 
 
 class CheckFrameError(ValueError):
@@ -43,6 +46,9 @@ class CheckFrameError(ValueError):
 class CheckFrame:
     payload: bytes = field(repr=False)
     digest: str
+    work_tree_digest: str | None = None
+    accept_manifest_digest: str | None = None
+    work_modes: Mapping | None = field(default=None, repr=False)
 
 
 def _json(value) -> str:
@@ -58,11 +64,14 @@ def _plain(value):
 
 
 def build_frame(request, material: Published, tree, contents, *, result_digest=None, result_manifest=None,
-                sensitive=()) -> CheckFrame:
+                sensitive=(), accumulated=None, work_tree_digest=None, work_modes=None) -> CheckFrame:
     """Render precisely the cached input material and this read's result facts."""
     scan_material((request.arguments, material.instruction, material.input_documents,
                    material.result_document, material.instruction_document,
                    material.input_artifact_ids, material.changed, tree, contents, result_manifest), sensitive)
+    if accumulated is not None:
+        scan_material(([row.as_dict() for row in accumulated.rows],
+                       tuple(accumulated.blobs.values())), sensitive)
     args = (DeepReviewArgs if request.capability == "review" else DeepDispatchArgs).from_dict(
         _plain(request.arguments))
     profile = args.review_profile if request.capability == "review" else args.profile
@@ -93,7 +102,7 @@ def build_frame(request, material: Published, tree, contents, *, result_digest=N
         sections.append("Your whole reply must fit in "
             f"{OUTPUT_LIMIT_BYTES[args.output_limit_profile]} UTF-8 bytes; keep the reasons brief.")
         sections.append(f"Each changed file of at most {FILE_BUDGET} bytes is included whole below; "
-            "a larger one appears in WORK TREE by digest only. This whole frame is bounded at "
+            "larger changes refuse verification. This whole frame is bounded at "
             f"{FRAME_LIMIT} bytes.")
     if typed:
         # The verdict line and two line breaks (CRLF included) come out of the reply bound first;
@@ -112,23 +121,47 @@ def build_frame(request, material: Published, tree, contents, *, result_digest=N
         sections.append("\nRESULT DOCUMENT\n" + _json(material.result_document))
         digest = result_digest
     else:
-        result_sections, digest = _dispatch_sections(request, material, tree, contents, result_manifest)
+        result_sections, digest = _dispatch_sections(
+            request, material, tree, contents, result_manifest, work_tree_digest)
         sections.extend(result_sections)
+        if accumulated is not None:
+            sections.append("\nACCUMULATED RESULT\n" + _json(
+                {"accept_manifest_digest": accumulated.digest,
+                 "files": [row.as_dict() for row in accumulated.rows]}))
+            sections.extend(_render_content(row.path, accumulated.blobs[row.sha256])
+                            for row in accumulated.rows if row.state != "deleted")
     payload = "\n".join(sections).encode("utf-8")
     if len(payload) > FRAME_LIMIT or b"\x00" in payload:
         raise CheckFrameError("frame_over_limit")
-    return CheckFrame(payload, digest)
+    return CheckFrame(payload, digest, work_tree_digest,
+                      None if accumulated is None else accumulated.digest, work_modes)
 
 
-def _dispatch_sections(request, material, tree, contents, result_manifest):
+def _dispatch_sections(request, material, tree, contents, result_manifest, work_tree_digest):
     if material.instruction is None:
         raise CheckFrameError("material_unavailable")
-    sections = ["\nWORK TREE\n" + _json(tree),
+    for path in material.changed:
+        value = tree.get(path)
+        if (isinstance(value, str) and len(value) == 64
+                and all(char in "0123456789abcdef" for char in value)
+                and (path not in contents or len(contents[path]) > FILE_BUDGET)):
+            raise CheckFrameError("frame_over_limit")
+    listing = _json(tree)
+    summarized = len(listing.encode("utf-8")) > TREE_LISTING_LIMIT
+    changed_rows = {path: tree.get(path) for path in material.changed}
+    seal = work_tree_digest or _content_digest(dict(tree))
+    tree_section = ("\nWORK TREE SUMMARY\n" + _json({"files": len(tree), "tree_digest": seal})
+                    + "\nCHANGED TREE ROWS\n" + _json(changed_rows)) if summarized else "\nWORK TREE\n" + listing
+    sections = [tree_section,
                 "\nCHANGED PATHS\n" + _json(material.changed), "\nCHANGED FILE CONTENTS\n"]
     sections.extend(_render_content(name, contents[name]) for name in sorted(contents))
     digest = _content_digest({
         "action_id": request.action_id, "input_artifact_ids": list(material.input_artifact_ids),
         "changed": list(material.changed), "tree": dict(tree)})
+    if summarized:
+        digest = _content_digest({"version": 2, "action_id": request.action_id,
+            "input_artifact_ids": list(material.input_artifact_ids), "changed": list(material.changed),
+            "changed_rows": changed_rows, "tree_digest": seal})
     if marked_policy(request):
         if result_manifest is None or result_manifest != material.result_manifest:
             raise CheckFrameError("material_unavailable")

@@ -1,6 +1,6 @@
 """The printing bodies of the hub-side commands of `conduct` (spec 4.1.12).
 
-`conduct tools pin` and `conduct hub` are here today; `projects add` comes later. Each body turns
+`conduct tools pin`, `conduct projects add` and `conduct hub` live here. Each body turns
 what a library decided into the stream contract of the CLI: a result on stdout, or ONE refusal
 line on stderr, and an exit code. The libraries (`tool_pins`, `hub.server`, ...) raise and never
 print. `hub_command` imports the hub only when it runs, so `tools pin` and `init` do not load it.
@@ -42,6 +42,24 @@ def tools_pin(tool: str, path: str) -> int:
 def _refused(command: str, code: str, detail: str) -> int:
     print(f"conduct {command}: refused {code}: {' '.join(str(detail).split())}", file=sys.stderr)
     return 1
+
+
+def projects_add(directory: str, *, name: str | None = None,
+                 legacy_writers_stopped: bool = False) -> int:
+    """Print one completed step per line, then the local folder's registration result."""
+    from conductor.hub import projects_add as addition
+
+    def completed(step: str) -> None:
+        print(json.dumps({"step": step}, ensure_ascii=False), flush=True)
+
+    try:
+        result = addition.add_folder(directory, name=name,
+            legacy_writers_stopped=legacy_writers_stopped, progress=completed)
+    except addition.AddRefused as error:
+        return _refused("projects add", error.code, error.detail)
+    print(json.dumps({"result": result}, sort_keys=True, ensure_ascii=False), flush=True)
+    print(f"conduct projects add: registered {result['name']} at {result['root']}", file=sys.stderr)
+    return 0
 
 
 class _Refusal(Exception):

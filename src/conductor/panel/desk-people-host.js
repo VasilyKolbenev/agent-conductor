@@ -56,12 +56,13 @@ function compact(row, providers, locale) {
     } else {
       const current = row.windows.filter((window) => window.freshness === "current"
         && window.remaining_percent !== null);
-      const nearest = current.filter((window) => window.resets_at !== null)
-        .sort((left, right) => left.resets_at.localeCompare(right.resets_at))[0] ?? current[0];
-      if (nearest) value = `${words(locale, "desk.quota.remaining")}: `
-        + `${nearest.remaining_percent}%` + (nearest.resets_at === null ? ""
+      const limiting = current.sort((left, right) => left.remaining_percent - right.remaining_percent
+        || (Date.parse(left.resets_at) || Infinity) - (Date.parse(right.resets_at) || Infinity))[0];
+      if (limiting) value = `${words(locale, current.length > 1
+        ? "desk.quota.lowest_remaining" : "desk.quota.remaining")}: `
+        + `${limiting.remaining_percent}%` + (limiting.resets_at === null ? ""
           : ` · ${words(locale, "desk.quota.resets")}: `
-            + instantText(locale(), nearest.resets_at).short);
+            + instantText(locale(), limiting.resets_at).short);
     }
   } else if (row.freshness === "stale") value = words(locale, "desk.quota.stale");
   return element("li", {className: "desk-quota__account", "data-quota-bindings": row.binding_ids.join(" "),

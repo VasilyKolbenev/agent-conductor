@@ -82,8 +82,11 @@ PULT = """() => {
     cancel: form ? form.querySelectorAll("button")[1].textContent : null,
     focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
     block: block ? [...block.querySelectorAll("h3, p, li")].map((node) => (node.tagName === "LI"
-      ? [...node.querySelectorAll(":scope > span")].map((part) => part.textContent).join("").trim()
+      ? [...node.querySelectorAll(":scope > span:not(.desk-queue__hint)")]
+        .map((part) => part.textContent).join("").trim()
       : node.textContent.trim())) : null,
+    entryHints: block ? [...block.querySelectorAll("li > .desk-queue__hint")]
+      .map((node) => [node.parentElement.dataset.runId, node.innerText]) : [],
     text: pult.innerText, lang: document.documentElement.lang,
     storage: [localStorage.length, sessionStorage.length], cookie: document.cookie,
     hash: location.hash,
@@ -138,6 +141,13 @@ def test_the_queue_block_says_each_fixture_read_in_the_page_and_no_machine_word_
         bench, case, language):
     facts = bench(language, case["body"], mode=case["mode"])
     assert facts["block"] == case["text"][language]
+    # The confirmation action adds its own name hint beside the projected facts.
+    # Keep both contracts visible instead of concatenating the hint into a fact.
+    hint = {"en": "Give your name above to confirm this entry.",
+            "ru": "Укажите имя выше, чтобы подтвердить эту запись."}[language]
+    assert facts["entryHints"] == [[entry["run_id"], hint]
+                                   for entry in case["body"]["entries"]
+                                   if entry["state"] == "confirmation_required"]
     assert not RAW.search(facts["text"]), RAW.search(facts["text"]).group(0)
     assert facts["head"] == HEAD[language]
 

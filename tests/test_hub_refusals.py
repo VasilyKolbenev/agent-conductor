@@ -48,7 +48,7 @@ OPERATION_STEPS = {
               "clone_cleanup_incomplete"),
     "admit": ("root_invalid", "root_too_broad", "root_nested", "root_in_login_home",
               "root_already_registered", "root_path_too_long", "windows_name_unsafe",
-              "conduct_home_invalid"),
+              "conduct_home_invalid", "name_invalid"),
     "git": ("git_not_pinned", "git_changed", "git_too_old", "tool_version_unreadable",
             "project_not_repo_root", "tracks_product_dir"),
     "init_activate": ("legacy_writers_must_stop", "unsettled_action", "recovery_required",
@@ -79,7 +79,7 @@ def test_the_operation_codes_are_the_table_of_the_spec_by_step_and_nothing_else(
     assert {step: tuple(codes) for step, codes in refusals.OPERATION_CODES_BY_STEP.items()
             if step != "start"} == OPERATION_STEPS
     assert set(refusals.OPERATION_ERROR_CODES) == _operation_codes()
-    assert len(_operation_codes()) == 60
+    assert len(_operation_codes()) == 61
 
 
 def test_status_unreadable_is_a_state_code_but_not_yet_a_code_of_the_start_step():
