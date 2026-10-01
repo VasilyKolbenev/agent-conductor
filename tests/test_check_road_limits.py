@@ -1,7 +1,8 @@
 """Codex ruling K (23.09.2026): one byte budget along the do -> independent check road.
 
 Live, a 43-49 KiB plan and a 19,538-byte test file could not be judged: the file was past the 16 KiB read budget
-and plan + file past the 64 KiB frame. FILE_BUDGET is now 32 KiB and FRAME = STDIN = INSTRUCTION = 256 KiB.
+and plan + file past the 64 KiB frame. ADR-7c raises FILE_BUDGET to 128 KiB;
+FRAME = STDIN = INSTRUCTION remain 256 KiB.
 Codex R1/R2 (25.09.2026): the argv channel is the whole command line in Windows' UTF-16 units, and the
 provider facts a grant binds carry each adapter's channel with that bound, unit and scope.
 """
@@ -109,7 +110,7 @@ def test_the_provider_digest_binds_every_limit_on_the_road(tmp_path, monkeypatch
     authority = ProviderAuthority([config], [_contract(auth="api_key")], f.registry)
     run = f.store.read("run")
     facts = authority.facts(run.config)["providers"][0]
-    assert facts["file_budget"] == FILE_BUDGET == 32 * 1024
+    assert facts["file_budget"] == FILE_BUDGET == 128 * 1024
     assert facts["input_limits"] == {"frame": 256 * 1024, "stdin": 256 * 1024, "instruction": 256 * 1024}
     assert facts["task_channel"] is None, "a class with no profile declares no channel to bound"
     before = authority.digest(run.config)

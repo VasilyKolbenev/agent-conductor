@@ -137,6 +137,7 @@ Use the executable inside your virtual environment if it is not activated.
 | `conduct reconcile` | Inspect actions left uncertain after interruption. |
 | `conduct tools` | Pin the `git` and `gh` this product may run (`conduct tools pin git --path <absolute path>`). |
 | `conduct hub` | Serve the hub page on one loopback port (default 7700); it runs one server per project. |
+| `conduct projects add` | Check and register a local project folder using the shared harness profile. |
 
 Project-map templates are different from Studio's workflow starters:
 

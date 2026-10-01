@@ -60,7 +60,7 @@ you are shipping.
 Expect exit 0, and this list of subcommands — no more, no fewer:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub,projects} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -614,6 +614,11 @@ Named so that passing it is not read as more than it is.
   above, because a hub keeps `~/.december-command` (or `CONDUCT_HOME`) between runs and answers
   until it is interrupted, and a clean install has no project for it to open. It is held by
   `tests/test_hub_command.py` and, over a real child, by `tests/test_hub_live.py`.
+- **`conduct projects add`.** This command checks a chosen folder, activates its ownership,
+  copies the configured harness profile and registers it in the hub. It is not exercised by
+  the legacy steps above. Use an isolated `CONDUCT_HOME` and disposable project for the
+  automated admission checks in `tests/test_projects_add.py` and `tests/test_hub_operations.py`;
+  no real provider call is needed.
 - **Any platform but this one.** Everything above ran on Windows. The CI configuration runs the
   suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
   the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two
