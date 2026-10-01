@@ -658,7 +658,7 @@ HUB_ENTRY = "hub.html"
 #: The hub's own rows of the `/hub/<name>` allowlist (spec 4.6.3), then the four
 #: modules it shares with the desk (spec 4.1.10). `hub.html` is in neither list.
 SPEC_HUB_OWN = ("hub.css", "hub.js", "hub-frame.js", "hub-rail.js", "hub-stub.js",
-                "hub-add.js", "hub-copy.js")
+                "hub-add.js", "hub-copy.js", "hub-onboarding.js", "hub-github.js")
 SPEC_SHARED = ("desk-hash.js", "desk-status.js", "desk-status-copy.js", "desk-time.js")
 
 
@@ -681,8 +681,8 @@ def test_the_hub_entry_page_is_held_packaged_and_outside_the_hub_registry():
 def test_the_tree_spec_4_6_3_describes_is_accounted_for_with_the_entry_page_outside_the_registry():
     """The day the hub page is packaged and its registry is written to spec.
 
-    Eleven `HUB_ASSETS` rows go through the loader exactly as lane H's module
-    would hand them over; `hub.html` is the twelfth packaged file and is served
+    Thirteen `HUB_ASSETS` rows go through the loader exactly as lane H's module
+    would hand them over; `hub.html` is the fourteenth packaged file and is served
     at `/`, so it is not one of them. Listing it as a row is what this partition
     once demanded, so that tree is shown refused as well.
     """
@@ -693,7 +693,7 @@ def test_the_tree_spec_4_6_3_describes_is_accounted_for_with_the_entry_page_outs
     module = SimpleNamespace(HUB_ASSETS={
         f"/hub/{name}": row(name) for name in SPEC_HUB_OWN + SPEC_SHARED})
     hub = hub_registry_names(lambda _name: module)
-    assert len(hub) == 11 and HUB_ENTRY not in hub
+    assert len(hub) == 13 and HUB_ENTRY not in hub
     shared = frozenset(SPEC_SHARED)
     tree = {
         "packaged": frozenset(SPEC_HUB_OWN) | shared | {HUB_ENTRY, "desk.html", "studio.js"},

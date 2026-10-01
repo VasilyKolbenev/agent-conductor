@@ -24,6 +24,7 @@
 // not fire a `hashchange`), and never a token, a path or a line of text.
 import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
 import {codeWords, hubText} from "./hub-copy.js";
+import {createOnboarding} from "./hub-onboarding.js";
 import {folderForm} from "./hub-add.js";
 import {createFrameHost, frameAddress} from "./hub-frame.js";
 import {confirmWords, mountRail, node, noticedMap, projectLine, unlistedNotes} from "./hub-rail.js";
@@ -33,9 +34,11 @@ const byId = (id) => document.getElementById(id);
 const THEMES = Object.freeze([null, "dark", "light"]);
 //: A read or a write that has not answered in this long is lost (answered `unknown`, never repeated).
 const LIMIT_MS = 10000;
+// GitHub reads include the server's bounded 15-second CLI call.
+const GITHUB_READ_MS = 20000;
 //: The pause before the stream is opened again after it was closed by an error, doubled each time.
 const REOPEN_MS = Object.freeze({first: 1000, last: 30000});
-//: The four reads the page may make, by name.
+//: The reads the page may make, by name.
 const READS = Object.freeze({
   session: "/hub/session",
   projects: "/hub/projects",
@@ -43,6 +46,9 @@ const READS = Object.freeze({
   setup: "/hub/setup",
   dialog: "/hub/dialogs/{pick}",
   operation: "/hub/operations/{operation}",
+  githubStatus: "/hub/github/status",
+  githubRepos: "/hub/github/repos",
+  githubOwner: "/hub/github/repos/{owner}",
 });
 //: `HUB_WRITE_TARGETS` of spec 4.6.3: every write the page may make, and the route it writes.
 const WRITE_TARGETS = Object.freeze({
@@ -64,6 +70,7 @@ const WRITE_TARGETS = Object.freeze({
 //: The grammar of each identifier a route may carry (spec 4.6.3): an id that does not fit is never
 //: put in a path.
 const IDS = Object.freeze({pick: /^pick-[0-9a-f]{32}$/, tool: /^(?:gh|git)$/,
+  owner: /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/,
   project: /^[0-9a-f]{32}$/, login: /^[0-9a-f]{64}$/, operation: /^operation-[0-9a-f]{32}$/});
 //: The frames that make the page read again, by kind, and the read each makes.
 const FRAMES = Object.freeze({projects: "projects", project: "projects", limits: "limits",
@@ -102,7 +109,7 @@ async function read(name, params = {}) {
   try {
     return await answerOf(await fetch(fill(READS[name], params), {cache: "no-store",
       credentials: "same-origin", headers: {Accept: "application/json"},
-      signal: AbortSignal.timeout(LIMIT_MS)}));
+      signal: AbortSignal.timeout(name.startsWith("github") ? GITHUB_READ_MS : LIMIT_MS)}));
   } catch (_error) {
     return LOST;
   }
@@ -197,145 +204,9 @@ async function refresh(name) {
 
 const refreshAll = () => Promise.all(["projects", "limits", "setup"].map(refresh));
 
-function closeAdd() {
-  const add = state.add;
-  if (add.mode === "picking" && add.pickId) {
-    write("pickCancel", {pick: add.pickId}, {});
-  }
-  add.epoch += 1;
-  add.open = false;
-  add.pickId = null;
-  render();
-}
-
-function chooseSource(source) {
-  if (state.add.mode === "running") return;
-  const pick = state.add.pickId;
-  Object.assign(state.add, {source, epoch: state.add.epoch + 1, pickId: null,
-    mode: source === "folder" ? "choose" : "picked", folder: "", name: "",
-    project: null, consent: false, result: null, error: null});
-  if (pick) write("pickCancel", {pick}, {});
-  render();
-}
-
-async function chooseFolder(purpose = "project") {
-  const add = state.add;
-  const epoch = ++add.epoch;
-  if (purpose === "project") Object.assign(add, {folder: null, project: null,
-    name: "", consent: false, error: null, result: null});
-  Object.assign(add, {mode: "picking", pickId: null, pickPurpose: purpose});
-  render();
-  const answer = await write("pickFolder", {}, {purpose});
-  if (add.epoch !== epoch || !add.open) {
-    const latePick = answer.payload?.pick_id;
-    if (answer.status === "accepted" && IDS.pick.test(String(latePick))) {
-      await write("pickCancel", {pick: latePick}, {});
-    }
-    return;
-  }
-  if (answer.status !== "accepted" || !IDS.pick.test(String(answer.payload?.pick_id))) {
-    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
-      error: answer.code ?? "unknown"});
-    render();
-    return;
-  }
-  add.pickId = answer.payload.pick_id;
-  pollPick(epoch);
-}
-
-async function pollPick(epoch) {
-  const add = state.add;
-  if (add.epoch !== epoch || !add.open || !add.pickId) return;
-  const answer = await read("dialog", {pick: add.pickId});
-  if (add.epoch !== epoch || !add.open) return;
-  const row = answer.payload;
-  if (answer.status !== "accepted" || !isObject(row)) {
-    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
-      error: answer.code ?? "unknown"});
-  } else if (row.state === "open") {
-    setTimeout(() => pollPick(epoch), 500);
-    return;
-  } else if (row.state === "picked" && typeof row.folder === "string") {
-    if (add.pickPurpose === "projects_home") {
-      const saved = await write("projectsHome", {}, {pick_id: add.pickId});
-      if (add.epoch !== epoch || !add.open) return;
-      Object.assign(add, {mode: "picked", pickId: null,
-        error: saved.status === "accepted" ? null : saved.code ?? "unknown"});
-      if (saved.status === "accepted" && state.setup) state.setup.projects_home = saved.payload.projects_home;
-      refresh("setup");
-      render();
-      return;
-    }
-    Object.assign(add, {mode: "picked", folder: row.folder, name: row.folder,
-      project: row.project, error: null});
-  } else {
-    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
-      error: row.code ?? row.state});
-  }
-  render();
-}
-
-async function cancelFolder() {
-  const add = state.add, pick = add.pickId;
-  add.epoch += 1;
-  Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
-    pickId: null, error: null});
-  render();
-  if (pick) await write("pickCancel", {pick}, {});
-}
-
-async function submitFolder() {
-  const add = state.add;
-  if (add.mode !== "picked" || (add.source === "folder" ? !add.pickId : !add.folder)
-      || !add.name.trim()
-      || (add.project === "legacy" && !add.consent)) return;
-  const epoch = ++add.epoch;
-  add.mode = "running";
-  add.step = "admit";
-  add.error = null;
-  render();
-  const body = add.source === "scratch"
-    ? {source: "scratch", folder: add.folder, name: add.name}
-    : {source: "folder", pick_id: add.pickId,
-    name: add.name, legacy_writers_stopped: add.project !== "activated" &&
-      (add.project !== "legacy" || add.consent)};
-  const answer = await write("projectAdd", {}, body);
-  if (add.epoch !== epoch || !add.open) return;
-  if (answer.status !== "accepted" || !IDS.operation.test(String(answer.payload?.operation_id))) {
-    Object.assign(add, {mode: "picked", error: answer.code ?? "unknown"});
-    render();
-    return;
-  }
-  add.operationId = answer.payload.operation_id;
-  pollAdd(epoch);
-}
-
-async function pollAdd(epoch) {
-  const add = state.add;
-  if (add.epoch !== epoch || !add.open || !add.operationId) return;
-  const answer = await read("operation", {operation: add.operationId});
-  if (add.epoch !== epoch || !add.open) return;
-  const row = answer.payload;
-  if (answer.status !== "accepted" || !isObject(row)) {
-    Object.assign(add, {mode: "failed", error: answer.code ?? "unknown"});
-  } else {
-    Object.assign(add, {step: row.step, result: row.result});
-    if (row.state === "running") {
-      render();
-      setTimeout(() => pollAdd(epoch), 500);
-      return;
-    }
-    add.mode = row.state === "succeeded" ? "done" : "failed";
-    add.error = row.state === "failed" ? row.code : null;
-    projectReadEpoch += 1;
-    refresh("projects");
-    if (row.state === "succeeded" && IDS.project.test(String(row.project_id))) {
-      select({project_id: row.project_id, task_id: null, run_id: null, gate_id: null},
-        add.source === "scratch" ? {new: "task", starter: "desk-starter-docs"} : {});
-    }
-  }
-  render();
-}
+const adding = createOnboarding({state, write, read, render, refresh, select, isObject, IDS,
+  schedule: (call, delay) => setTimeout(call, delay),
+  invalidateProjects: () => { projectReadEpoch += 1; }});
 
 // -- the stream: frames are identifiers ------------------------------------------------------------
 
@@ -584,7 +455,7 @@ function topActions() {
     text: hubText(locale, "hub.add_project")});
   add.addEventListener("click", () => {
     if (state.add.open) {
-      closeAdd();
+      adding.close();
       return;
     }
     Object.assign(state.add, {open: true, source: "folder", mode: "choose", pickId: null, operationId: null,
@@ -637,6 +508,9 @@ function setupBanners() {
   if (isObject(setup.projects_home) && setup.projects_home.state === "invalid") {
     list.push(banner("home", hubText(locale, "hub.banner.home_invalid")));
   }
+  if (isList(setup.clone_recovery) && setup.clone_recovery.length) {
+    list.push(banner("clone-recovery", codeWords(locale, "clone_cleanup_incomplete")));
+  }
   if (setup.hub_job === "kill_on_close") {
     list.push(banner("job", hubText(locale, "hub.banner.job"), [small("hub.banner.job_how")]));
   }
@@ -656,12 +530,15 @@ function unlistedBanners() {
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
-  const first = state.projects.length === 0 || state.addHelp ? [firstRun()] : [];
+  const first = (state.projects.length === 0 || state.addHelp)
+    && !(state.add.open && state.add.source === "github") ? [firstRun()] : [];
   const form = state.add.open ? [folderForm(state.locale,
     {...state.add, home: state.setup?.projects_home?.name ?? "ConductProjects"}, {
-    close: closeAdd, choose: () => chooseFolder(), home: () => chooseFolder("projects_home"),
-    cancel: cancelFolder, submit: submitFolder,
-    source: chooseSource, folder: (value) => { state.add.folder = value; },
+    close: adding.close, choose: () => adding.choose(), home: () => adding.choose("projects_home"),
+    cancel: adding.cancel, submit: adding.submit,
+    source: adding.source, github: adding.github, repositories: adding.repositories,
+    repository: adding.repository, cancelClone: adding.cancelClone,
+    folder: (value) => { state.add.folder = value; },
     name: (value) => { state.add.name = value; },
     consent: (value) => { state.add.consent = value; render(); },
   })] : [];
