@@ -26,9 +26,9 @@ import {NO_PULT, createPultFlow} from "./desk-pult-flow.js";
 import {createWizardHost} from "./desk-wizard-host.js";
 import {connectDeskStream} from "./desk-stream.js";
 import {createFlowHost} from "./desk-flow-host.js";
+import {createPeopleHost} from "./desk-people-host.js";
 
-//: The reads the desk makes, each named for the route it asks. A route is only ever
-//: `path.<name>` of the transport module.
+//: Route names come only from the shared transport.
 const READS = Object.freeze({
   tasks: () => path.tasks(),
   runs: () => path.runs(),
@@ -37,24 +37,18 @@ const READS = Object.freeze({
   controls: (runId) => path.controls(runId),
   project: () => path.project(),
 });
-//: The five mounts, in reading order: the desk boots only on a page that carries all of
-//: them. Each has a module that fills it; one whose read gave nothing to draw stays in the word
-//: `empty`.
+//: The five required desk mounts, in reading order.
 const MOUNTS = Object.freeze(["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]);
-//: What a list stands at before a read and while one is out, and after a read that brought
-//: nothing usable: a phase and no rows.
+//: List phases before and after a read.
 const NONE = Object.freeze([]);
 const NOT_READ = Object.freeze({phase: "empty", list: NONE});
 const READING = Object.freeze({phase: "loading", list: NONE});
 const UNUSABLE = Object.freeze({phase: "failed", list: NONE});
-//: The chosen task's run: nothing chosen yet, one being read, and one that could not be
-//: used. `absent` says why a chosen task has no run to show, and is null otherwise.
+//: The chosen run's phases; `absent` explains a task with no run.
 const NO_RUN = Object.freeze({phase: "empty", detail: null, absent: null});
 const READING_RUN = Object.freeze({phase: "loading", detail: null, absent: null});
 const UNUSABLE_RUN = Object.freeze({phase: "failed", detail: null, absent: null});
-//: What the transport answers when the wire gave no answer at all: the read was
-//: abandoned at its deadline, or the request could not be made. Any other answer
-//: is the server's own refusal.
+//: These are missing wire answers, unlike a server refusal.
 const UNANSWERED = Object.freeze([LATE, "store_error"]);
 //: The refusal that says this server serves another project (spec 4.5.1).
 const MISMATCH = "project_mismatch";
@@ -72,6 +66,7 @@ let wizardHost = null;
 let stream = null, connection = "closed", loading = 0;
 let selectionRead = Promise.resolve(true);
 let flowHost = null, flowOpen = false;
+let peopleHost = null;
 // The bound project comes from the first hash or claim; only the hash's own identity is written
 // back. Embedded origin and announced location belong to this page, never browser storage.
 let bound = null;
@@ -180,6 +175,7 @@ function render() {
   mountFeed(byId("deskFeed"), view);
   mountSummary(byId("deskSummary"), view);
   mountPult(byId("deskPult"), view, handlers);
+  peopleHost?.render(state.run);
   wizardHost?.render();
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
@@ -192,7 +188,11 @@ function render() {
   byId("deskConnection").textContent = message(locale(), `desk.connection.${connection}`);
   byId("deskFlowToggle").hidden = state.foreign;
   byId("deskFlowToggle").setAttribute("aria-expanded", String(flowOpen));
-  for (const id of ["deskScene", "deskFeed", "deskSummary"]) byId(id).hidden = flowOpen;
+  byId("deskPeopleToggle").hidden = state.foreign;
+  byId("deskPeopleToggle").setAttribute("aria-expanded", String(peopleHost?.isOpen() ?? false));
+  byId("deskPeople").hidden = !peopleHost?.isOpen();
+  for (const id of ["deskScene", "deskFeed", "deskSummary"])
+    byId(id).hidden = flowOpen || peopleHost?.isOpen();
   say(said.shell);
   restoreFocus(byId("deskShell"), held);
 }
@@ -213,7 +213,8 @@ function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
-  const panel = flowOpen ? "cycle" : state.flag !== null && state.flag.open ? "continue" : null;
+  const panel = flowOpen ? "cycle" : peopleHost?.isOpen() ? "people"
+    : state.flag !== null && state.flag.open ? "continue" : null;
   const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
   // Preparation names the wizard's task. Until its run link has landed, a previously
   // selected run in the scene must not be paired with that new task in the address.
@@ -568,6 +569,7 @@ function enterForeign() {
   choice += 1;
   stream?.dispose();
   flowHost?.dispose();
+  peopleHost?.dispose();
   flowOpen = false;
   byId("deskFlow").hidden = true;
   connection = "closed";
@@ -603,21 +605,18 @@ function closeContinue() {
   move({flag: Object.freeze({...state.flag, open: false})});
 }
 
-//: Apply the steps of a hash the desk did not write, top to bottom. The task and its run, and
-//: the one panel the desk has a surface for, `continue`, are the only navigation it has today
-//: (the wizard and the other panels come with their modules), so no other step has a row here;
-//: a panel step that names another panel closes the block, since one panel is open at a time. A
-//: changed task resets the panel with it, before its run is read (spec 4.5.3, step 2.1). The
-//: panel step follows the selection, as in spec 4.5.3. Says whether it opened a run.
+//: Apply the task/run selection before its panel and wizard (spec 4.5.3).
 async function navigate(change, address) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
   if (address.panel !== "cycle" && flowOpen) showFlow(false);
+  if (address.panel !== "people" && peopleHost?.isOpen()) showPeople(false);
   const opened = await navigateSelection(keys, address);
   if (keys.includes("panel")) {
     if (address.panel === "continue") showContinue();
     else closeContinue();
     if (address.panel === "cycle") showFlow(true);
+    if (address.panel === "people") showPeople(true);
   }
   await wizardHost?.navigate(change, address);
   return opened;
@@ -661,9 +660,7 @@ function claimMode(claim) {
   return mode === "active" || mode === "view" ? mode : null;
 }
 
-//: The first read of every window (spec 4.5.1): the project claim. The claim, or null when
-//: the read gave none (a refusal, a route that is not there, no answer). A `project_mismatch`
-//: has ended the desk by now, in `readJson`.
+//: Read the project claim first; a mismatch has already ended the desk.
 async function readClaim() {
   try {
     return await readJson(READS.project());
@@ -672,10 +669,7 @@ async function readClaim() {
   }
 }
 
-//: Whether the claim ends the desk: the hash named a project and the claim names another
-//: (an id that differs, or none), which is the claim being wrong for this window. A window
-//: whose hash named none binds to what the claim names, `null` included; a claim that names
-//: nothing usable binds nothing and ends nothing.
+//: Bind an unnamed address to the claim; refuse a conflicting named address.
 function bindToClaim(address, claim) {
   if (address.project !== null) return !claimNamesAnotherProject(bound, claim);
   const named = projectOf(claim);
@@ -683,11 +677,7 @@ function bindToClaim(address, claim) {
   return true;
 }
 
-//: Embed mode (spec 4.5.5), decided once, from the claim the window already read. The desk
-//: embeds only if the window is framed, its hash asks for it and names a project, and the claim
-//: repeats that project and names a hub origin of the exact grammar. Any other answer leaves it
-//: off, and the hash the desk keeps then says no `embed`. The hub is told where the desk stands
-//: at once, and again at each change.
+//: Embed only when the frame, address and claim agree (spec 4.5.5).
 function enterEmbed(address, claim) {
   const origin = embedTarget({framed: window.parent !== window, address, claim});
   if (origin === null) return;
@@ -714,12 +704,10 @@ async function settle(address) {
   startStream();
 }
 
-//: The page's language is the address's (`#lang=ru`), and without a choice the page's own
-//: `lang` stands. The platform's language is not asked for here or in the hash module: the
-//: source guards keep that question in the transport and the Studio's boot module, and the
-//: hub always says `lang` when it mounts a desk.
+//: The address chooses language; without it, the page's `lang` stands.
 function showFlow(open) {
   if (state.foreign) return;
+  if (open) peopleHost?.show(false);
   flowOpen = open;
   byId("deskFlow").hidden = !open;
   if (open && flowHost === null) {
@@ -727,6 +715,13 @@ function showFlow(open) {
       nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign});
     flowHost.open();
   }
+  render();
+}
+
+function showPeople(open) {
+  if (state.foreign) return;
+  if (open) showFlow(false);
+  peopleHost?.show(open);
   render();
 }
 
@@ -749,12 +744,14 @@ async function refreshStream({current}) {
 function startStream() {
   if (state.foreign || stream !== null) return;
   stream = connectDeskStream({door, refresh: refreshStream, onForeign: enterForeign,
-    onConnection: (value) => { connection = value; render(); }});
+    onConnection: (value) => { connection = value; peopleHost?.connection(value === "open");
+      render(); }});
 }
 
 function stopStream() {
   flowHost?.suspend();
   stream?.dispose();
+  peopleHost?.suspend();
   stream = null;
   loading += 1;
   choice += 1;
@@ -771,6 +768,8 @@ function boot() {
   queueDoor = createQueueDoor(door, enterForeign);
   pultFlow = createPultFlow({door: queueDoor,
     host: {state: () => state, move, nonce: () => crypto.randomUUID()}});
+  peopleHost = createPeopleHost({mount: byId("deskPeople"), pult: byId("deskPult"), door,
+    locale, onForeign: enterForeign});
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
@@ -779,6 +778,11 @@ function boot() {
   byId("deskFlowToggle").addEventListener("click", () => {
     closeContinue();
     showFlow(!flowOpen);
+    remember();
+  });
+  byId("deskPeopleToggle").addEventListener("click", () => {
+    closeContinue();
+    showPeople(!peopleHost.isOpen());
     remember();
   });
   window.addEventListener("pagehide", stopStream);

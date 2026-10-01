@@ -82,7 +82,11 @@ PERMITTED_IMPORTS = {
                           "./desk-pult.js",
                           "./desk-flag-model.js", "./desk-flag.js", "./desk-queue.js",
                           "./desk-pult-flow.js", "./desk-wizard-host.js",
-                          "./desk-stream.js", "./desk-flow-host.js"}),
+                          "./desk-stream.js", "./desk-flow-host.js", "./desk-people-host.js"}),
+    "desk-people-host.js": frozenset({"./command-view.js", "./studio-i18n.js",
+      "./desk-time.js", "./studio-model.js", "./studio-runread.js",
+      "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
+      "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
                                          "./desk-wizard-run.js", "./desk-wizard.js"}),
     #: What a press on the console's queue block means: a pure flow over the door it is handed and

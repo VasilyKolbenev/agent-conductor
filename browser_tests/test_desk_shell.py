@@ -51,7 +51,7 @@ from tests.test_store import good_lane, write_project
 #: the element helper the region modules draw with, and the catalogue (with its
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
-    "desk.html": 200, "desk.css": 200, "desk-flow.css": 200,
+    "desk.html": 200, "desk.css": 200, "desk-flow.css": 200, "desk-people.css": 200,
     "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
     "desk-hash.js": 200, "desk-embed.js": 200, "command-view.js": 200, "desk-copy.js": 200,
@@ -97,6 +97,8 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
     "desk-wizard-card.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
+    "desk-people-host.js": 200, "studio-quotas-model.js": 200,
+    "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,
     "desk-flow-host.js": 200, "desk-flow.js": 200, "desk-flow-model.js": 200,
     "desk-flow-draw.js": 200, "desk-flow-diag.js": 200, "desk-flow-edits.js": 200,
     "desk-flow-fields.js": 200, "desk-flow-graph.js": 200, "desk-flow-inspector.js": 200,
@@ -276,9 +278,11 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     # console says its heading, the line that asks for the name and the queue this server reads
     # (it has no owner: its slot is unavailable, and nothing is queued).
     assert by_id["deskSummary"]["children"] == 0
-    assert (by_id["deskPult"]["children"], by_id["deskPult"]["text"]) == (
-        3, "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
-           "the project has no ownerNothing is queued.")
+    assert by_id["deskPult"]["children"] == 4
+    assert by_id["deskPult"]["text"].startswith(
+        "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
+        "the project has no ownerNothing is queued.")
+    assert "Harness limits" in by_id["deskPult"]["text"]
     assert by_id["deskRail"]["children"] == 2
     assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"

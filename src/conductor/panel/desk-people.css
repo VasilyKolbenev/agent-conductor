@@ -1,0 +1,35 @@
+/* The People panel reuses Studio's provider, participant and quota rendering.
+   Scope its geometry to the desk so the old Studio sheet cannot move the shell. */
+.desk-people{grid-row:2/5;padding:22px;min-width:0;overflow:auto;background:var(--ground)}
+.desk-people>h2{font:500 23px var(--display);margin:0 0 14px}
+.desk-people .studio-agents{display:grid;gap:18px}
+.desk-people .studio-lede,.desk-people .studio-why,
+.desk-people .studio-note,.desk-people .studio-quota__fact dt,
+.desk-people .studio-quota__status{color:var(--muted)}
+.desk-people .studio-agents section{min-width:0}
+.desk-people .studio-agents h2,.desk-people .studio-agents h3,
+.desk-people .studio-agents h4{margin:0 0 9px}
+.desk-people .studio-quotas,.desk-people .studio-section{
+  padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.desk-people .studio-quotas button,.desk-people .studio-agents button{
+  padding:0 14px;border:1px solid var(--line-strong);border-radius:8px;color:var(--ink)}
+.desk-people .studio-quotas__grid{display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;margin-top:14px}
+.desk-people .studio-quota{padding:14px;border:1px solid var(--line);border-radius:8px}
+.desk-people .studio-quota__fact{display:grid;grid-template-columns:minmax(100px,1fr) 2fr;
+  gap:8px;margin:6px 0}
+.desk-people .studio-quota__fact dd{margin:0;font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere}
+.desk-people .studio-quota__window{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+.desk-people .studio-providers,.desk-people .studio-participants{list-style:none;margin:0;
+  padding:0;display:grid;gap:10px}
+.desk-people .studio-provider,.desk-people .studio-participant{padding:12px;
+  border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
+.desk-people .studio-fact{margin:6px 0}
+.desk-quota{margin-top:18px;padding-top:15px;border-top:1px solid var(--line);min-width:0}
+.desk-quota h3{font-size:13px;margin:0 0 8px}
+.desk-quota__source,.desk-quota__state{font-size:12px;color:var(--muted)}
+.desk-quota__list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:7px}
+.desk-quota__account{font-size:12px;overflow-wrap:anywhere}
+@media(max-width:600px){.desk-people{padding:15px}
+  .desk-people .studio-quota__fact{grid-template-columns:1fr}}

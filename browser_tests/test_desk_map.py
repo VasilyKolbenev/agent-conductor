@@ -6,7 +6,7 @@ holds those words to the source. This module holds them to a desk in a real brow
 seeded one-project server: what the map says a booted desk draws IS drawn, in both languages, and
 what it says is not built is not there: the desk has exactly the five regions, no tab list, no panel
 where an address asks for them. The wizard, cycle editor, queue and stream are mounted; the
-run and people panels and old tabs remain absent. The day another surface is built
+run panel and old tabs remain absent. The day another surface is built
 a row here reds with it, and is moved by the lane that built it.
 
 A fact and its sentence are read in ONE evaluation.
@@ -28,7 +28,7 @@ from tests.test_store import good_lane, write_project
 
 #: The five regions of the desk (spec 5.1) and nothing else.
 REGIONS = ["rail", "scene", "feed", "summary", "pult"]
-#: Run and people panels and old tabs still have no surface; the wizard and cycle do.
+#: Run panel and old tabs still have no surface; wizard, cycle and people do.
 ABSENT_SURFACES = '[class*="desk-panel"], [data-panel], [role="tablist"], [role="tab"]'
 ASKS = [("#panel=cycle", True, False), ("#new=task", False, True),
         ("#task=task-fix&prepare=1", False, True),
@@ -39,6 +39,7 @@ SHOWN = """(selectors) => Object.fromEntries(selectors.map(
 FACTS = f"""() => ({{regions: [...document.querySelectorAll("[data-region]")].map(
   (node) => node.dataset.region), absent: document.querySelectorAll('{ABSENT_SURFACES}').length,
   flow: !document.getElementById('deskFlow').hidden,
+  people: !document.getElementById('deskPeople').hidden,
   wizard: !document.getElementById('deskWizard').hidden,
   connection: document.getElementById('deskConnection').getAttribute('role'),
   hash: location.hash}})"""
@@ -114,8 +115,9 @@ def test_the_address_opens_only_the_mounted_surface_it_names(
                       "requestAnimationFrame(done)))")
         facts = page.evaluate(FACTS)
         assert facts["regions"] == REGIONS, "the five regions of the desk and no sixth"
-        assert facts["absent"] == 0, "the run and people panels and old tabs remain absent"
+        assert facts["absent"] == 0, "the run panel and old tabs remain absent"
         assert (facts["flow"], facts["wizard"]) == (flow, wizard)
+        assert facts["people"] == (ask == "#panel=people")
         assert facts["connection"] == "status"
         assert "/events" in asked, "the booted desk opens its projection stream"
     finally:
@@ -124,5 +126,5 @@ def test_the_address_opens_only_the_mounted_surface_it_names(
 
 def test_the_rows_that_are_not_on_the_desk_name_an_owner_and_the_five_regions_are_what_remains():
     off = [row for row in ROWS if row.state != "on_desk"]
-    assert len(off) >= 20 and all(row.owner in ("D1", "D2") for row in off)
+    assert len(off) >= 19 and all(row.owner in ("D1", "D2") for row in off)
     assert REGIONS == ["rail", "scene", "feed", "summary", "pult"], Path(__file__).name

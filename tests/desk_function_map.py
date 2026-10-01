@@ -62,8 +62,8 @@ def _in_module(file: str, token: str) -> tuple[str, str, str]:
     return ("token", file, token)
 
 
-#: The run and people panels are still absent.
-NO_PANEL = _absent("desk.js", "\"people\"")
+#: The detailed run panel is still absent.
+NO_PANEL = _absent("desk.html", 'id="deskRun"')
 #: The cycle editor and wizard are reached through their hosts.
 FLOW = _in("desk-flow.js", "mountFlow")
 
@@ -95,7 +95,7 @@ ROWS: tuple[Row, ...] = (
         (_in("desk.html", "href=\"/panel/index.html\""),), selector="a[href=\"/panel/index.html\"]"),
     Row("5.6.1", "Навигация в hash", "desk-hash.js and the hashchange router", "on_desk",
         (_in("desk.js", "navigationChange"), _in("desk.js", "hashchange")),
-        owed=(("D1", "the run and people panels still have no surface"),)),
+        owed=(("D1", "the detailed run panel still has no surface"),)),
     Row("5.6.1", "Кто действует (actor)", "pult: «Вы: <имя> · изменить»", "on_desk",
         (_in("desk-pult.js", "desk.pult.actor"), _in("desk.js", "setActor")),
         selector=".desk-pult__actor"),
@@ -227,15 +227,15 @@ ROWS: tuple[Row, ...] = (
     Row("5.6.5", "Почему пока нельзя ответить", "pult: why-not-yet", "not_built",
         (_absent("desk-pult.js", "whyNotYet"),), "D1"),
     # -- 5.6.6 agents -------------------------------------------------------------------------
-    Row("5.6.6", "Лимиты полностью", "«Участники»; briefly the pult", "not_built",
-        (NO_PANEL, _absent("desk-pult.js", "quota")), "D1"),
-    Row("5.6.6", "Обновление лимитов раз в 60 с", "the pult, whatever the view", "not_built",
-        (_absent("desk.js", "quota"),), "D1"),
-    Row("5.6.6", "Харнессы: доступность, сборка, вход, controls", "«Участники»", "not_built",
-        (NO_PANEL,), "D1"),
+    Row("5.6.6", "Лимиты полностью", "«Участники»; briefly the pult", "on_desk",
+        (_in("desk-people-host.js", "quotaSection"),), selector="#deskPult [data-desk-quotas]"),
+    Row("5.6.6", "Обновление лимитов раз в 60 с", "the pult, whatever the view", "on_desk",
+        (_in("desk-people-host.js", "quotaFlow"),)),
+    Row("5.6.6", "Харнессы: доступность, сборка, вход, controls", "«Участники»", "on_desk",
+        (_in("desk-people-host.js", "mountAgents"),), selector="#deskPeopleToggle"),
     Row("5.6.6", "Нет провайдеров: `conduct providers`, файл, поля", "«Участники»; the wizard",
-        "not_built", (NO_PANEL,), "D1"),
+        "on_desk", (_in("studio-people.js", "noProviders"),)),
     Row("5.6.6", "Участники запуска", "«Участники» and the summary panel", "on_desk",
-        (_in("desk-summary-model.js", "participantsOf"),),
-        owed=(("D1", "the panel «Участники»"),)),
+        (_in("desk-summary-model.js", "participantsOf"),
+         _in("desk-people-host.js", "participantsOf"))),
 )
