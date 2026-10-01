@@ -77,10 +77,11 @@ const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [
   stream: "connecting", selection: {project_id: null, task_id: null, run_id: null, gate_id: null},
   menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null,
   addHelp: false, add: {open: false, mode: "choose", epoch: 0, pickId: null,
-    operationId: null, folder: null, project: null, name: "", consent: false,
+    source: "folder", operationId: null, folder: null, project: null, name: "", consent: false,
     step: null, result: null, error: null}};
 let token = null;
 let tick = null;
+let projectReadEpoch = 0;
 let reopen = REOPEN_MS.first;
 //: The host of the one frame of the page, made at boot (it holds the ONE listener for the desk's message).
 let host = null;
@@ -188,7 +189,8 @@ async function refresh(name) {
   slot.busy = true;
   do {
     slot.again = false;
-    land(name, await read(name));
+    const epoch = projectReadEpoch, answer = await read(name);
+    if (name !== "projects" || epoch === projectReadEpoch) land(name, answer);
   } while (slot.again);
   slot.busy = false;
 }
@@ -206,13 +208,24 @@ function closeAdd() {
   render();
 }
 
-async function chooseFolder() {
+function chooseSource(source) {
+  if (state.add.mode === "running") return;
+  const pick = state.add.pickId;
+  Object.assign(state.add, {source, epoch: state.add.epoch + 1, pickId: null,
+    mode: source === "folder" ? "choose" : "picked", folder: "", name: "",
+    project: null, consent: false, result: null, error: null});
+  if (pick) write("pickCancel", {pick}, {});
+  render();
+}
+
+async function chooseFolder(purpose = "project") {
   const add = state.add;
   const epoch = ++add.epoch;
-  Object.assign(add, {mode: "picking", pickId: null, folder: null, project: null,
+  if (purpose === "project") Object.assign(add, {folder: null, project: null,
     name: "", consent: false, error: null, result: null});
+  Object.assign(add, {mode: "picking", pickId: null, pickPurpose: purpose});
   render();
-  const answer = await write("pickFolder", {}, {purpose: "project"});
+  const answer = await write("pickFolder", {}, {purpose});
   if (add.epoch !== epoch || !add.open) {
     const latePick = answer.payload?.pick_id;
     if (answer.status === "accepted" && IDS.pick.test(String(latePick))) {
@@ -221,7 +234,8 @@ async function chooseFolder() {
     return;
   }
   if (answer.status !== "accepted" || !IDS.pick.test(String(answer.payload?.pick_id))) {
-    Object.assign(add, {mode: "choose", error: answer.code ?? "unknown"});
+    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
+      error: answer.code ?? "unknown"});
     render();
     return;
   }
@@ -236,15 +250,27 @@ async function pollPick(epoch) {
   if (add.epoch !== epoch || !add.open) return;
   const row = answer.payload;
   if (answer.status !== "accepted" || !isObject(row)) {
-    Object.assign(add, {mode: "choose", error: answer.code ?? "unknown"});
+    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
+      error: answer.code ?? "unknown"});
   } else if (row.state === "open") {
     setTimeout(() => pollPick(epoch), 500);
     return;
   } else if (row.state === "picked" && typeof row.folder === "string") {
+    if (add.pickPurpose === "projects_home") {
+      const saved = await write("projectsHome", {}, {pick_id: add.pickId});
+      if (add.epoch !== epoch || !add.open) return;
+      Object.assign(add, {mode: "picked", pickId: null,
+        error: saved.status === "accepted" ? null : saved.code ?? "unknown"});
+      if (saved.status === "accepted" && state.setup) state.setup.projects_home = saved.payload.projects_home;
+      refresh("setup");
+      render();
+      return;
+    }
     Object.assign(add, {mode: "picked", folder: row.folder, name: row.folder,
       project: row.project, error: null});
   } else {
-    Object.assign(add, {mode: "choose", error: row.code ?? row.state});
+    Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
+      error: row.code ?? row.state});
   }
   render();
 }
@@ -252,23 +278,28 @@ async function pollPick(epoch) {
 async function cancelFolder() {
   const add = state.add, pick = add.pickId;
   add.epoch += 1;
-  Object.assign(add, {mode: "choose", pickId: null, error: null});
+  Object.assign(add, {mode: add.source === "scratch" ? "picked" : "choose",
+    pickId: null, error: null});
   render();
   if (pick) await write("pickCancel", {pick}, {});
 }
 
 async function submitFolder() {
   const add = state.add;
-  if (add.mode !== "picked" || !add.pickId || !add.name.trim()
+  if (add.mode !== "picked" || (add.source === "folder" ? !add.pickId : !add.folder)
+      || !add.name.trim()
       || (add.project === "legacy" && !add.consent)) return;
   const epoch = ++add.epoch;
   add.mode = "running";
   add.step = "admit";
   add.error = null;
   render();
-  const answer = await write("projectAdd", {}, {source: "folder", pick_id: add.pickId,
+  const body = add.source === "scratch"
+    ? {source: "scratch", folder: add.folder, name: add.name}
+    : {source: "folder", pick_id: add.pickId,
     name: add.name, legacy_writers_stopped: add.project !== "activated" &&
-      (add.project !== "legacy" || add.consent)});
+      (add.project !== "legacy" || add.consent)};
+  const answer = await write("projectAdd", {}, body);
   if (add.epoch !== epoch || !add.open) return;
   if (answer.status !== "accepted" || !IDS.operation.test(String(answer.payload?.operation_id))) {
     Object.assign(add, {mode: "picked", error: answer.code ?? "unknown"});
@@ -296,7 +327,12 @@ async function pollAdd(epoch) {
     }
     add.mode = row.state === "succeeded" ? "done" : "failed";
     add.error = row.state === "failed" ? row.code : null;
+    projectReadEpoch += 1;
     refresh("projects");
+    if (row.state === "succeeded" && IDS.project.test(String(row.project_id))) {
+      select({project_id: row.project_id, task_id: null, run_id: null, gate_id: null},
+        add.source === "scratch" ? {new: "task", starter: "desk-starter-docs"} : {});
+    }
   }
   render();
 }
@@ -551,7 +587,7 @@ function topActions() {
       closeAdd();
       return;
     }
-    Object.assign(state.add, {open: true, mode: "choose", pickId: null, operationId: null,
+    Object.assign(state.add, {open: true, source: "folder", mode: "choose", pickId: null, operationId: null,
       folder: null, project: null, name: "", consent: false, step: null, result: null,
       error: null});
     state.addHelp = true;
@@ -621,8 +657,11 @@ function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
   const first = state.projects.length === 0 || state.addHelp ? [firstRun()] : [];
-  const form = state.add.open ? [folderForm(state.locale, state.add, {
-    close: closeAdd, choose: chooseFolder, cancel: cancelFolder, submit: submitFolder,
+  const form = state.add.open ? [folderForm(state.locale,
+    {...state.add, home: state.setup?.projects_home?.name ?? "ConductProjects"}, {
+    close: closeAdd, choose: () => chooseFolder(), home: () => chooseFolder("projects_home"),
+    cancel: cancelFolder, submit: submitFolder,
+    source: chooseSource, folder: (value) => { state.add.folder = value; },
     name: (value) => { state.add.name = value; },
     consent: (value) => { state.add.consent = value; render(); },
   })] : [];

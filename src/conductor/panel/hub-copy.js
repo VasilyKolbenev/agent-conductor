@@ -16,6 +16,8 @@
 import {DESK_STATUS_COPY} from "./desk-status-copy.js";
 
 export const HUB_COPY = Object.freeze({
+  "hub.add.home": ["Folder for new projects", "Папка новых проектов"],
+  "hub.add.change_home": ["Change folder…", "Изменить папку…"],
   // -- the frame -----------------------------------------------------------------------
   "hub.page_title": ["December Command — Hub", "December Command — Hub"],
   "hub.top.label": ["Top bar", "Верхняя панель"],
@@ -27,7 +29,11 @@ export const HUB_COPY = Object.freeze({
   "hub.new_task": ["＋ New task", "＋ Новая задача"],
   "hub.new_task.blocked": ["The project has no running desk.", "У проекта нет работающего стола."],
   "hub.add_project": ["＋ Add a project", "＋ Добавить проект"],
-  "hub.add.heading": ["Add a folder", "Добавить папку"],
+  "hub.add.heading": ["Add a project", "Добавить проект"],
+  "hub.add.source_folder": ["Existing folder", "Папка на компьютере"],
+  "hub.add.source_scratch": ["Start from scratch", "С нуля"],
+  "hub.add.scratch_intro": ["Create a project folder, then prepare its idea and materials in the task wizard.",
+    "Создайте папку проекта, затем подготовьте идею и материалы в мастере задачи."],
   "hub.add.close": ["Close", "Закрыть"],
   "hub.add.intro": ["Choose an existing folder on this computer. Its path stays in the hub.",
     "Выберите существующую папку на этом компьютере. Её путь остаётся в hub."],

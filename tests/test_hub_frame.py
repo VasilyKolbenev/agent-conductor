@@ -66,6 +66,7 @@ def test_the_hash_of_the_frame_is_written_by_the_shared_grammar_and_holds_no_ref
       const prefs = {locale: "ru", theme: "dark"};
       const hash = (nav, p = prefs, id = "a".repeat(32)) => frame.frameHash(id, nav, p);
       show({full: hash({task: "task-1", run: "run-1", gate: "gate-1", panel: "run", new: "task"}),
+        starter: hash({new: "task", starter: "desk-starter-docs"}),
         bare: hash({}), light: hash({}, {locale: "en", theme: null}),
         dirty: hash({task: "../x", run: "a b", gate: "g", panel: "evil", new: "project"}),
         gateNoRun: hash({task: "task-1", gate: "gate-1"}),
@@ -74,6 +75,7 @@ def test_the_hash_of_the_frame_is_written_by_the_shared_grammar_and_holds_no_ref
     assert out["full"] == (f"#project={PROJECT}&embed=hub&task=task-1&run=run-1&gate=gate-1"
                            "&panel=run&new=task&lang=ru&theme=dark")
     assert out["bare"] == f"#project={PROJECT}&embed=hub&lang=ru&theme=dark"
+    assert "new=task&starter=desk-starter-docs" in out["starter"]
     assert out["light"] == f"#project={PROJECT}&embed=hub&lang=en"
     assert out["dirty"] == f"#project={PROJECT}&embed=hub&lang=ru&theme=dark", (
         "a task, run, gate, panel or new that the grammar refuses is not written")

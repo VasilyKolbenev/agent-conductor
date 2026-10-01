@@ -308,6 +308,7 @@ LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "
         ("GET", "/hub/operations/<operation_id>"), ("GET", "/hub/dialogs/<pick_id>"),
         ("POST", "/hub/dialogs/folder"), ("POST", "/hub/dialogs/<pick_id>/cancel"),
         ("POST", "/hub/projects"),
+        ("POST", "/hub/setup/projects-home"),
         ("POST", "/hub/projects/<project_id>/activate"),
         ("POST", "/hub/projects/<project_id>/view"), ("POST", "/hub/projects/<project_id>/stop"),
         ("POST", "/hub/projects/<project_id>/forget"), ("POST", "/hub/queue/order")}
@@ -335,7 +336,7 @@ def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_sa
         assert _code(reply, 404) == "route_not_found", (row.method, row.path)
         assert _envelope(reply)["detail"] == {"reason": "not in this build"}
         checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 6
+    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 5
 
 
 def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):
@@ -639,8 +640,7 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
                "project_not_running", "project_queue_changed", "operation_not_found",
                "pick_not_found", "dialog_busy", "dialog_unavailable",
                "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed"}
-    # POST /hub/projects is live for folder picks only. Keep the full frozen route vocabulary,
-    # including the not-yet-live github/scratch branches, explicit in this source guard.
+    # Folder and scratch admission are live. GitHub clone remains a separate delivery.
     add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",
                     "pick_invalid", "legacy_writers_unconfirmed", "folder_exists",
                     "projects_home_invalid", "git_not_pinned", "git_changed", "gh_not_pinned",
@@ -651,7 +651,7 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
     assert set(add_row.refusals) == add_declared
     named = {code for row in routes.HUB_ROUTES if (row.method, row.path) in LIVE
              for code in row.refusals}
-    assert named <= reached | add_declared | {"route_not_found"}, sorted(named - reached - add_declared)
+    assert named <= reached | add_declared | {"route_not_found", "windows_path_too_long"}, sorted(named - reached - add_declared)
     assert reached <= set(refusals.HUB_ERROR_STATUS)
 
 

@@ -14,7 +14,7 @@ from typing import Callable
 
 from conductor import ownership_records
 from conductor.command.adapters import _procgroup
-from conductor.hub import events, operations, projects_add, refusals
+from conductor.hub import events, operations, projects_add, project_targets, refusals
 
 TIMEOUT = 600
 PICK_LIFETIME = 600
@@ -47,8 +47,8 @@ class Dialogs:
         self._open: str | None = None
 
     def begin(self, purpose: str) -> str:
-        if purpose != "project":
-            raise refusals.HubRefusal("route_not_found", {"reason": "purpose not in this build"})
+        if type(purpose) is not str or purpose not in {"project", "projects_home"}:
+            raise refusals.HubRefusal("contract_invalid")
         if not self._available():
             raise refusals.HubRefusal("dialog_unavailable")
         with self._lock:
@@ -88,6 +88,16 @@ class Dialogs:
             row = self._rows.get(ident)
             if row is not None:
                 row.update(state="expired", folder=None, project=None)
+
+    def resolve_home(self, ident: str) -> str | None:
+        with self._lock:
+            try:
+                row = self._row(ident)
+            except refusals.HubRefusal:
+                return None
+            if row["state"] != "picked" or row["purpose"] != "projects_home":
+                return None
+            return self._paths.get(ident)
 
     def cancel(self, ident: str) -> None:
         with self._lock:
@@ -146,11 +156,18 @@ class Dialogs:
             else:
                 path = answer["path"]
                 try:
-                    root, _registry = projects_add._admit(path, None, self._home)
-                    _root, head = ownership_records.state(root)
-                    project = "activated" if head and head["phase"] in {
-                        "active", "opened", "closed", "recovered"} else (
-                        "legacy" if os.path.lexists(root / "conductor") else "none")
+                    if self._rows[ident]["purpose"] == "projects_home":
+                        root = project_targets.admit_home(path, self._home)
+                        project = None
+                    else:
+                        root, _registry = projects_add._admit(path, None, self._home)
+                        _root, head = ownership_records.state(root)
+                        project = "activated" if head and head["phase"] in {
+                            "active", "opened", "closed", "recovered"} else (
+                            "legacy" if os.path.lexists(root / "conductor") else "none")
+                except refusals.HubRefusal as error:
+                    self._finish(ident, "refused", code=error.code)
+                    return
                 except projects_add.AddRefused as error:
                     self._finish(ident, "refused", code=error.code)
                     return

@@ -10,36 +10,59 @@ const button = (key, text, action, disabled = false) => {
   return made;
 };
 
+function fields(locale, add, actions) {
+  const say = (key) => hubText(locale, `hub.add.${key}`);
+  const children = [];
+  let folder = null;
+  if (add.source === "scratch") {
+    folder = node("input", {type: "text", value: add.folder, maxlength: "40",
+      "aria-label": say("folder"), "data-focus": "scratch-folder"});
+    children.push(node("label", {text: say("folder")}, [folder]));
+  }
+  const name = node("input", {type: "text", value: add.name, maxlength: "64",
+    "aria-label": say("name"), "data-focus": "folder-name"});
+  children.push(node("label", {text: say("name")}, [name]));
+  if (add.project === "legacy") {
+    const check = node("input", {type: "checkbox", "data-focus": "folder-writers"});
+    check.checked = add.consent;
+    check.addEventListener("change", () => actions.consent(check.checked));
+    children.push(node("label", {text: say("writers")}, [check]));
+  }
+  const submit = button("folder-submit", say("submit"), actions.submit,
+    !add.name.trim() || (add.source === "scratch" && !add.folder)
+    || (add.project === "legacy" && !add.consent));
+  folder?.addEventListener("input", () => {
+    actions.folder(folder.value);
+    submit.disabled = !folder.value || !name.value.trim();
+  });
+  name.addEventListener("input", () => {
+    actions.name(name.value);
+    submit.disabled = !name.value.trim() || (folder !== null && !folder.value)
+      || (add.project === "legacy" && !add.consent);
+  });
+  return [...children, node("p", {text: say("ownership")}), submit];
+}
+
 export function folderForm(locale, add, actions) {
   const say = (key) => hubText(locale, `hub.add.${key}`);
   const title = node("h2", {text: say("heading")});
   const close = button("folder-close", say("close"), actions.close);
-  const children = [title, close, node("p", {text: say("intro")}),
+  const children = [title, close,
+    button("source-folder", say("source_folder"), () => actions.source("folder"), add.mode === "running"),
+    button("source-scratch", say("source_scratch"), () => actions.source("scratch"), add.mode === "running"),
+    node("p", {text: say(add.source === "scratch" ? "scratch_intro" : "intro")})];
+  if (add.source !== "scratch") children.push(
     button("folder-choose", say("choose"), actions.choose,
-      add.mode === "picking" || add.mode === "running")];
+      add.mode === "picking" || add.mode === "running"));
+  else children.push(node("p", {text: `${say("home")}: ${add.home}`}),
+    button("projects-home", say("change_home"), actions.home,
+      add.mode === "picking" || add.mode === "running"));
   if (add.mode === "picking") {
     children.push(node("p", {text: say("window")}),
       button("folder-cancel", say("cancel"), actions.cancel));
   }
   if (add.folder) children.push(node("p", {text: `${say("folder")}: ${add.folder}`}));
-  if (add.mode === "picked") {
-    const name = node("input", {type: "text", value: add.name, maxlength: "64",
-      "aria-label": say("name"), "data-focus": "folder-name"});
-    children.push(node("label", {text: say("name")}, [name]));
-    if (add.project === "legacy") {
-      const check = node("input", {type: "checkbox", "data-focus": "folder-writers"});
-      check.checked = add.consent;
-      check.addEventListener("change", () => actions.consent(check.checked));
-      children.push(node("label", {text: say("writers")}, [check]));
-    }
-    const submit = button("folder-submit", say("submit"), actions.submit,
-      !add.name.trim() || (add.project === "legacy" && !add.consent));
-    name.addEventListener("input", () => {
-      actions.name(name.value);
-      submit.disabled = !name.value.trim() || (add.project === "legacy" && !add.consent);
-    });
-    children.push(node("p", {text: say("ownership")}), submit);
-  }
+  if (add.mode === "picked") children.push(...fields(locale, add, actions));
   if (add.mode === "running" || add.mode === "done" || add.mode === "failed") {
     children.push(node("p", {text: `${say("progress")}: ${say(`step.${add.step || "admit"}`)}`}));
   }
