@@ -7,6 +7,20 @@ If you only want to see the interface, start with the [account-free demo](../REA
 
 You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
 A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
+
+If you already have a local project folder, use it after installing the build. First configure the
+shared harness profile once in a terminal: `conduct providers --profile`. Then stop other
+`conduct up` processes and agents working in that folder, and explicitly add it:
+
+```text
+conduct projects add --dir "<absolute path to folder>" --legacy-writers-stopped
+```
+
+Replace the bracketed text with the folder's actual absolute path. The command checks the folder
+and git, creates project data if needed, copies the profile configuration, and registers the
+project. It does not start a harness or make a paid call. If `conduct hub` is already running,
+the project appears on its page after a data refresh; the command does not change the active
+project.
 For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## 1. Install the identified build

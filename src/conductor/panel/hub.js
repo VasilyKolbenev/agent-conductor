@@ -72,7 +72,8 @@ const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], computedAt: null,
   unlisted: [], noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
   stream: "connecting", selection: {project_id: null, task_id: null, run_id: null, gate_id: null},
-  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null};
+  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null,
+  addHelp: false};
 let token = null;
 let tick = null;
 let reopen = REOPEN_MS.first;
@@ -432,9 +433,10 @@ function pathText() {
 function topActions() {
   const {locale} = state;
   const themes = THEMES.map((value) => [value, hubText(locale, `hub.theme.${value ?? "system"}`)]);
-  byId("hubActions").replaceChildren(newTaskControl(),
-    blocked("add-project", hubText(locale, "hub.add_project"),
-      hubText(locale, "hub.add_project.blocked")), ...viewBar(),
+  const add = node("button", {type: "button", className: "hub-action", "data-focus": "add-project",
+    text: hubText(locale, "hub.add_project")});
+  add.addEventListener("click", () => { state.addHelp = !state.addHelp; render(); });
+  byId("hubActions").replaceChildren(newTaskControl(), add, ...viewBar(),
     segment("lang", hubText(locale, "hub.lang.label"), [["en", "EN"], ["ru", "RU"]], locale,
       (value) => choose({locale: value})),
     segment("theme", hubText(locale, "hub.theme.label"), themes, state.theme,
@@ -497,7 +499,21 @@ function unlistedBanners() {
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
-  byId("hubBanners").replaceChildren(...registry, ...setupBanners(), ...unlistedBanners());
+  const first = state.projects.length === 0 || state.addHelp ? [firstRun()] : [];
+  byId("hubBanners").replaceChildren(...registry, ...first, ...setupBanners(), ...unlistedBanners());
+}
+
+function firstRun() {
+  const locale = state.locale;
+  const commands = ["conduct providers --profile",
+    'conduct projects add --dir "<absolute-folder>" --legacy-writers-stopped'];
+  return node("div", {className: "hub-banner hub-first-run", "data-banner": "first-run"}, [
+    node("strong", {text: hubText(locale, "hub.first.heading")}),
+    node("p", {text: hubText(locale, "hub.first.explain")}),
+    node("ol", {}, commands.map((command, index) => node("li", {}, [
+      node("span", {text: hubText(locale, `hub.first.step.${index + 1}`)}),
+      node("code", {text: command})]))),
+  ]);
 }
 
 function confirmation() {

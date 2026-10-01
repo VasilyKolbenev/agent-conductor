@@ -29,6 +29,8 @@ FRAME = """() => {
     brand: document.querySelector(".hub-brand").textContent,
     labels: ["hubTop", "hubBanners", "hubConfirm", "hubRail", "hubCenter", "hubSide"].map(label),
     path: document.getElementById("hubPath").textContent, actions,
+    add: [...document.querySelectorAll('#hubActions [data-focus="add-project"]')].map(
+      (button) => [button.textContent, button.disabled]),
     rail: document.querySelector(".hub-rail__head").textContent,
     status: document.getElementById("hubStatus").textContent,
     pressed: [...document.querySelectorAll(".hub-seg button")].map((b) => [b.dataset.focus,
@@ -47,11 +49,23 @@ def test_the_page_boots_under_the_hubs_own_policy_and_says_its_frame_in_its_lang
         "top", "banners", "confirm", "rail", "center", "side")]
     assert facts["path"] == say(page, "hub.path.none")
     assert facts["actions"] == [
-        [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")],
-        [say(page, "hub.add_project"), True, say(page, "hub.add_project.blocked")]]
+        [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")]]
+    assert facts["add"] == [[say(page, "hub.add_project"), False]]
     assert facts["rail"].startswith(say(page, "hub.rail.heading", count="3"))
     assert facts["status"] == say(page, "hub.status.ready")
     assert dict(facts["pressed"])[f"seg:lang:{lang}"] == "true"
+
+
+def test_add_project_shows_the_two_terminal_commands_without_sending_a_path(hub_page, lang):
+    page = hub_page
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    guide = page.page.locator('[data-banner="first-run"]')
+    expect(guide).to_be_visible()
+    assert guide.locator("code").all_text_contents() == [
+        "conduct providers --profile",
+        'conduct projects add --dir "<absolute-folder>" --legacy-writers-stopped']
+    assert guide.locator("strong").text_content() == say(page, "hub.first.heading")
 
 
 def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(

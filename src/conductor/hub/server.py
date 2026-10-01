@@ -49,6 +49,7 @@ _GET: dict[str, Callable[[HubService], tuple[int, Any]]] = {
     "/hub/setup": lambda service: (200, service.setup()),
 }
 _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
+    "/hub/projects": lambda service, _params, body: service.add_project(body),
     "/hub/projects/<project_id>/activate":
         lambda service, params, _body: service.activate(params["project_id"]),
     "/hub/projects/<project_id>/view":
@@ -61,7 +62,8 @@ _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
 }
 #: The rows of `HUB_ROUTES` this build answers, as (method, path). The others are `route_not_found`.
 LIVE_ROUTES = frozenset(
-    {("GET", "/"), ("GET", routes.ASSET_PATH), ("GET", "/hub/session"), ("GET", "/hub/events")}
+    {("GET", "/"), ("GET", routes.ASSET_PATH), ("GET", "/hub/session"),
+     ("GET", "/hub/events"), ("GET", "/hub/operations/<operation_id>")}
     | {("GET", path) for path in _GET} | {("POST", path) for path in _POST})
 
 
@@ -210,6 +212,8 @@ class HubHandler(KeptConnection, BaseHTTPRequestHandler):
             self._reply(200, self.server.session.session_response(self.headers["Host"]))
         elif path == "/hub/events":
             self._stream()
+        elif path == "/hub/operations/<operation_id>":
+            self._reply(200, self._service().operation(matched.params["operation_id"]))
         else:
             status, payload = _GET[path](self._service())
             self._reply(status, payload)
