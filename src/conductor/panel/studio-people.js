@@ -430,8 +430,10 @@ function decisionForm(row, draft, handlers, live, state) {
   const submit = handlerOf(handlers, "submitDecision");
   const form = element("form", {className: "studio-decide"});
   form.append(answerChoices(row, draft, edit, state),
-    textControl("actor", "actor", draft, edit, L(state, "agents.actor"),
-      {maxlength: "128", pattern: ID_PATTERN, required: ""}),
+    ...(Object.hasOwn(state, "decisionActor")
+      ? [localizedFact(state, "agents.actor", state.decisionActor)]
+      : [textControl("actor", "actor", draft, edit, L(state, "agents.actor"),
+        {maxlength: "128", pattern: ID_PATTERN, required: ""})]),
     textControl("reason", "reason", draft, edit,
       L(state, "agents.reason_limit", {limit: String(REASON_LIMIT)}),
       {maxlength: String(REASON_LIMIT)}));
@@ -440,12 +442,14 @@ function decisionForm(row, draft, handlers, live, state) {
     "data-focus-key": "action:submitDecision",
     text: L(state, "agents.record_decision"), type: "submit",
   });
-  button.disabled = stops !== null || submit === null || !live;
+  button.disabled = stops !== null || submit === null || !live
+    || Boolean(state.decisionWriteBlocked);
   if (!live) button.title = L(state, "agents.stream_down");
   form.append(button);
   // The dropped stream is said first: it is the one reason of the three that
   // no amount of typing here answers.
   if (!live) form.append(note(L(state, "agents.stream_down")));
+  if (state.decisionWriteBlocked) form.append(note(L(state, state.decisionWriteBlocked)));
   if (stops !== null) form.append(note(stops));
   if (submit === null) {
     form.append(note(L(state, "agents.submit_missing")));
@@ -527,7 +531,9 @@ function decisionDetail(row, draft, handlers, live, state) {
       [whatItUnblocks(row, state)]),
   ];
   if (offersAnAnswer(row)) {
-    body.push(decisionForm(row, draft, handlers, live, state));
+    body.push(state.decisionListOnly
+      ? note(L(state, "desk.decision.answer_in_pult"))
+      : decisionForm(row, draft, handlers, live, state));
   } else {
     body.push(whyNotYet(row, state));
   }
@@ -590,6 +596,21 @@ export function mountDecisions(mount, state, handlers) {
       : decisionDetail(chosen, draft, handlers, live, state),
   ]));
   restoreFocus(mount, key);
+}
+
+// The current gate in the Desk's always-visible Pult. The list/history still
+// belongs to mountDecisions; this reuses the same fact, form and refusal rules.
+export function mountDecisionCard(mount, state, handlers) {
+  const decisions = object(state.decisions) || {};
+  const draft = object(decisions.draft) || {};
+  const list = rows(decisions.list);
+  const row = list.find((item) => decisionKey(item) === draftKey(draft));
+  if (!row) { mount.replaceChildren(); return; }
+  mount.replaceChildren(element("section", {className: "desk-decision-card",
+    "data-desk-decision": ""}, [
+    element("h2", {text: L(state, "desk.decision.heading")}),
+    decisionDetail(row, draft, handlers, state.connection === "open", state),
+  ]));
 }
 
 // -- Agents -------------------------------------------------------------------
