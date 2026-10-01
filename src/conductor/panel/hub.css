@@ -106,6 +106,15 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .hub-first-run code{display:block;width:fit-content;max-width:100%;padding:5px 8px;
   background:var(--panel);border:1px solid var(--line);border-radius:6px;
   overflow-wrap:anywhere;user-select:text}
+.hub-add{align-items:flex-start;flex-direction:column;color:var(--ink)}
+.hub-add h2{margin:0;font-size:17px}
+.hub-add p{margin:0;color:var(--muted)}
+.hub-add label{display:grid;gap:5px;width:min(100%,380px)}
+.hub-add label:has([type="checkbox"]){display:flex;align-items:flex-start}
+.hub-add input[type="text"]{padding:8px;border:1px solid var(--line);border-radius:7px;
+  background:var(--panel);color:var(--ink);font:inherit}
+.hub-add button{padding:7px 12px;border:1px solid var(--line);border-radius:8px}
+.hub-add button:disabled{opacity:.55;cursor:default}
 .hub-confirm{grid-area:confirm}
 .hub-confirm:not(:empty){padding:10px 22px;border-bottom:1px solid var(--line)}
 .hub-confirm__box{display:flex;flex-direction:column;gap:8px;padding:12px 14px;

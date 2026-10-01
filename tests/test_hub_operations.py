@@ -119,3 +119,17 @@ def test_oversized_protocol_line_waits_for_child_exit_before_failure(tmp_path):
     row = settled(manager, manager.begin(PICK, "Project", True))
     assert row["state"] == "failed" and row["code"] == "subprocess_failed"
     assert exited.read_text() == "done"
+
+
+def test_trailing_partial_line_after_result_is_a_protocol_failure(tmp_path):
+    def launch(_argv, **kwargs):
+        fake_cli()(None, **kwargs)
+        kwargs["stdout"].write(b'{"step":')
+        return Finished()
+
+    manager = operations.Operations(tmp_path, events.EventBus(),
+        start=lambda _project_id: (_ for _ in ()).throw(AssertionError("started")),
+        status=lambda _project_id: ("running", None), popen=launch)
+    row = settled(manager, manager.begin(PICK, "Project", True))
+    assert row["state"] == "failed" and row["code"] == "subprocess_failed"
+    assert row["result"] is None

@@ -41,7 +41,8 @@ CSP = ("default-src 'self'; frame-src http://127.0.0.1:*; frame-ancestors 'none'
 #: The GET routes that answer a fixture, by path.
 FIXTURE_ROUTES = {"/hub/projects": "hub_projects.json", "/hub/limits": "hub_limits.json",
                   "/hub/setup": "hub_setup.json", "/hub/session": "hub_session.json"}
-POST_ROUTE = re.compile(r"^/hub/(?:projects/[0-9a-f]{32}/(?:activate|view|stop|recover|forget|"
+POST_ROUTE = re.compile(r"^/hub/(?:projects|dialogs/folder|dialogs/pick-[0-9a-f]{32}/cancel|"
+                        r"projects/[0-9a-f]{32}/(?:activate|view|stop|recover|forget|"
                         r"providers)|queue/order|logins/[0-9a-f]{64}/recover)$")
 KEEPALIVE_SECONDS = 0.2
 
@@ -110,6 +111,7 @@ class FakeHub:
         self.gets: list[str] = []
         self.faults: list[str] = []
         self.refusals: dict[str, tuple[int, dict[str, Any]]] = {}
+        self.post_answers: dict[str, tuple[int, dict[str, Any]]] = {}
         self.stream: queue.Queue[bytes | None] = queue.Queue()
         self.streams_opened = 0
         self.server.daemon_threads = True
@@ -248,6 +250,9 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 hub.posts.append({"path": self.path, "body": body})
                 if self.path in hub.refusals:
                     status, answer = hub.refusals[self.path]
+                    self._json(status, answer)
+                elif self.path in hub.post_answers:
+                    status, answer = hub.post_answers[self.path]
                     self._json(status, answer)
                 else:
                     self._json(202, {"project_id": self.path.split("/")[3]

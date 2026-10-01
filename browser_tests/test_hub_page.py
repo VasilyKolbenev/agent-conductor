@@ -68,6 +68,37 @@ def test_add_project_shows_the_two_terminal_commands_without_sending_a_path(hub_
     assert guide.locator("strong").text_content() == say(page, "hub.first.heading")
 
 
+def test_folder_choice_stays_in_hub_and_legacy_add_needs_explicit_consent(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "1" * 32
+    operation = "operation-" + "2" * 32
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    hub.answer(f"/hub/dialogs/{pick}", {"pick_id": pick, "purpose": "project",
+        "state": "picked", "folder": "проект", "project": "legacy", "code": None})
+    hub.post_answers["/hub/projects"] = (202, {"operation_id": operation})
+    hub.answer(f"/hub/operations/{operation}", {"operation_id": operation, "kind": "add",
+        "source": "folder", "state": "succeeded", "step": "start", "project_id": "a" * 32,
+        "code": None, "result": {"folder": "проект", "activated": "new",
+        "providers": "copied", "git": "not_git", "exclude": "not_git",
+        "exclude_names": None, "agent_instructions": [], "projects_home_created": False}})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    name = page.page.locator('[data-focus="folder-name"]')
+    expect(name).to_have_value("проект")
+    submit = page.page.locator('[data-focus="folder-submit"]')
+    expect(submit).to_be_disabled()
+    page.page.locator('[data-focus="folder-writers"]').check()
+    submit.click()
+    expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(
+        say(page, "hub.add.serving"))
+    assert hub.posts[:2] == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": "/hub/projects", "body": {"source": "folder", "pick_id": pick,
+            "name": "проект", "legacy_writers_stopped": True}}]
+    assert not any("C:\\" in str(post) for post in hub.posts)
+
+
 def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(
         hub_page, lang):
     page = hub_page

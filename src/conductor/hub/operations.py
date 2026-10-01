@@ -162,7 +162,8 @@ class Operations:
                     position, result, valid = self._read_progress(ident, output, position, result)
                 time.sleep(0.05)
             if valid:
-                position, result, valid = self._read_progress(ident, output, position, result)
+                position, result, valid = self._read_progress(ident, output, position, result,
+                                                              final=True)
             errors.seek(0)
             lines = errors.read(65536).decode("utf-8", errors="replace").splitlines()
             if process.returncode != 0:
@@ -171,7 +172,7 @@ class Operations:
             return (result, None) if valid else (None, "subprocess_failed")
 
     def _read_progress(self, ident: str, output, position: int,
-                       result: dict | None) -> tuple[int, dict | None, bool]:
+                       result: dict | None, *, final: bool = False) -> tuple[int, dict | None, bool]:
         output.seek(position)
         while True:
             start = output.tell()
@@ -183,7 +184,7 @@ class Operations:
             if len(line) > MAX_LINE_BYTES or start + len(line) > MAX_OUTPUT_BYTES:
                 return start, result, False
             if not line.endswith(b"\n"):
-                return start, result, True  # wait for the writer to finish the line
+                return start, result, not final  # only a living writer may finish the line
             position = output.tell()
             try:
                 item = json.loads(line)

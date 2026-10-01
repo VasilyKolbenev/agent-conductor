@@ -49,6 +49,9 @@ _GET: dict[str, Callable[[HubService], tuple[int, Any]]] = {
     "/hub/setup": lambda service: (200, service.setup()),
 }
 _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
+    "/hub/dialogs/folder": lambda service, _params, body: service.folder_dialog(body),
+    "/hub/dialogs/<pick_id>/cancel":
+        lambda service, params, _body: service.cancel_dialog(params["pick_id"]),
     "/hub/projects": lambda service, _params, body: service.add_project(body),
     "/hub/projects/<project_id>/activate":
         lambda service, params, _body: service.activate(params["project_id"]),
@@ -63,7 +66,8 @@ _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
 #: The rows of `HUB_ROUTES` this build answers, as (method, path). The others are `route_not_found`.
 LIVE_ROUTES = frozenset(
     {("GET", "/"), ("GET", routes.ASSET_PATH), ("GET", "/hub/session"),
-     ("GET", "/hub/events"), ("GET", "/hub/operations/<operation_id>")}
+     ("GET", "/hub/events"), ("GET", "/hub/operations/<operation_id>"),
+     ("GET", "/hub/dialogs/<pick_id>")}
     | {("GET", path) for path in _GET} | {("POST", path) for path in _POST})
 
 
@@ -107,6 +111,8 @@ class HubServer(ThreadingHTTPServer):
         """Stop serving and wake every waiting stream."""
         self.shutting_down = True
         self.bus.wake_all()
+        if self.service is not None:
+            self.service.close_dialog()
         super().shutdown()
 
     def handle_error(self, request: object, client_address: object) -> None:
@@ -214,6 +220,8 @@ class HubHandler(KeptConnection, BaseHTTPRequestHandler):
             self._stream()
         elif path == "/hub/operations/<operation_id>":
             self._reply(200, self._service().operation(matched.params["operation_id"]))
+        elif path == "/hub/dialogs/<pick_id>":
+            self._reply(200, self._service().dialog(matched.params["pick_id"]))
         else:
             status, payload = _GET[path](self._service())
             self._reply(status, payload)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -26,7 +27,7 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git
 from conductor.hub import (
-    events, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
+    dialogs, events, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
     supervisor)
 from conductor.hub.refusals import HubRefusal
 
@@ -59,7 +60,7 @@ class HubService:
                  job_policy: Callable[[], str] = job.own_policy,
                  folder_ok: Callable[[registry.Project], bool] | None = None,
                  pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
-                 operation_popen=None) -> None:
+                 operation_popen=None, dialog_popen=None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -68,8 +69,11 @@ class HubService:
         self._verified: dict[str, tuple[tool_pins.ToolPin, str]] = {}
         self._last_projects: str | None = None
         self._last_setup: dict[str, Any] | None = None
-        # Production has no picker until the native dialog slice. No HTTP path is accepted.
-        self._pick_resolver = pick_resolver or (lambda _ident: None)
+        self._add_lock = threading.RLock()
+        dialog_options = {} if dialog_popen is None else {"popen": dialog_popen}
+        self._dialogs = dialogs.Dialogs(self._home, bus, **dialog_options)
+        self._pick_resolver = pick_resolver or self._dialogs.resolve
+        self._consume_pick = self._dialogs.consume if pick_resolver is None else lambda _ident: None
         options = {} if operation_popen is None else {"popen": operation_popen}
         self._operations = operations.Operations(self._home, bus, start=self._start_added,
             status=self._added_status, **options)
@@ -132,8 +136,25 @@ class HubService:
         """The latest state of one bounded in-memory add operation."""
         return self._operations.get(operation_id)
 
+    def folder_dialog(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
+        return 202, {"pick_id": self._dialogs.begin(body["purpose"])}
+
+    def dialog(self, pick_id: str) -> dict[str, Any]:
+        return self._dialogs.get(pick_id)
+
+    def cancel_dialog(self, pick_id: str) -> tuple[int, dict[str, str]]:
+        self._dialogs.cancel(pick_id)
+        return 200, {"pick_id": pick_id, "state": "cancelled"}
+
+    def close_dialog(self) -> None:
+        self._dialogs.close()
+
     def add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
         """Accept only a trusted folder pick; the browser cannot name a filesystem path."""
+        with self._add_lock:
+            return self._add_project(body)
+
+    def _add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
         if body["source"] not in {"folder", "github", "scratch"}:
             raise HubRefusal("contract_invalid")
         if body["source"] != "folder":
@@ -168,6 +189,7 @@ class HubService:
                 raise HubRefusal(code)
         confirmed = body["legacy_writers_stopped"] is True or not legacy
         ident = self._operations.begin(pick, body["name"], confirmed)
+        self._consume_pick(body["pick_id"])
         return 202, {"operation_id": ident}
 
     def _start_added(self, project_id: str) -> None:
