@@ -180,7 +180,7 @@ WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
                            "proposals", "actions", "artifacts", "tasks",
                            "automationPreview", "automationAuthorize", "automationControl",
                            "materials", "autoContinue", "seed", "flow", "queue",
-                           "queueOrder", "queueWithdraw"})
+                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.

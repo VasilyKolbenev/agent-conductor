@@ -57,6 +57,9 @@ export const path = Object.freeze({
   revisions: (id) => `/command/workflows/${encodeURIComponent(id)}/revisions`,
   runs: () => "/command/runs",
   run: (id) => `/command/runs/${encodeURIComponent(id)}`,
+  accept: (id) => `/command/runs/${encodeURIComponent(id)}/accept`,
+  acceptPreview: (id) => `/command/runs/${encodeURIComponent(id)}/accept/preview`,
+  acceptCommit: (id) => `/command/runs/${encodeURIComponent(id)}/accept/commit`,
   controls: (id) => `/command/runs/${encodeURIComponent(id)}/controls`,
   decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
   proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
@@ -85,7 +88,8 @@ export const path = Object.freeze({
 const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
-  "autoContinue", "seed", "flow", "queue", "queueOrder", "queueWithdraw"]);
+  "autoContinue", "seed", "flow", "queue", "queueOrder", "queueWithdraw",
+  "acceptPreview", "acceptCommit"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //
