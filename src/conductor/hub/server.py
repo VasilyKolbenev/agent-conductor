@@ -117,8 +117,11 @@ class HubServer(ThreadingHTTPServer):
         self.shutting_down = True
         self.bus.wake_all()
         if self.service is not None:
+            self.clone_shutdown_proven = self.service.close_operations()
             self.service.close_dialog()
         super().shutdown()
+        if getattr(self, "clone_shutdown_proven", True) is False:
+            print("conduct hub: clone retirement unproven; recovery record retained", file=sys.stderr)
 
     def handle_error(self, request: object, client_address: object) -> None:
         """A client that vanished is not an error worth a traceback."""

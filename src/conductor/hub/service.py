@@ -164,6 +164,9 @@ class HubService:
     def close_dialog(self) -> None:
         self._dialogs.close()
 
+    def close_operations(self) -> bool:
+        return self._operations.close_clones()
+
     def add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
         """Accept only a trusted folder pick; the browser cannot name a filesystem path."""
         with self._add_lock:

@@ -1,6 +1,8 @@
 """Focused GitHub clone boundary witnesses; no real gh, git or browser."""
 import io
 import json
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -167,3 +169,125 @@ def test_setup_exposes_only_an_operation_id_for_unresolved_cleanup(stack):
     recovery = stack.get("/hub/setup").json()["clone_recovery"]
     assert recovery == [{"operation_id": ident, "code": "clone_cleanup_incomplete"}]
     assert "clone-attempts" not in json.dumps(recovery)
+
+
+def test_shutdown_cancels_a_live_clone_and_waits_for_its_group(bound):
+    home, ticket = bound
+    spawned = threading.Event()
+    stopped = threading.Event()
+    calls = []
+
+    class SlowChild:
+        stdout, stderr = io.BytesIO(), io.BytesIO()
+        returncode = None
+
+        def poll(self):
+            if stopped.is_set():
+                self.returncode = -1
+            return self.returncode
+
+        def wait(self, timeout=None):
+            assert stopped.wait(timeout)
+            return self.poll()
+
+    class ExactGroup:
+        def __init__(self, child):
+            self.child = child
+
+        def terminate(self):
+            calls.append("terminate")
+            stopped.set()
+
+        def retired(self, *, timeout):
+            calls.append("retired")
+            return stopped.is_set()
+
+        def close(self):
+            pass
+
+    def launch(*_args, **_kwargs):
+        spawned.set()
+        return SlowChild()
+
+    cloner = clone.Clones(home, popen=launch, make_group=ExactGroup)
+    manager = operations.Operations(home, events.EventBus(), start=lambda _ident: None,
+        status=lambda _ident: ("running", None), clone_cancel=cloner.cancel,
+        popen=lambda *_args, **_kwargs: pytest.fail("projects add launched after shutdown"))
+    ident = manager.begin(operations.FolderPick(str(ticket.path), "none"), "app", True,
+                          source="github", repo="owner/app",
+                          prepare=lambda operation_id: cloner.clone(operation_id, "owner/app", ticket))
+    assert spawned.wait(2)
+    assert manager.close_clones(timeout=5) is True
+    assert manager.get(ident)["state"] == "cancelled"
+    assert calls == ["terminate", "retired"]
+    assert not ticket.path.exists()
+    with pytest.raises(HubRefusal, match="operation_busy"):
+        manager.begin(operations.FolderPick(str(ticket.path), "none"), "app", True)
+
+
+def test_shutdown_between_clone_step_and_cloner_registration_queues_cancel(bound):
+    home, ticket = bound
+    at_prepare = threading.Event()
+    continue_prepare = threading.Event()
+    cloner = clone.Clones(home, popen=lambda *_args, **_kwargs: pytest.fail("gh spawned"))
+
+    def prepare(ident):
+        at_prepare.set()
+        assert continue_prepare.wait(2)
+        return cloner.clone(ident, "owner/app", ticket)
+
+    manager = operations.Operations(home, events.EventBus(), start=lambda _ident: None,
+        status=lambda _ident: ("running", None), clone_cancel=cloner.cancel,
+        popen=lambda *_args, **_kwargs: pytest.fail("projects add launched"))
+    ident = manager.begin(operations.FolderPick(str(ticket.path), "none"), "app", True,
+                          source="github", repo="owner/app", prepare=prepare)
+    assert at_prepare.wait(2)
+    answer = []
+    shutdown = threading.Thread(target=lambda: answer.append(manager.close_clones(timeout=5)))
+    shutdown.start()
+    for _ in range(100):
+        if manager._closing:
+            break
+        time.sleep(0.01)
+    assert manager._closing
+    continue_prepare.set()
+    shutdown.join(5)
+    assert answer == [True] and manager.get(ident)["state"] == "cancelled"
+    assert not ticket.path.exists()
+
+
+def test_shutdown_allows_launched_add_to_finish_but_does_not_start_project(bound):
+    home, ticket = bound
+    launched = threading.Event()
+    finish = threading.Event()
+
+    class AddChild:
+        returncode = None
+
+        def poll(self):
+            if finish.is_set():
+                self.returncode = 0
+            return self.returncode
+
+    def launch(_argv, **kwargs):
+        kwargs["stdout"].write((json.dumps({"result": {"project_id": "a" * 32,
+            "folder": "app"}}) + "\n").encode())
+        launched.set()
+        return AddChild()
+
+    manager = operations.Operations(home, events.EventBus(),
+        start=lambda _ident: pytest.fail("project started after shutdown"),
+        status=lambda _ident: ("running", None), popen=launch)
+    ident = manager.begin(operations.FolderPick(str(ticket.path), "none"), "app", True,
+                          source="github", repo="owner/app",
+                          prepare=lambda _ident: (ticket.path, False))
+    assert launched.wait(2)
+    assert manager.close_clones(timeout=2) is True
+    finish.set()
+    for _ in range(200):
+        row = manager.get(ident)
+        if row["state"] != "running":
+            break
+        time.sleep(0.01)
+    assert row["state"] == "cancelled"
+    assert row["project_id"] == "a" * 32 and row["result"]["folder"] == "app"
