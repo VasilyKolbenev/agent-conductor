@@ -112,6 +112,16 @@ def test_native_backend_command_order_is_explicit_without_opening_a_window(monke
     assert calls == []
 
 
+def test_external_picker_preserves_spaces_in_the_chosen_folder(monkeypatch):
+    class Completed:
+        returncode = 0
+        stdout = b"/home/user/a folder  \n"
+        stderr = b""
+
+    monkeypatch.setattr(pick_folder.subprocess, "run", lambda *_args, **_kwargs: Completed())
+    assert pick_folder._command(["/usr/bin/zenity"]) == {"path": "/home/user/a folder  "}
+
+
 def test_cancel_keeps_the_single_slot_until_the_helper_really_exits(tmp_path):
     home = tmp_path / "home"
     home.mkdir()

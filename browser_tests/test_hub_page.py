@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
+import threading
+import time
 
 from playwright.sync_api import expect
 
@@ -89,6 +91,10 @@ def test_folder_choice_stays_in_hub_and_legacy_add_needs_explicit_consent(hub_pa
     submit = page.page.locator('[data-focus="folder-submit"]')
     expect(submit).to_be_disabled()
     page.page.locator('[data-focus="folder-writers"]').check()
+    name.fill("")
+    expect(submit).to_be_disabled()
+    name.fill("проект")
+    expect(submit).to_be_enabled()
     submit.click()
     expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(
         say(page, "hub.add.serving"))
@@ -97,6 +103,32 @@ def test_folder_choice_stays_in_hub_and_legacy_add_needs_explicit_consent(hub_pa
         {"path": "/hub/projects", "body": {"source": "folder", "pick_id": pick,
             "name": "проект", "legacy_writers_stopped": True}}]
     assert not any("C:\\" in str(post) for post in hub.posts)
+
+
+def test_closing_during_a_held_pick_response_cancels_only_that_late_pick(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "3" * 32
+    gate = threading.Event()
+    hub.post_gates["/hub/dialogs/folder"] = gate
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    for _ in range(100):
+        if hub.posts:
+            break
+        time.sleep(.01)
+    assert hub.posts == [{"path": "/hub/dialogs/folder", "body": {"purpose": "project"}}]
+    page.page.locator('[data-focus="add-project"]').click()  # the top toggle is also a close path
+    expect(page.page.locator('[data-banner="folder-add"]')).to_have_count(0)
+    gate.set()
+    for _ in range(100):
+        if len(hub.posts) == 2:
+            break
+        time.sleep(.01)
+    assert hub.posts == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": f"/hub/dialogs/{pick}/cancel", "body": {}}]
 
 
 def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(

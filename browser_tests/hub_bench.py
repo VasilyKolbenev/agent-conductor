@@ -112,6 +112,7 @@ class FakeHub:
         self.faults: list[str] = []
         self.refusals: dict[str, tuple[int, dict[str, Any]]] = {}
         self.post_answers: dict[str, tuple[int, dict[str, Any]]] = {}
+        self.post_gates: dict[str, threading.Event] = {}
         self.stream: queue.Queue[bytes | None] = queue.Queue()
         self.streams_opened = 0
         self.server.daemon_threads = True
@@ -248,6 +249,8 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
             else:
                 body = json.loads(raw or b"{}")
                 hub.posts.append({"path": self.path, "body": body})
+                if self.path in hub.post_gates:
+                    hub.post_gates[self.path].wait(5)
                 if self.path in hub.refusals:
                     status, answer = hub.refusals[self.path]
                     self._json(status, answer)

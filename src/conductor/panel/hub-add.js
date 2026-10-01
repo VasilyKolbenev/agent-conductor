@@ -25,7 +25,6 @@ export function folderForm(locale, add, actions) {
   if (add.mode === "picked") {
     const name = node("input", {type: "text", value: add.name, maxlength: "64",
       "aria-label": say("name"), "data-focus": "folder-name"});
-    name.addEventListener("input", () => actions.name(name.value));
     children.push(node("label", {text: say("name")}, [name]));
     if (add.project === "legacy") {
       const check = node("input", {type: "checkbox", "data-focus": "folder-writers"});
@@ -33,9 +32,13 @@ export function folderForm(locale, add, actions) {
       check.addEventListener("change", () => actions.consent(check.checked));
       children.push(node("label", {text: say("writers")}, [check]));
     }
-    children.push(node("p", {text: say("ownership")}),
-      button("folder-submit", say("submit"), actions.submit,
-        !add.name.trim() || (add.project === "legacy" && !add.consent)));
+    const submit = button("folder-submit", say("submit"), actions.submit,
+      !add.name.trim() || (add.project === "legacy" && !add.consent));
+    name.addEventListener("input", () => {
+      actions.name(name.value);
+      submit.disabled = !name.value.trim() || (add.project === "legacy" && !add.consent);
+    });
+    children.push(node("p", {text: say("ownership")}), submit);
   }
   if (add.mode === "running" || add.mode === "done" || add.mode === "failed") {
     children.push(node("p", {text: `${say("progress")}: ${say(`step.${add.step || "admit"}`)}`}));

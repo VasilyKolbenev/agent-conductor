@@ -26,7 +26,13 @@ def _command(argv: list[str], *, mac: bool = False) -> dict:
     completed = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
                                timeout=590, check=False)
     if completed.returncode == 0:
-        path = completed.stdout.decode("utf-8").strip()
+        # The tool adds one line ending. Spaces (and even other trailing newlines) may
+        # belong to the selected folder name, so whitespace stripping changes the pick.
+        path = completed.stdout.decode("utf-8")
+        if path.endswith("\r\n"):
+            path = path[:-2]
+        elif path.endswith("\n"):
+            path = path[:-1]
         return {"path": path} if path else {"cancelled": True}
     if mac:
         return {"cancelled": True} if b"-128" in completed.stderr else {"unavailable": True}

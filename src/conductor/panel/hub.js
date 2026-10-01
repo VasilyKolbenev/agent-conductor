@@ -202,6 +202,7 @@ function closeAdd() {
   }
   add.epoch += 1;
   add.open = false;
+  add.pickId = null;
   render();
 }
 
@@ -212,7 +213,13 @@ async function chooseFolder() {
     name: "", consent: false, error: null, result: null});
   render();
   const answer = await write("pickFolder", {}, {purpose: "project"});
-  if (add.epoch !== epoch || !add.open) return;
+  if (add.epoch !== epoch || !add.open) {
+    const latePick = answer.payload?.pick_id;
+    if (answer.status === "accepted" && IDS.pick.test(String(latePick))) {
+      await write("pickCancel", {pick: latePick}, {});
+    }
+    return;
+  }
   if (answer.status !== "accepted" || !IDS.pick.test(String(answer.payload?.pick_id))) {
     Object.assign(add, {mode: "choose", error: answer.code ?? "unknown"});
     render();
@@ -540,8 +547,14 @@ function topActions() {
   const add = node("button", {type: "button", className: "hub-action", "data-focus": "add-project",
     text: hubText(locale, "hub.add_project")});
   add.addEventListener("click", () => {
-    state.add.open = !state.add.open;
-    state.addHelp = state.add.open;
+    if (state.add.open) {
+      closeAdd();
+      return;
+    }
+    Object.assign(state.add, {open: true, mode: "choose", pickId: null, operationId: null,
+      folder: null, project: null, name: "", consent: false, step: null, result: null,
+      error: null});
+    state.addHelp = true;
     render();
   });
   byId("hubActions").replaceChildren(newTaskControl(), add, ...viewBar(),
