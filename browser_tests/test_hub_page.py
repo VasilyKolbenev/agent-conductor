@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
+import threading
+import time
 
 from playwright.sync_api import expect
 
@@ -29,6 +31,8 @@ FRAME = """() => {
     brand: document.querySelector(".hub-brand").textContent,
     labels: ["hubTop", "hubBanners", "hubConfirm", "hubRail", "hubCenter", "hubSide"].map(label),
     path: document.getElementById("hubPath").textContent, actions,
+    add: [...document.querySelectorAll('#hubActions [data-focus="add-project"]')].map(
+      (button) => [button.textContent, button.disabled]),
     rail: document.querySelector(".hub-rail__head").textContent,
     status: document.getElementById("hubStatus").textContent,
     pressed: [...document.querySelectorAll(".hub-seg button")].map((b) => [b.dataset.focus,
@@ -47,11 +51,84 @@ def test_the_page_boots_under_the_hubs_own_policy_and_says_its_frame_in_its_lang
         "top", "banners", "confirm", "rail", "center", "side")]
     assert facts["path"] == say(page, "hub.path.none")
     assert facts["actions"] == [
-        [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")],
-        [say(page, "hub.add_project"), True, say(page, "hub.add_project.blocked")]]
+        [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")]]
+    assert facts["add"] == [[say(page, "hub.add_project"), False]]
     assert facts["rail"].startswith(say(page, "hub.rail.heading", count="3"))
     assert facts["status"] == say(page, "hub.status.ready")
     assert dict(facts["pressed"])[f"seg:lang:{lang}"] == "true"
+
+
+def test_add_project_shows_the_two_terminal_commands_without_sending_a_path(hub_page, lang):
+    page = hub_page
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    guide = page.page.locator('[data-banner="first-run"]')
+    expect(guide).to_be_visible()
+    assert guide.locator("code").all_text_contents() == [
+        "conduct providers --profile",
+        'conduct projects add --dir "<absolute-folder>" --legacy-writers-stopped']
+    assert guide.locator("strong").text_content() == say(page, "hub.first.heading")
+
+
+def test_folder_choice_stays_in_hub_and_legacy_add_needs_explicit_consent(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "1" * 32
+    operation = "operation-" + "2" * 32
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    hub.answer(f"/hub/dialogs/{pick}", {"pick_id": pick, "purpose": "project",
+        "state": "picked", "folder": "проект", "project": "legacy", "code": None})
+    hub.post_answers["/hub/projects"] = (202, {"operation_id": operation})
+    hub.answer(f"/hub/operations/{operation}", {"operation_id": operation, "kind": "add",
+        "source": "folder", "state": "succeeded", "step": "start", "project_id": "a" * 32,
+        "code": None, "result": {"folder": "проект", "activated": "new",
+        "providers": "copied", "git": "not_git", "exclude": "not_git",
+        "exclude_names": None, "agent_instructions": [], "projects_home_created": False}})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    name = page.page.locator('[data-focus="folder-name"]')
+    expect(name).to_have_value("проект")
+    submit = page.page.locator('[data-focus="folder-submit"]')
+    expect(submit).to_be_disabled()
+    page.page.locator('[data-focus="folder-writers"]').check()
+    name.fill("")
+    expect(submit).to_be_disabled()
+    name.fill("проект")
+    expect(submit).to_be_enabled()
+    submit.click()
+    expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(
+        say(page, "hub.add.serving"))
+    assert hub.posts[:2] == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": "/hub/projects", "body": {"source": "folder", "pick_id": pick,
+            "name": "проект", "legacy_writers_stopped": True}}]
+    assert not any("C:\\" in str(post) for post in hub.posts)
+
+
+def test_closing_during_a_held_pick_response_cancels_only_that_late_pick(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "3" * 32
+    gate = threading.Event()
+    hub.post_gates["/hub/dialogs/folder"] = gate
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    for _ in range(100):
+        if hub.posts:
+            break
+        time.sleep(.01)
+    assert hub.posts == [{"path": "/hub/dialogs/folder", "body": {"purpose": "project"}}]
+    page.page.locator('[data-focus="add-project"]').click()  # the top toggle is also a close path
+    expect(page.page.locator('[data-banner="folder-add"]')).to_have_count(0)
+    gate.set()
+    for _ in range(100):
+        if len(hub.posts) == 2:
+            break
+        time.sleep(.01)
+    assert hub.posts == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": f"/hub/dialogs/{pick}/cancel", "body": {}}]
 
 
 def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(

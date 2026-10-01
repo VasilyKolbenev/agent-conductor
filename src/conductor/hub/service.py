@@ -17,15 +17,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from conductor import ownership_native, tool_pins
+from conductor import ownership_native, ownership_records, tool_pins
+from conductor.command import project_git
 from conductor.hub import (
-    events, instance, job, lifecycle, reader, refusals, registry, snapshots, state, summary,
+    dialogs, events, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
     supervisor)
 from conductor.hub.refusals import HubRefusal
 
@@ -56,7 +58,9 @@ class HubService:
                  now: Callable[[], datetime] = _utc_now,
                  verify_tool: Callable[..., tool_pins.ToolPin] = tool_pins.verify_pin,
                  job_policy: Callable[[], str] = job.own_policy,
-                 folder_ok: Callable[[registry.Project], bool] | None = None) -> None:
+                 folder_ok: Callable[[registry.Project], bool] | None = None,
+                 pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
+                 operation_popen=None, dialog_popen=None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -65,6 +69,14 @@ class HubService:
         self._verified: dict[str, tuple[tool_pins.ToolPin, str]] = {}
         self._last_projects: str | None = None
         self._last_setup: dict[str, Any] | None = None
+        self._add_lock = threading.RLock()
+        dialog_options = {} if dialog_popen is None else {"popen": dialog_popen}
+        self._dialogs = dialogs.Dialogs(self._home, bus, **dialog_options)
+        self._pick_resolver = pick_resolver or self._dialogs.resolve
+        self._consume_pick = self._dialogs.consume if pick_resolver is None else lambda _ident: None
+        options = {} if operation_popen is None else {"popen": operation_popen}
+        self._operations = operations.Operations(self._home, bus, start=self._start_added,
+            status=self._added_status, **options)
 
     def start(self) -> None:
         """Seed the ledger of first-seen moments from the snapshots the last hub left."""
@@ -119,6 +131,77 @@ class HubService:
                                   "default_name": DEFAULT_PROJECTS_HOME},
                 "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": [],
                 "hub_job": self._job_policy()}
+
+    def operation(self, operation_id: str) -> dict[str, Any]:
+        """The latest state of one bounded in-memory add operation."""
+        return self._operations.get(operation_id)
+
+    def folder_dialog(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
+        return 202, {"pick_id": self._dialogs.begin(body["purpose"])}
+
+    def dialog(self, pick_id: str) -> dict[str, Any]:
+        return self._dialogs.get(pick_id)
+
+    def cancel_dialog(self, pick_id: str) -> tuple[int, dict[str, str]]:
+        self._dialogs.cancel(pick_id)
+        return 200, {"pick_id": pick_id, "state": "cancelled"}
+
+    def close_dialog(self) -> None:
+        self._dialogs.close()
+
+    def add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
+        """Accept only a trusted folder pick; the browser cannot name a filesystem path."""
+        with self._add_lock:
+            return self._add_project(body)
+
+    def _add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
+        if body["source"] not in {"folder", "github", "scratch"}:
+            raise HubRefusal("contract_invalid")
+        if body["source"] != "folder":
+            raise HubRefusal("route_not_found", {"reason": "source not in this build"})
+        if (not isinstance(body["pick_id"], str)
+                or re.fullmatch(r"pick-[0-9a-f]{32}", body["pick_id"]) is None
+                or type(body["legacy_writers_stopped"]) is not bool):
+            raise HubRefusal("contract_invalid")
+        pick = self._pick_resolver(body["pick_id"])
+        if pick is None or pick.project not in {"none", "legacy", "activated"}:
+            raise HubRefusal("pick_invalid")
+        problem = registry.name_problem(body["name"])
+        if problem is not None:
+            raise HubRefusal("name_invalid", {"reason": problem})
+        path = Path(pick.path)
+        if not path.is_absolute():
+            raise HubRefusal("pick_invalid")
+        legacy = (os.path.lexists(path / "conductor") and not os.path.lexists(path / ".conduct")
+                  and not os.path.lexists(path / "conductor.v3"))
+        if os.path.lexists(path / ".conduct"):
+            try:
+                legacy = ownership_records.chain(path)["phase"] in {"prepared", "moved", "rolled_back"}
+            except (ownership_records.OwnerRefused, OSError):
+                pass  # The CLI's admit/activate step owns the precise refusal.
+        if legacy and body["legacy_writers_stopped"] is not True:
+            raise HubRefusal("legacy_writers_unconfirmed")
+        if project_git.has_git_entry(path):
+            tool = self._tool("git")["state"]
+            code = {"not_pinned": "git_not_pinned", "changed": "git_changed",
+                    "too_old": "git_too_old", "unreadable": "tool_version_unreadable"}.get(tool)
+            if code is not None:
+                raise HubRefusal(code)
+        confirmed = body["legacy_writers_stopped"] is True or not legacy
+        ident = self._operations.begin(pick, body["name"], confirmed)
+        self._consume_pick(body["pick_id"])
+        return 202, {"operation_id": ident}
+
+    def _start_added(self, project_id: str) -> None:
+        if self._state().active_project_id is None:
+            self.activate(project_id)
+        else:
+            self.view(project_id)
+
+    def _added_status(self, project_id: str) -> tuple[str, str | None]:
+        project = self._require(project_id)
+        status = self._status(project).lifecycle
+        return status.state, status.state_code
 
     # -- the writes --------------------------------------------------------------------------------
 

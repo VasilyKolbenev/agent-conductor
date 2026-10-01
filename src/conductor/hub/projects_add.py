@@ -248,7 +248,7 @@ def add_folder(raw: str, *, name: str | None = None, legacy_writers_stopped: boo
         return {"project_id": project.project_id, "name": project.name, "root": project.root,
                 "port": project.port, "registered": registered, "git": git.state,
                 "activated": activated, "providers": providers, "exclude": exclude,
-                "exclude_names": list(product_names.EXCLUDE_LINES),
+                "exclude_names": list(product_names.EXCLUDE_LINES) if git.state == "repo" else None,
                 "agent_instructions": instructions, "folder": root.name,
                 "projects_home_created": False}
     except (registry.RegistryError, tool_pins.ToolPinError,

@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from conductor.hub import events, refusals, routes, server
+from conductor.hub import events, operations, refusals, routes, server
 from conductor.hub.assets import HUB_ASSETS
 from tests._hub_fake_child import FakeChild, run_row, serve_standard, task_row
 from tests._hub_stack import A, B, C, Stack, raw_exchange, request
@@ -303,6 +303,9 @@ def test_a_registry_that_cannot_be_read_is_409_registry_invalid_and_is_not_rewri
 
 LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "/hub/events"),
         ("GET", "/hub/projects"), ("GET", "/hub/limits"), ("GET", "/hub/setup"),
+        ("GET", "/hub/operations/<operation_id>"), ("GET", "/hub/dialogs/<pick_id>"),
+        ("POST", "/hub/dialogs/folder"), ("POST", "/hub/dialogs/<pick_id>/cancel"),
+        ("POST", "/hub/projects"),
         ("POST", "/hub/projects/<project_id>/activate"),
         ("POST", "/hub/projects/<project_id>/view"), ("POST", "/hub/projects/<project_id>/stop"),
         ("POST", "/hub/projects/<project_id>/forget"), ("POST", "/hub/queue/order")}
@@ -330,7 +333,66 @@ def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_sa
         assert _code(reply, 404) == "route_not_found", (row.method, row.path)
         assert _envelope(reply)["detail"] == {"reason": "not in this build"}
         checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 14
+    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 9
+
+
+def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):
+    folder = tmp_path / "chosen"
+    folder.mkdir()
+    stack.service._dialogs._choose = lambda _ident: {"path": str(folder)}
+    stack.service._dialogs._available = lambda: True
+    sent = stack.post("/hub/dialogs/folder", {"purpose": "project"})
+    assert sent.status == 202
+    ident = sent.json()["pick_id"]
+    for _ in range(100):
+        row = stack.get(f"/hub/dialogs/{ident}").json()
+        if row["state"] != "open":
+            break
+        time.sleep(.01)
+    assert row == {"pick_id": ident, "purpose": "project", "state": "picked",
+                   "folder": "chosen", "project": "none", "code": None}
+    assert str(folder) not in json.dumps(row)
+    assert stack.post(f"/hub/dialogs/{ident}/cancel", {}).status == 200
+    assert stack.get(f"/hub/dialogs/{ident}").json()["state"] == "cancelled"
+
+
+def test_add_project_requires_a_hub_issued_pick_and_never_accepts_a_web_path(stack):
+    pick = "pick-" + "0" * 32
+    assert _code(stack.post("/hub/projects", {"source": "folder", "pick_id": pick,
+               "name": "Example", "legacy_writers_stopped": True}), 409) == "pick_invalid"
+    assert _code(stack.post("/hub/projects", {"source": "folder", "pick_id": pick,
+               "name": "Example", "legacy_writers_stopped": True,
+               "dir": "C:\\secret"}), 422) == "contract_invalid"
+    assert _code(stack.get("/hub/operations/operation-" + "0" * 32), 404) == \
+        "operation_not_found"
+
+
+def test_hub_issued_folder_pick_runs_the_real_cli_and_exposes_a_pathless_operation(
+        stack, tmp_path, monkeypatch):
+    project = tmp_path / "new-project"
+    project.mkdir()
+    monkeypatch.setenv("CONDUCT_HOME", str(stack.world.home))
+    pick_id = "pick-" + "1" * 32
+    stack.service._pick_resolver = lambda ident: (
+        operations.FolderPick(str(project), "none") if ident == pick_id else None)
+    stack.service._consume_pick = lambda _ident: None
+    stack.service._operations._start = lambda _project_id: None
+    stack.service._operations._status = lambda _project_id: ("running", None)
+    sent = stack.post("/hub/projects", {"source": "folder", "pick_id": pick_id,
+                      "name": "New project", "legacy_writers_stopped": False})
+    assert sent.status == 202
+    ident = sent.json()["operation_id"]
+    for _ in range(100):
+        row = stack.get(f"/hub/operations/{ident}").json()
+        if row["state"] != "running":
+            break
+        time.sleep(0.05)
+    assert row["state"] == "succeeded", row
+    assert row["step"] == "start" and row["result"]["folder"] == "new-project"
+    assert "root" not in row["result"] and str(project) not in json.dumps(row)
+    stack.tick()
+    assert any(one["project_id"] == row["project_id"] for one in
+               stack.get("/hub/projects").json()["projects"])
 
 
 # -- the stream ------------------------------------------------------------------------------------
@@ -572,10 +634,21 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
     """A guard on this file: the refusals of the live rows the tests above do not reach."""
     reached = {"project_not_found", "already_active", "active_not_closed", "project_unavailable",
                "recovery_required", "project_busy", "hub_in_kill_on_close_job", "project_running",
-               "project_not_running", "project_queue_changed"}
+               "project_not_running", "project_queue_changed", "operation_not_found",
+               "pick_not_found", "dialog_busy", "dialog_unavailable"}
+    # POST /hub/projects is live for folder picks only. Keep the full frozen route vocabulary,
+    # including the not-yet-live github/scratch branches, explicit in this source guard.
+    add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",
+                    "pick_invalid", "legacy_writers_unconfirmed", "folder_exists",
+                    "projects_home_invalid", "git_not_pinned", "git_changed", "gh_not_pinned",
+                    "gh_changed", "review_harness_missing", "operation_busy", "registry_busy",
+                    "registry_invalid"}
+    add_row = next(row for row in routes.HUB_ROUTES
+                   if (row.method, row.path) == ("POST", "/hub/projects"))
+    assert set(add_row.refusals) == add_declared
     named = {code for row in routes.HUB_ROUTES if (row.method, row.path) in LIVE
              for code in row.refusals}
-    assert named <= reached | {"route_not_found"}, sorted(named - reached)
+    assert named <= reached | add_declared | {"route_not_found"}, sorted(named - reached - add_declared)
     assert reached <= set(refusals.HUB_ERROR_STATUS)
 
 

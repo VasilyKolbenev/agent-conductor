@@ -31,8 +31,8 @@ PAGE = PANEL / "hub.html"
 STYLE = PANEL / "hub.css"
 LINE_CAP = 800
 #: The hub's own files by name, grown by the commit that adds one (the registry is held to exactly
-#: these and the four shared modules). `hub-add.js` is not written yet.
-OWN = ("hub.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
+#: these and the four shared modules).
+OWN = ("hub.js", "hub-add.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
 SHARED = tuple(sorted(SHARED_MODULES))
 JS_TYPE = "text/javascript; charset=utf-8"
 CSS_TYPE = "text/css; charset=utf-8"
@@ -50,8 +50,9 @@ PERMITTED = {
     "hub-copy.js": {"./desk-status-copy.js"},
     "hub-rail.js": {"./desk-status.js", "./desk-time.js", "./hub-copy.js"},
     "hub-frame.js": {"./desk-hash.js"},
+    "hub-add.js": {"./hub-copy.js", "./hub-rail.js"},
     "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js"},
-    "hub.js": {"./desk-hash.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
+    "hub.js": {"./desk-hash.js", "./hub-add.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
                "./hub-stub.js"},
 }
 REGIONS = (("top", "hubTop"), ("banners", "hubBanners"), ("confirm", "hubConfirm"),
@@ -410,7 +411,8 @@ SPEC_TARGETS = {
     "operationCancel": "/hub/operations/{operation}/cancel", "queueOrder": "/hub/queue/order"}
 #: The reads the page may make, by path.
 SPEC_READS = {"session": "/hub/session", "projects": "/hub/projects", "limits": "/hub/limits",
-              "setup": "/hub/setup"}
+              "setup": "/hub/setup", "dialog": "/hub/dialogs/{pick}",
+              "operation": "/hub/operations/{operation}"}
 TOKEN_NAMES = ("csrfToken", "csrf_token", "session.token")
 TOKEN_SINKS = ("textContent", "setAttribute", "node(", "dataset", "localStorage", "sessionStorage",
                "cookie", "encodeURIComponent", "querySelector", "append(", "/command", "?",

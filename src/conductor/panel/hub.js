@@ -24,6 +24,7 @@
 // not fire a `hashchange`), and never a token, a path or a line of text.
 import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
 import {codeWords, hubText} from "./hub-copy.js";
+import {folderForm} from "./hub-add.js";
 import {createFrameHost, frameAddress} from "./hub-frame.js";
 import {confirmWords, mountRail, node, noticedMap, projectLine, unlistedNotes} from "./hub-rail.js";
 import {mountCenter, mountSide} from "./hub-stub.js";
@@ -40,6 +41,8 @@ const READS = Object.freeze({
   projects: "/hub/projects",
   limits: "/hub/limits",
   setup: "/hub/setup",
+  dialog: "/hub/dialogs/{pick}",
+  operation: "/hub/operations/{operation}",
 });
 //: `HUB_WRITE_TARGETS` of spec 4.6.3: every write the page may make, and the route it writes.
 const WRITE_TARGETS = Object.freeze({
@@ -72,7 +75,10 @@ const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], computedAt: null,
   unlisted: [], noticed: {}, limits: null, setup: null, registryBad: false, readState: "loading",
   stream: "connecting", selection: {project_id: null, task_id: null, run_id: null, gate_id: null},
-  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null};
+  menu: null, confirm: null, notice: null, busy: false, cancelFocus: false, intent: null,
+  addHelp: false, add: {open: false, mode: "choose", epoch: 0, pickId: null,
+    operationId: null, folder: null, project: null, name: "", consent: false,
+    step: null, result: null, error: null}};
 let token = null;
 let tick = null;
 let reopen = REOPEN_MS.first;
@@ -91,9 +97,9 @@ async function answerOf(response) {
 
 const LOST = Object.freeze({status: "unknown", code: null, payload: null});
 
-async function read(name) {
+async function read(name, params = {}) {
   try {
-    return await answerOf(await fetch(READS[name], {cache: "no-store",
+    return await answerOf(await fetch(fill(READS[name], params), {cache: "no-store",
       credentials: "same-origin", headers: {Accept: "application/json"},
       signal: AbortSignal.timeout(LIMIT_MS)}));
   } catch (_error) {
@@ -188,6 +194,112 @@ async function refresh(name) {
 }
 
 const refreshAll = () => Promise.all(["projects", "limits", "setup"].map(refresh));
+
+function closeAdd() {
+  const add = state.add;
+  if (add.mode === "picking" && add.pickId) {
+    write("pickCancel", {pick: add.pickId}, {});
+  }
+  add.epoch += 1;
+  add.open = false;
+  add.pickId = null;
+  render();
+}
+
+async function chooseFolder() {
+  const add = state.add;
+  const epoch = ++add.epoch;
+  Object.assign(add, {mode: "picking", pickId: null, folder: null, project: null,
+    name: "", consent: false, error: null, result: null});
+  render();
+  const answer = await write("pickFolder", {}, {purpose: "project"});
+  if (add.epoch !== epoch || !add.open) {
+    const latePick = answer.payload?.pick_id;
+    if (answer.status === "accepted" && IDS.pick.test(String(latePick))) {
+      await write("pickCancel", {pick: latePick}, {});
+    }
+    return;
+  }
+  if (answer.status !== "accepted" || !IDS.pick.test(String(answer.payload?.pick_id))) {
+    Object.assign(add, {mode: "choose", error: answer.code ?? "unknown"});
+    render();
+    return;
+  }
+  add.pickId = answer.payload.pick_id;
+  pollPick(epoch);
+}
+
+async function pollPick(epoch) {
+  const add = state.add;
+  if (add.epoch !== epoch || !add.open || !add.pickId) return;
+  const answer = await read("dialog", {pick: add.pickId});
+  if (add.epoch !== epoch || !add.open) return;
+  const row = answer.payload;
+  if (answer.status !== "accepted" || !isObject(row)) {
+    Object.assign(add, {mode: "choose", error: answer.code ?? "unknown"});
+  } else if (row.state === "open") {
+    setTimeout(() => pollPick(epoch), 500);
+    return;
+  } else if (row.state === "picked" && typeof row.folder === "string") {
+    Object.assign(add, {mode: "picked", folder: row.folder, name: row.folder,
+      project: row.project, error: null});
+  } else {
+    Object.assign(add, {mode: "choose", error: row.code ?? row.state});
+  }
+  render();
+}
+
+async function cancelFolder() {
+  const add = state.add, pick = add.pickId;
+  add.epoch += 1;
+  Object.assign(add, {mode: "choose", pickId: null, error: null});
+  render();
+  if (pick) await write("pickCancel", {pick}, {});
+}
+
+async function submitFolder() {
+  const add = state.add;
+  if (add.mode !== "picked" || !add.pickId || !add.name.trim()
+      || (add.project === "legacy" && !add.consent)) return;
+  const epoch = ++add.epoch;
+  add.mode = "running";
+  add.step = "admit";
+  add.error = null;
+  render();
+  const answer = await write("projectAdd", {}, {source: "folder", pick_id: add.pickId,
+    name: add.name, legacy_writers_stopped: add.project !== "activated" &&
+      (add.project !== "legacy" || add.consent)});
+  if (add.epoch !== epoch || !add.open) return;
+  if (answer.status !== "accepted" || !IDS.operation.test(String(answer.payload?.operation_id))) {
+    Object.assign(add, {mode: "picked", error: answer.code ?? "unknown"});
+    render();
+    return;
+  }
+  add.operationId = answer.payload.operation_id;
+  pollAdd(epoch);
+}
+
+async function pollAdd(epoch) {
+  const add = state.add;
+  if (add.epoch !== epoch || !add.open || !add.operationId) return;
+  const answer = await read("operation", {operation: add.operationId});
+  if (add.epoch !== epoch || !add.open) return;
+  const row = answer.payload;
+  if (answer.status !== "accepted" || !isObject(row)) {
+    Object.assign(add, {mode: "failed", error: answer.code ?? "unknown"});
+  } else {
+    Object.assign(add, {step: row.step, result: row.result});
+    if (row.state === "running") {
+      render();
+      setTimeout(() => pollAdd(epoch), 500);
+      return;
+    }
+    add.mode = row.state === "succeeded" ? "done" : "failed";
+    add.error = row.state === "failed" ? row.code : null;
+    refresh("projects");
+  }
+  render();
+}
 
 // -- the stream: frames are identifiers ------------------------------------------------------------
 
@@ -432,9 +544,20 @@ function pathText() {
 function topActions() {
   const {locale} = state;
   const themes = THEMES.map((value) => [value, hubText(locale, `hub.theme.${value ?? "system"}`)]);
-  byId("hubActions").replaceChildren(newTaskControl(),
-    blocked("add-project", hubText(locale, "hub.add_project"),
-      hubText(locale, "hub.add_project.blocked")), ...viewBar(),
+  const add = node("button", {type: "button", className: "hub-action", "data-focus": "add-project",
+    text: hubText(locale, "hub.add_project")});
+  add.addEventListener("click", () => {
+    if (state.add.open) {
+      closeAdd();
+      return;
+    }
+    Object.assign(state.add, {open: true, mode: "choose", pickId: null, operationId: null,
+      folder: null, project: null, name: "", consent: false, step: null, result: null,
+      error: null});
+    state.addHelp = true;
+    render();
+  });
+  byId("hubActions").replaceChildren(newTaskControl(), add, ...viewBar(),
     segment("lang", hubText(locale, "hub.lang.label"), [["en", "EN"], ["ru", "RU"]], locale,
       (value) => choose({locale: value})),
     segment("theme", hubText(locale, "hub.theme.label"), themes, state.theme,
@@ -497,7 +620,27 @@ function unlistedBanners() {
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
-  byId("hubBanners").replaceChildren(...registry, ...setupBanners(), ...unlistedBanners());
+  const first = state.projects.length === 0 || state.addHelp ? [firstRun()] : [];
+  const form = state.add.open ? [folderForm(state.locale, state.add, {
+    close: closeAdd, choose: chooseFolder, cancel: cancelFolder, submit: submitFolder,
+    name: (value) => { state.add.name = value; },
+    consent: (value) => { state.add.consent = value; render(); },
+  })] : [];
+  byId("hubBanners").replaceChildren(...registry, ...form, ...first,
+    ...setupBanners(), ...unlistedBanners());
+}
+
+function firstRun() {
+  const locale = state.locale;
+  const commands = ["conduct providers --profile",
+    'conduct projects add --dir "<absolute-folder>" --legacy-writers-stopped'];
+  return node("div", {className: "hub-banner hub-first-run", "data-banner": "first-run"}, [
+    node("strong", {text: hubText(locale, "hub.first.heading")}),
+    node("p", {text: hubText(locale, "hub.first.explain")}),
+    node("ol", {}, commands.map((command, index) => node("li", {}, [
+      node("span", {text: hubText(locale, `hub.first.step.${index + 1}`)}),
+      node("code", {text: command})]))),
+  ]);
 }
 
 function confirmation() {
