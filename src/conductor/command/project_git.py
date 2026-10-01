@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .adapters.process import CommandSpec, ProcessRunner
+from .adapters.process import CommandSpec, ContainmentError, ProcessRunner
 from .product_names import PRODUCT_TOP_NAMES
 
 #: Flags every git call of the product carries (spec 9.3). Hooks are switched off by the
@@ -103,6 +103,10 @@ def process_git_read(runner: ProcessRunner, git_path: str, cwd: str, *,
             separate_stderr=separate_stderr)
         try:
             outcome = runner.run(spec)
+        except ContainmentError:
+            # A cached reader's working folder can disappear or move after admission.
+            # Keep the runner's refusal, without exposing its local path through the API.
+            raise GitReadFailed("git_failed") from None
         finally:
             if index_file is not None:
                 index_file.observed()
