@@ -578,7 +578,7 @@ def test_a_write_in_flight_is_its_run_and_steps_own_and_spends_only_its_draft():
     assert ("Object.hasOwn(writes, `${runOf(detail)}/${node.node_id}`)"
             in writing.group(2)), writing.group(2)
     # Both roads read it there, and only there.
-    assert step.count(", writingOf(state, detail, node));") == 2, step
+    assert step.count(", writingOf(state, detail, node), state.runWriteBlocked);") == 2, step
     assert "writingOf(draft)" not in step, step
     # Both roads hand the door what their draft's generation was.
     assert step.count("generation: draft.generation") == 2, step

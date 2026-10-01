@@ -250,10 +250,19 @@ def test_every_route_that_carries_a_provider_row_sends_what_the_window_admits(
         {"providers": provider_projection(roster)},
     ]
 
-    for payload in payloads:
+    for index, payload in enumerate(payloads):
         assert payload["providers"], "a provider-bearing route sent no rows"
         for row in payload["providers"]:
-            assert set(row) == admitted
+            assert set(row) == (admitted | {"offered", "task_channel"} if index == 0 else admitted)
+    # The workflow route's reviewed two-field extension must not silently empty
+    # the Studio roster; an unreviewed third field still fails the closed shape.
+    from tests.desk_node import run_js
+    projected = run_js("""
+      const valid = model.projectProviders(d).length;
+      const extra = model.projectProviders([{...d[0], unexpected: true}]).length;
+      console.log(JSON.stringify({valid, extra}));
+    """, {"model": "studio-model.js"}, payloads[0]["providers"])
+    assert projected == {"valid": len(payloads[0]["providers"]), "extra": 0}
 
 
 def test_the_store_hands_every_admitted_provider_key_back_to_the_screen():

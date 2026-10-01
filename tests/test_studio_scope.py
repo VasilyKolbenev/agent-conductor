@@ -61,7 +61,7 @@ GLOBALS = frozenset({
     "AbortController", "setTimeout", "clearTimeout",
     # words a call-shaped regex sees that are not calls at all
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
-    "await", "new", "else", "do", "of", "in", "case", "throw",
+    "await", "new", "else", "do", "of", "in", "case", "throw", "async",
 })
 # Native layout observation is needed by the two modules that draw against a
 # measured box: the orbit, and the participants strip that now sizes itself the
@@ -78,6 +78,8 @@ MODULE_GLOBALS = {
     # The date formatter of an instant's short text. Held to this one module and to the one
     # constructor: `GLOBALS` above does not carry `Intl`, so no other module may reach it.
     "desk-time.js": frozenset({"Intl"}),
+    "desk-flow-host.js": frozenset({"AbortController"}),
+    "desk-wizard-host.js": frozenset({"setInterval", "clearInterval", "queueMicrotask"}),
 }
 #: A call is `name(`, with the name not preceded by a dot -- `a.map(` is a
 #: method on a value and says nothing about this module's scope.
@@ -116,7 +118,7 @@ def _names_in_scope(source: str) -> set[str]:
     for pattern in _BOUND:
         for clause in pattern.findall(source):
             for part in clause.split(","):
-                name = part.split(":")[-1].split("=")[0].strip().lstrip(".")
+                name = part.split(":")[-1].split("=")[0].strip().lstrip(".").strip("{} ")
                 if re.fullmatch(r"[A-Za-z_$][\w$]*", name):
                     found.add(name)
     for clause in _IMPORTED.findall(source):
@@ -200,7 +202,9 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
         "studio-trace.js": frozenset({"ResizeObserver"}),
         "studio-orbit.js": frozenset({"ResizeObserver"}),
         "studio-participants.js": frozenset({"ResizeObserver"}),
-        "desk-time.js": frozenset({"Intl"})}, MODULE_GLOBALS
+        "desk-time.js": frozenset({"Intl"}),
+        "desk-flow-host.js": frozenset({"AbortController"}),
+        "desk-wizard-host.js": frozenset({"setInterval", "clearInterval", "queueMicrotask"})}, MODULE_GLOBALS
     # And every admission is SPENT: a module listed here that never calls the
     # name it was admitted for is a forgiveness nobody argued for, which is the
     # one widening the rest of this test cannot see -- each of its claims holds
@@ -319,8 +323,10 @@ def test_the_deadline_globals_are_reached_by_the_boot_and_transport_modules_alon
     assert DEADLINE.findall(planted) == ["setTimeout"]
     for name in MODULES:
         reached = sorted(set(DEADLINE.findall(_scannable(_code(PANEL / name)))))
-        if name in ("studio.js", "desk-transport.js"):
+        if name in ("studio.js", "desk-transport.js", "desk-people-host.js"):
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
+        elif name == "desk-flow-host.js":
+            assert reached == ["AbortController"]
         else:
             assert reached == [], (name, reached)
 
