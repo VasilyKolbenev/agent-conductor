@@ -157,6 +157,7 @@ EXPECTED_ERRORS = {
     #: The list of materials is well formed and the server will not make a document of it; the
     #: reason, one word of a closed list, is the detail.
     "materials_refused": (409, "service"),
+    "accept_refused": (409, "service"),
     #: The queue moved under the reader; it holds its 32 entries; the run cannot be queued now.
     "queue_changed": (409, "concurrency"),
     "queue_full": (409, "service"),
@@ -205,6 +206,8 @@ EXPECTED_ROUTES = (
     ("GET", "/command/project", False, False),
     ("GET", "/command/project/git", False, False),
     ("POST", "/command/runs/<run_id>/materials", True, True),
+    ("GET", "/command/runs/<run_id>/accept", False, False),
+    ("POST", "/command/runs/<run_id>/accept/preview", False, True),
     ("GET", "/command/project/documents", False, False),
     ("GET", "/command/project/documents/<doc_id>", False, False),
     ("GET", "/command/queue", False, False),

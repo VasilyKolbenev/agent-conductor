@@ -231,6 +231,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/project/git", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
@@ -454,6 +455,7 @@ choose a code.
   { "code": "preview_stale",         "status": 409, "source": "authorization" },
   { "code": "project_not_active",    "status": 409, "source": "lifecycle" },
   { "code": "materials_refused",     "status": 409, "source": "service" },
+  { "code": "accept_refused",        "status": 409, "source": "service" },
   { "code": "queue_changed",         "status": 409, "source": "concurrency" },
   { "code": "queue_full",            "status": 409, "source": "service" },
   { "code": "queue_not_ready",       "status": 409, "source": "plan" },
@@ -1241,6 +1243,16 @@ basis contains only `refused`. A successful files basis explicitly retains
 `pending_checks: ["snapshot_integrity", "current_work_tree"]` alongside its final
 gate, decision time, verified action and manifest digest. This read does not grant
 acceptance authority; damaged or ambiguously bound inventory fails closed.
+
+`POST /command/runs/<run_id>/accept/preview` takes only optional `branch`, `title`
+and `documents` (artifact-ref array or null). It requires the active project and
+the normal session/identity checks. It verifies the saved snapshot and current
+work seal, reads pinned Git base/author/branch facts, and returns `{"accept": ...}`
+as specified in desk redesign sections 9.5–9.6. It writes no Git objects, refs,
+index, configuration or journal records. `accept_refused` (409) carries one closed
+`detail.reason`. Until a real GitHub probe, `github` is null. The digest includes
+the message before its derived Conduct-Acceptance trailer; the shown message has
+that trailer appended after deriving its id. Commit, push and PR are separate doors.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,

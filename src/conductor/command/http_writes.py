@@ -66,6 +66,9 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 
 
 def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    if route.name == "accept_preview":
+        from .accept_preview import preview
+        return preview(api, route.run_id, body)
     if route.name.startswith("automation_"):
         from .policy_routes import route as policy_route
         return policy_route(api, route.name, route.run_id, body)
