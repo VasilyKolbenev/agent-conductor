@@ -62,8 +62,10 @@ def _in_module(file: str, token: str) -> tuple[str, str, str]:
     return ("token", file, token)
 
 
-#: The detailed run panel is still absent.
-NO_PANEL = _absent("desk.html", 'id="deskRun"')
+#: The read-only panel leaves writes and decisions to a later mounted slice.
+NO_STEP_WRITE = _absent("desk-run-host.js", "proposeStep")
+NO_DOCUMENT_WRITE = _absent("desk-run-host.js", "publishDocument")
+NO_DECISIONS = _absent("desk-run-host.js", "mountDecisions")
 #: The cycle editor and wizard are reached through their hosts.
 FLOW = _in("desk-flow.js", "mountFlow")
 
@@ -95,7 +97,7 @@ ROWS: tuple[Row, ...] = (
         (_in("desk.html", "href=\"/panel/index.html\""),), selector="a[href=\"/panel/index.html\"]"),
     Row("5.6.1", "Навигация в hash", "desk-hash.js and the hashchange router", "on_desk",
         (_in("desk.js", "navigationChange"), _in("desk.js", "hashchange")),
-        owed=(("D1", "the detailed run panel still has no surface"),)),
+        owed=(("D1", "run writes and decisions are not wired in the read-only panel"),)),
     Row("5.6.1", "Кто действует (actor)", "pult: «Вы: <имя> · изменить»", "on_desk",
         (_in("desk-pult.js", "desk.pult.actor"), _in("desk.js", "setActor")),
         selector=".desk-pult__actor"),
@@ -173,8 +175,8 @@ ROWS: tuple[Row, ...] = (
         "not_built", (_absent("desk-rail.js", "refresh"),), "D1"),
     Row("5.6.4", "Карточка цикла", "centre, under the task heading: read only", "not_built",
         (_absent("desk.html", "cycle"),), "D1"),
-    Row("5.6.4", "Список запусков задачи", "«Запуск подробно › Запуски»", "not_built",
-        (NO_PANEL,), "D1"),
+    Row("5.6.4", "Список запусков задачи", "«Запуск подробно › Запуски»", "on_desk",
+        (_in("desk-run-host.js", "mountRuns"),), selector="#deskRunToggle"),
     Row("5.6.4", "Заголовок и положение запуска", "centre: the task heading", "on_desk",
         (_in("desk-scene.js", "subject"),)),
     Row("5.6.4", "Сцена: линзы, планеты, орбита, состав, легенда", "the scene", "on_desk",
@@ -184,19 +186,22 @@ ROWS: tuple[Row, ...] = (
     Row("5.6.4", "Гейт и петля на сцене", "the scene; «Открыть решение» leads to the pult",
         "on_desk", (_in("desk-scene.js", "participantDeck"),),
         owed=(("D1", "«Открыть решение»: no decisions surface for it to open yet"),)),
-    Row("5.6.4", "Паспорт запуска", "«Запуск подробно › Паспорт»", "not_built", (NO_PANEL,), "D1"),
-    Row("5.6.4", "План и положение шагов", "«Запуск подробно › Шаги»", "not_built",
-        (NO_PANEL,), "D1"),
+    Row("5.6.4", "Паспорт запуска", "«Запуск подробно › Паспорт»", "on_desk",
+        (_in("studio-runs.js", "identitySection"), _in("desk-run-host.js", "readOnly")),
+        selector="#deskRunToggle"),
+    Row("5.6.4", "План и положение шагов", "«Запуск подробно › Шаги»", "on_desk",
+        (_in("studio-runs.js", "positionSection"), _in("desk-run-host.js", "readOnly")),
+        selector="#deskRunToggle"),
     Row("5.6.4", "Ручные шаги и защита шага", "«Запуск подробно › Шаги»", "not_built",
-        (NO_PANEL,), "D1"),
+        (NO_STEP_WRITE,), "D1"),
     Row("5.6.4", "Документы запуска", "«Запуск подробно › Документы»", "not_built",
-        (NO_PANEL,), "D1"),
+        (NO_DOCUMENT_WRITE,), "D1"),
     Row("5.6.4", "Результат и доказательства", "the feed: the verdict row", "on_desk",
         (_in("desk-feed.js", "feedRows"),),
-        owed=(("D1", "«Запуск подробно › Результат»"),)),
+        owed=()),
     Row("5.6.4", "Артефакты", "the feed: a document opens in its row", "on_desk",
         (_in("desk-feed.js", "desk-feed__doc"),),
-        owed=(("D1", "«Запуск подробно › Документы»"),)),
+        owed=(("D1", "publication from «Запуск подробно › Документы»"),)),
     Row("5.6.4", "Журнал записей", "the feed «Ход работы»", "on_desk",
         (_in("desk-feed.js", "feedRows"),), selector="#deskFeed .desk-feed__log"),
     Row("5.6.4", "Нечитаемая запись запуска", "the status «Запись не читается»", "on_desk",
@@ -218,7 +223,7 @@ ROWS: tuple[Row, ...] = (
         owed=(("D1", "«Очередь внимания» and «Ресурсы сейчас»"),)),
     # -- 5.6.5 decisions ----------------------------------------------------------------------
     Row("5.6.5", "Гейты запуска и квитанции", "«Запуск подробно › Решения»", "not_built",
-        (NO_PANEL,), "D1"),
+        (NO_DECISIONS,), "D1"),
     Row("5.6.5", "Ответ на гейт: зачем, что откроет, ответы, actor, причина", "pult: the gate card",
         "not_built", (_absent("desk-pult.js", "gate"),), "D1"),
     Row("5.6.5", "«Доработать» на финальном гейте", "pult: new, L36", "not_built",

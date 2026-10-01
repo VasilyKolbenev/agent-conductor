@@ -301,8 +301,8 @@ function identitySection(state, detail, handlers) {
     body.push(element("ul", {className: "studio-warnings"},
       warnings.map((line) => element("li", {text: show(state, line)}))));
   }
-  body.push(actionButton(state, handlers, "showDecisions", localize(state, "runs.copy_54"),
-    run.run_id));
+  if (!state.readOnly) body.push(actionButton(state, handlers, "showDecisions",
+    localize(state, "runs.copy_54"), run.run_id));
   return section(localize(state, "runs.copy_55"), body);
 }
 
@@ -482,7 +482,7 @@ function positionRow(node, runtime, standing, detail, state, handlers) {
   // …and last, the one thing on this screen a person can DO to the run. It is
   // offered on the SCHEDULE's word and nothing else; the sentences above have
   // already said why a row that gets none gets none.
-  item.append(...stepControls(node, runtime, plan, detail, state, handlers));
+  if (!state.readOnly) item.append(...stepControls(node, runtime, plan, detail, state, handlers));
   return item;
 }
 
@@ -680,11 +680,11 @@ function detailColumn(runs, state, handlers, participant) {
   return element("div", {className: "studio-runs__detail",
     "data-subject": `run:${String((object(detail.run) || {}).run_id)}`}, [
     runHeading(state, detail, detail.task?.title || show(state, (object(detail.run) || {}).run_id)),
-    participantDeck(detail, participant, state, handlers),
+    ...(state.readOnly ? [] : [participantDeck(detail, participant, state, handlers)]),
     identitySection(state, detail, handlers),
     planSection(state, detail),
     positionSection(detail, state, handlers),
-    documentSection(detail, state, handlers),
+    ...(state.readOnly ? [] : [documentSection(detail, state, handlers)]),
     outcomeSection(state, records),
     artifactSection(state, records),
     timelineSection(state, records),

@@ -27,7 +27,8 @@ import {createWizardHost} from "./desk-wizard-host.js";
 import {connectDeskStream} from "./desk-stream.js";
 import {createFlowHost} from "./desk-flow-host.js";
 import {createPeopleHost} from "./desk-people-host.js";
-
+import {createRunHost} from "./desk-run-host.js";
+import {createDeskPanels} from "./desk-panels.js";
 //: Route names come only from the shared transport.
 const READS = Object.freeze({
   tasks: () => path.tasks(),
@@ -65,8 +66,7 @@ let pultFlow = null;
 let wizardHost = null;
 let stream = null, connection = "closed", loading = 0;
 let selectionRead = Promise.resolve(true);
-let flowHost = null, flowOpen = false;
-let peopleHost = null;
+let panels = null;
 // The bound project comes from the first hash or claim; only the hash's own identity is written
 // back. Embedded origin and announced location belong to this page, never browser storage.
 let bound = null;
@@ -175,7 +175,7 @@ function render() {
   mountFeed(byId("deskFeed"), view);
   mountSummary(byId("deskSummary"), view);
   mountPult(byId("deskPult"), view, handlers);
-  peopleHost?.render(state.run);
+  panels?.render(state, connection);
   wizardHost?.render();
   byId("deskPlate").hidden = state.mode !== "view" || state.foreign;
   mark(byId("deskRail"), said.rail);
@@ -187,12 +187,15 @@ function render() {
   byId("deskShell").dataset.connection = connection;
   byId("deskConnection").textContent = message(locale(), `desk.connection.${connection}`);
   byId("deskFlowToggle").hidden = state.foreign;
-  byId("deskFlowToggle").setAttribute("aria-expanded", String(flowOpen));
+  byId("deskFlowToggle").setAttribute("aria-expanded", String(panels?.isOpen("cycle") ?? false));
   byId("deskPeopleToggle").hidden = state.foreign;
-  byId("deskPeopleToggle").setAttribute("aria-expanded", String(peopleHost?.isOpen() ?? false));
-  byId("deskPeople").hidden = !peopleHost?.isOpen();
+  byId("deskPeopleToggle").setAttribute("aria-expanded", String(panels?.isOpen("people") ?? false));
+  byId("deskPeople").hidden = !panels?.isOpen("people");
+  byId("deskRunToggle").hidden = state.foreign;
+  byId("deskRunToggle").setAttribute("aria-expanded", String(panels?.isOpen("run") ?? false));
+  byId("deskRun").hidden = !panels?.isOpen("run");
   for (const id of ["deskScene", "deskFeed", "deskSummary"])
-    byId(id).hidden = flowOpen || peopleHost?.isOpen();
+    byId(id).hidden = Boolean(panels?.current());
   say(said.shell);
   restoreFocus(byId("deskShell"), held);
 }
@@ -213,8 +216,7 @@ function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const at = where();
   const embed = embedded === null ? null : "hub";
-  const panel = flowOpen ? "cycle" : peopleHost?.isOpen() ? "people"
-    : state.flag !== null && state.flag.open ? "continue" : null;
+  const panel = panels?.current() ?? (state.flag !== null && state.flag.open ? "continue" : null);
   const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
   // Preparation names the wizard's task. Until its run link has landed, a previously
   // selected run in the scene must not be paired with that new task in the address.
@@ -388,6 +390,18 @@ async function readChoice(taskId, runId = null, fresh = () => true) {
   return landed.phase === "ready";
 }
 
+async function selectPanelRun(runId) {
+  const task = state.taskId;
+  if (task === null || !state.runs.list.some((row) =>
+    row.task_id === task && row.run_id === runId)) return;
+  await chooseTask(task, runId);
+}
+async function refreshPanelRuns() {
+  const task = state.taskId, run = where().run, asked = choice;
+  if (!await load() || state.foreign || task !== state.taskId || asked !== choice
+      || task === null) return;
+  await chooseTask(task, run);
+}
 //: The name of a person, in the grammar every id of the routes has: it is what the routes will
 //: take as an actor, so the desk refuses here what they would refuse there.
 const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -461,6 +475,7 @@ function draftFlag(change) {
 //: `panel=continue`); nothing is drawn now, because a person opening it has done that.
 function openFlag(open) {
   if (state.foreign || state.flag === null || state.flag.open === open) return;
+  if (open) panels?.open(null);
   state = Object.freeze({...state, flag: Object.freeze({...state.flag, open})});
   remember();
 }
@@ -469,6 +484,7 @@ function openFlag(open) {
 //: -- at once if it stands, and when the read of the flag lands if it does not. This only
 //: selects and focuses: nothing is written.
 function showContinue() {
+  panels?.open(null);
   wantContinue = true;
   if (state.flag === null) return;
   move({flag: Object.freeze({...state.flag, open: true})});
@@ -555,7 +571,7 @@ function setAppearance(next) {
   const language = locale() !== next.locale;
   if (!language && (root.getAttribute("data-theme") ?? null) === next.theme) return false;
   paintAppearance(next);
-  flowHost?.refresh();
+  panels?.refresh();
   render();
   return language;
 }
@@ -568,10 +584,7 @@ function enterForeign() {
   loading += 1;
   choice += 1;
   stream?.dispose();
-  flowHost?.dispose();
-  peopleHost?.dispose();
-  flowOpen = false;
-  byId("deskFlow").hidden = true;
+  panels?.dispose();
   connection = "closed";
   door.seal();
   state = Object.freeze({tasks: NOT_READ, runs: NOT_READ, automation: new Map(),
@@ -609,14 +622,12 @@ function closeContinue() {
 async function navigate(change, address) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
-  if (address.panel !== "cycle" && flowOpen) showFlow(false);
-  if (address.panel !== "people" && peopleHost?.isOpen()) showPeople(false);
+  if (address.panel !== panels?.current()) panels?.open(null);
   const opened = await navigateSelection(keys, address);
   if (keys.includes("panel")) {
     if (address.panel === "continue") showContinue();
     else closeContinue();
-    if (address.panel === "cycle") showFlow(true);
-    if (address.panel === "people") showPeople(true);
+    if (["cycle", "people", "run"].includes(address.panel)) panels?.open(address.panel);
   }
   await wizardHost?.navigate(change, address);
   return opened;
@@ -704,27 +715,6 @@ async function settle(address) {
   startStream();
 }
 
-//: The address chooses language; without it, the page's `lang` stands.
-function showFlow(open) {
-  if (state.foreign) return;
-  if (open) peopleHost?.show(false);
-  flowOpen = open;
-  byId("deskFlow").hidden = !open;
-  if (open && flowHost === null) {
-    flowHost = createFlowHost({mount: byId("deskFlow"), door, locale,
-      nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign});
-    flowHost.open();
-  }
-  render();
-}
-
-function showPeople(open) {
-  if (state.foreign) return;
-  if (open) showFlow(false);
-  peopleHost?.show(open);
-  render();
-}
-
 async function refreshStream({current}) {
   if (!await load(current, true) || !current()) return false;
   while (current()) {
@@ -744,14 +734,13 @@ async function refreshStream({current}) {
 function startStream() {
   if (state.foreign || stream !== null) return;
   stream = connectDeskStream({door, refresh: refreshStream, onForeign: enterForeign,
-    onConnection: (value) => { connection = value; peopleHost?.connection(value === "open");
+    onConnection: (value) => { connection = value; panels?.connection(value === "open");
       render(); }});
 }
 
 function stopStream() {
-  flowHost?.suspend();
+  panels?.suspend();
   stream?.dispose();
-  peopleHost?.suspend();
   stream = null;
   loading += 1;
   choice += 1;
@@ -768,8 +757,14 @@ function boot() {
   queueDoor = createQueueDoor(door, enterForeign);
   pultFlow = createPultFlow({door: queueDoor,
     host: {state: () => state, move, nonce: () => crypto.randomUUID()}});
-  peopleHost = createPeopleHost({mount: byId("deskPeople"), pult: byId("deskPult"), door,
+  const people = createPeopleHost({mount: byId("deskPeople"), pult: byId("deskPult"), door,
     locale, onForeign: enterForeign});
+  const run = createRunHost({mount: byId("deskRun"), locale,
+    selectRun: (runId) => selectPanelRun(runId), refreshRuns: () => refreshPanelRuns()});
+  panels = createDeskPanels({flowMount: byId("deskFlow"), people, run,
+    createFlow: () => createFlowHost({mount: byId("deskFlow"), door, locale,
+      nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign}),
+    allowed: () => !state.foreign, onChange: render});
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
@@ -777,17 +772,22 @@ function boot() {
     tasks: () => state.tasks.list, foreign: () => state.foreign});
   byId("deskFlowToggle").addEventListener("click", () => {
     closeContinue();
-    showFlow(!flowOpen);
+    panels.toggle("cycle");
     remember();
   });
   byId("deskPeopleToggle").addEventListener("click", () => {
     closeContinue();
-    showPeople(!peopleHost.isOpen());
+    panels.toggle("people");
+    remember();
+  });
+  byId("deskRunToggle").addEventListener("click", () => {
+    closeContinue();
+    panels.toggle("run");
     remember();
   });
   window.addEventListener("pagehide", stopStream);
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted) { flowHost?.resume(); startStream(); }
+    if (event.persisted) { panels?.resume(); startStream(); }
   });
   window.addEventListener("hashchange", onHashChange);
   if (address.projectRepeated) {

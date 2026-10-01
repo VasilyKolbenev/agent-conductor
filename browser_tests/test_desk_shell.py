@@ -52,6 +52,7 @@ from tests.test_store import good_lane, write_project
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
     "desk.html": 200, "desk.css": 200, "desk-flow.css": 200, "desk-people.css": 200,
+    "desk-run.css": 200,
     "desk.js": 200, "desk-transport.js": 200,
     "command-projection.js": 200, "studio-i18n.js": 200,
     "desk-hash.js": 200, "desk-embed.js": 200, "command-view.js": 200, "desk-copy.js": 200,
@@ -97,7 +98,10 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
     "desk-wizard-card.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
-    "desk-people-host.js": 200, "studio-quotas-model.js": 200,
+    "desk-people-host.js": 200, "desk-run-host.js": 200,
+    "desk-panels.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
+    "studio-isolation.js": 200, "studio-runhead.js": 200,
+    "studio-quotas-model.js": 200,
     "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,
     "desk-flow-host.js": 200, "desk-flow.js": 200, "desk-flow-model.js": 200,
     "desk-flow-draw.js": 200, "desk-flow-diag.js": 200, "desk-flow-edits.js": 200,
