@@ -308,6 +308,7 @@ LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "
         ("GET", "/hub/operations/<operation_id>"), ("GET", "/hub/dialogs/<pick_id>"),
         ("POST", "/hub/dialogs/folder"), ("POST", "/hub/dialogs/<pick_id>/cancel"),
         ("POST", "/hub/projects"),
+        ("POST", "/hub/operations/<operation_id>/cancel"),
         ("POST", "/hub/setup/projects-home"),
         ("POST", "/hub/projects/<project_id>/activate"),
         ("POST", "/hub/projects/<project_id>/view"), ("POST", "/hub/projects/<project_id>/stop"),
@@ -336,7 +337,7 @@ def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_sa
         assert _code(reply, 404) == "route_not_found", (row.method, row.path)
         assert _envelope(reply)["detail"] == {"reason": "not in this build"}
         checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 5
+    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 4
 
 
 def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):

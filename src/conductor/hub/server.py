@@ -56,6 +56,8 @@ _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
     "/hub/dialogs/<pick_id>/cancel":
         lambda service, params, _body: service.cancel_dialog(params["pick_id"]),
     "/hub/projects": lambda service, _params, body: service.add_project(body),
+    "/hub/operations/<operation_id>/cancel":
+        lambda service, params, _body: service.cancel_operation(params["operation_id"]),
     "/hub/projects/<project_id>/activate":
         lambda service, params, _body: service.activate(params["project_id"]),
     "/hub/projects/<project_id>/view":

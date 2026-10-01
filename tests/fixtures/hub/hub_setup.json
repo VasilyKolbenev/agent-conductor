@@ -36,6 +36,7 @@
         "state": "in_use"
       }
     ],
-    "hub_job": "none"
+    "hub_job": "none",
+    "clone_recovery": []
   }
 }

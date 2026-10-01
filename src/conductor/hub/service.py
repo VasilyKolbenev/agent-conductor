@@ -27,7 +27,7 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
-    dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
+    clone, dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
     supervisor, project_targets)
 from conductor.hub.refusals import HubRefusal
 
@@ -71,16 +71,22 @@ class HubService:
         self._last_setup: dict[str, Any] | None = None
         self._add_lock = threading.RLock()
         self._github = github.Github(self._home)
+        self._clones = clone.Clones(self._home)
+        self._clone_recovery: tuple[str | None, ...] = ()
         dialog_options = {} if dialog_popen is None else {"popen": dialog_popen}
         self._dialogs = dialogs.Dialogs(self._home, bus, **dialog_options)
         self._pick_resolver = pick_resolver or self._dialogs.resolve
         self._consume_pick = self._dialogs.consume if pick_resolver is None else lambda _ident: None
         options = {} if operation_popen is None else {"popen": operation_popen}
         self._operations = operations.Operations(self._home, bus, start=self._start_added,
-            status=self._added_status, **options)
+            status=self._added_status, clone_cancel=self._clones.cancel, **options)
 
     def start(self) -> None:
         """Seed the ledger of first-seen moments from the snapshots the last hub left."""
+        try:
+            self._clone_recovery = self._clones.recover()
+        except clone.CloneFailed:
+            self._clone_recovery = (None,)
         try:
             listed = registry.load(self._home).projects
         except registry.RegistryError:
@@ -131,7 +137,9 @@ class HubService:
                 "projects_home": {**self._projects_home(home_value),
                                   "default_name": DEFAULT_PROJECTS_HOME},
                 "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": [],
-                "hub_job": self._job_policy()}
+                "hub_job": self._job_policy(),
+                "clone_recovery": [{"operation_id": ident, "code": "clone_cleanup_incomplete"}
+                                   for ident in self._clone_recovery]}
 
     def operation(self, operation_id: str) -> dict[str, Any]:
         """The latest state of one bounded in-memory add operation."""
@@ -166,6 +174,8 @@ class HubService:
             raise HubRefusal("contract_invalid")
         if body["source"] == "scratch":
             return self._scratch_project(body)
+        if body["source"] == "github":
+            return self._github_project(body)
         if body["source"] != "folder":
             raise HubRefusal("route_not_found", {"reason": "source not in this build"})
         if set(body) != {"source", "pick_id", "name", "legacy_writers_stopped"}:
@@ -202,6 +212,35 @@ class HubService:
         ident = self._operations.begin(pick, body["name"], confirmed)
         self._consume_pick(body["pick_id"])
         return 202, {"operation_id": ident}
+
+    def _github_project(self, body):
+        if set(body) != {"source", "repo", "folder", "name"}:
+            raise HubRefusal("contract_invalid")
+        if type(body["repo"]) is not str or clone.REPO.fullmatch(body["repo"]) is None:
+            raise HubRefusal("repo_invalid")
+        problem = registry.name_problem(body["name"])
+        if problem is not None:
+            raise HubRefusal("name_invalid", {"reason": problem})
+        admitted = project_targets.ticket(self._home, body["folder"])
+        git_state = self._tool("git")["state"]
+        git_code = {"not_pinned": "git_not_pinned", "changed": "git_changed",
+                    "too_old": "git_too_old", "unreadable": "tool_version_unreadable"}.get(git_state)
+        if git_code:
+            raise HubRefusal(git_code)
+        gh_state = self._tool("gh")["state"]
+        gh_code = {"not_pinned": "gh_not_pinned", "changed": "gh_changed",
+                   "unreadable": "gh_changed"}.get(gh_state)
+        if gh_code:
+            raise HubRefusal(gh_code)
+        repo = body["repo"]
+        ident = self._operations.begin(operations.FolderPick(str(admitted.path), "none"),
+            body["name"], True, source="github", repo=repo,
+            prepare=lambda ident: self._clones.clone(ident, repo, admitted))
+        return 202, {"operation_id": ident}
+
+    def cancel_operation(self, operation_id: str):
+        self._operations.cancel(operation_id)
+        return 202, {"operation_id": operation_id}
 
     def projects_home(self, body):
         if set(body) == {"default"} and body["default"] is True:

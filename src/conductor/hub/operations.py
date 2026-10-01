@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from conductor.hub import events, job, refusals
+from conductor.hub import clone, events, job, refusals
 
 LIMIT = 50
 START_WAIT_SECONDS = 35
@@ -37,14 +37,16 @@ class Operations:
     def __init__(self, folder: Path, bus: events.EventBus, *,
                  start: Callable[[str], None], status: Callable[[str], tuple[str, str | None]],
                  popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+                 clone_cancel=None,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self._folder, self._bus = Path(folder), bus
         self._start, self._status, self._popen, self._clock = start, status, popen, clock
+        self._clone_cancel = clone_cancel
         self._lock = threading.RLock()
         self._rows: OrderedDict[str, dict] = OrderedDict()
 
     def begin(self, pick: FolderPick, name: str, confirmed: bool, *, source="folder",
-              prepare=None) -> str:
+              repo=None, prepare=None) -> str:
         with self._lock:
             if any(row["state"] == "running" for row in self._rows.values()):
                 raise refusals.HubRefusal("operation_busy")
@@ -56,7 +58,7 @@ class Operations:
                 self._rows.popitem(last=False)
         self._publish(ident)
         thread = threading.Thread(target=self._run, args=(ident, pick, name, confirmed),
-                                  kwargs={"source": source, "prepare": prepare},
+                                  kwargs={"source": source, "repo": repo, "prepare": prepare},
                                   name=f"hub-add-{ident[-8:]}", daemon=True)
         thread.start()
         return ident
@@ -67,6 +69,19 @@ class Operations:
             if row is None:
                 raise refusals.HubRefusal("operation_not_found", {"operation_id": ident})
             return dict(row)
+
+    def cancel(self, ident: str) -> None:
+        with self._lock:
+            row = self._rows.get(ident)
+            if row is None:
+                raise refusals.HubRefusal("operation_not_found")
+            if (row["source"] != "github" or row["state"] != "running"
+                    or row["step"] != "clone" or self._clone_cancel is None):
+                raise refusals.HubRefusal("operation_not_cancellable")
+            try:
+                self._clone_cancel(ident)
+            except clone.CloneFailed as error:
+                raise refusals.HubRefusal(error.code) from error
 
     def configure_parent(self, change):
         """Serialize the selected parent with admission of a new add operation."""
@@ -84,14 +99,23 @@ class Operations:
         self._publish(ident)
 
     def _run(self, ident: str, pick: FolderPick, name: str, confirmed: bool, *,
-             source="folder", prepare=None) -> None:
+             source="folder", repo=None, prepare=None) -> None:
         try:
             made_home = False
             if prepare is not None:
-                path, made_home = prepare()
+                if source == "github":
+                    self._change(ident, step="clone")
+                    path, made_home = prepare(ident)
+                    # The clone is now owner data. If the subsequent ownership
+                    # CLI refuses, show its folder alongside the step's code.
+                    self._change(ident, step="admit", result={"folder": Path(path).name,
+                        "cloned": True, "projects_home_created": made_home})
+                else:
+                    path, made_home = prepare()
                 pick = FolderPick(str(path), "none")
             result, code = (self._cli(ident, pick.path, name, confirmed) if source == "folder"
-                            else self._cli(ident, pick.path, name, confirmed, source=source))
+                            else self._cli(ident, pick.path, name, confirmed,
+                                           source=source, repo=repo))
             if code is not None:
                 self._change(ident, state="failed", code=code)
                 return
@@ -126,6 +150,11 @@ class Operations:
             self._change(ident, state="failed", code="start_timeout")
         except refusals.HubRefusal as error:
             self._change(ident, state="failed", code=self._known(error.code))
+        except clone.CloneFailed as error:
+            if error.code == "cancelled":
+                self._change(ident, state="cancelled", code=None)
+            else:
+                self._change(ident, state="failed", code=self._known(error.code))
         except Exception:  # a background operation must end in its closed vocabulary
             self._change(ident, state="failed", code="subprocess_failed")
 
@@ -134,7 +163,7 @@ class Operations:
         return code if code in refusals.OPERATION_ERROR_CODES else "subprocess_failed"
 
     def _cli(self, ident: str, path: str, name: str, confirmed: bool, *,
-             source="folder") -> tuple[dict | None, str | None]:
+             source="folder", repo=None) -> tuple[dict | None, str | None]:
         # A file, rather than an anonymous pipe, lets the short ownership command finish if the
         # hub exits mid-step. The child has its own process group/session and is not killed by hub.
         fd, output_path = tempfile.mkstemp(prefix="hub-add-out-", dir=self._folder)
@@ -144,20 +173,22 @@ class Operations:
             os.close(fd)
             try:
                 return self._cli_files(ident, path, name, confirmed, output_path, error_path,
-                                       source=source)
+                                       source=source, repo=repo)
             finally:
                 os.unlink(error_path)
         finally:
             os.unlink(output_path)
 
     def _cli_files(self, ident: str, path: str, name: str, confirmed: bool,
-                   output_path: str, error_path: str, *, source="folder") -> tuple[dict | None, str | None]:
+                   output_path: str, error_path: str, *, source="folder", repo=None) -> tuple[dict | None, str | None]:
         argv = [sys.executable, "-m", "conductor", "projects", "add", "--dir", path,
                 "--name", name]
         if confirmed:
             argv.append("--legacy-writers-stopped")
         if source != "folder":
             argv.extend(("--source", source))
+        if repo is not None:
+            argv.extend(("--repo", repo))
         # Writer and reader must be independently opened: a duplicated handle shares the
         # file position, allowing the next CLI line to overwrite a line already inspected.
         with open(output_path, "wb", buffering=0) as writer, open(output_path, "rb", buffering=0) as output, \
