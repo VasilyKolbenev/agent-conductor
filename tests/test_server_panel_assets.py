@@ -117,6 +117,8 @@ ASSETS = {
     "/panel/desk-wizard-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-people-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-run-host.js": "text/javascript; charset=utf-8",
+    "/panel/desk-run-binding.js": "text/javascript; charset=utf-8",
+    "/panel/desk-run-write-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-panels.js": "text/javascript; charset=utf-8",
     # The wire doors, moved out of the Studio's boot module for the desk to share.
     "/panel/desk-transport.js": "text/javascript; charset=utf-8",

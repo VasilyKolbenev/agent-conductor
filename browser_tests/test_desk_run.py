@@ -21,7 +21,8 @@ def test_real_run_panel_reads_passport_steps_and_history_then_selects_an_older_r
         assert panel.locator(".studio-runs__rows .studio-run").count() == 2
         assert panel.locator(".studio-positions li").count() > 0
         assert panel.locator(".studio-timeline li").count() > 0
-        assert panel.locator("form").count() == 0
+        # The read panel now carries the Studio document form for this saved plan.
+        assert panel.locator('[data-step="document"]').count() == 1
         assert "/command/runs/run-fix-new" in asked
         panel.locator(".studio-run-picker summary").click()
         panel.locator(".studio-run").filter(has_text="run-fix-old").click()

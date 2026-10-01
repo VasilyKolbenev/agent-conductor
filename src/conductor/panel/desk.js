@@ -28,6 +28,7 @@ import {connectDeskStream} from "./desk-stream.js";
 import {createFlowHost} from "./desk-flow-host.js";
 import {createPeopleHost} from "./desk-people-host.js";
 import {createRunHost} from "./desk-run-host.js";
+import {createRunPanelBindings} from "./desk-run-binding.js";
 import {createDeskPanels} from "./desk-panels.js";
 //: Route names come only from the shared transport.
 const READS = Object.freeze({
@@ -390,18 +391,6 @@ async function readChoice(taskId, runId = null, fresh = () => true) {
   return landed.phase === "ready";
 }
 
-async function selectPanelRun(runId) {
-  const task = state.taskId;
-  if (task === null || !state.runs.list.some((row) =>
-    row.task_id === task && row.run_id === runId)) return;
-  await chooseTask(task, runId);
-}
-async function refreshPanelRuns() {
-  const task = state.taskId, run = where().run, asked = choice;
-  if (!await load() || state.foreign || task !== state.taskId || asked !== choice
-      || task === null) return;
-  await chooseTask(task, run);
-}
 //: The name of a person, in the grammar every id of the routes has: it is what the routes will
 //: take as an actor, so the desk refuses here what they would refuse there.
 const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -759,8 +748,10 @@ function boot() {
     host: {state: () => state, move, nonce: () => crypto.randomUUID()}});
   const people = createPeopleHost({mount: byId("deskPeople"), pult: byId("deskPult"), door,
     locale, onForeign: enterForeign});
-  const run = createRunHost({mount: byId("deskRun"), locale,
-    selectRun: (runId) => selectPanelRun(runId), refreshRuns: () => refreshPanelRuns()});
+  const runBinding = createRunPanelBindings({state: () => state,
+    connection: () => connection, choice: () => choice, where, load, chooseTask});
+  const run = createRunHost({mount: byId("deskRun"), locale, door,
+    ...runBinding, onChange: render, onForeign: enterForeign});
   panels = createDeskPanels({flowMount: byId("deskFlow"), people, run,
     createFlow: () => createFlowHost({mount: byId("deskFlow"), door, locale,
       nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign}),

@@ -135,6 +135,8 @@ DESK_ASSETS = {
     "/panel/desk-flow-host.js": ("text/javascript; charset=utf-8", "desk-flow-host.js"),
     "/panel/desk-people-host.js": ("text/javascript; charset=utf-8", "desk-people-host.js"),
     "/panel/desk-run-host.js": ("text/javascript; charset=utf-8", "desk-run-host.js"),
+    "/panel/desk-run-binding.js": ("text/javascript; charset=utf-8", "desk-run-binding.js"),
+    "/panel/desk-run-write-host.js": ("text/javascript; charset=utf-8", "desk-run-write-host.js"),
     "/panel/desk-panels.js": ("text/javascript; charset=utf-8", "desk-panels.js"),
 }
 

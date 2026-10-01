@@ -1,15 +1,18 @@
 "use strict";
 // The Desk's selected task and run are already read and fenced by desk.js.
-// Adapt those facts to the existing Studio run reader without granting a new
-// write door: its step, document and decision controls stay visibly disabled.
+// Adapt those facts to Studio's run reader and its existing step/document doors.
 import {mountRuns} from "./studio-runs.js";
 import {element} from "./command-view.js";
-import {localize} from "./studio-i18n.js";
+import {localize, noticeText} from "./studio-i18n.js";
+import {createRunWriteHost} from "./desk-run-write-host.js";
 
-export function createRunHost({mount, locale, selectRun, refreshRuns}) {
+export function createRunHost({mount, locale, selectRun, refreshRuns, door,
+    binding, refreshRun, onChange, onForeign}) {
   let open = false, disposed = false;
   const heading = element("h2"), note = element("p", {className: "desk-run__note"});
+  const outcome = element("p", {className: "desk-run__note", role: "status"});
   const body = element("div");
+  const writer = createRunWriteHost({door, binding, refreshRun, onChange, onForeign});
   function show(value) {
     if (disposed || open === value) return;
     open = value;
@@ -17,22 +20,32 @@ export function createRunHost({mount, locale, selectRun, refreshRuns}) {
   }
   function render(desk, connection) {
     if (disposed || !open) return;
-    if (!mount.contains(body)) mount.replaceChildren(heading, note, body);
+    if (!mount.contains(body)) mount.replaceChildren(heading, note, outcome, body);
     heading.textContent = localize({locale: locale()}, "desk.run");
-    note.textContent = localize({locale: locale()}, "desk.run.read_only");
+    note.textContent = localize({locale: locale()}, desk.mode === "view"
+      ? "desk.run.view_blocked" : "desk.run.actions");
     const selectedId = desk.run.detail?.run?.run_id ?? null;
-    const state = {locale: locale(), connection, readOnly: true,
+    const drafted = writer.sync(desk);
+    const blocked = desk.mode === "view" ? "desk.run.view_blocked"
+      : desk.run.phase !== "ready" || desk.mode !== "active" ? "desk.run.not_ready" : null;
+    const state = {...drafted, locale: locale(), connection, deskRun: true,
+      runWriteBlocked: blocked,
       tasks: {selectedId: desk.taskId},
       runs: {phase: desk.runs.phase, list: desk.runs.list,
-        selectedId, detail: desk.run.detail}};
+        selectedId, detail: desk.run.detail, step: drafted.runs.step,
+        document: drafted.runs.document, writes: drafted.runs.writes}};
+    outcome.textContent = drafted.noticeFrom === "human"
+      ? noticeText(state, drafted.notice) : "";
     mountRuns(body, state, {
       selectRun: (runId) => selectRun(runId),
       refreshRuns: () => refreshRuns(),
+      ...writer.handlers,
     });
   }
   function dispose() {
     disposed = true;
     open = false;
+    writer.dispose();
     mount.replaceChildren();
   }
   return Object.freeze({show, render, isOpen: () => open, dispose});
