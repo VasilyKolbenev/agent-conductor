@@ -41,8 +41,10 @@ from threading import Thread
 import pytest
 
 from conductor import ownership, ownership_transition, server, tool_pins
+from conductor.ownership_records import ANCHOR, HOME
 from conductor.command import (
-    http_writes, project_git_state, project_routes, providers, seed_routes, task_routes)
+    accept_commit, accept_context, accept_preview, git_setup, http_writes,
+    project_git_state, project_routes, providers, seed_routes, task_routes)
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
@@ -309,6 +311,43 @@ def _walk_materials_and_documents(subject, mode: str) -> None:
     else:
         assert [row["path"] for row in answers[1]["documents"]] == ["README.md", "docs/spec.md"]
         assert answers[2]["content"] == "# Project\n", answers[2]
+    # The acceptance GET is journal-only even in view. Each write-bearing route
+    # must reach its real handler and refuse before Git or any durable effect.
+    before = _view_effects(subject.command_store.project_root) if viewing else None
+    accepted = _send(subject, "GET", f"/command/runs/{RUN}/accept", None, 200)
+    assert set(accepted) == {"kind", "basis", "commit", "push", "pull_request"}
+    assert accepted["commit"] is accepted["push"] is accepted["pull_request"] is None
+    accept_answers = [
+        _send(subject, "POST", f"/command/runs/{RUN}/accept/preview", {}, 409),
+        _send(subject, "POST", f"/command/runs/{RUN}/accept/commit",
+              {"accept_digest": "sha256:" + "a" * 64, "actor": "Owner"}, 409)]
+    assert [answer["error"]["code"] for answer in accept_answers] == (
+        ["project_not_active"] * 2 if viewing else ["accept_refused"] * 2)
+    setup_answer = _send(subject, "POST", "/command/project/git/setup",
+                         {"step": "init", "actor": "Owner"}, 409)
+    if viewing:
+        assert setup_answer["error"]["code"] == "project_not_active"
+        for body in ({"step": "exclude", "actor": "Owner"},
+                     {"step": "first_commit", "mode": "snapshot", "preview": True}):
+            assert _send(subject, "POST", "/command/project/git/setup", body, 409)["error"]["code"] == "project_not_active"
+        assert _view_effects(subject.command_store.project_root) == before
+    else:
+        assert setup_answer["error"]["code"] == "git_setup_refused"
+        assert setup_answer["error"]["detail"]["reason"] == "already_git"
+
+
+def _view_effects(root):
+    result = {}
+    for path in sorted(root.rglob("*")):
+        if path == root / HOME / ANCHOR:
+            # Windows denies reads through the held ownership byte-range lock.
+            # Keep its identity/metadata in the comparison; never swallow other I/O failures.
+            entry = os.lstat(path)
+            value = (entry.st_dev, entry.st_ino, entry.st_size, entry.st_mtime_ns)
+        else:
+            value = path.read_bytes() if path.is_file() else None
+        result[path.relative_to(root).as_posix()] = value
+    return result
 
 
 def _walk_the_request_of_a_seed(subject) -> None:
@@ -349,10 +388,12 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication
 #: then the three routes of materials and project documents, which are the ones that may ask git.
 ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
          "_publish_template", "_open_run", "write_materials", "read_documents", "read_document",
-         "seed_task", "read_git")
+         "seed_task", "read_git", "read_accept", "preview", "commit", "setup")
 #: Where a road lives when it is not in `http_writes`.
 HOMES = {"create_task": task_routes, "read_documents": project_routes,
-         "read_document": project_routes, "seed_task": seed_routes, "read_git": project_git_state}
+         "read_document": project_routes, "seed_task": seed_routes, "read_git": project_git_state,
+         "read_accept": accept_context, "preview": accept_preview,
+         "commit": accept_commit, "setup": git_setup}
 
 
 @pytest.mark.parametrize("road", ROADS)
@@ -452,12 +493,16 @@ def test_view_mode_process_never_spawns_a_child_through_a_full_prepare_flow(
 
 #: The routes of this build that read the project's git or make a copy from it, and so are the
 #: ones a view process must refuse or never answer with a child: the walk above goes through
-#: each. The setup and acceptance routes of 9.1.6 join this walk when implemented.
+#: each, including the setup and acceptance routes of 9.1.6.
 WALKED_GIT_ROUTES = frozenset({
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
     ("GET", "/command/project/git"),
+    ("POST", "/command/project/git/setup"),
+    ("GET", "/command/runs/<run_id>/accept"),
+    ("POST", "/command/runs/<run_id>/accept/preview"),
+    ("POST", "/command/runs/<run_id>/accept/commit"),
     ("POST", "/command/tasks/<task_id>/seed")})
 GIT_WORDS = ("/materials", "/documents", "/project/git", "/seed", "/accept")
 
@@ -489,7 +534,7 @@ def test_the_view_walk_notices_a_git_route_that_no_longer_refuses_in_view(
 
 
 def test_the_route_guard_says_no_to_a_git_state_seed_or_accept_route_that_nothing_walks():
-    unwalked = {("POST", "/command/project/git/setup"), ("POST", "/command/tasks/<task_id>/seed/again"),
+    unwalked = {("POST", "/command/project/git/setup/again"), ("POST", "/command/tasks/<task_id>/seed/again"),
                 ("POST", "/command/project/accept/preview")}
     assert git_routes((*COMMAND_ROUTES, *unwalked)) - WALKED_GIT_ROUTES == unwalked
 

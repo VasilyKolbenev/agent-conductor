@@ -367,6 +367,7 @@ def test_every_fixed_code_has_one_test_owned_exact_message_and_empty_detail():
         "project_not_active": "the project is open for viewing and starts no agent",
         "materials_refused": "the materials could not be made into a document",
         "accept_refused": "the reviewed result cannot be accepted into the project",
+        "git_setup_refused": "the Git setup step could not be completed",
         "queue_changed": "the project queue changed since it was read",
         "queue_full": "the project queue is full",
         "queue_not_ready": "the run cannot be put in the project queue now",

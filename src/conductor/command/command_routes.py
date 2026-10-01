@@ -59,6 +59,7 @@ COMMAND_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/control"),
     ("GET", "/command/project"),
     ("GET", "/command/project/git"),
+    ("POST", "/command/project/git/setup"),
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/runs/<run_id>/accept"),
     ("POST", "/command/runs/<run_id>/accept/preview"),
@@ -131,6 +132,7 @@ _FIXED_ROUTES = {
     _QUOTAS_PATH: ("GET", "quotas"),
     _PROJECT_PATH: ("GET", "project"),
     "/command/project/git": ("GET", "project_git"),
+    "/command/project/git/setup": ("POST", "git_setup"),
     _TEMPLATES_PATH: ("POST", "templates"),
     _WORKFLOWS_PATH: ("GET", "workflows"),
 }

@@ -229,6 +229,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/runs/<run_id>/automation/control", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/git", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/project/git/setup", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
@@ -457,6 +458,7 @@ choose a code.
   { "code": "project_not_active",    "status": 409, "source": "lifecycle" },
   { "code": "materials_refused",     "status": 409, "source": "service" },
   { "code": "accept_refused",        "status": 409, "source": "service" },
+  { "code": "git_setup_refused",     "status": 409, "source": "service" },
   { "code": "queue_changed",         "status": 409, "source": "concurrency" },
   { "code": "queue_full",            "status": 409, "source": "service" },
   { "code": "queue_not_ready",       "status": 409, "source": "plan" },
@@ -1225,6 +1227,30 @@ twice is refused `project_mismatch` (409) after the Host, Origin, CSRF and body
 checks and before its route is handled, and a request without the header is
 answered as before. The shapes are in the desk redesign specification, section
 4.5.1.
+
+`POST /command/project/git/setup` accepts these closed bodies:
+`{step:"init"|"exclude",actor}` explicitly confirms one local setup step;
+`{step:"first_commit",mode:"snapshot"|"empty",preview:true}` reads its preview.
+Init/exclude return `{"setup":receipt}`, 201 on their first completed receipt and
+200 for the identical actor's exact repeat. Receipts under
+`<data_root>/git/setup/<step>.json` contain `schema_version:1`, `step`,
+`requested_by`, `recorded_at`, `object_format`, `exclude` and `warnings`.
+They are immutable. A missing init receipt plus an existing `.git` refuses
+`already_git`; a partial earlier attempt never grants ownership of that entry.
+Init preserves `init.defaultBranch` and writes the product exclusion block;
+an existing empty seed requires explicit `--object-format=sha1`. Deferred
+exclude writes the pinned Git's structurally plain common directory.
+
+The first-commit preview returns `{"setup":{step,mode,head:null,target_ref,
+object_format,author,signing,files,manual,warnings,paths_digest}}`. At most 5000
+untracked paths are listed, excluding product names. Regular files bind
+`{path,length,sha256,git_oid}`: the raw-byte seal and actual clean-filter Git OID.
+The canonical ordered list is sealed by `paths_digest`; unsafe leaves are shown
+as manual paths. Reading this preview creates no Git objects, index, ref or
+receipt. Missing author identity refuses; required signing is a shown warning.
+Actual first-commit confirmation and its recovery are not implemented by these
+accepted request forms. Every setup form requires active mode and a live owner;
+`git_setup_refused` carries one closed `reason`, never Git stderr.
 
 `GET /command/project/git` reads the repository facts for the task wizard:
 admission state, HEAD and object format, changed-path count excluding product

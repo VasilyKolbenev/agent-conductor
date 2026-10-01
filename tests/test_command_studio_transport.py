@@ -73,6 +73,7 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_thirty_two(t
         ("POST", "/command/runs/<run_id>/automation/control"),
         ("GET", "/command/project"),
         ("GET", "/command/project/git"),
+        ("POST", "/command/project/git/setup"),
         ("POST", "/command/runs/<run_id>/materials"),
         ("GET", "/command/runs/<run_id>/accept"),
         ("POST", "/command/runs/<run_id>/accept/preview"),
