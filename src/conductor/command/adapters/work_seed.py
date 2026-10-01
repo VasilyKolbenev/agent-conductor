@@ -18,6 +18,59 @@ from pathlib import Path
 from ..containment import RouteViolationCode, portal_violation
 
 
+class CaptureRefused(ValueError):
+    pass
+
+
+def capture_work_tree(base, leaf, read_file, *, max_files=7000, max_bytes=128 * 1024 * 1024):
+    """One bounded byte capture; a portal/alias never supplies snapshot content.
+
+    File modes are raw stat bits. The consumer chooses Git modes against the seed.
+    The seed permits 5000 files/64 MiB and its accumulated diff 2000 rows/64 MiB. Their
+    sum bounds this read without charging unchanged seed bytes to the diff twice.
+    """
+    result, total = {}, 0
+    found = leaf(base)
+    if found is None or not stat.S_ISDIR(found.st_mode):
+        raise CaptureRefused("material_unavailable")
+    stack = [base]
+    while stack:
+        for path in sorted(stack.pop().iterdir()):
+            entry = leaf(path)
+            if entry is None or portal_violation(path, entry) is not None:
+                raise CaptureRefused("irregular_result")
+            if stat.S_ISDIR(entry.st_mode):
+                stack.append(path)
+                continue
+            if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+                raise CaptureRefused("irregular_result")
+            if len(result) >= max_files or total + entry.st_size > max_bytes:
+                raise CaptureRefused("result_too_large")
+            _digest, data = read_file(path, entry, True, max_bytes - total)
+            if data is None:
+                raise CaptureRefused("result_too_large")
+            result[path.relative_to(base).as_posix()] = (entry.st_mode, data)
+            total += len(data)
+    return result
+
+
+def work_modes(base, leaf):
+    """Recheck executable bits without a second content capture for the frame."""
+    result, stack = {}, [base]
+    while stack:
+        for path in sorted(stack.pop().iterdir()):
+            entry = leaf(path)
+            if entry is None or portal_violation(path, entry) is not None:
+                raise CaptureRefused("irregular_result")
+            if stat.S_ISDIR(entry.st_mode):
+                stack.append(path)
+            elif stat.S_ISREG(entry.st_mode) and entry.st_nlink == 1:
+                result[path.relative_to(base).as_posix()] = bool(entry.st_mode & 0o111)
+            else:
+                raise CaptureRefused("irregular_result")
+    return result
+
+
 def digest_work_tree(
         base: Path, leaf: Callable[[Path], os.stat_result | None],
 ) -> dict[str, str]:

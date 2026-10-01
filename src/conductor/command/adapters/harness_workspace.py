@@ -107,7 +107,7 @@ _RESERVED_DIRS = frozenset({WORK_DIR, INSTRUCTION_DIR})
 #: task is a task, not a payload, and an unbounded read is an unbounded prompt.
 INSTRUCTION_SUFFIX = ".md"
 INSTRUCTION_LIMIT = 256 * 1024
-FILE_BUDGET = 32 * 1024
+FILE_BUDGET = 128 * 1024
 #: Windows marks a reparse DIRECTORY here; removing its own entry needs rmdir.
 _DIRECTORY_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_DIRECTORY", 0x10)
 #: What ONE name inside an attempt home turned out to be. A CLOSED vocabulary,
@@ -762,11 +762,20 @@ class HarnessWorkspace:
         if any(not path.startswith(subtree) for path in changed):
             raise WorkspaceNotContained("result member is outside the exact work-item subtree")
         tree, contents = self.read_work_tree(work_item_id, changed, work_scope=work_scope)
-        absent = []
-        for path in changed:
-            if path not in tree:
-                _, found = self._file_route(WORK_DIR, *path.split("/"))
-                if found is not None:
-                    raise WorkspaceNotContained("a reported deletion still has a file")
-                absent.append(path)
-        return tree, contents, tuple(absent), subtree
+        absent = self.absent_result_paths(tuple(path for path in changed if path not in tree))
+        return tree, contents, absent, subtree
+
+    def absent_result_paths(self, paths):
+        for path in paths:
+            _, found = self._file_route(WORK_DIR, *path.split("/"))
+            if found is not None:
+                raise WorkspaceNotContained("a reported deletion still has a file")
+        return paths
+
+    def capture_work_tree(self, work_item_id, *, work_scope=None):
+        base = self._directory_route(*work_parts(work_item_id, work_scope))
+        return work_seed.capture_work_tree(base, _leaf, _read_work_file)
+
+    def work_modes(self, work_item_id, *, work_scope=None):
+        base = self._directory_route(*work_parts(work_item_id, work_scope))
+        return work_seed.work_modes(base, _leaf)
