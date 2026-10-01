@@ -552,3 +552,23 @@ def run(args: argparse.Namespace,
         _say("\ninit cancelled — nothing was written")
         return 1
     return _scaffold(args, cdir, name, text)
+
+
+def scaffold_default(project_root: str | Path) -> Path:
+    """Write the same non-interactive default scaffold without a bootstrap prompt.
+
+    This is the init step of `projects add`. An existing namespace is never overwritten.
+    """
+    from .ownership_layout import init_target
+    root = Path(project_root)
+    cdir = init_target(root)
+    if cdir.exists():
+        raise FileExistsError(f"{cdir} already exists")
+    text = templates.get(templates.DEFAULT, project=_default_project(str(root)))
+    (cdir / "lanes").mkdir(parents=True)
+    (cdir / "events.jsonl").write_text("", encoding="utf-8", newline="\n")
+    (cdir / "map.toml").write_text(text, encoding="utf-8", newline="\n")
+    errors, _warnings = validate.check(str(root))
+    if errors:
+        raise ValueError(f"the default scaffold is invalid: {errors}")
+    return cdir
