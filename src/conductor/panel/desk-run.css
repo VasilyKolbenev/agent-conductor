@@ -27,6 +27,15 @@
 .desk-run .studio-row,.desk-run .studio-position,.desk-run .studio-artifact{
   min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px}
 .desk-run .studio-row__head{display:flex;flex-wrap:wrap;gap:5px 10px}
+.desk-run .studio-step{display:grid;gap:10px;min-width:0;padding:12px;
+  border:1px solid var(--line);border-radius:8px}
+.desk-run .studio-field{display:grid;gap:5px;min-width:0;font-size:12px}
+.desk-run .studio-field input,.desk-run .studio-field select,
+.desk-run .studio-field textarea{box-sizing:border-box;width:100%;min-width:0;
+  padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  color:var(--ink);background:var(--ground);font:inherit}
+.desk-run .studio-field textarea{min-height:130px;resize:vertical}
+.desk-run .studio-step button[type="submit"]{justify-self:start;min-height:36px}
 .desk-run button:not(.studio-run){padding:0 12px;border:1px solid var(--line);
   border-radius:7px;color:var(--ink)}
 .desk-run button:disabled{color:var(--muted);cursor:default}

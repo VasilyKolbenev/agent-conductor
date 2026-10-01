@@ -522,7 +522,7 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
-READ_SIDE = ("desk.js", "desk-panels.js", "desk-run-host.js", "desk-rail.js",
+READ_SIDE = ("desk.js", "desk-panels.js", "desk-run-binding.js", "desk-rail.js",
              "desk-scene.js", "desk-status.js", "desk-hash.js",
              "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js",
              "desk-feed-model.js", "desk-feed.js", "desk-summary-model.js", "desk-closing.js",
@@ -536,6 +536,12 @@ RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene",
 #: reds. A form of the console is not a door: its handler asks the boot module, which writes
 #: nothing either.
 FORM_SIDE = ("desk-pult.js",)
+
+
+def test_run_write_host_uses_only_the_shared_project_bound_mutation_door():
+    source = (PANEL / "desk-run-write-host.js").read_text(encoding="utf-8")
+    assert source.count("door.submit(") == 1
+    assert "fetch(" not in source and "method: \"POST\"" not in source
 
 
 @pytest.mark.parametrize("name", READ_SIDE)

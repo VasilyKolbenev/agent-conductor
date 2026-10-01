@@ -301,6 +301,7 @@ function submitControl(stops, shut, missing, writing, live, state) {
   const said = [];
   if (writing) said.push(note(localize(state, "run_docs.writing")));
   if (!live) said.push(note(localize(state, "run_docs.stream_down")));
+  if (state.runWriteBlocked) said.push(note(localize(state, state.runWriteBlocked)));
   if (stops !== null) said.push(note(stops));
   if (missing !== null) said.push(note(mountedWithout(missing, state)));
   return [button, ...said];
@@ -336,7 +337,8 @@ function documentForm(detail, state, handlers, refs) {
   const submit = handlerOf(handlers, "publishDocument");
   const live = state.connection === "open";
   const writing = writingOf(state, runId);
-  const shut = submit === null || edit === null || !live || writing;
+  const shut = submit === null || edit === null || !live || writing
+    || Boolean(state.runWriteBlocked);
   const ref = liveValue(FORM, "artifact_ref", plain(draft.artifactRef));
   const media = liveValue(FORM, "media_type", plain(draft.mediaType));
   const content = liveValue(FORM, "content", plain(draft.content));

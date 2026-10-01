@@ -301,7 +301,7 @@ function identitySection(state, detail, handlers) {
     body.push(element("ul", {className: "studio-warnings"},
       warnings.map((line) => element("li", {text: show(state, line)}))));
   }
-  if (!state.readOnly) body.push(actionButton(state, handlers, "showDecisions",
+  if (!state.readOnly && !state.deskRun) body.push(actionButton(state, handlers, "showDecisions",
     localize(state, "runs.copy_54"), run.run_id));
   return section(localize(state, "runs.copy_55"), body);
 }
@@ -680,7 +680,7 @@ function detailColumn(runs, state, handlers, participant) {
   return element("div", {className: "studio-runs__detail",
     "data-subject": `run:${String((object(detail.run) || {}).run_id)}`}, [
     runHeading(state, detail, detail.task?.title || show(state, (object(detail.run) || {}).run_id)),
-    ...(state.readOnly ? [] : [participantDeck(detail, participant, state, handlers)]),
+    ...(state.readOnly || state.deskRun ? [] : [participantDeck(detail, participant, state, handlers)]),
     identitySection(state, detail, handlers),
     planSection(state, detail),
     positionSection(detail, state, handlers),

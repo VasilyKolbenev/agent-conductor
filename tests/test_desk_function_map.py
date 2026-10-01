@@ -242,6 +242,7 @@ def desk_handlers() -> list[str]:
 
 
 #: What became of each handler of the old boot module: `kept` (the desk has it under its name),
+#: `host` (mounted through a panel host),
 #: `retired` (the spec's dictionary gives it a new name and the desk has that handler),
 #: `pending` (the spec's new name, which the desk does not have yet, and who adds it) or `owed` (no new
 #: name yet: who owes it, and where it will live).
@@ -268,12 +269,12 @@ HANDLERS = {
     "onSelect": ("owed", "D1", "the canvas of «Схема»"), "onView": ("owed", "D1", "the canvas of «Схема»"),
     "onStatus": ("owed", "D1", "the status line"), "selectRun": ("owed", "D1", "the list of runs"),
     "refreshRuns": ("owed", "D1", "the list of runs"),
-    "chooseStep": ("owed", "D1", "«Запуск подробно › Шаги»"),
-    "editStep": ("owed", "D1", "«Запуск подробно › Шаги»"),
-    "proposeStep": ("owed", "D1", "«Запуск подробно › Шаги»"),
-    "confirmStep": ("owed", "D1", "«Запуск подробно › Шаги»"),
-    "editDocument": ("owed", "D1", "«Запуск подробно › Документы»"),
-    "publishDocument": ("owed", "D1", "«Запуск подробно › Документы»"),
+    "chooseStep": ("host", "desk-run-write-host.js", "stepWriters"),
+    "editStep": ("host", "desk-run-write-host.js", "stepWriters"),
+    "proposeStep": ("host", "desk-run-write-host.js", "stepWriters"),
+    "confirmStep": ("host", "desk-run-write-host.js", "stepWriters"),
+    "editDocument": ("host", "desk-run-write-host.js", "documentWriters"),
+    "publishDocument": ("host", "desk-run-write-host.js", "documentWriters"),
     "selectDecision": ("owed", "D1", "the gate card of the pult"),
     "editDecision": ("owed", "D1", "the gate card of the pult"),
     "submitDecision": ("owed", "D1", "the gate card of the pult"),
@@ -305,6 +306,9 @@ def handler_faults(old: list[str], desk: list[str], table=HANDLERS) -> list[str]
                           "is `kept`")
         elif fate[0] == "owed" and (name in desk or fate[1] not in OWNERS):
             faults.append(f"{name}: owed, but the desk has it now (or no owner)")
+        elif fate[0] == "host" and (name in desk or fate[1] not in desk_closure()
+                                   or fate[2] not in (read_file(fate[1]) or "")):
+            faults.append(f"{name}: its mounted host no longer supplies {fate[2]}")
     return faults
 
 

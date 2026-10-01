@@ -480,6 +480,7 @@ function submitControl(label, stops, wire, state) {
   // has already done something about, and it is about to end by itself.
   if (wire.writing) said.push(note(L(state, "runstep.writing")));
   if (!wire.live) said.push(note(L(state, "runstep.stream_down")));
+  if (wire.blocked !== null) said.push(note(L(state, wire.blocked)));
   if (stops !== null) said.push(note(stops));
   if (wire.missing !== null) said.push(note(mountedWithout(wire.missing, state)));
   return [button, ...said];
@@ -512,10 +513,10 @@ function editorFor(node, mine, handlers) {
 //: and its sentences all read the same answers. `missing` names the one wire
 //: that is absent, or null: a control shut for the want of a handler says which
 //: one, and a control shut because the line is down says that instead.
-function wireFor(name, key, edit, submit, live, writing) {
+function wireFor(name, key, edit, submit, live, writing, blocked = null) {
   const absent = submit === null ? name : (edit === null ? "editStep" : null);
-  return {edit, key, live, missing: absent,
-    shut: submit === null || edit === null || !live || writing, submit,
+  return {edit, key, live, missing: absent, blocked,
+    shut: submit === null || edit === null || !live || writing || blocked !== null, submit,
     writing};
 }
 
@@ -588,7 +589,7 @@ function proposeForm(node, runtime, detail, state, handlers, authority) {
   const submit = handlerOf(handlers, "proposeStep");
   const wire = wireFor("proposeStep", `propose:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
-    state.connection === "open", writingOf(state, detail, node));
+    state.connection === "open", writingOf(state, detail, node), state.runWriteBlocked);
   const shut = whyNoAdapter(detail, node, state);
   const stops = shut === null ? whyNotProposable(draft, state) : shut;
   const form = element("form", {className: "studio-step", "data-step": step},
@@ -698,7 +699,7 @@ function confirmForm(node, detail, state, handlers) {
   const submit = handlerOf(handlers, "confirmStep");
   const wire = wireFor("confirmStep", `confirm:${node.node_id}`,
     editorFor(node, draft !== null, handlers), submit,
-    state.connection === "open", writingOf(state, detail, node));
+    state.connection === "open", writingOf(state, detail, node), state.runWriteBlocked);
   const shut = whyNoAdapter(detail, node, state);
   const stops = shut === null ? whyNotConfirmable(draft, state) : shut;
   const form = element("form", {className: "studio-step", "data-step": step},
