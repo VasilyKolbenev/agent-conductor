@@ -52,6 +52,33 @@ class ArtifactHandoff:
         self._store = store
         self._clock = clock
         self._ids = ids
+        self._accept_git = None
+
+    def capture_dispatch(self, request, args, workspace, *, sensitive=()):
+        from .accept_capture import capture_dispatch
+        from .accept_manifest import SnapshotRefused
+        from .adapters.independent_check import CheckFrameError
+        try:
+            return capture_dispatch(self._store, request, args, workspace, self._snapshot_git,
+                                    sensitive=sensitive)
+        except SnapshotRefused as error:
+            raise CheckFrameError(error.reason) from error
+
+    def _snapshot_git(self):
+        if self._accept_git is None:
+            from ..server_git import project_git_reader
+            self._accept_git = project_git_reader(self._store.project_root)
+        return self._accept_git
+
+    @staticmethod
+    def captured_attempt(captured, changed):
+        from .accept_capture import attempt_material
+        from .accept_manifest import SnapshotRefused
+        from .adapters.independent_check import CheckFrameError
+        try:
+            return attempt_material(captured, changed)
+        except SnapshotRefused as error:
+            raise CheckFrameError(error.reason) from error
 
     def resolve(
             self, run_id: str, artifact_refs: object) -> tuple[ArtifactDocument, ...]:
@@ -211,7 +238,9 @@ class ArtifactHandoff:
     def record_dispatch(
             self, request: ActionRequest, *, adapter_id: str,
             digest: str | None,
-            verifier_instance_id: str | None = None) -> EvidenceRef | None:
+            verifier_instance_id: str | None = None,
+            work_tree_digest: str | None = None,
+            accept_manifest_digest: str | None = None) -> EvidenceRef | None:
         """Publish bounded tree-change evidence, or recover its durable row."""
         with self._store.transaction():
             recovered = self._store.read(request.run_id)
@@ -221,10 +250,13 @@ class ArtifactHandoff:
                     return None
                 evidence = self._verified_evidence(
                     request, adapter_id, digest,
-                    verifier_instance_id=verifier_instance_id)
+                    verifier_instance_id=verifier_instance_id,
+                    work_tree_digest=work_tree_digest, accept_manifest_digest=accept_manifest_digest)
                 self._store.append(evidence)
             self._hold_evidence(evidence, request, adapter_id, digest,
-                                verifier_instance_id=verifier_instance_id)
+                                verifier_instance_id=verifier_instance_id,
+                                work_tree_digest=work_tree_digest,
+                                accept_manifest_digest=accept_manifest_digest)
             return EvidenceRef.from_dict(evidence.as_dict())
 
     def _review_artifact(
@@ -271,7 +303,16 @@ class ArtifactHandoff:
 
     def _verified_evidence(
             self, request: ActionRequest, adapter_id: str, digest: str, *,
-            verifier_instance_id: str | None = None) -> EvidenceRef:
+            verifier_instance_id: str | None = None,
+            work_tree_digest: str | None = None,
+            accept_manifest_digest: str | None = None) -> EvidenceRef:
+        extra = {}
+        if work_tree_digest is not None or accept_manifest_digest is not None:
+            from .contract_values import _digest
+            _digest("work_tree_digest", work_tree_digest)
+            _digest("accept_manifest_digest", accept_manifest_digest)
+            extra = {"work_tree_digest": work_tree_digest,
+                     "accept_manifest_digest": accept_manifest_digest}
         now = self._clock()
         return EvidenceRef(
             evidence_id=self._ids("evidence"), run_id=request.run_id,
@@ -281,13 +322,15 @@ class ArtifactHandoff:
             created_by=adapter_id,
             observed_at=now, digest=digest, verification="verified",
             verified_by=adapter_id, verified_at=now,
-            verifier_instance_id=verifier_instance_id)
+            verifier_instance_id=verifier_instance_id, extra=extra)
 
     @staticmethod
     def _hold_evidence(
             evidence: EvidenceRef, request: ActionRequest,
             adapter_id: str, digest: str | None, *,
-            verifier_instance_id: str | None = None) -> None:
+            verifier_instance_id: str | None = None,
+            work_tree_digest: str | None = None,
+            accept_manifest_digest: str | None = None) -> None:
         if (evidence.run_id != request.run_id
                 or evidence.uri != f"verification/{request.action_id}"
                 or evidence.kind != "verification"
@@ -298,3 +341,9 @@ class ArtifactHandoff:
                 or evidence.digest is None
                 or digest is not None and evidence.digest != digest):
             raise RecordConflict("action verification evidence records different facts")
+        # A read-only standing lookup passes no digest. A publication/retry must compare both
+        # snapshot bindings, including None: legacy evidence cannot silently acquire a seal.
+        if (digest is not None or work_tree_digest is not None or accept_manifest_digest is not None) and (
+                evidence.extra.get("work_tree_digest") != work_tree_digest
+                or evidence.extra.get("accept_manifest_digest") != accept_manifest_digest):
+            raise RecordConflict("action verification evidence records another snapshot")

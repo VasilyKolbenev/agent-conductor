@@ -110,7 +110,7 @@ def test_a_dispatch_checker_is_told_the_file_budget_and_the_frame_ceiling_before
     payload = build_frame(a_request(), material(), {"work-001/result.txt": "digest"},
                           {"work-001/result.txt": b"ordinary result"}).payload.decode("utf-8")
     said = (f"Each changed file of at most {FILE_BUDGET} bytes is included whole below; "
-            f"a larger one appears in WORK TREE by digest only. This whole frame is bounded at {FRAME_LIMIT} bytes.")
+            f"larger changes refuse verification. This whole frame is bounded at {FRAME_LIMIT} bytes.")
     assert payload.count(said) == 1 and payload.index(said) < payload.index("\nWORK TREE\n")
 
 

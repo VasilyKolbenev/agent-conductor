@@ -44,7 +44,7 @@ class IndependentCheckTransport:
             # task must not run after a promise this build has already broken.
             return self._checker_answer(request, "login_residue")
         # The preflight has no authority to alter the tree it is about to judge.
-        if self._evidence() != before:
+        if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._checker_answer(request, "tree_changed")
         self._workspace.claim_verification(request.run_id, request.action_id)
         outcome = self._attempt(
@@ -53,7 +53,7 @@ class IndependentCheckTransport:
             separate_stderr=True, model=verifier.model,
             output_limit=(None if request.capability == REVIEW_CAPABILITY
                           else OUTPUT_LIMIT_BYTES[args.output_limit_profile]))
-        if self._evidence() != before:
+        if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._checker_answer(request, "tree_changed")
         if self._retained:
             return self._checker_answer(request, "homes_refused")
@@ -65,13 +65,17 @@ class IndependentCheckTransport:
         reason = verdict(outcome)
         if reason != "verified":
             return self._feedback_answer(request, reason, outcome, material)
-        answer = self._record_check(request, args, verifier, frame.digest)
+        answer = self._record_check(request, args, verifier, frame)
         return replace(answer, result_manifest=material.result_manifest)
+
+    def _frame_modes_stand(self, frame, args):
+        return (frame.work_modes is None or frame.work_modes == self._workspace.work_modes(
+            args.work_item_id, work_scope=args.task_scope))
 
     def _check_frame(self, request, args, material):
         inputs = tuple(self._artifact_document(row) for row in material.input_documents)
         self._hold_check_inputs(request, args, material, inputs)
-        manifest = None
+        manifest, capture = None, None
         if request.capability == REVIEW_CAPABILITY:
             document = self._artifact_document(material.result_document)
             if (document.source_action_id != request.action_id or document.run_id != request.run_id
@@ -79,18 +83,36 @@ class IndependentCheckTransport:
                     or document.input_artifact_ids != material.input_artifact_ids):
                 raise CheckFrameError("material_unavailable")
             digest, tree, contents = document.digest(), {}, {}
-        elif marked_policy(request):
-            digest = None
-            tree, contents, manifest = self._check_manifest(request, args, material)
         else:
-            digest, (tree, contents) = None, self._workspace.read_work_tree(
-                args.work_item_id, material.changed, work_scope=args.task_scope)
+            digest = None
+            capture = self._handoff.capture_dispatch(request, args, self._workspace,
+                sensitive=(*material.sensitive, *self._sensitive_values()))
+            if capture is not None:
+                tree, contents, absent, subtree = self._handoff.captured_attempt(capture, material.changed)
+                self._workspace.absent_result_paths(absent)
+                expected = {path: value for path, value in material.after.items()
+                            if path.startswith(subtree)}
+                if tree != expected:
+                    raise CheckFrameError("tree_changed")
+                if marked_policy(request):
+                    manifest = self._checked_manifest(request, material, tree, contents, absent, subtree)
+            elif marked_policy(request):
+                tree, contents, manifest = self._check_manifest(request, args, material)
+            else:
+                tree, contents = self._workspace.read_work_tree(
+                    args.work_item_id, material.changed, work_scope=args.task_scope)
         return build_frame(request, material, tree, contents, result_digest=digest, result_manifest=manifest,
+                           accumulated=None if capture is None else capture.snapshot,
+                           work_tree_digest=None if capture is None else capture.work_tree_digest,
+                           work_modes=None if capture is None else capture.modes,
                            sensitive=(*material.sensitive, *self._sensitive_values()))
 
     def _check_manifest(self, request, args, material):
         tree, contents, absent, subtree = self._workspace.read_result_tree(
             args.work_item_id, material.changed, work_scope=args.task_scope)
+        return tree, contents, self._checked_manifest(request, material, tree, contents, absent, subtree)
+
+    def _checked_manifest(self, request, material, tree, contents, absent, subtree):
         try:
             manifest = check_result_manifest(material.result_manifest, request,
                 material.input_artifact_ids, material.changed, tree, contents,
@@ -98,7 +120,7 @@ class IndependentCheckTransport:
                 sensitive=(*material.sensitive, *self._sensitive_values()))
         except MaterialManifestError as error:
             raise CheckFrameError(error.reason) from error
-        return tree, contents, manifest
+        return manifest
 
     def _hold_check_inputs(self, request, args, material, inputs) -> None:
         refs = (args.target_artifact_refs if request.capability == REVIEW_CAPABILITY
@@ -116,7 +138,8 @@ class IndependentCheckTransport:
         if invalid or ids != material.input_artifact_ids:
             raise CheckFrameError("material_unavailable")
 
-    def _record_check(self, request, args, verifier, digest) -> AdapterVerification:
+    def _record_check(self, request, args, verifier, frame) -> AdapterVerification:
+        digest = frame.digest
         if request.capability == REVIEW_CAPABILITY:
             evidence = self._handoff.record_review(
                 request, args.result_artifact_ref, input_artifact_ids=None,
@@ -125,7 +148,9 @@ class IndependentCheckTransport:
         else:
             evidence = self._handoff.record_dispatch(
                 request, adapter_id=self.manifest.adapter_id, digest=digest,
-                verifier_instance_id=verifier.instance_id)
+                verifier_instance_id=verifier.instance_id,
+                work_tree_digest=frame.work_tree_digest,
+                accept_manifest_digest=frame.accept_manifest_digest)
         if evidence is None or evidence.digest != digest:
             return self._checker_answer(request, "material_unavailable")
         return self._verification(request, "verified", (evidence.evidence_id,), "verified")

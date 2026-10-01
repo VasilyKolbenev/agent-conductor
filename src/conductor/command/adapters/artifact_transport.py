@@ -295,7 +295,8 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         return ("\n\nRESULT LIMITS\nIf this step has an independent check, it reads each file you "
                 f"change whole only up to {FILE_BUDGET} bytes, and a larger changed file is refused "
                 "before that check. Its whole input -- this instruction, the input documents, the work "
-                "item's file listing and every changed file, JSON-encoded -- must fit in "
+                "item's listing or summary, every changed file and the accumulated result from the "
+                "seed, JSON-encoded -- must fit in "
                 f"{FRAME_LIMIT} bytes.")
 
     def _review_args(self, arguments: object) -> DeepReviewArgs:
