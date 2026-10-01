@@ -23,7 +23,8 @@ FORMS = {
                           "projects_home", "projects", "unlisted_closing"},
     "GET /hub/limits": {"computed_at", "project_id", "source", "taken_at", "as_of",
                         "max_age_seconds", "accounts"},
-    "GET /hub/setup": {"profile", "projects_home", "tools", "logins", "hub_job"},
+    "GET /hub/setup": {"profile", "projects_home", "tools", "logins", "hub_job",
+                       "clone_recovery"},
     "GET /hub/operations/<operation_id>": {
         "operation_id", "kind", "source", "state", "step", "project_id", "code", "result"},
     "GET /hub/dialogs/<pick_id>": {"pick_id", "purpose", "state", "folder", "project", "code"},

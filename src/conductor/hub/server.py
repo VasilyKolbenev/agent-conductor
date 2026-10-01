@@ -56,6 +56,8 @@ _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
     "/hub/dialogs/<pick_id>/cancel":
         lambda service, params, _body: service.cancel_dialog(params["pick_id"]),
     "/hub/projects": lambda service, _params, body: service.add_project(body),
+    "/hub/operations/<operation_id>/cancel":
+        lambda service, params, _body: service.cancel_operation(params["operation_id"]),
     "/hub/projects/<project_id>/activate":
         lambda service, params, _body: service.activate(params["project_id"]),
     "/hub/projects/<project_id>/view":
@@ -115,8 +117,11 @@ class HubServer(ThreadingHTTPServer):
         self.shutting_down = True
         self.bus.wake_all()
         if self.service is not None:
+            self.clone_shutdown_proven = self.service.close_operations()
             self.service.close_dialog()
         super().shutdown()
+        if getattr(self, "clone_shutdown_proven", True) is False:
+            print("conduct hub: clone retirement unproven; recovery record retained", file=sys.stderr)
 
     def handle_error(self, request: object, client_address: object) -> None:
         """A client that vanished is not an error worth a traceback."""
