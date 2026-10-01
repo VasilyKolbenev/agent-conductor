@@ -518,6 +518,22 @@ def _cmd_hub(args: argparse.Namespace) -> int:
     return cli.hub_command(args.port)
 
 
+def _cmd_projects_add(args: argparse.Namespace) -> int:
+    from conductor.hub import cli
+    return cli.projects_add(args.dir, name=args.name,
+                            legacy_writers_stopped=args.legacy_writers_stopped)
+
+
+def _add_projects(sub) -> None:
+    parser = sub.add_parser("projects", help="register an existing local project folder")
+    verbs = parser.add_subparsers(dest="projects_command", required=True)
+    add = verbs.add_parser("add", help="admit, activate and register a local folder")
+    add.add_argument("--dir", required=True, metavar="ABS_ROOT")
+    add.add_argument("--name", default=None)
+    add.add_argument("--legacy-writers-stopped", action="store_true")
+    add.set_defaults(func=_cmd_projects_add)
+
+
 def _add_hub(sub) -> None:
     parser = sub.add_parser("hub", help="serve the hub: one child per project, on one port")
     parser.add_argument("--port", type=int, default=HUB_PORT,
@@ -578,6 +594,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_demo)
 
     _add_tools(sub)
+    _add_projects(sub)
     _add_hub(sub)
     return parser
 
