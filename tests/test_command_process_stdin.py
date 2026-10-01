@@ -600,4 +600,4 @@ def test_the_frame_the_stdin_and_the_instruction_share_one_ceiling_and_a_file_it
     from conductor.command.adapters.harness_workspace import FILE_BUDGET
     from conductor.command.adapters.independent_check import FRAME_LIMIT
     assert FRAME_LIMIT == STDIN_LIMIT == INSTRUCTION_LIMIT == 256 * 1024
-    assert FILE_BUDGET == 32 * 1024
+    assert FILE_BUDGET == 128 * 1024  # ADR-7c: whole files, unchanged whole-frame ceiling.
