@@ -81,6 +81,28 @@ def test_preview_transfers_saved_bytes_and_keeps_all_git_metadata_and_journal_un
 
 
 @needs_git
+def test_missing_git_reader_cwd_refuses_preview_without_spawn_or_changes(tmp_path, monkeypatch):
+    from conductor.command.adapters import process
+
+    api, root, _work, _saved = project(tmp_path)
+    assert post(api, PATH, {}).status == 200
+    before_git, before_data = snapshot(root / ".git"), snapshot(data_root(root))
+    (tmp_path / "runner-home" / "cwd").rmdir()
+    monkeypatch.setattr(process.subprocess, "Popen",
+                        lambda *a, **k: pytest.fail("missing cwd reached process spawn"))
+
+    answer = post(api, PATH, {})
+
+    assert answer.status == 409
+    assert answer.payload == {"error": {
+        "code": "accept_refused",
+        "message": "the result cannot be accepted: git_failed",
+        "detail": {"reason": "git_failed"}}}
+    assert snapshot(root / ".git") == before_git
+    assert snapshot(data_root(root)) == before_data
+
+
+@needs_git
 @pytest.mark.parametrize("damage", ["work", "blob", "alias"])
 def test_moved_work_missing_blob_or_alias_never_becomes_transfer_bytes(tmp_path, damage):
     api, root, work, saved = project(tmp_path)
