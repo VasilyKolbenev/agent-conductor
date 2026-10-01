@@ -64,6 +64,7 @@ ERROR_STATUS = MappingProxyType({
     "project_not_active": 409,
     "materials_refused": 409,
     "accept_refused": 409,
+    "git_setup_refused": 409,
     "queue_changed": 409,
     "queue_full": 409,
     "queue_not_ready": 409,
@@ -168,6 +169,7 @@ _FIXED_MESSAGES = MappingProxyType({
     #: this fixed sentence is the vocabulary-completeness one.
     "materials_refused": "the materials could not be made into a document",
     "accept_refused": "the reviewed result cannot be accepted into the project",
+    "git_setup_refused": "the Git setup step could not be completed",
     #: The three codes of the project queue (spec 4.4.7). Each is its own code rather than
     #: `contract_invalid` because the body is well formed and nothing in it is wrong: the
     #: list moved under the reader (`queue_changed`), the queue holds its 32 entries
@@ -247,6 +249,12 @@ ACCEPT_REASONS = (
     "not_a_git_repository", "unborn_head", "project_not_repo_root", "tracks_product_dir",
     "unsafe_directory", "object_format_changed", "git_failed", "git_timed_out",
     "acceptance_exists", "signing_required", "blob_mismatch")
+
+GIT_SETUP_REASONS = (
+    "already_git", "not_a_git_repository", "project_not_repo_root", "tracks_product_dir",
+    "unsafe_directory", "unsafe_git_route", "git_exclude_failed", "git_identity_missing",
+    "head_exists", "index_exists", "index_locked", "too_many_files", "paths_changed",
+    "setup_damaged", "setup_terms_changed", "task_run_active", "git_failed", "git_timed_out")
 
 #: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
 #: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that
@@ -341,6 +349,8 @@ _REVIEWED_FACTS = (
      lambda facts: f"the materials were not accepted: {facts['reason']}"),
     ("accept_refused", ("reason",),
      lambda facts: f"the result cannot be accepted: {facts['reason']}"),
+    ("git_setup_refused", ("reason",),
+     lambda facts: f"the Git setup step was refused: {facts['reason']}"),
     ("accept_refused", _SIGNING_FIELDS,
      lambda facts: "the result cannot be accepted: signing_required"),
     # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
@@ -503,6 +513,13 @@ class ApiRefusal(Exception):
                       branch=branch, message_path=message_path)
         return cls(_REFUSAL_BUILD, "accept_refused",
                    "the result cannot be accepted: signing_required", detail)
+
+    @classmethod
+    def git_setup_refused(cls, reason: str) -> "ApiRefusal":
+        if type(reason) is not str or reason not in GIT_SETUP_REASONS:
+            raise ValueError("Git setup reason must be one of the closed list") from None
+        return cls(_REFUSAL_BUILD, "git_setup_refused",
+                   f"the Git setup step was refused: {reason}", {"reason": reason})
 
     @classmethod
     def materials_refused(cls, reason: str) -> "ApiRefusal":

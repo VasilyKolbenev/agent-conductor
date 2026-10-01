@@ -158,6 +158,7 @@ EXPECTED_ERRORS = {
     #: reason, one word of a closed list, is the detail.
     "materials_refused": (409, "service"),
     "accept_refused": (409, "service"),
+    "git_setup_refused": (409, "service"),
     #: The queue moved under the reader; it holds its 32 entries; the run cannot be queued now.
     "queue_changed": (409, "concurrency"),
     "queue_full": (409, "service"),
@@ -205,6 +206,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/automation/control", True, True),
     ("GET", "/command/project", False, False),
     ("GET", "/command/project/git", False, False),
+    ("POST", "/command/project/git/setup", True, True),
     ("POST", "/command/runs/<run_id>/materials", True, True),
     ("GET", "/command/runs/<run_id>/accept", False, False),
     ("POST", "/command/runs/<run_id>/accept/preview", False, True),
