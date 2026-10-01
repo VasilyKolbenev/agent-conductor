@@ -82,10 +82,12 @@ class ProfileJournal:
         if head is None or head["phase"] != "opened":
             raise ProfileRefused("profile_owner_required", "project owner is not opened")
         ownership.require_owner(root)
-        return cls(ownership.data_root(root), owner_nonce=head["nonce"],
+        found = cls(ownership.data_root(root), owner_nonce=head["nonce"],
                    root_identity=head["root_identity"], data_identity=head["data_identity"],
                    derive=native.derive_profile_sid, create=native.create_profile,
                    inspect=native.inspect_profile, delete=native.delete_profile)
+        found.native, found.owner_root = native, root
+        return found
 
     def __init__(self, data_root: Path, *, owner_nonce: str, root_identity,
                  data_identity, derive, create, inspect, delete):
@@ -97,6 +99,7 @@ class ProfileJournal:
         self.data_identity = list(data_identity)
         self.derive, self.create = derive, create
         self.inspect, self.delete = inspect, delete
+        self.native, self.owner_root = None, None
 
     def _directory(self) -> None:
         _plain(self.directory.parent, True)
@@ -118,14 +121,18 @@ class ProfileJournal:
             value = json.loads(raw.decode("utf-8"))
         except (UnicodeError, ValueError) as error:
             raise ProfileRefused("profile_record_invalid", "profile record is malformed") from error
+        try:
+            canonical = _bytes(value)
+        except (TypeError, ValueError) as error:
+            raise ProfileRefused("profile_record_invalid", "profile record is malformed") from error
         match = _NAME.fullmatch(path.name)
-        if (type(value) is not dict or set(value) != _FIELDS
+        if (type(value) is not dict or raw != canonical or set(value) != _FIELDS
                 or type(value["schema"]) is not int or value["schema"] != 1
                 or not match or value["attempt"] != match.group(1)
                 or value["owner_nonce"] != self.owner_nonce
                 or value["root_identity"] != self.root_identity
                 or value["data_identity"] != self.data_identity
-                or value["phase"] not in _PHASES
+                or type(value["phase"]) is not str or value["phase"] not in _PHASES
                 or value["moniker"] != f"conduct-{self.owner_nonce[:12]}-{value['attempt']}"
                 or value["display"] != f"Conduct owned profile {self.owner_nonce}:{value['attempt']}"
                 or type(value["sid"]) is not str):
@@ -172,7 +179,13 @@ class ProfileJournal:
 
     def recover(self) -> None:
         self._directory()
+        from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_TEMP
+        if self.native is not None:
+            AttemptAclJournal(self, self.native).recover()
         for path in sorted(self.directory.iterdir()):
+            if self.native is not None and (_ACL_NAME.fullmatch(path.name)
+                                            or _ACL_TEMP.fullmatch(path.name)):
+                continue
             if _TEMP.fullmatch(path.name):
                 _plain(path, False)
                 path.unlink()  # stale atomic-replace scratch, not an OS profile
@@ -182,9 +195,32 @@ class ProfileJournal:
             self.retire(path)
 
     @contextmanager
-    def container(self, *, internet_client: bool = False):
+    def container(self, *, internet_client: bool = False, mode=None, active_tokens=None):
+        if mode not in (None, "dispatch", "review"):
+            raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
         path, sid = self.create_profile()
+        acl = None
         try:
-            yield WindowsContainer(sid, internet_client=internet_client)
+            if mode is None:
+                yield WindowsContainer(sid, internet_client=internet_client)
+            else:
+                if self.native is None or active_tokens is None:
+                    raise ProfileRefused("profile_acl_invalid", "trusted ACL callbacks are absent")
+                from .process_acl import AttemptAclJournal
+                acl = AttemptAclJournal(self, self.native)
+                _, paths = acl.prepare(path, sid, mode)
+                yield WindowsContainer(sid, internet_client=internet_client), paths
         finally:
-            self.retire(path)
+            try:
+                if active_tokens is not None and active_tokens():
+                    raise ProfileRefused("profile_acl_unproven", "native children still hold attempt loan")
+                if self.owner_root is not None:
+                    ownership.require_owner(self.owner_root).check()
+                if acl is not None:
+                    record = acl._record_path(self._read(path)["attempt"])
+                    if record.exists():
+                        acl.retire(record, proven=True)
+                self.retire(path)
+            finally:
+                if acl is not None:
+                    acl.close()

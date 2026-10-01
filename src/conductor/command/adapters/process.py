@@ -514,9 +514,9 @@ class ProcessRunner:
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
 
-    def container_profile(self, *, internet_client: bool = False):
+    def container_profile(self, *, internet_client: bool = False, mode=None):
         from . import _winlaunch
-        return ProfileJournal.for_project(self._root, _winlaunch).container(internet_client=internet_client)
+        return ProfileJournal.for_project(self._root, _winlaunch).container(internet_client=internet_client, mode=mode, active_tokens=self.active_tokens)
     def recover_container_profiles(self) -> None:
         from . import _winlaunch
         ProfileJournal.for_project(self._root, _winlaunch).recover()

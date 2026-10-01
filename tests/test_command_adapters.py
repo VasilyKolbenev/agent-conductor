@@ -51,11 +51,11 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
 # ``work_seed`` is the work-tree half of ``harness_workspace``, split off when
 # that module reached its line cap: it walks the tree the door proved contained
 # and hands back digests and bounded contents. It holds no execution door either.
-# ``process_profile`` journals owned AppContainer profile identities before the
-# runner changes OS state. Native profile callbacks remain confined to process.py.
+# ``process_profile`` and ``process_acl`` journal owned AppContainer profiles and
+# attempt ACLs before OS mutation. Native callbacks remain confined to the runner.
 SDK_WORKSPACE_DOOR = frozenset({
     "artifact_transport.py", "harness_workspace.py", "login_home.py",
-    "work_seed.py", "process_profile.py"})
+    "work_seed.py", "process_profile.py", "process_acl.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
