@@ -87,7 +87,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-flow-edits.js", "desk-flowwrite.js", "desk-quickcycle.js", "desk-flow-graph.js",
            "desk-flow-fields.js", "desk-flow-model.js", "desk-flow-copy.js",
            "desk-flow-draw.js", "desk-flow-diag.js", "desk-flow-inspector.js", "desk-flow.js",
-           "desk-flow-host.js")
+           "desk-flow-host.js", "desk-people-host.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"

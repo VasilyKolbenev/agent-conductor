@@ -110,7 +110,7 @@ function freshnessAgrees(row) {
   return row.freshness === (stale ? "stale" : "current");
 }
 
-export function projectQuotas(payload) {
+export function projectQuotas(payload, {allowEmptySnapshots = false} = {}) {
   if (!keys(payload, ["as_of", "max_age_seconds", "providers", "snapshots"])
       || !time(payload.as_of) || typeof payload.max_age_seconds !== "number"
       || !Number.isFinite(payload.max_age_seconds) || payload.max_age_seconds <= 0
@@ -122,7 +122,8 @@ export function projectQuotas(payload) {
       || !payload.snapshots.every(freshnessAgrees)) return null;
   const declared = new Set(providers.map((row) => row.providerId));
   const bound = payload.snapshots.flatMap((row) => row.binding_ids);
-  if (!unique(bound) || bound.length !== declared.size
+  if (!unique(bound) || (bound.length !== declared.size
+      && !(allowEmptySnapshots && bound.length === 0))
       || !bound.every((id) => declared.has(id))) return null;
   return frozenJson(payload);
 }
@@ -130,7 +131,8 @@ export function projectQuotas(payload) {
 export function reduceQuotas(state, event) {
   let quotas;
   if (event.type === "quotas-loaded") {
-    const payload = projectQuotas(event.payload);
+    const payload = projectQuotas(event.payload,
+      {allowEmptySnapshots: event.allowEmptySnapshots === true});
     quotas = {phase: payload ? "ready" : "failed", payload};
   } else if (event.type === "quotas-phase"
       && ["loading", "failed", "disconnected"].includes(event.phase)) {

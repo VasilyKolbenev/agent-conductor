@@ -53,6 +53,7 @@ DESK_ASSETS = {
     "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
     "/panel/desk.css": ("text/css; charset=utf-8", "desk.css"),
     "/panel/desk-flow.css": ("text/css; charset=utf-8", "desk-flow.css"),
+    "/panel/desk-people.css": ("text/css; charset=utf-8", "desk-people.css"),
     "/panel/desk.js": ("text/javascript; charset=utf-8", "desk.js"),
     "/panel/desk-wizard-host.js": ("text/javascript; charset=utf-8", "desk-wizard-host.js"),
     # The wire doors the Studio's boot module and, later, the desk share.
@@ -131,6 +132,7 @@ DESK_ASSETS = {
     "/panel/desk-flow-inspector.js": ("text/javascript; charset=utf-8", "desk-flow-inspector.js"),
     "/panel/desk-flow.js": ("text/javascript; charset=utf-8", "desk-flow.js"),
     "/panel/desk-flow-host.js": ("text/javascript; charset=utf-8", "desk-flow-host.js"),
+    "/panel/desk-people-host.js": ("text/javascript; charset=utf-8", "desk-people-host.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

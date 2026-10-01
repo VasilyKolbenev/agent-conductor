@@ -11,6 +11,7 @@ import pytest
 from conductor.command.quota import CredentialContext, QuotaObservation, QuotaSource, QuotaWindow
 from conductor.command.quota_service import QuotaService
 from conductor.command.quota_views import DEFAULT_QUOTA_MAX_AGE, QuotaView
+from conductor.command.quota_snapshot_view import HubLimitsView
 from tests.test_command_quota import AT, SOURCE, account, parsed
 from tests.test_command_quota_routes import catalog, contracts, get, quota_api
 from tests.test_quota_connection import BALANCE, observed
@@ -61,6 +62,16 @@ def test_real_quota_projection_preserves_every_catalog_entry(tmp_path):
     payload = QuotaView(None, DEFAULT_QUOTA_MAX_AGE).payload(catalog(tmp_path), AT.isoformat())
     assert len(payload["providers"]) == len(payload["snapshots"]) == 5
     assert _js(f"console.log(JSON.stringify(quota.projectQuotas({json.dumps(payload)}))); ") == payload
+
+
+def test_view_without_hub_snapshot_admits_unknown_only_at_explicit_view_boundary(tmp_path):
+    answer = HubLimitsView(None).payload(catalog(tmp_path), AT.isoformat().replace("+00:00", "Z"))
+    assert answer["hub_snapshot"] is None and answer["providers"] and not answer["snapshots"]
+    clean = {key: value for key, value in answer.items() if key != "hub_snapshot"}
+    script = f"""const payload = {json.dumps(clean)};
+    console.log(JSON.stringify([quota.projectQuotas(payload),
+      quota.projectQuotas(payload, {{allowEmptySnapshots: true}})]));"""
+    assert _js(script) == [None, clean]
 
 
 @pytest.mark.parametrize("at", [AT, AT + timedelta(minutes=5), AT - timedelta(seconds=1)])

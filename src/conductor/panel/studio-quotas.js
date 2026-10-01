@@ -4,36 +4,44 @@ import {localize as L} from "./studio-i18n.js";
 import {element} from "./command-view.js";
 
 const REASONS = Object.freeze(["no_data", "source_error", "not_authenticated", "not_supported", "malformed_payload"]);
-const PHASES = Object.freeze(["empty", "loading", "failed", "disconnected"]);
+const PHASES = Object.freeze(["empty", "loading", "failed", "disconnected", "no_data"]);
 
-function line(label, value) {
+function line(label, value, hint = null) {
   return element("div", {className: "studio-quota__fact"}, [
-    element("dt", {text: label}), element("dd", {text: value})]);
+    element("dt", {text: label}), element("dd", {text: value, title: hint})]);
 }
-function timestamp(value, state) { return value === null ? L(state, "agents.quota_unavailable") : value.replace("T", " ").replace("Z", " UTC"); }
+function timestamp(value, state) { return value === null ? L(state, "agents.quota_unavailable")
+  : typeof state.quotaTime === "function" ? state.quotaTime(value)
+    : value.replace("T", " ").replace("Z", " UTC"); }
+function dated(label, value, state) {
+  return line(label, timestamp(value, state), state.quotaTime && value !== null ? value : null);
+}
 function percentage(value, state) { return value === null ? L(state, "agents.quota_unavailable") : `${value}%`; }
 
 function windowCard(row, state) {
   // Past its own reset the figures describe a window that has already restarted: never a remainder.
   const reset = row.freshness === "reset_passed";
-  const figure = (value) => reset ? L(state, "agents.quota_unavailable") : percentage(value, state);
+  const figure = (value) => reset || state.hideStaleQuotas && row.freshness !== "current"
+    ? L(state, "agents.quota_unavailable") : percentage(value, state);
   return element("section", {className: "studio-quota__window", "data-quota-window": row.window_id}, [
     element("h4", {text: `${row.limit_id} · ${row.window_id}`}),
     element("p", {className: "studio-quota__status", text: reset ? L(state, "agents.quota_reset_window")
       : row.freshness === "stale" ? L(state, "agents.quota_stale_window") : L(state, "agents.quota_current")}),
     element("dl", {}, [line(L(state, "agents.quota_used"), figure(row.used_percent)),
       line(L(state, "agents.quota_remaining"), figure(row.remaining_percent)),
-      line(L(state, "agents.quota_resets"), timestamp(row.resets_at, state)), line(L(state, "agents.quota_starts"), timestamp(row.starts_at, state)),
+      dated(L(state, "agents.quota_resets"), row.resets_at, state), dated(L(state, "agents.quota_starts"), row.starts_at, state),
       line(L(state, "agents.quota_window"), row.duration_minutes === null ? L(state, "agents.quota_unavailable") : L(state, "agents.quota_minutes", {minutes: String(row.duration_minutes)}))]),
   ]);
 }
 
-function balanceCard(row, state) {
+function balanceCard(row, state, stale) {
+  const amount = (value) => stale ? L(state, "agents.quota_unavailable")
+    : `${value} ${row.currency}`;
   return element("section", {className: "studio-quota__window", "data-quota-currency": row.currency}, [
     element("h4", {text: row.currency}), element("dl", {}, [
-      line(L(state, "agents.quota_total"), `${row.total_balance} ${row.currency}`),
-      line(L(state, "agents.quota_granted"), `${row.granted_balance} ${row.currency}`),
-      line(L(state, "agents.quota_topped"), `${row.topped_up_balance} ${row.currency}`),
+      line(L(state, "agents.quota_total"), amount(row.total_balance)),
+      line(L(state, "agents.quota_granted"), amount(row.granted_balance)),
+      line(L(state, "agents.quota_topped"), amount(row.topped_up_balance)),
     ]),
   ]);
 }
@@ -46,7 +54,7 @@ function snapshotCard(row, providers, state) {
       ? L(state, "agents.quota_unknown_account")
       : L(state, "agents.quota_verified")}),
     element("dl", {}, [line(L(state, "agents.quota_source"), row.source ? `${row.source.kind} · ${row.source.version}` : L(state, "agents.quota_unavailable")),
-      line(L(state, "agents.quota_observed"), timestamp(row.observed_at, state)),
+      dated(L(state, "agents.quota_observed"), row.observed_at, state),
       line(L(state, "agents.quota_freshness"), row.freshness === "current" ? L(state, "agents.quota_current")
         : row.freshness === "stale" ? L(state, "agents.quota_stale") : L(state, "agents.quota_no_observation"))]),
   ]);
@@ -57,7 +65,8 @@ function snapshotCard(row, providers, state) {
   if (Object.hasOwn(row, "balances")) {
     box.append(element("dl", {}, [line(L(state, "agents.quota_funds"), row.is_available === null
       ? L(state, "agents.quota_unavailable") : row.is_available ? L(state, "agents.quota_yes") : L(state, "agents.quota_no")), line(L(state, "agents.quota_reset"), L(state, "agents.quota_reset_na"))]));
-    box.append(...row.balances.map((balance) => balanceCard(balance, state)));
+    box.append(...row.balances.map((balance) => balanceCard(balance, state,
+      state.hideStaleQuotas && row.freshness !== "current")));
   } else box.append(...row.windows.map((window) => windowCard(window, state)));
   return box;
 }
