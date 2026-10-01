@@ -276,6 +276,7 @@ def test_every_reference_the_desk_page_makes_is_a_route_this_server_serves():
     html = DESK_PAGE.read_text(encoding="utf-8")
     refs = re.findall(QUOTED_REFERENCE, html)
     assert refs == ["/panel/desk.css", "/panel/desk-flow.css", "/panel/desk-people.css",
+                    "/panel/desk-run.css",
                     "/panel/desk.js", "/panel/index.html"]
     assert set(refs) <= set(server.PANEL_ASSETS), sorted(set(refs) - set(server.PANEL_ASSETS))
     assert html.count('<link rel="stylesheet" href="/panel/desk.css">') == 1
@@ -521,7 +522,8 @@ def test_the_desk_write_check_reads_code_and_not_the_prose_around_it():
 
 #: The modules of the desk that only read, draw or say a word: none reaches a write door, and
 #: none says a state word outside the seven. A module joins this list the day it is written.
-READ_SIDE = ("desk.js", "desk-rail.js", "desk-scene.js", "desk-status.js", "desk-hash.js",
+READ_SIDE = ("desk.js", "desk-panels.js", "desk-run-host.js", "desk-rail.js",
+             "desk-scene.js", "desk-status.js", "desk-hash.js",
              "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js",
              "desk-feed-model.js", "desk-feed.js", "desk-summary-model.js", "desk-closing.js",
              "desk-summary.js", "desk-pult-flow.js")
