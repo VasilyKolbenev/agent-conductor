@@ -232,6 +232,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/commit", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
@@ -1253,6 +1254,23 @@ index, configuration or journal records. `accept_refused` (409) carries one clos
 `detail.reason`. Until a real GitHub probe, `github` is null. The digest includes
 the message before its derived Conduct-Acceptance trailer; the shown message has
 that trailer appended after deriving its id. Commit, push and PR are separate doors.
+
+`POST /command/runs/<run_id>/accept/commit` accepts exactly `accept_digest` and
+`actor`, returning `{"commit": record}` (201 on publication, 200 on an identical
+receipt). Preview choices come from the current session's bounded cache or an
+immutable intent created by that same explicit confirmation. Missing choices
+require a new preview; startup never replays an intent. A local critical section
+rechecks the durable basis/queue/snapshot, then writes Git objects and one new
+`refs/heads/conduct/...` ref through an exclusive temporary index. HEAD, owner
+index, configuration and worktree remain untouched. Crash/manual-sign recovery
+requires the same actor/digest and complete message, author, parent and tree.
+With actual `commit.gpgSign=true`, the product writes only objects/tree and the
+message file, then refuses `accept_refused` with exact detail
+`{reason:"signing_required",tree,base_commit,branch,message_path}`. The two OIDs
+are full and of the same format, the branch is validated under `conduct/`, and
+`message_path` is only `conductor[.v3]/git/msg-acc-<32 hex>.txt` relative to the
+project. No commit or ref is created until the owner uses the terminal; a later
+explicit retry verifies the complete result before writing its receipt.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,

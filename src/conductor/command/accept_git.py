@@ -55,7 +55,7 @@ class PreviewGit:
             authors.append({"name": match[1], "email": match[2]})
         return authors[0]
 
-    def branch(self, name):
+    def branch(self, name, *, allow_existing=False):
         if not name.startswith("conduct/") or any(ord(c) < 32 or ord(c) == 127 for c in name):
             raise SnapshotRefused("branch_name_invalid")
         answer = self.git(["-C", str(self.root), "check-ref-format", "--branch", name], True)
@@ -65,7 +65,7 @@ class PreviewGit:
             raise SnapshotRefused("branch_name_invalid")
         refs = self.call("for-each-ref", "--format=%(refname)", "refs/heads/conduct").decode("utf-8").splitlines()
         asked = "refs/heads/" + name
-        if asked in refs:
+        if asked in refs and not allow_existing:
             raise SnapshotRefused("branch_exists")
         if any(asked.startswith(ref + "/") or ref.startswith(asked + "/") for ref in refs):
             raise SnapshotRefused("branch_namespace_blocked")

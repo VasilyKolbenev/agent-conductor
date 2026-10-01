@@ -1,6 +1,6 @@
 """Read the three immutable acceptance records without inventing absent or damaged facts.
 
-There is no writer in this slice. Every returned field belongs to the closed wire schema;
+Every returned field belongs to the closed wire schema;
 remote credentials and unrelated run/task identities cannot become a GET response.
 """
 from __future__ import annotations
@@ -10,6 +10,7 @@ import os
 import re
 
 from .accept_snapshot import _folder, _hold, _read
+from .authorization_terms import human_identity
 from .contract_values import _digest, _id, _timestamp
 from .project_git_state import _remote_target
 from .run_store import CorruptRun, _root_gate
@@ -53,7 +54,7 @@ def _validate(kind, value):
         raise ValueError("shape")
     if re.fullmatch(r"acc-[0-9a-f]{32}", _text(value["acceptance_id"])) is None:
         raise ValueError("acceptance id")
-    _text(value["requested_by"], 256)
+    human_identity("requested_by", value["requested_by"])
     _timestamp("recorded_at", value[{"commit": "recorded_at", "push": "pushed_at", "pr": "created_at"}[kind]])
     if kind == "commit":
         for name in ("run_id", "task_id"):
@@ -105,7 +106,7 @@ def read_records(root, run_id, *, task_id=None, kind=None):
                 path = folder / f"{name}.json"
                 _hold(root, path)
                 result[name] = (None if not os.path.lexists(path) else _validate(name,
-                    json.loads(_read(root, path, 64 * 1024), object_pairs_hook=_object)))
+                    json.loads(_read(root, path, 256 * 1024), object_pairs_hook=_object)))
             commit, push, pr = (result[name] for name in _FIELDS)
             if commit is not None and (commit["run_id"] != run_id or commit["task_id"] != task_id
                                        or commit["kind"] != kind):

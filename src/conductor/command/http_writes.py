@@ -66,6 +66,9 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 
 
 def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    if route.name == "accept_commit":
+        from .accept_commit import commit
+        return commit(api, route.run_id, body)
     if route.name == "accept_preview":
         from .accept_preview import preview
         return preview(api, route.run_id, body)

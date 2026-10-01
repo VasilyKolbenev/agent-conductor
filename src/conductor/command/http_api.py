@@ -197,6 +197,8 @@ class CommandApi:
             store, templates, tasks)
         self._registry = registry
         self._session = session
+        from .accept_cache import AcceptancePreviews
+        self._accept_previews = AcceptancePreviews()
         self._budget = Budget(
             budget.max_actions, budget.max_action_seconds,
             budget.max_confirmation_age_seconds)

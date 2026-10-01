@@ -23,7 +23,7 @@ def preview(api, run_id, body):
     if api._project_git is None:
         raise ApiRefusal.tool_unavailable("git", "not_pinned")
     try:
-        result = _preview(api, context, options)
+        result, _bytes = plan_preview(api, context, options)
         # No root gate is held during Git/work reads. Recheck admission after those reads;
         # a newly queued/started/later task run invalidates this projection immediately.
         current = read_context(api, run_id)
@@ -32,6 +32,7 @@ def preview(api, run_id, body):
         if (current.basis, current.task, current.workflow, current.seed) != (
                 context.basis, context.task, context.workflow, context.seed):
             raise SnapshotRefused("accept_terms_changed")
+        api._accept_previews.remember(run_id, result["accept_digest"], options)
         return 200, {"accept": result}
     except SnapshotRefused as error:
         raise ApiRefusal.accept_refused(error.reason) from None
@@ -46,10 +47,10 @@ def preview(api, run_id, body):
         raise ApiRefusal.accept_refused("git_failed") from None
 
 
-def _preview(api, context, options):
+def plan_preview(api, context, options, *, allow_existing=False):
     facts = read_git(api._store.project_root, api._project_git, context.seed)
     run_id, kind = context.recovered.envelope.run_id, context.basis.kind
-    branch = facts.branch(options.get("branch", f"conduct/{run_id}"))
+    branch = facts.branch(options.get("branch", f"conduct/{run_id}"), allow_existing=allow_existing)
     author = facts.author()
     listing = facts.listing()
     rows, after, skipped, count = ([], {}, [], 0)
@@ -81,7 +82,7 @@ def _preview(api, context, options):
               "documents": documents, "patch": accept_terms.patch(files, before, after),
               "warnings": warnings, "github": None}
     accept_terms.seal_terms(result)
-    return result
+    return result, after
 
 
 def _warnings(facts, files, before, after, base, overlay):

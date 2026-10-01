@@ -208,6 +208,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/runs/<run_id>/materials", True, True),
     ("GET", "/command/runs/<run_id>/accept", False, False),
     ("POST", "/command/runs/<run_id>/accept/preview", False, True),
+    ("POST", "/command/runs/<run_id>/accept/commit", True, True),
     ("GET", "/command/project/documents", False, False),
     ("GET", "/command/project/documents/<doc_id>", False, False),
     ("GET", "/command/queue", False, False),

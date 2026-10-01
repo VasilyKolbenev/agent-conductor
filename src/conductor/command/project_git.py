@@ -81,20 +81,31 @@ class RepositoryAdmission:
 
 def process_git_read(runner: ProcessRunner, git_path: str, cwd: str, *,
                      env_allow: Sequence[str] = (),
-                     env: Mapping[str, str] | None = None) -> GitRead:
+                     env: Mapping[str, str] | None = None, index_root: Path | None = None) -> GitRead:
     """A reader that runs the pinned `git_path` through `runner`, in `cwd`.
 
     The runner refuses a `cwd` that is not strictly beneath its own root, so the caller chooses a
     folder of its own for it; the repository is named by `-C` in each call, not by `cwd`.
     """
     def read(args: Sequence[str], separate_stderr: bool = False, *, stdin: bytes | None = None,
-             output_limit: int | None = None, timeout: float | None = None) -> GitAnswer:
-        outcome = runner.run(CommandSpec(
+             output_limit: int | None = None, timeout: float | None = None, index_file=None) -> GitAnswer:
+        environment = dict(env or {})
+        if index_file is not None:
+            from .git_index import OwnedIndex
+            if type(index_file) is not OwnedIndex or index_root is None:
+                raise ValueError("Git index must be owned by this project's operation")
+            environment.update(index_file.environment(index_root))
+        spec = CommandSpec(
             argv=(git_path, *GIT_FLAGS, *args), cwd=cwd, env_allow=tuple(env_allow),
-            env=dict(env or {}), stdin_bytes=stdin,
+            env=environment, stdin_bytes=stdin,
             output_limit=READ_OUTPUT_LIMIT if output_limit is None else output_limit,
             timeout_seconds=READ_TIMEOUT_SECONDS if timeout is None else timeout,
-            separate_stderr=separate_stderr))
+            separate_stderr=separate_stderr)
+        try:
+            outcome = runner.run(spec)
+        finally:
+            if index_file is not None:
+                index_file.observed()
         return GitAnswer(exit_code=outcome.exit_code, output=outcome.output,
                          truncated=outcome.output_truncated,
                          timed_out=outcome.status == "timed_out")
