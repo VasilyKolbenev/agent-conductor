@@ -117,6 +117,7 @@ ASSETS = {
     "/panel/desk-wizard-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-people-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-run-host.js": "text/javascript; charset=utf-8",
+    "/panel/desk-accept-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-run-binding.js": "text/javascript; charset=utf-8",
     "/panel/desk-run-write-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-panels.js": "text/javascript; charset=utf-8",

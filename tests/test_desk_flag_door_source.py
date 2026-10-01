@@ -20,7 +20,7 @@ FLAG_DOOR = PANEL / "desk-flag.js"
 #: name their own closed list of targets (the queue's is held by `test_desk_queue_door_source.py`,
 #: and the run writer's single shared-door call by `test_desk_source.py`).
 DOORS = ("desk-transport.js", "desk-flag.js", "desk-queue.js", "desk-flow-host.js",
-         "desk-run-write-host.js")
+         "desk-run-write-host.js", "desk-accept-host.js")
 #: Everything else that reaches the wire or a session, which the flag's door does not do.
 FLAG_OTHER_DOORS = (r"\bfetch\s*\(", r"\bmethod\s*:", r'"POST"', r"\bXMLHttpRequest\b",
                     r"\bsendBeacon\b", r"\bdropSession\b", r"\bopenStream\b", r"\bEventSource\b")

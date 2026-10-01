@@ -6,15 +6,18 @@ import {mountDecisions, mountDecisionCard} from "./studio-people.js";
 import {element} from "./command-view.js";
 import {localize, noticeText} from "./studio-i18n.js";
 import {createRunWriteHost} from "./desk-run-write-host.js";
+import {createAcceptHost} from "./desk-accept-host.js";
 
 export function createRunHost({mount, pult, locale, selectRun, refreshRuns, door,
-    binding, refreshRun, onChange, onForeign}) {
+    binding, refreshRun, onChange, onForeign, openRun}) {
   let open = false, disposed = false;
   const heading = element("h2"), note = element("p", {className: "desk-run__note"});
   const outcome = element("p", {className: "desk-run__note", role: "status"});
   const body = element("div"), decisions = element("div");
   const pultCard = element("div");
   const writer = createRunWriteHost({door, binding, refreshRun, onChange, onForeign});
+  const accept = createAcceptHost({door, binding, locale, onChange, onForeign,
+    openDetails: openRun});
   function show(value) {
     if (disposed || open === value) return;
     open = value;
@@ -30,8 +33,11 @@ export function createRunHost({mount, pult, locale, selectRun, refreshRuns, door
       decisionActor: desk.actor, decisionWriteBlocked: blocked};
     pult.append(pultCard);
     mountDecisionCard(pultCard, decisionState, writer.handlers);
+    pult.append(accept.pult);
+    accept.render(desk, open);
     if (!open) return;
-    if (!mount.contains(body)) mount.replaceChildren(heading, note, outcome, body, decisions);
+    if (!mount.contains(body)) mount.replaceChildren(heading, note, outcome, body, decisions,
+      accept.detail);
     heading.textContent = localize({locale: locale()}, "desk.run");
     note.textContent = localize({locale: locale()}, desk.mode === "view"
       ? "desk.run.view_blocked" : "desk.run.actions");
@@ -58,6 +64,7 @@ export function createRunHost({mount, pult, locale, selectRun, refreshRuns, door
     disposed = true;
     open = false;
     writer.dispose();
+    accept.dispose();
     mount.replaceChildren();
     pultCard.remove();
   }

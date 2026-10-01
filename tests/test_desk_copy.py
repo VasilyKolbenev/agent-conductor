@@ -66,6 +66,17 @@ def test_every_desk_key_is_said_by_the_page_or_a_desk_module_and_none_says_a_mis
     for prefix, phases in dynamic.items():
         assert any(f"`{prefix}${{" in source for source in sources), prefix
         said.update(prefix + phase for phase in phases)
+    accept = (PANEL / "desk-accept-host.js").read_text(encoding="utf-8")
+    for kind, field, names in (
+        ("state", "row.state", ("added", "modified", "deleted")),
+        ("skip", "row.reason", ("ignored_by_project", "seed_skipped",
+                                  "agent_instructions", "agent_git_dir")),
+        ("warning", "warning", ("hooks_not_run", "signing_required", "overlay_base",
+                                 "base_behind_head", "overlap_with_head", "suspicious_name",
+                                 "long_path_checkout", "lfs_pointer", "line_endings_changed")),
+    ):
+        assert f'word(locale, "{kind}", {field})' in accept
+        said.update(f"desk.accept.{kind}.{name}" for name in names)
     assert said == set(catalogue), sorted(said ^ set(catalogue))
 
 
