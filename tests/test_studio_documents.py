@@ -285,7 +285,7 @@ def test_the_step_forms_name_the_document_a_proposal_binds():
     # And the position row names what the latest proposal bound.
     runs = _code(RUNS)
     assert "item.append(...boundSources(detail, node, state));" in runs
-    assert "documentSection(detail, state, handlers)," in runs
+    assert "...(state.readOnly ? [] : [documentSection(detail, state, handlers)])," in runs
 
 
 def test_the_step_forms_name_every_input_document_a_proposal_binds():

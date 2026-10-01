@@ -269,6 +269,8 @@ def test_every_exported_function_of_a_screen_module_is_one_of_its_mounts(
     """No second entry point, and no default export to guess at."""
     exported = set(re.findall(r"export function (\w+)\(", source(path)))
     expected = {name for owner, name in MOUNT_SIGNATURES if owner == path}
+    if path == PEOPLE_FILE:
+        expected.add("mountDecisionCard")  # the Desk's one current-gate fragment
     assert exported == expected
     assert "export default" not in source(path)
 
@@ -304,7 +306,11 @@ def test_a_mount_replaces_its_whole_subtree_exactly_once(path: Path) -> None:
     """Idempotent re-render: the subtree is replaced, never appended to."""
     text = source(path)
     mounts = {name for owner, name in MOUNT_SIGNATURES if owner == path}
-    assert text.count("mount.replaceChildren(") == len(mounts)
+    assert text.count("mount.replaceChildren(") == len(mounts) + (2 if path == PEOPLE_FILE else 0)
+    if path == PEOPLE_FILE:
+        card = text[text.index("export function mountDecisionCard("):]
+        card = card[:card.index("\n}\n")]
+        assert card.count("mount.replaceChildren(") == 2  # empty or the same gate detail
 
 
 @pytest.mark.parametrize("path", MOUNTED, ids=lambda path: path.name)

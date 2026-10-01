@@ -217,11 +217,11 @@ export function projectProviders(rows) {
   const out = [];
   const conflicted = new Set();
   for (const row of rows) {
-    if (!isPlainObject(row) || !exactKeys(row, PROVIDER_KEYS)) continue;
+    if (!isPlainObject(row) || !(exactKeys(row, PROVIDER_KEYS)
+        || exactKeys(row, [...PROVIDER_KEYS, "offered", "task_channel"]))) continue;
     if (!isId(row.provider_id) || !isText(row.display_name)) continue;
     if (!PROVIDER_AVAILABILITY.includes(row.availability)) continue;
-    if (!PROVIDER_IMPLEMENTATION.includes(row.implementation)) continue;
-    if (!PROVIDER_AUTH.includes(row.auth)) continue;
+    if (!PROVIDER_IMPLEMENTATION.includes(row.implementation) || !PROVIDER_AUTH.includes(row.auth)) continue;
     if (!Array.isArray(row.controls) || !row.controls.every(isId)) continue;
     // A malformed declaration is DROPPED like any other bad row rather than
     // read as an absence: "we did not look" is the one answer this field exists
