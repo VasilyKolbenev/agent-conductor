@@ -45,7 +45,8 @@ def _refused(command: str, code: str, detail: str) -> int:
 
 
 def projects_add(directory: str, *, name: str | None = None,
-                 legacy_writers_stopped: bool = False) -> int:
+                 legacy_writers_stopped: bool = False, source: str = "folder",
+                 repo: str | None = None) -> int:
     """Print one completed step per line, then the local folder's registration result."""
     from conductor.hub import projects_add as addition
 
@@ -54,7 +55,8 @@ def projects_add(directory: str, *, name: str | None = None,
 
     try:
         result = addition.add_folder(directory, name=name,
-            legacy_writers_stopped=legacy_writers_stopped, progress=completed)
+            legacy_writers_stopped=legacy_writers_stopped, progress=completed,
+            source=source, repo=repo)
     except addition.AddRefused as error:
         return _refused("projects add", error.code, error.detail)
     print(json.dumps({"result": result}, sort_keys=True, ensure_ascii=False), flush=True)

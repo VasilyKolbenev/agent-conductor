@@ -61,6 +61,32 @@ def test_relative_root_refuses_before_any_write(tmp_path, monkeypatch, capsys):
     assert not home.exists()
 
 
+@pytest.mark.parametrize("source,repo", [("scratch", None), ("github", "octocat/app")])
+def test_project_origin_is_kept_in_registry(tmp_path, monkeypatch, capsys, source, repo):
+    home, project = tmp_path / "hub-home", tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("CONDUCT_HOME", str(home))
+    assert cli.projects_add(str(project), source=source, repo=repo,
+                            legacy_writers_stopped=True) == 0
+    _lines(capsys)
+    saved = registry.load(home).projects[0]
+    assert (saved.source, saved.repo) == (source, repo)
+    assert not (project / ".git").exists()  # source metadata never initializes Git
+
+
+@pytest.mark.parametrize("source,repo", [("github", None), ("github", "--evil/x"),
+                                        ("scratch", "a/b"), ("folder", "a/b")])
+def test_invalid_origin_refuses_before_scaffold(tmp_path, monkeypatch, capsys, source, repo):
+    home, project = tmp_path / "hub-home", tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("CONDUCT_HOME", str(home))
+    assert cli.projects_add(str(project), source=source, repo=repo,
+                            legacy_writers_stopped=True) == 1
+    lines, error = _lines(capsys)
+    assert lines == [] and "repo_invalid" in error
+    assert list(project.iterdir()) == [] and not home.exists()
+
+
 def test_nested_root_refuses_before_any_write(tmp_path, monkeypatch, capsys):
     home = tmp_path / "hub-home"
     monkeypatch.setenv("CONDUCT_HOME", str(home))

@@ -521,7 +521,8 @@ def _cmd_hub(args: argparse.Namespace) -> int:
 def _cmd_projects_add(args: argparse.Namespace) -> int:
     from conductor.hub import cli
     return cli.projects_add(args.dir, name=args.name,
-                            legacy_writers_stopped=args.legacy_writers_stopped)
+                            legacy_writers_stopped=args.legacy_writers_stopped,
+                            source=args.source, repo=args.repo)
 
 
 def _add_projects(sub) -> None:
@@ -531,6 +532,8 @@ def _add_projects(sub) -> None:
     add.add_argument("--dir", required=True, metavar="ABS_ROOT")
     add.add_argument("--name", default=None)
     add.add_argument("--legacy-writers-stopped", action="store_true")
+    add.add_argument("--source", choices=("folder", "github", "scratch"), default="folder")
+    add.add_argument("--repo", default=None, metavar="OWNER/NAME")
     add.set_defaults(func=_cmd_projects_add)
 
 

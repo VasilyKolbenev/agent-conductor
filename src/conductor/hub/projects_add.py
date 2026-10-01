@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 from pathlib import Path
 from typing import Callable
@@ -22,6 +23,7 @@ REFUSAL_CODES = frozenset({
     "recovery_required", "transition_conflict", "activation_present",
     "inventory_bound", "owner_busy", "ownership_lost", "git_exclude_failed",
     "ports_exhausted", "registry_busy", "registry_invalid", "subprocess_failed",
+    "repo_invalid",
 })
 
 
@@ -209,9 +211,15 @@ def _instructions(root: Path) -> list[str]:
 
 
 def add_folder(raw: str, *, name: str | None = None, legacy_writers_stopped: bool = False,
+               source: str = "folder", repo: str | None = None,
                progress: Callable[[str], None] = lambda _step: None) -> dict:
     """Admit, activate and register one folder; emit a step only after it completes."""
     try:
+        if (source not in {"folder", "github", "scratch"}
+                or (source == "github" and (type(repo) is not str or
+                    re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}", repo) is None))
+                or (source != "github" and repo is not None)):
+            _refuse("repo_invalid", "source and repository must describe the added project")
         folder = home.conduct_home_path()
         root, current = _admit(raw, name, folder)
         progress("admit")
@@ -243,7 +251,8 @@ def add_folder(raw: str, *, name: str | None = None, legacy_writers_stopped: boo
         if prior is not None and prior.project_id != project_id:
             _refuse("root_already_registered", str(root))
         project, registered = registry.add_project(project_id=project_id, root=str(root),
-            root_identity=ownership_records.identity(root), source="folder", name=name, folder=folder)
+            root_identity=ownership_records.identity(root), source=source, repo=repo,
+            name=name, folder=folder)
         progress("register")
         return {"project_id": project.project_id, "name": project.name, "root": project.root,
                 "port": project.port, "registered": registered, "git": git.state,
