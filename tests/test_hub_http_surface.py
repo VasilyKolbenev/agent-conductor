@@ -303,6 +303,8 @@ def test_a_registry_that_cannot_be_read_is_409_registry_invalid_and_is_not_rewri
 
 LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "/hub/events"),
         ("GET", "/hub/projects"), ("GET", "/hub/limits"), ("GET", "/hub/setup"),
+        ("GET", "/hub/github/status"), ("GET", "/hub/github/repos"),
+        ("GET", "/hub/github/repos/<owner>"),
         ("GET", "/hub/operations/<operation_id>"), ("GET", "/hub/dialogs/<pick_id>"),
         ("POST", "/hub/dialogs/folder"), ("POST", "/hub/dialogs/<pick_id>/cancel"),
         ("POST", "/hub/projects"),
@@ -333,7 +335,7 @@ def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_sa
         assert _code(reply, 404) == "route_not_found", (row.method, row.path)
         assert _envelope(reply)["detail"] == {"reason": "not in this build"}
         checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 9
+    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 6
 
 
 def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):
@@ -635,7 +637,8 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
     reached = {"project_not_found", "already_active", "active_not_closed", "project_unavailable",
                "recovery_required", "project_busy", "hub_in_kill_on_close_job", "project_running",
                "project_not_running", "project_queue_changed", "operation_not_found",
-               "pick_not_found", "dialog_busy", "dialog_unavailable"}
+               "pick_not_found", "dialog_busy", "dialog_unavailable",
+               "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed"}
     # POST /hub/projects is live for folder picks only. Keep the full frozen route vocabulary,
     # including the not-yet-live github/scratch branches, explicit in this source guard.
     add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",

@@ -27,7 +27,7 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git
 from conductor.hub import (
-    dialogs, events, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
+    dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
     supervisor)
 from conductor.hub.refusals import HubRefusal
 
@@ -70,6 +70,7 @@ class HubService:
         self._last_projects: str | None = None
         self._last_setup: dict[str, Any] | None = None
         self._add_lock = threading.RLock()
+        self._github = github.Github(self._home)
         dialog_options = {} if dialog_popen is None else {"popen": dialog_popen}
         self._dialogs = dialogs.Dialogs(self._home, bus, **dialog_options)
         self._pick_resolver = pick_resolver or self._dialogs.resolve
@@ -135,6 +136,12 @@ class HubService:
     def operation(self, operation_id: str) -> dict[str, Any]:
         """The latest state of one bounded in-memory add operation."""
         return self._operations.get(operation_id)
+
+    def github_status(self):
+        return self._github.status()
+
+    def github_repos(self, owner=None):
+        return self._github.repositories(owner)
 
     def folder_dialog(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
         return 202, {"pick_id": self._dialogs.begin(body["purpose"])}
