@@ -245,7 +245,8 @@ ACCEPT_REASONS = (
     "git_identity_missing", "branch_name_invalid", "branch_exists", "branch_namespace_blocked",
     "document_name_collision", "accept_terms_changed", "case_collision",
     "not_a_git_repository", "unborn_head", "project_not_repo_root", "tracks_product_dir",
-    "unsafe_directory", "object_format_changed", "git_failed", "git_timed_out")
+    "unsafe_directory", "object_format_changed", "git_failed", "git_timed_out",
+    "acceptance_exists", "signing_required", "blob_mismatch")
 
 #: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
 #: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that
@@ -259,6 +260,24 @@ SEED_COMMIT_REASONS = ("base_moved", "seed_exists")
 TOOLS = ("git", "gh")
 TOOL_REASONS = ("not_pinned", "version_changed", "missing")
 _OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_SIGNING_FIELDS = ("reason", "tree", "base_commit", "branch", "message_path")
+
+
+def _signing_detail(detail: dict) -> bool:
+    """The one product-only path exception; never admit arbitrary exception facts."""
+    if set(detail) != set(_SIGNING_FIELDS) or any(type(value) is not str for value in detail.values()):
+        return False
+    branch = detail["branch"]
+    return (detail["reason"] == "signing_required"
+            and _OBJECT_ID.fullmatch(detail["tree"]) is not None
+            and _OBJECT_ID.fullmatch(detail["base_commit"]) is not None
+            and len(detail["tree"]) == len(detail["base_commit"])
+            and branch.startswith("conduct/") and len(branch) <= 240
+            and not any(ord(c) < 33 or ord(c) == 127 or c in "~^:?*[\\" for c in branch)
+            and ".." not in branch and "@{" not in branch and not branch.endswith(".")
+            and all(part and not part.startswith(".") and not part.endswith(".lock")
+                    for part in branch.split("/"))
+            and re.fullmatch(r"conductor(?:\.v3)?/git/msg-acc-[0-9a-f]{32}\.txt", detail["message_path"]) is not None)
 
 #: Every refusal that may carry a detail, as `(code, fields, sentence)`. A
 #: closed table rather than a condition, because the closure is the point: a
@@ -322,6 +341,8 @@ _REVIEWED_FACTS = (
      lambda facts: f"the materials were not accepted: {facts['reason']}"),
     ("accept_refused", ("reason",),
      lambda facts: f"the result cannot be accepted: {facts['reason']}"),
+    ("accept_refused", _SIGNING_FIELDS,
+     lambda facts: "the result cannot be accepted: signing_required"),
     # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
     # it is is the one fact a person can act on (spec 4.3.4).
     ("contract_invalid", ("run_id",),
@@ -345,8 +366,9 @@ def _reviewed_fact(code: str, message: str, detail: dict) -> bool:
     for reviewed, fields, sentence in _REVIEWED_FACTS:
         if code != reviewed or set(detail) != set(fields):
             continue
-        if all(_safe_detail(detail[key]) for key in fields) \
-                and message == sentence(detail):
+        safe = (_signing_detail(detail) if code == "accept_refused" and fields == _SIGNING_FIELDS
+                else all(_safe_detail(detail[key]) for key in fields))
+        if safe and message == sentence(detail):
             return True
     return False
 
@@ -473,6 +495,14 @@ class ApiRefusal(Exception):
             raise ValueError("acceptance refusal reason must be one of the closed list") from None
         return cls(_REFUSAL_BUILD, "accept_refused",
                    f"the result cannot be accepted: {reason}", {"reason": reason})
+
+    @classmethod
+    def signing_required(cls, *, tree: str, base_commit: str, branch: str,
+                         message_path: str) -> "ApiRefusal":
+        detail = dict(reason="signing_required", tree=tree, base_commit=base_commit,
+                      branch=branch, message_path=message_path)
+        return cls(_REFUSAL_BUILD, "accept_refused",
+                   "the result cannot be accepted: signing_required", detail)
 
     @classmethod
     def materials_refused(cls, reason: str) -> "ApiRefusal":

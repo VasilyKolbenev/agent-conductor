@@ -92,7 +92,7 @@ class _LazyReader:
                 cwd = self._work_folder()
                 runner = self._runner_class(self._root, environ={}, spawns_allowed=True)
                 self._read = project_git.process_git_read(
-                    runner, tool.path, str(cwd), env_allow=(), env=tool.env)
+                    runner, tool.path, str(cwd), env_allow=(), env=tool.env, index_root=self._root)
             return self._read
 
     def _judged(self) -> _Tool:
