@@ -35,7 +35,8 @@ def test_every_key_the_desk_page_names_resolves_in_both_languages():
     keys = re.findall(PAGE_KEY, (PANEL / "desk.html").read_text(encoding="utf-8"))
     keys += re.findall(r'message\(locale\(\), "(desk\.[a-z_.]+)"\)',
                        (PANEL / "desk.js").read_text(encoding="utf-8"))
-    assert len(keys) >= 8 and len(keys) == len(set(keys)), keys
+    # Two controls may use the same label; the key still has one translation.
+    assert len(keys) >= 8 and len(set(keys)) >= 8, keys
     rendered = run_js("""
       console.log(JSON.stringify(d.map((key) => i18n.LOCALES.map(
         (locale) => i18n.message(locale, key)))));
@@ -50,11 +51,21 @@ def test_every_desk_key_is_said_by_the_page_or_a_desk_module_and_none_says_a_mis
       console.log(JSON.stringify(Object.keys(i18n.MESSAGES).filter(
         (key) => key.startsWith("desk."))));
     """, MODULES)
-    sources = [(PANEL / "desk.html").read_text(encoding="utf-8")] + [
+    # Decisions reuse Studio's renderer, which says the Desk-specific Pult words.
+    sources = [(PANEL / "desk.html").read_text(encoding="utf-8"),
+               (PANEL / "studio-people.js").read_text(encoding="utf-8")] + [
         path.read_text(encoding="utf-8") for path in sorted(PANEL.glob("desk*.js"))
         if path.name != "desk-copy.js"]
     said = {key for source in sources for key in re.findall(r'"(desk\.[a-z_.]+)"', source)}
     said |= {key for key in re.findall(PAGE_KEY, sources[0])}
+    dynamic = {
+        "desk.connection.": ("open", "connecting", "closed"),
+        "desk.people.": ("empty", "loading", "failed"),
+        "desk.quota.": ("empty", "loading", "failed", "disconnected", "no_data"),
+    }
+    for prefix, phases in dynamic.items():
+        assert any(f"`{prefix}${{" in source for source in sources), prefix
+        said.update(prefix + phase for phase in phases)
     assert said == set(catalogue), sorted(said ^ set(catalogue))
 
 

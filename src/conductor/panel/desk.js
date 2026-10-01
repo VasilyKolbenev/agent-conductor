@@ -750,7 +750,7 @@ function boot() {
     locale, onForeign: enterForeign});
   const runBinding = createRunPanelBindings({state: () => state,
     connection: () => connection, choice: () => choice, where, load, chooseTask});
-  const run = createRunHost({mount: byId("deskRun"), locale, door,
+  const run = createRunHost({mount: byId("deskRun"), pult: byId("deskPult"), locale, door,
     ...runBinding, onChange: render, onForeign: enterForeign});
   panels = createDeskPanels({flowMount: byId("deskFlow"), people, run,
     createFlow: () => createFlowHost({mount: byId("deskFlow"), door, locale,

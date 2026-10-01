@@ -63,7 +63,6 @@ def _in_module(file: str, token: str) -> tuple[str, str, str]:
 
 
 #: The run panel mounts the Studio step/document controls; decisions remain owed.
-NO_DECISIONS = _absent("desk-run-host.js", "mountDecisions")
 #: The cycle editor and wizard are reached through their hosts.
 FLOW = _in("desk-flow.js", "mountFlow")
 
@@ -220,15 +219,17 @@ ROWS: tuple[Row, ...] = (
         (_in("desk.html", "desk.pult.label"),), selector="#deskPult",
         owed=(("D1", "«Очередь внимания» and «Ресурсы сейчас»"),)),
     # -- 5.6.5 decisions ----------------------------------------------------------------------
-    Row("5.6.5", "Гейты запуска и квитанции", "«Запуск подробно › Решения»", "not_built",
-        (NO_DECISIONS,), "D1"),
+    Row("5.6.5", "Гейты запуска и квитанции", "«Запуск подробно › Решения»", "on_desk",
+        (_in("desk-run-host.js", "mountDecisions"), _in("studio-people.js", "receiptBlock")),
+        selector="#deskRunToggle"),
     Row("5.6.5", "Ответ на гейт: зачем, что откроет, ответы, actor, причина", "pult: the gate card",
-        "not_built", (_absent("desk-pult.js", "gate"),), "D1"),
+        "on_desk", (_in("desk-run-host.js", "mountDecisionCard"),
+                    _in("desk-run-write-host.js", "decisionWriters"))),
     Row("5.6.5", "«Доработать» на финальном гейте", "pult: new, L36", "not_built",
         (_absent("desk-pult.js", "rework"),), "D1",
         owed=(("D2", "a rework mode of the wizard: the owner's remarks as a document"),)),
-    Row("5.6.5", "Почему пока нельзя ответить", "pult: why-not-yet", "not_built",
-        (_absent("desk-pult.js", "whyNotYet"),), "D1"),
+    Row("5.6.5", "Почему пока нельзя ответить", "pult: why-not-yet", "on_desk",
+        (_in("studio-people.js", "whyNotYet"), _in("desk-run-host.js", "mountDecisionCard"))),
     # -- 5.6.6 agents -------------------------------------------------------------------------
     Row("5.6.6", "Лимиты полностью", "«Участники»; briefly the pult", "on_desk",
         (_in("desk-people-host.js", "quotaSection"),), selector="#deskPult [data-desk-quotas]"),
