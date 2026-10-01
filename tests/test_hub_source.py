@@ -32,7 +32,7 @@ STYLE = PANEL / "hub.css"
 LINE_CAP = 800
 #: The hub's own files by name, grown by the commit that adds one (the registry is held to exactly
 #: these and the four shared modules).
-OWN = ("hub.js", "hub-add.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
+OWN = ("hub.js", "hub-add.js", "hub-onboarding.js", "hub-github.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
 SHARED = tuple(sorted(SHARED_MODULES))
 JS_TYPE = "text/javascript; charset=utf-8"
 CSS_TYPE = "text/css; charset=utf-8"
@@ -50,9 +50,11 @@ PERMITTED = {
     "hub-copy.js": {"./desk-status-copy.js"},
     "hub-rail.js": {"./desk-status.js", "./desk-time.js", "./hub-copy.js"},
     "hub-frame.js": {"./desk-hash.js"},
-    "hub-add.js": {"./hub-copy.js", "./hub-rail.js"},
+    "hub-add.js": {"./hub-copy.js", "./hub-rail.js", "./hub-github.js"},
+    "hub-onboarding.js": set(),
+    "hub-github.js": {"./hub-copy.js", "./hub-rail.js"},
     "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js"},
-    "hub.js": {"./desk-hash.js", "./hub-add.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
+    "hub.js": {"./desk-hash.js", "./hub-add.js", "./hub-onboarding.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
                "./hub-stub.js"},
 }
 REGIONS = (("top", "hubTop"), ("banners", "hubBanners"), ("confirm", "hubConfirm"),
@@ -412,7 +414,8 @@ SPEC_TARGETS = {
 #: The reads the page may make, by path.
 SPEC_READS = {"session": "/hub/session", "projects": "/hub/projects", "limits": "/hub/limits",
               "setup": "/hub/setup", "dialog": "/hub/dialogs/{pick}",
-              "operation": "/hub/operations/{operation}"}
+              "operation": "/hub/operations/{operation}", "githubStatus": "/hub/github/status",
+              "githubRepos": "/hub/github/repos", "githubOwner": "/hub/github/repos/{owner}"}
 TOKEN_NAMES = ("csrfToken", "csrf_token", "session.token")
 TOKEN_SINKS = ("textContent", "setAttribute", "node(", "dataset", "localStorage", "sessionStorage",
                "cookie", "encodeURIComponent", "querySelector", "append(", "/command", "?",
@@ -486,7 +489,8 @@ def test_the_write_targets_of_the_page_are_the_fourteen_of_the_spec_and_no_other
 
 def test_the_bodies_the_page_sends_name_no_path_no_root_and_no_folder():
     code = _code("hub.js")
-    assert not re.search(r"""["']?\b(?:root|path|dir)["']?\s*:""", code)
+    assert not re.search(r"""["']?\b(?:root|path|dir)["']?\s*:""",
+                         code + _code("hub-onboarding.js"))
     assert "JSON.stringify" in code and code.count("JSON.stringify") == 1
 
 

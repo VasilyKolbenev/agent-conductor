@@ -117,3 +117,5 @@ The mechanisms above are implemented in the current V1 candidate; this document 
 Qwen execution, Dream-RSI-inspired strategy improvement and SoL-Pi-inspired context handoff experiments belong to future V2 direction, along with the experience ledger and evidence-weighted harness graph. A branding entry is not an execution adapter. Each strategy change remains a proposal for human approval. These ideas do not imply a V1 memory engine or automatic model switching. See [V1/V2 scope](v1-v2-scope.md) and [release notes](release-notes-v1-alpha.md).
 
 For the rationale behind the current boundaries, read ADRs [0002: run identity](adr/0002-command-run-identity-and-store.md), [0003: adapter protocol](adr/0003-command-action-and-adapter-protocol.md), [0005: evidence](adr/0005-command-evidence-verification.md) and [0006: control modes](adr/0006-command-control-modes-and-policy-effects.md), alongside the current modules linked above.
+
+The add-project state transitions are in [`hub-onboarding.js`](../src/conductor/panel/hub-onboarding.js); [`hub-github.js`](../src/conductor/panel/hub-github.js) renders GitHub choices. Both use the injected hub door.

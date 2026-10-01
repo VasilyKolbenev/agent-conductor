@@ -241,7 +241,7 @@ def test_a_code_is_said_by_its_clause_and_a_code_the_page_has_no_word_for_is_sai
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The modules that say a message. The catalogue's own table is not one of them (it would name every
 #: key); its functions, after the table, are.
-SAYERS = ("hub.js", "hub-add.js", "hub-rail.js", "hub-stub.js")
+SAYERS = ("hub.js", "hub-add.js", "hub-github.js", "hub-rail.js", "hub-stub.js")
 LITERAL = re.compile(r'"((?:hub|desk_status)\.[a-z0-9_.]+)"')
 FAMILY = re.compile(r"`((?:hub|desk_status)\.[a-z0-9_.]+\.)\$\{")
 
