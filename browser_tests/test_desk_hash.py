@@ -166,7 +166,9 @@ def test_a_hash_that_names_a_task_and_a_run_opens_that_run_at_boot(open_desk, la
     assert facts["hash"] == f"#task=task-fix&run=run-fix-old&lang={language}"
     detail = sorted(path for path in _reads(window) if path.startswith("/command/runs/")
                     and not path.endswith("/automation"))
-    assert detail == ["/command/runs/run-fix-old", "/command/runs/run-fix-old/controls"]
+    # The run view also reads its acceptance facts (desk-accept-host.js, the «Принять в проект» block).
+    assert detail == ["/command/runs/run-fix-old", "/command/runs/run-fix-old/accept",
+                      "/command/runs/run-fix-old/controls"]
     _only_gets_and_no_header(window)
     assert page.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]
     assert window.problems == []
@@ -227,7 +229,8 @@ def test_a_hashchange_selects_without_reloading_the_document_and_reads_only(
     assert after["hash"] == f"#task=task-docs&run=run-docs&lang={language}"
     assert [path for _m, path, _h in window.asked[asked:] if "/panel/" in path] == []
     assert sorted(_reads(window)[read:]) == [
-        "/command/runs/run-docs", "/command/runs/run-docs/controls"]
+        "/command/runs/run-docs", "/command/runs/run-docs/accept",
+        "/command/runs/run-docs/controls"]
     _only_gets_and_no_header(window)
     assert window.problems == []
 
