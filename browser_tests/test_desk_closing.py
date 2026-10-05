@@ -110,10 +110,17 @@ def test_a_task_the_list_cannot_read_is_never_asked_about(desk_in):
 
 
 @pytest.mark.parametrize("task", [None, "task-closed"])
-def test_the_desk_reads_the_run_of_a_finished_task_and_no_other_run_besides_the_one_it_draws(
+def test_the_boot_reads_the_run_of_a_finished_task_once_and_no_other_run_besides_the_one_it_draws(
         desk_in, task):
-    """Chosen or not, the closing read is one GET of the finished run; the scene adds its own."""
-    window = desk_in("en", task=task)
+    """One closing read of the finished run at the boot, plus the scene's read of a chosen task.
+
+    The count is of the boot alone, so the stream is ended (`stream=False`): a stream that
+    opens makes full refreshes of its own, and each one reads every finished task's newest run
+    again, so a count taken while it opens would depend on how far it had got. The closing
+    reads are over once the summary is drawn, which is what the count waits for.
+    """
+    window = desk_in("en", task=task, stream=False)
+    window.page.wait_for_function(BAR_DRAWN)
     reads = [path for method, path in window.asked
              if method == "GET" and path.startswith("/command/runs/")
              and path.count("/") == 3]

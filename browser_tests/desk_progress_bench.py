@@ -62,12 +62,20 @@ class Window:
 
 
 def open_window(browser: Browser, url: str, language: str, *, task: str | None = None,
-                width: int = 1280, height: int = 900) -> Window:
-    """Boot the desk in `language`; with `task`, the address chooses it and its run is drawn."""
+                width: int = 1280, height: int = 900, stream: bool = True) -> Window:
+    """Boot the desk in `language`; with `task`, the address chooses it and its run is drawn.
+
+    A desk whose stream opens makes full refreshes after its boot (the stream's open and the
+    server's first frame each ask for one), and they read again what the boot read. With
+    `stream=False` the stream is answered with HTTP 204, which ends it without a retry, so
+    the window holds the boot's own reads and nothing else.
+    """
     context = browser.new_context(viewport={"width": width, "height": height},
                                   timezone_id=ZONE)
     page = context.new_page()
     window = Window(page)
+    if not stream:
+        page.route("**/events", lambda route: route.fulfill(status=204))
     page.on("console", lambda message: window.problems.append(message.text)
             if message.type == "error" else None)
     page.on("pageerror", lambda error: window.problems.append(str(error)))
@@ -86,8 +94,10 @@ def desk_in(chromium: Browser, progress_url: str) -> Iterator:
     """A factory of booted windows, each closed when the test is over."""
     opened: list[Window] = []
 
-    def make(language: str = "en", *, task: str | None = None, width: int = 1280) -> Window:
-        opened.append(open_window(chromium, progress_url, language, task=task, width=width))
+    def make(language: str = "en", *, task: str | None = None, width: int = 1280,
+             stream: bool = True) -> Window:
+        opened.append(open_window(chromium, progress_url, language, task=task, width=width,
+                                  stream=stream))
         return opened[-1]
 
     yield make

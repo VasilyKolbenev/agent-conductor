@@ -306,10 +306,10 @@ async function readAutomation(tasks, runs) {
 }
 
 //: The reads that say which tasks were closed (`desk-closing.js`) are one run read per finished
-//: task and may take as long as a read may (`READ_DEADLINE`). Only the summary needs their
-//: answer, so nothing waits for them: not the scene of the task an address names, not the hash
-//: that comes next. The answer is kept when it lands, unless the desk has ended by then (`move`
-//: keeps nothing for one that has).
+//: task in every `load` (the boot's, and each full refresh after it) and may take as long as a
+//: read may (`READ_DEADLINE`). Only the summary needs their answer, so nothing waits for them:
+//: not the scene of the task an address names, not the hash that comes next. The answer is kept
+//: when it lands, unless the desk has ended by then (`move` keeps nothing for one that has).
 function learnClosing(reads, current) {
   reads.then((found) => { if (current()) move({closing: found}); });
 }
