@@ -176,6 +176,45 @@ def test_the_hub_start_leaves_an_unproven_clone_unfinished_and_writes_nothing(
     assert untouched(world) and tree(home / "clone-attempts") == before
 
 
+def started_over_an_unproven_clone(stack, monkeypatch, tmp_path_factory):  # noqa: F811
+    personal = tmp_path_factory.mktemp("hlog")            # short: Windows limits the projects home
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: personal))
+    world = crashed(stack.service._home, monkeypatch, NOW, legacy=LEGACY_OTHER)
+    stack.service.start()
+    return world
+
+
+def test_the_hub_start_names_each_unfinished_clone_and_the_command_that_finishes_it_in_its_log(
+        stack, monkeypatch, tmp_path_factory, capsys):  # noqa: F811
+    world = started_over_an_unproven_clone(stack, monkeypatch, tmp_path_factory)
+    lines = capsys.readouterr().err.splitlines()
+    [named] = [line for line in lines if world.ident in line]
+    assert named.startswith("conduct hub: ") and "unfinished" in named
+    assert " ".join(stack.service._clones.unfinished[world.ident].split()) in named
+    assert any("stop the hub" in line and "conduct ownership recover-clones" in line
+               and "--prepare-restart" in line for line in lines), lines
+
+
+def test_the_hub_start_says_so_in_its_log_when_the_clone_journal_cannot_be_read(
+        stack, monkeypatch, capsys):  # noqa: F811
+    def unreadable():
+        raise clone.CloneFailed("clone_cleanup_incomplete",
+                                stderr=("a record of the clone journal cannot be read",))
+
+    monkeypatch.setattr(stack.service._clones, "recover", unreadable)
+    stack.service.start()
+    assert stack.service._clone_recovery == (None,)
+    lines = capsys.readouterr().err.splitlines()
+    assert any("a record of the clone journal cannot be read" in line for line in lines), lines
+    assert any("conduct ownership recover-clones" in line for line in lines), lines
+
+
+def test_the_hub_start_says_nothing_about_clones_when_none_is_unfinished(
+        stack, capsys):  # noqa: F811
+    stack.service.start()
+    assert stack.service._clone_recovery == () and capsys.readouterr().err == ""
+
+
 def test_the_proof_that_the_own_group_ended_still_cleans_up_at_once(
         bound, monkeypatch):  # noqa: F811
     home, ticket = bound

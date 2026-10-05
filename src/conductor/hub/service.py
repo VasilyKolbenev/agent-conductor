@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import replace
@@ -39,6 +40,8 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 _ALIVE = ("starting", "running", "stopping", "stop_overdue")
 _UNRECOVERED = ("recovery_required", "stop_uncertain")
 _TOOLS = ("gh", "git")
+_RECOVER_CLONES = ("to finish them, stop the hub, then run: conduct ownership recover-clones "
+                   "(run it with --prepare-restart first when it says a preparation is needed)")
 
 
 def _utc_now() -> datetime:
@@ -47,6 +50,18 @@ def _utc_now() -> datetime:
 
 def _iso(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).strftime(_INSTANT)
+
+
+def _tell(lines: list[str]) -> None:
+    """Write what stays unfinished at start to the hub's stderr, then the way to finish it.
+
+    The page has only the closed row of `GET /hub/setup`, so the sentence that names the next
+    action reaches a person here, and the banner points at the command.
+    """
+    for line in lines:
+        print("conduct hub: " + " ".join(line.split()), file=sys.stderr)
+    if lines:
+        print("conduct hub: " + _RECOVER_CLONES, file=sys.stderr, flush=True)
 
 
 class HubService:
@@ -85,8 +100,13 @@ class HubService:
         """Seed the ledger of first-seen moments from the snapshots the last hub left."""
         try:
             self._clone_recovery = self._clones.recover()
-        except clone.CloneFailed:
+            said = [f"clone attempt {ident} is unfinished: {self._clones.unfinished[ident]}"
+                    for ident in self._clone_recovery]
+        except clone.CloneFailed as error:
             self._clone_recovery = (None,)
+            said = ["the clone attempts cannot be read: "
+                    + (" ".join(error.stderr) or "a record cannot be read")]
+        _tell(said)
         try:
             listed = registry.load(self._home).projects
         except registry.RegistryError:

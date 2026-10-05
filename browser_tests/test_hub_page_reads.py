@@ -207,6 +207,21 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
     assert page.hub.posts == [{"path": f"/hub/logins/{LOGIN}/recover", "body": {}}]
 
 
+def test_an_unfinished_clone_cleanup_names_the_command_that_finishes_it(hub_page):
+    page = hub_page
+    setup = fixture("hub_setup.json")
+    setup["clone_recovery"] = [{"operation_id": "operation-" + "1" * 32,
+                                "code": "clone_cleanup_incomplete"}]
+    page.hub.answer("/hub/setup", setup)
+    page.page.reload()
+    ready(page)
+    banners = dict(page.page.evaluate(BANNERS))
+    assert banners["clone-recovery"] == [say(page, "hub.code.clone_cleanup_incomplete"),
+                                         say(page, "hub.banner.clone_recovery_how")]
+    assert "conduct ownership recover-clones" in banners["clone-recovery"][1]
+    assert page.hub.posts == [], "the banner tells a person what to run; it sends nothing"
+
+
 UNLISTED = """() => [...document.querySelectorAll('#hubBanners [data-banner="unlisted"]')].map((n) => {
   const control = n.querySelector(".hub-blocked");
   return {text: n.firstElementChild.textContent, title: n.firstElementChild.title,

@@ -201,6 +201,12 @@ export const HUB_COPY = Object.freeze({
     + "window, not from another application's built-in terminal", "Остановите hub (Ctrl+C) и "
     + "запустите conduct hub из отдельного окна терминала, а не из встроенного терминала другого "
     + "приложения"],
+  "hub.banner.clone_recovery_how": ["Stop the hub (Ctrl+C), then run conduct ownership "
+    + "recover-clones in a terminal. If it says a preparation is needed, run it with "
+    + "--prepare-restart, do a full Restart of the OS, then run it again.", "Остановите hub "
+    + "(Ctrl+C) и выполните в терминале conduct ownership recover-clones. Если команда просит "
+    + "подготовку, выполните её с --prepare-restart, сделайте полную перезагрузку ОС и "
+    + "выполните команду ещё раз."],
   // -- the bar over the desk, and the centre -------------------------------------------------
   "hub.view.with_active": ["View · {name} is in progress", "Просмотр · в работе {name}"],
   "hub.view.no_active": ["View · there is no active project", "Просмотр · активного проекта нет"],
