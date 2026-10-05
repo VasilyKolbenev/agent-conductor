@@ -54,12 +54,17 @@ class OwnedIndex:
             path.unlink()
 
 
+#: An acceptance index, or one of the two a first commit builds per attempt (a: the tree,
+#: b: the bytes to install). Anything else never becomes a GIT_INDEX_FILE.
+_LABEL = re.compile(r"(?:acc-[0-9a-f]{32}|first-[0-9a-f]{16}-[ab])")
+
+
 @contextmanager
-def temporary_index(root, acceptance_id, object_format):
-    if re.fullmatch(r"acc-[0-9a-f]{32}", acceptance_id) is None or object_format not in {"sha1", "sha256"}:
+def temporary_index(root, label, object_format):
+    if _LABEL.fullmatch(label) is None or object_format not in {"sha1", "sha256"}:
         raise SnapshotRefused("irregular_result")
     root = Path(root).resolve()
-    path = data_root(root) / "git" / f"index-{acceptance_id}-{secrets.token_hex(8)}"
+    path = data_root(root) / "git" / f"index-{label}-{secrets.token_hex(8)}"
     admit_file(path, "acceptance index")
     _hold(root, path)
     path.parent.mkdir(parents=True, exist_ok=True)

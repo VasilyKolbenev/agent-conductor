@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 from conductor.ownership_errors import OwnerRefused
 from . import git_setup_facts as facts
@@ -17,40 +19,40 @@ from .project_git import GitReadFailed, has_git_entry
 from .project_routes import _hold_git_allowed
 from .seed_record import read_seed
 
+MODES = frozenset({"snapshot", "empty"})
 
-def setup(api, body):
-    _hold_git_allowed(api)
+
+@dataclass(frozen=True)
+class Request:
+    """One accepted body: `kind` is init, exclude or preview."""
+
+    kind: str
+    actor: str | None = None
+    mode: str | None = None
+
+
+def parse(body: object) -> Request:
+    """The closed shapes of spec 9.5 for this route, and nothing else."""
     if type(body) is not dict:
         raise ContractError("Git setup needs one closed step")
     step = body.get("step")
     if type(step) is not str:
         raise ContractError("Git setup needs a named step")
-    if step in {"init", "exclude"} and set(body) == {"step", "actor"}:
-        actor = human_identity("actor", body["actor"])
-    elif (step == "first_commit" and set(body) == {"step", "mode", "preview"}
-          and type(body["mode"]) is str and body["mode"] in {"snapshot", "empty"} and body["preview"] is True):
-        actor = None
-    else:
-        raise ContractError("Git setup accepts init/exclude confirmation or first_commit preview")
-    root = api._store.project_root
+    keys = set(body)
+    if step in {"init", "exclude"} and keys == {"step", "actor"}:
+        return Request(step, actor=human_identity("actor", body["actor"]))
+    if (step == "first_commit" and keys == {"step", "mode", "preview"}
+            and type(body["mode"]) is str and body["mode"] in MODES
+            and body["preview"] is True):
+        return Request("preview", mode=body["mode"])
+    raise ContractError("Git setup accepts init/exclude confirmation or first_commit preview")
+
+
+@contextmanager
+def _refusals():
+    """The one translation of the writers' failures into the closed refusal."""
     try:
-        with ProcessRunner.project_write_guard(root):
-            if step == "first_commit":
-                _reader(api)
-                return 200, {"setup": preview(root, api._project_git, body["mode"])}
-            with root_turn(root, wait=0), api._store.transaction():
-                standing = receipt(root, step)
-                if standing is not None:
-                    if standing["requested_by"] != actor:
-                        raise SetupRefused("setup_terms_changed")
-                    return 200, {"setup": standing}
-                _reader(api)
-                warnings = _init(api) if step == "init" else []
-                facts.admitted(root, api._project_git)
-                form = facts.object_format(root, api._project_git)
-                excluded = facts.exclude(root, api._project_git)
-                row = publish(root, step, actor, api._clock(), form, excluded, warnings)
-                return 201, {"setup": row}
+        yield
     except WorkspaceBusy:
         raise ApiRefusal.git_setup_refused("task_run_active") from None
     except (OwnershipError, OwnerRefused):
@@ -58,14 +60,43 @@ def setup(api, body):
     except SetupRefused as error:
         raise ApiRefusal.git_setup_refused(error.reason) from None
     except SnapshotRefused as error:
-        reason = "git_identity_missing" if error.reason == "git_identity_missing" else "setup_damaged"
-        raise ApiRefusal.git_setup_refused(reason) from None
+        known = error.reason == "git_identity_missing"
+        raise ApiRefusal.git_setup_refused(
+            "git_identity_missing" if known else "setup_damaged") from None
     except GitReadFailed as error:
         if error.code == "tool_unavailable":
             raise ApiRefusal.tool_unavailable("git", error.reason) from None
         raise ApiRefusal.git_setup_refused(error.code) from None
     except (OSError, UnicodeError):
         raise ApiRefusal.git_setup_refused("git_failed") from None
+
+
+def setup(api, body):
+    _hold_git_allowed(api)
+    request = parse(body)
+    root = api._store.project_root
+    with _refusals(), ProcessRunner.project_write_guard(root):
+        if request.kind == "preview":
+            _reader(api)
+            return 200, {"setup": preview(root, api._project_git, request.mode)}
+        return _step(api, request)
+
+
+def _step(api, request):
+    root = api._store.project_root
+    with root_turn(root, wait=0), api._store.transaction():
+        standing = receipt(root, request.kind)
+        if standing is not None:
+            if standing["requested_by"] != request.actor:
+                raise SetupRefused("setup_terms_changed")
+            return 200, {"setup": standing}
+        _reader(api)
+        warnings = _init(api) if request.kind == "init" else []
+        facts.admitted(root, api._project_git)
+        form = facts.object_format(root, api._project_git)
+        excluded = facts.exclude(root, api._project_git)
+        row = publish(root, request.kind, request.actor, api._clock(), form, excluded, warnings)
+        return 201, {"setup": row}
 
 
 def _reader(api):

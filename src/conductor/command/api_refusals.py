@@ -254,7 +254,8 @@ GIT_SETUP_REASONS = (
     "already_git", "not_a_git_repository", "project_not_repo_root", "tracks_product_dir",
     "unsafe_directory", "unsafe_git_route", "git_exclude_failed", "git_identity_missing",
     "head_exists", "index_exists", "index_locked", "too_many_files", "paths_changed",
-    "setup_damaged", "setup_terms_changed", "task_run_active", "git_failed", "git_timed_out")
+    "setup_damaged", "setup_terms_changed", "task_run_active", "git_failed", "git_timed_out",
+    "signing_required")
 
 #: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
 #: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that

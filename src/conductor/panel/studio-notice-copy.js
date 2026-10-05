@@ -117,6 +117,7 @@ export const NOTICE_COPY = Object.freeze({
   "git_setup.reason.task_run_active": ["Active work holds the project.", "Проект занят действующей работой."],
   "git_setup.reason.git_failed": ["Git could not complete this step.", "Git не смог выполнить этот шаг."],
   "git_setup.reason.git_timed_out": ["Git did not finish in time.", "Git не закончил работу вовремя."],
+  "git_setup.reason.signing_required": ["Git is set to sign commits: create the first commit in your terminal with the two commands shown, then check again.", "Git настроен на подпись коммитов: создайте первый коммит в терминале двумя показанными командами и проверьте снова."],
   "accept.reason.run_has_no_task": ["This run is not bound to a task.", "Запуск не привязан к задаче."],
   "accept.reason.seed_missing": ["The task has no saved seed.", "У задачи нет сохранённого засева."],
   "accept.reason.run_not_complete": ["The run has not completed.", "Запуск ещё не завершён."],
