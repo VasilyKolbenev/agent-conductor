@@ -22,8 +22,9 @@ each as a measurement of the page:
 - a desk nobody framed has no block and never reads the flag;
 - a hash the hub sends closes the block when it moves the desk away from it (spec 4.5.3, step 2.1):
   a changed task with no panel in the same hash -- even while the read of the flag is still out --
-  or a panel other than `continue`, and the address the desk then keeps says no `panel`; a task
-  sent together with `panel=continue` leaves the block open;
+  or a panel other than `continue`: the desk then opens that panel (`run`, `cycle` or `people`,
+  which it mounts), the address it keeps says that panel in place of `continue`, and the other two
+  toggles stand closed; a task sent together with `panel=continue` leaves the block open;
 - no raw token in the words of the console, and nothing in any storage.
 
 A fact and its sentence are read in ONE evaluation, as `test_desk_shell.py` does.
@@ -372,7 +373,11 @@ def test_a_desk_that_went_foreign_shows_no_plate(embed, rig):
 WHERE = """() => ({hash: location.hash,
   focus: document.activeElement?.getAttribute("data-focus-key") ?? null,
   open: document.querySelector("#deskPult .desk-flag")?.open ?? null,
-  changes: window.__hashchanges ?? 0})"""
+  changes: window.__hashchanges ?? 0,
+  expanded: Object.fromEntries(["deskFlowToggle", "deskPeopleToggle", "deskRunToggle"].map(
+    (id) => [id, document.getElementById(id).getAttribute("aria-expanded")]))})"""
+#: The toggle of the top bar that stands for each panel a hub may name besides `continue`.
+PANEL_TOGGLES = {"run": "deskRunToggle", "cycle": "deskFlowToggle", "people": "deskPeopleToggle"}
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])
@@ -439,15 +444,17 @@ def test_a_task_the_hub_sends_alone_closes_the_block_and_the_address_loses_its_p
     assert window.problems == []
 
 
-@pytest.mark.parametrize("panel", ["run", "cycle", "people"])
-def test_a_panel_the_hub_sends_other_than_continue_closes_the_block_and_continue_leaves_the_address(
+@pytest.mark.parametrize("panel", list(PANEL_TOGGLES))
+def test_a_panel_the_hub_sends_other_than_continue_closes_the_block_and_the_desk_opens_it_instead(
         embed, rig, panel):
     server = fake.FlagServer()
     window = _open_by_address(embed, rig, server)
     _hub_sends(window, f"#project={PROJECT}&embed=hub&panel={panel}&lang=en")
     facts = window.frame.evaluate(WHERE)
     assert facts["open"] is False
-    assert facts["hash"] == f"#project={PROJECT}&embed=hub&lang=en"
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&panel={panel}&lang=en"
+    assert facts["expanded"] == {toggle: "true" if name == panel else "false"
+                                 for name, toggle in PANEL_TOGGLES.items()}
     assert server.posts == [] and window.problems == []
 
 
