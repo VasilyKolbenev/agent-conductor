@@ -22,6 +22,8 @@ Neither test imports a vendor tool, spawns anything, or can skip.
 from __future__ import annotations
 
 import ast
+import os
+import re
 from importlib import import_module
 from pathlib import Path
 
@@ -164,9 +166,39 @@ def test_the_adapter_package_has_no_import_cycle():
                 part.rsplit(".", 1)[-1] for part in cycle)
 
 
+#: The modules that refuse to load off Windows, by design, and the exact refusal of each.
+#: `_winlaunch` is the native launch helper of ProcessRunner: it is imported only on the
+#: Windows road and has no ordinary Popen fallback. Read from the source both ways: a module
+#: that gains such a guard unnamed fails here, and so does a named one that loses it.
+WINDOWS_ONLY = {f"{PACKAGE_NAME}._winlaunch":
+                "Windows process creation is unavailable on this platform"}
+
+
+def _refusal_off_windows(tree: ast.Module) -> str | None:
+    """The message of a module-level ``if os.name != "nt": raise ImportError(...)``."""
+    for node in tree.body:
+        if not (isinstance(node, ast.If) and ast.unparse(node.test) == "os.name != 'nt'"
+                and len(node.body) == 1 and isinstance(node.body[0], ast.Raise)):
+            continue
+        call = node.body[0].exc
+        if isinstance(call, ast.Call) and ast.unparse(call.func) == "ImportError" \
+                and len(call.args) == 1 and isinstance(call.args[0], ast.Constant):
+            return call.args[0].value
+    return None
+
+
 def test_every_module_of_the_package_imports_on_its_own():
-    """Each in isolation, so no module depends on another being imported first."""
-    for name in sorted(_modules()):
+    """Each in isolation, so no module depends on another being imported first. A module
+    named in WINDOWS_ONLY imports on Windows and elsewhere refuses with its exact words."""
+    modules = _modules()
+    refusing = {name: _refusal_off_windows(tree) for name, tree in modules.items()}
+    assert {name: words for name, words in refusing.items() if words is not None} \
+        == WINDOWS_ONLY
+    for name in sorted(modules):
+        if name in WINDOWS_ONLY and os.name != "nt":
+            with pytest.raises(ImportError, match=f"^{re.escape(WINDOWS_ONLY[name])}$"):
+                import_module(name)
+            continue
         assert import_module(name) is not None, f"{name} did not import"
 
 
