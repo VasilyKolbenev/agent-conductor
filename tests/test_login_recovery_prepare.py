@@ -319,7 +319,7 @@ def test_preparing_and_recovering_never_open_a_file_of_the_login_home(tmp_path, 
         login.prepare_login_recovery(str(home))
         measure(patch, counter(43))
         login.recover_login(str(home))
-    inside = [path for path in opened if str(home) in path and str(box) not in path]
-    assert inside == [] and any(str(box) in path for path in opened)
+    inside = [path for path in opened if path.startswith(str(home) + os.sep)]
+    assert inside == [] and any(path.startswith(str(box) + os.sep) for path in opened)
     assert (home / "credential.json").read_bytes() == SECRET
     assert all(SECRET not in payload for payload in durable_bytes(box).values())
