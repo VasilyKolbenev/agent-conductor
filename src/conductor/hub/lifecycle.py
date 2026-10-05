@@ -80,7 +80,8 @@ def _from_record(record: up_status.StatusRecord | None, liveness: str, pending: 
     if record.state in ("serving", "stopping", "stop_overdue"):
         if alive:
             return Lifecycle({"serving": "running"}.get(record.state, record.state))
-        return Lifecycle("recovery_required" if head_phase == "opened" else "stopped")
+        unfinished = head_phase in ("opened", "recovery_prepared")
+        return Lifecycle("recovery_required" if unfinished else "stopped")
     if record.state == "stop_uncertain":
         return Lifecycle("stop_uncertain")
     return Lifecycle("stopped")
