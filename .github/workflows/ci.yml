@@ -58,8 +58,15 @@ jobs:
           python -c "import sys, sysconfig; print('executable:', sys.executable)"
           python -c "import sysconfig; print('scripts:', sysconfig.get_path('scripts'))"
 
+      # A short basetemp, on every platform alike. On Windows the product refuses a
+      # project root longer than 100 UTF-16 units and a projects home longer than
+      # 60, and pytest's default temp on a runner is already about 70 characters
+      # deep before the test's own folder: run 37304817722 lost 21 tests and 8
+      # setups of the hub and `projects add` suites to `windows_path_too_long`.
+      # The same set fails locally under a 63-character basetemp and passes under
+      # a short one, so the length is the whole cause.
       - name: Tests
-        run: python -m pytest -q
+        run: python -m pytest -q --basetemp "${{ runner.temp }}/pt"
 
       - name: Mutation harness
         run: python scripts/mutate_merge.py
