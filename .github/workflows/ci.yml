@@ -123,9 +123,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install
+        id: install
         run: python -m pip install -e ".[browser]"
 
       - name: Install Chromium
+        id: chromium
         run: python -m playwright install --with-deps chromium
 
       # RUNNER_TEMP, never the worktree. The gate hands each module its own
@@ -140,21 +142,55 @@ jobs:
       # `windows_path_too_long` under `browser-gate-reverse` and admitted it under
       # `browser-gate` -- the product was right both times; the directory name
       # was spending the budget. `bg` and `bgr` leave it to the test.
+      #
+      # --keep-going: one module, one process, one chance, in order -- but an
+      # ordinary red module no longer hides the modules after it, so one run names
+      # every failure. The verdict stays red; a timeout still ends the order.
       - name: Browser gate
-        run: python browser_tests/gate.py --artifacts "$RUNNER_TEMP/bg"
+        id: gate
+        run: python browser_tests/gate.py --keep-going --artifacts "$RUNNER_TEMP/bg"
+
+      # The reversed order runs after an ORDINARY red too, never after a cancel, a
+      # failed install or an order the gate itself stopped (a timeout leaves the
+      # browser it started unproven, so this runner is not reused for a second
+      # order). The forward report alone answers; no continue-on-error anywhere:
+      # the forward step's red stays the job's red whatever the reversed order says.
+      # The multi-line conditions are bare expressions in a block scalar, not
+      # ${{ }}: text outside ${{ }} (even a trailing newline) would turn one into
+      # an always-true string. This step fails when it refuses the second order,
+      # so a forward order that somehow stopped green could not go unseen.
+      - name: May the reversed order run
+        id: next
+        if: >-
+          !cancelled() && steps.install.outcome == 'success'
+          && steps.chromium.outcome == 'success'
+          && (steps.gate.outcome == 'success' || steps.gate.outcome == 'failure')
+        run: |
+          if python browser_tests/gate.py --completed-report "$RUNNER_TEMP/bg/gate.json"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "the forward order did not complete: the reversed order is not run here"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
 
       # The same modules in the opposite order. The recurring Chromium flake was
       # order-sensitive, and a gate that only ever ran one order could not say
       # whether a module passed on its own merits or on its neighbour's state.
       - name: Browser gate, reversed
+        if: ${{ !cancelled() && steps.next.outputs.run == 'true' }}
         run: >
-          python browser_tests/gate.py --reverse
+          python browser_tests/gate.py --reverse --keep-going
           --artifacts "$RUNNER_TEMP/bgr"
 
       # The same fail-closed check, and the browser job needs it MORE: a browser
       # writes profiles, caches and its own engine log wherever it is pointed,
       # and "pointed at the runner temp" is a claim this step is what proves.
+      # It runs after an ordinary red gate too, whenever the preparation happened.
       - name: The checkout is clean
+        if: >-
+          !cancelled() && steps.install.outcome == 'success'
+          && steps.chromium.outcome == 'success'
         run: |
           dirty="$(git status --porcelain --untracked-files=all)"
           if [ -n "$dirty" ]; then

@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from browser_tests import conftest as gate_conftest
 from browser_tests import gate
 
@@ -38,7 +40,7 @@ def _run_gate(tmp_path: Path, *flags: str,
               conftest: str | None = None,
               extra_env: dict[str, str] | None = None) -> tuple[int, dict]:
     modules_dir = tmp_path / "modules"
-    modules_dir.mkdir(exist_ok=True)
+    modules_dir.mkdir(parents=True, exist_ok=True)
     for name, body in (modules or _DEFAULT_MODULES).items():
         (modules_dir / name).write_text(body, encoding="utf-8")
     if conftest is not None:
@@ -71,6 +73,172 @@ def test_the_gate_stops_at_the_first_red_module_and_records_everything(
     # near-miss is the diagnostic corpus; stdout dumps stay failure-only.
     assert (tmp_path / "artifacts" / "test_a_first.stderr.txt").exists()
     assert not (tmp_path / "artifacts" / "test_a_first.stdout.txt").exists()
+
+
+def test_by_default_the_report_says_the_order_stopped_at_its_first_failure(
+        tmp_path: Path) -> None:
+    code, report = _run_gate(tmp_path)
+    assert code == 1 and report["result"] == "red" and report["keep_going"] is False
+    assert report["progress"] == "stopped" and report["complete"] is False
+    assert report["stopped"] == {"reason": "first-failure", "module": "test_m_middle.py"}
+    assert report["planned"] == ["test_a_first.py", "test_m_middle.py", "test_z_last.py"]
+    assert report["done"] == ["test_a_first.py", "test_m_middle.py"]
+    assert report["remaining"] == ["test_z_last.py"]
+    assert report["failures"] == ["test_m_middle.py"]
+
+
+def test_keep_going_runs_the_module_after_a_failure_and_the_verdict_stays_red(
+        tmp_path: Path) -> None:
+    code, report = _run_gate(tmp_path, "--keep-going")
+    assert code == 1 and report["result"] == "red" and report["keep_going"] is True
+    assert [row["module"] for row in report["records"]] == [
+        "test_a_first.py", "test_m_middle.py", "test_z_last.py"]
+    assert report["records"][-1]["exit_code"] == 0
+    assert report["progress"] == "complete" and report["complete"] is True
+    assert report["remaining"] == [] and report["stopped"] is None
+    assert report["failures"] == ["test_m_middle.py"]
+
+
+def test_keep_going_names_every_red_module_in_either_order(tmp_path: Path) -> None:
+    modules = {"test_a.py": _FAILING, "test_b.py": _PASSING, "test_c.py": _FAILING}
+    for flags in ((), ("--reverse",)):
+        code, report = _run_gate(tmp_path / ("r" if flags else "n"), "--keep-going",
+                                 *flags, modules=modules)
+        assert code == 1 and report["complete"] is True
+        assert sorted(report["failures"]) == ["test_a.py", "test_c.py"]
+
+
+def test_keep_going_over_green_modules_is_green_and_complete(tmp_path: Path) -> None:
+    code, report = _run_gate(tmp_path, "--keep-going",
+                             modules={"test_a.py": _PASSING, "test_b.py": _PASSING})
+    assert code == 0 and report["result"] == "green"
+    assert report["complete"] is True and report["failures"] == []
+
+
+def test_keep_going_still_reds_a_waived_outcome(tmp_path: Path) -> None:
+    code, report = _run_gate(
+        tmp_path, "--keep-going", modules={"test_a.py": _PASSING, "test_b.py": _PASSING},
+        conftest=_DYNAMIC_XFAIL_CONFTEST)
+    assert code == 1 and report["result"] == "red" and report["complete"] is True
+    assert report["failures"] == ["test_a.py", "test_b.py"]
+
+
+def test_a_timeout_ends_the_order_even_with_keep_going_and_the_run_is_incomplete(
+        tmp_path: Path) -> None:
+    hanging = "import time\n\ndef test_wedge():\n    time.sleep(120)\n"
+    code, report = _run_gate(
+        tmp_path, "--keep-going", "--module-timeout", "5",
+        modules={"test_a_ok.py": _PASSING, "test_b_hang.py": hanging,
+                 "test_c_ok.py": _PASSING})
+    assert code == 1 and report["result"] == "red"
+    assert report["done"] == ["test_a_ok.py", "test_b_hang.py"]
+    assert report["remaining"] == ["test_c_ok.py"]
+    assert report["progress"] == "stopped" and report["complete"] is False
+    assert report["stopped"] == {"reason": "timed-out", "module": "test_b_hang.py"}
+
+
+def test_a_module_process_that_did_not_end_through_pytest_ends_the_order(
+        tmp_path: Path) -> None:
+    """A crash, a kill or os._exit skips the session teardown that closes the
+    browser, so -- as after a timeout -- nothing after it is a run of its own."""
+    crashing = "import os\n\ndef test_dies():\n    os._exit(99)\n"
+    code, report = _run_gate(
+        tmp_path, "--keep-going",
+        modules={"test_a_ok.py": _PASSING, "test_b_dies.py": crashing,
+                 "test_c_ok.py": _PASSING})
+    assert code == 1 and report["result"] == "red"
+    assert report["records"][-1]["exit_code"] == 99
+    assert report["progress"] == "stopped" and report["complete"] is False
+    assert report["stopped"] == {"reason": "abnormal-exit", "module": "test_b_dies.py"}
+    assert report["remaining"] == ["test_c_ok.py"]
+    assert not gate.completed_report(tmp_path / "artifacts" / "gate.json")
+
+
+def test_a_report_left_by_an_earlier_run_is_gone_before_this_run_can_fail(
+        tmp_path: Path, monkeypatch) -> None:
+    """A probe that fails must not leave an old complete report to be read as
+    this run's answer."""
+    _run_gate(tmp_path, "--keep-going")
+    report = tmp_path / "artifacts" / "gate.json"
+    assert gate.completed_report(report)
+
+    def probe_fails(artifacts):
+        raise OSError("no engine")
+
+    monkeypatch.setattr(gate, "probe_versions", probe_fails)
+    with pytest.raises(OSError):
+        gate.run_gate(tmp_path / "modules", tmp_path / "artifacts", False, False,
+                      keep_going=True)
+    assert not report.exists() and not gate.completed_report(report)
+
+
+def _gate_with(tmp_path: Path, monkeypatch, run_module) -> Path:
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    for name in ("test_a.py", "test_b.py", "test_c.py"):
+        (modules / name).write_text(_PASSING, encoding="utf-8")
+    monkeypatch.setattr(gate, "run_module", run_module)
+    return modules
+
+
+def _green(module: Path) -> dict[str, object]:
+    return {"module": module.name, "exit_code": 0, "duration_seconds": 0.0,
+            "failed_nodes": [], "tail": [], **{name: 0 for name in gate.WAIVER_OUTCOMES}}
+
+
+def test_the_report_on_disk_is_never_green_while_a_module_is_running(
+        tmp_path: Path, monkeypatch) -> None:
+    """What a gate killed in the middle of a module leaves behind."""
+    seen: list[dict] = []
+
+    def run_module(module, artifacts, repo, timeout):
+        seen.append(json.loads((artifacts / "gate.json").read_text(encoding="utf-8")))
+        return _green(module)
+
+    modules = _gate_with(tmp_path, monkeypatch, run_module)
+    assert gate.run_gate(modules, tmp_path / "artifacts", False, True, keep_going=True) == 0
+    assert [len(report["done"]) for report in seen] == [0, 1, 2]
+    assert all(report["result"] == "running" and report["complete"] is False
+               for report in seen)
+
+
+def test_an_interrupted_gate_leaves_a_red_incomplete_report(
+        tmp_path: Path, monkeypatch) -> None:
+    def run_module(module, artifacts, repo, timeout):
+        if module.name == "test_b.py":
+            raise KeyboardInterrupt
+        return _green(module)
+
+    modules = _gate_with(tmp_path, monkeypatch, run_module)
+    with pytest.raises(KeyboardInterrupt):
+        gate.run_gate(modules, tmp_path / "artifacts", False, True, keep_going=True)
+    report = json.loads((tmp_path / "artifacts" / "gate.json").read_text(encoding="utf-8"))
+    assert report["result"] == "red" and report["complete"] is False
+    assert report["stopped"] == {"reason": "error", "module": "test_b.py",
+                                 "detail": "KeyboardInterrupt"}
+    assert report["remaining"] == ["test_b.py", "test_c.py"]
+
+
+def test_the_other_order_may_follow_only_a_completed_order(tmp_path: Path) -> None:
+    """The condition CI puts on the reversed order, read from the report alone."""
+    _, complete_red = _run_gate(tmp_path / "red", "--keep-going")
+    _, stopped = _run_gate(tmp_path / "stopped")
+    complete_red_path = tmp_path / "red" / "artifacts" / "gate.json"
+    stopped_path = tmp_path / "stopped" / "artifacts" / "gate.json"
+    assert complete_red["result"] == "red" and gate.completed_report(complete_red_path)
+    assert stopped["result"] == "red" and not gate.completed_report(stopped_path)
+    assert not gate.completed_report(tmp_path / "missing.json")
+    torn = tmp_path / "torn.json"
+    torn.write_text('{"progress": "complete", "planned": [', encoding="utf-8")
+    assert not gate.completed_report(torn)
+    partial = dict(complete_red, remaining=["test_z_last.py"])
+    (tmp_path / "partial.json").write_text(json.dumps(partial), encoding="utf-8")
+    assert not gate.completed_report(tmp_path / "partial.json")
+    for path, expected in ((complete_red_path, 0), (stopped_path, 1)):
+        completed = subprocess.run(
+            [sys.executable, "-m", "browser_tests.gate", "--completed-report", str(path)],
+            capture_output=True, text=True, cwd=str(ROOT), check=False)
+        assert completed.returncode == expected, completed.stderr
 
 
 def test_the_gate_honours_reverse_order_with_the_same_discipline(
@@ -398,7 +566,8 @@ def test_the_evidence_walk_finds_pages_the_test_never_put_in_funcargs(
 def test_the_gate_runs_each_module_exactly_once_with_no_second_chances():
     source = GATE.read_text(encoding="utf-8")
     # One subprocess call in the whole runner, inside no retry construct:
-    # the only loop is the module walk in run_gate, which returns on red.
+    # the only loop is the module walk in run_gate, which visits each module
+    # once and returns on red unless asked to keep going.
     assert source.count("subprocess.run(") == 1
     # The prose DENIES these words, so the scan reads executable code alone:
     # a guard that greps a docstring or a comment fails on the very sentence

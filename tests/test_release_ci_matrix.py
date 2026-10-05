@@ -199,11 +199,59 @@ def test_the_browser_gate_runs_in_both_orders(workflow: str) -> None:
     runs the modules forwards and backwards.
     """
     job = _job(workflow, "browser")
+    runs = _gate_runs(job)
 
     assert "--reverse" in job, (
         "the browser gate never runs the modules in the other order")
-    assert job.count("browser_tests/gate.py") == 2, (
-        "the browser gate is invoked once, so one of the two orders is missing")
+    assert len(runs) == 2, (
+        "the browser gate runs its modules once, so one of the two orders is missing")
+
+
+def _gate_runs(job: str) -> list[str]:
+    """The steps that RUN the gate's modules (they name artifacts), each with
+    its whitespace folded: the reversed one is a folded scalar over two lines."""
+    steps = (" ".join(step.split()) for step in job.split("\n      - "))
+    return [step for step in steps
+            if "browser_tests/gate.py" in step and "--artifacts" in step]
+
+
+def _step(job: str, name: str) -> str:
+    """One step's block, from its `- name:` line to the next step."""
+    start = job.index(f"- name: {name}\n")
+    end = job.find("\n      - ", start + 1)
+    return job[start:] if end == -1 else job[start:end]
+
+
+def test_both_orders_keep_going_and_the_second_follows_only_a_completed_first(
+        workflow: str) -> None:
+    """Every ordinary failure is named in one run; the reversed order follows an
+    ordinary red forward order, never a cancel, a failed install or a forward
+    order the gate stopped (its report answers); and nothing hides a red."""
+    job = _job(workflow, "browser")
+    assert all("--keep-going" in line for line in _gate_runs(job)), _gate_runs(job)
+    # The setting, not the word: the job's comments say why it is absent.
+    settings = [line for line in job.splitlines() if not line.lstrip().startswith("#")]
+    assert not [line for line in settings if "continue-on-error" in line]
+    decide = _step(job, "May the reversed order run")
+    for clause in ("!cancelled()", "steps.install.outcome == 'success'",
+                   "steps.chromium.outcome == 'success'", "steps.gate.outcome == 'success'",
+                   "steps.gate.outcome == 'failure'"):
+        assert clause in decide, clause
+    assert '--completed-report "$RUNNER_TEMP/bg/gate.json"' in decide
+    assert "run=true" in decide and "run=false" in decide and "exit 1" in decide
+    reversed_step = _step(job, "Browser gate, reversed")
+    assert "if: ${{ !cancelled() && steps.next.outputs.run == 'true' }}" in reversed_step
+    clean = _step(job, "The checkout is clean")
+    for clause in ("!cancelled()", "steps.install.outcome == 'success'",
+                   "steps.chromium.outcome == 'success'"):
+        assert clause in clean, clause
+    # A multi-line condition is a bare expression: inside ${{ }} a block scalar's
+    # trailing text would make it an always-true string.
+    for step in (decide, clean):
+        condition = step.split("if:", 1)[1].split("run:", 1)[0]
+        assert condition.lstrip().startswith(">-") and "${{" not in condition, condition
+    upload = _step(job, "Keep the gate's records")
+    assert "if: always()" in upload and "/bg" in upload and "/bgr" in upload
 
 
 def test_no_gate_writes_its_artifacts_into_the_worktree(workflow: str) -> None:
