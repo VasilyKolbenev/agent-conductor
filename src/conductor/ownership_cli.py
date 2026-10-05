@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import sys
 
 
@@ -25,16 +26,44 @@ def dispatch(args):
         return 1
 
 
+def _prepared_message(repeat, command):
+    again = "already prepared; " if repeat else "restart prepared; "
+    return (f"ownership is NOT released: {again}nothing was recovered. Restart the OS now (a full "
+            f"Restart, not a shutdown), then run: {command}")
+
+
+def _prepare(args):
+    """`--prepare-restart`: the result to print and the message to say, on stderr."""
+    if args.operation == "recover-login":
+        from .ownership_login import prepare_login_recovery
+        result = prepare_login_recovery(args.auth_home)
+        command = f"conduct ownership recover-login --auth-home {args.auth_home}"
+    else:
+        from .ownership_transition import prepare_recovery
+        record, created = prepare_recovery(args.dir)
+        result = {"state": "recovery_prepared", "released": False, "created": created,
+                  "generation": record["generation"], "prepared_boot": record["prepared_boot"],
+                  "project_root": str(Path(args.dir).resolve())}
+        command = f"conduct ownership recover --dir {args.dir}"
+    print(_prepared_message(not result["created"], command), file=sys.stderr)
+    return result
+
+
 def ownership_command(args):
     from .ownership_records import OwnerRefused, state
     from .ownership_transition import activate, recover, rollback
     try:
         if args.operation != "recover-login" and args.auth_home is not None:
             raise OwnerRefused("login_context_required", "--auth-home is only for recover-login")
-        if args.operation == "recover-login":
+        if args.prepare_restart and args.operation not in {"recover", "recover-login"}:
+            raise OwnerRefused("recovery_refused",
+                               "--prepare-restart is only for recover and recover-login")
+        if args.operation == "recover-login" and args.auth_home is None:
+            raise OwnerRefused("login_context_required", "recover-login requires --auth-home")
+        if args.prepare_restart:
+            result = _prepare(args)
+        elif args.operation == "recover-login":
             from .ownership_login import recover_login
-            if args.auth_home is None:
-                raise OwnerRefused("login_context_required", "recover-login requires --auth-home")
             result = recover_login(args.auth_home)
         elif args.operation == "status":
             root, head = state(args.dir)
