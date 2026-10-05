@@ -15,6 +15,7 @@ CAPPED = (
     "src/conductor/command/flag_control_id.py",
     "src/conductor/command/flow_routes.py",
     "src/conductor/command/flow_rules.py",
+    "src/conductor/command/git_setup.py",
     "src/conductor/command/plan_budget.py",
     "src/conductor/command/preview_draft.py",
     "src/conductor/command/product_names.py",
