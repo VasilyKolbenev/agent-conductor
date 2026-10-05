@@ -61,11 +61,15 @@ class Refuse:
 def next_action(stage: str, ref: Ref, lock: Lock, index: Index) -> Act | Refuse:
     """The one next step for these facts.
 
-    A ref that is not ours, or one recorded as moved and now absent, refuses `head_exists`; a
-    foreign lock refuses `index_locked`. A ref at our commit takes the road of `ref_moved`. With
-    the ref absent a missing lock is taken, an index found under our lock refuses `index_exists`,
-    and the recorded stage says whether to mark the lock or to move the ref.
+    A stage outside STAGES is a damaged record: it refuses `setup_damaged` before anything else
+    and undoes nothing. A ref that is not ours, or one recorded as moved and now absent, refuses
+    `head_exists`; a foreign lock refuses `index_locked`. A ref at our commit takes the road of
+    `ref_moved`. With the ref absent a missing lock is taken, an index found under our lock
+    refuses `index_exists`, and the recorded stage says whether to mark the lock or to move the
+    ref.
     """
+    if stage not in STAGES:
+        return Refuse("setup_damaged")
     own = lock is Lock.OWN
     if ref is Ref.OTHER or (stage == REF_MOVED and ref is Ref.ABSENT):
         return Refuse("head_exists", release_own_lock=own)
@@ -77,7 +81,7 @@ def next_action(stage: str, ref: Ref, lock: Lock, index: Index) -> Act | Refuse:
         return Act.TAKE_LOCK
     if index is not Index.ABSENT:
         return Refuse("index_exists", release_own_lock=True)
-    return Act.MARK_LOCKED if stage == PREPARED else Act.MOVE_REF
+    return Act.MOVE_REF if stage == LOCKED else Act.MARK_LOCKED
 
 
 def _after_the_ref_moved(stage: str, lock: Lock, index: Index) -> Act | Refuse:

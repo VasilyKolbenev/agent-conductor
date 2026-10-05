@@ -39,6 +39,20 @@ def test_first_commit_resume_never_acts_on_a_foreign_lock_except_to_refuse_it():
             assert row[0] == REF_MOVED and row[1] is Ref.AT_COMMIT and row[3] is Index.MATCHES
 
 
+UNKNOWN_STAGES = ["", "done", "Locked", "prepared ", "ref-moved", "finished"]
+
+
+def test_first_commit_resume_refuses_a_stage_it_does_not_know_and_never_returns_an_act():
+    wrong = {}
+    for stage in UNKNOWN_STAGES:
+        for ref, lock, index in itertools.product(Ref, Lock, Index):
+            step = next_action(stage, ref, lock, index)
+            if step != Refuse("setup_damaged"):
+                wrong[(stage, ref, lock, index)] = step
+    acts = sorted({step.name for step in wrong.values() if isinstance(step, Act)})
+    assert not wrong, f"{len(wrong)} unknown-stage rows were not refused; acts returned: {acts}"
+
+
 A, N, O, F = Index.ABSENT, Lock.NONE, Lock.OWN, Lock.FOREIGN
 NO_LOCK = Refuse("index_locked", drop_copy=True)
 SPEC_ROWS = [   # (stage, ref, lock, index) -> what 9.8 and S4 say happens
