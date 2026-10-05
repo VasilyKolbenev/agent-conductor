@@ -27,22 +27,12 @@ DOCUMENTED = (
     ("NtProductType", 4, 4), ("ProductTypeIsValid", 1, 1), ("Reserved0", 1, 1),
     ("NativeProcessorArchitecture", 2, 2), ("NtMajorVersion", 4, 4), ("NtMinorVersion", 4, 4),
     ("ProcessorFeatures", 64, 1), ("Reserved1", 4, 4), ("Reserved3", 4, 4), ("TimeSlip", 4, 4),
-    ("AlternativeArchitecture", 4, 4), ("BootId", 4, 4), ("SystemExpirationDate", 8, 8),
-    ("SuiteMask", 4, 4))
+    ("AlternativeArchitecture", 4, 4), ("BootId", 4, 4))
 
-
-# Every `VER_SUITE_*` flag winnt.h defines (Windows SDK 10.0.26100.0, um/winnt.h lines 1517-1533).
-# The value 0x00010000 is not defined there.
-SUITE_FLAGS = (
-    ("VER_SUITE_SMALLBUSINESS", 0x00000001), ("VER_SUITE_ENTERPRISE", 0x00000002),
-    ("VER_SUITE_BACKOFFICE", 0x00000004), ("VER_SUITE_COMMUNICATIONS", 0x00000008),
-    ("VER_SUITE_TERMINAL", 0x00000010), ("VER_SUITE_SMALLBUSINESS_RESTRICTED", 0x00000020),
-    ("VER_SUITE_EMBEDDEDNT", 0x00000040), ("VER_SUITE_DATACENTER", 0x00000080),
-    ("VER_SUITE_SINGLEUSERTS", 0x00000100), ("VER_SUITE_PERSONAL", 0x00000200),
-    ("VER_SUITE_BLADE", 0x00000400), ("VER_SUITE_EMBEDDED_RESTRICTED", 0x00000800),
-    ("VER_SUITE_SECURITY_APPLIANCE", 0x00001000), ("VER_SUITE_STORAGE_SERVER", 0x00002000),
-    ("VER_SUITE_COMPUTE_SERVER", 0x00004000), ("VER_SUITE_WH_SERVER", 0x00008000),
-    ("VER_SUITE_MULTIUSERTS", 0x00020000))
+#: A page as long as the one the OS maps for the first members of the structure, so that a mask
+#: written at its real place (0x2D0) is inside the buffer whatever the reader chooses to read.
+PAGE_WITH_MASK = 0x2E0
+SUITE_OFFSET = 0x2D0
 
 
 def documented_offsets():
@@ -56,14 +46,14 @@ def documented_offsets():
 
 def snapshot(*, build=VERSION[2], major=VERSION[0], minor=VERSION[1], alt=0, boot=42,
              suite=272, arch=9, size=boot_kuser.SNAPSHOT_SIZE):
-    raw = bytearray(boot_kuser.SNAPSHOT_SIZE)
+    raw = bytearray(PAGE_WITH_MASK)
     struct.pack_into("<I", raw, 0x260, build)
     struct.pack_into("<I", raw, 0x26C, major)
     struct.pack_into("<I", raw, 0x270, minor)
     struct.pack_into("<H", raw, 0x26A, arch)
     struct.pack_into("<I", raw, 0x2C0, alt)
     struct.pack_into("<I", raw, 0x2C4, boot)
-    struct.pack_into("<I", raw, 0x2D0, suite)
+    struct.pack_into("<I", raw, SUITE_OFFSET, suite)
     return bytes(raw[:size])
 
 
@@ -81,8 +71,7 @@ def test_the_offsets_the_reader_uses_are_the_sum_of_the_documented_member_sizes(
     assert found["NtMinorVersion"] == boot_kuser.MINOR_OFFSET
     assert found["AlternativeArchitecture"] == boot_kuser.ALTERNATIVE_OFFSET
     assert found["NativeProcessorArchitecture"] == boot_kuser.ARCHITECTURE_OFFSET
-    assert found["SuiteMask"] == boot_kuser.SUITE_OFFSET
-    assert found["SuiteMask"] + 4 <= boot_kuser.SNAPSHOT_SIZE
+    assert found["BootId"] + 4 == boot_kuser.SNAPSHOT_SIZE
 
 
 def test_a_complete_snapshot_of_the_expected_layout_gives_the_boot_counter():
@@ -113,36 +102,29 @@ def test_a_processor_architecture_outside_the_known_four_is_an_unknown_layout():
     assert refusal(snapshot(arch=7)).code == "layout_unknown"
 
 
-def test_a_suite_mask_with_a_bit_no_documented_suite_flag_covers_is_an_unknown_layout():
-    assert refusal(snapshot(suite=0x7FFE0000)).code == "layout_unknown"
-    assert refusal(snapshot(suite=0x00010000)).code == "layout_unknown"
-    assert refusal(snapshot(suite=0x80000000)).code == "layout_unknown"
-    assert refusal(snapshot(suite=0x00020000 | 0x00040000)).code == "layout_unknown"
+def test_any_suite_mask_value_is_accepted():
+    masks = [0, 272, 0x00010000, 0x00040000, 0x7FFE0000, 0xFFFFFFFF]
+    masks += [1 << bit for bit in range(32)]
+    for mask in masks:
+        page = snapshot(suite=mask, size=PAGE_WITH_MASK)
+        assert boot_kuser.parse_snapshot(page, VERSION) == 42, hex(mask)
 
 
-@pytest.mark.parametrize("name, bit", SUITE_FLAGS)
-def test_each_suite_flag_winnt_h_documents_is_accepted_alone(name, bit):
-    assert boot_kuser.parse_snapshot(snapshot(suite=bit), VERSION) == 42, name
+@pytest.mark.parametrize("mask", [0, 0x00010000, 0xFFFFFFFF])
+def test_every_other_refusal_holds_whatever_the_suite_mask_says(mask):
+    page = {"suite": mask, "size": PAGE_WITH_MASK}
+    assert refusal(snapshot(**page, major=6)).code == "layout_unknown"
+    assert refusal(snapshot(**page, build=19045)).code == "layout_unknown"
+    assert refusal(snapshot(**page, arch=7)).code == "layout_unknown"
+    assert refusal(snapshot(**page, alt=3)).code == "layout_unknown"
+    assert refusal(snapshot(**page, boot=0)).code == "value_empty"
+    assert refusal(snapshot(**page, boot=0xFFFFFFFF)).code == "counter_overflow"
 
 
-def test_all_the_suite_flags_winnt_h_documents_are_accepted_together():
-    everything = 0
-    for _, bit in SUITE_FLAGS:
-        everything |= bit
-    assert boot_kuser.parse_snapshot(snapshot(suite=everything), VERSION) == 42
-
-
-def test_a_multi_session_edition_with_a_terminal_suite_mask_is_not_an_unknown_layout():
-    # VER_SUITE_MULTIUSERTS together with VER_SUITE_TERMINAL and VER_SUITE_ENTERPRISE
-    assert boot_kuser.parse_snapshot(snapshot(suite=0x00020000 | 0x10 | 0x2), VERSION) == 42
-
-
-def test_the_version_and_architecture_refusals_hold_whatever_the_suite_mask_says():
-    multi = 0x00020000
-    assert refusal(snapshot(suite=multi, major=6)).code == "layout_unknown"
-    assert refusal(snapshot(suite=multi, build=19045)).code == "layout_unknown"
-    assert refusal(snapshot(suite=multi, arch=7)).code == "layout_unknown"
-    assert refusal(snapshot(suite=multi, alt=3)).code == "layout_unknown"
+def test_a_page_that_ends_right_after_the_boot_counter_is_complete():
+    page = snapshot(size=boot_kuser.BOOT_ID_OFFSET + 4)
+    assert boot_kuser.parse_snapshot(page, VERSION) == 42
+    assert refusal(snapshot(size=boot_kuser.BOOT_ID_OFFSET + 3)).code == "partial_read"
 
 
 def test_a_boot_counter_of_zero_is_an_empty_value_and_the_saturated_one_an_overflow():

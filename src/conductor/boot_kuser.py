@@ -7,8 +7,8 @@ sum of the documented member sizes (ntddk.h, `KUSER_SHARED_DATA`): `BootId` foll
 
 The bytes are read with `ReadProcessMemory` on the current process: an unmapped or short read
 comes back as an error and a byte count, never as a crashed interpreter. The value is used only
-after the page proves to be the documented layout (same version as the system, enums in range,
-a suite mask made only of documented flags); otherwise the answer is a typed refusal, not a guess.
+after the page proves to be the documented layout (same version as the system, architecture
+members in range); otherwise the answer is a typed refusal, not a guess.
 
 The counter alone is not a boot: it is joined to the boot environment GUID (the scope in which
 counters are comparable) by `boot_witness.counter_text`.
@@ -30,33 +30,11 @@ MAJOR_OFFSET = 0x26C
 MINOR_OFFSET = 0x270
 ALTERNATIVE_OFFSET = 0x2C0
 BOOT_ID_OFFSET = 0x2C4
-SUITE_OFFSET = 0x2D0
-#: The bytes read: through `SuiteMask`, the last member the layout check looks at.
-SNAPSHOT_SIZE = 0x2E0
+#: The bytes read: through `BootId`, the last member the reader looks at.
+SNAPSHOT_SIZE = BOOT_ID_OFFSET + 4
 
 _ARCHITECTURES = frozenset({0, 5, 9, 12})
 _ALTERNATIVE_LIMIT = 3
-#: The union of every `VER_SUITE_*` flag winnt.h documents for `SuiteMask` (Windows SDK
-#: 10.0.26100.0, um/winnt.h). 0x00010000 is not defined there and is not part of it.
-_SUITE_FLAGS = (
-    0x00000001      # VER_SUITE_SMALLBUSINESS
-    | 0x00000002    # VER_SUITE_ENTERPRISE
-    | 0x00000004    # VER_SUITE_BACKOFFICE
-    | 0x00000008    # VER_SUITE_COMMUNICATIONS
-    | 0x00000010    # VER_SUITE_TERMINAL
-    | 0x00000020    # VER_SUITE_SMALLBUSINESS_RESTRICTED
-    | 0x00000040    # VER_SUITE_EMBEDDEDNT
-    | 0x00000080    # VER_SUITE_DATACENTER
-    | 0x00000100    # VER_SUITE_SINGLEUSERTS
-    | 0x00000200    # VER_SUITE_PERSONAL
-    | 0x00000400    # VER_SUITE_BLADE
-    | 0x00000800    # VER_SUITE_EMBEDDED_RESTRICTED
-    | 0x00001000    # VER_SUITE_SECURITY_APPLIANCE
-    | 0x00002000    # VER_SUITE_STORAGE_SERVER
-    | 0x00004000    # VER_SUITE_COMPUTE_SERVER
-    | 0x00008000    # VER_SUITE_WH_SERVER
-    | 0x00020000    # VER_SUITE_MULTIUSERTS
-)
 _SATURATED = 0xFFFFFFFF
 
 
@@ -99,11 +77,6 @@ def _check_members(raw: bytes) -> None:
                           f"the processor architecture {architecture} is not a documented one")
     if _u32(raw, ALTERNATIVE_OFFSET) >= _ALTERNATIVE_LIMIT:
         raise BootRefused("layout_unknown", "the alternative architecture is outside its enum")
-    undocumented = _u32(raw, SUITE_OFFSET) & ~_SUITE_FLAGS
-    if undocumented:
-        raise BootRefused("layout_unknown", (
-            f"the suite mask carries the bits 0x{undocumented:08X} that no documented "
-            "VER_SUITE flag covers"))
 
 
 def _need_windows() -> None:
