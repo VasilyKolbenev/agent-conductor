@@ -30,6 +30,7 @@ import {createPeopleHost} from "./desk-people-host.js";
 import {createRunHost} from "./desk-run-host.js";
 import {createRunPanelBindings} from "./desk-run-binding.js";
 import {createDeskPanels} from "./desk-panels.js";
+import {createToggles} from "./desk-toggles.js";
 //: Route names come only from the shared transport.
 const READS = Object.freeze({
   tasks: () => path.tasks(),
@@ -41,9 +42,6 @@ const READS = Object.freeze({
 });
 //: The five required desk mounts, in reading order.
 const MOUNTS = Object.freeze(["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]);
-//: The toggles of the top bar, each with the panel it opens.
-const TOGGLES = Object.freeze({"deskFlowToggle": "cycle", "deskPeopleToggle": "people",
-  "deskRunToggle": "run"});
 //: List phases before and after a read.
 const NONE = Object.freeze([]);
 const NOT_READ = Object.freeze({phase: "empty", list: NONE});
@@ -81,10 +79,8 @@ let shown = Object.freeze({task: null, run: null});
 let booted = Promise.resolve();
 let embedded = null;
 let announced = null;
-//: Whether the boot has applied the address it read (`start`). That navigation closes any panel or
-//: wizard it did not open itself, so what opens one -- the toggles, the new task button -- is off
-//: until then: a press refused (visibly) rather than made and undone.
-let applied = false;
+//: The toggles of the top bar: a press while the boot still reads is a choice the boot keeps.
+let toggles = null;
 //: Whether the address has asked for the continue-after block (`panel=continue`), which a read of
 //: the flag still to land must then open.
 let wantContinue = false;
@@ -194,11 +190,7 @@ function render() {
   mark(byId("deskShell"), said.shell);
   byId("deskShell").dataset.connection = connection;
   byId("deskConnection").textContent = message(locale(), `desk.connection.${connection}`);
-  for (const [id, panel] of Object.entries(TOGGLES)) {
-    byId(id).hidden = state.foreign;
-    byId(id).disabled = !applied;
-    byId(id).setAttribute("aria-expanded", String(panels?.isOpen(panel) ?? false));
-  }
+  toggles?.draw(state.foreign);
   byId("deskPeople").hidden = !panels?.isOpen("people");
   byId("deskRun").hidden = !panels?.isOpen("run");
   for (const id of ["deskScene", "deskFeed", "deskSummary"])
@@ -614,17 +606,23 @@ function closeContinue() {
   move({flag: Object.freeze({...state.flag, open: false})});
 }
 
-//: Apply the task/run selection before its panel and wizard (spec 4.5.3).
-async function navigate(change, address) {
+//: Show the panel a hash or a press chose: the continue-after block, a centre panel, or neither.
+function showPanel(panel) {
+  if (panel === "continue") showContinue();
+  else closeContinue();
+  if (toggles.names.includes(panel)) panels?.open(panel);
+}
+
+//: Apply the task/run selection before its panel and wizard (spec 4.5.3). `panelOf` gives the panel
+//: to show once the selection has been read: the address's, and for the first hash the person's
+//: last press while the desk booted, if they pressed.
+async function navigate(change, address, panelOf = (named) => named) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
   if (address.panel !== panels?.current()) panels?.open(null);
   const opened = await navigateSelection(keys, address);
-  if (keys.includes("panel")) {
-    if (address.panel === "continue") showContinue();
-    else closeContinue();
-    if (["cycle", "people", "run"].includes(address.panel)) panels?.open(address.panel);
-  }
+  const panel = panelOf(address.panel);
+  if (keys.includes("panel") || panel !== address.panel) showPanel(panel);
   await wizardHost?.navigate(change, address);
   return opened;
 }
@@ -659,7 +657,7 @@ async function onHashChange() {
 //: close.
 async function start(address) {
   const first = navigationChange(readDeskHash(""), address);
-  await navigate(Object.freeze({...first, reset: NONE}), address);
+  await navigate(Object.freeze({...first, reset: NONE}), address, toggles.resolve);
   remember();
 }
 
@@ -711,7 +709,7 @@ async function settle(address) {
   if (embedded !== null) loadFlag();
   await load();
   await start(address);
-  applied = true;
+  toggles.finish();
   render();
   startStream();
 }
@@ -769,20 +767,13 @@ function boot() {
     createFlow: () => createFlowHost({mount: byId("deskFlow"), door, locale,
       nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign}),
     allowed: () => !state.foreign, onChange: render});
+  toggles = createToggles({byId, panels, closeContinue, remember, render});
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
   wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
-    tasks: () => state.tasks.list, foreign: () => state.foreign, applied: () => applied});
+    tasks: () => state.tasks.list, foreign: () => state.foreign, applied: toggles.applied});
   wizardHost.render();
-  for (const [id, panel] of Object.entries(TOGGLES)) {
-    byId(id).disabled = true;
-    byId(id).addEventListener("click", () => {
-      closeContinue();
-      panels.toggle(panel);
-      remember();
-    });
-  }
   window.addEventListener("pagehide", stopStream);
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) { panels?.resume(); startStream(); }

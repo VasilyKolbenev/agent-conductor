@@ -100,7 +100,7 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-card.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
     "desk-people-host.js": 200, "desk-run-host.js": 200,
-    "desk-panels.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
+    "desk-panels.js": 200, "desk-toggles.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
     "studio-isolation.js": 200, "studio-runhead.js": 200,
     "studio-quotas-model.js": 200,
     "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,

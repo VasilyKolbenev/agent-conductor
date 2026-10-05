@@ -555,6 +555,30 @@ def test_a_block_opened_while_the_boot_reads_is_not_closed_by_the_boot_that_draw
     assert window.problems == []
 
 
+def test_a_toggle_pressed_after_the_block_was_opened_while_the_boot_reads_replaces_the_block(
+        embed, rig):
+    """Opening a panel closes the block, as it does after the boot: the person's last choice is
+    the panel, and the address says it and not `panel=continue`."""
+    held: list[Route] = []
+    window = embed(
+        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
+        _answering(_claim(hub_origin=rig.host_origin)), automations=AUTOMATIONS, wait=False,
+        before=lambda page: page.route("**/command/tasks", lambda route: held.append(route)))
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    assert len(held) == 1, "the block is drawn while the boot's list read is still held"
+    _open_block(window)
+    window.frame.locator("#deskFlowToggle").click()
+    assert window.frame.evaluate(WHERE)["open"] is False, "pressing a panel closes the block"
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False and facts["expanded"]["deskFlowToggle"] == "true"
+    assert facts["hash"] == (
+        f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&panel=cycle&lang=en")
+    assert window.problems == []
+
+
 def test_a_desk_nobody_framed_drops_panel_continue_from_its_address(chromium, rig):
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     try:

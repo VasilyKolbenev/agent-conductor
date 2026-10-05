@@ -526,7 +526,7 @@ READ_SIDE = ("desk.js", "desk-panels.js", "desk-run-binding.js", "desk-rail.js",
              "desk-scene.js", "desk-status.js", "desk-hash.js",
              "desk-embed.js", "desk-time.js", "desk-queue-model.js", "desk-flag-model.js",
              "desk-feed-model.js", "desk-feed.js", "desk-summary-model.js", "desk-closing.js",
-             "desk-summary.js", "desk-pult-flow.js")
+             "desk-summary.js", "desk-pult-flow.js", "desk-toggles.js")
 #: The render modules, and the one function each exports (`mountX(mount, state, handlers)`).
 RENDER_MODULES = {"desk-rail.js": "mountRail", "desk-scene.js": "mountScene",
                   "desk-feed.js": "mountFeed", "desk-summary.js": "mountSummary",
