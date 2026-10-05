@@ -136,7 +136,10 @@ def test_http_home_setting_consumes_only_its_own_native_pick(stack, tmp_path_fac
 
 
 def test_parent_setting_does_not_change_a_running_add(stack):
-    stack.service._operations._rows["operation-" + "f" * 32] = {"state": "running"}
+    ident = "operation-" + "f" * 32
+    stack.service._operations._rows[ident] = {
+        "operation_id": ident, "kind": "add", "source": "folder", "state": "running",
+        "step": "admit", "project_id": None, "code": None, "result": None}
     before = registry.load(stack.service._home).projects_home
     response = stack.post("/hub/setup/projects-home", {"default": True})
     assert response.status == 409 and response.json()["error"]["code"] == "operation_busy"
