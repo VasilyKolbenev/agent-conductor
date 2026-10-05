@@ -654,9 +654,12 @@ async function onHashChange() {
   remember();
 }
 
-//: The first hash is applied like any other, against a desk that has written none.
+//: The first hash is applied like any other, against a desk that has written none -- which has
+//: nothing to reset, so a block a person opened while the lists were read is not the hash's to
+//: close.
 async function start(address) {
-  await navigate(navigationChange(readDeskHash(""), address), address);
+  const first = navigationChange(readDeskHash(""), address);
+  await navigate(Object.freeze({...first, reset: NONE}), address);
   remember();
 }
 

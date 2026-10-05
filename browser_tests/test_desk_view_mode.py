@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from playwright.sync_api import Route
 
 from browser_tests import desk_flag_fake as fake
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
@@ -515,6 +516,43 @@ def test_the_address_follows_a_person_who_opens_and_closes_the_block(embed, rig)
     _open_block(window)
     window.frame.wait_for_function("(hash) => location.hash === hash", arg=closed)
     assert server.posts == [] and window.problems == []
+
+
+#: What the block says of itself each time the console is drawn again, kept page-side so that no
+#: draw between two reads of the test is lost: the block's `open` and the address at that moment.
+WATCH_BLOCK = """() => {
+  window.__block = [];
+  new MutationObserver(() => window.__block.push([
+    document.querySelector("#deskPult .desk-flag")?.open ?? null, location.hash])
+  ).observe(document.getElementById("deskPult"),
+    {childList: true, subtree: true, attributes: true, attributeFilter: ["open"]});
+}"""
+
+
+def test_a_block_opened_while_the_boot_reads_is_not_closed_by_the_boot_that_draws_a_task(
+        embed, rig):
+    """The address names a task and no panel. Its first navigation resets the keys the address
+    does not carry, but a desk that has written no address has nothing to reset: the block is the
+    person's, and it is not closed for an instant (the address losing its panel with it) to be
+    opened again by the echo of the element it replaced."""
+    held: list[Route] = []
+    window = embed(
+        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
+        _answering(_claim(hub_origin=rig.host_origin)), automations=AUTOMATIONS, wait=False,
+        before=lambda page: page.route("**/command/tasks", lambda route: held.append(route)))
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    assert len(held) == 1, "the block is drawn while the boot's list read is still held"
+    _open_block(window)
+    window.frame.evaluate(WATCH_BLOCK)
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    drawn = window.frame.evaluate("window.__block")
+    assert drawn and all(opened is True for opened, _hash in drawn), drawn
+    assert all("panel=continue" in hash_ for _opened, hash_ in drawn), drawn
+    assert window.frame.evaluate(WHERE)["hash"] == (
+        f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&panel=continue&lang=en")
+    assert window.problems == []
 
 
 def test_a_desk_nobody_framed_drops_panel_continue_from_its_address(chromium, rig):
