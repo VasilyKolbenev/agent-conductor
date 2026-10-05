@@ -13,6 +13,8 @@ binary starts, or runs correctly, inside the container.
 from __future__ import annotations
 
 import os
+import subprocess
+import threading
 
 import pytest
 
@@ -191,3 +193,35 @@ def test_the_verifier_rejects_a_process_that_is_not_an_appcontainer_process(impl
             ac.require_confinement(plain.handle, box.container.sid)
     finally:
         plain.discard()
+
+
+def _idle_shell() -> "subprocess.Popen[bytes]":
+    """A single process (no child) that sleeps far longer than any wait below."""
+    return subprocess.Popen(
+        [str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-Command",
+         "[Threading.Thread]::Sleep(60000)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+
+
+def test_a_watch_on_a_running_process_is_not_gone_when_its_wait_runs_out():
+    proc = _idle_shell()
+    watch = ac.ProcessWatch(proc.pid)
+    try:
+        assert watch.wait_gone(0.3) is False
+    finally:
+        watch.close()
+        proc.kill()
+        proc.wait()
+
+
+def test_a_watch_sees_a_process_that_ends_after_its_wait_began():
+    proc = _idle_shell()
+    watch = ac.ProcessWatch(proc.pid)
+    ender = threading.Timer(0.3, proc.kill)
+    try:
+        ender.start()
+        assert watch.wait_gone(ac.SETTLE_SECONDS) is True
+    finally:
+        ender.cancel()
+        watch.close()
+        proc.kill()
+        proc.wait()

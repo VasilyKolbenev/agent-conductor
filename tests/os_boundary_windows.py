@@ -51,6 +51,10 @@ _ATTR_SECURITY_CAPABILITIES = 0x00020009
 _ATTR_HANDLE_LIST = 0x00020002
 _SE_GROUP_ENABLED = 4
 _WAIT_OBJECT_0, _WAIT_TIMEOUT, _INFINITE = 0, 0x102, 0xFFFFFFFF
+#: How long a killed process may take to be signalled. MEASURED 05.10.2026 after
+#: TerminateJobObject: 7-21 ms idle and 27-46 ms with every core busy. A survivor of these tests
+#: sleeps 120 s, so 5 s (the runner's own bound for a leader) tells the two apart.
+SETTLE_SECONDS = 5.0
 _TOKEN_QUERY, _TOKEN_IS_APPCONTAINER, _TOKEN_APPCONTAINER_SID = 8, 29, 31
 _ALREADY_EXISTS = 0x800700B7
 
@@ -418,6 +422,18 @@ class ProcessWatch:
 
     def is_gone(self) -> bool:
         return _k32.WaitForSingleObject(self._handle, 0) == _WAIT_OBJECT_0
+
+    def wait_gone(self, seconds: float = SETTLE_SECONDS) -> bool:
+        """Wait for the process to end; False if it is still running after ``seconds``.
+
+        A process object is signalled by the kernel after the Job has already counted the
+        process out, and each process of a killed tree is signalled on its own, so a single
+        ``is_gone`` taken the moment the runner returns can precede the signal.
+        """
+        status = _k32.WaitForSingleObject(self._handle, int(seconds * 1000))
+        if status not in (_WAIT_OBJECT_0, _WAIT_TIMEOUT):
+            raise _fail(f"WaitForSingleObject returned {status:#x}")
+        return status == _WAIT_OBJECT_0
 
     def close(self) -> None:
         _k32.CloseHandle(self._handle)
