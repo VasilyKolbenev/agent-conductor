@@ -103,7 +103,9 @@ def _summary(facts: dict) -> list[tuple]:
 
 @pytest.mark.parametrize("language", ["en", "ru"])
 def test_the_feed_says_the_journal_of_the_run_as_its_facts_in_each_language(desk_in, language):
-    window = desk_in(language, task="task-closed")
+    # The feed says the state of the scene. A stream that opens makes a full refresh, which
+    # stands the scene as `stale` until the run is read again, so the stream is ended.
+    window = desk_in(language, task="task-closed", stream=False)
     facts = window.page.evaluate(FEED_FACTS)
     assert facts["state"] == "ready"
     assert (facts["title"], facts["order"]) == HEADS[language]
