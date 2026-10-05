@@ -609,7 +609,10 @@ def test_a_run_that_completes_frees_the_slot_for_the_next_entry_through_the_real
         assert first and [row.authorization_id for row in
                           (r.value for r in f.store.read("run-b").records
                            if r.kind == "run_authorization")] == ["grant-run-b"]
-        assert service.store.read().entries == () and driver.slot().active_run_id is None
+        assert service.store.read().entries == ()
+        # The terminal record is written by the execution; the driver frees the slot on its
+        # next tick, when it reads the plan as complete. So the slot is waited for.
+        assert wait_until(lambda: driver.slot().active_run_id is None)
     finally:
         driver.stop()
         execution.shutdown()
