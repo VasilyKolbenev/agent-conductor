@@ -316,8 +316,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.ownership_lost": ["the folder was replaced or moved", "папка заменена или перенесена"],
   "hub.code.transition_conflict": ["the ownership state cannot be read",
     "состояние владения не читается"],
-  "hub.code.ownership_unavailable": ["the ownership state cannot be read",
-    "состояние владения не читается"],
+  "hub.code.ownership_unavailable": ["ownership could not be opened: the OS boot counter or the "
+    + "ownership state cannot be read", "владение не открыто: счётчик загрузки ОС или состояние "
+    + "владения не читается"],
   "hub.code.store_error": ["the project map cannot be read", "карта проекта не читается"],
   "hub.code.providers_invalid": ["the project's providers.json was not accepted",
     "providers.json проекта не принят"],
