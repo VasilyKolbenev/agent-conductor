@@ -229,8 +229,9 @@ FACTS = """() => {
     focus: document.activeElement ? document.activeElement.dataset.focusKey ?? null : null,
     entries: block === null ? [] : [...block.querySelectorAll(".desk-queue__entry")].map((row) => ({
       run: row.dataset.runId, state: row.dataset.queueState, tone: row.dataset.tone,
-      text: [...row.querySelectorAll(":scope > span")].map((part) => part.textContent).join("")
-        .trim(),
+      text: [...row.querySelectorAll(":scope > span:not(.desk-queue__hint)")]
+        .map((part) => part.textContent).join("").trim(),
+      hint: text(row.querySelector(":scope > .desk-queue__hint")),
       buttons: [...row.querySelectorAll("button")].map((button) => ({
         key: button.dataset.focusKey, text: text(button), label: button.getAttribute("aria-label"),
         disabled: button.disabled || button.getAttribute("aria-disabled") === "true",
@@ -304,6 +305,12 @@ def open_desk(browser: Any, served: Project, language: str = "en", *, width: int
             if message.type == "error" else None)
     page.on("pageerror", lambda error: window.problems.append(str(error)))
     page.on("request", lambda request: _note(window, served, request))
+    # HTTP 204 ends the projection stream without a retry. A stream that opens refreshes every
+    # read the desk made -- the queue among them, and again at each frame the server's own pump
+    # and writes send -- so a count of the desk's reads, and a console drawn from the answer of a
+    # write, would be judged beside the refreshes. Live updates and reconnect are judged in
+    # test_desk_live_stream.py.
+    page.route("**/events", lambda route: route.fulfill(status=204))
     if before is not None:
         before(page)
     page.goto(served.url(language, extra=extra), wait_until="load")

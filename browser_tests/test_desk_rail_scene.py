@@ -239,6 +239,17 @@ def test_the_desk_reads_the_lists_and_the_newest_run_of_each_task_and_writes_not
     assert window.problems == []
 
 
+def _end_the_stream(page: Page) -> None:
+    """Answer the projection stream with HTTP 204, as `_open` does: it ends without a retry.
+
+    A live stream that opens refreshes every read the desk made, so a window that holds or
+    rewrites a read of its own would meet the desk's refresh as well: a second read of the
+    same run taken for the person's, and a rewritten read still in flight when the window
+    closes. Live updates and reconnect are judged in test_desk_live_stream.py.
+    """
+    page.route("**/events", lambda route: route.fulfill(status=204))
+
+
 def _answer(page: Page, pattern: str, how: str) -> None:
     def handle(route: Route) -> None:
         if how == "refused":
@@ -343,6 +354,7 @@ def test_a_finished_but_unverified_run_is_never_drawn_without_its_sentence(
             route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
 
         page.route("**/command/runs", unverified)
+        _end_the_stream(page)
         try:
             page.goto(f"{seeded_url}#lang={language}", wait_until="load")
             page.wait_for_function(SETTLED)
@@ -534,9 +546,12 @@ def test_choosing_a_task_mounts_the_trace_for_its_newest_run_and_only_reads(desk
     assert facts["gates"] == []
     assert len(facts["unconfirmed"]) == 1 and words["unconfirmed"] in facts["unconfirmed"][0]
     assert [row["id"] for row in facts["planets"] if row["shown"]] == ["claude-dev"]
+    # The run, the controls read for it and -- since the desk mounts the acceptance block of a
+    # chosen run, which reads the acceptance facts of that run -- the acceptance read.
     detail = sorted(path for _method, path, _header in window.asked
                     if path.startswith("/command/runs/") and not path.endswith("/automation"))
-    assert detail == ["/command/runs/run-fix-new", "/command/runs/run-fix-new/controls"]
+    assert detail == ["/command/runs/run-fix-new", "/command/runs/run-fix-new/accept",
+                      "/command/runs/run-fix-new/controls"]
     assert {method for method, _path, _header in window.asked} == {"GET"}
     assert not any(header for _method, _path, header in window.asked)
     assert window.problems == []
@@ -588,6 +603,7 @@ def test_a_run_read_again_stays_on_screen_as_stale_until_the_new_answer_lands(
             held.append(route)
 
     page.route("**/command/runs/run-fix-new", second_read_held)
+    _end_the_stream(page)
     try:
         page.goto(f"{seeded_url}#lang=en", wait_until="load")
         page.wait_for_function(SETTLED)
@@ -664,6 +680,7 @@ def test_a_late_answer_for_a_task_left_behind_never_lands(chromium: Browser, see
     page.add_init_script(LANDING_HOOK)
     held: list[Route] = []
     page.route("**/command/runs/run-fix-new", lambda route: held.append(route))
+    _end_the_stream(page)
     try:
         page.goto(f"{seeded_url}#lang=en", wait_until="load")
         page.wait_for_function(SETTLED)
@@ -729,6 +746,7 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
         route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
 
     page.route("**/command/runs/run-fix-new", wrong_task)
+    _end_the_stream(page)
     try:
         page.goto(f"{seeded_url}#lang=en", wait_until="load")
         page.wait_for_function(SETTLED)

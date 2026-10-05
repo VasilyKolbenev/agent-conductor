@@ -133,6 +133,7 @@ BOOT_ASSETS = {
     # entry route fetches them too.
     "desk-wizard-copy.js": 200, "desk-copy.js": 200, "desk-status-copy.js": 200,
     "desk-flow-copy.js": 200, "desk-feed-copy.js": 200, "desk-summary-copy.js": 200,
+    "desk-pult-copy.js": 200,
     # Readings, bounded automation and typed checker findings.
     "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
     "studio-automation.js": 200, "studio-automation-flow.js": 200,

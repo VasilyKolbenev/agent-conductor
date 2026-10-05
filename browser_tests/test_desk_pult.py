@@ -6,7 +6,8 @@ Two kinds of measurement, both on the production server's desk page:
   (`tests/fixtures/desk/queue_read.json`, spec 4.4.6; lane L's route is not served yet), by the
   real `desk-pult.js` and `desk-queue-model.js` mounted into the page's own console, so what is
   read is the real CSS, the real width of the column and the real `innerText`, in Russian and
-  English, in a zone the test names;
+  English, in a zone the test names (the desk's projection stream is held at its request, so
+  that the live desk draws nothing over the mount);
 - the actor line and the view lines are measured on the booted desk itself: the name asked for
   once and kept in the page's memory and nowhere else, a refused name, a name typed and not yet
   saved that survives a redraw, a desk that went foreign drawing nothing, and a framed desk whose
@@ -21,7 +22,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, Route
 
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     Embedded, Rig, _answering, _claim, embed, rig)
@@ -64,10 +65,11 @@ RAIL_TASK = '#deskRail [data-task-id="task-fix"]'
 #: Everything a test asks of the console, in one evaluation. The rows of the queue block are read
 #: by `textContent`: the headings are drawn in capitals by the style, and what a screen reader
 #: says is the text of the node, not its capitals. `text` is the rendered `innerText`, and is
-#: what the raw-token check reads.
+#: what the raw-token check reads. `form` is the name form of the actor: with a run chosen the
+#: console holds the form of the decisions bound to that task as well.
 PULT = """() => {
   const pult = document.getElementById("deskPult");
-  const form = pult.querySelector("form");
+  const form = pult.querySelector("form.desk-pult__form");
   const actor = pult.querySelector(".desk-pult__actor");
   const block = pult.querySelector(".desk-queue");
   return {
@@ -122,7 +124,14 @@ def bench(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., dict]]: 
         page.on("console", lambda message: problems.append(message.text)
                 if message.type == "error" else None)
         page.on("pageerror", lambda error: problems.append(str(error)))
-        page.goto(f"{seeded_url}#lang={language}", wait_until="load")
+        # The desk asks for its projection stream when its reads are over, after drawing the
+        # console one last time; a stream that opens refreshes every read and draws the console
+        # again, over what the bench mounts. The request is held and never answered, so the
+        # request itself says the desk has finished drawing, and nothing is drawn after it.
+        held: list[Route] = []
+        page.route("**/events", lambda route: held.append(route))
+        with page.expect_request("**/events"):
+            page.goto(f"{seeded_url}#lang={language}", wait_until="load")
         page.wait_for_function(SETTLED)
         page.evaluate(BENCH, {"locale": language, "mode": mode, "actor": actor,
                               "editing": editing, "body": body, "tasks": TASKS, "runs": RUNS})
