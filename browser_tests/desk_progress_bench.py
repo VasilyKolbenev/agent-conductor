@@ -29,7 +29,7 @@ from tests.test_store import good_lane, write_project
 #: the desk has settled is `desk_settled.SETTLED`).
 ZONE = "UTC"
 SCENE_READY = """() => document.getElementById("deskScene")?.getAttribute("data-state") === "ready"
-  && document.getElementById("deskScene").childElementCount > 0"""
+  && document.getElementById("deskScene")?.childElementCount > 0"""
 #: The words the person's screen must never carry (spec 5.2).
 RAW_TOKENS = r"\b(?:verification_failed|policy|created|ready|empty)\b"
 

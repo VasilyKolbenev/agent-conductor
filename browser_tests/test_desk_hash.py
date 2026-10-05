@@ -73,7 +73,7 @@ FACTS = """() => {
     marker: window.__marker, hashchanges: window.__hashchanges, entries: history.length};
 }"""
 ON_RUN = """(id) => document.querySelector("#deskScene [data-deck-run]")?.dataset.deckRun === id
-  && document.getElementById("deskScene").getAttribute("data-state") === "ready" """
+  && document.getElementById("deskScene")?.getAttribute("data-state") === "ready" """
 AT_HASH = "(hash) => location.hash === hash"
 #: Two animation frames: whatever a `hashchange` handler does before its first real wait has been
 #: done, and any request it made has been asked. A frame boundary, never a clock.

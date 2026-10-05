@@ -250,7 +250,7 @@ def test_a_selection_the_hash_makes_at_load_is_announced_as_it_lands(embed, rig)
     window.frame.wait_for_function(ON_RUN, arg="run-docs")
     window.wait_for_messages(1)
     window.page.wait_for_function(
-        "() => window.__messages.at(-1).data.run_id === 'run-docs'")
+        "() => window.__messages.at(-1)?.data.run_id === 'run-docs'")
     messages = [message["data"] for message in window.settle()]
     assert messages[-1] == _where("task-docs", "run-docs")
     assert all(message in (NOWHERE, _where("task-docs", None), _where("task-docs", "run-docs"))
@@ -271,7 +271,7 @@ def test_a_location_replace_from_the_hub_selects_without_a_reload_and_is_announc
         f"{rig.desk_url}#project={PROJECT}&embed=hub&task=task-docs&lang={language}")
     window.frame.wait_for_function(ON_RUN, arg="run-docs")
     window.page.wait_for_function(
-        "() => window.__messages.at(-1).data.run_id === 'run-docs'")
+        "() => window.__messages.at(-1)?.data.run_id === 'run-docs'")
     messages = [message["data"] for message in window.settle()]
     assert messages == [NOWHERE, _where("task-docs", None), _where("task-docs", "run-docs")]
     assert window.frame.evaluate("() => [window.__marker, window.__hashchanges]") == [marker, 1]
@@ -415,7 +415,7 @@ def test_a_desk_that_has_gone_foreign_says_nothing_more_to_its_hub(embed, rig):
                    _answering(_claim(hub_origin=rig.host_origin)))
     window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
     window.page.wait_for_function(
-        "() => window.__messages.at(-1).data.run_id === 'run-fix-new'")
+        "() => window.__messages.at(-1)?.data.run_id === 'run-fix-new'")
     sent = len(window.settle())
     window.page.evaluate(
         "(url) => document.getElementById('desk').contentWindow.location.replace(url)",

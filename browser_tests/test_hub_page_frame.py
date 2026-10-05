@@ -177,7 +177,7 @@ def test_the_desks_location_message_sets_the_path_the_highlight_and_the_address_
     reads = (one.reads("/hub/projects"), one.reads("/hub/limits"), one.reads("/hub/setup"))
     frame.locator('#deskRail [data-task-id="task-check"]').click()
     wait_hub(one, "the path to name the task and its run", """() => document.getElementById(
-      "hubPath").textContent === "a › Check the export › run-check" """)
+      "hubPath")?.textContent === "a › Check the export › run-check" """)
     facts = one.page.evaluate(FRAME_FACTS)
     assert fields(facts["hash"]) == {"project": A, "task": "task-check", "run": "run-check",
                                      "lang": lang}
@@ -195,7 +195,7 @@ def test_a_message_from_anywhere_but_the_frame_in_the_one_shape_changes_nothing(
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's own location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("""() => {
       window.__addresses = [];
       const original = history.replaceState.bind(history);
@@ -213,7 +213,7 @@ def test_a_message_from_anywhere_but_the_frame_in_the_one_shape_changes_nothing(
       task_id: "task-check", run_id: null}, "*")""", [A])
     frame.evaluate(SAY, good)
     wait_hub(one, "the one good message", """() => document.getElementById(
-      "hubPath").textContent === "a › Check the export" """)
+      "hubPath")?.textContent === "a › Check the export" """)
     addresses = one.page.evaluate("window.__addresses")
     assert len(addresses) == 1 and "task=task-check" in addresses[0], (
         "six forged messages, from the frame and from the page itself, wrote nothing; one good one did")
@@ -246,7 +246,7 @@ def test_a_changed_instance_replaces_the_frame_with_a_new_element_and_a_stopped_
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("document.querySelector('#hubDesk iframe').__mine = 'first element'")
     one.live.world.gone("a")
     one.live.tick()
@@ -424,7 +424,7 @@ def test_a_message_from_another_window_at_the_desks_own_origin_is_not_the_frames
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's own location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("""(src) => {
       window.__addresses = [];
       const original = history.replaceState.bind(history);
@@ -440,7 +440,7 @@ def test_a_message_from_another_window_at_the_desks_own_origin_is_not_the_frames
     other.evaluate(SAY, ["desk-location", A, "task-check", None, {}])
     frame.evaluate(SAY, ["desk-location", A, "task-idle", None, {}])
     wait_hub(one, "the frame's own message", """() => document.getElementById(
-      "hubPath").textContent === "a › Tidy up" """)
+      "hubPath")?.textContent === "a › Tidy up" """)
     addresses = one.page.evaluate("window.__addresses")
     assert len(addresses) == 1 and "task=task-idle" in addresses[0], (
         "the same origin and the exact shape are not enough: the window must be the frame's own")
