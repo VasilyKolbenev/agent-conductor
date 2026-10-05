@@ -712,6 +712,7 @@ def test_a_run_read_that_is_not_answered_leaves_the_scene_empty_in_the_word_it_e
     uncaught: list[str] = []
     page.on("pageerror", lambda error: uncaught.append(str(error)))
     _answer(page, "**/command/runs/run-fix-new", how)
+    _end_the_stream(page)
     try:
         page.goto(f"{seeded_url}#lang=en", wait_until="load")
         page.wait_for_function(SETTLED)
