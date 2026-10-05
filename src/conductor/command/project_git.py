@@ -81,14 +81,16 @@ class RepositoryAdmission:
 
 def process_git_read(runner: ProcessRunner, git_path: str, cwd: str, *,
                      env_allow: Sequence[str] = (),
-                     env: Mapping[str, str] | None = None, index_root: Path | None = None) -> GitRead:
+                     env: Mapping[str, str] | None = None,
+                     index_root: Path | None = None) -> GitRead:
     """A reader that runs the pinned `git_path` through `runner`, in `cwd`.
 
     The runner refuses a `cwd` that is not strictly beneath its own root, so the caller chooses a
     folder of its own for it; the repository is named by `-C` in each call, not by `cwd`.
     """
     def read(args: Sequence[str], separate_stderr: bool = False, *, stdin: bytes | None = None,
-             output_limit: int | None = None, timeout: float | None = None, index_file=None) -> GitAnswer:
+             output_limit: int | None = None, timeout: float | None = None,
+             index_file=None) -> GitAnswer:
         environment = dict(env or {})
         if index_file is not None:
             from .git_index import OwnedIndex
