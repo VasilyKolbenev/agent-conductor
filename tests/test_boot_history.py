@@ -17,8 +17,10 @@ SESSION = "a" * 32
 OTHER_SESSION = "b" * 32
 NONCE = "c" * 32
 
-# What a reader of the schema-1 world knows: frozen here so that "an old reader refuses" is a fact
-# of this file, not of whatever the validator becomes.
+# What a reader of the schema-1 world knows, frozen here so that the checks below do not move with
+# whatever the validator becomes. These three values are the ones of the base commit's reader
+# (`_FIELDS`, `_NEXT["opened"]` and the boot regex of `_validate_session` in ownership_records.py
+# at 77e84bf8). This file pins them as copies; it does not run that reader.
 OLD_FIELDS = frozenset({"schema", "generation", "previous_digest", "phase", "nonce",
     "root_identity", "data_identity", "fence_identity", "fence_digest", "data_digest",
     "session_id", "boot_id", "recovered_session"})
@@ -192,9 +194,10 @@ def test_per_boot_id_records_stay_schema_one_and_keep_the_old_field_set(tmp_path
         recover(tmp_path, opened(tmp_path, done, LINUX_B, OTHER_SESSION), LINUX_B)
 
 
-def test_every_record_this_version_writes_for_the_new_scheme_is_unreadable_to_the_old_reader(
+def test_every_record_this_version_writes_for_the_new_scheme_fails_the_frozen_old_vocabulary(
         tmp_path):
-    """The frozen old vocabulary: shape, phase and boot text each refuse it, independently."""
+    """Against the frozen copy: the shape differs for all three records, the phase for the
+    preparation, the boot text for the other two."""
     prepared = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
     done = recover(tmp_path, prepared, counter(43))
     fresh_root = tmp_path / "fresh"
