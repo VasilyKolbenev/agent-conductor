@@ -9,9 +9,10 @@ import sys
 
 import pytest
 
-from conductor import ownership, ownership_native, ownership_records, ownership_transition
+from conductor import ownership, ownership_records, ownership_transition
 from conductor.command.adapters.harness_workspace import HarnessWorkspace
 from conductor.command.adapters.process import CommandSpec, OwnershipError, ProcessRunner
+from tests._boot_world import later_boot, measure
 from tests._fakeproc import fake_argv, HEARTBEAT_FILE, wait_for_int
 from tests.test_project_ownership import activated
 from tests.test_command_task_store import durable_bytes
@@ -199,9 +200,9 @@ os._exit(0)
     assert result.returncode == 0, result.stderr
     before = durable_bytes(tmp_path / "conductor.v3")
     boot = ownership_records.chain(tmp_path)["boot_id"]
-    other = boot.split(":")[0] + ":11111111-2222-4333-8444-555555555555"
+    other = later_boot(boot)
     assert other != boot
-    monkeypatch.setattr(ownership_native, "boot_identity", lambda: other)
+    measure(monkeypatch, other)
     recovered = ownership_transition.recover(tmp_path)
     assert recovered["phase"] == "recovered"
     assert recovered["session_id"] == recovered["recovered_session"]

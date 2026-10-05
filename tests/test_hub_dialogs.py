@@ -146,3 +146,22 @@ def test_cancel_keeps_the_single_slot_until_the_helper_really_exits(tmp_path):
             break
         time.sleep(.01)
     assert manager._open is None
+
+
+def test_a_picked_project_whose_restart_was_only_prepared_is_reported_as_activated(
+        tmp_path, monkeypatch):
+    from tests._boot_world import counter, measure
+    from tests.test_project_recovery_prepare import abandoned_legacy
+    from conductor import ownership_transition
+    home, project = tmp_path / "home", tmp_path / "prepared"
+    home.mkdir()
+    project.mkdir()
+    abandoned_legacy(project)
+    measure(monkeypatch, counter(42))
+    ownership_transition.prepare_recovery(project)
+    monkeypatch.setattr(dialogs._procgroup, "popen_kwargs", lambda: {"start_new_session": True})
+    monkeypatch.setattr(dialogs._procgroup, "make_group", lambda _proc: Group())
+    manager = dialogs.Dialogs(home, events.EventBus(), popen=lambda argv, **kwargs: Chosen(project),
+                              backend="linux", available=lambda: True)
+    row = settled(manager, manager.begin("project"))
+    assert row["state"] == "picked" and row["project"] == "activated"

@@ -14,6 +14,7 @@ import pytest
 from conductor import ownership, ownership_login
 from conductor.command.adapters.harness_workspace import WORK_DIR
 from conductor.command.adapters.process import CommandSpec, OwnershipError, ProcessRunner
+from tests._boot_world import later_boot, measure
 from tests.test_command_task_store import durable_bytes
 from tests.test_harness_subscription_login import a_harness
 from tests.test_project_ownership import activated
@@ -187,9 +188,9 @@ def test_explicit_controlled_new_boot_recovery_does_not_run_or_read_credentials(
     """A protocol test with a supplied boot fact, not an actual OS reboot."""
     home, box = abandoned(tmp_path)
     record = json.loads((box / "active.json").read_bytes())
-    other = record["boot"].split(":")[0] + ":00000000-1111-4222-8333-444444444444"
+    other = later_boot(record["boot"])
     assert other != record["boot"]
-    monkeypatch.setattr(ownership_login, "boot_identity", lambda: other)
+    measure(monkeypatch, other)
     assert ownership_login.recover_login(str(home))["state"] == "recovered"
     assert not (box / "active.json").exists()
     assert len(list(box.glob("recovered-*.json"))) == 1
@@ -208,7 +209,7 @@ def test_recovery_never_adopts_a_copied_active_record(tmp_path, monkeypatch):
     (box / "active.json").rename(box / "foreign-original.json")
     (box / "active.json").write_bytes(standing)
     before = durable_bytes(box)
-    monkeypatch.setattr(ownership_login, "boot_identity", lambda: "windows:00000000-1111-4222-8333-444444444444")
+    measure(monkeypatch, later_boot(json.loads(standing)["boot"]))
     with pytest.raises(ownership.OwnerRefused, match="login_ownership_invalid"):
         ownership_login.recover_login(str(home))
     assert durable_bytes(box) == before

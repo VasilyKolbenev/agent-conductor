@@ -163,7 +163,7 @@ class Dialogs:
                         root, _registry = projects_add._admit(path, None, self._home)
                         _root, head = ownership_records.state(root)
                         project = "activated" if head and head["phase"] in {
-                            "active", "opened", "closed", "recovered"} else (
+                            "active", "opened", "closed", "recovered", "recovery_prepared"} else (
                             "legacy" if os.path.lexists(root / "conductor") else "none")
                 except refusals.HubRefusal as error:
                     self._finish(ident, "refused", code=error.code)

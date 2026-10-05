@@ -101,7 +101,7 @@ def acquire_owner(project_root):
 
 class ProjectOwner:
     def __init__(self, root, expected):
-        from .ownership_native import boot_identity
+        from . import ownership_boot
         self.root, self.pid = root, os.getpid()
         self._lock = threading.RLock()
         self._holds, self._loans, self._borrowers = [], 0, 0
@@ -114,6 +114,9 @@ class ProjectOwner:
                 raise OwnerRefused("transition_conflict", "ownership state changed during acquisition")
             if head["phase"] == "opened":
                 raise OwnerRefused("recovery_required", "previous owner did not close; recover explicitly after OS restart")
+            if head["phase"] == "recovery_prepared":
+                raise OwnerRefused("recovery_required", "ownership is not released: a restart was "
+                                   "prepared; restart the OS, then recover")
             if head["phase"] not in {"active", "closed", "recovered"}:
                 raise OwnerRefused("recovery_required", "ownership transition is incomplete")
             for path in (root, root / HOME, root / HOME / RECORDS, root / ACTIVE):
@@ -124,7 +127,7 @@ class ProjectOwner:
             self._tree = self._pin(root / HOME / TREE, tree=True)
             validate_live(root, head)
             self._head = publish(root, head, phase="opened", session_id=secrets.token_hex(16),
-                boot_id=boot_identity(), recovered_session=None)
+                boot_id=ownership_boot.measured("owner session"), recovered_session=None)
             self._pin(root / HOME / RECORDS / f"gen-{self._head['generation']:08d}.json")
             self._install_scope()
         except BaseException:

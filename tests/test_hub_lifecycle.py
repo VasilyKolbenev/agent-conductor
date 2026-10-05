@@ -168,3 +168,10 @@ def test_the_working_state_is_active_then_view_then_queued_then_stopped():
     assert lifecycle.working_of(ID, active=other, queue=(ID,), viewing=()) == "queued"
     assert lifecycle.working_of(ID, active=other, queue=(), viewing=()) == "stopped"
     assert lifecycle.working_of(ID, active=None, queue=(), viewing=()) == "stopped"
+
+
+@pytest.mark.parametrize("state", ["serving", "stopping", "stop_overdue"])
+def test_a_dead_child_whose_head_holds_only_a_prepared_restart_still_reads_recovery_required(
+        state):
+    found = lifecycle.derive(record(state), "dead", head_phase="recovery_prepared")
+    assert found.state == "recovery_required"

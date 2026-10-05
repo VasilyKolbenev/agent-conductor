@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import secrets
 
+from . import boot_witness, ownership_boot
+from .boot_witness import BootRefused
 from .ownership_records import (ACTIVE, ANCHOR, HOME, LEGACY, RECORDS, TREE,
     OwnerRefused, canonical, chain, digest, exclusive, fence_bytes, identity,
     plain, publish, state, validate_live)
@@ -217,28 +219,109 @@ def _resume_rollback(root, head, stack):
     return publish(root, head, phase="rolled_back")
 
 
-def recover(project_root):
-    """Close an abandoned owner only across a verified different OS boot."""
-    from .ownership_native import boot_identity
+_ABANDONED = frozenset({"opened", "recovery_prepared"})
+
+
+def _recovery_holds(stack, root):
+    """The native holds every recovery step takes before it reads or writes anything."""
+    _hold(stack, root / HOME / ANCHOR, exclusive=True)
+    _hold(stack, root / HOME / TREE, tree=True)
+    for path in (root, root / HOME, root / HOME / RECORDS, root / ACTIVE):
+        _hold(stack, path, directory=True)
+    _hold(stack, root / LEGACY)
+    for path in sorted((root / HOME / RECORDS).iterdir()):
+        _hold(stack, path)
+
+
+def _reread(root, head):
+    if chain(root) != head:
+        raise OwnerRefused("transition_conflict", "owner history changed during recovery")
+    validate_live(root, head)
+
+
+def _abandoned(project_root, verb):
     root, head = state(project_root)
-    if head is None or head["phase"] != "opened":
-        raise OwnerRefused("recovery_refused", "there is no abandoned owner session to recover")
+    if head is None or head["phase"] not in _ABANDONED:
+        raise OwnerRefused("recovery_refused", f"there is no abandoned owner session to {verb}")
+    return root, head
+
+
+def _measure(consequence):
+    try:
+        return ownership_boot.current_boot()
+    except BootRefused as error:
+        raise OwnerRefused("recovery_required", (
+            f"the OS boot cannot be measured, so {consequence}: {error}")) from error
+
+
+def _prove(head, current):
+    """Refuse unless `current` proves a restart after the record the recovery stands on."""
+    prepared = head["phase"] == "recovery_prepared"
+    recorded = head["prepared_boot"] if prepared else head["boot_id"]
+    try:
+        boot_witness.prove_restart(recorded, current)
+    except BootRefused as error:
+        raise _not_proven(error, boot_witness.is_legacy(recorded)) from error
+
+
+def _not_proven(error, record_is_legacy):
+    if error.code == "same_boot":
+        return OwnerRefused("recovery_required", (
+            "restart the OS before recovering an uncertain writer session "
+            "(do a full Restart, not a shutdown)"))
+    if record_is_legacy:
+        return OwnerRefused("recovery_required", (
+            "the abandoned record predates the boot counter and cannot prove a restart; run "
+            "`ownership recover --prepare-restart`, restart the OS (a full Restart, not a "
+            "shutdown), then run `ownership recover` again"))
+    return OwnerRefused("recovery_required", f"no restart is proven: {error.detail}")
+
+
+def recover(project_root):
+    """Close an abandoned owner only across a verified different OS boot.
+
+    A record from before the boot counter needs `prepare_recovery` first; its recovery stands on
+    the measurement the preparation took, not on the old record.
+    """
+    root, head = _abandoned(project_root, "recover")
     try:
         with ExitStack() as stack:
-            _hold(stack, root / HOME / ANCHOR, exclusive=True)
-            _hold(stack, root / HOME / TREE, tree=True)
-            for path in (root, root / HOME, root / HOME / RECORDS, root / ACTIVE):
-                _hold(stack, path, directory=True)
-            _hold(stack, root / LEGACY)
-            for path in sorted((root / HOME / RECORDS).iterdir()):
-                _hold(stack, path)
-            current = boot_identity()
-            if current == head["boot_id"]:
-                raise OwnerRefused("recovery_required", "restart the OS before recovering an uncertain writer session")
-            if chain(root) != head:
-                raise OwnerRefused("transition_conflict", "owner history changed during recovery")
-            validate_live(root, head)
+            _recovery_holds(stack, root)
+            current = _measure("no restart can be proven")
+            _prove(head, current)
+            _reread(root, head)
             return publish(root, head, phase="recovered", boot_id=current,
                            recovered_session=head["session_id"])
+    except OSError as error:
+        raise OwnerRefused("recovery_refused", "native recovery hold is unavailable") from error
+
+
+def prepare_recovery(project_root):
+    """Record, without releasing anything, the boot a later recovery must be newer than.
+
+    Takes the holds `recover` takes, re-reads the history, checks the live layout, then appends
+    one `recovery_prepared` generation holding the current counter witness. The phase is not an
+    owner: nothing opens, starts or is allowed by it. A second call returns the first record and
+    writes nothing, so the measurement cannot be refreshed by repeating it.
+
+    Returns:
+        `(record, created)`: the head, and whether this call wrote it.
+    """
+    root, head = _abandoned(project_root, "prepare")
+    try:
+        with ExitStack() as stack:
+            _recovery_holds(stack, root)
+            _reread(root, head)
+            if head["phase"] == "recovery_prepared":
+                return head, False
+            if not boot_witness.is_legacy(head["boot_id"]):
+                raise OwnerRefused("recovery_refused", (
+                    "this record already holds a comparable boot, so no preparation is needed: "
+                    "restart the OS, then run `ownership recover`"))
+            current = _measure("no restart can be prepared")
+            if not boot_witness.is_counter(current):
+                raise OwnerRefused("recovery_required", (
+                    "this OS gives no boot counter to prepare a restart with"))
+            return publish(root, head, phase="recovery_prepared", prepared_boot=current), True
     except OSError as error:
         raise OwnerRefused("recovery_refused", "native recovery hold is unavailable") from error
