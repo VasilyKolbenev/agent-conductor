@@ -248,3 +248,12 @@ def test_refusal_reasons_are_closed_and_translated():
         assert f'"git_setup.reason.{key}": [' in copy
     with pytest.raises(ValueError):
         ApiRefusal.git_setup_refused("raw Git stderr")
+
+
+def test_signing_required_is_a_closed_and_translated_setup_reason():
+    copy = (Path(__file__).parents[1] / "src/conductor/panel/studio-notice-copy.js").read_text(
+        encoding="utf-8")
+    assert "signing_required" in GIT_SETUP_REASONS
+    assert ApiRefusal.git_setup_refused("signing_required").as_dict()["error"]["detail"] == {
+        "reason": "signing_required"}
+    assert '"git_setup.reason.signing_required": [' in copy
