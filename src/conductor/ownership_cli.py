@@ -49,17 +49,30 @@ def _prepare(args):
     return result
 
 
+_RECOVERIES = frozenset({"recover", "recover-login", "recover-clones", "recover-containers"})
+
+
+def _journals(args):
+    """The two journal recoveries; each prints its own result and returns its exit code."""
+    from . import ownership_journals_cli as journals
+    if args.operation == "recover-clones":
+        return journals.recover_clones(args.prepare_restart)
+    return journals.recover_containers(args.dir, args.prepare_restart)
+
+
 def ownership_command(args):
     from .ownership_records import OwnerRefused, state
     from .ownership_transition import activate, recover, rollback
     try:
         if args.operation != "recover-login" and args.auth_home is not None:
             raise OwnerRefused("login_context_required", "--auth-home is only for recover-login")
-        if args.prepare_restart and args.operation not in {"recover", "recover-login"}:
-            raise OwnerRefused("recovery_refused",
-                               "--prepare-restart is only for recover and recover-login")
+        if args.prepare_restart and args.operation not in _RECOVERIES:
+            raise OwnerRefused("recovery_refused", "--prepare-restart is only for recover, "
+                               "recover-login, recover-clones and recover-containers")
         if args.operation == "recover-login" and args.auth_home is None:
             raise OwnerRefused("login_context_required", "recover-login requires --auth-home")
+        if args.operation in {"recover-clones", "recover-containers"}:
+            return _journals(args)
         if args.prepare_restart:
             result = _prepare(args)
         elif args.operation == "recover-login":

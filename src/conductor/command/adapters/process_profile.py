@@ -179,11 +179,12 @@ class ProfileJournal:
 
     def recover(self) -> None:
         self._directory()
-        from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_TEMP
+        from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_PREP, _ACL_TEMP
         if self.native is not None:
             AttemptAclJournal(self, self.native).recover()
         for path in sorted(self.directory.iterdir()):
             if self.native is not None and (_ACL_NAME.fullmatch(path.name)
+                                            or _ACL_PREP.fullmatch(path.name)
                                             or _ACL_TEMP.fullmatch(path.name)):
                 continue
             if _TEMP.fullmatch(path.name):
@@ -193,6 +194,17 @@ class ProfileJournal:
             if not _NAME.fullmatch(path.name):
                 raise ProfileRefused("profile_record_invalid", "unexpected profile journal entry")
             self.retire(path)
+
+    def prepare_restarts(self) -> list[dict]:
+        """The explicit action for attempt loans from before the boot counter: prepare each one.
+
+        Writes one restart preparation per record that needs one and cleans nothing; a recovery
+        never does this by itself. Returns one row per record that is not retired.
+        """
+        from .process_acl import AttemptAclJournal
+        if self.native is None:
+            return []
+        return AttemptAclJournal(self, self.native).prepare_restarts()
 
     @contextmanager
     def container(self, *, internet_client: bool = False, mode=None, active_tokens=None):

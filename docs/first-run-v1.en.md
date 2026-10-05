@@ -261,5 +261,19 @@ earlier ones); then do a full Restart and repeat step 3. If it refuses for anoth
 output for a bug report and do not delete service records. A record that needs no preparation says so;
 for it the plain command is enough.
 
+Two more kinds of record follow the same road with the same flag. They are the unfinished clone
+attempts of the hub and the container attempt loans of an activated project (Windows only). Stop the
+hub first for the clone attempts: a running hub holds them, and the command refuses. For the container
+loans recover the project first, as above:
+
+```text
+conduct ownership recover-clones --prepare-restart
+conduct ownership recover-containers --prepare-restart --dir "<absolute path to project>"
+```
+
+Do a full Restart, then run the same commands without the flag. Nothing is removed until a restart is
+proven for the record: a plain run only lists what is unfinished and names the action for each. A
+preparation prints that nothing was cleaned up.
+
 Still stuck? Include the command, expected and actual behavior, OS, and candidate identity in a bug report.
 Remove keys and private project content. [Contributor guide](../CONTRIBUTING.md) · [How the pieces fit](architecture.md).
