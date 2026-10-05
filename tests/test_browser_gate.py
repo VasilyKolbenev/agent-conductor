@@ -154,6 +154,71 @@ def test_a_module_process_that_did_not_end_through_pytest_ends_the_order(
     assert not gate.completed_report(tmp_path / "artifacts" / "gate.json")
 
 
+@pytest.mark.parametrize("code", [0, 1])
+def test_a_module_that_left_pytest_with_an_ordinary_code_still_ends_the_order(
+        tmp_path: Path, code: int) -> None:
+    """os._exit(0) and os._exit(1) wear pytest's own codes yet skip its teardown
+    and the rest of the module: only pytest's own end mark lets the order go on."""
+    leaving = f"import os\n\ndef test_leaves():\n    os._exit({code})\n\ndef test_never_run():\n" \
+              "    assert False\n"
+    exit_code, report = _run_gate(
+        tmp_path, "--keep-going",
+        modules={"test_a_ok.py": _PASSING, "test_b_leaves.py": leaving,
+                 "test_c_ok.py": _PASSING})
+    assert exit_code == 1 and report["result"] == "red"
+    record = report["records"][-1]
+    assert record["exit_code"] == code and record["pytest_end"] == "no-mark"
+    assert report["stopped"] == {"reason": "abnormal-exit", "module": "test_b_leaves.py"}
+    assert report["remaining"] == ["test_c_ok.py"]
+    assert not gate.completed_report(tmp_path / "artifacts" / "gate.json")
+
+
+_INTERRUPTING = "def test_stops():\n    raise KeyboardInterrupt\n"
+_INTERNAL_ERROR_CONFTEST = ("def pytest_collection_finish(session):\n"
+                            "    raise RuntimeError('broken hook')\n")
+
+
+@pytest.mark.parametrize("case", ["interrupted", "internal-error"])
+def test_a_pytest_that_did_not_run_its_tests_to_an_end_ends_the_order(
+        tmp_path: Path, case: str) -> None:
+    """Pytest ended itself, with its mark, but not after running the tests: an
+    interrupt (2) or an internal error (3) is no ordinary result to go past."""
+    modules = {"test_a_ok.py": _PASSING, "test_b_case.py": _PASSING, "test_c_ok.py": _PASSING}
+    conftest = None
+    if case == "interrupted":
+        modules["test_b_case.py"] = _INTERRUPTING
+    else:
+        conftest = _INTERNAL_ERROR_CONFTEST
+        modules = {"test_b_case.py": _PASSING, "test_c_ok.py": _PASSING}
+    _, report = _run_gate(tmp_path, "--keep-going", modules=modules, conftest=conftest)
+    record = report["records"][-1]
+    assert record["module"] == "test_b_case.py" and record["pytest_end"] == "ordinary"
+    assert record["exit_code"] == (2 if case == "interrupted" else 3)
+    assert report["result"] == "red" and report["remaining"] == ["test_c_ok.py"]
+    assert report["stopped"] == {"reason": case, "module": "test_b_case.py"}
+    assert not gate.completed_report(tmp_path / "artifacts" / "gate.json")
+
+
+def test_only_a_fresh_mark_of_this_run_says_pytest_ended(tmp_path: Path) -> None:
+    mark = tmp_path / "mark.json"
+    assert gate.pytest_end(mark, "n1", 0) == "no-mark"
+    mark.write_text('{"nonce": "n1", "exitst', encoding="utf-8")
+    assert gate.pytest_end(mark, "n1", 0) == "torn-mark"
+    mark.write_text(json.dumps({"nonce": "n0", "exitstatus": 0}), encoding="utf-8")
+    assert gate.pytest_end(mark, "n1", 0) == "foreign-mark"
+    mark.write_text(json.dumps({"nonce": "n1", "exitstatus": 1}), encoding="utf-8")
+    assert gate.pytest_end(mark, "n1", 0) == "status-mismatch"
+    mark.write_text(json.dumps({"nonce": "n1", "exitstatus": 0}), encoding="utf-8")
+    assert gate.pytest_end(mark, "n1", 0) == "ordinary"
+
+
+def test_an_assertion_failure_keeps_its_mark_and_lets_the_order_go_on(
+        tmp_path: Path) -> None:
+    _, report = _run_gate(tmp_path, "--keep-going")
+    assert [row["pytest_end"] for row in report["records"]] == ["ordinary"] * 3
+    assert [row["module"] for row in report["records"]] == report["planned"]
+
+
 def test_a_report_left_by_an_earlier_run_is_gone_before_this_run_can_fail(
         tmp_path: Path, monkeypatch) -> None:
     """A probe that fails must not leave an old complete report to be read as
@@ -182,8 +247,9 @@ def _gate_with(tmp_path: Path, monkeypatch, run_module) -> Path:
 
 
 def _green(module: Path) -> dict[str, object]:
-    return {"module": module.name, "exit_code": 0, "duration_seconds": 0.0,
-            "failed_nodes": [], "tail": [], **{name: 0 for name in gate.WAIVER_OUTCOMES}}
+    return {"module": module.name, "exit_code": 0, "pytest_end": "ordinary",
+            "duration_seconds": 0.0, "failed_nodes": [], "tail": [],
+            **{name: 0 for name in gate.WAIVER_OUTCOMES}}
 
 
 def test_the_report_on_disk_is_never_green_while_a_module_is_running(

@@ -36,9 +36,15 @@ This runner is the replacement discipline:
 - a module that hangs is killed at a stated timeout and recorded as
   timed-out. Killing the pytest process does not prove its own children (a
   browser) are gone, so a timeout ends the order in every mode, keep-going
-  included, and the report says the run is incomplete. So does a module
-  process that ended with a code pytest never returns (a crash, a kill,
-  ``os._exit``): it skipped the session teardown that closes the browser;
+  included, and the report says the run is incomplete. A return code alone
+  never says how a module process ended (``os._exit(0)`` returns 0 without
+  running the rest of the module or the teardown that closes the browser), so
+  each run also needs a fresh mark from pytest's own last hook
+  (``gate_finish.py``, keyed by a nonce of that run). The order goes on only
+  after an ordinary result: the mark is there and pytest ended with 0 or 1.
+  An interrupt, an internal or usage error, no tests, no mark, a torn or
+  foreign mark all end it. The mark says pytest ended itself, not that every
+  process the module started is gone;
 - the gate report keeps the run's progress apart from its verdict: the
   planned modules, those done, those remaining, whether the order completed,
   the failures so far and why it stopped. It is written before the first
@@ -64,6 +70,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -83,10 +90,13 @@ _FAILED_NODE = re.compile(r"^(?:FAILED|ERROR) (.+?)(?:\s+-\s.*)?$", re.MULTILINE
 WAIVER_OUTCOMES = ("skipped", "xfailed", "xpassed", "deselected")
 _WAIVERS = {name: re.compile(rf"(\d+) {name}") for name in WAIVER_OUTCOMES}
 MODULE_TIMEOUT_SECONDS = 600
-#: The codes a pytest process returns when it ends through pytest itself, read
-#: from the pytest the modules run on (the gate launches them with this
-#: interpreter). Any other code is a process that never reached its teardown.
-PYTEST_EXIT_CODES = frozenset(int(code) for code in pytest.ExitCode)
+#: The results the order may go past: pytest ran the module's tests and they
+#: passed or failed. Read from the pytest the modules run on (same interpreter).
+ORDINARY_CODES = frozenset({int(pytest.ExitCode.OK), int(pytest.ExitCode.TESTS_FAILED)})
+#: Where this gate (and its end-mark plugin) lives, whatever directory the
+#: modules come from.
+GATE_ROOT = Path(__file__).resolve().parents[1]
+FINISH_PLUGIN = "browser_tests.gate_finish"
 
 
 def discover_modules(modules_dir: Path, reverse: bool) -> list[Path]:
@@ -143,12 +153,16 @@ def probe_versions(artifacts: Path) -> dict[str, str]:
     return versions
 
 
-def _child_environment(artifacts: Path, repo: Path,
-                       module: Path) -> dict[str, str]:
+def _child_environment(artifacts: Path, repo: Path, module: Path,
+                       mark: Path | None = None, nonce: str | None = None) -> dict[str, str]:
     """The child's world: evidence armed, ambient pytest channels stripped."""
     environment = dict(os.environ)
     environment["CONDUCT_GATE_ARTIFACTS"] = str(artifacts)
-    environment["PYTHONPATH"] = str(repo / "src")
+    # The product, and the gate's own end-mark plugin, which -p loads by name.
+    environment["PYTHONPATH"] = os.pathsep.join([str(repo / "src"), str(GATE_ROOT)])
+    if mark is not None and nonce is not None:
+        environment["CONDUCT_GATE_FINISH"] = str(mark)
+        environment["CONDUCT_GATE_NONCE"] = nonce
     environment["PYTHONIOENCODING"] = "utf-8"
     # The engine this child launches keeps its own log; the gate says where.
     environment["CHROME_LOG_FILE"] = str(chromium_log(artifacts, module.stem))
@@ -181,6 +195,15 @@ def _own_basetemp(artifacts: Path, module: Path) -> Path:
     return basetemp
 
 
+def _fresh_mark(artifacts: Path, module: Path) -> tuple[Path, str]:
+    """Where this run's end mark goes, emptied, and the nonce only this run knows:
+    an earlier run's mark can never answer for it."""
+    mark = artifacts / "finish" / f"{module.stem}.json"
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.unlink(missing_ok=True)
+    return mark, secrets.token_hex(16)
+
+
 def run_module(module: Path, artifacts: Path, repo: Path,
                timeout: float) -> dict[str, object]:
     """Run one module once, in a fresh pytest/Chromium process."""
@@ -190,14 +213,16 @@ def run_module(module: Path, artifacts: Path, repo: Path,
     # inside this module's artifacts too, outside pytest's replaceable basetemp.
     working = artifacts / "working" / module.stem
     working.mkdir(parents=True, exist_ok=True)
+    mark, nonce = _fresh_mark(artifacts, module)
     started = time.monotonic()
     try:
         completed = subprocess.run(
             [sys.executable, "-m", "pytest", str(module), "-q", "--tb=long",
-             "-rEf", "-p", "no:cacheprovider", "-o", "addopts=",
+             "-rEf", "-p", "no:cacheprovider", "-p", FINISH_PLUGIN, "-o", "addopts=",
              "--basetemp", str(basetemp)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(working), env=_child_environment(artifacts, repo, module),
+            cwd=str(working),
+            env=_child_environment(artifacts, repo, module, mark, nonce),
             timeout=timeout, check=False)
         exit_code: object = completed.returncode
         stdout, stderr = completed.stdout, completed.stderr
@@ -213,6 +238,7 @@ def run_module(module: Path, artifacts: Path, repo: Path,
     record = {
         "module": module.name,
         "exit_code": exit_code,
+        "pytest_end": pytest_end(mark, nonce, exit_code),
         "duration_seconds": duration,
         "basetemp": str(basetemp),
         "cwd": str(working),
@@ -229,9 +255,26 @@ def run_module(module: Path, artifacts: Path, repo: Path,
     return record
 
 
+def pytest_end(mark: Path, nonce: str, exit_code: object) -> str:
+    """How this run's pytest ended, from its own end mark: "ordinary" only for
+    a whole mark of this nonce whose status is the code the process returned."""
+    try:
+        found = json.loads(mark.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "no-mark"
+    except (OSError, ValueError):
+        return "torn-mark"
+    if not isinstance(found, dict) or found.get("nonce") != nonce:
+        return "foreign-mark"
+    if found.get("exitstatus") != exit_code:
+        return "status-mismatch"
+    return "ordinary"
+
+
 def is_red(record: dict[str, object]) -> bool:
-    """A module is red on any non-zero exit and on any waived outcome."""
-    return record["exit_code"] != 0 or any(
+    """A module is red on any non-zero exit, on any waived outcome, and when its
+    pytest did not end through pytest."""
+    return record["exit_code"] != 0 or record["pytest_end"] != "ordinary" or any(
         record[name] for name in WAIVER_OUTCOMES)
 
 
@@ -262,14 +305,20 @@ def stop_reason(record: dict[str, object], keep_going: bool) -> str | None:
 
     A timed-out module ends it in every mode: the kill reached the pytest
     process, which proves nothing about the browser it started, so no later
-    module could be read as a run of its own. So does an exit code pytest
-    never returns: that process did not reach its session teardown. Any other
-    red module ends it only without keep-going.
+    module could be read as a run of its own. So does a run without pytest's
+    own end mark (it skipped the teardown), and so does any end that is not an
+    ordinary result -- an interrupt, an internal or usage error, no tests.
+    Only an ordinary red module goes past, and only with keep-going.
     """
-    if record["exit_code"] == "timed-out":
+    code = record["exit_code"]
+    if code == "timed-out":
         return "timed-out"
-    if record["exit_code"] not in PYTEST_EXIT_CODES:
+    if record["pytest_end"] != "ordinary":
         return "abnormal-exit"
+    if code not in ORDINARY_CODES:
+        known = {int(member) for member in pytest.ExitCode}
+        return pytest.ExitCode(code).name.lower().replace("_", "-") \
+            if code in known else "abnormal-exit"
     if is_red(record) and not keep_going:
         return "first-failure"
     return None
