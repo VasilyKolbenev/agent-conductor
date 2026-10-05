@@ -163,6 +163,8 @@ def _cmd_providers(args: argparse.Namespace) -> int:
     """
     from conductor import provider_setup          # deferred: see the import block
 
+    if args.dir is None:                          # the parser leaves it unset: see --dir
+        args = argparse.Namespace(**{**vars(args), "dir": "."})
     return provider_setup.run(args)
 
 
@@ -576,7 +578,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="configure a harness this machine can run; asks for paths and "
              "environment variable NAMES, never a credential")
     place = p.add_mutually_exclusive_group()
-    place.add_argument("--dir", default=".", metavar="ROOT", help="project directory")
+    # No "." default: argparse before 3.12 counts a value identical to the default as not
+    # given, and "." from argv is the interned one, so "--profile --dir ." passed unrefused.
+    place.add_argument("--dir", default=None, metavar="ROOT",
+                       help="project directory (default: the current one)")
     place.add_argument("--profile", action="store_true",
                        help="configure the shared harness profile once in this terminal")
     p.add_argument("--from-profile", action="store_true",
