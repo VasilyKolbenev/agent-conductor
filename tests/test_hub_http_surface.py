@@ -399,6 +399,48 @@ def test_hub_issued_folder_pick_runs_the_real_cli_and_exposes_a_pathless_operati
                stack.get("/hub/projects").json()["projects"])
 
 
+def test_cancelling_a_running_folder_add_is_refused_and_leaves_it_running(
+        stack, tmp_path, monkeypatch):
+    """A folder add has no clone step to stop, so the cancel route refuses it by name."""
+    project = tmp_path / "new-project"
+    project.mkdir()
+    monkeypatch.setenv("CONDUCT_HOME", str(stack.world.home))
+    pick_id = "pick-" + "2" * 32
+    stack.service._pick_resolver = lambda ident: (
+        operations.FolderPick(str(project), "none") if ident == pick_id else None)
+    stack.service._consume_pick = lambda _ident: None
+    manager = stack.service._operations
+    manager._start = lambda _project_id: None
+    manager._status = lambda _project_id: ("running", None)
+    held, release = threading.Event(), threading.Event()
+
+    def held_cli(_ident, _path, _name, _confirmed):
+        held.set()
+        release.wait(30)
+        return {"project_id": "1" * 32, "folder": "new-project"}, None
+
+    manager._cli = held_cli
+    ident = None
+    try:
+        sent = stack.post("/hub/projects", {"source": "folder", "pick_id": pick_id,
+                          "name": "New project", "legacy_writers_stopped": False})
+        assert sent.status == 202
+        ident = sent.json()["operation_id"]
+        assert held.wait(30), "the add never reached its ownership step"
+        row, state = stack.get(f"/hub/operations/{ident}").json(), stack.state_bytes()
+        assert row["state"] == "running" and row["source"] == "folder"
+        assert _code(stack.post(f"/hub/operations/{ident}/cancel", {}), 409) == \
+            "operation_not_cancellable"
+        assert stack.get(f"/hub/operations/{ident}").json() == row
+        assert stack.state_bytes() == state
+    finally:
+        release.set()
+        for _ in range(200 if ident else 0):
+            if stack.get(f"/hub/operations/{ident}").json()["state"] != "running":
+                break
+            time.sleep(0.05)
+
+
 # -- the stream ------------------------------------------------------------------------------------
 
 
@@ -640,7 +682,8 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
                "recovery_required", "project_busy", "hub_in_kill_on_close_job", "project_running",
                "project_not_running", "project_queue_changed", "operation_not_found",
                "pick_not_found", "dialog_busy", "dialog_unavailable",
-               "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed"}
+               "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed",
+               "operation_not_cancellable"}
     # Folder and scratch admission are live. GitHub clone remains a separate delivery.
     add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",
                     "pick_invalid", "legacy_writers_unconfirmed", "folder_exists",
