@@ -28,6 +28,7 @@ from itertools import count
 from pathlib import Path
 from typing import Any
 
+from browser_tests.desk_settled import SETTLED
 from conductor import ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.artifacts import ArtifactDocument
@@ -198,9 +199,6 @@ def decide(project: Project, run_id: str, action: str = "approve", by: str = "va
     assert status in (200, 201), payload
 
 
-#: The desk is settled when the shell says one of these (the same word every desk test waits for).
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
 #: What a test asks of the console and the rail, in ONE evaluation: a fact and its sentence are
 #: read together, so a redraw between two reads cannot make them disagree. `textContent`, because
 #: the style draws some words in capitals.

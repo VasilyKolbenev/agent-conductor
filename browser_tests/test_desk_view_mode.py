@@ -39,7 +39,7 @@ from browser_tests import desk_flag_fake as fake
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     PROJECT, Embedded, Rig, _answering, _claim, _listen, embed, rig)
 from browser_tests.test_desk_hash import ON_RUN, QUIET
-from browser_tests.test_desk_rail_scene import SETTLED
+from browser_tests.desk_settled import FOREIGN_SAID, SETTLED
 from browser_tests.test_desk_status import RAW
 
 #: The newest run of each task that has one, as the desk reads them, and what each says.
@@ -177,8 +177,9 @@ def test_taking_the_flag_off_writes_nothing_listed_and_no_queue_start(embed, rig
     _name(window, "petya")
     _open_block(window)
     window.frame.locator('[data-focus-key="flag:clear"]').click()
-    window.frame.wait_for_function("() => !document.querySelector("
-                                   "'#deskPult [data-focus-key=\"flag:enabled\"]').checked")
+    window.frame.wait_for_function(
+        "() => document.querySelector('#deskPult [data-focus-key=\"flag:enabled\"]')"
+        "?.checked === false")
     assert server.posts == [{"enabled": False, "actor": "petya", "resume_runs": [],
                              "start_task_queue": False}]
     after = window.frame.evaluate(BLOCK)
@@ -282,8 +283,7 @@ def test_a_project_mismatch_on_the_save_ends_the_desk(embed, rig):
     _open_block(window)
     window.frame.locator('[data-focus-key="flag:enabled"]').check()
     window.frame.locator('[data-focus-key="flag:save"]').click()
-    window.frame.wait_for_function(
-        "() => document.getElementById('deskStatus').innerText.includes('another project')")
+    window.frame.wait_for_function(FOREIGN_SAID)
     assert window.frame.evaluate(BLOCK) is None
     sent = len(server.posts)
     window.frame.evaluate(QUIET)

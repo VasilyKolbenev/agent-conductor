@@ -42,6 +42,7 @@ from conductor import server
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
+from browser_tests.desk_settled import SETTLED
 from browser_tests.test_desk_shell import LAYOUT_FACTS, SWEPT_WIDTHS
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_graph_projection import settle_to_the_confirm_gate
@@ -97,8 +98,6 @@ RAIL_FACTS = """() => ({
     tone: row.querySelector(".desk-task__state").getAttribute("data-tone"),
     note: row.querySelector(".desk-task__note")?.textContent ?? null,
     height: row.getBoundingClientRect().height}))})"""
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
 REFUSAL_BODY = json.dumps({"error": {"code": "same_origin_denied"}})
 
 
@@ -440,7 +439,7 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
     page.keyboard.press("Enter")
     page.wait_for_function(
         """() => document.querySelector('#deskRail [data-task-id="task-docs"]')
-           .getAttribute("aria-pressed") === "true" """)
+           ?.getAttribute("aria-pressed") === "true" """)
     facts = page.evaluate(RAIL_FACTS)
     assert [row["id"] for row in facts["rows"] if row["pressed"] == "true"] == ["task-docs"]
     assert page.evaluate("() => document.activeElement.dataset.taskId") == "task-docs"
@@ -525,7 +524,7 @@ def _choose(page: Page, task_id: str) -> None:
 
 def _scene_settled(page: Page, word: str) -> None:
     page.wait_for_function(
-        "(word) => document.getElementById('deskScene').getAttribute('data-state') === word",
+        "(word) => document.getElementById('deskScene')?.getAttribute('data-state') === word",
         arg=word)
 
 

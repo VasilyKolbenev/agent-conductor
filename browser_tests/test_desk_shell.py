@@ -42,6 +42,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
+from browser_tests.desk_settled import SETTLED
 from conductor import server
 from tests.test_store import good_lane, write_project
 
@@ -189,10 +190,6 @@ SAID_FAILED = "This read failed. Nothing below is newer than the failure."
 #: A refusal in the server's own vocabulary: a status and a body whose code the
 #: page's refusal table knows. A code it did not know would be read as no answer.
 REFUSAL_BODY = json.dumps({"error": {"code": "same_origin_denied"}})
-#: The shell is settled when its reads are over: `ready`, `refused` (the server
-#: said no) or `failed` (nothing was said). A real signal, never a clock.
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
 #: The page's read deadline is 20 s. A window that must reach it is given timers
 #: where anything that long fires after three seconds, so a read nobody answers
 #: is abandoned by the page's own deadline instead of after a twenty-second wait.

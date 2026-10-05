@@ -30,8 +30,9 @@ import pytest
 from playwright.sync_api import Browser, Page, Request, Route
 
 from browser_tests.desk_identity import identified_server
+from browser_tests.desk_settled import SETTLED, shell_is
 from browser_tests.test_desk_rail_scene import (  # noqa: F401  (seeded_url is a fixture)
-    SETTLED, _seed, seeded_url)
+    _seed, seeded_url)
 from tests.test_store import good_lane, write_project
 
 PROJECT_A, PROJECT_B = "a" * 32, "b" * 32
@@ -256,7 +257,7 @@ def test_a_hash_with_only_the_language_keeps_the_selection_and_re_reads_the_run_
     _go(page, f"#lang={other}")
     page.wait_for_function(
         "(lang) => document.documentElement.lang === lang && document.getElementById("
-        "'deskScene').getAttribute('data-state') === 'ready'", arg=other)
+        "'deskScene')?.getAttribute('data-state') === 'ready'", arg=other)
     after = page.evaluate(FACTS)
     assert (after["chosen"], after["run"]) == (before["chosen"], before["run"])
     assert after["subject"] == SUBJECT[other].format(task=FIX, run="run-fix-new")
@@ -302,8 +303,7 @@ def test_a_press_writes_the_address_without_a_hashchange_or_a_new_history_entry(
 def test_a_run_of_another_task_that_a_hash_names_is_refused_and_kept_out_of_the_address(
         open_desk):
     window = open_desk("#task=task-docs&run=run-fix-new&lang=en")
-    window.page.wait_for_function(
-        "() => document.getElementById('deskShell').getAttribute('data-state') === 'failed'")
+    window.page.wait_for_function(shell_is("failed"))
     facts = window.page.evaluate(FACTS)
     assert (facts["chosen"], facts["run"], facts["shell"]) == (["task-docs"], None, "failed")
     assert facts["hash"] == "#task=task-docs&lang=en"
@@ -315,8 +315,7 @@ def test_a_hash_that_arrives_before_the_lists_have_landed_is_applied_when_they_h
     window = open_desk("#lang=en", before=lambda page: page.route(
         "**/command/tasks", lambda route: held.append(route)))
     page = window.page
-    page.wait_for_function("() => document.getElementById('deskShell')"
-                           ".getAttribute('data-state') === 'loading'")
+    page.wait_for_function(shell_is("loading"))
     _go(page, "#task=task-docs&lang=en")
     page.evaluate(QUIET)
     assert page.evaluate(FACTS)["chosen"] == [] and len(held) == 1
@@ -341,8 +340,7 @@ def test_a_repeated_project_at_boot_puts_the_desk_in_the_foreign_state_and_asks_
         open_desk, language):
     fragment = f"#project={PROJECT_A}&project={PROJECT_A}&task=task-fix&lang={language}"
     window = open_desk(fragment)
-    window.page.wait_for_function(
-        "() => document.getElementById('deskShell').getAttribute('data-state') === 'refused'")
+    window.page.wait_for_function(shell_is("refused"))
     facts = window.page.evaluate(FACTS)
     _foreign(facts, language)
     assert facts["hash"] == fragment
@@ -360,8 +358,7 @@ def test_a_different_project_in_a_later_hash_stops_the_desk_and_nothing_after_it
         f"#project={PROJECT_A}&task=task-fix&run=run-fix-new&lang={language}")
     other = f"#project={PROJECT_B}&task=task-docs&lang={language}"
     _go(page, other)
-    page.wait_for_function(
-        "() => document.getElementById('deskShell').getAttribute('data-state') === 'refused'")
+    page.wait_for_function(shell_is("refused"))
     _foreign(page.evaluate(FACTS), language)
     asked = len(window.asked)
     back = f"#project={PROJECT_A}&task=task-docs&lang={language}"
@@ -387,7 +384,6 @@ def test_a_project_claimed_by_a_desk_that_bound_none_is_a_foreign_project(open_d
     window = open_desk("#task=task-fix&lang=en")
     window.page.wait_for_function(ON_RUN, arg="run-fix-new")
     _go(window.page, f"#project={PROJECT_A}&task=task-docs&lang=en")
-    window.page.wait_for_function(
-        "() => document.getElementById('deskShell').getAttribute('data-state') === 'refused'")
+    window.page.wait_for_function(shell_is("refused"))
     _foreign(window.page.evaluate(FACTS), "en")
     assert window.problems == []

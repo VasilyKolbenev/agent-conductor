@@ -402,7 +402,7 @@ def test_a_language_set_by_the_address_keeps_the_open_document_and_says_the_rest
     window.page.evaluate("() => { location.hash = '#lang=ru&task=task-closed'; }")
     window.page.wait_for_function("() => document.documentElement.lang === 'ru'")
     window.page.wait_for_function(
-        "() => document.querySelector('#deskFeed .desk-feed__title').textContent.includes('Ход')")
+        "() => document.querySelector('#deskFeed .desk-feed__title')?.textContent.includes('Ход')")
     after = window.page.evaluate(PLACE_FACTS)
     assert after["open"] == [False, True] and after["summaries"] == ["Показать текст"] * 2
     assert window.problems == []

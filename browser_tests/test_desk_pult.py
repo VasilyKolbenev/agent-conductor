@@ -28,7 +28,8 @@ from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers
     Embedded, Rig, _answering, _claim, embed, rig)
 from browser_tests.test_desk_hash import (  # noqa: F401  (fixtures and helpers)
     FACTS, ON_RUN, PROJECT_A, QUIET, _go, identified_url, open_desk)
-from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
+from browser_tests.desk_settled import SETTLED, shell_is
+from browser_tests.test_desk_rail_scene import seeded_url  # noqa: F401  (a fixture)
 from browser_tests.test_desk_status import RAW
 
 QUEUES = json.loads((Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "desk"
@@ -432,8 +433,7 @@ def test_a_desk_that_went_foreign_draws_nothing_in_the_console_and_keeps_no_name
     page.click(SAVE)
     assert page.evaluate(PULT)["actor"] == "You: vasya · change"
     _go(page, f"#project={'b' * 32}&lang=en")
-    page.wait_for_function(
-        "() => document.getElementById('deskShell').getAttribute('data-state') === 'refused'")
+    page.wait_for_function(shell_is("refused"))
     facts = page.evaluate(PULT)
     assert (facts["children"], facts["state"], facts["text"].strip()) == (0, "empty", "")
     assert window.problems == []

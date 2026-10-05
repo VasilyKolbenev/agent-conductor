@@ -20,15 +20,15 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page
 
+from browser_tests.desk_settled import SETTLED
 from conductor import server
 from tests.desk_progress_seed import seed_project
 from tests.test_store import good_lane, write_project
 
-#: The zone every window reads in, and the reads that say the desk has settled.
+#: The zone every window reads in, and the read that says the scene is drawn (the one that says
+#: the desk has settled is `desk_settled.SETTLED`).
 ZONE = "UTC"
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
-SCENE_READY = """() => document.getElementById("deskScene").getAttribute("data-state") === "ready"
+SCENE_READY = """() => document.getElementById("deskScene")?.getAttribute("data-state") === "ready"
   && document.getElementById("deskScene").childElementCount > 0"""
 #: The words the person's screen must never carry (spec 5.2).
 RAW_TOKENS = r"\b(?:verification_failed|policy|created|ready|empty)\b"

@@ -14,10 +14,12 @@ sentence are read in ONE evaluation.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Frame, expect
+from playwright.sync_api import Frame, Route, expect
+from playwright.sync_api import TimeoutError as WaitTimeout
 
 from browser_tests.desk_identity import identified_server
 from browser_tests.hub_bench import (fields, fixture, hub, hub_page, lang,  # noqa: F401
@@ -25,7 +27,8 @@ from browser_tests.hub_bench import (fields, fixture, hub, hub_page, lang,  # no
 from browser_tests.hub_live import (A, B, C, LivePage, line_of, live,  # noqa: F401
                                     live_page, press, ready, wait_for)
 from conductor.hub import state as hub_state
-from browser_tests.test_desk_rail_scene import SETTLED, _seed
+from browser_tests.desk_settled import SETTLED
+from browser_tests.test_desk_rail_scene import _seed
 from tests.test_store import good_lane, write_project
 
 SANDBOX = ("allow-scripts allow-same-origin allow-forms allow-popups "
@@ -86,6 +89,34 @@ def desk_frame(one: LivePage) -> Frame:
     frame = one.page.wait_for_selector("#hubDesk iframe").content_frame()
     frame.wait_for_function(SETTLED)
     return frame
+
+
+BARE = '<!doctype html><html><body data-bare="1"></body></html>'
+
+
+def test_the_wait_for_the_desk_goes_on_while_the_frames_document_is_not_the_desk_yet(running_a):
+    """A frame is asked before its document has drawn the desk: the wait must go on, not end."""
+    one = running_a
+    answered: list[str] = []
+
+    def bare_first(route: Route) -> None:
+        answered.append(route.request.url)
+        if len(answered) == 1:
+            route.fulfill(status=200, content_type="text/html", body=BARE)
+        else:
+            route.continue_()
+
+    one.page.route(re.compile(r"/panel/desk\.html"), bare_first)
+    try:
+        press(one, f"project:{A}")
+        frame = one.page.wait_for_selector("#hubDesk iframe").content_frame()
+        frame.wait_for_function('() => document.body?.dataset.bare === "1"')
+        with pytest.raises(WaitTimeout):
+            frame.wait_for_function(SETTLED, timeout=300)
+        frame.evaluate("() => location.reload()")
+        assert desk_frame(one).evaluate(DESK_FACTS)["rows"] == 6 and len(answered) == 2
+    finally:
+        one.page.unroute_all(behavior="ignoreErrors")
 
 
 def wait_hub(one: LivePage, what: str, script: str, arg=None) -> None:

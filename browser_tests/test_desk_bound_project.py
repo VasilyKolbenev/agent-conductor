@@ -33,6 +33,7 @@ import pytest
 from playwright.sync_api import Browser, Page, Route
 
 from browser_tests.desk_identity import identified_server
+from browser_tests.desk_settled import FOREIGN_SAID, SETTLED
 from browser_tests.test_desk_binding import HEADER, PROJECT_A, PROJECT_B, _json
 from browser_tests.test_desk_rail_scene import _seed, seeded_url  # noqa: F401  (a fixture)
 from tests.test_store import good_lane, write_project
@@ -41,9 +42,6 @@ from tests.test_store import good_lane, write_project
 #: any request it made has been asked. A frame boundary, never a clock.
 QUIET = """() => new Promise((done) => requestAnimationFrame(
   () => requestAnimationFrame(done)))"""
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
-ENDED = """() => document.getElementById("deskStatus").innerText.includes("another project")"""
 FOREIGN = {"en": "This desk is open for another project. Reload the page to continue.",
            "ru": "Стол открыт для другого проекта. Перезагрузите страницу, чтобы продолжить."}
 RELOAD = {"en": "Reload", "ru": "Перезагрузить"}
@@ -226,7 +224,7 @@ def test_a_project_mismatch_on_any_answer_ends_the_desk_and_nothing_is_asked_aft
     if press is not None:
         desk.page.wait_for_function(SETTLED)
         desk.page.locator(f'#deskRail [data-task-id="{press}"]').click()
-    desk.page.wait_for_function(ENDED)
+    desk.page.wait_for_function(FOREIGN_SAID)
     facts = desk.page.evaluate(FOREIGN_FACTS)
     assert facts["shell"] == "refused" and facts["button"] == RELOAD["en"]
     asked = len(desk.wire)
@@ -267,7 +265,7 @@ def test_a_hash_that_later_names_another_project_ends_a_desk_the_server_bound(op
     _quiet(desk.page)
     assert desk.page.evaluate(FOREIGN_FACTS)["shell"] == "ready"
     _replace(desk.page, f"#project={PROJECT_A}&lang=en")
-    desk.page.wait_for_function(ENDED)
+    desk.page.wait_for_function(FOREIGN_SAID)
     assert desk.page.evaluate(FOREIGN_FACTS)["button"] == RELOAD["en"]
 
 
