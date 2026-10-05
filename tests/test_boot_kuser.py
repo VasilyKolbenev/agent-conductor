@@ -31,6 +31,20 @@ DOCUMENTED = (
     ("SuiteMask", 4, 4))
 
 
+# Every `VER_SUITE_*` flag winnt.h defines (Windows SDK 10.0.26100.0, um/winnt.h lines 1517-1533).
+# The value 0x00010000 is not defined there.
+SUITE_FLAGS = (
+    ("VER_SUITE_SMALLBUSINESS", 0x00000001), ("VER_SUITE_ENTERPRISE", 0x00000002),
+    ("VER_SUITE_BACKOFFICE", 0x00000004), ("VER_SUITE_COMMUNICATIONS", 0x00000008),
+    ("VER_SUITE_TERMINAL", 0x00000010), ("VER_SUITE_SMALLBUSINESS_RESTRICTED", 0x00000020),
+    ("VER_SUITE_EMBEDDEDNT", 0x00000040), ("VER_SUITE_DATACENTER", 0x00000080),
+    ("VER_SUITE_SINGLEUSERTS", 0x00000100), ("VER_SUITE_PERSONAL", 0x00000200),
+    ("VER_SUITE_BLADE", 0x00000400), ("VER_SUITE_EMBEDDED_RESTRICTED", 0x00000800),
+    ("VER_SUITE_SECURITY_APPLIANCE", 0x00001000), ("VER_SUITE_STORAGE_SERVER", 0x00002000),
+    ("VER_SUITE_COMPUTE_SERVER", 0x00004000), ("VER_SUITE_WH_SERVER", 0x00008000),
+    ("VER_SUITE_MULTIUSERTS", 0x00020000))
+
+
 def documented_offsets():
     found, cursor = {}, 0
     for name, size, align in DOCUMENTED:
@@ -99,8 +113,36 @@ def test_a_processor_architecture_outside_the_known_four_is_an_unknown_layout():
     assert refusal(snapshot(arch=7)).code == "layout_unknown"
 
 
-def test_a_suite_mask_that_is_not_a_small_bit_set_is_an_unknown_layout():
+def test_a_suite_mask_with_a_bit_no_documented_suite_flag_covers_is_an_unknown_layout():
     assert refusal(snapshot(suite=0x7FFE0000)).code == "layout_unknown"
+    assert refusal(snapshot(suite=0x00010000)).code == "layout_unknown"
+    assert refusal(snapshot(suite=0x80000000)).code == "layout_unknown"
+    assert refusal(snapshot(suite=0x00020000 | 0x00040000)).code == "layout_unknown"
+
+
+@pytest.mark.parametrize("name, bit", SUITE_FLAGS)
+def test_each_suite_flag_winnt_h_documents_is_accepted_alone(name, bit):
+    assert boot_kuser.parse_snapshot(snapshot(suite=bit), VERSION) == 42, name
+
+
+def test_all_the_suite_flags_winnt_h_documents_are_accepted_together():
+    everything = 0
+    for _, bit in SUITE_FLAGS:
+        everything |= bit
+    assert boot_kuser.parse_snapshot(snapshot(suite=everything), VERSION) == 42
+
+
+def test_a_multi_session_edition_with_a_terminal_suite_mask_is_not_an_unknown_layout():
+    # VER_SUITE_MULTIUSERTS together with VER_SUITE_TERMINAL and VER_SUITE_ENTERPRISE
+    assert boot_kuser.parse_snapshot(snapshot(suite=0x00020000 | 0x10 | 0x2), VERSION) == 42
+
+
+def test_the_version_and_architecture_refusals_hold_whatever_the_suite_mask_says():
+    multi = 0x00020000
+    assert refusal(snapshot(suite=multi, major=6)).code == "layout_unknown"
+    assert refusal(snapshot(suite=multi, build=19045)).code == "layout_unknown"
+    assert refusal(snapshot(suite=multi, arch=7)).code == "layout_unknown"
+    assert refusal(snapshot(suite=multi, alt=3)).code == "layout_unknown"
 
 
 def test_a_boot_counter_of_zero_is_an_empty_value_and_the_saturated_one_an_overflow():
