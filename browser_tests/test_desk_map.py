@@ -128,5 +128,8 @@ def test_the_address_opens_only_the_mounted_surface_it_names(
 
 def test_the_rows_that_are_not_on_the_desk_name_an_owner_and_the_five_regions_are_what_remains():
     off = [row for row in ROWS if row.state != "on_desk"]
-    assert len(off) >= 16 and all(row.owner in ("D1", "D2") for row in off)
+    # Exact: 16 when this test was written (43a4ef22); five 5.6.4/5.6.5 rows (run documents, manual
+    # steps, gates and receipts, the gate answer, "why not yet") moved on_desk in e8649211 and
+    # cc699ace, each with its proof checked above. The number changes only together with the map.
+    assert len(off) == 11 and all(row.owner in ("D1", "D2") for row in off)
     assert REGIONS == ["rail", "scene", "feed", "summary", "pult"], Path(__file__).name
