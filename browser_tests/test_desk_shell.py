@@ -103,6 +103,15 @@ DESK_BOOT_ASSETS = {
     "studio-isolation.js": 200, "studio-runhead.js": 200,
     "studio-quotas-model.js": 200,
     "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,
+    # The run host's write doors (step and document actions): the binding of the run's
+    # facts, the host, the Studio's two run-write modules and the store they reduce with,
+    # and the reducers and ceilings that store is built from.
+    "desk-run-binding.js": 200, "desk-run-write-host.js": 200,
+    "studio-runwrite.js": 200, "studio-runwrites.js": 200, "studio-store.js": 200,
+    "studio-edits.js": 200, "studio-review.js": 200, "studio-rundraft.js": 200,
+    "studio-toolbardraft.js": 200, "studio-ceilings.js": 200,
+    # The acceptance block of a chosen run, mounted in the console by the run host.
+    "desk-accept-host.js": 200,
     "desk-flow-host.js": 200, "desk-flow.js": 200, "desk-flow-model.js": 200,
     "desk-flow-draw.js": 200, "desk-flow-diag.js": 200, "desk-flow-edits.js": 200,
     "desk-flow-fields.js": 200, "desk-flow-graph.js": 200, "desk-flow-inspector.js": 200,
@@ -280,13 +289,17 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
                if name not in ("deskRail", "deskSummary", "deskPult"))
     # The summary draws nothing for a project with no tasks; the rail of one says so; the
     # console says its heading, the line that asks for the name and the queue this server reads
-    # (it has no owner: its slot is unavailable, and nothing is queued).
+    # (it has no owner: its slot is unavailable, and nothing is queued), then what its hosts
+    # mount into it: the harness limits (not current: the projection stream is closed), the
+    # card of the decisions bound to a chosen task (a child that says nothing until a run is
+    # chosen) and the acceptance block, which asks for a run.
     assert by_id["deskSummary"]["children"] == 0
-    assert by_id["deskPult"]["children"] == 4
-    assert by_id["deskPult"]["text"].startswith(
+    assert by_id["deskPult"]["children"] == 6
+    assert by_id["deskPult"]["text"] == (
         "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
-        "the project has no ownerNothing is queued.")
-    assert "Harness limits" in by_id["deskPult"]["text"]
+        "the project has no ownerNothing is queued."
+        "Harness limitsLimits are not current while disconnected.No data"
+        "Accept into projectChoose a run first.")
     assert by_id["deskRail"]["children"] == 2
     assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
     assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
