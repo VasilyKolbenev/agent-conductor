@@ -55,7 +55,7 @@ def test_first_commit_resume_refuses_a_stage_it_does_not_know_and_never_returns_
 
 A, N, O, F = Index.ABSENT, Lock.NONE, Lock.OWN, Lock.FOREIGN
 NO_LOCK = Refuse("index_locked", drop_copy=True)
-SPEC_ROWS = [   # (stage, ref, lock, index) -> what 9.8 and S4 say happens
+SPEC_ROWS = [   # (stage, ref, lock, index) -> what the prose of 9.8 and S4 states for these facts
     ((PREPARED, Ref.ABSENT, N, A), Act.TAKE_LOCK),
     ((PREPARED, Ref.ABSENT, O, A), Act.MARK_LOCKED),
     ((PREPARED, Ref.ABSENT, F, A), NO_LOCK),
@@ -69,15 +69,26 @@ SPEC_ROWS = [   # (stage, ref, lock, index) -> what 9.8 and S4 say happens
     ((REF_MOVED, Ref.AT_COMMIT, O, A), Act.INSTALL_INDEX),
     ((REF_MOVED, Ref.AT_COMMIT, N, A), Act.TAKE_LOCK),                  # retake, then recheck
     ((REF_MOVED, Ref.AT_COMMIT, N, Index.MATCHES), Act.FINISH),         # already installed
-    ((REF_MOVED, Ref.AT_COMMIT, O, Index.MATCHES), Act.RELEASE_LOCK),   # two names, one inode
     ((REF_MOVED, Ref.AT_COMMIT, N, Index.OTHER), Refuse("index_exists")),
     ((REF_MOVED, Ref.AT_COMMIT, F, A), NO_LOCK),
 ]
 
 
 @pytest.mark.parametrize("row, expected", SPEC_ROWS)
-def test_first_commit_resume_follows_the_rows_the_spec_quotes(row, expected):
+def test_first_commit_resume_follows_the_rows_9_8_states(row, expected):
     assert next_action(*row) == expected
+
+
+def test_first_commit_resume_od2_pending_releases_an_own_lock_over_a_matching_index():
+    """The plan's decision OD-2, PENDING its ruling; section 9.8 does not state this row.
+
+    9.8 says only "own lock -> step 6", and step 6 renames index.lock onto index, which would
+    replace an index that already stands. OD-2 makes the move non-replacing, so on POSIX a crash
+    between the link and the removal of the lock leaves two names for one inode: the lock is OWN
+    and the index MATCHES. The plan answers RELEASE_LOCK there. A different ruling rewrites or
+    removes this test; the rows above do not depend on it.
+    """
+    assert next_action(REF_MOVED, Ref.AT_COMMIT, O, Index.MATCHES) == Act.RELEASE_LOCK
 
 
 def _apply(step, state):
