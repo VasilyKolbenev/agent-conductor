@@ -13,7 +13,7 @@ import pytest
 from playwright.sync_api import Browser, Locator, Page, expect
 
 from browser_tests import desk_hold
-from browser_tests.desk_hold import Hold
+from browser_tests.desk_hold import Hold, close_context
 from conductor import ownership_transition, server
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.project_git import process_git_read
@@ -113,7 +113,7 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
         expect(record.filter(has_text="Created commit")).to_contain_text(branch)
         assert errors == []
     finally:
-        context.close()
+        close_context(context)
 
 
 # -- the run read again while a person is partway through the acceptance --------------------------
@@ -201,7 +201,7 @@ def _desk(chromium: Browser, url: str) -> Iterator[_Desk]:
         if desk is not None:
             for held in (desk.run_read, desk.controls_read, desk.preview_post):
                 held.abort()
-        context.close()
+        close_context(context)
 
 
 def _enter_and_read_preview(desk: _Desk) -> None:

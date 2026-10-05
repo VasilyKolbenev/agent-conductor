@@ -42,6 +42,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
+from browser_tests.desk_hold import close_context
 from browser_tests.desk_settled import SETTLED
 from conductor import server
 from tests.test_store import good_lane, write_project
@@ -265,7 +266,7 @@ def desk(chromium: Browser, desk_url: str) -> Iterator[Desk]:
     try:
         yield window
     finally:
-        context.close()
+        close_context(context)
 
 
 def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answering_200(
@@ -346,7 +347,7 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
         page.wait_for_function(SETTLED)
         facts = page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
     finally:
-        context.close()
+        close_context(context)
     words = [(row["id"], row["word"]) for row in facts["regions"]]
     assert words == [("deskRail", rail), ("deskScene", "empty"), ("deskFeed", "empty"),
                      ("deskSummary", summary), ("deskPult", "ready")]
@@ -377,7 +378,7 @@ def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses
         page.wait_for_selector('#deskShell[data-state="ready"]')
         words = page.evaluate(PAGE_WORDS)
     finally:
-        context.close()
+        close_context(context)
     assert words == PAGE_LANGUAGES[language]
     assert problems == []
 
@@ -448,7 +449,7 @@ def test_the_sweep_sees_an_overflow_that_only_a_narrow_window_shows(
         page.wait_for_selector('#deskShell[data-state="ready"]')
         overflowing = {width for width, facts in _sweep(page).items() if facts["overflow"] > 0}
     finally:
-        context.close()
+        close_context(context)
     assert overflowing == {320, 375}
     assert not overflowing & {800, 1280}
 

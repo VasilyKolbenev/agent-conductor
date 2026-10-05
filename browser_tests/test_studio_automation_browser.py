@@ -18,6 +18,7 @@ from conductor.command.graph_definition import GraphDefinition, GraphEdge, Graph
 from conductor.command.run_store import RunStore, snapshot_digest
 from tests.test_policy_runtime import ARGS, DeepScripted, NOW, PD
 from tests.test_store import good_lane, write_project
+from browser_tests.desk_hold import close_context
 from browser_tests.test_studio_lifecycle import _Project, _open, TOKEN
 
 
@@ -113,7 +114,7 @@ def test_one_reviewed_permission_and_explicit_pause_resume_revoke(chromium: Brow
         assert not any(row.kind in {"action_request", "action_proposal"} for row in values)
         assert adapter.execute_calls == 0 and window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_keeps_actor(chromium: Browser, bounded_project):
@@ -138,7 +139,7 @@ def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_kee
         expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("owner")
         assert adapter.execute_calls == 0 and window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 @pytest.mark.parametrize("bounded_project", [True], indirect=True)
@@ -158,4 +159,4 @@ def test_the_review_names_the_doers_task_channel_and_the_bound_the_grant_freezes
             "32767 единиц UTF-16")
         assert adapter.execute_calls == 0 and window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)

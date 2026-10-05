@@ -30,6 +30,7 @@ from collections.abc import Iterator
 
 import pytest
 from playwright.sync_api import Browser, Page
+from browser_tests.desk_hold import close_context
 
 from conductor import server
 from conductor.command.adapters import AdapterRegistry
@@ -93,7 +94,7 @@ def gate_page(chromium: Browser, gate_url: str) -> Iterator[Page]:
     try:
         yield page
     finally:
-        context.close()
+        close_context(context)
 
 
 def project_gates(page: Page, wrappers: list[dict[str, object]]) -> dict[str, object]:

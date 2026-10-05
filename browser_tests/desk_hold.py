@@ -75,8 +75,11 @@ def close_context(context: BrowserContext) -> None:
     nobody's (`ignoreErrors`). `wait` is not used: it waits for every handler to finish, and a
     handler that holds a route for the test to answer never does. Unrouting the last route turns
     the page's interception off, which can strand a read paused across the switch, but the page
-    is closed on the next line and has nobody left to be waiting for it.
+    is closed on the next line and has nobody left to be waiting for it. A window that is already
+    closed has no handler left and is left as it is, as `close()` leaves it.
     """
+    if context.browser is not None and context not in context.browser.contexts:
+        return
     for page in context.pages:
         page.unroute_all(behavior="ignoreErrors")
     context.unroute_all(behavior="ignoreErrors")

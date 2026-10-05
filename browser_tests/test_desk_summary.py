@@ -325,7 +325,7 @@ def test_a_finished_run_that_cannot_be_read_is_left_and_not_closed(chromium, pro
         counts = [(chip["label"], chip["count"])
                   for chip in page.evaluate(SUMMARY_FACTS)["bar"]["chips"]]
     finally:
-        context.close()
+        close_context(context)
     assert counts == [("In progress", "1"), ("Waiting for you", "1"), ("Closed", "0"),
                       ("Left", "2")]
     assert problems == []
@@ -350,7 +350,7 @@ def test_the_summary_is_drawn_when_its_numbers_are_known_and_not_before(chromium
         page.wait_for_function(WAIT_BAR)
         known = page.evaluate(SUMMARY_FACTS)
     finally:
-        context.close()
+        close_context(context)
     assert (waiting["children"], waiting["text"]) == (0, "")
     assert known["children"] > 0
 

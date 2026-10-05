@@ -5,6 +5,7 @@ import json
 
 from playwright.sync_api import Browser, Page, expect
 
+from browser_tests.desk_hold import close_context
 from browser_tests.run_picker import choose_run, reveal_runs
 from browser_tests.task_picker import choose_task, create_task, selected_task, expect_selected_task
 from browser_tests.test_studio_layout import (  # noqa: F401
@@ -71,7 +72,7 @@ def test_two_same_named_tasks_freeze_separate_scopes_and_resume_after_reload(
         assert window.storage() == [0, 0]
         assert window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_new_run_requires_a_readable_selected_task(
@@ -86,7 +87,7 @@ def test_a_new_run_requires_a_readable_selected_task(
         choose_task(page, task_a)
         expect(page.locator('[data-focus="action:onOpenRun"]')).to_be_enabled()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_run_read_cannot_restore_the_previous_task_or_its_actions(
@@ -114,8 +115,7 @@ def test_a_late_run_read_cannot_restore_the_previous_task_or_its_actions(
         assert "run-alpha" not in page.locator('#bodyRuns .studio-runs__detail').inner_text()
         assert window.writes("/proposals") == window.writes("/actions") == 0
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_mismatched_frozen_task_payload_refuses_the_whole_run(
@@ -135,7 +135,7 @@ def test_a_mismatched_frozen_task_payload_refuses_the_whole_run(
         assert page.locator('#bodyRuns [data-step]').count() == 0
         assert window.writes("/proposals") == window.writes("/actions") == 0
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_open_reply_never_selects_its_old_task_or_run(
@@ -173,8 +173,7 @@ def test_a_late_open_reply_never_selects_its_old_task_or_run(
                        for method, path, _ in window.rows)
         assert RunStore(configured_project.root).read("run-late").config["task"]["id"] == task_a
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_old_taskless_runs_remain_readable_but_are_marked_as_history(
@@ -187,7 +186,7 @@ def test_old_taskless_runs_remain_readable_but_are_marked_as_history(
         expect(page.locator("#bodyRuns")).to_contain_text("No task — historical run")
         assert window.writes("/command/runs") == 0
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_generated_task_identity_survives_unknown_reply_and_background_reads(
@@ -224,7 +223,7 @@ def test_a_generated_task_identity_survives_unknown_reply_and_background_reads(
         expect_selected_task(page, attempts[0]["task_id"])
         assert window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_editing_an_accepted_task_with_a_lost_reply_starts_a_new_identity(
@@ -268,7 +267,7 @@ def test_editing_an_accepted_task_with_a_lost_reply_starts_a_new_identity(
         expect(page.locator("#studioStatus")).not_to_contain_text("Writing")
         assert window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_task_reply_keeps_the_next_draft_and_the_current_selection(
@@ -315,5 +314,4 @@ def test_a_late_task_reply_keeps_the_next_draft_and_the_current_selection(
         assert len(TaskStore(project.root).tasks()) == 3
         assert window.page_errors == []
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)

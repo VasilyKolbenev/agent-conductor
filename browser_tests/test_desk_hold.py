@@ -21,11 +21,13 @@ PAGE = b"<!doctype html><title>probe</title>"
 
 
 class _Slow:
-    """A loopback server whose answer to `/slow` is not sent until `release()`."""
+    """A loopback server whose answer to `/slow` is not sent until `release()`, which may also
+    drop the connection instead of answering: the fetch of a handler then fails."""
 
     def __init__(self) -> None:
         self.asked = threading.Event()
         self._go = threading.Event()
+        self._drop = False
         slow = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -33,6 +35,9 @@ class _Slow:
                 if self.path == "/slow":
                     slow.asked.set()
                     slow._go.wait(10)
+                    if slow._drop:
+                        self.close_connection = True
+                        return
                 body = b"{}" if self.path == "/slow" else PAGE
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html" if self.path != "/slow"
@@ -52,7 +57,8 @@ class _Slow:
         self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self._thread.start()
 
-    def release(self) -> None:
+    def release(self, drop: bool = False) -> None:
+        self._drop = drop
         self._go.set()
 
     def stop(self) -> None:
@@ -89,7 +95,7 @@ def _window_with_a_fetch_in_flight(chromium: Browser, slow: _Slow) -> BrowserCon
 def test_a_window_closed_as_it_is_leaves_the_error_of_the_fetch_for_the_next_call(
         chromium: Browser, slow: _Slow):
     context = _window_with_a_fetch_in_flight(chromium, slow)
-    context.close()
+    context.close()  # raw close on purpose: the form `close_context` replaces
     slow.release()
     with pytest.raises(Error, match="Request context disposed"):
         chromium.new_context().new_page().close()
@@ -101,3 +107,46 @@ def test_a_window_closed_through_close_context_leaves_nothing_for_the_next_call(
     close_context(context)
     slow.release()
     chromium.new_context().new_page().close()
+
+
+def _pumped(context: BrowserContext) -> None:
+    """Make synchronous calls for a while: an error Playwright holds for the process is raised in
+    the first of them."""
+    page = context.pages[0]
+    for _ in range(160):
+        page.wait_for_timeout(50)
+
+
+def test_an_error_of_a_fetch_in_a_window_that_is_still_open_reaches_the_test(
+        chromium: Browser, slow: _Slow):
+    """`close_context` ignores the errors of the handlers of the window it closes and of no other:
+    a fetch that fails in a live window (its upstream drops the connection) is an error the test
+    must hear."""
+    context = _window_with_a_fetch_in_flight(chromium, slow)
+    try:
+        slow.release(drop=True)
+        with pytest.raises(Error, match="hang up|ECONNRESET|socket"):
+            _pumped(context)
+    finally:
+        close_context(context)
+
+
+def test_closing_one_window_through_close_context_does_not_hide_the_error_of_an_open_one(
+        chromium: Browser, slow: _Slow):
+    live = _window_with_a_fetch_in_flight(chromium, slow)
+    other = chromium.new_context()
+    other.new_page()
+    try:
+        close_context(other)
+        slow.release(drop=True)
+        with pytest.raises(Error, match="hang up|ECONNRESET|socket"):
+            _pumped(live)
+    finally:
+        close_context(live)
+
+
+def test_a_window_that_is_already_closed_is_closed_again_without_an_error(chromium: Browser):
+    context = chromium.new_context()
+    context.new_page()
+    close_context(context)
+    close_context(context)
