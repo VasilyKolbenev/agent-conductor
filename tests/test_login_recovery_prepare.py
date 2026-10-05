@@ -312,20 +312,47 @@ def test_a_lease_is_not_taken_when_the_boot_cannot_be_measured(tmp_path, monkeyp
     assert not (box / "active.json").exists()
 
 
-def test_preparing_and_recovering_never_open_a_file_of_the_login_home(tmp_path, monkeypatch):
-    home, box, _ = legacy_lease(tmp_path, monkeypatch)
+def spy_python_opens(patch):
+    """Record the path of each `builtins.open`, `io.open` and `os.open` call while `patch` holds."""
     opened = []
-    real_open, real_io, real_os = builtins.open, io.open, os.open
 
     def spying(real):
         def spy(path, *args, **kwargs):
             opened.append(str(path))
             return real(path, *args, **kwargs)
         return spy
+    patch.setattr(builtins, "open", spying(builtins.open))
+    patch.setattr(io, "open", spying(io.open))
+    patch.setattr(os, "open", spying(os.open))
+    return opened
+
+
+def test_the_open_spy_records_a_credential_read_through_each_python_open_channel(
+        tmp_path, monkeypatch):
+    home = tmp_path / "login"
+    home.mkdir()
+    credential = home / "credential.json"
+    credential.write_bytes(SECRET)
     with monkeypatch.context() as patch:
-        patch.setattr(builtins, "open", spying(real_open))
-        patch.setattr(io, "open", spying(real_io))
-        patch.setattr(os, "open", spying(real_os))
+        opened = spy_python_opens(patch)
+        credential.read_bytes()
+        with open(credential, "rb"):
+            pass
+        os.close(os.open(credential, os.O_RDONLY))
+    assert opened == [str(credential)] * 3
+
+
+def test_preparing_and_recovering_make_no_python_open_call_on_a_path_inside_the_login_home(
+        tmp_path, monkeypatch):
+    """The spy sees `builtins.open`, `io.open` and `os.open` only (the test above calibrates it).
+
+    The native `CreateFileW` opens of `ownership_native` are outside its reach: they take the home
+    and its parent as directory handles, and the box's own files, and are checked by reading
+    the code, not by this spy.
+    """
+    home, box, _ = legacy_lease(tmp_path, monkeypatch)
+    with monkeypatch.context() as patch:
+        opened = spy_python_opens(patch)
         measure(patch, counter(42))
         login.prepare_login_recovery(str(home))
         measure(patch, counter(43))
