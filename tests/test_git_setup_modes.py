@@ -8,6 +8,7 @@ import json
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,8 +44,12 @@ def row_named(value, path):
     return next(row for row in value["files"] if row["path"] == path)
 
 
-def make_executable(project, name="run.sh", data=b"echo hi\n"):
-    """A file whose stat carries the owner execute bit."""
+EXECUTABLE = "run.bat" if os.name == "nt" else "run.sh"
+
+
+def make_executable(project, name=EXECUTABLE, data=b"echo hi\n"):
+    """A file whose stat, read by its name, carries the owner execute bit: `chmod` makes it on
+    POSIX, and on Windows CPython reports it for `.bat`, `.cmd`, `.com` and `.exe` names."""
     path = project.root / name
     path.write_bytes(data)
     path.chmod(0o755)
@@ -123,7 +128,6 @@ def test_a_mode_only_change_after_the_preview_changes_the_digest_and_the_shown_m
         == {key: value for key, value in row_named(before, "tool").items() if key != "git_mode"}
 
 
-@POSIX_ONLY
 @needs_git
 def test_core_filemode_false_shows_100644_for_an_executable_file_and_flipping_it_changes_the_digest(
         tmp_path):
@@ -134,8 +138,8 @@ def test_core_filemode_false_shows_100644_for_an_executable_file_and_flipping_it
     trusted = rows_of(project)
     git("config", "core.filemode", "false", cwd=project.root)
     ignored = rows_of(project)
-    assert row_named(trusted, "run.sh")["git_mode"] == "100755"
-    assert row_named(ignored, "run.sh")["git_mode"] == "100644"
+    assert row_named(trusted, EXECUTABLE)["git_mode"] == "100755"
+    assert row_named(ignored, EXECUTABLE)["git_mode"] == "100644"
     assert row_named(trusted, "plain.txt") == row_named(ignored, "plain.txt")
     assert row_named(trusted, "plain.txt")["git_mode"] == "100644"
     assert trusted["paths_digest"] != ignored["paths_digest"]
@@ -190,6 +194,22 @@ def test_a_mode_that_changes_while_the_preview_is_sealed_refuses_paths_changed(t
     finally:
         path.chmod(0o666)
     assert calls
+
+
+def test_the_look_by_open_handle_ignores_the_mode_and_the_look_by_path_keeps_it():
+    """Windows gives an open handle no execute bit but gives the same file looked at by a
+    `.bat`, `.cmd`, `.com` or `.exe` name one; only two looks by path may be compared by mode."""
+    base = dict(st_dev=1, st_ino=2, st_size=3, st_mtime_ns=4, st_nlink=1)
+    plain = SimpleNamespace(**base, st_mode=0o100666)
+    executable = SimpleNamespace(**base, st_mode=0o100777)
+    assert snapshot_module._open_stamp(plain) == snapshot_module._open_stamp(executable)
+    assert snapshot_module._stamp(plain) != snapshot_module._stamp(executable)
+    assert snapshot_module._stamp(plain) == snapshot_module._stamp(SimpleNamespace(**vars(plain)))
+    for field, other in (("st_dev", 9), ("st_ino", 9), ("st_size", 9), ("st_mtime_ns", 9),
+                         ("st_nlink", 2)):
+        moved = SimpleNamespace(**{**base, field: other}, st_mode=0o100666)
+        assert snapshot_module._open_stamp(moved) != snapshot_module._open_stamp(plain), field
+        assert snapshot_module._stamp(moved) != snapshot_module._stamp(plain), field
 
 
 def test_effective_git_mode_has_exactly_one_caller_in_src():

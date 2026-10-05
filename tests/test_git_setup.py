@@ -196,6 +196,20 @@ def test_snapshot_seals_raw_bytes_and_clean_filter_oid_without_git_writes_or_pat
 
 
 @needs_git
+def test_preview_lists_files_whose_names_windows_reports_as_executable(tmp_path):
+    project = unborn(tmp_path)
+    git("config", "core.filemode", "false", cwd=project.root)
+    names = ["build.bat", "dos.com", "plain.txt", "run.cmd", "tool.exe"]
+    for name in names:
+        (project.root / name).write_bytes(b"echo\n")
+    answer = preview(project)
+    assert answer.status == 200, answer.payload
+    rows = answer.payload["setup"]["files"]
+    assert [row["path"] for row in rows] == names
+    assert {row["git_mode"] for row in rows} == {"100644"}
+
+
+@needs_git
 def test_preview_names_symlink_as_manual_and_refuses_an_index_or_head(tmp_path):
     project = unborn(tmp_path)
     outside = tmp_path / "outside"

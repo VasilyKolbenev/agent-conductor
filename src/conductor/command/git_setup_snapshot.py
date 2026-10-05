@@ -82,7 +82,7 @@ def _raw(root, name):
     digest, count = hashlib.sha256(), 0
     with path.open("rb") as stream:
         found = os.fstat(stream.fileno())
-        if _stamp(found) != _stamp(before):
+        if _open_stamp(found) != _open_stamp(before):
             raise SetupRefused("paths_changed")
         while count < before.st_size:
             chunk = stream.read(min(128 * 1024, before.st_size - count))
@@ -90,7 +90,7 @@ def _raw(root, name):
                 raise SetupRefused("paths_changed")
             digest.update(chunk)
             count += len(chunk)
-        if stream.read(1) or _stamp(os.fstat(stream.fileno())) != _stamp(before):
+        if stream.read(1) or _open_stamp(os.fstat(stream.fileno())) != _open_stamp(before):
             raise SetupRefused("paths_changed")
     if (_manual(root, name) is not None or _stamp(os.lstat(path)) != _stamp(before)
             or count != before.st_size):
@@ -99,8 +99,16 @@ def _raw(root, name):
 
 
 def _stamp(found):
-    return (found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns, found.st_mode,
-            found.st_nlink)
+    """The path-based look at a file: what `_open_stamp` holds, and its mode."""
+    return (*_open_stamp(found), found.st_mode)
+
+
+def _open_stamp(found):
+    """What a look by path and a look by open handle must agree on. The mode is left out: on
+    Windows a handle reports no execute bit, while the same file looked at by its path carries
+    it when the name ends in `.bat`, `.cmd`, `.com` or `.exe`. The mode is compared between
+    two looks by path, never between a path and a handle."""
+    return found.st_dev, found.st_ino, found.st_size, found.st_mtime_ns, found.st_nlink
 
 
 def _filtered(root, git, files, object_format):
