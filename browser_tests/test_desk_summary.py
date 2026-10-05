@@ -23,6 +23,7 @@ import re
 import pytest
 from playwright.sync_api import Route
 
+from browser_tests.desk_hold import close_context
 from browser_tests.desk_progress_bench import RAW_TOKENS, ZONE, desk_in, progress_url  # noqa: F401
 
 #: One evaluation: the summary as the page draws it.
@@ -382,7 +383,10 @@ UNVERIFIED = {"en": "Verification failed", "ru": "Проверка не прой
 
 
 def _made_to_say_unverified(route: Route) -> None:
-    """The real list, with the waiting run's row saying it finished with a check that failed."""
+    """The real list, with the waiting run's row saying it finished with a check that failed.
+
+    The desk's stream refreshes the list whenever the server says so, so a fetch of this handler
+    can be in flight when the window is closed: the window is closed by `close_context`."""
     body = route.fetch().json()
     for row in body["runs"]:
         if row["run_id"] == "run-waiting":
@@ -408,7 +412,7 @@ def test_a_check_that_did_not_pass_carries_its_sentence_in_the_same_row_of_the_p
             note: item.querySelector(".desk-sum__task-note")?.textContent ?? null};
         }""")
     finally:
-        context.close()
+        close_context(context)
     assert row["note"] == NOTE[language]
     assert row["what"].startswith(UNVERIFIED[language])
 

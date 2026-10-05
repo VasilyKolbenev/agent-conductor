@@ -8,6 +8,10 @@ closing reads of finished tasks read the run too), so a held controls read is a 
 as stale until it lands. Nothing is slowed and nothing is raced: every window of the re-read can
 be judged.
 
+A window whose answers are rewritten has a call in flight whenever one is being fetched, and a desk
+whose stream is live makes reads of its own at any time. `close_context` closes such a window
+without leaving that call's error for the next test.
+
 This is a helper and not a test module.
 """
 from __future__ import annotations
@@ -15,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import BrowserContext, Page, Route, expect
 
 
 class Hold:
@@ -58,6 +62,25 @@ class Hold:
         kept, self._kept = self._kept, []
         for route in kept:
             route.abort()
+
+
+def close_context(context: BrowserContext) -> None:
+    """Close a window some of whose route handlers may be fetching, and leave nothing behind.
+
+    A handler that calls `route.fetch()` is a call in flight until the answer is back. Closing the
+    context disposes the request context under it; the fetch then raises "Request context
+    disposed" in the handler, and Playwright raises that in the NEXT synchronous call of the
+    process -- the first call of the next test, which then fails for a reason that is none of its
+    own. Every route is unrouted first, telling the handlers in flight that their errors are
+    nobody's (`ignoreErrors`). `wait` is not used: it waits for every handler to finish, and a
+    handler that holds a route for the test to answer never does. Unrouting the last route turns
+    the page's interception off, which can strand a read paused across the switch, but the page
+    is closed on the next line and has nobody left to be waiting for it.
+    """
+    for page in context.pages:
+        page.unroute_all(behavior="ignoreErrors")
+    context.unroute_all(behavior="ignoreErrors")
+    context.close()
 
 
 def until(page: Page, what: str, done: Callable[[], Any]) -> None:
