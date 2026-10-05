@@ -267,8 +267,8 @@ def _prove(head, current):
 def _not_proven(error, record_is_legacy):
     if error.code == "same_boot":
         return OwnerRefused("recovery_required", (
-            "restart the OS before recovering an uncertain writer session (a full Restart: sleep, "
-            "hibernate and a Fast Startup shutdown keep the same boot)"))
+            "restart the OS before recovering an uncertain writer session "
+            "(do a full Restart, not a shutdown)"))
     if record_is_legacy:
         return OwnerRefused("recovery_required", (
             "the abandoned record predates the boot counter and cannot prove a restart; run "

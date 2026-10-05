@@ -17,7 +17,8 @@ from conductor import ownership, ownership_login as login, ownership_records as 
 from conductor.boot_witness import BootRefused
 from conductor.command.adapters.process import ProcessRunner
 from conductor.ownership_native import NativeHold
-from tests._boot_world import GUID, OTHER_GUID, counter, later_boot, measure
+from tests._boot_world import (GUID, OTHER_GUID, assert_plain_restart_advice, counter, later_boot,
+                               measure)
 from tests.test_command_task_store import durable_bytes
 from tests.test_project_ownership import activated
 
@@ -124,6 +125,16 @@ def test_the_same_boot_a_lower_counter_and_another_environment_refuse_and_write_
     error = refusal(login.recover_login, str(home))
     assert error.code == "login_recovery_required" and word in error.detail
     assert durable_bytes(box) == before
+
+
+def test_the_same_boot_refusal_of_a_login_recovery_advises_a_full_restart_and_nothing_more(
+        tmp_path, monkeypatch):
+    home, box, _ = legacy_lease(tmp_path, monkeypatch)
+    measure(monkeypatch, counter(42))
+    login.prepare_login_recovery(str(home))
+    error = refusal(login.recover_login, str(home))
+    assert error.code == "login_recovery_required"
+    assert_plain_restart_advice(error.detail)
 
 
 def test_a_scheme_change_alone_is_no_restart_even_with_a_receipt_on_record(

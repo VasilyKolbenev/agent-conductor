@@ -275,8 +275,8 @@ def _write_receipt(stack, box, bound, record, current):
 def _not_proven(error, record_is_legacy):
     if error.code == "same_boot":
         return OwnerRefused("login_recovery_required", (
-            "restart the OS before recovering the shared login lease (a full Restart: sleep, "
-            "hibernate and a Fast Startup shutdown keep the same boot)"))
+            "restart the OS before recovering the shared login lease "
+            "(do a full Restart, not a shutdown)"))
     if record_is_legacy:
         return OwnerRefused("login_recovery_required", (
             "the lease predates the boot counter and cannot prove a restart; run `ownership "

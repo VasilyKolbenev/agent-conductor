@@ -26,6 +26,19 @@ def later_boot(recorded):
     return f"{found.scheme}:{uuid.uuid4()}"
 
 
+# What the OS does with the counter across sleep, hibernate and a Fast Startup shutdown is not
+# measured yet, so no product text may state it as fact.
+UNMEASURED_CLAIMS = ("sleep", "hibernat", "fast startup", "keep the same boot")
+
+
+def assert_plain_restart_advice(text):
+    """The text advises a full Restart and says nothing about how other power states act."""
+    lowered = text.lower()
+    assert "full restart" in lowered, f"no plain advice to do a full Restart in: {text!r}"
+    found = [word for word in UNMEASURED_CLAIMS if word in lowered]
+    assert not found, f"states unmeasured OS behaviour {found} in: {text!r}"
+
+
 def measure(monkeypatch, value):
     """From now on the product measures `value`; a callable is asked every time."""
     from conductor import ownership_boot

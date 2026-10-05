@@ -185,5 +185,4 @@ def _counter(before: Witness, after: Witness) -> Witness:
 def _same_boot() -> BootRefused:
     return BootRefused("same_boot", (
         "the boot has not changed since the record was written, so the OS has not restarted; "
-        "restart the OS (a full Restart: sleep, hibernate and a Fast Startup shutdown keep the "
-        "same boot) and try again"))
+        "restart the OS (do a full Restart, not a shutdown) and try again"))

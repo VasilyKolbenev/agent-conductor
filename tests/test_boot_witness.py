@@ -5,7 +5,7 @@ import pytest
 
 from conductor import boot_witness
 from conductor.boot_witness import BootRefused, counter_text, parse, prove_restart
-from tests._boot_world import GUID, OTHER_GUID, counter
+from tests._boot_world import GUID, OTHER_GUID, assert_plain_restart_advice, counter
 
 LINUX_A = "linux:5b1d9c0e-3b7a-4a76-9d0f-0d1f6c2e8a11"
 LINUX_B = "linux:6c2e0d1f-4c8b-4b87-8e1a-1e207d3f9b22"
@@ -66,10 +66,10 @@ def test_a_strictly_greater_counter_of_the_same_scope_proves_a_restart():
     prove_restart(counter(1), counter(4294967294))
 
 
-def test_an_equal_counter_is_the_same_boot_and_says_how_to_restart():
+def test_an_equal_counter_is_the_same_boot_and_advises_a_full_restart_and_nothing_more():
     error = refusal(counter(42), counter(42))
     assert error.code == "same_boot"
-    assert "restart" in error.detail.lower() and "sleep" in error.detail.lower()
+    assert_plain_restart_advice(error.detail)
 
 
 def test_a_smaller_counter_is_a_decrease_and_not_a_restart():
