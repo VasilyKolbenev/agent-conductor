@@ -76,8 +76,12 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
             (response.status, response.json()))
             if urlsplit(response.url).path == f"/command/runs/{RUN}" else None)
         page.goto(f"{url}#task={TASK}&run={RUN}&panel=run&lang=en", wait_until="load")
-        # The stream's first full refresh reads the chosen run again. It is over when the
-        # connection says open, so the person acts after it and not while it is under way.
+        # The stream's first full refresh reads the chosen run again, and it is over when the
+        # connection says open. The wait ends that one only: the server's first state frame
+        # asks for a second, which begins at that same moment and runs beside the person's
+        # steps. This test does not depend on the stream's timing because the host keeps the
+        # entries and the preview through a re-read of the same run (witnessed by the re-read
+        # tests below), not because of this wait.
         expect(page.locator("#deskShell")).to_have_attribute(
             "data-connection", "open", timeout=10000)
         page.locator('[data-focus-key="pult:actor-change"]').click()
