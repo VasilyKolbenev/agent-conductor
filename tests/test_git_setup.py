@@ -180,9 +180,12 @@ def test_snapshot_seals_raw_bytes_and_clean_filter_oid_without_git_writes_or_pat
     value = answer.payload["setup"]
     row = next(row for row in value["files"] if row["path"] == name)
     assert row == dict(path=name, length=len(data), sha256=sha256(data),
-                       git_oid=blob_oid(b"clean payload\n", value["object_format"]))
-    encoded = json.dumps(value["files"], sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+                       git_oid=blob_oid(b"clean payload\n", value["object_format"]),
+                       git_mode="100644")
+    encoded = json.dumps({"digest_version": 2, "files": value["files"]}, sort_keys=True,
+                         ensure_ascii=True, separators=(",", ":")).encode("ascii")
     assert value["paths_digest"] == sha256(encoded) and "suspicious_name" in value["warnings"]
+    assert value["digest_version"] == 2
     assert {row["path"] for row in value["files"]} == {name, ".gitattributes"}
     assert snapshot(project.root / ".git") == before
     assert not (data_root(project.root) / "git/setup/first_commit.json").exists()
