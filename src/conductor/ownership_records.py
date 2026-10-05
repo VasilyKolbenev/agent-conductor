@@ -25,7 +25,8 @@ _FIELDS_V2 = _FIELDS | {"prepared_boot"}
 _NEXT = {None: {"prepared"}, "prepared": {"moved"}, "moved": {"active"},
     "active": {"opened", "rollback_prepared"},
     "opened": {"closed", "recovered", "recovery_prepared"},
-    "closed": {"opened"}, "recovered": {"opened"}, "recovery_prepared": {"recovered"},
+    "closed": {"opened"}, "recovered": {"opened"},
+    "recovery_prepared": {"recovered", "recovery_prepared"},
     "rollback_prepared": {"fence_retired"}, "fence_retired": {"rolled_back"},
     "rolled_back": set()}
 _SESSION_PHASES = frozenset({"opened", "closed", "recovered", "recovery_prepared"})
@@ -167,10 +168,27 @@ def _ending_prepared(value, previous):
         raise _conflict("a preparation cannot claim a recovered session")
     if value["boot_id"] != previous["boot_id"]:
         raise _conflict("a preparation changed the old boot identity")
-    if not boot_witness.is_legacy(previous["boot_id"]):
-        raise _conflict("a preparation is only for a record in the legacy boot format")
     if not boot_witness.is_counter(value["prepared_boot"]):
         raise _conflict("a preparation must hold a counter witness")
+    _in_another_environment(value, previous)
+
+
+def _in_another_environment(value, previous):
+    """A preparation stands only where nothing before it could be compared with its measurement.
+
+    The first one follows a record in the legacy boot format, or a counter record of another boot
+    environment. A later one follows a preparation of another environment. Whatever the counter
+    reads, a preparation in the environment that already stands moves no baseline.
+    """
+    prepared = previous["phase"] == "recovery_prepared"
+    standing = boot_witness.parse(previous["prepared_boot"] if prepared else previous["boot_id"])
+    if standing.kind == "legacy":
+        return
+    if standing.kind != "counter":
+        raise _conflict("a preparation follows only a record in the legacy boot format "
+                        "or a counter of another boot environment")
+    if boot_witness.parse(value["prepared_boot"]).scope == standing.scope:
+        raise _conflict("a new preparation needs a boot environment other than the standing one")
 
 
 def _ending_recovered(value, previous):

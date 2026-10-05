@@ -117,15 +117,96 @@ def test_a_recovered_after_a_preparation_must_carry_the_preparation_unchanged(tm
     assert "preparation" in refused(tmp_path)
 
 
-def test_a_preparation_follows_only_a_legacy_opened(tmp_path):
-    for boot in (counter(42), LINUX_A):
+def test_a_preparation_follows_only_a_legacy_opened_or_a_counter_of_another_environment(tmp_path):
+    for boot, word in ((counter(42), "environment"), (LINUX_A, "legacy")):
         root = tmp_path / boot[:5]
         root.mkdir()
         head = start(root, boot)
-        with pytest.raises(OwnerRefused, match="legacy"):
+        with pytest.raises(OwnerRefused, match=word):
             prepare(root, head, counter(50))
         forge(root, head, schema=2, phase="recovery_prepared", prepared_boot=counter(50))
-        assert "legacy" in refused(root)
+        assert word in refused(root)
+
+
+def test_a_counter_record_met_in_another_environment_is_prepared_and_recovered_there(tmp_path):
+    head = start(tmp_path, counter(42))
+    prepared = prepare(tmp_path, head, counter(500, OTHER_GUID))
+    assert prepared["boot_id"] == counter(42) and prepared["session_id"] == SESSION
+    assert prepared["previous_digest"] == digest(canonical(head))
+    assert prepared["prepared_boot"] == counter(500, OTHER_GUID) and chain(tmp_path) == prepared
+    done = recover(tmp_path, prepared, counter(501, OTHER_GUID))
+    assert done["prepared_boot"] == counter(500, OTHER_GUID) and chain(tmp_path) == done
+
+
+def test_a_second_preparation_in_another_environment_extends_the_history_and_is_recovered_there(
+        tmp_path):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    second = prepare(tmp_path, first, counter(500, OTHER_GUID))
+    assert second["previous_digest"] == digest(canonical(first))
+    assert second["boot_id"] == LEGACY_A and second["session_id"] == SESSION
+    assert second["recovered_session"] is None and chain(tmp_path) == second
+    done = recover(tmp_path, second, counter(501, OTHER_GUID))
+    assert done["prepared_boot"] == counter(500, OTHER_GUID) and chain(tmp_path) == done
+
+
+@pytest.mark.parametrize("measured", [
+    counter(43), counter(500, OTHER_GUID), counter(499, OTHER_GUID)])
+def test_after_a_second_preparation_only_the_newest_one_is_recovered_from(tmp_path, measured):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    second = prepare(tmp_path, first, counter(500, OTHER_GUID))
+    with pytest.raises(OwnerRefused):
+        recover(tmp_path, second, measured)
+    forge(tmp_path, second, schema=2, phase="recovered", boot_id=measured,
+          prepared_boot=counter(500, OTHER_GUID), recovered_session=SESSION)
+    assert "recovery" in refused(tmp_path)
+
+
+@pytest.mark.parametrize("later", [counter(60), counter(30), counter(42)])
+def test_a_second_preparation_in_the_same_environment_is_refused_whatever_its_counter(
+        tmp_path, later):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    with pytest.raises(OwnerRefused, match="environment"):
+        prepare(tmp_path, first, later)
+    forge(tmp_path, first, schema=2, phase="recovery_prepared", prepared_boot=later)
+    assert "environment" in refused(tmp_path)
+
+
+@pytest.mark.parametrize("changes, word", [
+    ({"session_id": OTHER_SESSION}, "session"), ({"boot_id": LEGACY_B}, "boot"),
+    ({"boot_id": counter(42)}, "boot"), ({"prepared_boot": LEGACY_B}, "counter"),
+    ({"prepared_boot": None}, "counter"), ({"recovered_session": SESSION}, "session"),
+    ({"schema": 1}, "schema")])
+def test_a_second_preparation_that_changes_the_old_facts_or_holds_no_counter_is_refused(
+        tmp_path, changes, word):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    shaped = {"schema": 2, "phase": "recovery_prepared",
+              "prepared_boot": counter(500, OTHER_GUID), **changes}
+    if shaped["schema"] == 1:
+        shaped.pop("prepared_boot")
+        value = {key: first[key] for key in OLD_FIELDS} | shaped
+        value.update(generation=first["generation"] + 1, previous_digest=digest(canonical(first)))
+        exclusive(tmp_path / HOME / RECORDS / f"gen-{value['generation']:08d}.json",
+                  canonical(value))
+    else:
+        forge(tmp_path, first, **shaped)
+    assert word in refused(tmp_path)
+
+
+def test_a_second_preparation_that_does_not_bind_the_previous_one_is_refused(tmp_path):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    value = dict(first, schema=2, phase="recovery_prepared",
+                 prepared_boot=counter(500, OTHER_GUID), generation=first["generation"] + 1,
+                 previous_digest=digest(b"another history"))
+    exclusive(tmp_path / HOME / RECORDS / f"gen-{value['generation']:08d}.json", canonical(value))
+    assert "predecessor" in refused(tmp_path)
+
+
+def test_a_chain_may_come_back_to_an_earlier_environment_when_every_step_changes_it(tmp_path):
+    first = prepare(tmp_path, start(tmp_path, LEGACY_A), counter(42))
+    second = prepare(tmp_path, first, counter(500, OTHER_GUID))
+    third = prepare(tmp_path, second, counter(43))
+    done = recover(tmp_path, third, counter(44))
+    assert done["prepared_boot"] == counter(43) and chain(tmp_path) == done
 
 
 @pytest.mark.parametrize("changes, word", [

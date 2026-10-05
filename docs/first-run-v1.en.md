@@ -254,7 +254,10 @@ tool working through the shared login: a live holder makes the command refuse an
    ```
 
 Between steps 1 and 3 the project does not open: a prepared record is not a release. If step 3 still
-asks for a restart, do a full Restart and repeat only step 3. If it refuses for another reason, keep its
+asks for a restart, do a full Restart and repeat only step 3. If step 3 says that the recorded boot
+environment is not the current one, another Restart does not help: run step 1 again. Only that command,
+run by you, prepares the record in the current environment (it adds a new preparation and keeps the
+earlier ones); then do a full Restart and repeat step 3. If it refuses for another reason, keep its
 output for a bug report and do not delete service records. A record that needs no preparation says so;
 for it the plain command is enough.
 

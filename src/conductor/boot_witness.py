@@ -20,7 +20,7 @@ MAX_COUNTER = 0xFFFFFFFE
 #: Every reason a boot witness is refused: the comparison first, then the readers.
 CODES = frozenset({
     "same_boot", "counter_decreased", "counter_overflow", "other_scope", "other_scheme",
-    "legacy_value", "unknown_format",
+    "legacy_value", "unknown_format", "preparation_unneeded",
     "unsupported_platform", "native_unavailable", "layout_unknown", "partial_read",
     "value_empty"})
 
@@ -186,3 +186,78 @@ def _same_boot() -> BootRefused:
     return BootRefused("same_boot", (
         "the boot has not changed since the record was written, so the OS has not restarted; "
         "restart the OS (do a full Restart, not a shutdown) and try again"))
+
+
+def preparation_needed(recorded: str, current: str, *, prepared: bool) -> bool:
+    """Decide whether a NEW preparation may be written, or the standing one is the answer.
+
+    A preparation records the measurement a later recovery must be newer than. Only a counter of
+    the same boot environment can be exceeded, so a measurement from another environment is the
+    one case where a record, or an earlier preparation, needs a new baseline. Nothing here
+    permits a recovery: a preparation grants nothing, and a restart inside the new environment is
+    still required.
+
+    Args:
+        recorded: What a recovery would compare with: the measurement of the latest preparation
+            when `prepared`, else the boot the record itself holds.
+        current: The measurement taken now.
+        prepared: Whether `recorded` is the measurement of a preparation.
+
+    Returns:
+        True to write a new preparation, False when the standing preparation stands (a repeat
+        in the same environment never moves its baseline, whatever the counter now reads).
+
+    Raises:
+        BootRefused: `unknown_format` or `counter_overflow` for a side that is not a witness;
+            `other_scheme` when `current` is not a counter; `preparation_unneeded` for a per-boot
+            id record or a record whose restart is already proven; `same_boot` or
+            `counter_decreased` for a counter of this environment with no preparation. A lower
+            counter, an overflow and an unreadable measurement are never a way to prepare again.
+    """
+    before, after = _side(recorded, "recorded"), _side(current, "current")
+    if before.kind == "unique":
+        raise BootRefused("preparation_unneeded", (
+            "this record holds a per-boot id, which a later id proves a restart with; "
+            "nothing can be prepared"))
+    if after.kind != "counter":
+        raise BootRefused("other_scheme", (
+            "the current boot measurement is not a counter witness, so no restart can be "
+            "prepared with it"))
+    if before.kind == "legacy" or before.scope != after.scope:
+        return True
+    if prepared:
+        return False
+    prove_restart(recorded, current)
+    raise BootRefused("preparation_unneeded", (
+        "a restart is already proven for this record by the counter now read"))
+
+
+def preparation_refusal(error: BootRefused, command: str) -> str:
+    """The sentence for a preparation that was refused, naming the recovery command to use.
+
+    Args:
+        error: What `preparation_needed` raised, or the reader's own refusal.
+        command: The recovery command this refusal belongs to, such as `ownership recover`.
+    """
+    if error.code == "same_boot":
+        return ("no preparation is needed: the record already holds a comparable boot and the "
+                "OS has not restarted since it was written; do a full Restart (not a shutdown), "
+                f"then run `{command}`")
+    if error.code == "preparation_unneeded":
+        return f"no preparation is needed: {error.detail}; run `{command}`"
+    if error.code == "other_scheme":
+        return "this OS gives no boot counter to prepare a restart with"
+    if error.code == "counter_decreased":
+        return f"nothing can be prepared: {error.detail}"
+    return f"the OS boot cannot be measured, so no restart can be prepared: {error}"
+
+
+def other_environment_advice(error: BootRefused, command: str) -> str:
+    """What to do when the recorded boot environment is not the current one.
+
+    A second Restart cannot make the old environment the current one, so the only exit is an
+    explicit new preparation in the current environment, followed by a Restart inside it.
+    """
+    return (f"no restart is proven: {error.detail}. Another Restart does not make the old "
+            f"environment the current one: run `{command} --prepare-restart` to prepare in the "
+            f"current boot environment, do a full Restart, then run `{command}` again")

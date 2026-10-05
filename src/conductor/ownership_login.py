@@ -19,10 +19,13 @@ _FORMAT = {"protocol", "home", "parent", "box", "anchor"}
 _LEASE = {"protocol", "format_digest", "boot", "nonce", "identity"}
 _RECEIPT = {"protocol", "format_digest", "lease_nonce", "lease_identity", "lease_digest",
             "lease_boot", "prepared_boot"}
+#: A preparation after the first one also binds its place in the chain and the one before it.
+_RECEIPT_NEXT = _RECEIPT | {"sequence", "previous_digest"}
 LEASE_V1 = "conduct.login-lease.v1"
 #: A lease that holds the counter witness: the closed v1 record cannot carry it.
 LEASE_V2 = "conduct.login-lease.v2"
 RECEIPT = "conduct.login-recovery-prepared.v1"
+RECEIPT_V2 = "conduct.login-recovery-prepared.v2"
 _OLD_BOOT = re.compile(r"(?:windows|linux|darwin):[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 
 
@@ -232,8 +235,10 @@ def _measure(consequence):
                            f"the OS boot cannot be measured, so {consequence}: {error}") from error
 
 
-def _receipt_path(box, record):
-    return box / ("prepared-" + record["nonce"] + ".json")
+def _receipt_path(box, record, index=0):
+    """The name of the `index`-th preparation of a lease: `prepared-<nonce>[-<index>].json`."""
+    suffix = "" if index == 0 else f"-{index}"
+    return box / f"prepared-{record['nonce']}{suffix}.json"
 
 
 def _receipt_facts(bound, record):
@@ -242,33 +247,80 @@ def _receipt_facts(bound, record):
             "lease_boot": record["boot"]}
 
 
-def _receipt(stack, box, bound, record):
-    """The preparation of this very lease, held; `None` when there is none.
+def _invalid(detail):
+    return OwnerRefused("login_ownership_invalid", detail)
 
-    Refuses a receipt that is damaged, partial or bound to anything else than this lease's
-    format, nonce, identity, canonical bytes and recorded boot.
-    """
-    path = _receipt_path(box, record)
-    if not os.path.lexists(path):
-        return None
-    _pin(stack, path)
-    value = _read(path, _RECEIPT, RECEIPT)
+
+def _receipt_names(box, record):
+    """The paths of this lease's preparations in order; a gap or a stray name is refused."""
+    prefix = "prepared-" + record["nonce"]
+    shape = re.compile(re.escape(prefix) + r"(?:-([1-9][0-9]*))?\.json")
+    found = {}
+    for path in box.iterdir():
+        if not path.name.startswith(prefix):
+            continue
+        match = shape.fullmatch(path.name)
+        if match is None:
+            raise _invalid(f"the box holds a file of this lease that is no recovery "
+                           f"preparation ({path.name})")
+        found[int(match[1] or 0)] = path
+    if sorted(found) != list(range(len(found))):
+        raise _invalid("the recovery preparations of this lease are not a whole sequence")
+    return [found[number] for number in range(len(found))]
+
+
+def _checked(path, index, earlier, bound, record):
+    """One preparation, read and bound to this lease, to its place and to the one before it."""
+    first = index == 0
+    value = _read(path, _RECEIPT if first else _RECEIPT_NEXT, RECEIPT if first else RECEIPT_V2)
     for key, wanted in _receipt_facts(bound, record).items():
         if value[key] != wanted:
-            raise OwnerRefused("login_ownership_invalid",
-                               f"the recovery preparation does not belong to this lease ({key})")
+            raise _invalid(f"the recovery preparation does not belong to this lease ({key})")
     if not boot_witness.is_counter(value["prepared_boot"]):
-        raise OwnerRefused("login_ownership_invalid", "the recovery preparation holds no counter")
+        raise _invalid("the recovery preparation holds no counter")
+    if not first and (type(value["sequence"]) is not int or value["sequence"] != index
+                      or value["previous_digest"] != digest(canonical(earlier[-1]))):
+        raise _invalid("the recovery preparation does not follow the one before it")
+    standing = boot_witness.parse(_baseline(record, earlier))
+    if standing.kind == "counter" and (
+            standing.scope == boot_witness.parse(value["prepared_boot"]).scope):
+        raise _invalid("the recovery preparation stands in the environment that already stands")
     return value
 
 
-def _write_receipt(stack, box, bound, record, current):
-    path = _receipt_path(box, record)
-    value = {"protocol": RECEIPT, **_receipt_facts(bound, record), "prepared_boot": current}
+def _receipts(stack, box, bound, record):
+    """The preparations of this lease in order, each held and checked; `[]` when there is none.
+
+    A lease that holds a per-boot id (Linux, macOS) has none and is never asked for any. For the
+    others every file is held natively before it is read, and a damaged, partial, foreign,
+    misnumbered or unlinked one grants nothing.
+    """
+    if not (boot_witness.is_legacy(record["boot"]) or boot_witness.is_counter(record["boot"])):
+        return []
+    chain = []
+    for index, path in enumerate(_receipt_names(box, record)):
+        _pin(stack, path)
+        chain.append(_checked(path, index, chain, bound, record))
+    return chain
+
+
+def _baseline(record, chain):
+    """What a recovery of this lease compares with: the newest preparation, else its own boot."""
+    return chain[-1]["prepared_boot"] if chain else record["boot"]
+
+
+def _write_receipt(stack, box, bound, record, current, chain):
+    """Create the next preparation exclusively; an existing name is never overwritten."""
+    index = len(chain)
+    value = {"protocol": RECEIPT if index == 0 else RECEIPT_V2,
+             **_receipt_facts(bound, record), "prepared_boot": current}
+    if index:
+        value.update(sequence=index, previous_digest=digest(canonical(chain[-1])))
+    path = _receipt_path(box, record, index)
     exclusive(path, canonical(value))
     _pin(stack, path)
     if path.read_bytes() != canonical(value):
-        raise OwnerRefused("login_ownership_invalid", "created recovery preparation was replaced")
+        raise _invalid("created recovery preparation was replaced")
     return value
 
 
@@ -277,6 +329,9 @@ def _not_proven(error, record_is_legacy):
         return OwnerRefused("login_recovery_required", (
             "restart the OS before recovering the shared login lease "
             "(do a full Restart, not a shutdown)"))
+    if error.code == "other_scope":
+        return OwnerRefused("login_recovery_required", boot_witness.other_environment_advice(
+            error, "ownership recover-login"))
     if record_is_legacy:
         return OwnerRefused("login_recovery_required", (
             "the lease predates the boot counter and cannot prove a restart; run `ownership "
@@ -285,8 +340,7 @@ def _not_proven(error, record_is_legacy):
     return OwnerRefused("login_recovery_required", f"no restart is proven: {error.detail}")
 
 
-def _prove(record, receipt, current):
-    recorded = record["boot"] if receipt is None else receipt["prepared_boot"]
+def _prove(recorded, current):
     try:
         boot_witness.prove_restart(recorded, current)
     except BootRefused as error:
@@ -296,42 +350,48 @@ def _prove(record, receipt, current):
 def recover_login(auth_home):
     """A measured reboot can retire an abandoned resource; never run a login.
 
-    A lease from before the boot counter stands on the receipt `prepare_login_recovery` wrote.
+    A lease from before the boot counter stands on the preparations `prepare_login_recovery`
+    wrote, and so does a lease that met another boot environment: the newest one counts.
     """
     try:
         with ExitStack() as stack:
             home, box, bound, record, held = _hold_standing(stack, auth_home)
             current = _measure("no restart can be proven")
-            legacy = boot_witness.is_legacy(record["boot"])
-            receipt = _receipt(stack, box, bound, record) if legacy else None
-            _prove(record, receipt, current)
+            chain = _receipts(stack, box, bound, record)
+            _prove(_baseline(record, chain), current)
             held.rename(box / ("recovered-" + record["nonce"] + ".json"))
             return {"state": "recovered", "resource": digest(canonical(list(identity(home))))}
     except OSError as error:
         raise _busy() from error
 
 
-def prepare_login_recovery(auth_home):
-    """Write the receipt a later recovery of an old lease stands on; release nothing.
+def _preparation_refused(error):
+    return OwnerRefused("login_recovery_required",
+                        boot_witness.preparation_refusal(error, "ownership recover-login"))
 
-    The receipt is created exclusively under the box lock and the hold on `active.json`; no token
-    or auth file is read. A second call returns the first receipt's facts and writes nothing.
+
+def prepare_login_recovery(auth_home):
+    """Write the next preparation a later recovery stands on; release nothing.
+
+    The first one is for an old lease. A new one, binding the one before it, is written when the
+    boot environment is no longer the one the lease or the newest preparation was measured in. Each
+    is created exclusively under the box lock and the hold on `active.json`; no token or auth file
+    is read. In the environment that already stands a repeat returns the newest preparation's
+    facts and writes nothing; a lower counter, an overflow or an unreadable boot is never a way to
+    prepare again.
     """
     try:
         with ExitStack() as stack:
             home, box, bound, record, _ = _hold_standing(stack, auth_home)
-            if not boot_witness.is_legacy(record["boot"]):
-                raise OwnerRefused("login_recovery_required", (
-                    "this lease already holds a comparable boot, so no preparation is needed: "
-                    "restart the OS, then run `ownership recover-login`"))
-            receipt = _receipt(stack, box, bound, record)
-            created = receipt is None
-            if created:
-                current = _measure("no restart can be prepared")
-                if not boot_witness.is_counter(current):
-                    raise OwnerRefused("login_recovery_required",
-                                       "this OS gives no boot counter to prepare a restart with")
-                receipt = _write_receipt(stack, box, bound, record, current)
+            chain = _receipts(stack, box, bound, record)
+            current = _measure("no restart can be prepared")
+            try:
+                created = boot_witness.preparation_needed(
+                    _baseline(record, chain), current, prepared=bool(chain))
+            except BootRefused as error:
+                raise _preparation_refused(error) from error
+            receipt = (_write_receipt(stack, box, bound, record, current, chain) if created
+                       else chain[-1])
             return {"state": "recovery_prepared", "released": False, "created": created,
                     "resource": digest(canonical(list(identity(home)))),
                     "prepared_boot": receipt["prepared_boot"]}
