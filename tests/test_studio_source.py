@@ -504,7 +504,12 @@ def test_the_arms_that_drop_a_row_are_counted_apart_from_the_ones_that_refuse():
     # 13 after the controls route's duplicate-instance arm moved to
     # `studio-controls` with its projection: the arm still exists and is still
     # driven, one module along.
-    assert source.count("continue;") == 14
+    # One fewer, 13, from a different cause: `projectProviders` drops a row for an unknown
+    # implementation or an unknown login in ONE arm now (its `PROVIDER_IMPLEMENTATION ...
+    # || ... PROVIDER_AUTH` condition) where it used two statements. The same rows are
+    # dropped and the arm is still a DROP; tests/test_studio_provider_arms.py runs the
+    # module against the two statements it replaced.
+    assert source.count("continue;") == 13
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is
