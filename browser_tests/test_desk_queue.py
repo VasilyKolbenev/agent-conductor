@@ -36,6 +36,7 @@ WORDS = {
            "a": "Waiting for your decision", "confirm": "Waiting for your confirmation",
            "b_confirm": "1. Bravo · waits for your confirmation: the terms changed"
                         " · noticed · time not given",
+           "b_hint": "Give your name above to confirm this entry.",
            "inactive": "Project not active · the queue starts when the project becomes active",
            "inactive_rail": "Queued · starts once the project is active"},
     "ru": {"head": "Очередь проекта", "now": "Сейчас: Alpha · держит слот",
@@ -44,6 +45,7 @@ WORDS = {
            "a": "Ждёт вашего решения", "confirm": "Ждёт вашего подтверждения",
            "b_confirm": "1. Bravo · ждёт вашего подтверждения: условия изменились"
                         " · замечено · время не указано",
+           "b_hint": "Укажите имя выше, чтобы подтвердить эту запись.",
            "inactive": "Проект не активен · очередь начнётся, когда проект станет активным",
            "inactive_rail": "В очереди · начнётся после активации"},
 }
@@ -90,6 +92,10 @@ def test_an_entry_whose_document_changed_after_it_was_queued_waits_for_confirmat
         assert [(row["run"], row["state"], row["tone"], row["text"]) for row in facts["entries"]
                 ] == [("task-b-r1", "confirmation_required", "amber", words["b_confirm"]),
                       ("task-c-r1", "preauthorized", None, words["c"])]
+        # The desk has no name for the person, so the entry that waits for a confirmation asks
+        # for one beside its facts, in a line of its own: the other entry says nothing more.
+        assert [(row["run"], row["hint"]) for row in facts["entries"]] == [
+            ("task-b-r1", words["b_hint"]), ("task-c-r1", None)]
         assert (facts["rail"]["task-b"], facts["rail"]["task-c"]) == (
             words["confirm"], words["queued"][1])
 
