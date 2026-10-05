@@ -4,7 +4,9 @@
 // been approved or refused -- so the run itself is read, and only when its row says it could have
 // been accepted (`mayBeClosed`: nothing open, no step asking a person, some action with a result)
 // and only for the newest run of a task. A finished project therefore costs one read per finished
-// task, once, and a project with nothing finished costs none.
+// task in every load of the lists (the boot's, each full refresh the stream asks for, the run
+// panel's refresh, the wizard's exit): nothing is kept from one load to the next, and a project
+// with nothing finished costs none.
 //
 // The reads go through the door the boot module hands in, so a refusal that says the desk is open
 // for another project ends it in the one place that knows how. What a read brought is judged as

@@ -17,12 +17,16 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   let selected = null, task = null, detailStamp = null, epoch = 0, disposed = false;
   let facts = null, preview = null, confirming = false, phase = "idle", error = null;
   let branch = "", title = "", documents = null, actor = null, optionsRevision = 0;
-  let availableDocs = [];
+  let availableDocs = [], rereading = false;
   const pult = element("section", {className: "desk-accept"});
   const detail = element("section", {className: "desk-accept desk-accept--detail"});
+  // While the selected run is read again the desk draws the earlier read as "stale": an answer
+  // to this host's own request still belongs to that run, so it may land, but nothing is asked
+  // or confirmed until the new read has landed and shown the run unchanged.
   function current(ticket, write = false) {
     const now = binding();
-    return !disposed && ticket === epoch && !now.foreign && now.ready
+    return !disposed && ticket === epoch && !now.foreign
+      && (now.ready || (rereading && !write))
       && now.runId === selected && now.taskId === task
       && (!write || (now.mode === "active" && now.connection === "open"));
   }
@@ -56,13 +60,16 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   function sync(desk) {
     if (disposed) return;
     const detail = desk.run.detail;
-    const value = desk.run.phase === "ready" &&
-      detail?.config?.task?.id === desk.taskId ? detail?.run?.run_id ?? null : null;
+    const shown = detail?.config?.task?.id === desk.taskId ? detail?.run?.run_id ?? null : null;
+    const value = desk.run.phase === "ready" ? shown : null;
+    // The run held is read again: what stands is kept until the read lands and says if it changed.
+    rereading = desk.run.phase === "stale" && shown !== null && shown === selected
+      && desk.taskId === task;
     const records = detail?.records ?? [];
     const last = records.at(-1);
     const stamp = value === null ? null : `${detail?.run?.status ?? ""}/${records.length}/`
       + `${last?.sequence ?? last?.record_id ?? last?.record_type ?? ""}`;
-    if (value !== selected || desk.taskId !== task || stamp !== detailStamp) {
+    if (!rereading && (value !== selected || desk.taskId !== task || stamp !== detailStamp)) {
       epoch += 1; selected = value; task = desk.taskId; detailStamp = stamp; reset();
       if (value !== null) {
         const nodes = desk.run.detail?.graph?.definition?.nodes ?? [];

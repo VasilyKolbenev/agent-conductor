@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import expect
 
 from browser_tests import desk_queue_rig as rig
 
@@ -27,7 +28,11 @@ def test_a_changed_entry_shows_reviewed_terms_then_keeps_its_place_with_a_new_pe
         chromium, tmp_path: Path, language, words):
     with rig.project(tmp_path, SEEDS) as served:
         _world(served)
-        window = rig.open_desk(chromium, served, language)
+        reads: list = []
+        # The dialog opens first and the terms are read after it. The read is held, so the window
+        # in which the dialog stands without its terms lasts as long as the test needs.
+        window = rig.open_desk(chromium, served, language, before=lambda page: page.route(
+            "**/automation/preview", lambda route: reads.append(route)))
         row = window.facts()["entries"][0]
         assert row["state"] == "confirmation_required"
         assert next(button for button in row["buttons"] if button["key"] == f"queue:confirm:{B}")[
@@ -35,10 +40,15 @@ def test_a_changed_entry_shows_reviewed_terms_then_keeps_its_place_with_a_new_pe
         assert words[2] in window.page.locator(f'[data-run-id="{B}"]').inner_text()
         window.name("vasya")
         window.press(f"queue:confirm:{B}")
-        window.page.locator(f'[data-focus-key="queue:confirm:accept:{B}"]')\
-            .wait_for(state="visible")
+        accept = window.page.locator(f'[data-focus-key="queue:confirm:accept:{B}"]')
+        accept.wait_for(state="visible")
         dialog = window.page.locator('[data-pult-dialog="confirm"]')
         assert words[0] in dialog.inner_text() and words[1] in dialog.inner_text()
+        window.until("the read of the terms", lambda: reads)
+        assert accept.get_attribute("aria-disabled") == "true"
+        assert "3" not in dialog.inner_text()
+        reads.pop().continue_()
+        expect(accept).not_to_have_attribute("aria-disabled", "true")
         assert "3" in dialog.inner_text()
         assert served.queue()["entries"][0]["state"] == "confirmation_required"
         window.press(f"queue:confirm:accept:{B}")

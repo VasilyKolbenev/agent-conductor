@@ -240,7 +240,11 @@ def _desk_reads(project: dict) -> dict[str, dict]:
 @pytest.fixture
 def desk_of(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., dict]]:  # noqa: F811
     """A factory: boot the desk's page in a language with its reads answered from `bodies`, and
-    say what its rail drew, which routes it asked and what went wrong in the console."""
+    say what its rail drew, which routes it asked and what went wrong in the console.
+
+    The stream is ended (HTTP 204, as the other rigs do), so the page holds the boot's own reads:
+    a stream that opens makes full refreshes after the boot, and each one reads the lists and the
+    automation again, so what the page had asked would depend on how far the stream had got."""
     contexts = []
 
     def make(language: str, bodies: dict[str, dict]) -> dict:
@@ -257,6 +261,7 @@ def desk_of(chromium: Browser, seeded_url: str) -> Iterator[Callable[..., dict]]
             route.fulfill(status=200 if path in bodies else 404,
                           content_type="application/json", body=json.dumps(body))
 
+        page.route("**/events", lambda route: route.fulfill(status=204))
         for pattern in ("**/command/tasks", "**/command/runs", "**/command/runs/*/automation"):
             page.route(pattern, answer)
         page.on("pageerror", lambda error: problems.append(str(error)))
