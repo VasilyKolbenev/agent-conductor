@@ -207,6 +207,9 @@ def test_a_stale_read_that_lands_with_a_changed_run_state_resets_entries_and_rea
     assert out == {"title": "", "digest": False, "reads": 2}
 
 
+# The desk never draws this: `whileReading` always shows the run that was read before, so a
+# stale scene shows the run the host holds. This pins the host's own rule alone (a stale scene
+# that shows another run is not a re-read); the sequence the desk makes is the test below.
 def test_a_stale_read_that_shows_another_run_of_the_task_resets_and_reads_that_run():
     out = run_js(DOM + STALE + """
       const asked = [];
@@ -226,3 +229,23 @@ def test_a_stale_read_that_shows_another_run_of_the_task_resets_and_reads_that_r
     """, modules=MODULES)
     assert out["noRun"] is True and out["title"] == ""
     assert len(out["asked"]) == 2 and out["asked"][0] != out["asked"][1]
+
+
+def test_a_read_that_lands_on_another_run_after_a_stale_one_resets_and_reads_that_run():
+    out = run_js(DOM + STALE + """
+      const asked = [];
+      const door = {readJson: async (target) => {asked.push(target); return facts();},
+        submit: async () => ({status: 'accepted', payload: {accept: preview}})};
+      const host = make(door);
+      ready(host); await tick(); ready(host);
+      typeTitle(host, 'Mine'); ready(host);
+      reread(host);
+      const keptWhileStale = keyed(host.detail, 'desk.accept.title').value;
+      chosen = {...chosen, runId: 'run-two', ready: true};
+      host.render(desk('task-one', 'run-two'), true); await tick();
+      host.render(desk('task-one', 'run-two'), true);
+      console.log(JSON.stringify({keptWhileStale, asked,
+        title: keyed(host.detail, 'desk.accept.title').value}));
+    """, modules=MODULES)
+    assert out == {"keptWhileStale": "Mine", "title": "",
+                   "asked": ["/command/runs/run-one/accept", "/command/runs/run-two/accept"]}
