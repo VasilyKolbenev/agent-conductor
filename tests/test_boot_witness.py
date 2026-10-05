@@ -76,6 +76,12 @@ def test_a_smaller_counter_is_a_decrease_and_not_a_restart():
     assert refusal(counter(43), counter(42)).code == "counter_decreased"
 
 
+def test_only_the_old_windows_string_is_legacy():
+    assert boot_witness.is_legacy(LEGACY_A) and boot_witness.is_legacy(LEGACY_B)
+    for text in (counter(42), LINUX_A, DARWIN_A, "windows:zzz", "", None):
+        assert boot_witness.is_legacy(text) is False
+
+
 def test_a_recorded_counter_with_no_room_above_it_cannot_prove_anything():
     recorded = f"windows-bootid.v1:{GUID}:4294967295"
     assert refusal(recorded, counter(5)).code == "counter_overflow"

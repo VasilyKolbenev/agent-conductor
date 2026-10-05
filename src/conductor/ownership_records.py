@@ -133,13 +133,6 @@ def _boot_text(value):
     return True
 
 
-def _is_legacy(text):
-    try:
-        return boot_witness.parse(text).kind == "legacy"
-    except BootRefused:
-        return False
-
-
 def _conflict(detail):
     return OwnerRefused("transition_conflict", detail)
 
@@ -174,7 +167,7 @@ def _ending_prepared(value, previous):
         raise _conflict("a preparation cannot claim a recovered session")
     if value["boot_id"] != previous["boot_id"]:
         raise _conflict("a preparation changed the old boot identity")
-    if not _is_legacy(previous["boot_id"]):
+    if not boot_witness.is_legacy(previous["boot_id"]):
         raise _conflict("a preparation is only for a record in the legacy boot format")
     if not boot_witness.is_counter(value["prepared_boot"]):
         raise _conflict("a preparation must hold a counter witness")

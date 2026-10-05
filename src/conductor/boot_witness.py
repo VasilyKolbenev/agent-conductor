@@ -116,6 +116,14 @@ def is_counter(text: object) -> bool:
         return False
 
 
+def is_legacy(text: object) -> bool:
+    """True when `text` is the old `windows:<uuid>` string, which proves no restart."""
+    try:
+        return parse(text).kind == "legacy"
+    except BootRefused:
+        return False
+
+
 def _side(text: object, name: str) -> Witness:
     try:
         return parse(text)
