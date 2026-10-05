@@ -3,8 +3,8 @@
 Three kinds of witness text exist. `counter` is the Windows scheme, an environment GUID and a
 strictly increasing boot counter. `unique` is a random per-boot id (`linux:<uuid>`,
 `darwin:<uuid>`): only its difference proves a restart. `legacy` is the old Windows string
-(`windows:<uuid>`): it can be read, but it never proves anything, because the id it holds does not
-change with a boot.
+(`windows:<uuid>`): it can be read, but it never proves anything, because it holds no counter; a
+record that holds only it is recovered through an explicit preparation.
 
 Nothing here touches the OS; the readers live in `boot_kuser` and `ownership_native`.
 """
