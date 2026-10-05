@@ -124,7 +124,7 @@ def test_native_token_stop_reaps_the_actual_descendant(native_box):
     try:
         assert not watch.is_gone()
         result = runner.stop(owned.token)
-        assert result.status == "stopped" and watch.is_gone()
+        assert result.status == "stopped" and watch.wait_gone()
     finally:
         watch.close()
     assert runner.active_tokens() == () and scope.retired == [True]

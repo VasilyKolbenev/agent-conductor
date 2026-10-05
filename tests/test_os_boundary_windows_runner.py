@@ -76,7 +76,7 @@ def test_a_confined_child_that_outlives_its_timeout_dies_with_the_process_it_sta
     assert outcome.status == "timed_out", outcome
     assert rb.runner.active_tokens() == ()
     assert rb.scope.retired == [True]
-    assert grandchild.is_gone(), "the grandchild outlived the Job"
+    assert grandchild.wait_gone(), "the grandchild outlived the Job"
 
 
 def test_a_confined_child_started_and_stopped_by_token_leaves_no_live_process(runner_box):
@@ -92,7 +92,7 @@ def test_a_confined_child_started_and_stopped_by_token_leaves_no_live_process(ru
     assert outcome.status == "stopped"
     assert rb.runner.active_tokens() == ()
     assert rb.scope.retired == [True]
-    assert grandchild.is_gone() and leader.is_gone()
+    assert grandchild.wait_gone() and leader.is_gone()
 
 
 def test_a_script_run_by_the_runner_gets_no_utility_cmdlet_and_still_gets_dotnet(runner_box):
