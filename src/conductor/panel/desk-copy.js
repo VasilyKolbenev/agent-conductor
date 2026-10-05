@@ -21,6 +21,7 @@ export const DESK_COPY = Object.freeze({
     "Проект открыт для просмотра. Сделайте его активным для записи."],
   "desk.run.not_ready": ["A current run read is required before writing.",
     "Для записи нужно актуальное чтение запуска."],
+  "desk.run.updating": ["Updating the run's data…", "Обновляем данные запуска…"],
   "desk.accept.heading": ["Accept into project", "Принять в проект"],
   "desk.accept.no_run": ["Choose a run first.", "Сначала выберите запуск."],
   "desk.accept.reading": ["Reading acceptance facts…", "Читаем факты принятия…"],

@@ -189,6 +189,9 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
       text: text(locale, "desk.accept.no_run")})); return; }
     if (phase === "reading") target.append(element("p", {
       text: text(locale, "desk.accept.reading")}));
+    // The run held is read again: the controls below are off until the new read has landed.
+    if (rereading) target.append(element("p", {role: "status",
+      text: text(locale, "desk.run.updating")}));
     if (facts?.commit) {
       target.append(line(text(locale, "desk.accept.branch"), facts.commit.branch),
         line(text(locale, "desk.accept.commit"), facts.commit.commit));
