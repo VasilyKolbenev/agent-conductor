@@ -221,11 +221,42 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | --- | --- |
 | No `ownership` command | Check the executable path and identified build. |
 | `owner_busy` | Stop the other server using this project cleanly. Reloading the browser does not release ownership. |
-| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. |
+| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. On Windows, a record from an older build needs a [prepared restart](#recovery-of-an-old-windows-record) first. |
+| `login_recovery_required` | The same road for the shared login lease: a [prepared restart](#recovery-of-an-old-windows-record) if it asks for one, then `conduct ownership recover-login --auth-home <login directory>`. This does not start model work. |
 | `not_authenticated` | Complete the native login in the configured dedicated profile, then retry the appropriate reading. |
 | DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
+
+### Recovery of an old Windows record
+
+A project record or a shared login lease that an older build wrote on Windows cannot prove by itself
+that the computer was restarted. For such a record `conduct ownership recover` refuses and points here.
+The road has three steps; do them in order. First stop the project's server, the hub for it and any
+tool working through the shared login: a live holder makes the command refuse and write nothing.
+
+1. Prepare. Each command writes one record, releases nothing, starts nothing, and reads no token or
+   login file. It prints that ownership is NOT released and which command to run after the restart.
+
+   ```text
+   conduct ownership recover --prepare-restart --dir "<absolute path to project>"
+   conduct ownership recover-login --prepare-restart --auth-home "<absolute path to login directory>"
+   ```
+
+   Run the first line for `recovery_required` and the second for `login_recovery_required`.
+2. Restart Windows from the Start menu with **Restart**. Do not use **Shut down** or **Update and
+   restart**: this road covers only a full Restart.
+3. Recover with the plain command:
+
+   ```text
+   conduct ownership recover --dir "<absolute path to project>"
+   conduct ownership recover-login --auth-home "<absolute path to login directory>"
+   ```
+
+Between steps 1 and 3 the project does not open: a prepared record is not a release. If step 3 still
+asks for a restart, do a full Restart and repeat only step 3. If it refuses for another reason, keep its
+output for a bug report and do not delete service records. A record that needs no preparation says so;
+for it the plain command is enough.
 
 Still stuck? Include the command, expected and actual behavior, OS, and candidate identity in a bug report.
 Remove keys and private project content. [Contributor guide](../CONTRIBUTING.md) · [How the pieces fit](architecture.md).
