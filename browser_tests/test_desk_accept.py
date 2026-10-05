@@ -10,8 +10,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Browser, Locator, Page, Route, expect
+from playwright.sync_api import Browser, Locator, Page, expect
 
+from browser_tests import desk_hold
+from browser_tests.desk_hold import Hold
 from conductor import ownership_transition, server
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.project_git import process_git_read
@@ -120,10 +122,8 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
 # any later state frame, the run panel's refresh door) reads the chosen run again, and while that
 # read is out the scene says the run is "stale". What the person entered, the preview they read and
 # the confirmation they gave belong to the run they were looking at, so a re-read that brings the
-# same run in the same state keeps them. The scene's read is the run and its controls together, and
-# the controls read is the one that is held here: it is made for the scene alone (the closing reads
-# of finished tasks read the run too), so a held controls read is a scene that stands as stale until
-# it lands. Nothing is slowed and nothing is raced: every window of the re-read can be judged.
+# same run in the same state keeps them. The window of the re-read is held open and judged with
+# `desk_hold` (the scene's controls read is the one that is held).
 
 ACCEPT_PATH = f"/command/runs/{RUN}/accept"
 PREVIEW_PATH, COMMIT_PATH = f"{ACCEPT_PATH}/preview", f"{ACCEPT_PATH}/commit"
@@ -137,48 +137,6 @@ CONFIRMING = "The current branch stays unchanged"
 FORCE_PRESS = "(node) => { node.disabled = false; node.click(); }"
 
 
-class _Hold:
-    """The answers of one URL: passed on until `hold()`, then kept back until `land()`.
-
-    A set `rewrite` changes the JSON body of every answer that is passed on.
-    """
-
-    def __init__(self, page: Page, pattern: str) -> None:
-        self.rewrite: Callable[[dict], dict] | None = None
-        self._holding, self._kept = False, []
-        page.route(pattern, self._answer)
-
-    def _answer(self, route: Route) -> None:
-        if self._holding:
-            self._kept.append(route)
-        else:
-            self._pass_on(route)
-
-    def _pass_on(self, route: Route) -> None:
-        if self.rewrite is None:
-            route.continue_()
-        else:
-            response = route.fetch()
-            route.fulfill(response=response, json=self.rewrite(response.json()))
-
-    def hold(self) -> None:
-        self._holding = True
-
-    def reached(self) -> bool:
-        return bool(self._kept)
-
-    def land(self) -> None:
-        self._holding = False
-        kept, self._kept = self._kept, []
-        for route in kept:
-            self._pass_on(route)
-
-    def abort(self) -> None:
-        kept, self._kept = self._kept, []
-        for route in kept:
-            route.abort()
-
-
 @dataclass
 class _Desk:
     """One window on the run, what it asked, and the answers a test may hold or rewrite."""
@@ -188,9 +146,9 @@ class _Desk:
     errors: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        self.run_read = _Hold(self.page, f"**/command/runs/{RUN}")
-        self.controls_read = _Hold(self.page, f"**/command/runs/{RUN}/controls")
-        self.preview_post = _Hold(self.page, f"**{PREVIEW_PATH}")
+        self.run_read = Hold(self.page, f"**/command/runs/{RUN}")
+        self.controls_read = Hold(self.page, f"**/command/runs/{RUN}/controls")
+        self.preview_post = Hold(self.page, f"**{PREVIEW_PATH}")
 
     @property
     def card(self) -> Locator:
@@ -205,24 +163,16 @@ class _Desk:
 
     def until(self, what: str, done: Callable[[], Any]) -> None:
         """Wait, pumping the page, until a fact of this side of the wire holds."""
-        for _ in range(160):
-            if done():
-                return
-            self.page.wait_for_timeout(50)
-        raise AssertionError(f"the page never reached: {what}")
+        desk_hold.until(self.page, what, done)
 
     def reread(self, start: Callable[[], None]) -> None:
         """`start` makes a full refresh; the desk stands on its earlier read of the run until
         `land()`: the controls read the new one needs is held."""
-        self.controls_read.hold()
-        start()
-        self.until("the scene's read of the run is held", self.controls_read.reached)
-        expect(self.scene).to_have_attribute("data-state", "stale")
+        desk_hold.read_again(self.page, self.controls_read, start)
 
     def land(self) -> None:
         """The held read lands and the scene is ready again."""
-        self.controls_read.land()
-        expect(self.scene).to_have_attribute("data-state", "ready")
+        desk_hold.land_read(self.page, self.controls_read)
 
 
 @contextmanager
