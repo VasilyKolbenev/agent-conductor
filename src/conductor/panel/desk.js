@@ -41,6 +41,9 @@ const READS = Object.freeze({
 });
 //: The five required desk mounts, in reading order.
 const MOUNTS = Object.freeze(["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"]);
+//: The toggles of the top bar, each with the panel it opens.
+const TOGGLES = Object.freeze({"deskFlowToggle": "cycle", "deskPeopleToggle": "people",
+  "deskRunToggle": "run"});
 //: List phases before and after a read.
 const NONE = Object.freeze([]);
 const NOT_READ = Object.freeze({phase: "empty", list: NONE});
@@ -78,6 +81,10 @@ let shown = Object.freeze({task: null, run: null});
 let booted = Promise.resolve();
 let embedded = null;
 let announced = null;
+//: Whether the boot has applied the address it read (`start`). That navigation closes any panel or
+//: wizard it did not open itself, so what opens one -- the toggles, the new task button -- is off
+//: until then: a press refused (visibly) rather than made and undone.
+let applied = false;
 //: Whether the address has asked for the continue-after block (`panel=continue`), which a read of
 //: the flag still to land must then open.
 let wantContinue = false;
@@ -187,13 +194,12 @@ function render() {
   mark(byId("deskShell"), said.shell);
   byId("deskShell").dataset.connection = connection;
   byId("deskConnection").textContent = message(locale(), `desk.connection.${connection}`);
-  byId("deskFlowToggle").hidden = state.foreign;
-  byId("deskFlowToggle").setAttribute("aria-expanded", String(panels?.isOpen("cycle") ?? false));
-  byId("deskPeopleToggle").hidden = state.foreign;
-  byId("deskPeopleToggle").setAttribute("aria-expanded", String(panels?.isOpen("people") ?? false));
+  for (const [id, panel] of Object.entries(TOGGLES)) {
+    byId(id).hidden = state.foreign;
+    byId(id).disabled = !applied;
+    byId(id).setAttribute("aria-expanded", String(panels?.isOpen(panel) ?? false));
+  }
   byId("deskPeople").hidden = !panels?.isOpen("people");
-  byId("deskRunToggle").hidden = state.foreign;
-  byId("deskRunToggle").setAttribute("aria-expanded", String(panels?.isOpen("run") ?? false));
   byId("deskRun").hidden = !panels?.isOpen("run");
   for (const id of ["deskScene", "deskFeed", "deskSummary"])
     byId(id).hidden = Boolean(panels?.current());
@@ -702,6 +708,8 @@ async function settle(address) {
   if (embedded !== null) loadFlag();
   await load();
   await start(address);
+  applied = true;
+  render();
   startStream();
 }
 
@@ -762,22 +770,16 @@ function boot() {
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
   wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
-    tasks: () => state.tasks.list, foreign: () => state.foreign});
-  byId("deskFlowToggle").addEventListener("click", () => {
-    closeContinue();
-    panels.toggle("cycle");
-    remember();
-  });
-  byId("deskPeopleToggle").addEventListener("click", () => {
-    closeContinue();
-    panels.toggle("people");
-    remember();
-  });
-  byId("deskRunToggle").addEventListener("click", () => {
-    closeContinue();
-    panels.toggle("run");
-    remember();
-  });
+    tasks: () => state.tasks.list, foreign: () => state.foreign, applied: () => applied});
+  wizardHost.render();
+  for (const [id, panel] of Object.entries(TOGGLES)) {
+    byId(id).disabled = true;
+    byId(id).addEventListener("click", () => {
+      closeContinue();
+      panels.toggle(panel);
+      remember();
+    });
+  }
   window.addEventListener("pagehide", stopStream);
   window.addEventListener("pageshow", (event) => {
     if (event.persisted) { panels?.resume(); startStream(); }

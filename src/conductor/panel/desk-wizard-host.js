@@ -20,7 +20,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   function render() {
     mount.hidden = wizard === null;
     trigger.hidden = wizard !== null || context?.foreign() === true;
-    trigger.disabled = context?.mode() === null;
+    trigger.disabled = context?.mode() === null || context?.applied() === false;
     if (wizard === null) mount.replaceChildren();
     else mountWizard(mount, {locale: locale(), wizard}, {onWizard: dispatch,
       onWizardClose: close});
@@ -128,7 +128,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   }
 
   function openNew() {
-    if (wizard !== null || context.foreign() || context.mode() === null) return;
+    if (wizard !== null || context.foreign() || context.mode() === null
+      || !context.applied()) return;
     onHash({new: "task"});
     void open({new: "task", starter: null}, {actor: context.actor(), mode: context.mode(),
       tasks: context.tasks()});

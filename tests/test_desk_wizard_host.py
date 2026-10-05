@@ -9,7 +9,7 @@ def test_removed_wizard_address_and_reentrant_close_send_no_late_asks():
 const mount = {replaceChildren() {}, querySelector() { return null; }};
 const trigger = {addEventListener() {}, removeEventListener() {}};
 const context = {actor: () => "owner", mode: () => "view", tasks: () => [],
-  foreign: () => false};
+  foreign: () => false, applied: () => true};
 const open = {steps: [{key: "new"}, {key: "starter"}]};
 const keys = {new: "task", prepare: null, starter: "desk-starter-docs"};
 const gone = {new: null, prepare: null, starter: null};
