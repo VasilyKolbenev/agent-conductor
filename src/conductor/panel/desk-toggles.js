@@ -9,15 +9,20 @@
 // press made again changes the choice, and the same toggle pressed twice is a choice of none, which
 // replaces a panel the address names as well. After that the toggles are what they always were.
 //
+// The continue-after block is one of the person's choices too: opening it in between is a choice of
+// the block (`choose("continue")`) and closing it a choice of none (`choose(null)`), each replacing
+// whatever was chosen before, a press and the panel the address names alike.
+//
 // The page and the desk's state come in as arguments; this module reaches neither by name.
 
 //: The toggle of each panel, by the id of its button.
 const PANELS = Object.freeze({deskFlowToggle: "cycle", deskPeopleToggle: "people",
   deskRunToggle: "run"});
+const NAMES = Object.freeze(Object.values(PANELS));
 
 export function createToggles({byId, panels, closeContinue, remember, render}) {
-  // `undefined` is no press at all; `null` is a choice, the one of a person who closed what they
-  // had pressed.
+  // `undefined` is no choice at all; `null` is a choice, the one of a person who closed what they
+  // had pressed or opened; `"continue"` is the block.
   let chosen;
   let booting = true;
   let applied = false;
@@ -34,7 +39,16 @@ export function createToggles({byId, panels, closeContinue, remember, render}) {
     render();
   }
 
-  //: The panel the boot opens, given the one its address names: the person's, if they pressed.
+  //: The person opened (`"continue"`) or closed (`null`) the block while the boot has not opened a
+  //: panel: that is their last choice, drawn at once so that no toggle stays pressed beside it.
+  function choose(value) {
+    if (!booting) return;
+    const pressed = NAMES.includes(chosen);
+    chosen = value;
+    if (pressed) render();
+  }
+
+  //: The panel the boot opens, given the one its address names: the person's, if they chose.
   //: The window of presses is closed by this call, in the turn that opens the panel, so no press
   //: can fall between the two.
   function resolve(named) {
@@ -56,7 +70,7 @@ export function createToggles({byId, panels, closeContinue, remember, render}) {
     byId(id).addEventListener("click", () => press(panel));
   }
 
-  return Object.freeze({draw, resolve, names: Object.freeze(Object.values(PANELS)),
+  return Object.freeze({draw, resolve, choose, names: NAMES,
     //: The boot has applied everything its address names, the wizard included.
     finish: () => { applied = true; }, applied: () => applied});
 }

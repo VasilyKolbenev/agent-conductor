@@ -68,6 +68,72 @@ console.log(JSON.stringify({none, says: says()}));
     assert answer["says"] == {"cycle": "false", "people": "false", "run": "false"}
 
 
+def test_opening_the_block_while_the_desk_boots_replaces_a_pressed_toggle_and_is_what_opens():
+    answer = _run("""
+press("cycle");
+log.length = 0;
+toggles.choose("continue");
+const drawn = says();
+console.log(JSON.stringify({log, drawn, chosen: toggles.resolve("people")}));
+""")
+    assert answer["log"] == [["render"]]
+    assert answer["drawn"] == {"cycle": "false", "people": "false", "run": "false"}
+    assert answer["chosen"] == "continue"
+
+
+def test_closing_the_block_while_the_desk_boots_is_a_choice_of_none_that_replaces_the_address():
+    answer = _run("""
+toggles.choose("continue");
+toggles.choose(null);
+console.log(JSON.stringify({chosen: toggles.resolve("people"), says: says()}));
+""")
+    assert answer["chosen"] is None
+
+
+def test_the_last_of_a_block_and_a_press_made_while_the_desk_boots_is_the_choice():
+    answer = _run("""
+toggles.choose("continue");
+press("run");
+const pressed = toggles.resolve("people");
+console.log(JSON.stringify({pressed}));
+""")
+    assert answer["pressed"] == "run"
+    answer = _run("""
+press("run");
+toggles.choose("continue");
+press("run");
+press("run");
+toggles.choose("continue");
+console.log(JSON.stringify({chosen: toggles.resolve(null), says: says()}));
+""")
+    assert answer["chosen"] == "continue"
+    assert answer["says"] == {"cycle": "false", "people": "false", "run": "false"}
+
+
+def test_a_block_chosen_while_no_toggle_is_pressed_draws_nothing_again():
+    answer = _run("""
+toggles.choose("continue");
+toggles.choose(null);
+console.log(JSON.stringify({log}));
+""")
+    assert answer["log"] == []
+
+
+def test_the_block_opened_after_the_boot_has_opened_its_panel_is_no_choice_of_the_toggles():
+    answer = _run("""
+press("cycle");
+toggles.resolve(null);
+open = "cycle";
+log.length = 0;
+toggles.choose("continue");
+toggles.choose(null);
+toggles.draw(false);
+console.log(JSON.stringify({log, says: says()}));
+""")
+    assert answer["log"] == []
+    assert answer["says"]["cycle"] == "true"
+
+
 def test_a_third_press_of_the_same_toggle_chooses_it_again():
     answer = _run("""
 press("run"); press("run"); press("run");

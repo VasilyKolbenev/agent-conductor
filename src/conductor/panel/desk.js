@@ -460,23 +460,26 @@ function draftFlag(change) {
 }
 
 //: Whether the block is open is kept for the next redraw, and said in the address (spec 4.5.2:
-//: `panel=continue`); nothing is drawn now, because a person opening it has done that.
+//: `panel=continue`); nothing is drawn now, because a person opening it has done that. While the
+//: boot reads, opening or closing it is the person's last choice (`desk-toggles.js`).
 function openFlag(open) {
   if (state.foreign || state.flag === null || state.flag.open === open) return;
   if (open) panels?.open(null);
   state = Object.freeze({...state, flag: Object.freeze({...state.flag, open})});
+  toggles.choose(open ? "continue" : null);
   remember();
 }
 
 //: The address says `panel=continue` (spec 4.5.3, 5.8): open the block and put the keyboard in it
 //: -- at once if it stands, and when the read of the flag lands if it does not. This only
-//: selects and focuses: nothing is written.
-function showContinue() {
+//: selects and focuses: nothing is written. A block the person opened themselves is not a request
+//: of the address, so the keyboard is left where it is (`focus` false).
+function showContinue(focus) {
   panels?.open(null);
   wantContinue = true;
   if (state.flag === null) return;
   move({flag: Object.freeze({...state.flag, open: true})});
-  focusOn("flag:summary");
+  if (focus) focusOn("flag:summary");
   remember();
 }
 
@@ -607,22 +610,23 @@ function closeContinue() {
 }
 
 //: Show the panel a hash or a press chose: the continue-after block, a centre panel, or neither.
-function showPanel(panel) {
-  if (panel === "continue") showContinue();
+//: `focus` is whether the address asked for it, and not the person's own choice.
+function showPanel(panel, focus) {
+  if (panel === "continue") showContinue(focus);
   else closeContinue();
   if (toggles.names.includes(panel)) panels?.open(panel);
 }
 
 //: Apply the task/run selection before its panel and wizard (spec 4.5.3). `panelOf` gives the panel
 //: to show once the selection has been read: the address's, and for the first hash the person's
-//: last press while the desk booted, if they pressed.
+//: last choice while the desk booted (a toggle or the continue-after block), if they chose.
 async function navigate(change, address, panelOf = (named) => named) {
   const keys = change.steps.map((step) => step.key);
   if (change.reset.includes("panel")) closeContinue();
   if (address.panel !== panels?.current()) panels?.open(null);
   const opened = await navigateSelection(keys, address);
   const panel = panelOf(address.panel);
-  if (keys.includes("panel") || panel !== address.panel) showPanel(panel);
+  if (keys.includes("panel") || panel !== address.panel) showPanel(panel, panel === address.panel);
   await wizardHost?.navigate(change, address);
   return opened;
 }
