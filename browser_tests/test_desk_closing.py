@@ -168,7 +168,8 @@ class HeldDesk:
 
 @pytest.fixture
 def held_desk(chromium, progress_url):
-    """`open_at(address)`: the desk booted at the address, its closing read out and held."""
+    """`open_at(address)`: the desk booted at the address, its closing read out and held; with
+    `stream=False` its stream is ended."""
     context = chromium.new_context(viewport={"width": 1280, "height": 900}, timezone_id=ZONE)
     page = context.new_page()
     held: list[Route] = []
@@ -180,7 +181,11 @@ def held_desk(chromium, progress_url):
     page.route("**/command/runs/run-closed", lambda route:
                route.continue_() if released[0] else held.append(route))
 
-    def open_at(address: str) -> HeldDesk:
+    def open_at(address: str, *, stream: bool = True) -> HeldDesk:
+        # With `stream=False` the stream is answered with HTTP 204, which ends it for good:
+        # no full refresh follows the boot to stand the scene as stale beside the read.
+        if not stream:
+            page.route("**/events", lambda route: route.fulfill(status=204))
         page.goto(f"{progress_url}{address}", wait_until="load")
         for _wait in range(200):
             if held:
@@ -199,7 +204,9 @@ def held_desk(chromium, progress_url):
 
 def test_a_task_the_address_names_is_drawn_while_the_closing_read_is_held_and_then_counted(
         held_desk):
-    window = held_desk("#lang=en&task=task-working")
+    # The claim is about the boot's draw: a stream that opens makes a full refresh, which stands
+    # the scene and the shell as `stale` until the run is read again, so the stream is ended.
+    window = held_desk("#lang=en&task=task-working", stream=False)
     window.page.wait_for_function(FEED_OF, arg="run-working", timeout=UNGATED_MS)
     drawn = window.page.evaluate(DESK_FACTS)
     assert (drawn["shell"], drawn["scene"], drawn["run"]) == ("ready", "ready", "run-working")
