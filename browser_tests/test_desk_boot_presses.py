@@ -330,6 +330,9 @@ ORDER = {
         [("hash", COLUMN_CLICK), ("hash", PANEL_HASH)], "cycle", DOCS, "en"),
     "a hash of the language alone then a column click on another task": (
         [("hash", LANGUAGE_ONLY), ("hash", COLUMN_CLICK)], None, DOCS, "en"),
+    "a column click on another task then a hash that goes back to an older run of the first": (
+        [("hash", COLUMN_CLICK), ("hash", "#task=task-fix&run=run-fix-old&lang=en")],
+        None, ("task-fix", "run-fix-old"), "en"),
 }
 
 
