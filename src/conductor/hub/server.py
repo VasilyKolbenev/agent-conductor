@@ -66,6 +66,8 @@ _POST: dict[str, Callable[[HubService, dict, dict], tuple[int, Any]]] = {
         lambda service, params, _body: service.stop(params["project_id"]),
     "/hub/projects/<project_id>/forget":
         lambda service, params, _body: service.forget(params["project_id"]),
+    "/hub/projects/<project_id>/recover":
+        lambda service, params, _body: service.recover(params["project_id"]),
     "/hub/queue/order": lambda service, _params, body: service.queue_order(body["order"]),
 }
 #: The rows of `HUB_ROUTES` this build answers, as (method, path). The others are `route_not_found`.

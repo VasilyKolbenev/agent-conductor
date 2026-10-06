@@ -28,8 +28,8 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
-    clone, dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
-    supervisor, project_targets)
+    clone, dialogs, events, github, instance, job, lifecycle, operations, owner_ops, reader,
+    refusals, registry, snapshots, state, summary, supervisor, project_targets)
 from conductor.hub.refusals import HubRefusal
 
 DEFAULT_PROJECTS_HOME = "ConductProjects"
@@ -75,7 +75,7 @@ class HubService:
                  job_policy: Callable[[], str] = job.own_policy,
                  folder_ok: Callable[[registry.Project], bool] | None = None,
                  pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
-                 operation_popen=None, dialog_popen=None) -> None:
+                 operation_popen=None, dialog_popen=None, owner_popen=None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -95,6 +95,9 @@ class HubService:
         options = {} if operation_popen is None else {"popen": operation_popen}
         self._operations = operations.Operations(self._home, bus, start=self._start_added,
             status=self._added_status, clone_cancel=self._clones.cancel, **options)
+        owner_options = {} if owner_popen is None else {"popen": owner_popen}
+        self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
+                                             policy=self._job_policy, **owner_options)
 
     def start(self) -> None:
         """Seed the ledger of first-seen moments from the snapshots the last hub left."""
@@ -185,6 +188,7 @@ class HubService:
         self._dialogs.close()
 
     def close_operations(self) -> bool:
+        self._owner_ops.close()
         return self._operations.close_clones()
 
     def add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
@@ -363,6 +367,20 @@ class HubService:
         self._move(lambda: self._sup.forget(project_id), project_id)
         return 200, {"project_id": project_id}
 
+    def recover(self, project_id: str) -> tuple[int, dict[str, str]]:
+        """`POST .../recover`: run `conduct ownership recover` for the project (ADR-8).
+
+        Only a person's click starts it. The command judges the record itself (the boot, the
+        holds, the whole history); the hub learns the result from the ownership head.
+        """
+        project = self._require(project_id)
+        self._owner_ops.require_free(project_id)
+        try:
+            self._sup.require_recoverable(project_id)
+        except supervisor.SupervisorRefused as refused:
+            raise HubRefusal(refused.code, {"project_id": project_id}) from refused
+        return 202, {"operation_id": self._owner_ops.recover(project)}
+
     def queue_order(self, order: object) -> tuple[int, dict[str, Any]]:
         """`POST /hub/queue/order`: reorder the queue; anything but a permutation writes nothing."""
         if not isinstance(order, list) or not all(
@@ -499,7 +517,12 @@ class HubService:
         return None
 
     def _move(self, act: Callable[[], object], project_id: str) -> None:
-        """Carry out a move of the supervisor; its refusals become the closed list's."""
+        """Carry out a move of the supervisor; its refusals become the closed list's.
+
+        A project whose own operation (a recovery, a profile copy) runs is refused `project_busy`
+        before anything is written.
+        """
+        self._owner_ops.require_free(project_id)
         try:
             act()
         except supervisor.SupervisorRefused as refused:

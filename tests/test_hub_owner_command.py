@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -46,6 +47,36 @@ def fake(out="", err="", code=0, seen=None):
         kwargs["stderr"].write(err.encode("utf-8"))
         return Finished(code)
     return launch
+
+
+class Held:
+    """A command that has started and keeps running until a test releases it.
+
+    A real `Popen` returns at once and the command runs on; this one does the same, so a test
+    can act (close the hub, ask for a second operation) while the command is still running.
+    """
+
+    def __init__(self, out="", err="", code=0):
+        self.release, self.entered, self.started = threading.Event(), threading.Event(), []
+        self._launch = fake(out=out, err=err, code=code)
+
+    def __call__(self, argv, **kwargs):
+        self.started.append(argv)
+        process = self._launch(argv, **kwargs)
+        self.entered.set()
+        return _Running(process, self.release)
+
+
+class _Running:
+    def __init__(self, process, release):
+        self._process, self._release = process, release
+
+    def poll(self):
+        return self._process.poll() if self._release.is_set() else None
+
+    @property
+    def returncode(self):
+        return self._process.returncode
 
 
 def test_a_command_starts_in_a_session_or_group_of_its_own_with_the_hubs_home_in_its_environment(

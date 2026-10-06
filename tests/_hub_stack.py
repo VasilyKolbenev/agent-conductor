@@ -97,7 +97,8 @@ def raw_exchange(port: int, payload: bytes, *, wait: float = 3.0) -> bytes:
 class Stack:
     """The parts of a hub over the fake world, and a server on a free port."""
 
-    def __init__(self, tmp_path: Path) -> None:
+    def __init__(self, tmp_path: Path, **service_options: Any) -> None:
+        """`service_options` are handed to `HubService` over the defaults below."""
         self.world = World(tmp_path)
         self.mono = Mono()
         self.server = server.HubServer(0)
@@ -109,12 +110,13 @@ class Stack:
             self.world.home, self.world.supervisor, self.world.store, self.snapshots,
             self.ledger, self.bus, hub_origin=HUB_ORIGIN, now=self.world.clock,
             monotonic=self.mono, follow=None)
+        options: dict[str, Any] = {
+            "verify_tool": lambda tool, **_kw: (_ for _ in ()).throw(
+                AssertionError("no tool is verified here")),
+            "job_policy": lambda: "none", "folder_ok": lambda project: True, **service_options}
         self.service = service.HubService(
             self.world.home, self.world.supervisor, self.world.store, self.snapshots,
-            self.reader, self.ledger, self.bus, now=self.world.clock,
-            verify_tool=lambda tool, **_kw: (_ for _ in ()).throw(
-                AssertionError("no tool is verified here")),
-            job_policy=lambda: "none", folder_ok=lambda project: True)
+            self.reader, self.ledger, self.bus, now=self.world.clock, **options)
         self.server.attach(self.service)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()

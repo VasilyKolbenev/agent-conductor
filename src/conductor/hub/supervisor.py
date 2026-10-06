@@ -355,7 +355,10 @@ class Supervisor:
         with self._lock:
             for held in (self._failed, self._codes):
                 held.pop(project_id, None)
-            current = self._store.load()
+            try:
+                current = self._store.load()
+            except state.HubStateError:
+                return              # nothing is started on a state nobody can read
             if current.active_project_id == project_id and self._waiting(current) is None:
                 self._awaiting.add(project_id)
 

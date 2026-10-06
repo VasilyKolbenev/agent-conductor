@@ -17,13 +17,18 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Collection, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from conductor.hub import job, refusals
+
+if TYPE_CHECKING:
+    from conductor.hub import operations, registry, supervisor
 
 OUTPUT_BOUND = 65536
 POLL_SECONDS = 0.05
@@ -187,3 +192,103 @@ def recovered_login(out: str) -> bool:
     """Whether stdout is the one JSON object a successful login recovery prints."""
     found = _one_object(out)
     return found is not None and found.get("state") == "recovered"
+
+
+class OwnerOps:
+    """The recoveries the hub runs, as operations of the shared ledger (spec 4.1.8, ADR-8).
+
+    Every operation is one row of `operations.Operations` and one daemon thread. The commands are
+    the ones a person types; the hub never ends one (not even at its own exit: one that began is
+    left to finish), never prepares a restart, and learns what a recovery did from the ownership
+    head the supervisor reads, never from what the command printed.
+    """
+
+    def __init__(self, home: Path | str, ledger: operations.Operations,
+                 sup: supervisor.Supervisor, *,
+                 popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+                 policy: Callable[[], str] | None = None, head: Sequence[str] = HEAD) -> None:
+        self._home, self._ledger, self._sup = Path(home), ledger, sup
+        self._popen, self._policy, self._head = popen, policy, tuple(head)
+        self._lock = threading.Lock()
+        self._closing = threading.Event()
+
+    def require_free(self, project_id: str) -> None:
+        """Refuse `project_busy` while an operation of this project runs."""
+        if self._ledger.running_for(project_id) is not None:
+            raise refusals.HubRefusal("project_busy", {"project_id": project_id})
+
+    def close(self) -> None:
+        """Seal at the hub's exit: nothing new starts, and no command that began is ended."""
+        with self._lock:
+            self._closing.set()
+
+    def recover(self, project: registry.Project) -> str:
+        """Open the `recover` operation of a project and run `conduct ownership recover`.
+
+        Raises:
+            HubRefusal: `project_busy` when an operation of the project runs, or the hub is
+                closing.
+        """
+        self._require_open("project_busy", project.project_id)
+        ident = self._ledger.open_project_row("recover", project.project_id, "recover")
+        self._thread(self._recover, ident, project)
+        return ident
+
+    def _recover(self, ident: str, project: registry.Project) -> None:
+        ran = self._command(("ownership", "recover", "--dir", project.root))
+        if ran.code == 0 and recovered_head(ran.out):
+            self._sup.recovered(project.project_id)
+            self._ledger.update_row(ident, state="succeeded")
+        else:
+            self._fail(ident, ran, "recover")
+
+    def _require_open(self, code: str, project_id: str | None = None) -> None:
+        if self._closing.is_set():
+            raise refusals.HubRefusal(code, {} if project_id is None else {
+                "project_id": project_id})
+
+    def _thread(self, body: Callable[..., None], ident: str, *args: Any) -> None:
+        def run() -> None:
+            try:
+                body(ident, *args)
+            except Exception:  # an operation must end in its closed vocabulary
+                self._ended_by_a_fault(ident)
+
+        thread = threading.Thread(target=run, name=f"hub-owner-{ident[-8:]}", daemon=True)
+        try:
+            thread.start()
+        except RuntimeError:       # no thread could be made: the row must not stay running
+            self._ended_by_a_fault(ident)
+
+    def _ended_by_a_fault(self, ident: str) -> None:
+        """End a row that is still running as `subprocess_failed`; a row that left is not read."""
+        with suppress(refusals.HubRefusal, KeyError):
+            if self._ledger.get(ident)["state"] == "running":
+                self._ledger.update_row(ident, state="failed", code="subprocess_failed",
+                                        detail=None)
+
+    def _command(self, args: Sequence[str]) -> Ran:
+        return run_command(args, home=self._home, popen=self._launch, policy=self._policy,
+                           head=self._head)
+
+    def _launch(self, argv: list[str], **kwargs: Any) -> subprocess.Popen:
+        """Start a command unless the hub is closing: the gate and the start are one step."""
+        with self._lock:
+            if self._closing.is_set():
+                raise OSError("the hub is closing")
+            return self._popen(argv, **kwargs)
+
+    def _fail(self, ident: str, ran: Ran, step: str) -> None:
+        """End a row `failed` with the code the command printed when the step lists it.
+
+        The row also carries the one closed reason the first line gives: which action a recovery
+        that needs a restart or a preparation wants (`restart_reason`), or the recovery a profile
+        copy needs first (`recovery_reason`). Nothing else the command printed is kept.
+        """
+        allowed = refusals.OPERATION_CODES_BY_STEP[step]
+        code = refusal_code(ran.error, allowed)
+        word = restart_reason(ran.error, step)
+        if word is None and code == "subprocess_failed":
+            word = recovery_reason(ran.error, allowed)
+        self._ledger.update_row(ident, state="failed", code=code,
+                                detail=None if word is None else {"reason": word})

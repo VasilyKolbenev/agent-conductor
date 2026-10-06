@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from conductor.hub import lifecycle as words
-from conductor.hub import spawn, supervisor
+from conductor.hub import spawn, state, supervisor
 from tests._hub_world import FakeSpawner, World, id_of
 
 
@@ -190,6 +190,19 @@ def test_a_recovery_forgets_the_start_failure_that_stood_on_the_project(world):
     assert world.supervisor.status(id_of("b")).lifecycle.state == "failed"
     world.supervisor.recovered(id_of("b"))
     assert world.supervisor.status(id_of("b")).lifecycle.state == "stopped"
+
+
+def test_a_recovery_on_a_hub_state_nobody_can_read_forgets_the_failure_and_starts_nothing(world):
+    def refuse(_arguments):
+        raise spawn.SpawnRefused("hub_in_kill_on_close_job", "a job")
+
+    world.spawner.before_start = refuse
+    world.supervisor.view(id_of("b"))
+    (world.home / "hub-state.json").write_bytes(b"{not json")
+    world.supervisor.recovered(id_of("b"))              # does not raise: the state is not its to fix
+    assert world.spawner.calls == []
+    with pytest.raises(state.HubStateError):            # the next read of the state says so
+        world.supervisor.status(id_of("b"))
 
 
 def test_the_recovery_of_the_previous_active_lets_the_waiting_transition_begin(world):
