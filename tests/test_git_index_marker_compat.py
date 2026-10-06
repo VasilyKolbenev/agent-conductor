@@ -96,6 +96,7 @@ def test_marked_index_is_read_by_git_with_one_ignored_extension_line_in_both_for
         box.install(m.marked)
         done = box.run(*read, check=False)
         seen[name] = (done.returncode, notice_lines(done), done.stdout.decode().strip())
+    print(f"marker-line {which} {fmt} {mode}: {seen}")     # what the gate driver copies out
     assert seen == {"diff-index": (0, [NOTICE], ""), "status": (0, [NOTICE], ""),
                     "write-tree": (0, [NOTICE], m.tree)}
 
