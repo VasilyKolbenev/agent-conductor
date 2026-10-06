@@ -206,10 +206,11 @@ def test_the_words_the_spec_gives_stand_as_the_spec_gives_them(key, russian):
     assert _rows()[key][1] == russian
 
 
-#: Every message of the hub that tells a person their project is unfinished: the two states, the
-#: line of the project that blocks the seat, and the clause of the code.
+#: Every message that tells a person their project is unfinished: the two states of the hub, the
+#: line of the project that blocks the seat, the clause of the code, and the item of the list of
+#: what waits for you (a key of the desk's shared copy, which the hub says too).
 UNFINISHED = ("hub.state.stop_uncertain", "hub.state.recovery_required", "hub.line.not_active",
-              "hub.code.recovery_required")
+              "hub.code.recovery_required", "desk_status.attention_recovery_required")
 #: The ones a person reads with no other word beside them: they also say which command to run.
 SAYS_THE_COMMAND = ("hub.state.stop_uncertain", "hub.state.recovery_required",
                     "hub.code.recovery_required")

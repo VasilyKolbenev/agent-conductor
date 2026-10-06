@@ -59,8 +59,10 @@ export const DESK_STATUS_COPY = Object.freeze({
     "Ждёт вашего подтверждения"],
   "desk_status.attention_slot_stuck": ["Slot busy · free the slot in the desk",
     "Слот занят · Освободить слот в столе"],
-  "desk_status.attention_recovery_required": ["The OS needs a restart",
-    "Нужна перезагрузка ОС"],
+  // The one word of this table that is not the spec's: a review ruling changed it, because a project
+  // that needs recovery does not always need a restart of the OS.
+  "desk_status.attention_recovery_required": ["Project needs recovery",
+    "Проект требует восстановления"],
   "desk_status.attention_login_recovery_required": ["Login needs recovery",
     "Вход требует восстановления"],
   // -- the phrases of a time ---------------------------------------------------------------

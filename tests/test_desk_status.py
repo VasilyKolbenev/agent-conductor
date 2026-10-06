@@ -187,7 +187,9 @@ SPEC_RUSSIAN = {
     "outcome_failed": "Ошибка", "outcome_unknown": "Исход неизвестен",
     "outcome_rejected": "Отклонено", "outcome_cancelled": "Отменено",
     "ended": "Завершён без результата", "no_outcome": "Результата пока нет"}
-#: The words of the table of reasons (spec 4.1.9), verbatim, under the copy's `attention_` keys.
+#: The words of the table of reasons (spec 4.1.9), verbatim, under the copy's `attention_` keys, but
+#: for `recovery_required`: the spec says "the OS needs a restart" there, which a review ruling found
+#: wrong once an older record or a changed boot environment needs a preparation first.
 ATTENTION_WORDS = {
     "gate_decision": "Решение на гейте", "confirmation": "Подтвердите шаг",
     "input_document": "Нужен документ", "reconcile": "Нужна сверка состояния вне окна",
@@ -195,7 +197,7 @@ ATTENTION_WORDS = {
     "stalled": "Запуск остановился", "expired": "Разрешение истекло",
     "queue_confirmation": "Ждёт вашего подтверждения",
     "slot_stuck": "Слот занят · Освободить слот в столе",
-    "recovery_required": "Нужна перезагрузка ОС",
+    "recovery_required": "Проект требует восстановления",
     "login_recovery_required": "Вход требует восстановления"}
 #: The phrases of a time (spec 5.2.1): a wait since a moment, a wait noticed at one, a snapshot
 #: from one -- and the same two when the moment is not given.
