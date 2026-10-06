@@ -68,6 +68,7 @@ CAPPED = (
     "tests/test_git_first_reader_account.py",
     "tests/test_git_first_readers.py",
     "tests/test_git_first_scratch.py",
+    "tests/test_git_fsmonitor_callers.py",
     "tests/test_git_index_labels.py",
     "tests/test_git_index_marker_compat.py",
     "tests/test_git_setup_first_index.py",

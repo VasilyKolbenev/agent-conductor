@@ -27,7 +27,9 @@ product's own `IndexFormatRefused`; the caller maps it to its closed refusal wor
 The file monitor is switched off with an EMPTY value, never with `false`: Git 2.31 reads the value
 of `core.fsmonitor` as the path of a hook program, so `false` names the program `false` and every
 index it writes carries an `FSMN` extension (measured), where later Gits read `false` as a
-boolean. The empty value is "off" in both, and the pin comes after the flags, so it wins.
+boolean. The empty value is "off" in both. The flags of every Git call and the environment
+(`tool_env`) say the same empty value, and the pin keeps its own copy after the flags, so a change
+of those two cannot take the monitor out of the pin's keeping.
 
 The marker costs one line on the standard error of a Git that does not know the extension, at each
 read of the index until Git's next write. The product neither hides that line nor rewrites the
