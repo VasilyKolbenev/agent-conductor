@@ -28,8 +28,8 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
-    clone, dialogs, events, github, instance, job, lifecycle, operations, owner_ops, reader,
-    refusals, registry, snapshots, state, summary, supervisor, project_targets)
+    clone, dialogs, events, github, instance, job, lifecycle, logins, operations, owner_ops,
+    reader, refusals, registry, snapshots, state, summary, supervisor, project_targets)
 from conductor.hub.refusals import HubRefusal
 
 DEFAULT_PROJECTS_HOME = "ConductProjects"
@@ -95,6 +95,8 @@ class HubService:
         options = {} if operation_popen is None else {"popen": operation_popen}
         self._operations = operations.Operations(self._home, bus, start=self._start_added,
             status=self._added_status, clone_cancel=self._clones.cancel, **options)
+        self._logins = logins.LoginView(self._home, lambda: self._registry().projects,
+                                        sup.has_live_active, self._closing_owed)
         owner_options = {} if owner_popen is None else {"popen": owner_popen}
         self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
                                              policy=self._job_policy, **owner_options)
@@ -147,19 +149,23 @@ class HubService:
                                        stored=self._snapshots.get_limits())
 
     def setup(self) -> dict[str, Any]:
-        """`GET /hub/setup`: the profile, `<projects-home>`, the pins, and the hub's own job.
+        """`GET /hub/setup`: the profile, `<projects-home>`, the pins, the logins, the hub's job.
 
-        `logins` is empty until the profile is read (a later slice): the boxes of the logins are
-        found from the profile and the registered projects' `providers.json`.
+        The logins are found from the profile and the registered projects' `providers.json`;
+        a registry nobody can read lists none.
         """
         try:
             home_value = registry.load(self._home).projects_home
         except registry.RegistryError:
             home_value = None
+        try:
+            found_logins = self._logins.entries()
+        except HubRefusal:
+            found_logins = []
         return {"profile": self._profile(),
                 "projects_home": {**self._projects_home(home_value),
                                   "default_name": DEFAULT_PROJECTS_HOME},
-                "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": [],
+                "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": found_logins,
                 "hub_job": self._job_policy(),
                 "clone_recovery": [{"operation_id": ident, "code": "clone_cleanup_incomplete"}
                                    for ident in self._clone_recovery]}
@@ -408,6 +414,13 @@ class HubService:
             return self._store.load()
         except state.HubStateError as error:
             raise HubRefusal("registry_invalid", {"file": state.FILE_NAME}) from error
+
+    def _closing_owed(self) -> bool:
+        """Whether a project still owes its closure; a state nobody can read says yes."""
+        try:
+            return bool(self._state().closing)
+        except HubRefusal:
+            return True
 
     def _require(self, project_id: str) -> registry.Project:
         found = self._registry().project(project_id)

@@ -12,8 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from conductor.command import operator_config
 from conductor.hub import instance, registry, state, supervisor
 from tests._hub_world import FakeSpawner, World, id_of, iso
+from tests.test_login_recovery_prepare import legacy_lease
+from tests.test_provider_profile import config
 
 A, B, C = "a" * 32, "b" * 32, "c" * 32
 NONCE = "0123456789abcdef0123456789abcdef"
@@ -408,3 +411,32 @@ def test_forgetting_a_project_proven_closed_leaves_no_obligation_and_clears_queu
     with pytest.raises(supervisor.SupervisorRefused) as unknown:
         world.supervisor.forget(id_of("b"))
     assert unknown.value.code == "project_not_found"
+
+
+# -- the box of a shared login: unclosed only when no active child can still hold it (4.1.13) ---
+
+
+def test_login_box_is_unclosed_only_without_a_running_active_child(world, tmp_path, monkeypatch):
+    from conductor.hub import logins
+    login, _box, _record = legacy_lease(tmp_path, monkeypatch)   # a lease record nobody closed
+    operator_config.save_provider_configs(
+        world.home / "providers.json", [config(tmp_path, "claude-code", login=login)])
+    view = logins.LoginView(world.home, lambda: registry.load(world.home).projects,
+                            world.supervisor.has_live_active,
+                            lambda: bool(world.hub_state().closing), ttl=0)
+
+    def read() -> str:
+        (entry,) = view.entries()
+        return entry["state"]
+
+    assert read() == "unclosed"                       # no active child, nothing closing
+    _activate_and_start(world, "a")
+    assert read() == "in_use"                         # an active child works
+    world.supervisor.stop(id_of("a"))
+    world.put_status("a", "stopping")
+    assert read() == "in_use"                         # draining: still running
+    world.gone("a", "serving", head="opened")         # dead, its closure NOT proven (D-H8)
+    assert read() == "in_use"
+    world.heads["a"] = "recovered"
+    world.supervisor.tick()                           # proven closed: `closing` is settled
+    assert read() == "unclosed"

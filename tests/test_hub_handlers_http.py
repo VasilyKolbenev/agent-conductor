@@ -9,12 +9,16 @@ behind (the ownership head) are the only two things a test says about it.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 import pytest
 
+from conductor.command import operator_config
 from tests._hub_stack import A, B, Stack
 from tests.test_hub_owner_command import fake
+from tests.test_login_recovery_prepare import legacy_lease
+from tests.test_provider_profile import config
 
 RECOVERED = json.dumps({"phase": "recovered"})
 
@@ -141,3 +145,51 @@ def test_no_answer_of_a_recovery_holds_a_path_or_a_word_the_command_printed(stac
                  stack.get("/hub/projects").body, stack.get("/hub/setup").body):
         assert stack.world.roots["a"].encode("utf-8") not in body
         assert b"is somewhere" not in body
+
+
+# -- GET /hub/setup: the logins ----------------------------------------------------------------
+
+
+def _name_a_login(stack, tmp_path, monkeypatch, *, leased: bool):
+    """Put one login folder in the shared profile; with a lease record nobody closed if asked."""
+    if leased:
+        login, box, _record = legacy_lease(tmp_path, monkeypatch, name="a-distinctive-login")
+    else:
+        login = tmp_path / "a-distinctive-login"
+        login.mkdir()
+        box = None
+    operator_config.save_provider_configs(
+        stack.world.home / "providers.json", [config(tmp_path, "claude-code", login=login)])
+    return login, box
+
+
+def test_the_setup_lists_the_logins_of_the_profile_in_their_public_form_and_no_path(
+        stack, tmp_path, monkeypatch):
+    login, _box = _name_a_login(stack, tmp_path, monkeypatch, leased=False)
+    reply = stack.get("/hub/setup")
+    (entry,) = reply.json()["logins"]
+    assert set(entry) == {"login_key", "harness", "used_by", "state"}
+    assert (entry["harness"], entry["used_by"], entry["state"]) == ("claude-code", [], "free")
+    assert re.fullmatch(r"[0-9a-f]{64}", entry["login_key"])
+    assert b"a-distinctive-login" not in reply.body and str(login).encode() not in reply.body
+
+
+def test_a_login_with_a_lease_nobody_closed_reads_unclosed_in_the_setup(
+        stack, tmp_path, monkeypatch):
+    _name_a_login(stack, tmp_path, monkeypatch, leased=True)
+    assert [row["state"] for row in stack.get("/hub/setup").json()["logins"]] == ["unclosed"]
+
+
+def test_a_hub_state_nobody_can_read_leaves_the_login_in_use_and_offers_no_action(
+        stack, tmp_path, monkeypatch):
+    _name_a_login(stack, tmp_path, monkeypatch, leased=True)
+    (stack.world.home / "hub-state.json").write_bytes(b"{not json")
+    assert [row["state"] for row in stack.get("/hub/setup").json()["logins"]] == ["in_use"]
+
+
+def test_a_registry_nobody_can_read_leaves_the_setup_answering_with_no_logins(
+        stack, tmp_path, monkeypatch):
+    _name_a_login(stack, tmp_path, monkeypatch, leased=True)
+    (stack.world.home / "registry.json").write_text("{not json", encoding="utf-8")
+    reply = stack.get("/hub/setup")
+    assert reply.status == 200 and reply.json()["logins"] == []
