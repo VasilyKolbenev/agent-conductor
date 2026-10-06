@@ -17,6 +17,7 @@ import pytest
 
 from conductor import ownership_transition
 from conductor.command import git_setup_first_records as records
+from conductor.command.contracts import canonical_json
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
 from conductor.command.git_setup_first_resume import LOCKED, PREPARED, REF_MOVED
 from conductor.command.project_git import GitReadFailed
@@ -165,6 +166,30 @@ def test_pending_of_an_op_with_any_damaged_field_is_damaged(tmp_path, case):
     assert stamped(tmp_path) == before
 
 
+def spell(row, spelling):
+    """The bytes of a record `row`: a lone surrogate as a JSON escape, or as raw bytes that the
+    decoder reads back with `surrogatepass`."""
+    if spelling == "raw bytes":
+        return json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8", "surrogatepass")
+    return json.dumps(row, sort_keys=True).encode("ascii")
+
+
+@pytest.mark.parametrize("spelling", ["a json escape", "raw bytes"])
+@pytest.mark.parametrize("where", ["name", "email", "target_ref"])
+def test_pending_of_an_op_with_a_lone_surrogate_is_damaged_and_its_answer_encodes(
+        tmp_path, where, spelling):
+    records.start(tmp_path, an_op(), DATA)
+    row = json.loads(op_file(tmp_path).read_bytes())
+    if where == "target_ref":
+        row["target_ref"] = "refs/heads/\ud800"
+    else:
+        row["author"][where] = "\ud800"
+    op_file(tmp_path).write_bytes(spell(row, spelling))
+    answer = pending().describe(tmp_path)
+    canonical_json({"first_commit_pending": answer}).encode("utf-8")   # the server's own step
+    assert answer == DAMAGED
+
+
 BROKEN = {
     "a duplicate key": lambda good: good.replace(
         b'"stage":"prepared"', b'"stage":"prepared","stage":"prepared"'),
@@ -302,6 +327,16 @@ def test_the_get_still_answers_200_for_a_signature_wait_and_for_a_damaged_record
     facts = read(project)                                # `read` itself asserts the 200
     assert facts["first_commit_pending"] == DAMAGED
     assert {**facts, "first_commit_pending": None} == baseline
+
+
+@needs_git
+def test_the_get_of_a_record_whose_text_is_not_utf8_is_damaged_and_still_encodes_for_the_wire(
+        tmp_path):
+    project = a_project(tmp_path, "unborn")
+    plant(project.root, lambda body: body.update(author={**body["author"], "name": "\ud800"}))
+    facts = read(project)
+    canonical_json({"git": facts}).encode("utf-8")      # the step server.py takes for every GET
+    assert facts["first_commit_pending"] == DAMAGED
 
 
 class Spy:

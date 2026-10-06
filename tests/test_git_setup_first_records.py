@@ -84,6 +84,11 @@ DAMAGE = {
     "ref_outside_heads": lambda b: b.update(target_ref="refs/tags/trunk"),
     "ref_with_a_control_character": lambda b: b.update(target_ref="refs/heads/a\nb"),
     "actor_with_a_control_character": lambda b: b.update(requested_by="Own\x07er"),
+    "ref_with_a_lone_surrogate": lambda b: b.update(target_ref="refs/heads/\ud800"),
+    "actor_with_a_lone_surrogate": lambda b: b.update(requested_by="Own\ud800er"),
+    "author_name_a_lone_surrogate": lambda b: b.update(author={**AUTHOR, "name": "\ud800"}),
+    "author_email_a_lone_surrogate": lambda b: b.update(
+        author={**AUTHOR, "email": "a\udc80@example.invalid"}),
     "digest_version_one": lambda b: b.update(digest_version=1),
     "digest_version_a_float": lambda b: b.update(digest_version=2.0),
     "signing_as_a_word": lambda b: b.update(signing="false"),
@@ -306,7 +311,8 @@ def test_first_commit_receipt_is_written_once_and_read_closed(tmp_path):
     path = setup_dir(tmp_path) / records.RECEIPT_NAME
     bad = [{**row, "extra": 1}, {**row, "mode": "x"}, {**row, "signature": "yes"},
            {**row, "digest_version": 1}, {**row, "schema_version": 2},
-           {key: value for key, value in row.items() if key != "tree"}]
+           {key: value for key, value in row.items() if key != "tree"},
+           {**row, "target_ref": "refs/heads/\ud800"}]
     for body in bad:
         path.write_bytes(encode(body))
         damaged(records.read_receipt, tmp_path)

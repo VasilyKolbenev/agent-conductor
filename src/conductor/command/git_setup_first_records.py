@@ -115,6 +115,15 @@ def _oid(value: object, object_format: str) -> str:
     return value
 
 
+def _utf8(value: object, limit: int = 1024) -> str:
+    """`_text`, and text that encodes as strict UTF-8. JSON lets a lone surrogate through, and
+    the answer that shows a stored text is written as UTF-8: one such character would end the
+    GET without an answer, so a record that holds one is damage."""
+    text = _text(value, limit)
+    text.encode("utf-8")                    # UnicodeEncodeError is a ValueError: damage
+    return text
+
+
 def _terms(row: dict, tree: str) -> None:
     """The fields an op and its receipt both carry, judged once for both."""
     if type(row["object_format"]) is not str or row["object_format"] not in _OID:
@@ -129,7 +138,7 @@ def _terms(row: dict, tree: str) -> None:
     count = row["file_count"]
     if type(count) is not int or not 0 <= count <= MAX_FILES:
         raise ValueError("file count")
-    ref = _text(row["target_ref"], 240)
+    ref = _utf8(row["target_ref"], 240)
     if not ref.startswith(_HEADS) or len(ref) == len(_HEADS):
         raise ValueError("target ref")
     human_identity("requested_by", row["requested_by"])
@@ -156,7 +165,7 @@ def _check(op: Op) -> None:
     if type(author) is not dict or set(author) != {"name", "email"}:
         raise ValueError("author")
     for field in ("name", "email"):
-        _text(author[field])
+        _utf8(author[field])
     _timestamp("started_at", op.started_at)
 
 
