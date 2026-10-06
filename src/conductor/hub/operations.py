@@ -33,6 +33,25 @@ class FolderPick:
     project: str  # none | legacy | activated
 
 
+def _new_row(ident: str, kind: str, source: str | None, step: str,
+             project_id: str | None) -> dict:
+    """A running row in the form of spec 4.6.4; `detail` is `None` or one typed reason."""
+    return {"operation_id": ident, "kind": kind, "source": source, "state": "running",
+            "step": step, "project_id": project_id, "code": None, "detail": None, "result": None}
+
+
+def _check_detail(row: dict) -> None:
+    """Refuse a `detail` that is not one closed reason standing beside the row's own code."""
+    detail = row["detail"]
+    if detail is None:
+        return
+    reason = detail.get("reason") if isinstance(detail, dict) and set(detail) == {"reason"} \
+        else None
+    beside = refusals.OPERATION_DETAIL_REASONS.get(reason) if isinstance(reason, str) else None
+    if beside is None or row["code"] not in beside:
+        raise ValueError("a row's detail is one closed reason that stands beside its own code")
+
+
 class Operations:
     def __init__(self, folder: Path, bus: events.EventBus, *,
                  start: Callable[[str], None], status: Callable[[str], tuple[str, str | None]],
@@ -53,16 +72,11 @@ class Operations:
         with self._lock:
             if self._closing:
                 raise refusals.HubRefusal("operation_busy")
-            if any(row["state"] == "running" for row in self._rows.values()):
+            if self._add_running():
                 raise refusals.HubRefusal("operation_busy")
             ident = f"operation-{secrets.token_hex(16)}"
-            row = {"operation_id": ident, "kind": "add", "source": source, "state": "running",
-                   "step": "admit", "project_id": None, "code": None, "result": None}
-            self._rows[ident] = row
-            while len(self._rows) > LIMIT:
-                old, _ = self._rows.popitem(last=False)
-                self._threads.pop(old, None)
-                self._cli_launched.discard(old)
+            self._rows[ident] = _new_row(ident, "add", source, "admit", None)
+            self._evict()
             thread = threading.Thread(target=self._run, args=(ident, pick, name, confirmed),
                                       kwargs={"source": source, "repo": repo, "prepare": prepare},
                                       name=f"hub-add-{ident[-8:]}", daemon=True)
@@ -120,17 +134,75 @@ class Operations:
     def configure_parent(self, change):
         """Serialize the selected parent with admission of a new add operation."""
         with self._lock:
-            if any(row["state"] == "running" for row in self._rows.values()):
+            if self._add_running():
                 raise refusals.HubRefusal("operation_busy")
             return change()
 
+    def open_project_row(self, kind: str, project_id: str, step: str) -> str:
+        """Open the running row of an operation on one project, claiming the project at once.
+
+        Raises:
+            HubRefusal: `project_busy` when another operation of this project is running (the
+                check and the claim are one step under the ledger's lock).
+        """
+        with self._lock:
+            if self.running_for(project_id) is not None:
+                raise refusals.HubRefusal("project_busy")
+            ident = self._open(kind, project_id, step)
+        self._publish(ident)
+        return ident
+
+    def open_login_row(self) -> str:
+        """Open the running row of a login recovery: it belongs to no project."""
+        with self._lock:
+            ident = self._open("recover_login", None, "recover_login")
+        self._publish(ident)
+        return ident
+
+    def running_for(self, project_id: str) -> str | None:
+        """The id of the running row of a project operation, if any.
+
+        An add row is not one: it carries the project id from the moment it registers it and
+        must not count against the project's own start step.
+        """
+        with self._lock:
+            return next((ident for ident, row in self._rows.items()
+                         if row["state"] == "running" and row["kind"] != "add"
+                         and row["project_id"] == project_id), None)
+
+    def update_row(self, ident: str, **fields) -> None:
+        """Change fields of a row and publish its `operation` frame.
+
+        Raises:
+            ValueError: `detail` is not `None` or one closed reason that stands beside the code
+                the row would have after this call; nothing is changed then.
+        """
+        with self._lock:
+            row = self._rows[ident]
+            _check_detail({**row, **fields})
+            row.update(fields)
+        self._publish(ident)
+
+    def _add_running(self) -> bool:
+        return any(row["state"] == "running" and row["kind"] == "add"
+                   for row in self._rows.values())
+
+    def _open(self, kind: str, project_id: str | None, step: str) -> str:
+        """A running row of any kind but an add; the caller holds the lock."""
+        ident = f"operation-{secrets.token_hex(16)}"
+        self._rows[ident] = _new_row(ident, kind, None, step, project_id)
+        self._evict()
+        return ident
+
+    def _evict(self) -> None:
+        """Keep the `LIMIT` latest rows of every kind; the caller holds the lock."""
+        while len(self._rows) > LIMIT:
+            old, _ = self._rows.popitem(last=False)
+            self._threads.pop(old, None)
+            self._cli_launched.discard(old)
+
     def _publish(self, ident: str) -> None:
         self._bus.publish("operation", operation_id=ident)
-
-    def _change(self, ident: str, **fields) -> None:
-        with self._lock:
-            self._rows[ident].update(fields)
-        self._publish(ident)
 
     def _run(self, ident: str, pick: FolderPick, name: str, confirmed: bool, *,
              source="folder", repo=None, prepare=None) -> None:
@@ -152,7 +224,7 @@ class Operations:
                     path, made_home = prepare(ident)
                     # The clone is now owner data. If the subsequent ownership
                     # CLI refuses, show its folder alongside the step's code.
-                    self._change(ident, step="admit", result={"folder": Path(path).name,
+                    self.update_row(ident, step="admit", result={"folder": Path(path).name,
                         "cloned": True, "projects_home_created": made_home})
                 else:
                     path, made_home = prepare()
@@ -161,49 +233,50 @@ class Operations:
                             else self._cli(ident, pick.path, name, confirmed,
                                            source=source, repo=repo))
             if code is not None:
-                self._change(ident, state="failed", code=code)
+                self.update_row(ident, state="failed", code=code)
                 return
             if result is None:
-                self._change(ident, state="failed", code="subprocess_failed")
+                self.update_row(ident, state="failed", code="subprocess_failed")
                 return
             project_id = result.get("project_id")
             if not isinstance(project_id, str) or re.fullmatch(r"[0-9a-f]{32}", project_id) is None:
-                self._change(ident, state="failed", code="subprocess_failed")
+                self.update_row(ident, state="failed", code="subprocess_failed")
                 return
             visible = {key: result.get(key) for key in (
                 "folder", "activated", "providers", "git", "exclude", "exclude_names",
                 "agent_instructions", "projects_home_created")}
             visible["projects_home_created"] = made_home or visible["projects_home_created"]
-            self._change(ident, project_id=project_id, result=visible, step="start")
+            self.update_row(ident, project_id=project_id, result=visible, step="start")
             try:
                 with self._lock:
                     if source == "github" and self._closing:
                         raise clone.CloneFailed("cancelled")
                     self._start(project_id)
             except refusals.HubRefusal as error:
-                self._change(ident, state="failed", code=self._known(error.code))
+                self.update_row(ident, state="failed", code=self._known(error.code))
                 return
             deadline = self._clock() + START_WAIT_SECONDS
             while self._clock() < deadline:
                 state, state_code = self._status(project_id)
                 if state == "running":
-                    self._change(ident, state="succeeded", code=None)
+                    self.update_row(ident, state="succeeded", code=None)
                     return
                 if state in {"failed", "missing", "identity_mismatch", "recovery_required",
                              "stop_uncertain"}:
-                    self._change(ident, state="failed", code=self._known(state_code or "start_failed"))
+                    self.update_row(ident, state="failed",
+                                    code=self._known(state_code or "start_failed"))
                     return
                 time.sleep(0.1)
-            self._change(ident, state="failed", code="start_timeout")
+            self.update_row(ident, state="failed", code="start_timeout")
         except refusals.HubRefusal as error:
-            self._change(ident, state="failed", code=self._known(error.code))
+            self.update_row(ident, state="failed", code=self._known(error.code))
         except clone.CloneFailed as error:
             if error.code == "cancelled":
-                self._change(ident, state="cancelled", code=None)
+                self.update_row(ident, state="cancelled", code=None)
             else:
-                self._change(ident, state="failed", code=self._known(error.code))
+                self.update_row(ident, state="failed", code=self._known(error.code))
         except Exception:  # a background operation must end in its closed vocabulary
-            self._change(ident, state="failed", code="subprocess_failed")
+            self.update_row(ident, state="failed", code="subprocess_failed")
 
     @staticmethod
     def _known(code: str) -> str:
@@ -301,7 +374,7 @@ class Operations:
                 return position, result, False
             if set(item) == {"step"} and item["step"] in STEPS:
                 index = STEPS.index(item["step"])
-                self._change(ident, step=STEPS[index + 1] if index + 1 < len(STEPS) else "start")
+                self.update_row(ident, step=STEPS[index + 1] if index + 1 < len(STEPS) else "start")
             elif set(item) == {"result"} and isinstance(item["result"], dict):
                 result = item["result"]
             else:

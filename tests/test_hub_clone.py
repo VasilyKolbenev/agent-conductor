@@ -152,7 +152,7 @@ def test_successful_clone_remains_visible_when_projects_add_refuses(bound):
                                     status=lambda _ident: ("running", None))
     manager._rows[ident] = {"operation_id": ident, "kind": "add", "source": "github",
                             "state": "running", "step": "clone", "project_id": None,
-                            "code": None, "result": None}
+                            "code": None, "detail": None, "result": None}
     manager._cli = lambda *_args, **_kwargs: (None, "tracks_product_dir")
     manager._run(ident, operations.FolderPick(str(ticket.path), "none"), "My app", True,
                  source="github", repo="owner/app",

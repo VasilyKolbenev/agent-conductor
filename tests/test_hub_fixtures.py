@@ -26,7 +26,8 @@ FORMS = {
     "GET /hub/setup": {"profile", "projects_home", "tools", "logins", "hub_job",
                        "clone_recovery"},
     "GET /hub/operations/<operation_id>": {
-        "operation_id", "kind", "source", "state", "step", "project_id", "code", "result"},
+        "operation_id", "kind", "source", "state", "step", "project_id", "code", "detail",
+        "result"},
     "GET /hub/dialogs/<pick_id>": {"pick_id", "purpose", "state", "folder", "project", "code"},
     "GET /hub/github/status": {"state", "login", "login_command"},
     "GET /hub/github/repos": {"owner", "repos"},
