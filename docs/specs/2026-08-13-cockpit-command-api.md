@@ -1281,7 +1281,10 @@ in view mode and in every state but `unborn` and `repo` (no file is read for it
 there). It is a read: it starts no Git process, writes nothing, grants nothing and
 repeats nothing, and a reload, a GET or a server start continue nothing. A record
 that cannot be read or proven is `damaged`; the answer is still 200 and nothing is
-deleted. The person continues by repeating the first-commit confirmation with
+deleted. Every stored text of `terms` is valid UTF-8, and a stored wait for a
+signature names only a branch of `refs/heads/` followed by letters, digits, `.`, `_`,
+`-` and `/`, because the owner pastes the commands built from it into a terminal; any
+other record is `damaged`. The person continues by repeating the first-commit confirmation with
 `mode` and `paths_digest` taken from `terms` and the actor who acts now; the server
 judges that repeat again, from the stored terms.
 

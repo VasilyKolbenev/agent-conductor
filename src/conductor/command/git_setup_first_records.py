@@ -55,6 +55,11 @@ _OID = {"sha1": re.compile(r"[0-9a-f]{40}"), "sha256": re.compile(r"[0-9a-f]{64}
 _NONCE = re.compile(r"[0-9a-f]{16}")
 _INSTALL_NAME = re.compile(re.escape(INSTALL) + r"[0-9a-f]{16}")
 _HEADS = "refs/heads/"
+#: The one spelling of a branch a signature wait may name. The owner pastes two commands built
+#: from it into a terminal, and Git's own rule for a name (`check-ref-format`) lets through what a
+#: shell reads as code, as a redirect or as more than one word (review ruling); these characters
+#: mean nothing to PowerShell, cmd or a POSIX shell. Git still judges everything else about it.
+_SIGNABLE_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]+")
 _OP_KEYS = frozenset({
     "schema_version", "stage", "nonce", "mode", "paths_digest", "digest_version", "target_ref",
     "object_format", "expected_tree", "commit", "install_sha256", "message_sha256", "file_count",
@@ -115,6 +120,11 @@ def _oid(value: object, object_format: str) -> str:
     return value
 
 
+def signable_ref(ref: object) -> bool:
+    """True when `ref` is a branch the two commands of a signature wait may name."""
+    return type(ref) is str and _SIGNABLE_REF.fullmatch(ref) is not None
+
+
 def _utf8(value: object, limit: int = 1024) -> str:
     """`_text`, and text that encodes as strict UTF-8. JSON lets a lone surrogate through, and
     the answer that shows a stored text is written as UTF-8: one such character would end the
@@ -155,6 +165,8 @@ def _check(op: Op) -> None:
     _terms(row, op.expected_tree)
     if (op.commit is None) != (op.stage == AWAITING_SIGNATURE):
         raise ValueError("commit and stage")
+    if op.stage == AWAITING_SIGNATURE and not signable_ref(op.target_ref):
+        raise ValueError("signing ref")           # the wait would show a command a shell can run
     if op.commit is not None:
         _oid(op.commit, op.object_format)
     _digest("install_sha256", op.install_sha256)

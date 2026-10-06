@@ -24,7 +24,8 @@ from conductor.command.project_git import GitReadFailed
 from tests.git_repo_helpers import Script, git, needs_git, real_reader, said
 from tests.test_command_materials_routes import NoGit, Project
 from tests.test_git_setup_first_records import (
-    COMMIT, DAMAGE, DATA, DIGEST, NOW, TREE, an_op, install_file, op_file, plant, setup_dir)
+    COMMIT, DAMAGE, DATA, DIGEST, NOW, READABLE, SHELL_READS, TREE, an_op, install_file, op_file,
+    plant, setup_dir)
 from tests.test_project_git_state import read
 from tests.test_seed_routes import Folder
 
@@ -147,6 +148,21 @@ def test_pending_names_the_message_file_inside_the_namespace_the_project_is_in(t
         path = pending().describe(root)["signing"]["message_path"]
         assert path == f"{namespace}/git/msg-first-0123456789abcdef0123456789abcdef.txt"
         assert MESSAGE_PATH.fullmatch(path)
+
+
+@pytest.mark.parametrize("ref", READABLE)
+def test_pending_of_a_signature_wait_names_the_branch_as_stored_in_both_places(tmp_path, ref):
+    waiting(tmp_path, target_ref=ref)
+    answer = pending().describe(tmp_path)
+    assert answer["state"] == "awaiting_signature"
+    assert answer["terms"]["target_ref"] == ref == answer["signing"]["target_ref"]
+
+
+@pytest.mark.parametrize("ref", SHELL_READS)
+def test_pending_of_an_unfinished_op_shows_any_branch_name_as_stored_and_no_command(tmp_path, ref):
+    op_at(tmp_path, PREPARED, target_ref=ref)
+    assert pending().describe(tmp_path) == {
+        "state": "unfinished", "terms": {**TERMS, "target_ref": ref}}
 
 
 def test_pending_of_a_signed_op_whose_ref_moved_is_unfinished_without_signing_facts(tmp_path):
