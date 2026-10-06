@@ -159,3 +159,24 @@ def test_every_code_projects_add_prints_is_a_code_of_the_operation_list():
     printed = set(projects_add.REFUSAL_CODES)
     assert printed <= set(refusals.OPERATION_ERROR_CODES), sorted(
         printed - set(refusals.OPERATION_ERROR_CODES))
+
+
+def test_every_code_an_owner_command_can_make_the_hub_say_is_in_the_list_of_its_step():
+    from conductor.hub import owner_ops
+
+    for step in ("recover", "recover_login", "providers"):
+        allowed = refusals.OPERATION_CODES_BY_STEP[step]
+        for code in allowed:
+            assert owner_ops.refusal_code(f"{code}: x\n", allowed) == code
+            assert code in refusals.OPERATION_ERROR_CODES
+        assert owner_ops.refusal_code("not_a_code_of_the_hub: x\n", allowed) == "subprocess_failed"
+
+
+def test_the_typed_detail_reasons_are_closed_and_no_other_closed_list_changed():
+    restart = {"recovery_required", "login_recovery_required"}
+    assert {reason: set(codes) for reason, codes in refusals.OPERATION_DETAIL_REASONS.items()
+            } == {"recovery_required": {"subprocess_failed"}, "restart_needed": restart,
+                  "prepare_needed": restart, "other_environment": restart,
+                  "not_proven": restart}
+    assert "recovery_required" not in refusals.OPERATION_CODES_BY_STEP["providers"]
+    assert refusals.OPERATION_CODES_BY_STEP["any"] == ("subprocess_failed",)
