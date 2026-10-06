@@ -776,5 +776,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
                     self._forget_login_sample()
         except CheckFrameError as error:
             return self._checker_answer(request, error.reason)
+        except LoginLeaseRefused as refused:  # two closed ids, never the owner's sentence
+            return self._checker_answer(request, str(refused))
         except Exception:
             return self._checker_answer(request, "material_unavailable")

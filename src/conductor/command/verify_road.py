@@ -36,6 +36,19 @@ CHECK_REASONS = MappingProxyType({
 })
 
 
+def check_reason(verification: AdapterVerification, default: str) -> str:
+    """The runtime's own sentence for a checker's refusal, or `default` when it knows none.
+
+    A closed reason key is looked up in `CHECK_REASONS`. A checker whose shared login lease was
+    refused answers `error` with the sentence of two closed ids instead of a key, because the
+    ids are the fact; its words are built from the closed lists only (`verify_holds`).
+    """
+    known = CHECK_REASONS.get((verification.state, verification.detail))
+    if known is None and verification.state == "error":
+        known = words.checker_lease_refused(verification.detail)
+    return default if known is None else known
+
+
 def _evidence(store, request, verifier, observed, refs):
     return words.standing_evidence(
         store.read(request.run_id), request, verifier.adapter_id, observed,
@@ -75,8 +88,7 @@ def verify_independently(registry, store, request, report, verifier, observed, *
                 if verification.feedback is not None:
                     from .feedback_runtime import record_rejection
                     record_rejection(store, request, verifier, verification, published, clock=clock)
-                refused = CHECK_REASONS.get(
-                    (verification.state, verification.detail), refused)
+                refused = check_reason(verification, refused)
             return None, refused
         return _evidence(store, request, verifier, observed, verification.evidence_refs)
     except IndependentVerifierUnavailable:

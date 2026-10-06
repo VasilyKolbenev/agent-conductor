@@ -62,16 +62,26 @@ _LEASE_SENTENCE = re.compile(
 _LEASE_REFUSED = "the shared login lease was refused"
 
 
-def _lease_words(sentence: str) -> str | None:
-    """The words for a lease refusal a transport wrote, from the closed lists only."""
-    found = _LEASE_SENTENCE.search(sentence)
+def lease_words(sentence: object, refused: str = _LEASE_REFUSED) -> str | None:
+    """The words for a lease refusal a transport wrote, from the closed lists only.
+
+    Args:
+        sentence: What a transport wrote (`adapters/login_refusal.sentence`), or anything else.
+        refused: The runtime's own opening words, which say whose lease it was.
+
+    Returns:
+        ``refused``, then the words of the closed code and of the closed reader code under it.
+        Never text taken from ``sentence``: an id outside the two lists is dropped. None when the
+        text is not the sentence of a refused lease.
+    """
+    found = _LEASE_SENTENCE.search(sentence) if type(sentence) is str else None
     if found is None:
         return None
     code, reader = found["code"], found["reader"]
     if code not in LEASE_WORDS:
-        return _LEASE_REFUSED
+        return refused
     named = code if reader not in READER_WORDS else f"{code}, {reader}: {READER_WORDS[reader]}"
-    return f"{_LEASE_REFUSED}: {LEASE_WORDS[code]} ({named})"
+    return f"{refused}: {LEASE_WORDS[code]} ({named})"
 
 
 def reason_words(sentence: object) -> str | None:
@@ -87,4 +97,4 @@ def reason_words(sentence: object) -> str | None:
     if type(sentence) is not str:
         return None
     found = next((words for fragment, words in REASONS if fragment in sentence), None)
-    return found if found is not None else _lease_words(sentence)
+    return found if found is not None else lease_words(sentence)

@@ -163,3 +163,85 @@ def test_a_sentence_with_an_id_outside_the_closed_lists_never_has_that_text_echo
                             and "nobody_raises" not in said), said
     if "ownership_unavailable: a_reader" in sentence:
         assert said is not None and "ownership_unavailable" in said, "the known code is kept"
+
+
+# -- the checker's words stand on the same two closed lists --------------------------------------
+
+CHECKER_WORDS = "the checker's shared login lease was refused"
+
+
+def checker_words(detail):
+    """The runtime's words for a checker whose lease was refused, read from its sentence."""
+    from conductor.command import verify_holds
+    return verify_holds.checker_lease_refused(detail)
+
+
+def a_checker_that_answers(tmp_path, state, detail):
+    """One run whose independent checker answers `state` and `detail`, and what the run says."""
+    from conductor.command.adapters import AdapterRegistry, AdapterVerification
+    from conductor.command.runtime import ControlRuntime
+    from tests.test_command_independent_runtime import circuit
+    from tests.test_command_runtime_authorize import (
+        NOW, a_budget, a_confirmation, fixed_clock, fixed_ids)
+    store, doer, checker, _, _, proposal = circuit(tmp_path)
+    checker.verify_for = lambda request, result, verifier, material: AdapterVerification(
+        adapter_id=checker.manifest.adapter_id, action_id=request.action_id,
+        state=state, observed_at=NOW, detail=detail)
+    # The registry snapshots optional seams at registration, so it is built after the answer.
+    runtime = ControlRuntime(store, AdapterRegistry([doer, checker]),
+                             clock=fixed_clock(), ids=fixed_ids())
+    return runtime.execute(runtime.authorize(a_confirmation(proposal), budget=a_budget()))
+
+
+@pytest.mark.parametrize("reader", [None, *READER_CODES])
+@pytest.mark.parametrize("code", sorted(login_refusal.LEASE_CODES))
+def test_the_checkers_words_carry_the_ids_of_the_sentence_the_transport_writes(code, reader):
+    said = checker_words(login_refusal.sentence(code, reader))
+    assert said is not None and said.startswith(CHECKER_WORDS), said
+    assert code in said and (reader is None or reader in said), said
+    assert failure_reasons.LEASE_WORDS[code] in said
+    assert "\\" not in said and "/" not in said
+
+
+@pytest.mark.parametrize("sentence", [
+    "the shared login lease was refused (C:\\Users\\someone\\auth), so no task was spawned",
+    "the shared login lease was refused (ownership_unavailable: a made-up reader), "
+    "so no task was spawned",
+    "the shared login lease was refused (a_code_nobody_raises), so no task was spawned",
+    "the shared login lease was refused (ownership_unavailable: a_reader_nobody_raises), "
+    "so no task was spawned",
+    "a sentence of the checker's own, with C:\\private\\path in it",
+    "",
+    None,
+    7,
+    b"the shared login lease was refused (ownership_unavailable), so no task was spawned",
+])
+def test_the_checkers_words_never_echo_an_id_outside_the_closed_lists(sentence):
+    said = checker_words(sentence)
+    assert said is None or ("Users" not in said and "made-up" not in said
+                            and "nobody_raises" not in said and "private" not in said), said
+
+
+@pytest.mark.parametrize(("code", "reader"), [
+    ("ownership_unavailable", "layout_unknown"), ("login_recovery_required", None)])
+def test_a_checker_answering_the_lease_sentence_is_given_the_runtimes_words_and_no_other_text(
+        tmp_path, code, reader):
+    from conductor.command.runtime_values import AttemptState
+    attempt = a_checker_that_answers(tmp_path, "error", login_refusal.sentence(code, reader))
+    said = failure_reasons.READER_WORDS.get(reader)
+    named = code if reader is None else f"{code}, {reader}: {said}"
+    assert attempt.state is AttemptState.VERIFICATION_FAILED
+    assert attempt.receipt.detail == (
+        f"{CHECKER_WORDS}: {failure_reasons.LEASE_WORDS[code]} ({named})")
+
+
+def test_a_checker_answering_a_sentence_with_a_path_in_it_has_none_of_it_in_the_record(tmp_path):
+    hostile = f"the shared login lease was refused ({PRIVATE}), so no task was spawned"
+    attempt = a_checker_that_answers(tmp_path, "error", hostile)
+    assert attempt.receipt.detail == "adapter verification was error"
+
+
+def test_a_lease_sentence_is_read_only_from_an_error_answer_of_the_checker(tmp_path):
+    attempt = a_checker_that_answers(
+        tmp_path, "mismatch", login_refusal.sentence("ownership_unavailable", "layout_unknown"))
+    assert attempt.receipt.detail == "adapter verification was mismatch"

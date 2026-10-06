@@ -29,6 +29,7 @@ from __future__ import annotations
 from .adapters import AdapterVerification
 from .attempts import AttemptEvent
 from .contracts import ActionRequest, EvidenceRef
+from .failure_reasons import lease_words
 from .graph_causality import demanded_evidence
 from .run_store import RecoveredRun
 
@@ -85,6 +86,9 @@ CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass prefligh
 CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
+#: The checker's own shared login lease was refused when its guard was entered, so that attempt
+#: spawned nothing. The ids that follow it come from the two closed lists of `failure_reasons`.
+CHECKER_LEASE_REFUSED = "the checker's shared login lease was refused"
 CHECKER_TREE_CHANGED = "the checker changed the work tree; its verdict was not accepted"
 CHECKER_REJECTED = "the independent checker rejected the doer's result"
 CHECKER_FINDINGS_REFUSED = (
@@ -124,6 +128,24 @@ def refused_verification(
     if verification.state != "verified":
         return f"adapter verification was {verification.state}"
     return None
+
+
+def checker_lease_refused(detail: object) -> str | None:
+    """The runtime's words for a checker whose shared login lease was refused, or None.
+
+    The checker's transport hands across two closed ids and nothing else
+    (`adapters/login_refusal.sentence`); the owner's own sentence names state of the operator's
+    machine and never gets here. The words are built from `failure_reasons`' two closed lists, so
+    an id outside them is dropped, never echoed.
+
+    Args:
+        detail: The ``detail`` of an ``error`` answer from the checker.
+
+    Returns:
+        ``CHECKER_LEASE_REFUSED`` and the words of the ids, or None when ``detail`` is not the
+        sentence of a refused lease.
+    """
+    return lease_words(detail, CHECKER_LEASE_REFUSED)
 
 
 def _bound_rows(
