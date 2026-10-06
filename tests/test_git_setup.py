@@ -180,9 +180,12 @@ def test_snapshot_seals_raw_bytes_and_clean_filter_oid_without_git_writes_or_pat
     value = answer.payload["setup"]
     row = next(row for row in value["files"] if row["path"] == name)
     assert row == dict(path=name, length=len(data), sha256=sha256(data),
-                       git_oid=blob_oid(b"clean payload\n", value["object_format"]))
-    encoded = json.dumps(value["files"], sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+                       git_oid=blob_oid(b"clean payload\n", value["object_format"]),
+                       git_mode="100644")
+    encoded = json.dumps({"digest_version": 2, "files": value["files"]}, sort_keys=True,
+                         ensure_ascii=True, separators=(",", ":")).encode("ascii")
     assert value["paths_digest"] == sha256(encoded) and "suspicious_name" in value["warnings"]
+    assert value["digest_version"] == 2
     assert {row["path"] for row in value["files"]} == {name, ".gitattributes"}
     assert snapshot(project.root / ".git") == before
     assert not (data_root(project.root) / "git/setup/first_commit.json").exists()
@@ -190,6 +193,20 @@ def test_snapshot_seals_raw_bytes_and_clean_filter_oid_without_git_writes_or_pat
     assert hashes and all("-w" not in args and name not in " ".join(args) for args, _ in hashes)
     assert name.encode() in hashes[0][1]["stdin"]
     assert preview(project, "empty").payload["setup"]["files"] == []
+
+
+@needs_git
+def test_preview_lists_files_whose_names_windows_reports_as_executable(tmp_path):
+    project = unborn(tmp_path)
+    git("config", "core.filemode", "false", cwd=project.root)
+    names = ["build.bat", "dos.com", "plain.txt", "run.cmd", "tool.exe"]
+    for name in names:
+        (project.root / name).write_bytes(b"echo\n")
+    answer = preview(project)
+    assert answer.status == 200, answer.payload
+    rows = answer.payload["setup"]["files"]
+    assert [row["path"] for row in rows] == names
+    assert {row["git_mode"] for row in rows} == {"100644"}
 
 
 @needs_git

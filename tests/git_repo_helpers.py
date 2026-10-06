@@ -8,9 +8,12 @@ without git.
 """
 from __future__ import annotations
 
+import atexit
+import functools
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -43,9 +46,35 @@ def said(output=b"", code=0, **flags):
     return project_git.GitAnswer(exit_code=code, output=output, **flags)
 
 
-def git(*args, cwd, check=True):
-    """Run the real git in `cwd` with the account's configuration out of sight."""
-    done = subprocess.run([GIT, *IDENTITY, *args], cwd=cwd, env={**os.environ, **ISOLATED},
+_HOME_NAMES = ("HOME", "USERPROFILE", "XDG_CONFIG_HOME")
+
+
+@functools.cache
+def _empty_home():
+    """A folder with no configuration in it. `GIT_CONFIG_GLOBAL` arrived in Git 2.32, so an older
+    Git is kept away from the account's configuration by where it looks for it."""
+    folder = tempfile.mkdtemp(prefix="conduct-empty-home-")
+    atexit.register(shutil.rmtree, folder, True)
+    return folder
+
+
+def empty_home_environment():
+    """Every home variable Git looks at, pointed at one folder with no configuration in it."""
+    return dict.fromkeys(_HOME_NAMES, _empty_home())
+
+
+def git(*args, cwd, check=True, binary=None, env=None):
+    """Run the real git in `cwd` with the account's configuration out of sight.
+
+    `binary` runs that Git instead of the one on the path (the isolated old Git of a
+    compatibility probe) and also points every home variable at an empty folder; `env` adds
+    environment variables (a private `GIT_INDEX_FILE`, for one).
+    """
+    environment = {**os.environ, **ISOLATED}
+    if binary is not None:
+        environment.update(empty_home_environment())
+    environment.update(env or {})
+    done = subprocess.run([binary or GIT, *IDENTITY, *args], cwd=cwd, env=environment,
                           capture_output=True)
     assert not check or done.returncode == 0, done.stderr.decode(errors="replace")
     return done

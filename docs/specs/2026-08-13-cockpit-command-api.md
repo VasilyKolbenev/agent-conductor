@@ -1242,10 +1242,17 @@ an existing empty seed requires explicit `--object-format=sha1`. Deferred
 exclude writes the pinned Git's structurally plain common directory.
 
 The first-commit preview returns `{"setup":{step,mode,head:null,target_ref,
-object_format,author,signing,files,manual,warnings,paths_digest}}`. At most 5000
-untracked paths are listed, excluding product names. Regular files bind
-`{path,length,sha256,git_oid}`: the raw-byte seal and actual clean-filter Git OID.
-The canonical ordered list is sealed by `paths_digest`; unsafe leaves are shown
+object_format,author,signing,files,manual,warnings,digest_version,paths_digest}}`.
+At most 5000 untracked paths are listed, excluding product names. Regular files
+bind `{path,length,sha256,git_oid,git_mode}`: the raw-byte seal, the actual
+clean-filter Git OID and the effective Git mode, `"100755"` when `core.filemode`
+is not false and the owner execute bit is set, else `"100644"`; on Windows no
+file has an execute bit in Git's view (Git for Windows stores `"100644"` even for
+`.bat` and `.exe` names), so every row there is `"100644"`. The canonical
+list `{"digest_version":2,"files":[...]}` (sorted keys, ASCII) is sealed by
+`paths_digest`; a digest of another scope, such as the version-1 digest of the
+bare list that had no mode, never equals it, so an old preview never confirms the
+terms now shown (`paths_changed`, then a new preview). Unsafe leaves are shown
 as manual paths. Reading this preview creates no Git objects, index, ref or
 receipt. Missing author identity refuses; required signing is a shown warning.
 Actual first-commit confirmation and its recovery are not implemented by these
