@@ -58,6 +58,11 @@ def _empty_home():
     return folder
 
 
+def empty_home_environment():
+    """Every home variable Git looks at, pointed at one folder with no configuration in it."""
+    return dict.fromkeys(_HOME_NAMES, _empty_home())
+
+
 def git(*args, cwd, check=True, binary=None, env=None):
     """Run the real git in `cwd` with the account's configuration out of sight.
 
@@ -67,7 +72,7 @@ def git(*args, cwd, check=True, binary=None, env=None):
     """
     environment = {**os.environ, **ISOLATED}
     if binary is not None:
-        environment.update(dict.fromkeys(_HOME_NAMES, _empty_home()))
+        environment.update(empty_home_environment())
     environment.update(env or {})
     done = subprocess.run([binary or GIT, *IDENTITY, *args], cwd=cwd, env=environment,
                           capture_output=True)

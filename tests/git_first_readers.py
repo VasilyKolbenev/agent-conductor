@@ -15,7 +15,9 @@ import subprocess
 
 import pytest
 
-from tests.git_repo_helpers import GIT, ISOLATED
+from conductor.command.adapters.process import ProcessRunner
+from conductor.command.project_git import process_git_read
+from tests.git_repo_helpers import GIT, ISOLATED, KEPT, empty_home_environment
 
 READERS = [pytest.param("current", id="current_git"), pytest.param("old", id="old_git")]
 _VERSION = re.compile(r"git version (\d+)\.(\d+)\.(\d+)")
@@ -54,3 +56,18 @@ def reader_binary(which: str) -> str:
     if problem is not None:
         pytest.fail(problem)
     return path
+
+
+def product_reader(root, binary, cwd, *, env=None, index_root=None):
+    """The product's own Git reader as a test builds it: the real runner and `process_git_read`.
+
+    Its Git cannot see the account's configuration, on any Git: `GIT_CONFIG_GLOBAL` (in `ISOLATED`)
+    arrived in 2.32, so the home variables point at an empty folder as well. They are given in the
+    literal environment, which the runner applies last: it passes HOME and USERPROFILE on from its
+    own (`KEPT`), and XDG_CONFIG_HOME is not among the names it lets through.
+    """
+    runner = ProcessRunner(root, environ={name: os.environ[name] for name in KEPT
+                                          if name in os.environ})
+    literal = {**ISOLATED, **empty_home_environment(), **(env or {})}
+    return process_git_read(runner, binary, str(cwd), env_allow=KEPT, env=literal,
+                            index_root=index_root)
