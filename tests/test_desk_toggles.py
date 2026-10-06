@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from tests.desk_node import run_js
 
-MODULES = {"toggles_module": "desk-toggles.js"}
+MODULES = {"toggles_module": "desk-toggles.js", "hash": "desk-hash.js"}
 #: The stand-ins: three buttons that keep what was set on them, a panel owner that keeps the open
 #: panel, and a log of every operation the module asked of the desk, in order.
 PRELUDE = """
@@ -22,17 +22,21 @@ const log = [];
 let open = null;
 const panels = {isOpen: (name) => open === name,
   toggle: (name) => { log.push(["toggle", name]); open = open === name ? null : name; }};
+const boot = hash.readDeskHash(d?.first ?? "");
 const toggles = toggles_module.createToggles({byId, panels,
   closeContinue: () => log.push(["closeContinue"]), remember: () => log.push(["remember"]),
-  render: () => { log.push(["render"]); toggles.draw(false); }});
+  render: () => { log.push(["render"]); toggles.draw(false); },
+  first: boot, moves: hash.navigationChange});
+const hear = (fragment) => toggles.hear(hash.readDeskHash(fragment));
 const press = (name) => byId(ids[name]).listeners.forEach((listener) => listener());
 const says = () => Object.fromEntries(Object.entries(ids).map(([name, id]) => [name,
   byId(id).expanded]));
 """
 
 
-def _run(body: str):
-    return run_js(PRELUDE + body, MODULES)
+def _run(body: str, first: str = ""):
+    """Run `body` against the toggles of a desk whose address at boot was `first`."""
+    return run_js(PRELUDE + body, MODULES, {"first": first})
 
 
 def test_a_press_while_the_desk_boots_is_drawn_and_asks_nothing_of_the_panels():
@@ -184,3 +188,189 @@ toggles.finish();
 console.log(JSON.stringify({first, then: toggles.applied(), names: toggles.names}));
 """)
     assert answer == {"first": False, "then": True, "names": ["cycle", "people", "run"]}
+
+
+# -- a hash that arrives while the desk boots --------------------------------------------------
+
+BOOKMARK = "#task=a&panel=people&lang=en"
+
+
+def test_a_hash_of_the_language_alone_heard_while_the_desk_boots_leaves_the_press():
+    answer = _run("""
+press("cycle");
+log.length = 0;
+hear("#lang=ru");
+console.log(JSON.stringify({log, chosen: toggles.resolve("people"), says: says()}));
+""", BOOKMARK)
+    assert answer["log"] == []
+    assert answer["chosen"] == "cycle"
+    assert answer["says"] == {"cycle": "true", "people": "false", "run": "false"}
+
+
+def test_a_hash_that_names_a_panel_replaces_the_press_before_it_and_the_panel_the_address_named():
+    answer = _run("""
+press("people");
+log.length = 0;
+hear("#panel=run&lang=en");
+console.log(JSON.stringify({log, says: says(), chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["log"] == [["render"]]
+    assert answer["says"] == {"cycle": "false", "people": "false", "run": "false"}
+    assert answer["chosen"] == "run"
+
+
+def test_a_hash_that_moves_the_task_and_names_no_panel_is_a_choice_of_none():
+    answer = _run("""
+press("cycle");
+hear("#task=b&lang=en");
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] is None
+    answer = _run("""
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] == "people"
+
+
+def test_a_hash_that_only_repeats_what_the_address_said_moves_nothing_and_keeps_the_press():
+    answer = _run("""
+press("cycle");
+hear("#task=a&panel=people&lang=ru");
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] == "cycle"
+
+
+def test_a_hash_is_judged_against_the_hash_heard_before_it_and_not_against_the_first_address():
+    answer = _run("""
+hear("#task=a&panel=run&lang=en");
+press("cycle");
+hear("#task=a&panel=run&lang=ru");
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] == "cycle", "the second hash repeats the first: it named nothing new"
+
+
+def test_a_press_made_after_a_hash_that_names_a_panel_is_the_panel_and_toggles_from_none():
+    answer = _run("""
+hear("#panel=run&lang=en");
+press("run");
+const once = toggles.resolve("people");
+console.log(JSON.stringify({once}));
+""", BOOKMARK)
+    assert answer["once"] == "run"
+    answer = _run("""
+hear("#panel=run&lang=en");
+press("run"); press("run");
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] is None
+
+
+def test_the_block_opened_after_a_hash_that_names_a_panel_is_the_choice():
+    answer = _run("""
+press("cycle");
+hear("#panel=run&lang=en");
+toggles.choose("continue");
+console.log(JSON.stringify({chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert answer["chosen"] == "continue"
+
+
+def test_a_hash_heard_after_the_boot_has_opened_its_panel_changes_no_choice():
+    answer = _run("""
+press("cycle");
+toggles.resolve("people");
+open = "cycle";
+log.length = 0;
+hear("#panel=run&lang=en");
+toggles.draw(false);
+console.log(JSON.stringify({log, says: says()}));
+""", BOOKMARK)
+    assert answer["log"] == []
+    assert answer["says"] == {"cycle": "true", "people": "false", "run": "false"}
+
+
+def test_a_hash_says_how_many_choices_were_made_when_it_arrived_and_whether_it_was_decided():
+    answer = _run("""
+const none = hear("#lang=ru");
+press("cycle");
+const one = hear("#lang=ru");
+toggles.choose("continue");
+const two = hear("#lang=ru");
+toggles.resolve(null);
+toggles.choose(null);
+press("run");
+const three = hear("#lang=ru");
+console.log(JSON.stringify({none, one, two, three}));
+""", BOOKMARK)
+    assert answer == {"none": {"asked": 0, "decided": True}, "one": {"asked": 1, "decided": True},
+                      "two": {"asked": 2, "decided": True},
+                      "three": {"asked": 4, "decided": False}}
+
+
+def test_the_panel_of_a_hash_heard_while_the_desk_boots_is_not_asked_again_when_the_boot_is_over():
+    answer = _run("""
+const change = hash.navigationChange(boot, hash.readDeskHash("#task=b&panel=run&lang=en"));
+const ticket = hear("#task=b&panel=run&lang=en");
+console.log(JSON.stringify({change, after: toggles.after(ticket, change)}));
+""", BOOKMARK)
+    keys = [step["key"] for step in answer["change"]["steps"]]
+    assert keys == ["task", "panel"]
+    assert [step["key"] for step in answer["after"]["steps"]] == ["task"]
+    assert "panel" not in answer["after"]["reset"]
+    assert answer["after"]["reset"] == answer["change"]["reset"], "what is not the panel stays"
+
+
+def test_a_hash_heard_while_the_desk_boots_that_repeats_the_address_is_not_asked_its_panel_either():
+    """The router compares with what is drawn: the person's panel, not the address's."""
+    answer = _run("""
+press("cycle");
+const same = "#task=a&panel=people&lang=ru";
+const ticket = hear(same);
+const change = hash.navigationChange(hash.readDeskHash("#task=a&panel=cycle"),
+  hash.readDeskHash(same));
+console.log(JSON.stringify({change, after: toggles.after(ticket, change),
+  chosen: toggles.resolve("people")}));
+""", BOOKMARK)
+    assert [step["key"] for step in answer["change"]["steps"]] == ["panel"]
+    assert answer["after"]["steps"] == []
+    assert answer["chosen"] == "cycle"
+
+
+def test_a_hash_heard_after_the_boot_asks_its_panel_until_the_person_chooses_after_it():
+    answer = _run("""
+toggles.resolve("people");
+const change = hash.navigationChange(boot, hash.readDeskHash("#task=b&panel=run&lang=en"));
+const ticket = hear("#task=b&panel=run&lang=en");
+const before = toggles.after(ticket, change);
+press("cycle");
+const later = toggles.after(ticket, change);
+console.log(JSON.stringify({change, before, later}));
+""", BOOKMARK)
+    assert answer["before"] == answer["change"], "no choice since the hash: the change is whole"
+    assert [step["key"] for step in answer["later"]["steps"]] == ["task"]
+
+
+def test_the_panel_a_task_change_resets_is_spared_when_the_person_chose_after_it_arrived():
+    answer = _run("""
+toggles.resolve("people");
+const change = hash.navigationChange(boot, hash.readDeskHash("#task=b&lang=en"));
+const ticket = hear("#task=b&lang=en");
+toggles.choose("continue");
+console.log(JSON.stringify({change, after: toggles.after(ticket, change)}));
+""", BOOKMARK)
+    assert "panel" in answer["change"]["reset"]
+    assert "panel" not in answer["after"]["reset"]
+    assert [step["key"] for step in answer["after"]["steps"]] == ["task"]
+
+
+def test_a_hash_heard_while_the_desk_boots_that_moves_the_task_and_names_no_panel_closes_it():
+    answer = _run("""
+hear("#task=b&lang=en");
+const closed = log.filter((entry) => entry[0] === "closeContinue").length;
+hear("#task=b&lang=ru");
+hear("#panel=run&lang=ru");
+console.log(JSON.stringify({closed, total: log.filter((e) => e[0] === "closeContinue").length}));
+""", BOOKMARK)
+    assert answer == {"closed": 1, "total": 1}, "a language and a named panel close nothing here"

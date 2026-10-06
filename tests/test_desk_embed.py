@@ -99,6 +99,22 @@ def test_the_project_a_claim_names_is_its_id_or_null_and_a_claim_that_binds_noth
     assert got == [PROJECT, None, None] + ["unusable"] * 9
 
 
+def test_the_mode_a_claim_names_is_active_or_view_and_anything_else_is_no_mode():
+    rows = [
+        _claim(),                                   # the mode `_claim` gives: active
+        {**_claim(), "mode": "view"},               # the other mode this build knows
+        {**_claim(), "mode": "paused"},             # a mode it does not know
+        {**_claim(), "mode": "ACTIVE"},             # not the spelling
+        {**_claim(), "mode": None},                 # no mode
+        {"project_id": PROJECT},                    # no mode key
+        None, "active", ["active"], 7,              # not a claim at all
+    ]
+    got = run_js("""
+      console.log(JSON.stringify(d.map((claim) => embed.claimMode(claim))));
+    """, MODULES, rows)
+    assert got == ["active", "view"] + [None] * 8
+
+
 def test_the_hub_origin_must_be_exactly_a_loopback_origin_with_a_port_and_nothing_else():
     refused = ["http://localhost:7700", "https://127.0.0.1:7700", "http://127.0.0.1:7700/",
                "http://127.0.0.1:7700/x", "http://127.0.0.1:0", "http://127.0.0.1:65536",

@@ -55,6 +55,13 @@ export function projectOf(claim) {
   return id === null || (typeof id === "string" && PROJECT_ID.test(id)) ? id : undefined;
 }
 
+//: The mode the server's claim names: the only source of it (spec 4.5.1). A claim that names
+//: none this build knows, or no claim at all, is no mode -- never a guess of `active`.
+export function claimMode(claim) {
+  const mode = claim !== null && typeof claim === "object" ? claim.mode : null;
+  return mode === "active" || mode === "view" ? mode : null;
+}
+
 //: The origin the desk may post its location to, or `null` when it is not embedded. The claim
 //: is the server's answer to the project read (or `null` when there was none): it must repeat
 //: the hash's project and carry a hub origin of the exact grammar.

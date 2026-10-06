@@ -4,7 +4,7 @@ import {LATE, createTransport, path} from "./desk-transport.js";
 import {message} from "./studio-i18n.js";
 import {deskHash, foreignProject, navigationChange, preferenceHash, readDeskHash,
   readPreferences} from "./desk-hash.js";
-import {announceLocation, claimNamesAnotherProject, embedTarget,
+import {announceLocation, claimMode, claimNamesAnotherProject, embedTarget,
   projectOf} from "./desk-embed.js";
 import {projectTasks} from "./studio-tasks-model.js";
 import {projectRuns} from "./studio-model.js";
@@ -205,6 +205,20 @@ function where() {
   return Object.freeze({task: state.taskId, run: state.run.detail?.run.run_id ?? null});
 }
 
+//: What the desk's address says of what it draws, in the canonical order of `deskHash`.
+function addressOf(wizardKeys) {
+  const at = where();
+  const embed = embedded === null ? null : "hub";
+  const panel = panels?.current() ?? (state.flag !== null && state.flag.open ? "continue" : null);
+  const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
+  // Preparation names the wizard's task. Until its run link has landed, a previously
+  // selected run in the scene must not be paired with that new task in the address.
+  const run = extra?.prepare === "1" ? null : at.run;
+  return preferenceHash(
+    deskHash({project: hashProject, embed, task: at.task, run, panel, ...extra}),
+    {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
+}
+
 //: The one place the desk moves its own address (spec 4.5.3, point 4): the selection it
 //: draws, then the appearance, in the canonical order of `deskHash`. A terminal desk writes
 //: nothing. `replaceState` adds no history entry and fires no `hashchange`, so this can
@@ -213,20 +227,11 @@ function where() {
 //: that reads it normalises it.
 function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
-  const at = where();
-  const embed = embedded === null ? null : "hub";
-  const panel = panels?.current() ?? (state.flag !== null && state.flag.open ? "continue" : null);
-  const extra = wizardKeys === undefined ? wizardHost?.hash() : wizardKeys;
-  // Preparation names the wizard's task. Until its run link has landed, a previously
-  // selected run in the scene must not be paired with that new task in the address.
-  const run = extra?.prepare === "1" ? null : at.run;
-  const address = preferenceHash(
-    deskHash({project: hashProject, embed, task: at.task, run, panel, ...extra}),
-    {locale: locale(), theme: document.documentElement.getAttribute("data-theme")});
+  const address = addressOf(wizardKeys);
   history.replaceState(null, "", address);
   seen = location.hash;
   lastWritten = readDeskHash(address);
-  shown = at;
+  shown = where();
 }
 
 //: Say where the desk is to the hub that framed it (spec 4.5.5), when embed mode is in force
@@ -619,11 +624,14 @@ function showPanel(panel, focus) {
 
 //: Apply the task/run selection before its panel and wizard (spec 4.5.3). `panelOf` gives the panel
 //: to show once the selection has been read: the address's, and for the first hash the person's
-//: last choice while the desk booted (a toggle or the continue-after block), if they chose.
+//: last choice while the desk booted (a toggle or the continue-after block), if they chose. A
+//: centre panel is closed for a hash that names another one or moves the task and names none, and
+//: for no other: a hash that moves only the language or the run leaves what the person opened.
 async function navigate(change, address, panelOf = (named) => named) {
   const keys = change.steps.map((step) => step.key);
-  if (change.reset.includes("panel")) closeContinue();
-  if (address.panel !== panels?.current()) panels?.open(null);
+  const reset = change.reset.includes("panel");
+  if (reset) closeContinue();
+  if ((reset || keys.includes("panel")) && address.panel !== panels?.current()) panels?.open(null);
   const opened = await navigateSelection(keys, address);
   const panel = panelOf(address.panel);
   if (keys.includes("panel") || panel !== address.panel) showPanel(panel, panel === address.panel);
@@ -640,8 +648,10 @@ async function reread() {
 //: The one listener (spec 4.5.3). A new hash is read against the last one the desk wrote: a
 //: project that is not the bound one ends the desk; a language or theme is set; a navigation
 //: key that moved is applied; a hash with none moves nothing, so the hub can send the language
-//: alone. It selects, reads and sets the appearance, and writes nothing.
+//: alone. It selects, reads and sets the appearance, and writes nothing. A hash that arrives while
+//: the desk boots is ordered with the person's presses by `toggles.hear`, and applied after it.
 async function onHashChange() {
+  const ticket = toggles.hear(readDeskHash(location.hash));
   await booted;
   if (state.foreign) return;
   seen = location.hash;
@@ -651,25 +661,20 @@ async function onHashChange() {
     return;
   }
   const language = setAppearance(readPreferences(seen, locale()));
-  const opened = await navigate(navigationChange(lastWritten, address), address);
+  const change = toggles.after(ticket, navigationChange(lastWritten, address));
+  const opened = await navigate(change, address);
   if (language && !opened) await reread();
   remember();
 }
 
 //: The first hash is applied like any other, against a desk that has written none -- which has
 //: nothing to reset, so a block a person opened while the lists were read is not the hash's to
-//: close.
+//: close. A hash that arrived meanwhile is not overwritten: it is compared with what is drawn.
 async function start(address) {
   const first = navigationChange(readDeskHash(""), address);
   await navigate(Object.freeze({...first, reset: NONE}), address, toggles.resolve);
+  lastWritten = readDeskHash(addressOf());
   remember();
-}
-
-//: The mode the server's claim names: the only source of it (spec 4.5.1). A claim that names
-//: none this build knows, or no claim at all, is no mode -- never a guess of `active`.
-function claimMode(claim) {
-  const mode = claim !== null && typeof claim === "object" ? claim.mode : null;
-  return mode === "active" || mode === "view" ? mode : null;
 }
 
 //: Read the project claim first; a mismatch has already ended the desk.
@@ -771,7 +776,8 @@ function boot() {
     createFlow: () => createFlowHost({mount: byId("deskFlow"), door, locale,
       nonce: crypto.randomUUID().replaceAll("-", ""), onForeign: enterForeign}),
     allowed: () => !state.foreign, onChange: render});
-  toggles = createToggles({byId, panels, closeContinue, remember, render});
+  toggles = createToggles({byId, panels, closeContinue, remember, render, first: address,
+    moves: navigationChange});
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});

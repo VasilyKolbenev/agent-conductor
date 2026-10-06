@@ -703,6 +703,36 @@ def test_a_block_opened_and_closed_while_the_boot_reads_is_a_choice_of_none(embe
     assert window.problems == []
 
 
+def test_a_task_the_hub_sends_while_the_boot_reads_closes_the_block_the_person_opened(embed, rig):
+    """A column click is another task, and another task starts with no panel (spec 4.5.3, step
+    2.1): the block the person opened before the click is closed, and the desk opens nothing."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.evaluate(HUB_SENDS, f"#project={PROJECT}&embed=hub&task=task-docs&lang=en")
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-docs")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&task=task-docs&run=run-docs&lang=en"
+    assert window.problems == []
+
+
+def test_a_language_the_hub_sends_while_the_boot_reads_leaves_the_block_the_person_opened(
+        embed, rig):
+    """What a person chose inside the desk stays when the hub sends only the language."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.evaluate(HUB_SENDS, f"#project={PROJECT}&embed=hub&lang=ru")
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is True and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"{FINAL}&panel=continue&lang=ru"
+    assert window.problems == []
+
+
 def test_a_desk_nobody_framed_drops_panel_continue_from_its_address(chromium, rig):
     context = chromium.new_context(viewport={"width": 1280, "height": 900})
     try:

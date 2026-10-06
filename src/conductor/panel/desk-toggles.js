@@ -13,6 +13,16 @@
 // the block (`choose("continue")`) and closing it a choice of none (`choose(null)`), each replacing
 // whatever was chosen before, a press and the panel the address names alike.
 //
+// A hash can arrive in between as well (the hub moves a mounted desk by replacing its fragment).
+// The events of the window are ordered: a hash that names a panel, or that moves the task and
+// names none, replaces what was pressed before it and the panel the address named, and is what
+// the boot opens unless the person chooses again; a hash that names no panel (the language alone,
+// a repeat of what was heard) replaces nothing; what the person chooses after a hash replaces it.
+// A hash is judged against the one heard before it, the address of the boot being the first. The
+// panel of a hash heard in the window is therefore decided when it is heard, and the rest of it
+// (task, run, wizard) is the router's, once the boot has finished: `hear` gives the router a
+// ticket, and `after` takes the panel out of what the router would ask for a hash that has one.
+//
 // The page and the desk's state come in as arguments; this module reaches neither by name.
 
 //: The toggle of each panel, by the id of its button.
@@ -20,15 +30,22 @@ const PANELS = Object.freeze({deskFlowToggle: "cycle", deskPeopleToggle: "people
   deskRunToggle: "run"});
 const NAMES = Object.freeze(Object.values(PANELS));
 
-export function createToggles({byId, panels, closeContinue, remember, render}) {
+//: `first` is the address the boot applies, and `moves(last, next)` what `next` asks of a desk
+//: whose address was `last` (`navigationChange` of the address grammar).
+export function createToggles({byId, panels, closeContinue, remember, render, first, moves}) {
   // `undefined` is no choice at all; `null` is a choice, the one of a person who closed what they
   // had pressed or opened; `"continue"` is the block.
   let chosen;
+  // The panel a hash heard while the boot reads names (`null`: none), `undefined` if none did.
+  let heard;
+  let last = first;
+  let choices = 0;
   let booting = true;
   let applied = false;
 
   //: A press of the toggle of `panel`: kept while the boot has not opened a panel, a toggle after.
   function press(panel) {
+    choices += 1;
     closeContinue();
     if (!booting) {
       panels.toggle(panel);
@@ -42,18 +59,48 @@ export function createToggles({byId, panels, closeContinue, remember, render}) {
   //: The person opened (`"continue"`) or closed (`null`) the block while the boot has not opened a
   //: panel: that is their last choice, drawn at once so that no toggle stays pressed beside it.
   function choose(value) {
+    choices += 1;
     if (!booting) return;
     const pressed = NAMES.includes(chosen);
     chosen = value;
     if (pressed) render();
   }
 
-  //: The panel the boot opens, given the one its address names: the person's, if they chose.
-  //: The window of presses is closed by this call, in the turn that opens the panel, so no press
-  //: can fall between the two.
+  //: A hash has arrived, `next` read. While the boot has not opened a panel, a hash that moves the
+  //: panel replaces the choice made before it: a hash that moves the task and names none closes
+  //: the block, which is the panel it was open as. The ticket says whether the panel of this hash
+  //: was decided here and how many choices the person had made when it arrived.
+  function hear(next) {
+    const ticket = Object.freeze({asked: choices, decided: booting});
+    if (!booting) return ticket;
+    const change = moves(last, next);
+    last = next;
+    const named = change.steps.some((step) => step.key === "panel");
+    if (!named && !change.reset.includes("panel")) return ticket;
+    const pressed = NAMES.includes(chosen);
+    heard = named ? next.panel : null;
+    chosen = undefined;
+    if (!named) closeContinue();
+    if (pressed) render();
+    return ticket;
+  }
+
+  //: What a hash still asks once the boot is over: not its panel when `hear` decided it, nor when
+  //: the person has chosen since it arrived (their choice stands).
+  function after(ticket, change) {
+    if (!ticket.decided && choices === ticket.asked) return change;
+    const steps = change.steps.filter((step) => step.key !== "panel");
+    const reset = change.reset.filter((key) => key !== "panel");
+    return Object.freeze({steps: Object.freeze(steps), reset: Object.freeze(reset)});
+  }
+
+  //: The panel the boot opens, given the one its address names: the person's, if they chose, else
+  //: the one a hash heard since names. The window of presses is closed by this call, in the turn
+  //: that opens the panel, so no press can fall between the two.
   function resolve(named) {
     booting = false;
-    return chosen === undefined ? named : chosen;
+    if (chosen !== undefined) return chosen;
+    return heard === undefined ? named : heard;
   }
 
   //: The toggles drawn: pressed for the choice while the boot has not opened a panel, else for the
@@ -70,7 +117,7 @@ export function createToggles({byId, panels, closeContinue, remember, render}) {
     byId(id).addEventListener("click", () => press(panel));
   }
 
-  return Object.freeze({draw, resolve, choose, names: NAMES,
+  return Object.freeze({draw, resolve, choose, hear, after, names: NAMES,
     //: The boot has applied everything its address names, the wizard included.
     finish: () => { applied = true; }, applied: () => applied});
 }
