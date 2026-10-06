@@ -205,11 +205,20 @@ def parse_netstat(text: str) -> list[dict[str, object]]:
         if len(parts) < 5 or parts[0] != "TCP" or not parts[-1].isdigit():
             continue
         _proto, local, remote, *state, pid = parts
-        rows.append({"local": local, "remote": remote, "state": " ".join(state),
+        said = " ".join(state)
+        rows.append({"local": local, "remote": remote, "state": said,
                      "pid": int(pid),
                      "local_port": _port(local), "remote_port": _port(remote),
-                     "listening": remote in ("0.0.0.0:0", "[::]:0")})
+                     # A bound, unconnected port also has an unspecified remote end.
+                     "listening": remote in ("0.0.0.0:0", "[::]:0") and said != "BOUND"})
     return rows
+
+
+def parse_dynamic_ports(text: str) -> dict[str, int] | None:
+    """The TCP dynamic port range ``netsh int ipv4 show dynamicport tcp`` prints: its
+    first two numbers, start and count, whatever language the labels are in."""
+    numbers = [int(found) for found in re.findall(r":\s*(\d+)", text)]
+    return {"start": numbers[0], "count": numbers[1]} if len(numbers) >= 2 else None
 
 
 def tcp_summary(rows: list[dict[str, object]], ports: Iterable[int],
@@ -229,7 +238,12 @@ def tcp_summary(rows: list[dict[str, object]], ports: Iterable[int],
             "by_state": dict(Counter(row["state"] for row in touching)),
             "owners": dict(Counter(str(row["pid"]) for row in touching))}
     owners = Counter(row["pid"] for row in rows)
+    bound = Counter(row["pid"] for row in rows if row["state"] == "BOUND")
     return {"total": len(rows),
+            # Ports held by a bind that never connected: they count against the dynamic
+            # range and only ``-q`` shows them.
+            "bound_by_owner": [[pid, names.get(pid, "?"), count]
+                               for pid, count in bound.most_common(5)],
             "by_state": dict(Counter(row["state"] for row in rows)),
             "loopback_by_state": dict(Counter(
                 row["state"] for row in rows
@@ -244,9 +258,24 @@ def _netstat() -> list[dict[str, object]]:
     # The system's own copy by full path: a bare name is looked up in the working
     # directory first.
     tool = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "netstat.exe"
-    completed = subprocess.run([str(tool), "-ano"], capture_output=True, encoding="oem",
+    # -q adds the bound, unconnected TCP ports: they hold dynamic ports too.
+    completed = subprocess.run([str(tool), "-anoq"], capture_output=True, encoding="oem",
                                errors="replace", timeout=NETSTAT_TIMEOUT, check=False)
     return parse_netstat(completed.stdout)
+
+
+_PORT_RANGE: dict[str, object] = {}
+
+
+def _dynamic_ports() -> dict[str, int] | None:
+    """The host's TCP dynamic port range, read once per process (it does not change)."""
+    if "range" not in _PORT_RANGE:
+        tool = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "netsh.exe"
+        completed = subprocess.run([str(tool), "int", "ipv4", "show", "dynamicport", "tcp"],
+                                   capture_output=True, encoding="oem", errors="replace",
+                                   timeout=NETSTAT_TIMEOUT, check=False)
+        _PORT_RANGE["range"] = parse_dynamic_ports(completed.stdout)
+    return _PORT_RANGE["range"]
 
 
 def snapshot(ports: Iterable[int] = ()) -> dict[str, object]:
@@ -269,6 +298,7 @@ def snapshot(ports: Iterable[int] = ()) -> dict[str, object]:
     rows = _guarded(_netstat)
     picture["tcp"] = rows if isinstance(rows, dict) else _guarded(
         tcp_summary, rows, ports, run, names)
+    picture["dynamic_ports"] = _guarded(_dynamic_ports)
     picture["seconds"] = round(time.monotonic() - began, 3)
     return picture
 

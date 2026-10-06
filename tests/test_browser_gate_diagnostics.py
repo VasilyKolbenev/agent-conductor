@@ -91,6 +91,59 @@ def test_the_socket_table_names_the_listener_and_this_runs_states_at_the_port() 
     assert [row["listening"] for row in rows if row["pid"] == 900] == [False, True, True]
 
 
+#: ``netstat -anoq`` adds the TCP ports a process has bound but not connected: they hold
+#: dynamic ports and plain ``-ano`` never shows them (CI run 37482638641's pictures could
+#: not count them at its four 10055 connects).
+_NETSTAT_BOUND = """
+  TCP    127.0.0.1:55731        0.0.0.0:0              LISTENING       4242
+  TCP    0.0.0.0:49179          0.0.0.0:0              BOUND           2588
+  TCP    0.0.0.0:49180          0.0.0.0:0              BOUND           2588
+  TCP    0.0.0.0:49181          0.0.0.0:0              BOUND           900
+"""
+_NETSH_EN = """
+Protocol tcp Dynamic Port Range
+---------------------------------
+Start Port      : 49152
+Number of Ports : 16384
+"""
+_NETSH_RU = """
+Протокол tcp: диапазон динамических портов
+---------------------------------
+Начальный порт  : 1025
+Число портов    : 64511
+"""
+
+
+def test_a_bound_port_is_counted_by_its_owner_and_is_no_listener() -> None:
+    rows = host_snapshot.parse_netstat(_NETSTAT_BOUND)
+    assert [row["listening"] for row in rows] == [True, False, False, False]
+    summary = host_snapshot.tcp_summary(rows, [55731], [4242], {2588: "chrome.exe"})
+    assert summary["by_state"]["BOUND"] == 3
+    assert summary["bound_by_owner"] == [[2588, "chrome.exe", 2], [900, "?", 1]]
+    assert summary["ports"]["55731"]["listeners"] == [4242]
+
+
+def test_the_socket_table_is_read_with_bound_ports(monkeypatch) -> None:
+    seen: list[list[str]] = []
+
+    class _Done:
+        stdout = _NETSTAT_BOUND
+
+    def run(argv, **_options):
+        seen.append(list(argv))
+        return _Done()
+
+    monkeypatch.setattr(host_snapshot.subprocess, "run", run)
+    assert len(host_snapshot._netstat()) == 4
+    assert seen[0][1:] == ["-anoq"]
+
+
+def test_the_dynamic_port_range_is_read_in_any_language() -> None:
+    assert host_snapshot.parse_dynamic_ports(_NETSH_EN) == {"start": 49152, "count": 16384}
+    assert host_snapshot.parse_dynamic_ports(_NETSH_RU) == {"start": 1025, "count": 64511}
+    assert host_snapshot.parse_dynamic_ports("no numbers here") is None
+
+
 def test_a_cascade_of_failures_pays_for_only_the_first_pictures(monkeypatch) -> None:
     taken: list[object] = []
     monkeypatch.setattr(host_snapshot, "_TAKEN", {"failures": 0})
