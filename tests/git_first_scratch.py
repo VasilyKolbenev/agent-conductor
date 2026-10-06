@@ -2,7 +2,8 @@
 
 One repository per reader (`tests.git_first_readers`) and object format, made in a folder outside
 every repository. It builds the index the way the product will: a tree from a private index, then
-a second private index by `read-tree <tree>` and `update-index --refresh` under the pin. Every
+a second private index by `read-tree <tree>` and `update-index --refresh` with the argv the
+product runs (`PRODUCT_FLAGS`: the flags of every Git call of the product, then the pin). Every
 command runs the reader's own Git, so on the `old_git` id both the commands that build the bytes
 and the owner's commands that read them are the old Git's.
 """
@@ -16,11 +17,15 @@ from pathlib import Path
 import pytest
 
 from conductor.command.git_setup_first_index import INDEX_PIN
+from conductor.command.project_git import GIT_FLAGS
 from tests.git_first_readers import reader_binary
 from tests.git_repo_helpers import git
 
 #: The one line a Git that does not know the marker prints for it (the accepted cost).
 NOTICE = "ignoring CNDT extension"
+#: What stands before the subcommand of an index command of the product: the flags of every Git
+#: call (`process_git_read` puts them first), then the pin, which is the later `-c` and so wins.
+PRODUCT_FLAGS = (*GIT_FLAGS, *INDEX_PIN)
 
 
 @dataclass(frozen=True)
@@ -72,14 +77,15 @@ class Scratch:
         """The empty tree of this object format, whatever the work tree holds."""
         return self._tree_of_private_index()
 
-    def base(self, tree: str, rows: int, *, pin: bool = True) -> bytes:
+    def base(self, tree: str, rows: int, *, flags: tuple = PRODUCT_FLAGS) -> bytes:
         """The bytes the product builds for `tree`: `read-tree` then the refresh (when there are
-        rows) into a private index; `pin=False` leaves the pin off to show what it keeps out."""
+        rows) into a private index, behind `flags`; another `flags` (the pin alone, or none) shows
+        what a part of the product's argv keeps out."""
         built = self._private("b")
-        env, flags = {"GIT_INDEX_FILE": str(built)}, (INDEX_PIN if pin else ())
+        env = {"GIT_INDEX_FILE": str(built)}
         self.run(*flags, "read-tree", tree, env=env)
         if rows:
-            self.run(f"--work-tree={self.folder}", *flags, "update-index", "--refresh", env=env)
+            self.run(*flags, f"--work-tree={self.folder}", "update-index", "--refresh", env=env)
         data = built.read_bytes()
         built.unlink()
         return data

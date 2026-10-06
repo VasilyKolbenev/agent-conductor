@@ -12,9 +12,9 @@ import pytest
 
 from conductor.command.accept_manifest import sha256
 from conductor.command.git_setup_first_index import (
-    Binding, IndexFormatRefused, IndexShape, mark, terms_hash, verify, verify_binding)
+    INDEX_PIN, Binding, IndexFormatRefused, IndexShape, mark, terms_hash, verify, verify_binding)
 from tests.git_first_readers import READERS
-from tests.git_first_scratch import NOTICE, Scratch, notice_lines, scratch
+from tests.git_first_scratch import NOTICE, PRODUCT_FLAGS, Scratch, notice_lines, scratch
 from tests.git_index_bytes import SIZE, digest, extension
 from tests.git_repo_helpers import needs_git
 
@@ -200,15 +200,15 @@ def test_in_mode_empty_the_current_git_writes_the_unmarked_base_bytes_itself(tmp
     assert foreign_bytes(m.box, "empty") == m.base != m.marked
 
 
-def families_built(box, tree, *, pin):
-    """For each family: the bytes the product's commands give with that owner configuration set,
-    and the shared index files that appeared. Every setting is unset again afterwards."""
+def families_built(box, tree, *, flags):
+    """For each family: the bytes the commands give behind `flags` with that owner configuration
+    set, and the shared index files that appeared. Every setting is unset again afterwards."""
     built, hook = {}, box.monitor_hook()
     try:
         for name, pairs in FAMILIES.items():
             for key, value in pairs:
                 box.run("config", "--local", key, hook if value == HOOK else value)
-            data = box.base(tree, len(SIX), pin=pin)
+            data = box.base(tree, len(SIX), flags=flags)
             shared = box.shared_indexes()
             for key in dict.fromkeys(key for key, _ in pairs):
                 box.run("config", "--local", "--unset", key)
@@ -228,13 +228,20 @@ def judged(data, fmt):
     return "plain" if shape.extensions == ("TREE",) else "other:" + ",".join(shape.extensions)
 
 
+#: The pin behind the flags of every Git call (what the product runs), and by itself: a change of
+#: those flags must not take the file monitor, or any other setting, out of the pin's keeping.
+PINNED_ARGV = [pytest.param(PRODUCT_FLAGS, id="behind_the_flags_of_every_git_call"),
+               pytest.param(INDEX_PIN, id="the_pin_alone")]
+
+
 @for_every_reader
 @for_every_format
+@pytest.mark.parametrize("flags", PINNED_ARGV)
 def test_the_pin_keeps_every_optional_extension_out_of_an_index_the_product_builds(
-        tmp_path, which, fmt):
+        tmp_path, which, fmt, flags):
     box = scratch(tmp_path, which, fmt)
     tree = box.tree(SIX)
-    pinned = families_built(box, tree, pin=True)
+    pinned = families_built(box, tree, flags=flags)
     assert {name: judged(data, fmt) for name, (data, _) in pinned.items()} == {
         name: "plain" for name in FAMILIES}
     assert {name: shared for name, (_, shared) in pinned.items()} == {name: [] for name in FAMILIES}
@@ -248,22 +255,39 @@ def test_without_the_pin_an_owner_setting_puts_an_end_of_entries_extension_into_
         tmp_path, which, fmt):
     box = scratch(tmp_path, which, fmt)
     tree = box.tree(SIX)
-    loose = families_built(box, tree, pin=False)
+    loose = families_built(box, tree, flags=())
     outcomes = {name: judged(data, fmt) for name, (data, _) in loose.items()}
     assert any(outcomes[name] == "extension_not_allowed" for name in EOIE_FAMILIES), outcomes
 
 
 @for_every_format
 def test_without_the_pin_every_owner_setting_changes_the_bytes_of_the_current_git(tmp_path, fmt):
-    """Measured on the current Git: no family is ignored (but the one that needs a build with a
-    built-in monitor), so each flag of the pin is load-bearing. What the old Git does is recorded
-    in the evidence file, not assumed."""
+    """Measured on the current Git with no flag at all: no family is ignored (but the one that
+    needs a build with a built-in monitor), so each flag of the pin is load-bearing. What the old
+    Git does is recorded in the evidence file, not assumed."""
     box = scratch(tmp_path, "current", fmt)
     tree = box.tree(SIX)
     outcomes = {name: judged(data, fmt) for name, (data, _) in
-                families_built(box, tree, pin=False).items()}
+                families_built(box, tree, flags=()).items()}
     assert {name: outcome for name, outcome in outcomes.items()
             if outcome == "plain" and name not in BUILD_BOUND} == {}
+
+
+@for_every_reader
+@for_every_format
+def test_the_pin_wins_over_the_monitor_setting_the_environment_of_every_git_call_carries(
+        tmp_path, monkeypatch, which, fmt):
+    """The product's environment (`tool_env`) says `core.fsmonitor=false` as well; on Git 2.31
+    that names a program, and only a later `-c` of the pin takes it back. The first assertion is
+    the calibration: with no flag at all, the environment alone does reach the old Git."""
+    for name, value in {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor",
+                        "GIT_CONFIG_VALUE_0": "false"}.items():
+        monkeypatch.setenv(name, value)
+    box = scratch(tmp_path, which, fmt)
+    tree = box.tree(SIX)
+    assert judged(box.base(tree, len(SIX), flags=()), fmt) == (
+        "extension_not_allowed" if which == "old" else "plain")
+    assert judged(box.base(tree, len(SIX)), fmt) == "plain"
 
 
 def standing(git_dir):
