@@ -123,6 +123,12 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _reads_the_head(record: up_status.StatusRecord) -> bool:
+    """Whether a dead process's record reads by the head of its project (D-H1)."""
+    return record.state in (*_WORKING, "stop_uncertain") or (
+        record.state == "refused" and record.code == "recovery_required")
+
+
 class Supervisor:
     """The hub's children and the moves of 4.1.7 over them."""
 
@@ -395,12 +401,21 @@ class Supervisor:
         return Seen(record, fresh, own, liveness, own_alive or liveness != "dead", mode,
                     unreadable)
 
-    def _head_phase(self, project: registry.Project) -> str | None:
+    def _head_phase(self, project: registry.Project) -> str:
+        """The phase of this project's own head, or `UNREADABLE`: never `None`.
+
+        The checks `state.proven_closed` makes before it believes a head: the head must be
+        readable, exist (an activated project) and belong to THIS activation (the registry id
+        is the activation nonce). No head, a read error and a head of another activation all
+        read `UNREADABLE`, which no table row treats as finished.
+        """
         try:
             _, head = self._head_of(project.root)
         except (OwnerRefused, OSError):
-            return None
-        return None if head is None else head["phase"]
+            return words.UNREADABLE
+        if head is None or head.get("nonce") != project.project_id:
+            return words.UNREADABLE
+        return head["phase"]
 
     def _lifecycle(self, project: registry.Project, seen: Seen) -> words.Lifecycle:
         pid = project.project_id
@@ -411,7 +426,7 @@ class Supervisor:
         pending = None if seen.own is None or record is not None else (
             "alive" if own_alive else "exited")
         head = None
-        if record is not None and seen.liveness == "dead" and record.state in _WORKING:
+        if record is not None and seen.liveness == "dead" and _reads_the_head(record):
             head = self._head_phase(project)
         prior = self._prior.get(pid)
         found = words.derive(record, seen.liveness, pending=pending, head_phase=head,
@@ -554,7 +569,10 @@ class Supervisor:
                 self._awaiting.discard(project_id)
                 continue
             seen = self._seen(project)
-            action = words.restart_action(seen.record, seen.liveness)
+            uncertain = seen.record is not None and seen.record.state == "stop_uncertain"
+            action = words.restart_action(
+                seen.record, seen.liveness,
+                head_phase=self._head_phase(project) if uncertain else None)
             if action == "offer_recover":
                 self._awaiting.discard(project_id)
             elif action == "start" and not current.closing and not self._busy(project_id):

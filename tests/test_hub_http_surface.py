@@ -598,6 +598,7 @@ def server_refusal():
 
 def test_a_project_that_cannot_be_used_is_refused_by_what_state_it_is_in(stack):
     stack.world.put_status("b", "stop_uncertain")                       # not confirmed stopped
+    stack.world.heads["b"] = "opened"                                   # and its head still says so
     _refused_and_unchanged(stack, ACTIVATE.format(B), 409, "recovery_required")
     _refused_and_unchanged(stack, f"/hub/projects/{B}/view", 409, "recovery_required")
     stack.world.put_status("c", "refused", code="project_identity_changed")

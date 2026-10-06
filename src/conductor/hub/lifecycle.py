@@ -30,6 +30,12 @@ STATE_CODES = frozenset(up_flags.START_CODES) | HUB_CODES
 _FAILED_CODES = STATE_CODES - {"project_identity_changed", "owner_busy", "recovery_required",
                                "ownership_lost"} - HUB_CODES
 _STARTED = ("starting", "serving", "stopping", "stop_overdue")
+#: The FINISHED phases of an ownership head: the ones `state.proven_closed` accepts
+#: (`state._NOT_OPENED`; a test pins the equality). Every other word a head can read as is
+#: unfinished and blocks: `opened`, `recovery_prepared`, a phase a later build adds.
+SETTLED_HEADS = frozenset({"active", "closed", "recovered", "rolled_back"})
+#: What the supervisor passes for a head it could not read, or one of another activation.
+UNREADABLE = "unreadable"
 
 
 @dataclass(frozen=True)
@@ -50,7 +56,11 @@ def derive(record: up_status.StatusRecord | None, liveness: str, *, pending: str
         liveness: `alive`, `dead` or `unproven`, for the process the record names.
         pending: The hub's own child that has not reported: `alive` while it runs, `exited`
             once it has left without a record; `None` when the hub has none.
-        head_phase: The phase of the ownership head, for a process that died in its work.
+        head_phase: The phase of the ownership head of THIS project, for a process that is dead
+            and was working, or was left `stop_uncertain` or refused with `recovery_required`;
+            `UNREADABLE` for a head that could not be read. A dead record reads `stopped` only
+            for a phase in `SETTLED_HEADS`; `None` means "no head was asked for", which only a
+            dead working record reads as finished (the default the table rows pin).
         prior_alive: Whether the hub's own earlier child of this project is still alive (an
             `owner_busy` refusal then means it is still stopping).
         hub_code: A code the hub put on the project (`start_timeout`, `active_not_closed`,
@@ -74,22 +84,31 @@ def _from_record(record: up_status.StatusRecord | None, liveness: str, pending: 
                 "exited": Lifecycle("failed", "start_failed")}[pending]
     alive = liveness != "dead"
     if record.state == "refused":
-        return _refused(record.code, prior_alive)
+        settled = not alive and _finished(head_phase, none_is_finished=False)
+        return _refused(record.code, prior_alive, settled)
     if record.state == "starting":
         return Lifecycle("starting") if alive else Lifecycle("failed", "start_failed")
     if record.state in ("serving", "stopping", "stop_overdue"):
         if alive:
             return Lifecycle({"serving": "running"}.get(record.state, record.state))
-        unfinished = head_phase in ("opened", "recovery_prepared")
-        return Lifecycle("recovery_required" if unfinished else "stopped")
+        finished = _finished(head_phase, none_is_finished=True)
+        return Lifecycle("stopped" if finished else "recovery_required")
     if record.state == "stop_uncertain":
-        return Lifecycle("stop_uncertain")
+        settled = not alive and _finished(head_phase, none_is_finished=False)
+        return Lifecycle("stopped" if settled else "stop_uncertain")
     return Lifecycle("stopped")
 
 
-def _refused(code: str | None, prior_alive: bool) -> Lifecycle:
+def _finished(head_phase: str | None, *, none_is_finished: bool) -> bool:
+    """Positive membership of `SETTLED_HEADS`; `None` counts only where the table pins it."""
+    return head_phase in SETTLED_HEADS or (none_is_finished and head_phase is None)
+
+
+def _refused(code: str | None, prior_alive: bool, settled: bool = False) -> Lifecycle:
     if code == "owner_busy":
         return Lifecycle("stopping" if prior_alive else "busy_elsewhere")
+    if code == "recovery_required" and settled:
+        return Lifecycle("stopped")              # the person recovered it: the refusal is stale
     mapped = {"project_identity_changed": "identity_mismatch",
               "recovery_required": "recovery_required", "ownership_lost": "missing"}
     if code in mapped:
@@ -97,13 +116,21 @@ def _refused(code: str | None, prior_alive: bool) -> Lifecycle:
     return Lifecycle("failed", code if code in _FAILED_CODES else "start_failed")
 
 
-def restart_action(record: up_status.StatusRecord | None, liveness: str) -> str:
+def restart_action(record: up_status.StatusRecord | None, liveness: str,
+                   head_phase: str | None = None) -> str:
     """What the hub does at its own start with this project (the table of 4.1.7).
+
+    Args:
+        record: The status file, or `None`.
+        liveness: `alive`, `dead` or `unproven`, for the process the record names.
+        head_phase: The phase of the project's own head, or `UNREADABLE`; read only for a
+            `stop_uncertain` record. Without it (`None`) the answer is the table's own.
 
     Returns:
         `start`, `wait` (a process of the project is still there: poll it once a second and
         start after it leaves) or `offer_recover` (the stop was not confirmed and the process
-        is dead: the person must recover, after an OS restart).
+        is dead: the person must recover, after an OS restart, unless the head already says a
+        recovery finished: then the project is started by the table).
 
     The rows the table does not give: a `starting` file with a dead process reads as `serving`
     with one (start); `stop_uncertain` with a live process is about to leave (wait); a `stopped`
@@ -113,7 +140,9 @@ def restart_action(record: up_status.StatusRecord | None, liveness: str) -> str:
         return "start"
     alive = liveness != "dead"
     if record.state == "stop_uncertain":
-        return "wait" if alive else "offer_recover"
+        if alive:
+            return "wait"
+        return "start" if _finished(head_phase, none_is_finished=False) else "offer_recover"
     return "wait" if alive else "start"
 
 

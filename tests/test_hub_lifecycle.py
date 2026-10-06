@@ -175,3 +175,85 @@ def test_a_dead_child_whose_head_holds_only_a_prepared_restart_still_reads_recov
         state):
     found = lifecycle.derive(record(state), "dead", head_phase="recovery_prepared")
     assert found.state == "recovery_required"
+
+
+# -- a recovery leaves only the ownership head behind (review ruling D-H1) ---------------------
+
+SETTLED = ["active", "closed", "recovered", "rolled_back"]
+
+#: Every word a head can read as that is NOT a finished phase. `None` is "no head was asked for".
+UNFINISHED = [None, "opened", "recovery_prepared", "prepared", "moved", "rollback_prepared",
+              "fence_retired", "unreadable", "a_phase_a_later_build_adds", ""]
+#: The same without `None`: the pure table keeps `None` as the default of a working record.
+ASKED = [word for word in UNFINISHED if word is not None]
+
+
+@pytest.mark.parametrize("head", SETTLED)
+def test_a_stop_uncertain_record_under_a_dead_process_reads_stopped_once_its_head_is_settled(head):
+    found = lifecycle.derive(record("stop_uncertain"), "dead", head_phase=head)
+    assert (found.state, found.state_code) == ("stopped", None)
+
+
+@pytest.mark.parametrize("head", UNFINISHED)
+def test_a_stop_uncertain_record_stays_while_its_head_is_open_unsettled_unknown_or_unread(head):
+    found = lifecycle.derive(record("stop_uncertain"), "dead", head_phase=head)
+    assert found.state == "stop_uncertain"
+
+
+@pytest.mark.parametrize("state", ["serving", "stopping", "stop_overdue"])
+@pytest.mark.parametrize("head", ASKED)
+def test_a_dead_working_record_is_recovery_required_for_every_head_that_is_not_finished(
+        state, head):
+    assert lifecycle.derive(record(state), "dead", head_phase=head).state == "recovery_required"
+
+
+@pytest.mark.parametrize("state", ["serving", "stopping", "stop_overdue"])
+@pytest.mark.parametrize("head", SETTLED)
+def test_a_dead_working_record_reads_stopped_for_a_finished_head(state, head):
+    assert lifecycle.derive(record(state), "dead", head_phase=head).state == "stopped"
+
+
+@pytest.mark.parametrize("head", UNFINISHED)
+def test_a_refused_recovery_required_record_stays_for_every_head_that_is_not_finished(head):
+    found = lifecycle.derive(record("refused", code="recovery_required"), "dead", head_phase=head)
+    assert (found.state, found.state_code) == ("recovery_required", None)
+
+
+@pytest.mark.parametrize("liveness", ["alive", "unproven"])
+@pytest.mark.parametrize("head", SETTLED)
+def test_a_record_under_a_process_that_may_live_never_reads_stopped_whatever_its_head(
+        liveness, head):
+    uncertain = lifecycle.derive(record("stop_uncertain"), liveness, head_phase=head)
+    refused = lifecycle.derive(record("refused", code="recovery_required"), liveness,
+                               head_phase=head)
+    assert uncertain.state == "stop_uncertain" and refused.state == "recovery_required"
+
+
+@pytest.mark.parametrize("head", SETTLED)
+def test_a_refused_recovery_required_record_reads_stopped_once_its_head_is_settled(head):
+    found = lifecycle.derive(record("refused", code="recovery_required"), "dead", head_phase=head)
+    assert (found.state, found.state_code) == ("stopped", None)
+
+
+@pytest.mark.parametrize("code", sorted(set(REFUSED) - {"recovery_required"}))
+def test_no_other_refusal_is_cleared_by_a_settled_head(code):
+    found = lifecycle.derive(record("refused", code=code), "dead", head_phase="recovered")
+    assert (found.state, found.state_code) == REFUSED[code]
+
+
+def test_the_settled_heads_are_exactly_the_phases_the_proven_closed_rule_accepts():
+    from conductor.hub import state
+    assert lifecycle.SETTLED_HEADS == state._NOT_OPENED
+
+
+def test_the_restart_table_starts_a_stop_uncertain_project_only_when_its_head_is_settled():
+    found = record("stop_uncertain")
+    assert lifecycle.restart_action(found, "dead", head_phase="recovered") == "start"
+    assert lifecycle.restart_action(found, "dead", head_phase="opened") == "offer_recover"
+    assert lifecycle.restart_action(found, "dead", head_phase="recovery_prepared") == (
+        "offer_recover")
+    assert lifecycle.restart_action(found, "dead", head_phase=lifecycle.UNREADABLE) == (
+        "offer_recover")
+    assert lifecycle.restart_action(found, "dead") == "offer_recover"      # unchanged default
+    assert lifecycle.restart_action(found, "alive", head_phase="recovered") == "wait"
+    assert lifecycle.restart_action(found, "unproven", head_phase="recovered") == "wait"
