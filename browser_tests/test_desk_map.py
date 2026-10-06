@@ -35,6 +35,10 @@ ASKS = [("#panel=cycle", True, False), ("#new=task", False, True),
         ("#task=task-fix&prepare=1", False, True),
         ("#panel=run", False, False), ("#panel=people", False, False),
         ("#workflow=desk-standard", False, False)]
+#: The boot has applied every key its address names, the wizard included: the new-task control
+#: comes on only then (desk-wizard-host.js reads the toggles' `applied`). A frame count after
+#: SETTLED is not this fact -- the wizard an address names opens after the boot's own reads.
+APPLIED = "() => document.getElementById('deskNewTask')?.disabled === false"
 SHOWN = """(selectors) => Object.fromEntries(selectors.map(
   (selector) => [selector, document.querySelectorAll(selector).length]))"""
 FACTS = f"""() => ({{regions: [...document.querySelectorAll("[data-region]")].map(
@@ -113,6 +117,7 @@ def test_the_address_opens_only_the_mounted_surface_it_names(
         chromium, desk_url, ask, flow, wizard):
     page, asked = booted(chromium, desk_url, f"{ask}&lang=en" if "&" in ask or "=" in ask else ask)
     try:
+        page.wait_for_function(APPLIED)
         page.evaluate("() => new Promise((done) => requestAnimationFrame(() => "
                       "requestAnimationFrame(done)))")
         facts = page.evaluate(FACTS)
