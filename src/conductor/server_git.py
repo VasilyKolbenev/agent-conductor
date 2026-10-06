@@ -37,9 +37,10 @@ CODE = "tool_unavailable"
 #: Why the tool is not usable, the three words of 9.3.
 REASONS = ("not_pinned", "version_changed", "missing")
 #: The reason each refusal of `tool_pins` comes to. A `tools.json` that is not the schema is no
-#: pin anyone can rely on, so it reads `not_pinned`; an executable that vanished or says nothing
-#: readable reads `missing`.
+#: pin anyone can rely on, so it reads `not_pinned`, and so does one that cannot be read; an
+#: executable that vanished or says nothing readable reads `missing`.
 _REASON_OF = {"git_not_pinned": "not_pinned", "tools_file_invalid": "not_pinned",
+              "tools_file_unreadable": "not_pinned",
               "git_changed": "version_changed", "tool_version_unreadable": "missing"}
 
 
