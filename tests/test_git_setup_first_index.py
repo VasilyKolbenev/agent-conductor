@@ -350,13 +350,14 @@ def test_no_cut_or_flipped_byte_makes_verify_do_anything_but_accept_or_refuse(fm
         assert verify_binding(changed, claim) is False
 
 
-def test_the_pin_is_the_seven_settings_that_keep_optional_parts_out_of_a_built_index():
+def test_the_pin_is_the_eight_settings_that_keep_optional_parts_out_of_a_built_index():
+    """The file monitor is set to an EMPTY value: Git 2.31 reads `false` as the path of a hook."""
     pairs = list(zip(INDEX_PIN[0::2], INDEX_PIN[1::2]))
-    assert all(flag == "-c" for flag, _ in pairs) and len(INDEX_PIN) == 14
+    assert all(flag == "-c" for flag, _ in pairs) and len(INDEX_PIN) == 16
     assert dict(value.split("=") for _, value in pairs) == {
         "core.splitIndex": "false", "index.version": "2", "index.skipHash": "false",
         "index.recordEndOfIndexEntries": "false", "index.threads": "1",
-        "core.untrackedCache": "false", "index.sparse": "false"}
+        "core.untrackedCache": "false", "index.sparse": "false", "core.fsmonitor": ""}
 
 
 def test_the_largest_index_is_the_largest_first_commit_the_preview_allows():

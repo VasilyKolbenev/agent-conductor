@@ -17,10 +17,17 @@ else; it never rewrites a byte it did not add. The format it accepts is small an
   hash of everything before it.
 
 An end-of-entries extension (`EOIE`) is not handled: it is kept out. Settings of the owner's own
-repository (threaded reads, an index version, a skipped hash, a split index, an untracked cache)
-change the bytes Git writes, so every index command of the product carries `INDEX_PIN`, and
-`verify` refuses every extension but the two above, `EOIE` included. A refusal is the product's
-own `IndexFormatRefused`; the caller maps it to its closed refusal word.
+repository (threaded reads, an index version, a skipped hash, a split index, an untracked cache,
+a file monitor) change the bytes Git writes, so every index command of the product carries
+`INDEX_PIN` after the flags of every Git call (`project_git.GIT_FLAGS`), and `verify` refuses
+every extension but the two above, `EOIE` and the monitor's `FSMN` included. A setting that the
+pin does not name shows up as such a refusal, never as bytes that pass. A refusal is the
+product's own `IndexFormatRefused`; the caller maps it to its closed refusal word.
+
+The file monitor is switched off with an EMPTY value, never with `false`: Git 2.31 reads the value
+of `core.fsmonitor` as the path of a hook program, so `false` names the program `false` and every
+index it writes carries an `FSMN` extension (measured), where later Gits read `false` as a
+boolean. The empty value is "off" in both, and the pin comes after the flags, so it wins.
 
 The marker costs one line on the standard error of a Git that does not know the extension, at each
 read of the index until Git's next write. The product neither hides that line nor rewrites the
@@ -40,11 +47,13 @@ from .accept_manifest import sha256
 from .git_setup_first_records import INDEX_LIMIT, Op
 from .git_setup_snapshot import MAX_FILES
 
-#: Every setting of the repository that changes the bytes Git writes for an index, set off on
-#: the command line of each index command the product runs (`-c key=value` pairs).
+#: The settings of the repository that are measured to change the bytes Git writes for an index,
+#: each set off on the command line of every index command the product runs (`-c key=value`
+#: pairs; the pin goes after `project_git.GIT_FLAGS`). The monitor's value is empty, see above.
 INDEX_PIN = ("-c", "core.splitIndex=false", "-c", "index.version=2", "-c", "index.skipHash=false",
              "-c", "index.recordEndOfIndexEntries=false", "-c", "index.threads=1",
-             "-c", "core.untrackedCache=false", "-c", "index.sparse=false")
+             "-c", "core.untrackedCache=false", "-c", "index.sparse=false",
+             "-c", "core.fsmonitor=")
 #: The extension of the operation. A capital first letter makes it OPTIONAL: a lower-case one is
 #: required, and every Git that reads such an index dies (measured, exit 128).
 SIGNATURE = b"CNDT"

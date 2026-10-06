@@ -23,6 +23,8 @@ FORMATS = ["sha1", "sha256"]
 FILES = {"a.txt": "one\n", "d/b.txt": "two\n", "d/e/c.txt": "three\n"}
 MODES = {"empty": {}, "snapshot": FILES}
 NONCE, OTHER_NONCE = "0123456789abcdef", "fedcba9876543210"
+#: Stands for the path of a hook program, which `families_built` writes for each scratch folder.
+HOOK = "<the hook of the file monitor>"
 SIX = {"f1.txt": "1\n", "f2.txt": "2\n", "f3.txt": "3\n", "f4.txt": "4\n", "f5.txt": "5\n",
        "d/y.txt": "y\n"}
 FAMILIES = {
@@ -34,10 +36,15 @@ FAMILIES = {
     "skip_hash": [("index.skipHash", "true")],
     "split_index": [("core.splitIndex", "true")],
     "many_files": [("feature.manyFiles", "true")],
+    "fsmonitor_true": [("core.fsmonitor", "true")],
+    "fsmonitor_hook": [("core.fsmonitor", HOOK)],
 }
 FAMILIES["all_together"] = [pair for pairs in list(FAMILIES.values()) for pair in pairs]
 #: The settings that put an end-of-entries extension (EOIE) into an index the owner's Git writes.
 EOIE_FAMILIES = ("end_of_entries", "threads_auto", "threads_four")
+#: Families that need a Git built with the thing they ask for: `core.fsmonitor=true` names the
+#: built-in file monitor, which only some builds have. A hook, a path to a program, works anywhere.
+BUILD_BOUND = ("fsmonitor_true",)
 for_every_reader = pytest.mark.parametrize("which", READERS)
 for_every_format = pytest.mark.parametrize("fmt", FORMATS)
 for_both_modes = pytest.mark.parametrize("mode", MODES)
@@ -196,17 +203,20 @@ def test_in_mode_empty_the_current_git_writes_the_unmarked_base_bytes_itself(tmp
 def families_built(box, tree, *, pin):
     """For each family: the bytes the product's commands give with that owner configuration set,
     and the shared index files that appeared. Every setting is unset again afterwards."""
-    built = {}
-    for name, pairs in FAMILIES.items():
-        for key, value in pairs:
-            box.run("config", "--local", key, value)
-        data = box.base(tree, len(SIX), pin=pin)
-        shared = box.shared_indexes()
-        for key in dict.fromkeys(key for key, _ in pairs):
-            box.run("config", "--local", "--unset", key)
-        for leftover in shared:
-            (box.git_dir / leftover).unlink()
-        built[name] = (data, shared)
+    built, hook = {}, box.monitor_hook()
+    try:
+        for name, pairs in FAMILIES.items():
+            for key, value in pairs:
+                box.run("config", "--local", key, hook if value == HOOK else value)
+            data = box.base(tree, len(SIX), pin=pin)
+            shared = box.shared_indexes()
+            for key in dict.fromkeys(key for key, _ in pairs):
+                box.run("config", "--local", "--unset", key)
+            for leftover in shared:
+                (box.git_dir / leftover).unlink()
+            built[name] = (data, shared)
+    finally:
+        box.stop_monitor()
     return built
 
 
@@ -245,13 +255,15 @@ def test_without_the_pin_an_owner_setting_puts_an_end_of_entries_extension_into_
 
 @for_every_format
 def test_without_the_pin_every_owner_setting_changes_the_bytes_of_the_current_git(tmp_path, fmt):
-    """Measured on the current Git: no family is ignored, so each flag of the pin is load-bearing.
-    What the old Git does is recorded in the evidence file, not assumed."""
+    """Measured on the current Git: no family is ignored (but the one that needs a build with a
+    built-in monitor), so each flag of the pin is load-bearing. What the old Git does is recorded
+    in the evidence file, not assumed."""
     box = scratch(tmp_path, "current", fmt)
     tree = box.tree(SIX)
     outcomes = {name: judged(data, fmt) for name, (data, _) in
                 families_built(box, tree, pin=False).items()}
-    assert {name: outcome for name, outcome in outcomes.items() if outcome == "plain"} == {}
+    assert {name: outcome for name, outcome in outcomes.items()
+            if outcome == "plain" and name not in BUILD_BOUND} == {}
 
 
 def standing(git_dir):

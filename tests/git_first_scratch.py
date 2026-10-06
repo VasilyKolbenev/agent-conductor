@@ -92,6 +92,19 @@ class Scratch:
         """Point the branch HEAD names at `commit`, as the product does before it installs."""
         self.run("update-ref", "HEAD", commit)
 
+    def monitor_hook(self) -> str:
+        """The path of a hook program for `core.fsmonitor`, kept outside the work tree: it answers
+        the protocol with one token and the root as the one changed path."""
+        hook = self.folder.parent / f"{self.folder.name}-monitor-hook.sh"
+        hook.write_bytes(b"#!/bin/sh\nprintf 'tok1\\0/\\0'\n")
+        hook.chmod(0o755)
+        return hook.as_posix()
+
+    def stop_monitor(self) -> None:
+        """Stop the built-in file monitor that a probe may have started; a Git that has none
+        fails here and nothing is lost."""
+        self.run("fsmonitor--daemon", "stop", check=False)
+
     def install(self, data: bytes) -> None:
         (self.git_dir / "index").write_bytes(data)
 
