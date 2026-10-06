@@ -419,11 +419,13 @@ def test_a_hash_of_the_language_alone_keeps_the_panel_the_person_has_open(
         _shows(page, panel)
         page.evaluate(SEND, LANGUAGE_ONLY)
         page.wait_for_function("() => document.documentElement.lang === 'ru'")
-        until(page, "the desk to write its address", lambda: _address(page).get("lang") == ["ru"])
+        # The whole address, not its language: the hash just sent already says lang=ru before the
+        # desk has written where it stands, so waiting for the language alone measures speed.
+        want = {"task": ["task-fix"], "run": ["run-fix-new"], "panel": [panel], "lang": ["ru"]}
+        until(page, "the desk to write its whole address", lambda: _address(page) == want)
         _says(page, panel)
         _shows(page, panel)
-        assert _address(page) == {"task": ["task-fix"], "run": ["run-fix-new"], "panel": [panel],
-                                  "lang": ["ru"]}
+        assert _address(page) == want
     finally:
         close_context(context)
 
