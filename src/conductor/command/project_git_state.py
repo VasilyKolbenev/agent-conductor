@@ -45,7 +45,7 @@ def _empty(state, include):
     return {"state": state, "unsupported": None, "head": None, "object_format": None,
             "dirty_paths": None, "exclude": None,
             "agent_instructions": {"found": None, "default_include": include},
-            "remotes": None, "tools": None, "signing": None}
+            "remotes": None, "tools": None, "signing": None, "first_commit_pending": None}
 
 
 def _last_choice(api, root):
@@ -85,6 +85,10 @@ def _active(root, git, include):
                   remotes=_remotes(root, git),
                   tools={"git": {"version": match.group(1)}, "gh": None},
                   signing=_signing(root, git))
+    # Only here: the state is now `unborn` or `repo`. Deferred, because the records module
+    # reaches this one through the accept records.
+    from .git_setup_first_pending import describe
+    result["first_commit_pending"] = describe(root)
     return result
 
 

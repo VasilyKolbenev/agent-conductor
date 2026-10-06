@@ -31,7 +31,7 @@ from tests.test_seed_routes import Folder
 
 PATH = "/command/project/git"
 KEYS = {"state", "unsupported", "head", "object_format", "dirty_paths", "exclude",
-        "agent_instructions", "remotes", "tools", "signing"}
+        "agent_instructions", "remotes", "tools", "signing", "first_commit_pending"}
 
 
 def read(project):
