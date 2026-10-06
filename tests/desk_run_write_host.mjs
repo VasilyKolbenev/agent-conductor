@@ -148,3 +148,98 @@ test("a settled gate yields the Pult draft to the next answerable gate", () => {
   assert.equal(host.state().decisions.draft.key, "run-one/gate-two");
   host.dispose();
 });
+
+// -- the run read again while a person is partway through the decisions -----------------------
+//
+// The desk draws the run it holds as `stale` while it reads the run again (`desk.js`,
+// `whileReading`); the binding is not ready until the new read has landed. The host keeps what it
+// holds for the SAME run through that window and refuses writes until the answer lands.
+
+const twoGates = (runId = "run-one", taskId = "task-one") => {
+  const base = gateRead(runId, taskId);
+  return {...base, graph: {...base.graph,
+    definition: {nodes: [base.graph.definition.nodes[0],
+      {node_id: "next-node", gate_id: "gate-two", title: "Gate B"}]},
+    runtime: {nodes: [{node_id: "gate-node", decision: "idle"},
+      {node_id: "next-node", decision: "idle"}]},
+    schedule: {run_state: "running", nodes: [
+      {node_id: "gate-node", state: "runnable", answerable: "first",
+        opens: [], blocked_by: [], closed_by: []},
+      {node_id: "next-node", state: "blocked", answerable: "none",
+        opens: [], blocked_by: ["gate-node"], closed_by: []}]}}};
+};
+const reading = (detail, taskId = "task-one") => ({taskId, actor: "owner",
+  run: {phase: "stale", detail}});
+const landed = (detail, taskId = "task-one") => ({taskId, actor: "owner",
+  run: {phase: "ready", detail}});
+const gates = (host) => host.state().decisions.list.map((row) => row.gate_id);
+const standing = () => ({taskId: "task-one", runId: "run-one", mode: "active",
+  foreign: false, connection: "open", ready: true});
+const writing = (now, calls) => createRunWriteHost({door: {submit: async (...args) => {
+  calls.push(args); return {status: "accepted"};
+}}, binding: () => now, refreshRun: () => {}, onChange: () => {},
+onForeign: () => assert.fail("foreign")});
+
+test("a re-read of the same run keeps the decisions and the selected record, refuses writes",
+  async () => {
+  const calls = [], now = standing(), host = writing(now, calls);
+  host.sync(landed(twoGates()));
+  host.handlers.selectDecision("run-one/gate-two");
+  assert.deepEqual(gates(host), ["gate-one", "gate-two"]);
+  assert.equal(host.historyKey(), "run-one/gate-two");
+  now.ready = false;
+  host.sync(reading(twoGates()));
+  assert.deepEqual(gates(host), ["gate-one", "gate-two"], "the list is kept");
+  assert.equal(host.historyKey(), "run-one/gate-two", "the selected record is kept");
+  assert.equal(host.updating(), true);
+  host.handlers.editDecision({action: "approve", reason: "words"});
+  host.handlers.submitDecision(host.state().decisions.list[0]);
+  await tick();
+  assert.deepEqual(calls, [], "no write is sent while the run is read again");
+  assert.equal(host.state().decisions.draft.reason, "words", "what the person typed is kept");
+  now.ready = true;
+  host.sync(landed(twoGates()));
+  assert.equal(host.updating(), false);
+  assert.deepEqual(gates(host), ["gate-one", "gate-two"]);
+  assert.equal(host.historyKey(), "run-one/gate-two", "the answer is reconciled with the key");
+  host.handlers.submitDecision(host.state().decisions.list[0]);
+  await tick();
+  assert.equal(calls.length, 1, "the write goes out once the fresh read has landed");
+  host.dispose();
+});
+
+test("the selected record goes only when the fresh read no longer holds it", () => {
+  const now = standing(), host = writing(now, []);
+  host.sync(landed(twoGates()));
+  host.handlers.selectDecision("run-one/gate-two");
+  now.ready = false;
+  host.sync(reading(twoGates()));
+  const one = gateRead("run-one", "task-one");
+  now.ready = true;
+  host.sync(landed(one));
+  assert.deepEqual(gates(host), ["gate-one"]);
+  assert.equal(host.historyKey(), null);
+  host.dispose();
+});
+
+test("a re-read that shows another task or another run, or fails, is not the same run", () => {
+  const now = standing(), host = writing(now, []);
+  host.sync(landed(twoGates()));
+  host.handlers.selectDecision("run-one/gate-two");
+  now.ready = false;
+  host.sync(reading(twoGates(), "task-two"));
+  assert.deepEqual(gates(host), []);
+  assert.equal(host.historyKey(), null);
+  assert.equal(host.updating(), false);
+  now.ready = true;
+  host.sync(landed(twoGates()));
+  host.handlers.selectDecision("run-one/gate-two");
+  host.sync({taskId: "task-one", actor: "owner", run: {phase: "failed", detail: null}});
+  assert.deepEqual(gates(host), []);
+  assert.equal(host.historyKey(), null);
+  assert.equal(host.updating(), false);
+  host.sync(landed(twoGates("run-two", "task-one")));
+  assert.deepEqual(host.state().decisions.list.map((row) => row.run_id), ["run-two", "run-two"]);
+  assert.equal(host.historyKey(), null, "another run is another subject");
+  host.dispose();
+});

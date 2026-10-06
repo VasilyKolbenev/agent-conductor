@@ -25,6 +25,7 @@ from tests.test_command_adapters import FakeAdapter
 from tests.test_command_schema_doubles import DeepPlanAdapter
 from conductor.command.adapters.deep_adapters import DEEP_ARGUMENT_SCHEMA
 
+from browser_tests.desk_hold import close_context
 from browser_tests.test_panel_task_scope import (
     ALPHA,
     BETA,
@@ -79,7 +80,7 @@ def test_while_a_read_is_pending_on_a_live_line_no_other_run_can_be_selected(
         held[0].continue_()
         assert _context(page, "bound") == shown(ALPHA)
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_landing_after_a_disconnect_and_a_switch_is_never_drawn(
@@ -103,7 +104,7 @@ def test_a_read_landing_after_a_disconnect_and_a_switch_is_never_drawn(
         _ready(page)
         assert (_selected(page), _context(page, "bound")) == ("run: run-beta", shown(BETA))
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_proposal_answer_landing_after_a_switch_is_never_drawn_into_the_new_run(
@@ -143,7 +144,7 @@ def test_a_proposal_answer_landing_after_a_switch_is_never_drawn_into_the_new_ru
         _context(page, "bound")
         assert page.locator(".command-record strong", has_text="action_proposal").count() == 1
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 @pytest.mark.parametrize("composed_again", [
@@ -179,7 +180,7 @@ def test_an_answer_sent_before_leaving_and_returning_is_never_drawn(
         assert "First, abandoned." not in after
         assert (state, after) == (("created", before) if composed_again else ("idle", ""))
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_confirm_answer_landing_after_a_switch_is_never_drawn_into_the_new_run(
@@ -212,7 +213,7 @@ def test_a_confirm_answer_landing_after_a_switch_is_never_drawn_into_the_new_run
         _context(page, "bound")
         assert page.locator(".command-record strong", has_text="action_request").count() == 1
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_signal_arriving_while_the_person_is_in_an_argument_field_never_freezes_the_panel(
@@ -247,7 +248,7 @@ def test_a_signal_arriving_while_the_person_is_in_an_argument_field_never_freeze
                                  "document.activeElement.selectionStart]") == [
                 "argument:work_item_id", "work-001", 2]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_proposal_and_its_confirmation_go_through_during_a_background_refresh(
@@ -282,7 +283,7 @@ def test_a_proposal_and_its_confirmation_go_through_during_a_background_refresh(
         held[0].continue_()
         _ready(page)
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 #: Flags when the page has READ the answer to its /actions POST, or seen the POST
@@ -374,7 +375,7 @@ def test_a_late_confirm_answer_never_marks_the_proposal_created_since_on_the_sam
         _until(page, lambda: page.locator(
             ".command-record strong", has_text="action_request").count() == recorded)
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 # -- what the composer keeps ------------------------------------------------------
@@ -425,7 +426,7 @@ def test_everything_the_person_entered_survives_a_background_refresh(
             "artifact_refs": [], "profile": "review", "output_limit_profile": "normal",
             "work_scope": SCOPES[ALPHA]}]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_multi_select_argument_survives_a_background_refresh(
@@ -452,7 +453,7 @@ def test_a_multi_select_argument_survives_a_background_refresh(
         assert _values(page, ["target_action_id", "kinds"]) == {
             "target_action_id": "action-001", "kinds": ["diff", "tests"]}
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_reloading_the_same_run_still_draws_the_answer_of_a_proposal_in_flight(
@@ -483,7 +484,7 @@ def test_reloading_the_same_run_still_draws_the_answer_of_a_proposal_in_flight(
         assert page.locator(
             '.command-proposal-form button[type="submit"]').is_enabled()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 @pytest.mark.parametrize("operation", ["proposal", "confirm"])
@@ -550,8 +551,7 @@ def test_a_read_queued_before_the_current_one_answered_keeps_that_answer(
         assert answered.value.status == 201
         assert len(posts) == 1
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_background_read_that_fails_shuts_both_forms_until_one_succeeds(
@@ -632,4 +632,4 @@ def test_a_background_read_that_fails_shuts_both_forms_until_one_succeeds(
         page.get_by_role("button", name="Confirm unchanged proposal").click()
         page.locator('[data-confirm-state="accepted"]').wait_for()
     finally:
-        page.context.close()
+        close_context(page.context)

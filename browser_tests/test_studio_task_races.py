@@ -12,6 +12,7 @@ import pytest
 
 from playwright.sync_api import Browser, Page, expect
 
+from browser_tests.desk_hold import close_context
 from browser_tests.run_picker import choose_run
 from browser_tests.task_picker import create_task, selected_task, expect_selected_task
 from browser_tests.test_studio_layout import (  # noqa: F401
@@ -83,7 +84,7 @@ def test_enter_creation_clears_visible_text_and_the_next_task_gets_a_new_identit
         assert window.writes("/command/tasks") == 2
         assert window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_created_and_read_back_task_finishes_its_writing_status(
@@ -102,7 +103,7 @@ def test_a_created_and_read_back_task_finishes_its_writing_status(
         assert window.writes("/command/tasks") == 1
         assert window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_open_reply_keeps_the_run_chosen_within_the_same_task(
@@ -129,8 +130,7 @@ def test_a_late_open_reply_keeps_the_run_chosen_within_the_same_task(
         assert window.writes("/proposals") == window.writes("/actions") == 0
         assert window.page_errors == []
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_open_reply_keeps_the_next_opening_draft(
@@ -163,8 +163,7 @@ def test_a_late_open_reply_keeps_the_next_opening_draft(
         assert window.writes("/proposals") == window.writes("/actions") == 0
         assert window.page_errors == []
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_late_task_creation_keeps_the_run_chosen_within_the_original_task(
@@ -215,8 +214,7 @@ def test_a_late_task_creation_keeps_the_run_chosen_within_the_original_task(
         assert window.writes("/proposals") == window.writes("/actions") == 0
         assert window.page_errors == []
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 #: Where a person types on the chosen run: a step's proposal and a document's content.
@@ -264,4 +262,4 @@ def test_a_late_task_creation_leaves_the_run_a_person_is_typing_in_untouched(
         expect(who).to_have_value("release-owner")
     finally:
         assert window.console_errors == [] and window.page_errors == []
-        page.context.close()
+        close_context(page.context)

@@ -21,7 +21,8 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page
 
-from browser_tests.test_desk_rail_scene import SETTLED, _seed
+from browser_tests.desk_settled import SETTLED
+from browser_tests.test_desk_rail_scene import _seed
 from conductor import server
 from tests.desk_function_map import ROWS
 from tests.test_store import good_lane, write_project

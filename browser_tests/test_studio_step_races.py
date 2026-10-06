@@ -44,6 +44,7 @@ and are imported; the gate runs every module in its own process.
 """
 from __future__ import annotations
 
+from browser_tests.desk_hold import close_context
 from browser_tests.run_picker import choose_run
 
 import json
@@ -215,7 +216,7 @@ def test_the_forced_press_reaches_a_control_the_product_leaves_open(
         assert _durable_on(bench, RUN_ID, "action_proposal", STEP) == 0
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def _a_read_lands(page: Page, bench: _Bench, run_id: str, index: int) -> None:
@@ -291,7 +292,7 @@ def test_a_read_landing_under_a_pending_write_leaves_the_control_shut(
         assert len(bench.records(RUN_ID, "action_result")) == 1
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- B. one step's answer and another step's words -----------------------------
@@ -344,7 +345,7 @@ def test_one_steps_accepted_write_leaves_another_steps_unsent_words_alone(
         assert posted[1]["node_id"] == HALTING
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- C. ownership across navigation --------------------------------------------
@@ -378,7 +379,7 @@ def test_a_write_in_flight_stays_its_runs_own_while_another_run_is_opened(
         assert bench.kinds() == ["graph_definition", "action_proposal"]
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- D. words typed under a pending write --------------------------------------
@@ -458,7 +459,7 @@ def test_words_typed_under_a_pending_write_survive_its_answer(
         assert window.writes("/proposals") == 1
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- E. the answer lands before its read ---------------------------------------
@@ -535,7 +536,7 @@ def test_an_accepted_write_keeps_its_control_shut_until_the_run_is_read_again(
         assert _durable_on(bench, RUN_ID, "action_request", STEP) == 1
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- F. a sibling write and the first's answer -----------------------------------
@@ -604,7 +605,7 @@ def test_a_sibling_steps_write_does_not_retire_the_first_steps_answer(
         # answer on its console; that note is not a fault in the window.
         assert [row for row in window.console_errors if "409" not in row] == []
         assert window.page_errors == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- G. the caret, across a frame ------------------------------------------------
@@ -670,7 +671,7 @@ def test_a_frame_leaves_the_caret_in_the_form_it_was_in(
         assert window.writes("/proposals") == 0
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_form_that_vanished_under_the_frame_hands_the_caret_to_nobody(
@@ -712,7 +713,7 @@ def test_a_form_that_vanished_under_the_frame_hands_the_caret_to_nobody(
         assert window.writes("/proposals") == 0
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_an_answered_write_stays_its_runs_own_across_navigation(
@@ -743,7 +744,7 @@ def test_an_answered_write_stays_its_runs_own_across_navigation(
         assert _durable_on(bench, RUN_ID, "action_proposal", STEP) == 1
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- H. a read this build cannot project -----------------------------------------
@@ -776,7 +777,7 @@ def test_a_read_the_projection_refuses_leaves_the_words_alone(
         assert window.writes("/proposals") == 0
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 #: A second run, for the person to be looking at when another run's refusal lands.
@@ -825,4 +826,4 @@ def test_a_late_refusal_is_not_announced_on_another_runs_screen(
         # The 409 is this test's own; the browser notes every non-2xx answer on its console.
         assert [row for row in window.console_errors if "409" not in row] == []
         assert window.page_errors == []
-        page.context.close()
+        close_context(page.context)

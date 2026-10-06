@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from browser_tests.desk_hold import close_context
 from browser_tests import desk_queue_rig as rig
 from browser_tests.test_desk_queue import RUNS, WORDS
 
@@ -125,7 +126,7 @@ def test_the_slot_line_says_its_state_and_why_for_every_row_of_the_table(
             base = words[state]
             expected = f"{base}: {why[reason]}" if state in ("stuck", "unavailable") else base
             assert window.facts()["now"] == expected, (state, reason)
-            window.page.context.close()
+            close_context(window.page.context)
 
 
 @pytest.mark.parametrize("language", ["en", "ru"])

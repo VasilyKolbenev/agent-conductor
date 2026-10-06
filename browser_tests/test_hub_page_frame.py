@@ -14,10 +14,12 @@ sentence are read in ONE evaluation.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Frame, expect
+from playwright.sync_api import Frame, Route, expect
+from playwright.sync_api import TimeoutError as WaitTimeout
 
 from browser_tests.desk_identity import identified_server
 from browser_tests.hub_bench import (fields, fixture, hub, hub_page, lang,  # noqa: F401
@@ -25,7 +27,8 @@ from browser_tests.hub_bench import (fields, fixture, hub, hub_page, lang,  # no
 from browser_tests.hub_live import (A, B, C, LivePage, line_of, live,  # noqa: F401
                                     live_page, press, ready, wait_for)
 from conductor.hub import state as hub_state
-from browser_tests.test_desk_rail_scene import SETTLED, _seed
+from browser_tests.desk_settled import SETTLED
+from browser_tests.test_desk_rail_scene import _seed
 from tests.test_store import good_lane, write_project
 
 SANDBOX = ("allow-scripts allow-same-origin allow-forms allow-popups "
@@ -88,6 +91,34 @@ def desk_frame(one: LivePage) -> Frame:
     return frame
 
 
+BARE = '<!doctype html><html><body data-bare="1"></body></html>'
+
+
+def test_the_wait_for_the_desk_goes_on_while_the_frames_document_is_not_the_desk_yet(running_a):
+    """A frame is asked before its document has drawn the desk: the wait must go on, not end."""
+    one = running_a
+    answered: list[str] = []
+
+    def bare_first(route: Route) -> None:
+        answered.append(route.request.url)
+        if len(answered) == 1:
+            route.fulfill(status=200, content_type="text/html", body=BARE)
+        else:
+            route.continue_()
+
+    one.page.route(re.compile(r"/panel/desk\.html"), bare_first)
+    try:
+        press(one, f"project:{A}")
+        frame = one.page.wait_for_selector("#hubDesk iframe").content_frame()
+        frame.wait_for_function('() => document.body?.dataset.bare === "1"')
+        with pytest.raises(WaitTimeout):
+            frame.wait_for_function(SETTLED, timeout=300)
+        frame.evaluate("() => location.reload()")
+        assert desk_frame(one).evaluate(DESK_FACTS)["rows"] == 6 and len(answered) == 2
+    finally:
+        one.page.unroute_all(behavior="ignoreErrors")
+
+
 def wait_hub(one: LivePage, what: str, script: str, arg=None) -> None:
     try:
         one.page.wait_for_function(script, arg=arg)
@@ -146,7 +177,7 @@ def test_the_desks_location_message_sets_the_path_the_highlight_and_the_address_
     reads = (one.reads("/hub/projects"), one.reads("/hub/limits"), one.reads("/hub/setup"))
     frame.locator('#deskRail [data-task-id="task-check"]').click()
     wait_hub(one, "the path to name the task and its run", """() => document.getElementById(
-      "hubPath").textContent === "a › Check the export › run-check" """)
+      "hubPath")?.textContent === "a › Check the export › run-check" """)
     facts = one.page.evaluate(FRAME_FACTS)
     assert fields(facts["hash"]) == {"project": A, "task": "task-check", "run": "run-check",
                                      "lang": lang}
@@ -164,7 +195,7 @@ def test_a_message_from_anywhere_but_the_frame_in_the_one_shape_changes_nothing(
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's own location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("""() => {
       window.__addresses = [];
       const original = history.replaceState.bind(history);
@@ -182,7 +213,7 @@ def test_a_message_from_anywhere_but_the_frame_in_the_one_shape_changes_nothing(
       task_id: "task-check", run_id: null}, "*")""", [A])
     frame.evaluate(SAY, good)
     wait_hub(one, "the one good message", """() => document.getElementById(
-      "hubPath").textContent === "a › Check the export" """)
+      "hubPath")?.textContent === "a › Check the export" """)
     addresses = one.page.evaluate("window.__addresses")
     assert len(addresses) == 1 and "task=task-check" in addresses[0], (
         "six forged messages, from the frame and from the page itself, wrote nothing; one good one did")
@@ -215,7 +246,7 @@ def test_a_changed_instance_replaces_the_frame_with_a_new_element_and_a_stopped_
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("document.querySelector('#hubDesk iframe').__mine = 'first element'")
     one.live.world.gone("a")
     one.live.tick()
@@ -393,7 +424,7 @@ def test_a_message_from_another_window_at_the_desks_own_origin_is_not_the_frames
     frame = desk_frame(one)
     frame.locator('#deskRail [data-task-id="task-docs"]').click()
     wait_hub(one, "the desk's own location", """() => document.getElementById(
-      "hubPath").textContent === "a › Write the docs › run-docs" """)
+      "hubPath")?.textContent === "a › Write the docs › run-docs" """)
     one.page.evaluate("""(src) => {
       window.__addresses = [];
       const original = history.replaceState.bind(history);
@@ -409,7 +440,7 @@ def test_a_message_from_another_window_at_the_desks_own_origin_is_not_the_frames
     other.evaluate(SAY, ["desk-location", A, "task-check", None, {}])
     frame.evaluate(SAY, ["desk-location", A, "task-idle", None, {}])
     wait_hub(one, "the frame's own message", """() => document.getElementById(
-      "hubPath").textContent === "a › Tidy up" """)
+      "hubPath")?.textContent === "a › Tidy up" """)
     addresses = one.page.evaluate("window.__addresses")
     assert len(addresses) == 1 and "task=task-idle" in addresses[0], (
         "the same origin and the exact shape are not enough: the window must be the frame's own")

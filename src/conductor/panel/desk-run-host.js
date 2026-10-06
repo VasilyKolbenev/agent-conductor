@@ -27,8 +27,9 @@ export function createRunHost({mount, pult, locale, selectRun, refreshRuns, door
     if (disposed) return;
     const drafted = writer.sync(desk);
     const blocked = desk.mode === "view" ? "desk.run.view_blocked"
-      : desk.run.phase !== "ready" || desk.mode !== "active" ? "desk.run.not_ready"
-        : writer.decisionPending() ? "desk.decision.writing" : null;
+      : writer.updating() ? "desk.run.updating"
+        : desk.run.phase !== "ready" || desk.mode !== "active" ? "desk.run.not_ready"
+          : writer.decisionPending() ? "desk.decision.writing" : null;
     const decisionState = {...drafted, locale: locale(), connection,
       decisionActor: desk.actor, decisionWriteBlocked: blocked};
     pult.append(pultCard);

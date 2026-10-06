@@ -34,12 +34,13 @@ from __future__ import annotations
 import json
 
 import pytest
+from playwright.sync_api import Route, expect
 
 from browser_tests import desk_flag_fake as fake
 from browser_tests.test_desk_embed import (  # noqa: F401  (fixtures and helpers)
     PROJECT, Embedded, Rig, _answering, _claim, _listen, embed, rig)
 from browser_tests.test_desk_hash import ON_RUN, QUIET
-from browser_tests.test_desk_rail_scene import SETTLED
+from browser_tests.desk_settled import FOREIGN_SAID, SETTLED
 from browser_tests.test_desk_status import RAW
 
 #: The newest run of each task that has one, as the desk reads them, and what each says.
@@ -177,8 +178,9 @@ def test_taking_the_flag_off_writes_nothing_listed_and_no_queue_start(embed, rig
     _name(window, "petya")
     _open_block(window)
     window.frame.locator('[data-focus-key="flag:clear"]').click()
-    window.frame.wait_for_function("() => !document.querySelector("
-                                   "'#deskPult [data-focus-key=\"flag:enabled\"]').checked")
+    window.frame.wait_for_function(
+        "() => document.querySelector('#deskPult [data-focus-key=\"flag:enabled\"]')"
+        "?.checked === false")
     assert server.posts == [{"enabled": False, "actor": "petya", "resume_runs": [],
                              "start_task_queue": False}]
     after = window.frame.evaluate(BLOCK)
@@ -282,8 +284,7 @@ def test_a_project_mismatch_on_the_save_ends_the_desk(embed, rig):
     _open_block(window)
     window.frame.locator('[data-focus-key="flag:enabled"]').check()
     window.frame.locator('[data-focus-key="flag:save"]').click()
-    window.frame.wait_for_function(
-        "() => document.getElementById('deskStatus').innerText.includes('another project')")
+    window.frame.wait_for_function(FOREIGN_SAID)
     assert window.frame.evaluate(BLOCK) is None
     sent = len(server.posts)
     window.frame.evaluate(QUIET)
@@ -515,6 +516,221 @@ def test_the_address_follows_a_person_who_opens_and_closes_the_block(embed, rig)
     _open_block(window)
     window.frame.wait_for_function("(hash) => location.hash === hash", arg=closed)
     assert server.posts == [] and window.problems == []
+
+
+#: What the block says of itself each time the console is drawn again, kept page-side so that no
+#: draw between two reads of the test is lost: the block's `open` and the address at that moment.
+WATCH_BLOCK = """() => {
+  window.__block = [];
+  new MutationObserver(() => window.__block.push([
+    document.querySelector("#deskPult .desk-flag")?.open ?? null, location.hash])
+  ).observe(document.getElementById("deskPult"),
+    {childList: true, subtree: true, attributes: true, attributeFilter: ["open"]});
+}"""
+
+
+def test_a_block_opened_while_the_boot_reads_is_not_closed_by_the_boot_that_draws_a_task(
+        embed, rig):
+    """The address names a task and no panel. Its first navigation resets the keys the address
+    does not carry, but a desk that has written no address has nothing to reset: the block is the
+    person's, and it is not closed for an instant (the address losing its panel with it) to be
+    opened again by the echo of the element it replaced."""
+    held: list[Route] = []
+    window = embed(
+        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
+        _answering(_claim(hub_origin=rig.host_origin)), automations=AUTOMATIONS, wait=False,
+        before=lambda page: page.route("**/command/tasks", lambda route: held.append(route)))
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    assert len(held) == 1, "the block is drawn while the boot's list read is still held"
+    _open_block(window)
+    window.frame.evaluate(WATCH_BLOCK)
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    drawn = window.frame.evaluate("window.__block")
+    assert drawn and all(opened is True for opened, _hash in drawn), drawn
+    assert all("panel=continue" in hash_ for _opened, hash_ in drawn), drawn
+    assert window.frame.evaluate(WHERE)["hash"] == (
+        f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&panel=continue&lang=en")
+    assert window.problems == []
+
+
+def test_a_toggle_pressed_after_the_block_was_opened_while_the_boot_reads_replaces_the_block(
+        embed, rig):
+    """Opening a panel closes the block, as it does after the boot: the person's last choice is
+    the panel, and the address says it and not `panel=continue`."""
+    held: list[Route] = []
+    window = embed(
+        f"#project={PROJECT}&embed=hub&task=task-fix&lang=en",
+        _answering(_claim(hub_origin=rig.host_origin)), automations=AUTOMATIONS, wait=False,
+        before=lambda page: page.route("**/command/tasks", lambda route: held.append(route)))
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    assert len(held) == 1, "the block is drawn while the boot's list read is still held"
+    _open_block(window)
+    window.frame.locator("#deskFlowToggle").click()
+    assert window.frame.evaluate(WHERE)["open"] is False, "pressing a panel closes the block"
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False and facts["expanded"]["deskFlowToggle"] == "true"
+    assert facts["hash"] == (
+        f"#project={PROJECT}&embed=hub&task=task-fix&run=run-fix-new&panel=cycle&lang=en")
+    assert window.problems == []
+
+
+#: What the top bar, the three regions and the address say each time any of them is drawn again,
+#: kept page-side so that no draw between two reads of the test is lost.
+WATCH_DRAWS = """() => {
+  window.__draws = [];
+  const toggles = ["deskFlowToggle", "deskPeopleToggle", "deskRunToggle"];
+  const regions = ["deskFlow", "deskPeople", "deskRun"];
+  new MutationObserver(() => window.__draws.push({
+    block: document.querySelector("#deskPult .desk-flag")?.open ?? null,
+    pressed: toggles.filter((id) => document.getElementById(id).getAttribute("aria-expanded")
+      === "true"),
+    shown: regions.filter((id) => !document.getElementById(id).hidden),
+    hash: location.hash})
+  ).observe(document.body, {childList: true, subtree: true, attributes: true,
+    attributeFilter: ["open", "aria-expanded", "hidden"]});
+}"""
+#: The first panel a person may have pressed, and the read that panel would make when it opens.
+PRESSED = {"deskFlowToggle": "/command/workflows", "deskPeopleToggle": "/command/runs",
+           "deskRunToggle": None}
+SELECTED = f"#project={PROJECT}&embed=hub&task=task-fix"
+BOOKED = f"{SELECTED}&lang=en"
+BOOKED_PEOPLE = f"{SELECTED}&panel=people&lang=en"
+FINAL = f"{SELECTED}&run=run-fix-new"
+
+
+def _held_boot(embed, rig, fragment: str):
+    """A framed desk whose boot waits for the lists, with the block drawn: the window of a slow
+    machine in which a person can press a toggle or open the block."""
+    held: list[Route] = []
+    window = embed(
+        fragment, _answering(_claim(hub_origin=rig.host_origin)), automations=AUTOMATIONS,
+        wait=False,
+        before=lambda page: page.route("**/command/tasks", lambda route: held.append(route)))
+    window.frame.wait_for_selector("#deskPult .desk-flag", timeout=6000)
+    assert len(held) == 1, "the block is drawn while the boot's list read is still held"
+    return window, held
+
+
+def _land(window, held) -> tuple[list[dict], list[str]]:
+    """Let the boot go on, wait until it has drawn the run its address names, and say every draw
+    from then on and every route the desk asked after the release."""
+    window.frame.evaluate(QUIET)
+    window.frame.evaluate(WATCH_DRAWS)
+    asked = len(window.command_paths())
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    return window.frame.evaluate("window.__draws"), window.command_paths()[asked:]
+
+
+def _the_block_stood(window, draws: list[dict], hash_: str) -> None:
+    """Every draw kept the block open, with no toggle pressed and no centre panel shown, and the
+    address said `panel=continue` throughout and at the end."""
+    assert draws and all(
+        one["block"] is True and one["pressed"] == [] and one["shown"] == []
+        and "panel=continue" in one["hash"] for one in draws), draws
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is True and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"{hash_}&panel=continue&lang=en"
+    assert window.problems == []
+
+
+@pytest.mark.parametrize("toggle", list(PRESSED))
+def test_a_block_opened_after_a_press_made_while_the_boot_reads_is_the_choice_the_boot_keeps(
+        embed, rig, toggle):
+    """The person's LAST choice is the block: the pressed toggle is drawn un-pressed from then on,
+    and the boot opens no panel (and asks for none of its reads) in between."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    window.frame.locator(f"#{toggle}").click()
+    _open_block(window)
+    expect(window.frame.locator(f"#{toggle}")).to_have_attribute("aria-expanded", "false")
+    draws, asked = _land(window, held)
+    _the_block_stood(window, draws, FINAL)
+    assert PRESSED[toggle] is None or PRESSED[toggle] not in asked, asked
+
+
+def test_a_block_opened_while_the_boot_reads_replaces_the_panel_the_address_names(embed, rig):
+    window, held = _held_boot(embed, rig, BOOKED_PEOPLE)
+    _open_block(window)
+    draws, asked = _land(window, held)
+    _the_block_stood(window, draws, FINAL)
+    assert "/command/runs" not in asked, "the People panel read nothing: it was never opened"
+
+
+def test_the_last_of_a_block_a_press_and_a_block_again_is_the_block(embed, rig):
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.locator("#deskFlowToggle").click()
+    _open_block(window)
+    expect(window.frame.locator("#deskFlowToggle")).to_have_attribute("aria-expanded", "false")
+    expect(window.frame.locator("#deskPult .desk-flag")).to_have_attribute("open", "")
+    draws, asked = _land(window, held)
+    _the_block_stood(window, draws, FINAL)
+    assert "/command/workflows" not in asked, asked
+
+
+def test_a_block_the_person_opened_while_the_boot_reads_does_not_take_the_keyboard_when_it_lands(
+        embed, rig):
+    """The address did not ask for the block, so the boot keeps the block open and leaves the
+    keyboard where the person has put it since."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.locator('[data-focus-key="pult:actor-change"]').focus()
+    draws, _asked = _land(window, held)
+    _the_block_stood(window, draws, FINAL)
+    assert window.frame.evaluate(WHERE)["focus"] == "pult:actor-change"
+
+
+def test_a_block_opened_and_closed_while_the_boot_reads_is_a_choice_of_none(embed, rig):
+    """As the same toggle pressed twice is: the address's panel does not come back."""
+    window, held = _held_boot(embed, rig, BOOKED_PEOPLE)
+    _open_block(window)
+    window.frame.wait_for_function("() => location.hash.includes('panel=continue')", timeout=5000)
+    _open_block(window)
+    window.frame.wait_for_function("() => !location.hash.includes('panel=continue')", timeout=5000)
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"{FINAL}&lang=en"
+    assert window.frame.evaluate("document.getElementById('deskPeople').hidden") is True
+    assert window.problems == []
+
+
+def test_a_task_the_hub_sends_while_the_boot_reads_closes_the_block_the_person_opened(embed, rig):
+    """A column click is another task, and another task starts with no panel (spec 4.5.3, step
+    2.1): the block the person opened before the click is closed, and the desk opens nothing."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.evaluate(HUB_SENDS, f"#project={PROJECT}&embed=hub&task=task-docs&lang=en")
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-docs")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is False and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"#project={PROJECT}&embed=hub&task=task-docs&run=run-docs&lang=en"
+    assert window.problems == []
+
+
+def test_a_language_the_hub_sends_while_the_boot_reads_leaves_the_block_the_person_opened(
+        embed, rig):
+    """What a person chose inside the desk stays when the hub sends only the language."""
+    window, held = _held_boot(embed, rig, BOOKED)
+    _open_block(window)
+    window.frame.evaluate(HUB_SENDS, f"#project={PROJECT}&embed=hub&lang=ru")
+    held[0].continue_()
+    window.frame.wait_for_function(ON_RUN, arg="run-fix-new")
+    window.frame.evaluate(QUIET)
+    facts = window.frame.evaluate(WHERE)
+    assert facts["open"] is True and set(facts["expanded"].values()) == {"false"}
+    assert facts["hash"] == f"{FINAL}&panel=continue&lang=ru"
+    assert window.problems == []
 
 
 def test_a_desk_nobody_framed_drops_panel_continue_from_its_address(chromium, rig):

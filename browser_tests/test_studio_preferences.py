@@ -1,4 +1,5 @@
 """Real shell preferences preserve drafts and accepted writes in flight."""
+from browser_tests.desk_hold import close_context
 from browser_tests.task_picker import selected_task, expect_selected_task
 
 from playwright.sync_api import Browser, expect
@@ -60,7 +61,7 @@ def test_five_screen_shell_preferences_preserve_selection_drafts_and_reload(
         page.screenshot(path=str(tmp_path / "studio-shell-en-light-1280.png"))
         assert window.page_errors == [] and window.storage() == [0, 0]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_switching_preferences_keeps_an_accepted_pending_task_and_the_next_draft(
@@ -102,8 +103,7 @@ def test_switching_preferences_keeps_an_accepted_pending_task_and_the_next_draft
         assert TaskStore(project.root).read(task_id).title == "Accepted task"
         assert window.writes("/command/tasks") == 1 and window.page_errors == []
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_russian_browser_defaults_to_russian_without_rewriting_user_data(
@@ -115,4 +115,4 @@ def test_russian_browser_defaults_to_russian_without_rewriting_user_data(
         expect(page.locator('[data-focus="preference-language"]')).to_have_value("ru")
         assert window.writes("/command/") == 0 and window.page_errors == []
     finally:
-        page.context.close()
+        close_context(page.context)

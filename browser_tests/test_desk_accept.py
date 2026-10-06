@@ -13,7 +13,7 @@ import pytest
 from playwright.sync_api import Browser, Locator, Page, expect
 
 from browser_tests import desk_hold
-from browser_tests.desk_hold import Hold
+from browser_tests.desk_hold import Hold, close_context
 from conductor import ownership_transition, server
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.project_git import process_git_read
@@ -113,7 +113,7 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
         expect(record.filter(has_text="Created commit")).to_contain_text(branch)
         assert errors == []
     finally:
-        context.close()
+        close_context(context)
 
 
 # -- the run read again while a person is partway through the acceptance --------------------------
@@ -176,7 +176,7 @@ class _Desk:
 
 
 @contextmanager
-def _desk(chromium: Browser, url: str) -> Iterator[_Desk]:
+def _desk(chromium: Browser, url: str, language: str = "en") -> Iterator[_Desk]:
     """A window on the run with a name given, once the stream has opened: the person acts after
     the first refresh of the connection and not while it is under way."""
     context = chromium.new_context(viewport={"width": 1280, "height": 1000})
@@ -188,7 +188,7 @@ def _desk(chromium: Browser, url: str) -> Iterator[_Desk]:
         page.on("request", lambda request: desk.requests.append(
             (request.method, urlsplit(request.url).path)))
         page.on("pageerror", lambda error: desk.errors.append(str(error)))
-        page.goto(f"{url}#task={TASK}&run={RUN}&panel=run&lang=en", wait_until="load")
+        page.goto(f"{url}#task={TASK}&run={RUN}&panel=run&lang={language}", wait_until="load")
         expect(page.locator("#deskShell")).to_have_attribute(
             "data-connection", "open", timeout=10000)
         page.locator('[data-focus-key="pult:actor-change"]').click()
@@ -201,7 +201,7 @@ def _desk(chromium: Browser, url: str) -> Iterator[_Desk]:
         if desk is not None:
             for held in (desk.run_read, desk.controls_read, desk.preview_post):
                 held.abort()
-        context.close()
+        close_context(context)
 
 
 def _enter_and_read_preview(desk: _Desk) -> None:
@@ -324,5 +324,60 @@ def test_a_re_read_that_lands_with_a_changed_run_state_resets_the_entries_and_re
         expect(desk.card.locator(BRANCH)).to_have_value("")
         expect(desk.card.locator(TITLE)).to_have_value("")
         expect(desk.card).not_to_contain_text("new.txt")
+        assert desk.count("GET", ACCEPT_PATH) == 2
+        assert desk.errors == []
+
+
+# -- the card says the run's data is being updated, and the explicit read stays allowed -------------
+#
+# While the run is read again the card keeps what it holds and refuses its presses; it says why
+# beside the controls, in one short sentence that is there only while the read is out. The person's
+# own "Read acceptance record" stays allowed: it is an explicit read, and it is judged by the same
+# subject and epoch as every answer the host takes.
+
+UPDATING = {"en": "Updating the run's data…", "ru": "Обновляем данные запуска…"}
+READ_RECORD = '[data-focus-key="accept:detail:desk.accept.refresh"]'
+
+
+@needs_git
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_a_re_read_of_the_same_run_says_so_beside_the_controls_and_only_until_it_lands(
+        chromium: Browser, accept_server, language: str):
+    url, _root, httpd = accept_server
+    said = UPDATING[language]
+    with _desk(chromium, url, language) as desk:
+        pult = desk.page.locator("#deskPult .desk-accept")
+        for card in (desk.card, pult):
+            expect(card).not_to_contain_text(said)
+        desk.reread(httpd.clients.publish_state)
+        for card in (desk.card, pult):
+            expect(card.locator("p", has_text=said)).to_have_count(1)
+        desk.land()
+        for card in (desk.card, pult):
+            expect(card).not_to_contain_text(said)
+        assert desk.errors == []
+
+
+@needs_git
+def test_the_explicit_read_of_the_acceptance_record_is_allowed_while_the_run_is_read_again(
+        chromium: Browser, accept_server):
+    url, _root, httpd = accept_server
+    with _desk(chromium, url) as desk:
+        desk.card.locator(BRANCH).fill("conduct/chosen")
+        desk.card.locator(TITLE).fill("Chosen title")
+        desk.reread(httpd.clients.publish_state)
+        expect(desk.card.locator(PREVIEW)).to_be_disabled()
+        expect(desk.card.locator(READ_RECORD)).to_be_enabled()
+        desk.card.locator(READ_RECORD).click()
+        desk.until("the explicit read of the record has been asked", lambda: desk.count(
+            "GET", ACCEPT_PATH) == 2)
+        expect(desk.card.locator(READ_RECORD)).to_be_enabled()
+        expect(desk.scene).to_have_attribute("data-state", "stale")
+        expect(desk.card.locator(BRANCH)).to_have_value("conduct/chosen")
+        expect(desk.card.locator(TITLE)).to_have_value("Chosen title")
+        expect(desk.card.locator(PREVIEW)).to_be_disabled()
+        desk.land()
+        expect(desk.card.locator(PREVIEW)).to_be_enabled()
+        expect(desk.card.locator(BRANCH)).to_have_value("conduct/chosen")
         assert desk.count("GET", ACCEPT_PATH) == 2
         assert desk.errors == []

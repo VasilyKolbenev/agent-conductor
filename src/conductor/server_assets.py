@@ -139,6 +139,7 @@ DESK_ASSETS = {
     "/panel/desk-run-binding.js": ("text/javascript; charset=utf-8", "desk-run-binding.js"),
     "/panel/desk-run-write-host.js": ("text/javascript; charset=utf-8", "desk-run-write-host.js"),
     "/panel/desk-panels.js": ("text/javascript; charset=utf-8", "desk-panels.js"),
+    "/panel/desk-toggles.js": ("text/javascript; charset=utf-8", "desk-toggles.js"),
 }
 
 # Exact package resources, never a path derived from the request target.

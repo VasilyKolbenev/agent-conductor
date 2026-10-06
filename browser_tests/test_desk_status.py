@@ -33,7 +33,8 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
-from browser_tests.test_desk_rail_scene import SETTLED, seeded_url  # noqa: F401  (a fixture)
+from browser_tests.desk_settled import SETTLED
+from browser_tests.test_desk_rail_scene import seeded_url  # noqa: F401  (a fixture)
 from tests.test_desk_attention import (
     FIVE, OBSERVED, RUN_OBSERVED, attention, automation, project, row)
 from tests.test_desk_status import (

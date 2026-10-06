@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 
 from playwright.sync_api import expect
 
+from browser_tests.desk_hold import close_context
 from browser_tests.test_desk_rail_scene import seeded_url  # noqa: F401
 
 
@@ -73,4 +74,4 @@ def test_reconnect_waits_for_the_selected_read_then_confirms_a_fresh_answer(chro
         assert page.evaluate("window.__streamCount") == 1
         assert errors == []
     finally:
-        context.close()
+        close_context(context)

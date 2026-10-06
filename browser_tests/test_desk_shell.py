@@ -42,6 +42,8 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page, Route
 
+from browser_tests.desk_hold import close_context
+from browser_tests.desk_settled import SETTLED
 from conductor import server
 from tests.test_store import good_lane, write_project
 
@@ -99,7 +101,7 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-card.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
     "desk-people-host.js": 200, "desk-run-host.js": 200,
-    "desk-panels.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
+    "desk-panels.js": 200, "desk-toggles.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
     "studio-isolation.js": 200, "studio-runhead.js": 200,
     "studio-quotas-model.js": 200,
     "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,
@@ -189,10 +191,6 @@ SAID_FAILED = "This read failed. Nothing below is newer than the failure."
 #: A refusal in the server's own vocabulary: a status and a body whose code the
 #: page's refusal table knows. A code it did not know would be read as no answer.
 REFUSAL_BODY = json.dumps({"error": {"code": "same_origin_denied"}})
-#: The shell is settled when its reads are over: `ready`, `refused` (the server
-#: said no) or `failed` (nothing was said). A real signal, never a clock.
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
 #: The page's read deadline is 20 s. A window that must reach it is given timers
 #: where anything that long fires after three seconds, so a read nobody answers
 #: is abandoned by the page's own deadline instead of after a twenty-second wait.
@@ -268,7 +266,7 @@ def desk(chromium: Browser, desk_url: str) -> Iterator[Desk]:
     try:
         yield window
     finally:
-        context.close()
+        close_context(context)
 
 
 def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answering_200(
@@ -349,7 +347,7 @@ def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_
         page.wait_for_function(SETTLED)
         facts = page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
     finally:
-        context.close()
+        close_context(context)
     words = [(row["id"], row["word"]) for row in facts["regions"]]
     assert words == [("deskRail", rail), ("deskScene", "empty"), ("deskFeed", "empty"),
                      ("deskSummary", summary), ("deskPult", "ready")]
@@ -380,7 +378,7 @@ def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses
         page.wait_for_selector('#deskShell[data-state="ready"]')
         words = page.evaluate(PAGE_WORDS)
     finally:
-        context.close()
+        close_context(context)
     assert words == PAGE_LANGUAGES[language]
     assert problems == []
 
@@ -451,7 +449,7 @@ def test_the_sweep_sees_an_overflow_that_only_a_narrow_window_shows(
         page.wait_for_selector('#deskShell[data-state="ready"]')
         overflowing = {width for width, facts in _sweep(page).items() if facts["overflow"] > 0}
     finally:
-        context.close()
+        close_context(context)
     assert overflowing == {320, 375}
     assert not overflowing & {800, 1280}
 

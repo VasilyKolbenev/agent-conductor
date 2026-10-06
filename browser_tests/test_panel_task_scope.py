@@ -25,6 +25,7 @@ from contextlib import contextmanager
 
 import pytest
 from playwright.sync_api import Browser, Page, Route
+from browser_tests.desk_hold import close_context
 
 from conductor import server
 from conductor.command.adapters import AdapterRegistry
@@ -214,7 +215,7 @@ def test_a_tasks_proposal_carries_exactly_its_frozen_scope(
             page.get_by_role("button", name="Confirm unchanged proposal").click()
             page.locator('[data-confirm-state="accepted"]').wait_for()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_task_whose_record_does_not_read_is_still_named_and_still_scoped(
@@ -228,7 +229,7 @@ def test_a_task_whose_record_does_not_read_is_still_named_and_still_scoped(
         _compose(page, "dispatch")
         assert [body["arguments"]["work_scope"] for _run, body in recorder.rows] == [GHOST]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 @pytest.mark.parametrize("capability", ["dispatch", "review"])
@@ -244,7 +245,7 @@ def test_a_run_without_a_task_sends_no_scope_at_all(
         assert [(run, body["arguments"]) for run, body in recorder.rows] == [
             ("run-legacy", TYPED[capability])]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_an_answer_echoing_another_scope_is_never_taken_for_the_proposal(
@@ -268,7 +269,7 @@ def test_an_answer_echoing_another_scope_is_never_taken_for_the_proposal(
         page.locator('[data-proposal-state="outcome-unknown"]').wait_for()
         assert page.locator(".command-review-fact").count() == 0
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 # -- switching, and answers that land late -----------------------------------------
@@ -292,7 +293,7 @@ def test_switching_to_another_task_while_composing_carries_nothing_across(
         assert [(run, body["arguments"]["work_scope"]) for run, body in recorder.rows] == [
             ("run-alpha", SCOPES[ALPHA]), ("run-beta", SCOPES[BETA])]
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 # -- a binding that does not read ------------------------------------------------
@@ -340,7 +341,7 @@ def test_a_binding_the_cockpit_cannot_read_disables_proposing_until_it_reads_aga
         assert _selected(page) == "run: run-alpha"
         assert form.locator("button[type=submit]").is_enabled()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 _BOUND = {"id": ALPHA, "work_scope": ALPHA}
@@ -429,7 +430,7 @@ def test_the_cockpit_reads_a_binding_as_the_server_does_and_never_half_as_none(
                 {"work_item_id": "w", "work_scope": expected["workScope"]},
                 {"reason": "user"})
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_run_whose_frozen_binding_is_half_is_refused_whole_by_the_server(
@@ -445,4 +446,4 @@ def test_a_run_whose_frozen_binding_is_half_is_refused_whole_by_the_server(
             "The run history is corrupt.")
         assert page.locator(".command-proposal-form").count() == 0
     finally:
-        page.context.close()
+        close_context(page.context)

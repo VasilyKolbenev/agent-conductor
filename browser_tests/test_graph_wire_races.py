@@ -21,6 +21,7 @@ from conductor.command.run_store import RunStore
 
 from tests.test_command_graph_projection import settle_to_the_confirm_gate
 
+from browser_tests.desk_hold import close_context
 # ``wire_url`` is imported to be used as a fixture: the seeded server whose
 # journal already holds the frozen plan and some records against it.
 from browser_tests.test_graph_wire import (  # noqa: F401
@@ -81,7 +82,7 @@ def test_a_run_frame_for_the_selected_run_buys_a_re_read_and_the_graph_moves(
         assert recorder.reads(DURABLE_RUN) > before
         assert "gate-result" in page.locator("#gatesCard").inner_text()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_foreign_or_unreadable_frame_moves_nothing_on_screen(
@@ -119,7 +120,7 @@ def test_a_foreign_or_unreadable_frame_moves_nothing_on_screen(
         assert recorder.reads(OTHER_RUN) == 0
         assert DIGEST in page.locator("#sourceLine").inner_text()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_dropped_stream_shuts_the_write_door_until_the_run_is_read_again(
@@ -158,7 +159,7 @@ def test_a_dropped_stream_shuts_the_write_door_until_the_run_is_read_again(
         assert len(recorder.matching("GET", "/command/session")) == sessions
         assert len(recorder.matching("POST", "/graph")) == writes
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
@@ -208,7 +209,7 @@ def test_a_reconnect_reopens_the_write_door_only_after_the_run_is_read(
         assert "held in this window" in notice, notice
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_answering_after_the_human_moved_on_paints_no_screen(
@@ -260,7 +261,7 @@ def test_a_read_answering_after_the_human_moved_on_paints_no_screen(
             "a superseded read painted the screen the Human had already left")
     finally:
         page.unroute(f"**/command/runs/{DURABLE_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_choosing_a_run_shuts_the_door_before_its_facts_have_arrived(
@@ -300,7 +301,7 @@ def test_choosing_a_run_shuts_the_door_before_its_facts_have_arrived(
         assert "follows no graph yet" in page.locator("#notice").inner_text()
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_run_that_follows_no_graph_confirms_no_write_of_ours(
@@ -340,7 +341,7 @@ def test_a_run_that_follows_no_graph_confirms_no_write_of_ours(
         assert len(recorder.matching("POST", "/graph")) == 1
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_showing_another_graph_confirms_no_write_of_ours(
@@ -379,7 +380,7 @@ def test_a_read_showing_another_graph_confirms_no_write_of_ours(
         assert len(recorder.matching("POST", "/graph")) == 1
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_showing_the_written_plan_is_what_confirms_it(
@@ -406,7 +407,7 @@ def test_a_read_showing_the_written_plan_is_what_confirms_it(
             ".includes('already stands')")
         assert "Outcome unknown" not in page.locator("#saveStatus").inner_text()
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_that_arrives_whole_and_unreadable_confirms_nothing_either(
@@ -452,7 +453,7 @@ def test_a_read_that_arrives_whole_and_unreadable_confirms_nothing_either(
         assert len(recorder.matching("POST", "/graph")) == 1
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_read_that_fails_after_a_write_confirms_nothing_about_it(
@@ -483,7 +484,7 @@ def test_a_read_that_fails_after_a_write_confirms_nothing_about_it(
         assert len(recorder.matching("POST", "/graph")) == 1
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_write_that_lands_after_the_human_moved_on_is_not_that_runs_answer(
@@ -516,7 +517,7 @@ def test_a_write_that_lands_after_the_human_moved_on_is_not_that_runs_answer(
         assert DIGEST in page.locator("#sourceLine").inner_text()
     finally:
         page.unroute("**/graph")
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_run_frame_arriving_mid_refetch_does_not_swallow_the_write_outcome(
@@ -553,4 +554,4 @@ def test_a_run_frame_arriving_mid_refetch_does_not_swallow_the_write_outcome(
         assert len(recorder.matching("POST", "/graph")) == 1
     finally:
         page.unroute(f"**/command/runs/{EMPTY_RUN}")
-        page.context.close()
+        close_context(page.context)

@@ -13,6 +13,8 @@ const errorNotice = (code) => ({key: `error.${Object.hasOwn(ERROR_LABELS, code) 
 export function createRunWriteHost({door, binding, refreshRun, onChange, onForeign}) {
   let state = EMPTY, selected = null, detail = null, disposed = false;
   let actor = null, decisionRevision = 0, decisionAnswer = null, historyKey = null;
+  // The run held is read again (the desk draws it as stale): its decisions are kept, writes wait.
+  let updating = false;
   const drafts = new Map();
   const pendingDecisions = new Set();
   function dispatch(event) {
@@ -55,7 +57,8 @@ export function createRunWriteHost({door, binding, refreshRun, onChange, onForei
       decisionRevision += 1;
       detail = null;
     }
-    if (id !== null && read !== detail) {
+    updating = desk.run.phase === "stale" && id !== null;
+    if (id !== null && read !== detail && !updating) {
       detail = read;
       state = Object.freeze({...state, runs: Object.freeze({...state.runs,
         writes: readWrites(state.runs.writes, id)}),
@@ -136,7 +139,7 @@ export function createRunWriteHost({door, binding, refreshRun, onChange, onForei
     said: errorNotice, state: () => state, write,
     refreshRun: (runId) => refreshRun(runId)};
   const decisions = decisionWriters({...adapter, draft: () => state.decisions.draft});
-  return Object.freeze({sync, state: () => state,
+  return Object.freeze({sync, state: () => state, updating: () => updating,
     decisionPending: () => pendingDecisions.has(state.decisions.draft.key),
     historyKey: () => historyKey,
     handlers: Object.freeze({...stepWriters(adapter), ...documentWriters(adapter),

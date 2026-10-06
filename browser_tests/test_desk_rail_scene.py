@@ -42,6 +42,8 @@ from conductor import server
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
+from browser_tests.desk_hold import close_context
+from browser_tests.desk_settled import SETTLED
 from browser_tests.test_desk_shell import LAYOUT_FACTS, SWEPT_WIDTHS
 from tests.alpha3_graph_artifacts import dalio_definition
 from tests.test_command_graph_projection import settle_to_the_confirm_gate
@@ -97,8 +99,6 @@ RAIL_FACTS = """() => ({
     tone: row.querySelector(".desk-task__state").getAttribute("data-tone"),
     note: row.querySelector(".desk-task__note")?.textContent ?? null,
     height: row.getBoundingClientRect().height}))})"""
-SETTLED = """() => ["ready", "refused", "failed"].includes(
-  document.getElementById("deskShell").getAttribute("data-state"))"""
 REFUSAL_BODY = json.dumps({"error": {"code": "same_origin_denied"}})
 
 
@@ -199,7 +199,7 @@ def desk_in(chromium: Browser, seeded_url: str) -> Iterator:
 
     yield make
     for window in opened:
-        window.page.context.close()
+        close_context(window.page.context)
 
 
 def _rows(facts: dict) -> dict[str, tuple[str, str, str | None]]:
@@ -282,7 +282,7 @@ def test_a_list_that_is_not_read_empties_the_rail_and_the_shell_says_why(
         page.wait_for_function(SETTLED)
         facts = page.evaluate(RAIL_FACTS)
     finally:
-        context.close()
+        close_context(context)
     assert (facts["rail"], facts["shell"], facts["said"]) == (word, word, said)
     assert facts["rows"] == [] and facts["text"].strip() == ""
     assert uncaught == []
@@ -301,7 +301,7 @@ def test_an_automation_read_that_fails_changes_only_the_row_it_belongs_to(
         page.wait_for_function(SETTLED)
         facts = page.evaluate(RAIL_FACTS)
     finally:
-        context.close()
+        close_context(context)
     rows = _rows(facts)
     assert rows["task-docs"] == ("Write the docs", "No result yet", None)
     assert {key: value for key, value in rows.items() if key != "task-docs"} == {
@@ -360,7 +360,7 @@ def test_a_finished_but_unverified_run_is_never_drawn_without_its_sentence(
             page.wait_for_function(SETTLED)
             facts = page.evaluate(RAIL_FACTS)
         finally:
-            context.close()
+            close_context(context)
         assert _rows(facts)["task-check"] == ("Check the export", word, note)
         assert not RAW_TOKENS.search(facts["text"]), facts["text"]
 
@@ -440,7 +440,7 @@ def test_pressing_a_row_marks_it_alone_and_the_keyboard_keeps_its_place(desk_in)
     page.keyboard.press("Enter")
     page.wait_for_function(
         """() => document.querySelector('#deskRail [data-task-id="task-docs"]')
-           .getAttribute("aria-pressed") === "true" """)
+           ?.getAttribute("aria-pressed") === "true" """)
     facts = page.evaluate(RAIL_FACTS)
     assert [row["id"] for row in facts["rows"] if row["pressed"] == "true"] == ["task-docs"]
     assert page.evaluate("() => document.activeElement.dataset.taskId") == "task-docs"
@@ -525,7 +525,7 @@ def _choose(page: Page, task_id: str) -> None:
 
 def _scene_settled(page: Page, word: str) -> None:
     page.wait_for_function(
-        "(word) => document.getElementById('deskScene').getAttribute('data-state') === word",
+        "(word) => document.getElementById('deskScene')?.getAttribute('data-state') === word",
         arg=word)
 
 
@@ -617,8 +617,7 @@ def test_a_run_read_again_stays_on_screen_as_stale_until_the_new_answer_lands(
         _scene_settled(page, "ready")
         ready = page.evaluate(SCENE_FACTS)
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        context.close()
+        close_context(context)
     assert (stale["scene"], stale["shell"], stale["run"]) == ("stale", "stale", "run-fix-new")
     assert stale["said"] == "Shown from an earlier read; a newer one has not landed."
     assert (ready["scene"], ready["shell"], ready["said"]) == ("ready", "ready", "Read.")
@@ -694,8 +693,7 @@ def test_a_late_answer_for_a_task_left_behind_never_lands(chromium: Browser, see
         page.wait_for_function("() => window.__landed.includes('/command/runs/run-fix-new')")
         facts = page.evaluate(SCENE_FACTS)
     finally:
-        page.unroute_all(behavior="ignoreErrors")
-        context.close()
+        close_context(context)
     assert (facts["run"], facts["scene"], facts["chosen"]) == ("run-docs", "ready", ["task-docs"])
     assert facts["subject"] == "Write the docs · run run-docs"
     assert uncaught == []
@@ -720,7 +718,7 @@ def test_a_run_read_that_is_not_answered_leaves_the_scene_empty_in_the_word_it_e
         _scene_settled(page, word)
         facts = page.evaluate(SCENE_FACTS)
     finally:
-        context.close()
+        close_context(context)
     assert (facts["scene"], facts["shell"], facts["said"]) == (word, word, said)
     assert facts["run"] is None and facts["text"].strip() == ""
     assert facts["chosen"] == ["task-fix"]
@@ -755,7 +753,7 @@ def test_a_run_of_another_task_is_never_drawn_as_the_chosen_ones(
         _scene_settled(page, "failed")
         facts = page.evaluate(SCENE_FACTS)
     finally:
-        context.close()
+        close_context(context)
     assert facts["run"] is None and facts["shell"] == "failed"
     assert problems == []
 

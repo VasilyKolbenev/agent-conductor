@@ -35,6 +35,7 @@ from playwright.sync_api import Browser, Page
 
 from conductor.command.template_store import TemplateStore
 
+from browser_tests.desk_hold import close_context
 from browser_tests.test_studio_lifecycle import (  # noqa: F401
     CONFIRM_GATE,
     RUN_ID,
@@ -120,7 +121,7 @@ def test_a_gates_road_offers_the_four_words_a_gate_can_produce(
         assert _condition_control(page, GATE, DOING).input_value() == ""
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_step_that_carries_out_no_work_is_offered_no_condition(
@@ -163,7 +164,7 @@ def test_a_step_that_carries_out_no_work_is_offered_no_condition(
         ).count() == 0
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- 2. choosing one reaches the durable document -----------------------------
@@ -193,7 +194,7 @@ def test_choosing_a_condition_reaches_the_saved_revision(
             (GATE, DOING)]
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_clearing_it_again_removes_the_condition_from_the_document(
@@ -219,7 +220,7 @@ def test_clearing_it_again_removes_the_condition_from_the_document(
         assert all(word is None for word in stored.values())
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- 3. the edge panel offers the SAME control --------------------------------
@@ -252,7 +253,7 @@ def test_the_edge_panel_offers_the_same_words_and_writes_the_same_edit(
             "on_rejected")
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_decision_routing_reads_back_the_road_that_was_just_drawn(
@@ -278,7 +279,7 @@ def test_decision_routing_reads_back_the_road_that_was_just_drawn(
                 f"approved → {DOING}")
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- 4. the Runs screen states the plan word, and never as a success ----------
@@ -313,7 +314,7 @@ def test_the_runs_screen_states_the_plan_word_without_dressing_it_as_success(
         assert "studio-chip--pass" not in (chip.get_attribute("class") or "")
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_step_waiting_at_a_join_is_told_that_ALL_roads_are_required(
@@ -334,7 +335,7 @@ def test_a_step_waiting_at_a_join_is_told_that_ALL_roads_are_required(
         assert "waiting for a predecessor" not in text.lower()
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 # -- 5. the Decisions screen names what an answer really unblocks -------------
@@ -419,7 +420,7 @@ def test_the_decisions_screen_names_the_step_this_answer_unblocks(
         assert "nothing here claims to know" not in detail, detail
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)
 
 
 def test_a_build_that_answers_no_schedule_says_so_rather_than_nothing(
@@ -456,4 +457,4 @@ def test_a_build_that_answers_no_schedule_says_so_rather_than_nothing(
             page.unroute(f"**/command/runs/{ROUTED_RUN}")
     finally:
         assert window.problems == []
-        page.context.close()
+        close_context(page.context)

@@ -249,3 +249,88 @@ def test_a_read_that_lands_on_another_run_after_a_stale_one_resets_and_reads_tha
     """, modules=MODULES)
     assert out == {"keptWhileStale": "Mine", "title": "",
                    "asked": ["/command/runs/run-one/accept", "/command/runs/run-two/accept"]}
+
+
+#: The short sentence the card says beside its controls while the run is read again, in each
+#: language, and a record the explicit read may bring (to see its answer land on the card).
+UPDATING = {"en": "Updating the run's data…", "ru": "Обновляем данные запуска…"}
+RECORD = ("{kind: 'files', basis: {}, "
+          "commit: {branch: 'conduct/run-one', commit: 'd'.repeat(40)}}")
+
+
+def test_a_stale_read_of_the_same_run_says_the_data_is_being_updated_beside_the_controls():
+    out = run_js(DOM + STALE + """
+      const makeIn = (locale) => acceptHost.createAcceptHost({door: {readJson: facts,
+        submit: async () => ({status: 'accepted', payload: {accept: preview}})},
+        binding: () => chosen, locale: () => locale, onChange: () => {}, onForeign: () => {}});
+      const said = (host, value) => ({pult: hasText(host.pult, value),
+        detail: hasText(host.detail, value)});
+      const result = {};
+      for (const [locale, value] of Object.entries(d)) {
+        const host = makeIn(locale);
+        ready(host); await tick(); ready(host);
+        const before = said(host, value);
+        reread(host);
+        const during = said(host, value);
+        ready(host);
+        result[locale] = {before, during, after: said(host, value)};
+      }
+      console.log(JSON.stringify(result));
+    """, modules=MODULES, data=UPDATING)
+    never, always = {"pult": False, "detail": False}, {"pult": True, "detail": True}
+    assert out == {language: {"before": never, "during": always, "after": never}
+                   for language in ("en", "ru")}
+
+
+def test_the_card_does_not_say_the_data_is_updating_for_a_read_that_is_not_of_the_same_run():
+    out = run_js(DOM + STALE + """
+      const host = make({readJson: facts, submit: async () => ({})});
+      ready(host); await tick(); ready(host);
+      chosen = {...chosen, ready: false, runId: 'run-two'};
+      host.render(stale('task-one', 'run-two'), true);
+      console.log(JSON.stringify({said: hasText(host.detail, d), noRun:
+        hasText(host.detail, 'Choose a run first.')}));
+    """, modules=MODULES, data=UPDATING["en"])
+    assert out == {"said": False, "noRun": True}
+
+
+def test_the_explicit_read_of_the_record_is_allowed_during_a_stale_read_and_its_answer_lands():
+    out = run_js(DOM + STALE + f"""
+      let reads = 0;
+      const door = {{readJson: async () => {{reads += 1;
+        return reads === 1 ? facts() : {RECORD};}},
+        submit: async () => ({{status: 'accepted', payload: {{accept: preview}}}})}};
+      const host = make(door);
+      ready(host); await tick(); ready(host);
+      typeTitle(host, 'Mine'); ready(host);
+      reread(host);
+      const button = find(host.detail, 'Read acceptance record');
+      const allowed = button.disabled === false;
+      button.listeners.click(); await tick();
+      reread(host);
+      console.log(JSON.stringify({{allowed, reads,
+        landed: hasText(host.detail, 'd'.repeat(40))}}));
+    """, modules=MODULES)
+    assert out == {"allowed": True, "reads": 2, "landed": True}
+
+
+def test_the_answer_of_an_explicit_read_made_during_a_stale_read_is_dropped_for_another_run():
+    out = run_js(DOM + STALE + f"""
+      let release, reads = [];
+      const door = {{readJson: (target) => {{ reads.push(target);
+        return reads.length === 2 ? new Promise((done) => {{ release = done; }}) : facts();}},
+        submit: async () => ({{status: 'accepted', payload: {{accept: preview}}}})}};
+      const host = make(door);
+      ready(host); await tick(); ready(host);
+      reread(host);
+      find(host.detail, 'Read acceptance record').listeners.click(); await tick();
+      chosen = {{...chosen, taskId: 'task-two', runId: 'run-two', ready: true}};
+      host.render(desk('task-two', 'run-two'), true); await tick();
+      release({RECORD}); await tick();
+      host.render(desk('task-two', 'run-two'), true);
+      console.log(JSON.stringify({{reads, shown: hasText(host.detail, 'd'.repeat(40)),
+        subject: host.detail['data-subject']}}));
+    """, modules=MODULES)
+    assert out == {"reads": ["/command/runs/run-one/accept", "/command/runs/run-one/accept",
+                             "/command/runs/run-two/accept"],
+                   "shown": False, "subject": "task-two/run-two"}
