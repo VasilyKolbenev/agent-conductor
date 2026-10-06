@@ -188,8 +188,8 @@ SPEC_RUSSIAN = {
     "outcome_rejected": "Отклонено", "outcome_cancelled": "Отменено",
     "ended": "Завершён без результата", "no_outcome": "Результата пока нет"}
 #: The words of the table of reasons (spec 4.1.9), verbatim, under the copy's `attention_` keys, but
-#: for `recovery_required`: the spec says "the OS needs a restart" there, which a review ruling found
-#: wrong once an older record or a changed boot environment needs a preparation first.
+#: for `recovery_required`: the spec says "the OS needs a restart" there, which a review ruling
+#: found wrong once an older record or a changed boot environment needs a preparation first.
 ATTENTION_WORDS = {
     "gate_decision": "Решение на гейте", "confirmation": "Подтвердите шаг",
     "input_document": "Нужен документ", "reconcile": "Нужна сверка состояния вне окна",

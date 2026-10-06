@@ -1,9 +1,9 @@
 """The typed login-lease refusal and the runtime's words for it, held at their own seams.
 
 `test_login_lease_refusal_reason` drives a whole dispatch. This file holds the two halves it stands
-on: the guard that makes the typed refusal (only for an entry that was refused, never for a refusal
-that comes after the task ran), and the runtime's table of words for the closed ids, which is held to
-the sources that raise them and never echoes text the adapter wrote.
+on: the guard that makes the typed refusal (only for an entry that was refused, never for a
+refusal that comes after the task ran), and the runtime's table of words for the closed ids, which
+is held to the sources that raise them and never echoes text the adapter wrote.
 """
 from __future__ import annotations
 

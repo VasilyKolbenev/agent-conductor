@@ -234,7 +234,7 @@ def test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart
     for key in UNFINISHED:
         english, russian = said[key]
         assert not re.search("restart", english, re.IGNORECASE), f"{key}: {english!r}"
-        assert not re.search("перезагрузк|перезапуск", russian, re.IGNORECASE), f"{key}: {russian!r}"
+        assert not re.search("перезагрузк|перезапуск", russian, re.I), f"{key}: {russian!r}"
         assert re.search("recover", english, re.IGNORECASE), f"{key}: {english!r}"
         assert re.search("восстановлен", russian, re.IGNORECASE), f"{key}: {russian!r}"
     for key in SAYS_THE_COMMAND:
