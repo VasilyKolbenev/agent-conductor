@@ -29,7 +29,8 @@ from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
     clone, dialogs, events, github, instance, job, lifecycle, logins, operations, owner_ops,
-    reader, refusals, registry, snapshots, state, summary, supervisor, project_targets)
+    reader, refusals, registry, snapshots, state, summary, supervisor, project_targets,
+    tool_candidates)
 from conductor.hub.refusals import HubRefusal
 
 DEFAULT_PROJECTS_HOME = "ConductProjects"
@@ -75,7 +76,8 @@ class HubService:
                  job_policy: Callable[[], str] = job.own_policy,
                  folder_ok: Callable[[registry.Project], bool] | None = None,
                  pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
-                 operation_popen=None, dialog_popen=None, owner_popen=None) -> None:
+                 operation_popen=None, dialog_popen=None, owner_popen=None,
+                 candidates: tool_candidates.ToolCandidates | None = None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -97,13 +99,20 @@ class HubService:
             status=self._added_status, clone_cancel=self._clones.cancel, **options)
         self._logins = logins.LoginView(self._home, lambda: self._registry().projects,
                                         sup.has_live_active, self._closing_owed)
+        self._candidates = (tool_candidates.ToolCandidates(self._home) if candidates is None
+                            else candidates)
         owner_options = {} if owner_popen is None else {"popen": owner_popen}
         self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
                                              status=self._added_status, policy=self._job_policy,
                                              **owner_options)
 
     def start(self) -> None:
-        """Seed the ledger of first-seen moments from the snapshots the last hub left."""
+        """Seed the ledger of first-seen moments from the snapshots the last hub left.
+
+        It also starts the one search for git and gh candidates of this hub's life, on a thread
+        of its own; the page reads the setup again when it ends.
+        """
+        self._candidates.start(lambda: self._bus.publish("setup"))
         try:
             self._clone_recovery = self._clones.recover()
             said = [f"clone attempt {ident} is unfinished: {self._clones.unfinished[ident]}"
@@ -522,14 +531,15 @@ class HubService:
         try:
             pin = tool_pins.read_pin(tool, self._home)
         except tool_pins.ToolPinError:
-            return _tool_entry("unreadable", None)
+            return _tool_entry("unreadable", None)       # the file is the owner's to fix: no offer
         if pin is None:
-            return _tool_entry("not_pinned", None)
+            return _tool_entry("not_pinned", None, self._candidates.offered(tool, settled=False))
         held = self._verified.get(tool)
         if held is None or held[0] != pin:
             held = (pin, self._verified_state(tool))
             self._verified[tool] = held
-        return _tool_entry(held[1], pin)
+        return _tool_entry(held[1], pin,
+                           self._candidates.offered(tool, settled=held[1] == "pinned"))
 
     def _verified_state(self, tool: str) -> str:
         try:
@@ -632,7 +642,8 @@ def _folder_is_the_listed_one(project: registry.Project) -> bool:
         return False
 
 
-def _tool_entry(found: str, pin: tool_pins.ToolPin | None) -> dict[str, Any]:
+def _tool_entry(found: str, pin: tool_pins.ToolPin | None,
+                candidates: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     display = None if pin is None else f"{Path(pin.path).parent.name}{os.sep}{Path(pin.path).name}"
     return {"state": found, "display": display, "version": None if pin is None else pin.version,
-            "candidates": []}
+            "candidates": [] if candidates is None else candidates}
