@@ -41,6 +41,11 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 _ALIVE = ("starting", "running", "stopping", "stop_overdue")
 _UNRECOVERED = ("recovery_required", "stop_uncertain")
 _TOOLS = ("gh", "git")
+_CANDIDATE = re.compile(r"cand-[0-9a-f]{32}")
+#: What a pin file that is the problem is called in the refusal's detail: the closed words of the
+#: `reason` of `tool_version_unreadable`. Every code `tool_pins` proposes for its file is a key.
+PIN_FILE_REASONS = {"tools_file_invalid": "corrupt", "tools_file_unreadable": "unreadable",
+                    "tools_file_unwritable": "unwritable"}
 _RECOVER_CLONES = ("to finish them, stop the hub, then run: conduct ownership recover-clones "
                    "(run it with --prepare-restart first when it says a preparation is needed)")
 
@@ -77,7 +82,8 @@ class HubService:
                  folder_ok: Callable[[registry.Project], bool] | None = None,
                  pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
                  operation_popen=None, dialog_popen=None, owner_popen=None,
-                 candidates: tool_candidates.ToolCandidates | None = None) -> None:
+                 candidates: tool_candidates.ToolCandidates | None = None,
+                 pin_run: tool_pins.Runner | None = None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -101,6 +107,7 @@ class HubService:
                                         sup.has_live_active, self._closing_owed)
         self._candidates = (tool_candidates.ToolCandidates(self._home) if candidates is None
                             else candidates)
+        self._pin_run = pin_run
         owner_options = {} if owner_popen is None else {"popen": owner_popen}
         self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
                                              status=self._added_status, policy=self._job_policy,
@@ -442,6 +449,32 @@ class HubService:
             raise HubRefusal("recover_not_needed")
         return 202, {"operation_id": running or self._owner_ops.recover_login(
             found.key, found.auth_home)}
+
+    def pin_tool(self, tool: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """`POST /hub/tools/<tool>/pin`: pin a candidate the hub itself found (spec 8.8).
+
+        The page names an id; the path is the hub's own. The pin is made only while the tool
+        still says the version the person was shown. A pin file that is the problem is told apart
+        from a tool whose version cannot be read by `detail.reason`.
+        """
+        ident = body["candidate_id"]
+        if type(ident) is not str or _CANDIDATE.fullmatch(ident) is None:
+            raise HubRefusal("contract_invalid")
+        found = self._candidates.get(tool, ident)
+        if found is None:
+            raise HubRefusal("candidate_not_found")
+        try:
+            pin = tool_pins.pin_tool(tool, found.path, folder=self._home, run=self._pin_run,
+                                     expect_version=found.version)
+        except tool_pins.ToolPinError as error:
+            if error.code in PIN_FILE_REASONS:
+                raise HubRefusal("tool_version_unreadable",
+                                 {"reason": PIN_FILE_REASONS[error.code]}) from error
+            raise HubRefusal(error.code) from error
+        self._verified.pop(tool, None)
+        self._bus.publish("setup")
+        return 200, {"tool": tool, "state": "pinned", "version": pin.version,
+                     "display": _tool_entry("pinned", pin)["display"]}
 
     def queue_order(self, order: object) -> tuple[int, dict[str, Any]]:
         """`POST /hub/queue/order`: reorder the queue; anything but a permutation writes nothing."""
