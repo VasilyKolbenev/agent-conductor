@@ -20,6 +20,7 @@ from .harness_profile import (
 )
 from .harness_workspace import INSTRUCTION_LIMIT, WorkspaceNotContained, work_route
 from .headless_cli import HeadlessCliTransport, residue_detail
+from .login_lifetime import LoginLeaseRefused
 from .headless_values import (
     AttemptEvidence,
     attempt_relation,
@@ -201,12 +202,20 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         unroutable = self._unroutable(prepared.request, prepared.model)
         if unroutable is not None:
             return unroutable
+        return self._review_owned(prepared.request, args, prepared.model)
+
+    def _review_owned(
+            self, request: ActionRequest, args: DeepReviewArgs,
+            model: str | None) -> ActionResultReceipt:
+        """The review turn, taken while this adapter owns its workspace."""
         with self._workspace.owned():
             try:
-                return self._review(prepared.request, args, prepared.model)
+                return self._review(request, args, model)
+            except LoginLeaseRefused as refused:  # two closed ids, never the owner's sentence
+                return self._receipt(request, "failed", None, str(refused))
             except WorkspaceNotContained:
                 return self._receipt(
-                    prepared.request, "failed", None,
+                    request, "failed", None,
                     "the review workspace is not locally contained, so no task was spawned")
             finally:
                 self._forget_login_sample()

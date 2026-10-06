@@ -105,7 +105,7 @@ from .harness_workspace import (
 from . import login_home
 from ._procgroup import COMMAND_LINE_LIMIT, command_line_units
 from .headless_login import LoginRoad
-from .login_lifetime import owned_login_attempt
+from .login_lifetime import LoginLeaseRefused, owned_login_attempt
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .task_binding import (
@@ -370,6 +370,8 @@ class HeadlessCliTransport(
                 return self._dispatch(request, args, prepared.model)
             except InstructionChanged as changed:
                 return self._receipt(request, "failed", None, str(changed))
+            except LoginLeaseRefused as refused:  # two closed ids, never the owner's sentence
+                return self._receipt(request, "failed", None, str(refused))
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
             finally:
