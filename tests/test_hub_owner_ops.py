@@ -14,10 +14,13 @@ import pytest
 from conductor.hub import events, operations, owner_ops, refusals, routes
 from tests._hub_world import World, id_of
 from tests.test_hub_operations import settled
-from tests.test_hub_owner_command import (LEGACY, NOT_PROVEN, OTHER_ENVIRONMENT, REWORDED,
-                                          SAME_BOOT, UNMEASURED, Held, fake)
+from tests.test_hub_owner_command import (LEGACY, LOGIN_LEGACY, LOGIN_OTHER, LOGIN_SAME_BOOT,
+                                          NOT_PROVEN, OTHER_ENVIRONMENT, REWORDED, SAME_BOOT,
+                                          UNMEASURED, Held, fake)
 
 RECOVERED = json.dumps({"phase": "recovered", "generation": 4})
+LOGIN_RECOVERED = json.dumps({"state": "recovered", "resource": "sha256:ab"})
+KEY, FOLDER = "ab" * 32, r"C:\logins\shared"
 
 
 @pytest.fixture
@@ -230,3 +233,109 @@ def test_a_hub_job_that_would_end_a_command_with_the_hub_fails_the_row_and_start
     world.gone("a", "serving", head="opened")
     row = settled(ledger, _recover(world, ops))
     assert started == [] and (row["state"], row["code"]) == ("failed", "subprocess_failed")
+
+
+# -- the recovery of a shared login (recover-login) ------------------------------------------------
+
+
+def test_a_login_recovery_runs_the_command_for_the_folder_it_was_given_and_ends_on_its_object(
+        world):
+    seen = []
+    ledger, ops = _ops(world, fake(out=LOGIN_RECOVERED, seen=seen))
+    row = settled(ledger, ops.recover_login(KEY, FOLDER))
+    ((argv, _kwargs),) = seen
+    assert argv[3:] == ["ownership", "recover-login", "--auth-home", FOLDER]
+    assert (row["kind"], row["step"], row["project_id"], row["source"]) == (
+        "recover_login", "recover_login", None, None)
+    assert (row["state"], row["code"], row["detail"], row["result"]) == (
+        "succeeded", None, None, None)
+    assert FOLDER not in json.dumps(row)
+
+
+@pytest.mark.parametrize("out", ["{}", "", "not json", RECOVERED, LOGIN_RECOVERED + "\n{}\n"])
+def test_a_login_recovery_that_exits_zero_without_its_one_recovered_object_is_subprocess_failed(
+        world, out):
+    ledger, ops = _ops(world, fake(out=out))
+    row = settled(ledger, ops.recover_login(KEY, FOLDER))
+    assert (row["state"], row["code"], row["detail"]) == ("failed", "subprocess_failed", None)
+
+
+@pytest.mark.parametrize(("err", "code"), [
+    ("login_recovery_required: restart the OS\n", "login_recovery_required"),
+    ("login_owner_busy: x\n", "login_owner_busy"),
+    ("login_ownership_invalid: x\n", "login_ownership_invalid"),
+    ("login_context_required: x\n", "login_context_required"),
+    ("recovery_refused: x\n", "subprocess_failed"),
+    ("recovery_required: restart the OS\n", "subprocess_failed"),
+    ("Traceback (most recent call last):\n", "subprocess_failed")])
+def test_a_refused_login_recovery_ends_failed_with_a_code_of_its_step(world, err, code):
+    ledger, ops = _ops(world, fake(err=err, code=1))
+    row = settled(ledger, ops.recover_login(KEY, FOLDER))
+    assert (row["state"], row["code"]) == ("failed", code) and FOLDER not in json.dumps(row)
+
+
+@pytest.mark.parametrize(("err", "word"), [
+    (LOGIN_SAME_BOOT, "restart_needed"), (LOGIN_LEGACY, "prepare_needed"),
+    (LOGIN_OTHER, "other_environment"),
+    ("login_recovery_required: no restart is proven: x\n", "not_proven"),
+    ("login_recovery_required: a sentence nobody knows\n", "not_proven")])
+def test_a_login_recovery_that_needs_a_restart_or_a_preparation_says_which_in_the_row(
+        world, err, word):
+    ledger, ops = _ops(world, fake(err=err, code=1))
+    row = settled(ledger, ops.recover_login(KEY, FOLDER))
+    assert (row["state"], row["code"], row["detail"]) == (
+        "failed", "login_recovery_required", {"reason": word})
+    assert FOLDER not in json.dumps(row)
+
+
+@pytest.mark.parametrize("err", [LOGIN_SAME_BOOT, LOGIN_LEGACY, LOGIN_OTHER, ""])
+def test_no_command_the_hub_runs_for_a_login_recovery_carries_a_prepare_flag(world, err):
+    seen = []
+    ledger, ops = _ops(world, fake(err=err, code=1, seen=seen))
+    settled(ledger, ops.recover_login(KEY, FOLDER))
+    assert seen and not [arg for argv, _ in seen for arg in argv if "prepare" in arg]
+
+
+def test_a_second_login_recovery_of_the_same_key_while_one_runs_is_the_operation_running(world):
+    command = Held(out=LOGIN_RECOVERED)
+    ledger, ops = _ops(world, command)
+    first = ops.recover_login(KEY, FOLDER)
+    assert command.entered.wait(10)
+    assert ops.recover_login(KEY, FOLDER) == first and ops.running_login(KEY) == first
+    assert len(command.started) == 1
+    other = ops.recover_login("cd" * 32, FOLDER + "-2")          # another login is its own
+    assert other != first
+    command.release.set()
+    assert settled(ledger, first)["state"] == "succeeded" and settled(ledger, other)
+    assert ops.running_login(KEY) is None
+    assert ops.recover_login(KEY, FOLDER) != first               # after it ended: a new one
+
+
+def test_a_login_recovery_runs_beside_a_project_operation(world):
+    ledger, ops = _ops(world, fake(out=LOGIN_RECOVERED))
+    ledger.open_project_row("recover", id_of("a"), "recover")     # stays running
+    assert settled(ledger, ops.recover_login(KEY, FOLDER))["state"] == "succeeded"
+    assert ledger.running_for(id_of("a")) is not None
+
+
+def test_a_hub_that_is_closing_starts_no_login_recovery_and_hands_back_the_one_that_runs(world):
+    command = Held(out=LOGIN_RECOVERED)
+    ledger, ops = _ops(world, command)
+    flying = ops.recover_login(KEY, FOLDER)
+    assert command.entered.wait(10)
+    ops.close()
+    assert ops.recover_login(KEY, FOLDER) == flying              # an idempotent answer is harmless
+    with pytest.raises(refusals.HubRefusal) as sealed:
+        ops.recover_login("cd" * 32, FOLDER + "-2")
+    assert sealed.value.code == "operation_busy" and len(command.started) == 1
+    command.release.set()
+    assert settled(ledger, flying)["state"] == "succeeded"
+
+
+def test_a_fault_inside_a_login_recovery_ends_the_row_failed_in_the_closed_vocabulary(world):
+    def broken(_argv, **_kwargs):
+        raise RuntimeError("the popen seam broke")
+
+    ledger, ops = _ops(world, broken)
+    row = settled(ledger, ops.recover_login(KEY, FOLDER))
+    assert (row["state"], row["code"], row["detail"]) == ("failed", "subprocess_failed", None)

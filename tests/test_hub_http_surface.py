@@ -313,7 +313,7 @@ LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "
         ("POST", "/hub/projects/<project_id>/activate"),
         ("POST", "/hub/projects/<project_id>/view"), ("POST", "/hub/projects/<project_id>/stop"),
         ("POST", "/hub/projects/<project_id>/forget"), ("POST", "/hub/queue/order"),
-        ("POST", "/hub/projects/<project_id>/recover")}
+        ("POST", "/hub/projects/<project_id>/recover"), ("POST", "/hub/logins/<login_key>/recover")}
 
 
 def test_the_live_routes_are_these_and_are_all_rows_of_the_table():
@@ -338,7 +338,7 @@ def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_sa
         assert _code(reply, 404) == "route_not_found", (row.method, row.path)
         assert _envelope(reply)["detail"] == {"reason": "not in this build"}
         checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 3
+    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 2
 
 
 def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):
@@ -685,7 +685,7 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
                "project_not_running", "project_queue_changed", "operation_not_found",
                "pick_not_found", "dialog_busy", "dialog_unavailable",
                "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed",
-               "operation_not_cancellable", "recover_not_needed"}
+               "operation_not_cancellable", "recover_not_needed", "login_not_found"}
     # Folder and scratch admission are live. GitHub clone remains a separate delivery.
     add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",
                     "pick_invalid", "legacy_writers_unconfirmed", "folder_exists",

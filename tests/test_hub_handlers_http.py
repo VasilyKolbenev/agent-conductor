@@ -10,33 +10,44 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 
 import pytest
 
 from conductor.command import operator_config
 from tests._hub_stack import A, B, Stack
-from tests.test_hub_owner_command import fake
+from tests.test_hub_owner_command import Running, fake
 from tests.test_login_recovery_prepare import legacy_lease
 from tests.test_provider_profile import config
 
 RECOVERED = json.dumps({"phase": "recovered"})
+LOGIN_RECOVERED = json.dumps({"state": "recovered", "resource": "sha256:ab"})
 
 
 class Command:
-    """The fake owner command of a stack: a test says what it prints and what it leaves behind."""
+    """The fake owner command of a stack: a test says what it prints and what it leaves behind.
+
+    `leaves` is `(project name, head)` set as the command runs, `on_run` is anything else it
+    leaves, and a command with a `release` event runs on until the test sets it.
+    """
 
     def __init__(self) -> None:
         self.out, self.err, self.code = RECOVERED, "", 0
         self.seen: list[list[str]] = []
-        self.leaves: tuple[str, str] | None = None      # (project name, head) set as it runs
+        self.leaves: tuple[str, str] | None = None
+        self.on_run = None
+        self.release: threading.Event | None = None
         self.world = None
 
     def __call__(self, argv, **kwargs):
         self.seen.append(list(argv))
         if self.leaves is not None:
             self.world.heads[self.leaves[0]] = self.leaves[1]
-        return fake(out=self.out, err=self.err, code=self.code)(argv, **kwargs)
+        if self.on_run is not None:
+            self.on_run()
+        process = fake(out=self.out, err=self.err, code=self.code)(argv, **kwargs)
+        return process if self.release is None else Running(process, self.release)
 
 
 @pytest.fixture
@@ -193,3 +204,155 @@ def test_a_registry_nobody_can_read_leaves_the_setup_answering_with_no_logins(
     (stack.world.home / "registry.json").write_text("{not json", encoding="utf-8")
     reply = stack.get("/hub/setup")
     assert reply.status == 200 and reply.json()["logins"] == []
+
+
+# -- POST /hub/logins/<login_key>/recover ----------------------------------------------------------
+
+
+def _leased_login(stack, tmp_path, monkeypatch):
+    """A login folder of the profile whose lease record nobody closed: `(folder, box, key)`."""
+    login, box = _name_a_login(stack, tmp_path, monkeypatch, leased=True)
+    (entry,) = stack.get("/hub/setup").json()["logins"]
+    return login, box, entry["login_key"]
+
+
+def _wait_until(condition) -> None:
+    deadline = time.monotonic() + 5
+    while not condition():
+        assert time.monotonic() < deadline, "the condition never held"
+        time.sleep(0.01)
+
+
+def _the_lease_is_retired_as_the_command_runs(box):
+    return lambda: (box / "active.json").rename(box / "recovered-test.json")
+
+
+def test_a_login_recovery_passes_the_folder_the_hub_found_and_no_row_holds_a_path(
+        stack, tmp_path, monkeypatch):
+    login, box, key = _leased_login(stack, tmp_path, monkeypatch)
+    stack.command.out = LOGIN_RECOVERED
+    stack.command.on_run = _the_lease_is_retired_as_the_command_runs(box)
+    reply = stack.post(f"/hub/logins/{key}/recover")
+    assert reply.status == 202 and set(reply.json()) == {"operation_id"}
+    row = _settled(stack, reply.json()["operation_id"])
+    assert stack.command.seen[0][3:] == ["ownership", "recover-login", "--auth-home",
+                                         str(login.resolve())]
+    assert (row["kind"], row["step"], row["project_id"], row["source"]) == (
+        "recover_login", "recover_login", None, None)
+    assert (row["state"], row["code"], row["detail"], row["result"]) == (
+        "succeeded", None, None, None)
+    assert b"a-distinctive-login" not in json.dumps(row).encode("utf-8") + reply.body
+    assert [one["state"] for one in stack.get("/hub/setup").json()["logins"]] == ["free"]
+
+
+def test_an_unknown_key_is_login_not_found_and_changes_nothing(stack, tmp_path, monkeypatch):
+    _leased_login(stack, tmp_path, monkeypatch)
+    _refused_and_unchanged(stack, "/hub/logins/" + "ab" * 32 + "/recover", 404,
+                           "login_not_found")
+
+
+def test_a_box_with_no_lease_record_is_recover_not_needed(stack, tmp_path, monkeypatch):
+    _name_a_login(stack, tmp_path, monkeypatch, leased=False)
+    (entry,) = stack.get("/hub/setup").json()["logins"]
+    _refused_and_unchanged(stack, f"/hub/logins/{entry['login_key']}/recover", 409,
+                           "recover_not_needed")
+
+
+def test_a_box_an_active_child_may_hold_is_recover_not_needed(stack, tmp_path, monkeypatch):
+    _login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
+    stack.world.running("a", mode="active")
+    assert [one["state"] for one in stack.get("/hub/setup").json()["logins"]] == ["in_use"]
+    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "recover_not_needed")
+
+
+def test_a_hub_state_nobody_can_read_makes_a_login_recovery_not_needed_not_offered(
+        stack, tmp_path, monkeypatch):
+    _login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
+    (stack.world.home / "hub-state.json").write_bytes(b"{not json")
+    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "recover_not_needed")
+
+
+@pytest.mark.parametrize(("err", "code", "reason"), [
+    ("login_recovery_required: restart the OS before recovering the shared login lease "
+     "(do a full Restart, not a shutdown)\n", "login_recovery_required", "restart_needed"),
+    ("login_recovery_required: the lease predates the boot counter and cannot prove a "
+     "restart; run `ownership recover-login --prepare-restart`\n", "login_recovery_required",
+     "prepare_needed"),
+    ("login_recovery_required: no restart is proven: x\n", "login_recovery_required",
+     "not_proven"),
+    ("login_owner_busy: x\n", "login_owner_busy", None),
+    ("login_ownership_invalid: x\n", "login_ownership_invalid", None),
+    ("login_context_required: x\n", "login_context_required", None),
+    ("recovery_refused: x\n", "subprocess_failed", None)])
+def test_a_refused_login_recovery_ends_failed_with_its_code_and_the_reason_of_a_restart_code(
+        stack, tmp_path, monkeypatch, err, code, reason):
+    login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
+    stack.command.code, stack.command.out, stack.command.err = 1, "", err
+    row = _settled(stack, stack.post(f"/hub/logins/{key}/recover").json()["operation_id"])
+    assert (row["state"], row["code"]) == ("failed", code)
+    assert row["detail"] == (None if reason is None else {"reason": reason})
+    assert "prepare" not in " ".join(arg for argv in stack.command.seen for arg in argv)
+    assert str(login).encode("utf-8") not in json.dumps(row).encode("utf-8")
+
+
+def test_a_second_login_recovery_of_the_same_key_answers_the_operation_already_running(
+        stack, tmp_path, monkeypatch):
+    _login, box, key = _leased_login(stack, tmp_path, monkeypatch)
+    stack.command.out, stack.command.release = LOGIN_RECOVERED, threading.Event()
+    stack.command.on_run = _the_lease_is_retired_as_the_command_runs(box)
+    first = stack.post(f"/hub/logins/{key}/recover")
+    _wait_until(lambda: len(stack.command.seen) == 1)       # the command runs; its lease is gone
+    again = stack.post(f"/hub/logins/{key}/recover")
+    assert (first.status, again.status) == (202, 202)
+    assert again.json()["operation_id"] == first.json()["operation_id"]
+    assert len(stack.command.seen) == 1
+    stack.command.release.set()
+    assert _settled(stack, first.json()["operation_id"])["state"] == "succeeded"
+    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "recover_not_needed")
+
+
+def test_a_login_recovery_runs_beside_a_project_operation_and_an_add(
+        tmp_path, monkeypatch):
+    from conductor.hub import operations
+    adding = Command()
+    adding.release, adding.out = threading.Event(), ""
+    command = Command()
+    made = Stack(tmp_path, owner_popen=command, operation_popen=adding)
+    command.world = made.world
+    command.out = LOGIN_RECOVERED
+    try:
+        _login, box = _name_a_login(made, tmp_path, monkeypatch, leased=True)
+        command.on_run = _the_lease_is_retired_as_the_command_runs(box)
+        key = made.get("/hub/setup").json()["logins"][0]["login_key"]
+        made.service._operations.open_project_row("recover", A, "recover")     # stays running
+        made.service._operations.begin(operations.FolderPick(str(tmp_path / "x"), "none"),
+                                       "x", True)                              # an add runs on
+        reply = made.post(f"/hub/logins/{key}/recover")
+        assert reply.status == 202
+        assert _settled(made, reply.json()["operation_id"])["state"] == "succeeded"
+    finally:
+        adding.release.set()
+        made.close()
+
+
+def test_the_setup_says_so_when_a_login_recovery_has_ended_and_the_box_changed(
+        stack, tmp_path, monkeypatch):
+    _login, box, key = _leased_login(stack, tmp_path, monkeypatch)
+    mailbox = stack.bus.register()
+    stack.tick()                                            # the baseline of the loop
+    mailbox.drain()
+    stack.command.out = LOGIN_RECOVERED
+    stack.command.on_run = _the_lease_is_retired_as_the_command_runs(box)
+    ident = stack.post(f"/hub/logins/{key}/recover").json()["operation_id"]
+    _settled(stack, ident)
+    stack.tick()
+    frames = [json.loads(chunk[len(b"data: "):]) for chunk in mailbox.drain()]
+    assert {"kind": "setup"} in frames
+    assert {"kind": "operation", "operation_id": ident} in frames
+
+
+def test_a_hub_that_is_closing_refuses_a_new_login_recovery_and_starts_no_command(
+        stack, tmp_path, monkeypatch):
+    _login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
+    stack.service.close_operations()
+    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "operation_busy")

@@ -387,6 +387,24 @@ class HubService:
             raise HubRefusal(refused.code, {"project_id": project_id}) from refused
         return 202, {"operation_id": self._owner_ops.recover(project)}
 
+    def recover_login(self, login_key: str) -> tuple[int, dict[str, str]]:
+        """`POST .../recover` of a login: run `conduct ownership recover-login` for its folder.
+
+        The key names a login the hub itself found; the folder is the hub's, never the page's. A
+        second click while the recovery runs is that operation again (no refusal).
+        """
+        try:
+            found = self._logins.find(login_key)
+        except HubRefusal:
+            found = None                   # a registry nobody can read names no login
+        if found is None:
+            raise HubRefusal("login_not_found")
+        running = self._owner_ops.running_login(found.key)
+        if running is None and self._logins.state(found) != "unclosed":
+            raise HubRefusal("recover_not_needed")
+        return 202, {"operation_id": running or self._owner_ops.recover_login(
+            found.key, found.auth_home)}
+
     def queue_order(self, order: object) -> tuple[int, dict[str, Any]]:
         """`POST /hub/queue/order`: reorder the queue; anything but a permutation writes nothing."""
         if not isinstance(order, list) or not all(

@@ -211,6 +211,8 @@ class OwnerOps:
         self._popen, self._policy, self._head = popen, policy, tuple(head)
         self._lock = threading.Lock()
         self._closing = threading.Event()
+        self._login_lock = threading.Lock()
+        self._logins: dict[str, str] = {}
 
     def require_free(self, project_id: str) -> None:
         """Refuse `project_busy` while an operation of this project runs."""
@@ -241,6 +243,47 @@ class OwnerOps:
             self._ledger.update_row(ident, state="succeeded")
         else:
             self._fail(ident, ran, "recover")
+
+    def recover_login(self, key: str, auth_home: str) -> str:
+        """Open the `recover_login` operation of a login and run `conduct ownership recover-login`.
+
+        A second call for a key whose operation still runs is that operation again (a double
+        click starts nothing), even at the hub's exit; any other call at the exit is refused.
+
+        Raises:
+            HubRefusal: `operation_busy` when the hub is closing and the key has no operation
+                running.
+        """
+        with self._login_lock:
+            running = self._running_login(key)
+            if running is not None:
+                return running
+            self._require_open("operation_busy")
+            ident = self._ledger.open_login_row()
+            self._logins[key] = ident
+        self._thread(self._recover_login, ident, auth_home)
+        return ident
+
+    def running_login(self, key: str) -> str | None:
+        """The id of the login recovery of this key that still runs, if any."""
+        with self._login_lock:
+            return self._running_login(key)
+
+    def _running_login(self, key: str) -> str | None:
+        ident = self._logins.get(key)
+        if ident is None:
+            return None
+        try:
+            return ident if self._ledger.get(ident)["state"] == "running" else None
+        except refusals.HubRefusal:        # the row left the ledger: it ended long ago
+            return None
+
+    def _recover_login(self, ident: str, auth_home: str) -> None:
+        ran = self._command(("ownership", "recover-login", "--auth-home", auth_home))
+        if ran.code == 0 and recovered_login(ran.out):
+            self._ledger.update_row(ident, state="succeeded")
+        else:
+            self._fail(ident, ran, "recover_login")
 
     def _require_open(self, code: str, project_id: str | None = None) -> None:
         if self._closing.is_set():

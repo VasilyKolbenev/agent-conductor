@@ -64,10 +64,10 @@ class Held:
         self.started.append(argv)
         process = self._launch(argv, **kwargs)
         self.entered.set()
-        return _Running(process, self.release)
+        return Running(process, self.release)
 
 
-class _Running:
+class Running:
     def __init__(self, process, release):
         self._process, self._release = process, release
 
