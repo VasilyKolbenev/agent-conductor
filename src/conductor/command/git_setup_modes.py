@@ -8,6 +8,7 @@ there is no second place that could disagree with what the person was shown.
 from __future__ import annotations
 
 import json
+import os
 import stat
 from collections.abc import Callable
 from pathlib import Path
@@ -23,13 +24,16 @@ from .project_git_state import _checked
 DIGEST_VERSION = 2
 
 
-def effective_git_mode(filemode: bool, st_mode: int) -> str:
+def effective_git_mode(filemode: bool, st_mode: int, *, posix: bool = os.name != "nt") -> str:
     """The mode `git add` stores for a new regular file.
 
     `100755` exactly when `core.filemode` is not false and the owner execute bit is set; every
-    other permission bit and every other attribute of the file stays out.
+    other permission bit and every other attribute of the file stays out. Where the platform has
+    no execute bit of its own (`posix` false: Windows), the bit in `st_mode` is not read at all:
+    CPython invents it from a `.bat`, `.cmd`, `.com` or `.exe` name, while Git for Windows
+    stores `100644` for those names under every `core.filemode` setting (measured).
     """
-    return "100755" if filemode and st_mode & stat.S_IXUSR else "100644"
+    return "100755" if filemode and posix and st_mode & stat.S_IXUSR else "100644"
 
 
 def core_filemode(root: Path, git: Callable[..., Any]) -> bool:

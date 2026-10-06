@@ -47,13 +47,20 @@ def row_named(value, path):
 EXECUTABLE = "run.bat" if os.name == "nt" else "run.sh"
 
 
-def make_executable(project, name=EXECUTABLE, data=b"echo hi\n"):
+def make_executable(folder, name=EXECUTABLE, data=b"echo hi\n"):
     """A file whose stat, read by its name, carries the owner execute bit: `chmod` makes it on
-    POSIX, and on Windows CPython reports it for `.bat`, `.cmd`, `.com` and `.exe` names."""
-    path = project.root / name
+    POSIX, and on Windows CPython reports it for `.bat`, `.cmd`, `.com` and `.exe` names (which
+    Git for Windows does not store, see `effective_git_mode`)."""
+    path = folder / name
     path.write_bytes(data)
     path.chmod(0o755)
     return path
+
+
+def stored_modes(folder):
+    """What Git itself stores for the files of `folder`: `path -> mode` of `ls-files -s`."""
+    listing = git("ls-files", "-s", cwd=folder).stdout.decode("utf-8").splitlines()
+    return {line.split("\t", 1)[1]: line.split()[0] for line in listing}
 
 
 @pytest.mark.parametrize("st_mode, expected", [
@@ -61,8 +68,42 @@ def make_executable(project, name=EXECUTABLE, data=b"echo hi\n"):
     (0o100655, "100644"), (0o100611, "100644"), (0o100600, "100644")])
 def test_effective_git_mode_follows_core_filemode_and_only_the_owner_execute_bit(
         st_mode, expected):
-    assert modes.effective_git_mode(True, st_mode) == expected
-    assert modes.effective_git_mode(False, st_mode) == "100644"
+    assert modes.effective_git_mode(True, st_mode, posix=True) == expected
+    assert modes.effective_git_mode(False, st_mode, posix=True) == "100644"
+
+
+@pytest.mark.parametrize("st_mode", [0o100644, 0o100755, 0o100777, 0o100744, 0o100700])
+def test_effective_git_mode_reads_no_execute_bit_where_the_platform_invents_one(st_mode):
+    assert modes.effective_git_mode(True, st_mode, posix=False) == "100644"
+    assert modes.effective_git_mode(False, st_mode, posix=False) == "100644"
+
+
+def test_effective_git_mode_reads_the_execute_bit_by_default_exactly_where_the_platform_has_one():
+    expected = "100644" if os.name == "nt" else "100755"
+    assert modes.effective_git_mode(True, 0o100755) == expected
+    assert modes.effective_git_mode(False, 0o100755) == "100644"
+
+
+@needs_git
+@pytest.mark.parametrize("setting", ["true", "false", None], ids=["true", "false", "unset"])
+def test_the_modes_the_preview_shows_are_the_modes_git_stores_for_the_same_files(
+        tmp_path, setting):
+    """The oracle is Git: the same files added to a twin repository with the same setting."""
+    project, twin = unborn(tmp_path), repository(tmp_path, "twin")
+    for folder in (project.root, twin):
+        make_executable(folder)
+        (folder / "plain.txt").write_bytes(b"plain\n")
+        if setting is None:
+            git("config", "--unset", "core.filemode", cwd=folder, check=False)
+        else:
+            git("config", "core.filemode", setting, cwd=folder)
+    git("add", "-A", cwd=twin)
+    stored = stored_modes(twin)
+    shown = {row["path"]: row["git_mode"] for row in rows_of(project)["files"]}
+    assert set(stored) == set(shown) == {EXECUTABLE, "plain.txt"}
+    assert shown == stored
+    if os.name != "nt" and setting != "false":
+        assert stored[EXECUTABLE] == "100755"       # the oracle did see the bit: not vacuous
 
 
 @needs_git
@@ -128,11 +169,12 @@ def test_a_mode_only_change_after_the_preview_changes_the_digest_and_the_shown_m
         == {key: value for key, value in row_named(before, "tool").items() if key != "git_mode"}
 
 
+@POSIX_ONLY
 @needs_git
 def test_core_filemode_false_shows_100644_for_an_executable_file_and_flipping_it_changes_the_digest(
         tmp_path):
     project = unborn(tmp_path)
-    make_executable(project)
+    make_executable(project.root)
     (project.root / "plain.txt").write_bytes(b"plain\n")
     git("config", "core.filemode", "true", cwd=project.root)
     trusted = rows_of(project)

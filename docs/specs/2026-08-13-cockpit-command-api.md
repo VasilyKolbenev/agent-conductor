@@ -1246,7 +1246,9 @@ object_format,author,signing,files,manual,warnings,digest_version,paths_digest}}
 At most 5000 untracked paths are listed, excluding product names. Regular files
 bind `{path,length,sha256,git_oid,git_mode}`: the raw-byte seal, the actual
 clean-filter Git OID and the effective Git mode, `"100755"` when `core.filemode`
-is not false and the owner execute bit is set, else `"100644"`. The canonical
+is not false and the owner execute bit is set, else `"100644"`; on Windows no
+file has an execute bit in Git's view (Git for Windows stores `"100644"` even for
+`.bat` and `.exe` names), so every row there is `"100644"`. The canonical
 list `{"digest_version":2,"files":[...]}` (sorted keys, ASCII) is sealed by
 `paths_digest`; a digest of another scope, such as the version-1 digest of the
 bare list that had no mode, never equals it, so an old preview never confirms the
