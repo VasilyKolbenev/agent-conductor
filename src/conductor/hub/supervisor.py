@@ -399,6 +399,45 @@ class Supervisor:
             found = self._scan()
             return bool(found.unreadable) or "active" in found.live.values()
 
+    def restart_in_mode(self, project_id: str, mode: str, *, root: str,
+                        allowed: Callable[[], bool]) -> bool:
+        """Start a project again in the mode its child was drained in, if all still holds.
+
+        A courtesy to a person who asked for something else (a profile copy), never a decision
+        of the hub's: not made once the choice has moved on. The conditions are judged here,
+        under the lock, and the start is made in the same step, so no move of the owner comes
+        between them: `allowed()` (the hub is not closing); the project is registered with this
+        `root`, its process gone and its head finished; and, for `active`, it is still the active
+        project, no transition waits, nothing is left to close and nothing else runs (the
+        restart table then starts it, with no transition and no flag); for `view`, it has not
+        become the active project.
+
+        Returns:
+            True when asked to start again (an active one by the next `tick`, a view one at
+            once); False when a condition no longer holds and nothing was done.
+
+        Raises:
+            SupervisorRefused: the start itself was refused.
+        """
+        with self._lock:
+            if not allowed():
+                return False
+            try:
+                project, current = self._project(project_id), self._store.load()
+            except (SupervisorRefused, state.HubStateError):
+                return False
+            if project.root != root or self.closure_of(project_id) != "closed":
+                return False
+            if mode == "active" and current.active_project_id == project_id and (
+                    self._waiting(current) is None and not current.closing
+                    and not self._busy(project_id)):
+                self.activate(project_id)
+                return True
+            if mode == "view" and current.active_project_id != project_id:
+                self.view(project_id)
+                return True
+            return False
+
     # -- the loop --------------------------------------------------------------------------------
 
     def restart(self) -> None:

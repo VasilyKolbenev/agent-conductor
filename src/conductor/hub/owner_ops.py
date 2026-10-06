@@ -25,10 +25,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from conductor.hub import job, refusals
+from conductor.hub import job, operations, refusals, supervisor
 
 if TYPE_CHECKING:
-    from conductor.hub import operations, registry, supervisor
+    from conductor.hub import registry
 
 OUTPUT_BOUND = 65536
 POLL_SECONDS = 0.05
@@ -37,6 +37,14 @@ HEAD = (sys.executable, "-m", "conductor")
 _REFUSAL = re.compile(r"([a-z][a-z0-9_]*): \S")
 #: The two job policies under which a command may start (`kill_on_close` ends it with the hub).
 _RUNNABLE = ("none", "breakaway")
+#: The result of a profile copy: the form of an add's result with only `providers` filled (8.7).
+BLANK_RESULT = {"folder": None, "activated": None, "providers": None, "git": None,
+                "exclude": None, "exclude_names": None, "agent_instructions": None,
+                "projects_home_created": None}
+#: What a child's state reads as when its start has failed (the same words an add stops on).
+_START_FAILED = frozenset({"failed", "missing", "identity_mismatch", "recovery_required",
+                           "stop_uncertain"})
+_ABANDONED = "abandoned"
 
 
 @dataclass(frozen=True)
@@ -195,7 +203,7 @@ def recovered_login(out: str) -> bool:
 
 
 class OwnerOps:
-    """The recoveries the hub runs, as operations of the shared ledger (spec 4.1.8, ADR-8).
+    """The recoveries and profile copies the hub runs, as operations of the shared ledger.
 
     Every operation is one row of `operations.Operations` and one daemon thread. The commands are
     the ones a person types; the hub never ends one (not even at its own exit: one that began is
@@ -205,9 +213,12 @@ class OwnerOps:
 
     def __init__(self, home: Path | str, ledger: operations.Operations,
                  sup: supervisor.Supervisor, *,
+                 status: Callable[[str], tuple[str, str | None]],
                  popen: Callable[..., subprocess.Popen] = subprocess.Popen,
-                 policy: Callable[[], str] | None = None, head: Sequence[str] = HEAD) -> None:
+                 policy: Callable[[], str] | None = None, head: Sequence[str] = HEAD,
+                 poll_seconds: float = 0.1, clock: Callable[[], float] = time.monotonic) -> None:
         self._home, self._ledger, self._sup = Path(home), ledger, sup
+        self._status, self._poll, self._clock = status, poll_seconds, clock
         self._popen, self._policy, self._head = popen, policy, tuple(head)
         self._lock = threading.Lock()
         self._closing = threading.Event()
@@ -285,6 +296,102 @@ class OwnerOps:
         else:
             self._fail(ident, ran, "recover_login")
 
+    def providers(self, project: registry.Project, *, mode: str | None, restart: bool) -> str:
+        """Open the `providers` operation of a project and apply the shared profile to it.
+
+        Args:
+            project: The registered project.
+            mode: The mode of its live child (`active`, `view`), or `None` when none lives. A live
+                child of the hub's own is drained first (EOF only, nothing is ended).
+            restart: Whether to start the child again afterwards; `False` for one that was
+                already stopping. The restart is made only while every condition it was asked
+                under still holds (`Supervisor.restart_in_mode`), and the row ends with the copy's
+                own result when it is not.
+
+        Raises:
+            HubRefusal: `project_busy` when an operation of the project runs, or the hub is
+                closing.
+        """
+        self._require_open("project_busy", project.project_id)
+        ident = self._ledger.open_project_row("providers", project.project_id,
+                                              "drain" if mode else "providers")
+        self._thread(self._providers, ident, project, mode, restart)
+        return ident
+
+    def _providers(self, ident: str, project: registry.Project, mode: str | None,
+                   restart: bool) -> None:
+        drained = mode is not None and self._sup.drain_project(project.project_id)
+        if drained and not self._wait_for_the_drain(ident, project.project_id):
+            return
+        self._ledger.update_row(ident, step="providers")
+        ran = self._command(("providers", "--dir", project.root, "--from-profile"))
+        failure = None if ran.code == 0 else self._failure(ran, "providers")
+        if failure is None:
+            self._ledger.update_row(ident, result={**BLANK_RESULT, "providers": "copied"})
+        if drained and restart and mode is not None:
+            self._restarted(ident, project, mode, failure)
+        else:
+            self._settle(ident, failure, None)
+
+    def _wait_for_the_drain(self, ident: str, project_id: str) -> bool:
+        """Wait until the process is gone and its head is finished; `False` ends the operation.
+
+        A drain that ends without a finished head fails the row `stop_uncertain` and nothing is
+        copied. The wait never ends a process: it only reads, until the hub's exit.
+        """
+        while not self._closing.is_set():
+            verdict = self._sup.closure_of(project_id)
+            if verdict == "closed":
+                return True
+            if verdict == "uncertain":
+                self._ledger.update_row(ident, state="failed", code="stop_uncertain")
+                return False
+            self._closing.wait(self._poll)
+        self._ended_by_a_fault(ident)         # the hub is leaving: nothing was copied or started
+        return False
+
+    def _restarted(self, ident: str, project: registry.Project, mode: str,
+                   failure: tuple[str, dict | None] | None) -> None:
+        try:
+            asked = self._sup.restart_in_mode(project.project_id, mode, root=project.root,
+                                              allowed=lambda: not self._closing.is_set())
+        except supervisor.SupervisorRefused as refused:
+            self._settle(ident, failure, _start_code(refused.code))
+            return
+        if not asked:
+            self._settle(ident, failure, None)
+            return
+        self._ledger.update_row(ident, step="start")
+        waited = self._wait_for_the_start(project.project_id)
+        if waited == _ABANDONED:
+            self._ended_by_a_fault(ident)
+        else:
+            self._settle(ident, failure, waited)
+
+    def _wait_for_the_start(self, project_id: str) -> str | None:
+        """Wait until the child reads `running`: `None`, or the code the start ended in."""
+        deadline = self._clock() + operations.START_WAIT_SECONDS
+        while self._clock() < deadline:
+            if self._closing.is_set():
+                return _ABANDONED
+            found, code = self._status(project_id)
+            if found == "running":
+                return None
+            if found in _START_FAILED:
+                return _start_code(code or "start_failed")
+            self._closing.wait(self._poll)
+        return "start_timeout"
+
+    def _settle(self, ident: str, failure: tuple[str, dict | None] | None,
+                started: str | None) -> None:
+        """End the row: the copy's own failure first, else the start's, else success."""
+        if failure is not None:
+            self._ledger.update_row(ident, state="failed", code=failure[0], detail=failure[1])
+        elif started is not None:
+            self._ledger.update_row(ident, state="failed", code=started)
+        else:
+            self._ledger.update_row(ident, state="succeeded")
+
     def _require_open(self, code: str, project_id: str | None = None) -> None:
         if self._closing.is_set():
             raise refusals.HubRefusal(code, {} if project_id is None else {
@@ -322,16 +429,26 @@ class OwnerOps:
             return self._popen(argv, **kwargs)
 
     def _fail(self, ident: str, ran: Ran, step: str) -> None:
-        """End a row `failed` with the code the command printed when the step lists it.
+        code, detail = self._failure(ran, step)
+        self._ledger.update_row(ident, state="failed", code=code, detail=detail)
 
-        The row also carries the one closed reason the first line gives: which action a recovery
-        that needs a restart or a preparation wants (`restart_reason`), or the recovery a profile
-        copy needs first (`recovery_reason`). Nothing else the command printed is kept.
+    @staticmethod
+    def _failure(ran: Ran, step: str) -> tuple[str, dict[str, str] | None]:
+        """The code a refused command ends its step with, and the closed reason beside it.
+
+        The code is the one the command printed when the step lists it. The reason is the one the
+        first line gives: which action a recovery that needs a restart or a preparation wants
+        (`restart_reason`), or the recovery a profile copy needs first (`recovery_reason`).
+        Nothing else the command printed is kept.
         """
         allowed = refusals.OPERATION_CODES_BY_STEP[step]
         code = refusal_code(ran.error, allowed)
         word = restart_reason(ran.error, step)
         if word is None and code == "subprocess_failed":
             word = recovery_reason(ran.error, allowed)
-        self._ledger.update_row(ident, state="failed", code=code,
-                                detail=None if word is None else {"reason": word})
+        return code, None if word is None else {"reason": word}
+
+
+def _start_code(code: str) -> str:
+    """A code of the `start` step's list, else `subprocess_failed`."""
+    return code if code in refusals.OPERATION_CODES_BY_STEP["start"] else "subprocess_failed"

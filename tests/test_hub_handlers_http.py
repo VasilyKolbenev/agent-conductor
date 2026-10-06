@@ -133,7 +133,7 @@ def test_a_project_with_a_running_operation_refuses_every_other_move_project_bus
     # own rules (`recover` would be `recover_not_needed`): the busy refusal comes FIRST.
     stack.world.gone("a")
     stack.service._operations.open_project_row("recover", A, "recover")   # stays running
-    for target in ("activate", "view", "stop", "forget", "recover"):
+    for target in ("activate", "view", "stop", "forget", "recover", "providers"):
         _refused_and_unchanged(stack, f"/hub/projects/{A}/{target}", 409, "project_busy")
     stack.world.gone("b")
     assert stack.post(f"/hub/projects/{B}/view").status == 202           # another project is free
@@ -356,3 +356,107 @@ def test_a_hub_that_is_closing_refuses_a_new_login_recovery_and_starts_no_comman
     _login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
     stack.service.close_operations()
     _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "operation_busy")
+
+
+# -- POST /hub/projects/<project_id>/providers -------------------------------------------------
+
+COPIED = {"folder": None, "activated": None, "providers": "copied", "git": None, "exclude": None,
+          "exclude_names": None, "agent_instructions": None, "projects_home_created": None}
+
+
+def _a_profile(stack, tmp_path) -> None:
+    operator_config.save_provider_configs(
+        stack.world.home / "providers.json", [config(tmp_path, "claude-code")])
+
+
+def _a_running_child(stack, name: str = "a", mode: str = "active"):
+    world = stack.world
+    if mode == "active":
+        world.supervisor.activate(name * 32)
+        world.supervisor.tick()
+    else:
+        world.supervisor.view(name * 32)
+    world.running(name, mode=mode)
+    return world.spawner.children[-1]
+
+
+def test_providers_for_a_stopped_project_answers_202_copies_and_starts_nothing(stack, tmp_path):
+    _a_profile(stack, tmp_path)
+    stack.world.gone("a")
+    before = stack.state_bytes()
+    reply = stack.post(f"/hub/projects/{A}/providers")
+    assert reply.status == 202 and set(reply.json()) == {"operation_id"}
+    row = _settled(stack, reply.json()["operation_id"])
+    assert (row["kind"], row["step"], row["state"], row["project_id"]) == (
+        "providers", "providers", "succeeded", A)
+    assert row["result"] == COPIED and row["code"] is None and row["detail"] is None
+    assert stack.command.seen[0][3:] == ["providers", "--dir", stack.world.roots["a"],
+                                         "--from-profile"]
+    assert stack.state_bytes() == before and stack.world.spawner.calls == []
+    assert stack.world.roots["a"].encode("utf-8") not in json.dumps(row).encode("utf-8")
+
+
+def test_providers_refuses_an_absent_or_invalid_profile_before_draining_anything(
+        stack, tmp_path):
+    child = _a_running_child(stack)
+    for text in (None, "{not json", json.dumps({"schema_version": 1, "providers": "nope"})):
+        profile = stack.world.home / "providers.json"
+        if text is None:
+            profile.unlink(missing_ok=True)
+        else:
+            profile.write_text(text, encoding="utf-8")
+        _refused_and_unchanged(stack, f"/hub/projects/{A}/providers", 409,
+                               "profile_absent" if text is None else "profile_invalid")
+        assert child.closed is False
+        assert stack.service._operations.running_for(A) is None
+
+
+def test_providers_refuses_an_unknown_project_and_one_with_an_operation_running(stack, tmp_path):
+    _a_profile(stack, tmp_path)
+    _refused_and_unchanged(stack, f"/hub/projects/{'f' * 32}/providers", 404, "project_not_found")
+    stack.world.gone("a")
+    stack.service._operations.open_project_row("recover", A, "recover")       # stays running
+    _refused_and_unchanged(stack, f"/hub/projects/{A}/providers", 409, "project_busy")
+
+
+@pytest.mark.parametrize("mode", ["active", "view"])
+def test_providers_for_a_running_project_drains_copies_and_starts_it_again_in_its_mode(
+        stack, tmp_path, mode):
+    _a_profile(stack, tmp_path)
+    name = "a" if mode == "active" else "b"
+    child = _a_running_child(stack, name, mode)
+    before = stack.state_bytes()
+    ident = stack.post(f"/hub/projects/{name * 32}/providers").json()["operation_id"]
+    _wait_until(lambda: child.closed)
+    assert stack.command.seen == []                       # the copy waits for the drain to end
+    stack.world.gone(name, "stopped", head="closed")
+    _wait_until(lambda: stack.get(f"/hub/operations/{ident}").json()["step"] == "start")
+    stack.tick()                                          # the loop's own pass starts an active one
+    stack.world.running(name, mode=mode)
+    row = _settled(stack, ident)
+    assert (row["state"], row["step"], row["result"]) == ("succeeded", "start", COPIED)
+    starts = stack.world.spawner.started(name)
+    assert len(starts) == 2 and starts[-1]["mode"] == mode
+    assert (starts[-1]["transition"], starts[-1]["auto_continue"]) == (None, None)
+    assert stack.state_bytes() == before
+
+
+def test_a_child_that_was_already_stopping_is_drained_and_copied_and_not_brought_back(
+        stack, tmp_path):
+    _a_profile(stack, tmp_path)
+    child = _a_running_child(stack, "a", "active")
+    stack.world.put_status("a", "stopping")
+    ident = stack.post(f"/hub/projects/{A}/providers").json()["operation_id"]
+    _wait_until(lambda: child.closed)
+    stack.world.gone("a", "stopped", head="closed")
+    row = _settled(stack, ident)
+    stack.tick()
+    assert (row["state"], row["result"]) == ("succeeded", COPIED)
+    assert len(stack.world.spawner.started("a")) == 1
+
+
+def test_a_hub_that_is_closing_refuses_a_profile_copy_and_starts_no_command(stack, tmp_path):
+    _a_profile(stack, tmp_path)
+    stack.world.gone("a")
+    stack.service.close_operations()
+    _refused_and_unchanged(stack, f"/hub/projects/{A}/providers", 409, "project_busy")

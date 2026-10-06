@@ -34,7 +34,7 @@ def _ops(world, popen):
     ledger = operations.Operations(world.home, events.EventBus(),
                                    start=lambda _p: None, status=lambda _p: ("running", None))
     ops = owner_ops.OwnerOps(world.home, ledger, world.supervisor, popen=popen,
-                             policy=lambda: "none")
+                             policy=lambda: "none", status=lambda _pid: ("running", None))
     return ledger, ops
 
 
@@ -229,7 +229,7 @@ def test_a_hub_job_that_would_end_a_command_with_the_hub_fails_the_row_and_start
                                    start=lambda _p: None, status=lambda _p: ("running", None))
     ops = owner_ops.OwnerOps(world.home, ledger, world.supervisor,
                              popen=fake(out=RECOVERED, seen=started),
-                             policy=lambda: "kill_on_close")
+                             policy=lambda: "kill_on_close", status=lambda _pid: ("running", None))
     world.gone("a", "serving", head="opened")
     row = settled(ledger, _recover(world, ops))
     assert started == [] and (row["state"], row["code"]) == ("failed", "subprocess_failed")

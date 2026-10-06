@@ -99,7 +99,8 @@ class HubService:
                                         sup.has_live_active, self._closing_owed)
         owner_options = {} if owner_popen is None else {"popen": owner_popen}
         self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
-                                             policy=self._job_policy, **owner_options)
+                                             status=self._added_status, policy=self._job_policy,
+                                             **owner_options)
 
     def start(self) -> None:
         """Seed the ledger of first-seen moments from the snapshots the last hub left."""
@@ -386,6 +387,34 @@ class HubService:
         except supervisor.SupervisorRefused as refused:
             raise HubRefusal(refused.code, {"project_id": project_id}) from refused
         return 202, {"operation_id": self._owner_ops.recover(project)}
+
+    def providers(self, project_id: str) -> tuple[int, dict[str, str]]:
+        """`POST .../providers`: apply the shared profile to a project (8.7).
+
+        A stopped project gets the copy and nothing else. A live child is drained first and, once
+        the copy has ended, started again in the same mode, but only while everything it was
+        asked under still holds (`OwnerOps.providers`); a child that was already stopping is
+        drained and copied and not brought back.
+        """
+        project = self._require(project_id)
+        self._owner_ops.require_free(project_id)
+        self._profile_problem()
+        found = self._status(project)
+        alive = found.lifecycle.state in _ALIVE
+        ident = self._owner_ops.providers(
+            project, mode=found.mode if alive else None,
+            restart=found.lifecycle.state in ("starting", "running"))
+        return 202, {"operation_id": ident}
+
+    def _profile_problem(self) -> None:
+        """Refuse `profile_absent` / `profile_invalid` before anything is drained or written."""
+        path = self._home / PROFILE_FILE
+        if not path.exists():
+            raise HubRefusal("profile_absent")
+        try:
+            operator_config.load_provider_configs(path)
+        except operator_config.OperatorConfigError as error:
+            raise HubRefusal("profile_invalid") from error
 
     def recover_login(self, login_key: str) -> tuple[int, dict[str, str]]:
         """`POST .../recover` of a login: run `conduct ownership recover-login` for its folder.
