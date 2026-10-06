@@ -418,3 +418,24 @@ def test_a_hash_that_repeats_the_task_the_address_named_leaves_the_run_the_addre
         page.wait_for_function(ON_RUN, arg="run-fix-old")
     finally:
         close_context(context)
+
+
+def test_a_hash_that_opens_the_wizard_leaves_the_panel_the_person_has_open(
+        chromium: Browser, seeded_url: str):  # noqa: F811
+    """`new=task` names no panel and moves no task: the wizard is drawn over the desk and the
+    panel the person opened stays as it was (spec 4.5.3: a panel changes by its own key)."""
+    context = chromium.new_context(viewport={"width": 1100, "height": 1200})
+    try:
+        page = context.new_page()
+        page.set_default_timeout(5000)
+        page.goto(f"{seeded_url}#task=task-fix&lang=en", wait_until="load")
+        _booted(page)
+        page.wait_for_function(ON_RUN, arg="run-fix-new")
+        page.locator("#deskPeopleToggle").click()
+        _shows(page, "people")
+        page.evaluate(SEND, "#task=task-fix&run=run-fix-new&new=task&lang=en")
+        expect(page.locator("#deskWizard [data-wizard]")).to_be_visible()
+        _says(page, "people")
+        _shows(page, "people")
+    finally:
+        close_context(context)
