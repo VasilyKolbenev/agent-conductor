@@ -11,11 +11,13 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Error
 
-from browser_tests.desk_hold import close_context
+from browser_tests import desk_queue_rig as rig
+from browser_tests.desk_hold import close_context, until
 
 PAGE = b"<!doctype html><title>probe</title>"
 
@@ -150,3 +152,19 @@ def test_a_window_that_is_already_closed_is_closed_again_without_an_error(chromi
     context.new_page()
     close_context(context)
     close_context(context)
+
+
+def test_a_window_the_queue_rig_opened_is_closed_with_its_project_and_leaves_nothing_behind(
+        chromium: Browser, slow: _Slow, tmp_path: Path):
+    """The queue modules never close their windows themselves: the rig closes each one through
+    `close_context` when its project ends, and not the reaper of the conftest with a plain
+    `close()`. A handler of the window is fetching when the project ends."""
+    with rig.project(tmp_path, [rig.Seed("task-a-r1", "task-a", "Alpha")]) as served:
+        window = rig.open_desk(chromium, served)
+        window.page.route("**/slow", lambda route: route.fulfill(response=route.fetch()))
+        window.page.evaluate("(url) => { fetch(url, {mode: 'no-cors'}).catch(() => {}); }",
+                             f"{slow.url}slow")
+        until(window.page, "the handler's fetch reached the upstream", slow.asked.is_set)
+    assert window.page.is_closed(), "the window is closed when its project ends"
+    slow.release()
+    chromium.new_context().new_page().close()

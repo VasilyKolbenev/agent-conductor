@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, Page
 
+from browser_tests.desk_hold import close_context
 from browser_tests.desk_settled import SETTLED
 from conductor import server
 from tests.desk_progress_seed import seed_project
@@ -102,4 +103,4 @@ def desk_in(chromium: Browser, progress_url: str) -> Iterator:
 
     yield make
     for window in opened:
-        window.page.context.close()
+        close_context(window.page.context)

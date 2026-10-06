@@ -14,6 +14,11 @@ that must keep the slot, a FINAL gate nobody has decided, so the run waits there
 reads busy). `running` then serves the folder. From there a person's acts are the wire's own:
 `Project.call` goes through the server's CSRF door, and the helpers below it (`hold`, `enqueue`,
 `decide`) are a few calls of it, never a write into a store.
+
+A window `open_desk` opens belongs to the project it was opened on: `running` closes it through
+`desk_hold.close_context` when the project ends, before the server stops. A test that closes its
+window itself may; one that does not leaves nothing for the per-test reaper of the conftest,
+whose plain `close()` would dispose the request context under a route handler that is fetching.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ from itertools import count
 from pathlib import Path
 from typing import Any
 
+from browser_tests.desk_hold import close_context
 from browser_tests.desk_settled import SETTLED
 from conductor import ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
@@ -115,6 +121,7 @@ class Project:
     project_id: str
     ticks: list[str]
     calls: list[tuple[str, str]] = field(default_factory=list)
+    windows: list[Any] = field(default_factory=list)
 
     def url(self, language: str = "en", *, extra: str = "") -> str:
         """The desk at its own address, bound to this project."""
@@ -135,6 +142,12 @@ class Project:
             return response.status, json.loads(response.read())
         finally:
             connection.close()
+
+    def close_windows(self) -> None:
+        """Close every window opened on this project, through `close_context`: a handler of one
+        may be fetching, and a plain `close()` would leave its error for the next test."""
+        while self.windows:
+            close_context(self.windows.pop())
 
     def queue(self) -> dict:
         status, payload = self.call("GET", "/command/queue")
@@ -294,8 +307,10 @@ def _note(window: Window, served: Project, request: Any) -> None:
 
 def open_desk(browser: Any, served: Project, language: str = "en", *, width: int = 1280,
               extra: str = "", before: Callable[[Any], None] | None = None) -> Window:
-    """A desk on the project, waited until it is settled; `before` may route the page first."""
+    """A desk on the project, waited until it is settled; `before` may route the page first. The
+    window is closed with the project (`Project.close_windows`)."""
     context = browser.new_context(viewport={"width": width, "height": 900}, timezone_id="UTC")
+    served.windows.append(context)
     page = context.new_page()
     page.set_default_timeout(8000)
     window = Window(page)
@@ -332,13 +347,17 @@ def running(root: Path, *, mode: str = "active") -> Iterator[Project]:
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     origin = f"http://127.0.0.1:{httpd.server_address[1]}"
+    served = Project(httpd, origin, httpd.project_identity.project_id, ticks)
     try:
-        yield Project(httpd, origin, httpd.project_identity.project_id, ticks)
+        yield served
     finally:
-        httpd.shutdown()
-        httpd.server_close()
-        thread.join(timeout=8)
-        assert not thread.is_alive(), "the project server did not stop"
+        try:
+            served.close_windows()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=8)
+            assert not thread.is_alive(), "the project server did not stop"
 
 
 @contextmanager
