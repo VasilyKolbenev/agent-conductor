@@ -1,16 +1,17 @@
 """The browser gate's mark that a module's pytest process ended through pytest.
 
 The gate loads this plugin with ``-p`` into every module process and names, in
-the environment, a mark file and a nonce of its own for that one run. The last
-hook pytest calls, ``pytest_unconfigure`` -- after the session has finished and
-its fixtures were torn down -- writes the nonce and pytest's final exit status
-there, through a partial file and one rename, so a reader finds the whole mark
-or none.
+the environment, a mark file and a nonce of its own for that one run.
+``pytest_unconfigure`` runs after the session has finished and its fixtures
+were torn down; there the plugin writes the nonce and pytest's final exit
+status, through a partial file and one rename, so a reader finds the whole
+mark or none. Other unconfigure hooks and the release of the configuration may
+still run after it.
 
 A process that left by ``os._exit``, a crash or a kill never reaches that hook
 and leaves no mark: its return code, even 0 or 1, says nothing about how it
-ended. The mark says pytest ended itself; it does not prove that every process
-the module started is gone.
+ended. The mark says the session and its fixtures ended through pytest; it
+does not prove that every process the module started is gone.
 
 Not a test module (no ``test_`` prefix), and inert outside the gate: without
 the two environment names it writes nothing.
@@ -35,7 +36,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
-    """Write the mark: the last thing pytest does before the process returns."""
+    """Write the mark once the session has finished and its fixtures were torn down."""
     path, nonce = os.environ.get(MARK_ENV), os.environ.get(NONCE_ENV)
     if not path or not nonce or _STATUS not in config.stash:
         return

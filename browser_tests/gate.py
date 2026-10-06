@@ -39,12 +39,13 @@ This runner is the replacement discipline:
   included, and the report says the run is incomplete. A return code alone
   never says how a module process ended (``os._exit(0)`` returns 0 without
   running the rest of the module or the teardown that closes the browser), so
-  each run also needs a fresh mark from pytest's own last hook
-  (``gate_finish.py``, keyed by a nonce of that run). The order goes on only
-  after an ordinary result: the mark is there and pytest ended with 0 or 1.
-  An interrupt, an internal or usage error, no tests, no mark, a torn or
-  foreign mark all end it. The mark says pytest ended itself, not that every
-  process the module started is gone;
+  each run also needs a fresh mark written in ``pytest_unconfigure``, after
+  the session finished and its fixtures were torn down (``gate_finish.py``,
+  keyed by a nonce of that run). The order goes on only after an ordinary
+  result: the mark is there and pytest ended with 0 or 1. An interrupt, an
+  internal or usage error, no tests, no mark, a torn or foreign mark all end
+  it. The mark says the session and its fixtures ended through pytest, not
+  that every process the module started is gone;
 - the gate report keeps the run's progress apart from its verdict: the
   planned modules, those done, those remaining, whether the order completed,
   the failures so far and why it stopped. It is written before the first
