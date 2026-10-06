@@ -131,11 +131,15 @@ export const HUB_COPY = Object.freeze({
     "Остановка затянулась: шаг не закончился"],
   "hub.state.stop_overdue_hint": ["Ending the process would mean recovering after a restart of the OS.",
     "Убить процесс — значит восстанавливать после перезагрузки ОС."],
-  "hub.state.stop_uncertain": ["Stop not confirmed · the OS needs a restart",
-    "Остановка не подтверждена · нужна перезагрузка ОС"],
+  "hub.state.stop_uncertain": ["Stop not confirmed · recovery needed · run conduct ownership "
+    + "recover in a terminal; it says what to do next", "Остановка не подтверждена · нужно "
+    + "восстановление · выполните в терминале conduct ownership recover: команда скажет, что "
+    + "делать дальше"],
   "hub.state.failed": ["Did not start: {reason}", "Не запустился: {reason}"],
   "hub.state.busy_elsewhere": ["Open in another conduct up", "Открыт другим conduct up"],
-  "hub.state.recovery_required": ["The OS needs a restart", "Нужна перезагрузка ОС"],
+  "hub.state.recovery_required": ["Recovery needed · run conduct ownership recover in a "
+    + "terminal; it says what to do next", "Нужно восстановление · выполните в терминале conduct "
+    + "ownership recover: команда скажет, что делать дальше"],
   "hub.state.identity_mismatch": ["A different project is in the folder now",
     "В папке теперь другой проект"],
   "hub.state.missing": ["The folder was not found or was replaced", "Папка не найдена или заменена"],
@@ -143,8 +147,8 @@ export const HUB_COPY = Object.freeze({
     "Файл состояния не читается, другой проект не запустится"],
   "hub.line.becomes_active": ["Will become active after {name} stops",
     "Станет активным после остановки {name}"],
-  "hub.line.not_active": ["Did not become active: {name} is not closed · the OS needs a restart",
-    "Не стал активным: {name} не закрыт · нужна перезагрузка ОС"],
+  "hub.line.not_active": ["Did not become active: {name} is not closed · recovery needed",
+    "Не стал активным: {name} не закрыт · нужно восстановление"],
   // -- actions and what asks before it is done ------------------------------------------------
   "hub.act.stop": ["Stop at a checkpoint", "Остановить на контрольной точке"],
   "hub.act.activate": ["Make active", "Сделать активным"],
@@ -304,7 +308,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.already_active": ["the project is already the active one", "проект уже активный"],
   "hub.code.active_not_closed": ["the previous active project is not closed",
     "прежний активный проект не закрыт"],
-  "hub.code.recovery_required": ["the OS needs a restart", "нужна перезагрузка ОС"],
+  "hub.code.recovery_required": ["recovery is needed first (run conduct ownership recover in a "
+    + "terminal)", "сначала нужно восстановление (выполните в терминале conduct ownership "
+    + "recover)"],
   "hub.code.recover_not_needed": ["there is nothing to recover", "восстанавливать нечего"],
   "hub.code.operation_not_cancellable": ["this step cannot be cancelled", "этот шаг отменить нельзя"],
   "hub.code.project_queue_changed": ["the queue of projects changed while you were choosing",
