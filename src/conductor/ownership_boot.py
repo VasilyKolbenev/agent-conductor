@@ -5,8 +5,9 @@ On Windows it is the counter witness (`boot_kuser`); on Linux and macOS it is th
 nowhere else, so a test can stand in for a restart at a single seam and the product has a single
 place to refuse when the boot cannot be measured.
 
-`ownership_native.boot_identity` keeps answering the old class-90 string for the callers that
-compare it outside project and login ownership.
+`ownership_native.boot_identity` keeps answering the old class-90 string, but only as the
+environment GUID (`boot_kuser`) and as a diagnostic of the probe: no ownership record, no login
+lease, no container attempt and no clone attempt compares it with another string any more.
 """
 from __future__ import annotations
 

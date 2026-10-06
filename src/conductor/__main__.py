@@ -492,12 +492,14 @@ def _cmd_ownership(args):
 
 def _add_ownership(sub):
     parser = sub.add_parser("ownership", help="explicit ownership status and maintenance")
-    parser.add_argument("operation", choices=("status", "activate", "rollback", "recover", "recover-login"))
+    parser.add_argument("operation", choices=(
+        "status", "activate", "rollback", "recover", "recover-login", "recover-clones",
+        "recover-containers"))
     parser.add_argument("--legacy-writers-stopped", action="store_true")
     parser.add_argument("--auth-home", default=None)
     parser.add_argument("--prepare-restart", action="store_true",
-                        help="recover and recover-login only: record the boot a later recovery "
-                             "must be newer than; releases nothing")
+                        help="the recover operations only: record the boot a later recovery "
+                             "must be newer than; releases and cleans nothing")
     _add_dir_and_func(parser, _cmd_ownership)
 
 

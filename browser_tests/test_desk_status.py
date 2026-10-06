@@ -69,7 +69,7 @@ ENGLISH_ATTENTION = {
     "stalled": "Run stalled", "expired": "Permission expired",
     "queue_confirmation": "Waiting for your confirmation",
     "slot_stuck": "Slot busy · free the slot in the desk",
-    "recovery_required": "The OS needs a restart",
+    "recovery_required": "Project needs recovery",
     "login_recovery_required": "Login needs recovery"}
 #: The short time of an instant in each language, in Moscow (UTC+3, no daylight time).
 CLOCK = {"en": {"2026-09-29T09:20:00Z": "09/29 12:20", "2026-09-29T09:05:00Z": "09/29 12:05",

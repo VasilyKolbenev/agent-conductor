@@ -16,6 +16,7 @@ within it, not equal to it); until then that one test is skipped, and says why.
 from __future__ import annotations
 
 import importlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,11 @@ ALL_CODES = sorted({*ROUTE_CODES, *STATE_CODES, *OPERATION_CODES})
 STATES = ("stopped", "starting", "running", "stopping", "stop_overdue", "stop_uncertain", "failed",
           "busy_elsewhere", "recovery_required", "identity_mismatch", "missing")
 WORKING = ("active", "queued", "stopped", "view")
-#: The words the spec gives, in Russian, that the catalogue carries exactly as given.
+#: The words the spec gives, in Russian, that the catalogue carries exactly as given. The words of
+#: an unfinished project (`stop_uncertain`, `recovery_required`, `not_active`) are not here: the
+#: spec says "the OS needs a restart" for them, which a review ruling found wrong once a legacy
+#: record or a changed boot environment needs a preparation first. They are held by
+#: `test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart`.
 SPEC_WORDS = {
     "hub.working.active": "В работе", "hub.working.view": "Просмотр",
     "hub.working.stopped": "Остановлен", "hub.working.stopped_since": "Остановлен · с {time}",
@@ -79,14 +84,11 @@ SPEC_WORDS = {
     "hub.state.starting_active": "Запускается…", "hub.state.starting_view": "Открывается…",
     "hub.state.stopping": "Останавливается, до {time}",
     "hub.state.stop_overdue": "Остановка затянулась: шаг не закончился к {time}",
-    "hub.state.stop_uncertain": "Остановка не подтверждена · нужна перезагрузка ОС",
     "hub.state.failed": "Не запустился: {reason}",
     "hub.state.busy_elsewhere": "Открыт другим conduct up",
-    "hub.state.recovery_required": "Нужна перезагрузка ОС",
     "hub.state.identity_mismatch": "В папке теперь другой проект",
     "hub.state.missing": "Папка не найдена или заменена",
     "hub.line.becomes_active": "Станет активным после остановки {name}",
-    "hub.line.not_active": "Не стал активным: {name} не закрыт · нужна перезагрузка ОС",
     "hub.act.stop": "Остановить на контрольной точке", "hub.act.activate": "Сделать активным",
     "hub.act.resume": "Продолжить", "hub.act.view_open": "Открыть на просмотр",
     "hub.act.view_close": "Закрыть просмотр", "hub.act.restart": "Запустить снова",
@@ -202,6 +204,41 @@ def test_the_state_codes_the_page_has_words_for_are_exactly_those_the_hub_can_pu
 @pytest.mark.parametrize("key,russian", sorted(SPEC_WORDS.items()))
 def test_the_words_the_spec_gives_stand_as_the_spec_gives_them(key, russian):
     assert _rows()[key][1] == russian
+
+
+#: Every message that tells a person their project is unfinished: the two states of the hub, the
+#: line of the project that blocks the seat, the clause of the code, and the item of the list of
+#: what waits for you (a key of the desk's shared copy, which the hub says too).
+UNFINISHED = ("hub.state.stop_uncertain", "hub.state.recovery_required", "hub.line.not_active",
+              "hub.code.recovery_required", "desk_status.attention_recovery_required")
+#: The ones a person reads with no other word beside them: they also say which command to run.
+SAYS_THE_COMMAND = ("hub.state.stop_uncertain", "hub.state.recovery_required",
+                    "hub.code.recovery_required")
+
+
+def test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart():
+    """Another Restart does not help a record of an older build or a changed boot environment.
+
+    Both need `--prepare-restart` first, and the command says so; a label that says "restart"
+    sends the owner round a loop that the recovery contract calls pointless. The label says that
+    recovery is needed and, where it stands alone, which command names the next step.
+    """
+    said = js("""
+      const out = {};
+      for (const key of %s) {
+        out[key] = ["en", "ru"].map((locale) => copy.hubText(locale, key,
+          key === "hub.line.not_active" ? {name: "stuck-one"} : {}));
+      }
+      show(out);
+    """ % json.dumps(list(UNFINISHED)))
+    for key in UNFINISHED:
+        english, russian = said[key]
+        assert not re.search("restart", english, re.IGNORECASE), f"{key}: {english!r}"
+        assert not re.search("перезагрузк|перезапуск", russian, re.I), f"{key}: {russian!r}"
+        assert re.search("recover", english, re.IGNORECASE), f"{key}: {english!r}"
+        assert re.search("восстановлен", russian, re.IGNORECASE), f"{key}: {russian!r}"
+    for key in SAYS_THE_COMMAND:
+        assert all("conduct ownership recover" in text for text in said[key]), key
 
 
 def test_a_message_is_said_by_its_locale_and_a_wrong_call_fails_loudly():

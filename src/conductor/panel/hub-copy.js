@@ -131,11 +131,15 @@ export const HUB_COPY = Object.freeze({
     "Остановка затянулась: шаг не закончился"],
   "hub.state.stop_overdue_hint": ["Ending the process would mean recovering after a restart of the OS.",
     "Убить процесс — значит восстанавливать после перезагрузки ОС."],
-  "hub.state.stop_uncertain": ["Stop not confirmed · the OS needs a restart",
-    "Остановка не подтверждена · нужна перезагрузка ОС"],
+  "hub.state.stop_uncertain": ["Stop not confirmed · recovery needed · run conduct ownership "
+    + "recover in a terminal; it says what to do next", "Остановка не подтверждена · нужно "
+    + "восстановление · выполните в терминале conduct ownership recover: команда скажет, что "
+    + "делать дальше"],
   "hub.state.failed": ["Did not start: {reason}", "Не запустился: {reason}"],
   "hub.state.busy_elsewhere": ["Open in another conduct up", "Открыт другим conduct up"],
-  "hub.state.recovery_required": ["The OS needs a restart", "Нужна перезагрузка ОС"],
+  "hub.state.recovery_required": ["Recovery needed · run conduct ownership recover in a "
+    + "terminal; it says what to do next", "Нужно восстановление · выполните в терминале conduct "
+    + "ownership recover: команда скажет, что делать дальше"],
   "hub.state.identity_mismatch": ["A different project is in the folder now",
     "В папке теперь другой проект"],
   "hub.state.missing": ["The folder was not found or was replaced", "Папка не найдена или заменена"],
@@ -143,8 +147,8 @@ export const HUB_COPY = Object.freeze({
     "Файл состояния не читается, другой проект не запустится"],
   "hub.line.becomes_active": ["Will become active after {name} stops",
     "Станет активным после остановки {name}"],
-  "hub.line.not_active": ["Did not become active: {name} is not closed · the OS needs a restart",
-    "Не стал активным: {name} не закрыт · нужна перезагрузка ОС"],
+  "hub.line.not_active": ["Did not become active: {name} is not closed · recovery needed",
+    "Не стал активным: {name} не закрыт · нужно восстановление"],
   // -- actions and what asks before it is done ------------------------------------------------
   "hub.act.stop": ["Stop at a checkpoint", "Остановить на контрольной точке"],
   "hub.act.activate": ["Make active", "Сделать активным"],
@@ -201,6 +205,12 @@ export const HUB_COPY = Object.freeze({
     + "window, not from another application's built-in terminal", "Остановите hub (Ctrl+C) и "
     + "запустите conduct hub из отдельного окна терминала, а не из встроенного терминала другого "
     + "приложения"],
+  "hub.banner.clone_recovery_how": ["Stop the hub (Ctrl+C), then run conduct ownership "
+    + "recover-clones in a terminal. If it says a preparation is needed, run it with "
+    + "--prepare-restart, do a full Restart of the OS, then run it again.", "Остановите hub "
+    + "(Ctrl+C) и выполните в терминале conduct ownership recover-clones. Если команда просит "
+    + "подготовку, выполните её с --prepare-restart, сделайте полную перезагрузку ОС и "
+    + "выполните команду ещё раз."],
   // -- the bar over the desk, and the centre -------------------------------------------------
   "hub.view.with_active": ["View · {name} is in progress", "Просмотр · в работе {name}"],
   "hub.view.no_active": ["View · there is no active project", "Просмотр · активного проекта нет"],
@@ -298,7 +308,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.already_active": ["the project is already the active one", "проект уже активный"],
   "hub.code.active_not_closed": ["the previous active project is not closed",
     "прежний активный проект не закрыт"],
-  "hub.code.recovery_required": ["the OS needs a restart", "нужна перезагрузка ОС"],
+  "hub.code.recovery_required": ["recovery is needed first (run conduct ownership recover in a "
+    + "terminal)", "сначала нужно восстановление (выполните в терминале conduct ownership "
+    + "recover)"],
   "hub.code.recover_not_needed": ["there is nothing to recover", "восстанавливать нечего"],
   "hub.code.operation_not_cancellable": ["this step cannot be cancelled", "этот шаг отменить нельзя"],
   "hub.code.project_queue_changed": ["the queue of projects changed while you were choosing",
@@ -316,8 +328,9 @@ export const HUB_COPY = Object.freeze({
   "hub.code.ownership_lost": ["the folder was replaced or moved", "папка заменена или перенесена"],
   "hub.code.transition_conflict": ["the ownership state cannot be read",
     "состояние владения не читается"],
-  "hub.code.ownership_unavailable": ["the ownership state cannot be read",
-    "состояние владения не читается"],
+  "hub.code.ownership_unavailable": ["ownership could not be opened: the OS boot counter or the "
+    + "ownership state cannot be read", "владение не открыто: счётчик загрузки ОС или состояние "
+    + "владения не читается"],
   "hub.code.store_error": ["the project map cannot be read", "карта проекта не читается"],
   "hub.code.providers_invalid": ["the project's providers.json was not accepted",
     "providers.json проекта не принят"],

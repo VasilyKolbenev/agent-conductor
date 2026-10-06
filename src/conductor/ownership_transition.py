@@ -269,6 +269,9 @@ def _not_proven(error, record_is_legacy):
         return OwnerRefused("recovery_required", (
             "restart the OS before recovering an uncertain writer session "
             "(do a full Restart, not a shutdown)"))
+    if error.code == "other_scope":
+        return OwnerRefused("recovery_required",
+                            boot_witness.other_environment_advice(error, "ownership recover"))
     if record_is_legacy:
         return OwnerRefused("recovery_required", (
             "the abandoned record predates the boot counter and cannot prove a restart; run "
@@ -296,13 +299,27 @@ def recover(project_root):
         raise OwnerRefused("recovery_refused", "native recovery hold is unavailable") from error
 
 
+_NOT_NEEDED = frozenset({"same_boot", "preparation_unneeded", "counter_decreased"})
+
+
+def _preparation_refused(error):
+    """The refusal of `prepare_recovery` for a decision that writes nothing."""
+    code = "recovery_refused" if error.code in _NOT_NEEDED else "recovery_required"
+    return OwnerRefused(code, boot_witness.preparation_refusal(error, "ownership recover"))
+
+
 def prepare_recovery(project_root):
     """Record, without releasing anything, the boot a later recovery must be newer than.
 
     Takes the holds `recover` takes, re-reads the history, checks the live layout, then appends
     one `recovery_prepared` generation holding the current counter witness. The phase is not an
-    owner: nothing opens, starts or is allowed by it. A second call returns the first record and
-    writes nothing, so the measurement cannot be refreshed by repeating it.
+    owner: nothing opens, starts or is allowed by it. A preparation is written for a record in
+    the legacy boot format, and again, as a NEW generation that binds the earlier one, when the
+    boot environment is no longer the one the record or the standing preparation was measured in
+    (a Restart cannot make the old environment the current one). Only this explicit call writes
+    it: `recover` never does. In the environment that already stands, a repeat returns the
+    standing preparation and writes nothing, so the baseline cannot be moved by repeating it; a
+    lower counter, an overflow or an unreadable boot is never a way to prepare again.
 
     Returns:
         `(record, created)`: the head, and whether this call wrote it.
@@ -312,16 +329,16 @@ def prepare_recovery(project_root):
         with ExitStack() as stack:
             _recovery_holds(stack, root)
             _reread(root, head)
-            if head["phase"] == "recovery_prepared":
-                return head, False
-            if not boot_witness.is_legacy(head["boot_id"]):
-                raise OwnerRefused("recovery_refused", (
-                    "this record already holds a comparable boot, so no preparation is needed: "
-                    "restart the OS, then run `ownership recover`"))
+            prepared = head["phase"] == "recovery_prepared"
             current = _measure("no restart can be prepared")
-            if not boot_witness.is_counter(current):
-                raise OwnerRefused("recovery_required", (
-                    "this OS gives no boot counter to prepare a restart with"))
+            try:
+                needed = boot_witness.preparation_needed(
+                    head["prepared_boot"] if prepared else head["boot_id"], current,
+                    prepared=prepared)
+            except BootRefused as error:
+                raise _preparation_refused(error) from error
+            if not needed:
+                return head, False
             return publish(root, head, phase="recovery_prepared", prepared_boot=current), True
     except OSError as error:
         raise OwnerRefused("recovery_refused", "native recovery hold is unavailable") from error

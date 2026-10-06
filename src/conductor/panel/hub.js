@@ -509,7 +509,8 @@ function setupBanners() {
     list.push(banner("home", hubText(locale, "hub.banner.home_invalid")));
   }
   if (isList(setup.clone_recovery) && setup.clone_recovery.length) {
-    list.push(banner("clone-recovery", codeWords(locale, "clone_cleanup_incomplete")));
+    list.push(banner("clone-recovery", codeWords(locale, "clone_cleanup_incomplete"),
+      [small("hub.banner.clone_recovery_how")]));
   }
   if (setup.hub_job === "kill_on_close") {
     list.push(banner("job", hubText(locale, "hub.banner.job"), [small("hub.banner.job_how")]));

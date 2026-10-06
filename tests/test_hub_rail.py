@@ -90,12 +90,13 @@ STATE_TABLE = [
     ("stopping", "stopped", "Stopped · Stopping…", [], None),
     ("stop_overdue", "stopped", "Stopped · The stop is taking long: the step has not finished", [],
      "amber"),
-    ("stop_uncertain", "stopped", "Stopped · Stop not confirmed · the OS needs a restart",
-     ["recover"], "amber"),
+    ("stop_uncertain", "stopped", "Stopped · Stop not confirmed · recovery needed · run conduct "
+     "ownership recover in a terminal; it says what to do next", ["recover"], "amber"),
     ("failed", "active", "In progress · Did not start: startup error", ["restart"], "amber"),
     ("failed", "view", "View · Did not start: startup error", ["restart"], "amber"),
     ("busy_elsewhere", "stopped", "Stopped · Open in another conduct up", ["recheck"], "amber"),
-    ("recovery_required", "stopped", "Stopped · The OS needs a restart", ["recover"], "amber"),
+    ("recovery_required", "stopped", "Stopped · Recovery needed · run conduct ownership recover "
+     "in a terminal; it says what to do next", ["recover"], "amber"),
     ("identity_mismatch", "stopped", "Stopped · A different project is in the folder now",
      ["forget"], "amber"),
     ("missing", "stopped", "Stopped · The folder was not found or was replaced", ["forget"],
@@ -151,8 +152,8 @@ def test_a_project_takes_the_seat_of_one_that_is_still_closing_and_names_it():
     """)
     assert out["waits"] == "Will become active after old-one stops"
     assert out["closing"].startswith("Stopped · Stopping, until ")
-    assert out["notActive"] == ("Did not become active: stuck-one is not closed · the OS needs "
-                                "a restart")
+    assert out["notActive"] == ("Did not become active: stuck-one is not closed · recovery "
+                                "needed")
     assert out["stuckActions"] == ["recover"], "the way out stands on the project that blocks"
 
 
