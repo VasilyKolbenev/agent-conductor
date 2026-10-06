@@ -147,6 +147,17 @@ def test_first_commit_op_record_that_is_not_one_json_object_is_setup_damaged(tmp
         assert op_file(tmp_path).read_bytes() == raw, what      # a refusal rewrites nothing
 
 
+def test_first_commit_records_nested_far_deeper_than_any_record_are_setup_damaged(tmp_path):
+    """16000 bytes of brackets fit the size limit and are deeper than a JSON decoder allows on
+    the older Pythons: that is a damaged record, not an exception of the decoder's own."""
+    records.start(tmp_path, an_op(), DATA)
+    nested = b"[" * 8000 + b"]" * 8000
+    receipt = setup_dir(tmp_path) / records.RECEIPT_NAME
+    for path, read in ((op_file(tmp_path), records.read_op), (receipt, records.read_receipt)):
+        path.write_bytes(nested)
+        damaged(read, tmp_path)
+
+
 def test_first_commit_op_stage_advances_only_forward(tmp_path):
     op = records.start(tmp_path, an_op(), DATA)
     before = op_file(tmp_path).read_bytes()

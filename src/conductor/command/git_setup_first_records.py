@@ -187,7 +187,7 @@ def read_op(root: Path) -> Op | None:
         op = _op(json.loads(_read(root, path, OP_LIMIT), object_pairs_hook=_object))
         read_install(root, op)
         return op
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):   # the decoder's depth limit
         raise SetupRefused("setup_damaged") from None
 
 
@@ -351,5 +351,5 @@ def read_receipt(root: Path) -> dict | None:
         if not os.path.lexists(path):
             return None
         return _receipt(json.loads(_read(root, path, RECEIPT_LIMIT), object_pairs_hook=_object))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):   # the decoder's depth limit
         raise SetupRefused("setup_damaged") from None
