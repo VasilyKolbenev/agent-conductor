@@ -42,9 +42,11 @@ START_TIMEOUT_SECONDS = 30.0
 #: The refusals of a route that changes who is active or starts a child (4.6.5).
 CODES = frozenset({"project_not_found", "project_running", "project_not_running",
                    "project_busy", "already_active", "active_not_closed",
-                   "hub_in_kill_on_close_job", "project_queue_changed"})
+                   "hub_in_kill_on_close_job", "project_queue_changed", "recover_not_needed"})
 _INSTANT = "%Y-%m-%dT%H:%M:%SZ"
 _WORKING = ("serving", "stopping", "stop_overdue")
+#: The lifecycle states that ask for a recovery (the same two `HubService` refuses a move on).
+_UNRECOVERED = ("recovery_required", "stop_uncertain")
 #: The only name a child's status file can have (`--status-file` must be `<project-id>.json`).
 _STATUS_NAME = re.compile(r"[0-9a-f]{32}\.json")
 
@@ -326,6 +328,73 @@ class Supervisor:
             return tuple(UnlistedClosing(entry.project_id, entry.since)
                          for entry in self._store.load().closing
                          if entry.project_id not in listed)
+
+    # -- recovery: what the hub asks of the owner commands and learns from the head -------------
+
+    def require_recoverable(self, project_id: str) -> registry.Project:
+        """The project, if a recovery command has something to do; else refuse.
+
+        Raises:
+            SupervisorRefused: `project_not_found`, `project_running` (a process of it may
+                live), `recover_not_needed` (it reads neither `recovery_required` nor
+                `stop_uncertain` and its head is a finished phase of this project).
+        """
+        with self._lock:
+            project = self._project(project_id)
+            seen = self._seen(project)
+            if seen.live:
+                raise SupervisorRefused("project_running", project_id)
+            asks = self._lifecycle(project, seen).state in _UNRECOVERED
+            if not asks and self._head_phase(project) in words.SETTLED_HEADS:
+                raise SupervisorRefused("recover_not_needed", project_id)
+            return project
+
+    def recovered(self, project_id: str) -> None:
+        """The recovery command succeeded: forget the stale failure and, for the active project
+        with no transition waiting, start it by the restart table (no transition, no flag)."""
+        with self._lock:
+            for held in (self._failed, self._codes):
+                held.pop(project_id, None)
+            current = self._store.load()
+            if current.active_project_id == project_id and self._waiting(current) is None:
+                self._awaiting.add(project_id)
+
+    def closure_of(self, project_id: str) -> str:
+        """`alive`, `closed` (dead and the head a finished phase) or `uncertain` (dead, not so).
+
+        Raises:
+            SupervisorRefused: `project_not_found`.
+        """
+        with self._lock:
+            project = self._project(project_id)
+            if self._seen(project).live:
+                return "alive"
+            closed = self._head_phase(project) in words.SETTLED_HEADS
+            return "closed" if closed else "uncertain"
+
+    def drain_project(self, project_id: str) -> bool:
+        """End the pipe of the hub's OWN live child of a project (EOF only; nothing else changes).
+
+        Returns:
+            True when the hub's own child was asked; False when no such child lives (a process
+            the hub did not start is never signalled).
+
+        Raises:
+            SupervisorRefused: `project_not_found`.
+        """
+        with self._lock:
+            self._project(project_id)
+            child = self._children.get(project_id)
+            if child is None or child.poll() is not None:
+                return False
+            self._drain(project_id)
+            return True
+
+    def has_live_active(self) -> bool:
+        """Whether an `active` process lives, or a status file cannot be read (fail closed)."""
+        with self._lock:
+            found = self._scan()
+            return bool(found.unreadable) or "active" in found.live.values()
 
     # -- the loop --------------------------------------------------------------------------------
 
