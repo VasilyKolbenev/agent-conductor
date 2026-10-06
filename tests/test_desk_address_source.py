@@ -90,6 +90,9 @@ def test_the_purity_check_refuses_each_planted_reach_and_names_it(edit, needle):
 # `replaceState`, which fires no `hashchange`, so no write of its own can start a loop.
 BOOT_MODULE = "desk.js"
 ROUTER = "onHashChange"
+#: The function that applies one hash, after the router has said which hash it is and its turn has
+#: come: it takes that hash as an argument and never reads the address bar itself.
+APPLIER = "applyHash"
 LISTENER = re.compile(
     r"""(?:\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\.)?addEventListener\(\s*["']([a-z]+)["']""")
 LISTENING = re.compile(rf"""addEventListener\(\s*["']hashchange["']\s*,\s*{ROUTER}\s*\)""")
@@ -136,12 +139,14 @@ def router_faults(source: str) -> list[str]:
         source: The text of the boot module.
 
     Returns:
-        One sentence per fault; empty when the router exists, writes nothing, and the address
-        is moved only by `replaceState` in one function.
+        One sentence per fault; empty when the router exists, writes nothing, takes the address
+        of each hash from its own event and applies it in turn, and the address is moved only
+        by `replaceState` in one function.
     """
     code = strip_comments(source)
     body = _function_body(code, ROUTER)
     faults = [] if body.strip() else [f"the router {ROUTER} is missing or empty"]
+    faults += _turn_faults(body, _function_body(code, APPLIER))
     faults += [f"the router calls {name}(" for name in ("write", "submit")
                if re.search(rf"\b{name}\s*\(", body)]
     faults += ["the module calls write(" for _ in re.findall(r"\bwrite\s*\(", code)[:1]]
@@ -153,8 +158,26 @@ def router_faults(source: str) -> list[str]:
     return faults
 
 
+def _turn_faults(router: str, applier: str) -> list[str]:
+    """Every way a hash stops being applied against the address its own event carried, in turn.
+
+    Two hashes heard while the desk boots are two choices. A router that re-reads the address bar
+    after its wait hands every waiting hash the newest one, and one that applies a hash outside
+    `toggles.inTurn` lets two of them run at the same time.
+    """
+    faults = [] if applier.strip() else [f"the applier {APPLIER} is missing or empty"]
+    faults += [f"{name} reads the location itself, not the address its event carried"
+               for name, part in ((ROUTER, router), (APPLIER, applier))
+               if re.search(r"\blocation\b", part)]
+    if router.strip() and "event.newURL" not in router:
+        faults.append(f"the router {ROUTER} does not take its address from event.newURL")
+    if router.strip() and "toggles.inTurn(" not in router:
+        faults.append(f"the router {ROUTER} applies a hash outside toggles.inTurn(")
+    return faults
+
+
 def _in_router(call: str):
-    anchor = f"async function {ROUTER}() {{"
+    anchor = f"async function {ROUTER}(event) {{"
 
     def apply(text: str) -> str:
         assert anchor in text, f"the sabotage target is gone from the module: {anchor!r}"
@@ -196,6 +219,15 @@ ROUTER_BROKEN = {
                                   "replaceState is called 0 times"),
     "the router renamed away": (_swap(f"function {ROUTER}(", "function onChange("),
                                 "missing or empty"),
+    "the applier renamed away": (_swap(f"function {APPLIER}(", "function applied("),
+                                 "applier applyHash is missing"),
+    "the address bar read by the router": (
+        _swap("new URL(event.newURL).hash", "location.hash"), "reads the location itself"),
+    "the address bar read again by the applier": (
+        _swap("seen = heard;", "seen = location.hash;"), "applyHash reads the location itself"),
+    "the hash applied outside its turn": (
+        _swap("await toggles.inTurn(booted, () => applyHash(heard, ticket));",
+              "await booted;\n  await applyHash(heard, ticket);"), "outside toggles.inTurn("),
 }
 #: The same, for the whole set of modules and the two events.
 LISTENER_BROKEN = {

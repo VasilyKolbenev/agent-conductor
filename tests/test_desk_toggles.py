@@ -374,3 +374,76 @@ hear("#panel=run&lang=ru");
 console.log(JSON.stringify({closed, total: log.filter((e) => e[0] === "closeContinue").length}));
 """, BOOKMARK)
     assert answer == {"closed": 1, "total": 1}, "a language and a named panel close nothing here"
+
+
+# -- the hashes heard are applied one after another ---------------------------------------------
+
+#: Stand-ins for a boot that has not finished and for jobs that wait on a gate each: `started`
+#: says in which order the jobs began and ended, and `flush` lets every settled promise run.
+TURNS = """
+const started = [];
+let finishBoot;
+const booted = new Promise((resolve) => { finishBoot = resolve; });
+const gates = [];
+const job = (name) => async () => {
+  started.push(`${name} starts`);
+  await new Promise((resolve) => gates.push(resolve));
+  started.push(`${name} ends`);
+  return name;
+};
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+"""
+
+
+def test_the_hashes_heard_before_the_boot_ends_are_applied_one_after_another_in_arrival_order():
+    answer = _run(TURNS + """
+const one = toggles.inTurn(booted, job("one"));
+const two = toggles.inTurn(booted, job("two"));
+await flush();
+const during = [...started];
+finishBoot();
+await flush();
+const first = [...started];
+gates[0]();
+await flush();
+const second = [...started];
+gates[1]();
+const answers = [await one, await two];
+console.log(JSON.stringify({during, first, second, last: started, answers}));
+""")
+    assert answer["during"] == [], "nothing is applied before the boot has ended"
+    assert answer["first"] == ["one starts"], "the second waits for the first, not for the boot"
+    assert answer["second"] == ["one starts", "one ends", "two starts"]
+    assert answer["last"] == ["one starts", "one ends", "two starts", "two ends"]
+    assert answer["answers"] == ["one", "two"]
+
+
+def test_a_hash_heard_after_the_boot_waits_for_the_one_still_being_applied():
+    answer = _run(TURNS + """
+finishBoot();
+const one = toggles.inTurn(booted, job("one"));
+await flush();
+const two = toggles.inTurn(booted, job("two"));
+await flush();
+const waiting = [...started];
+gates[0]();
+await flush();
+gates[1]();
+await Promise.all([one, two]);
+console.log(JSON.stringify({waiting, last: started}));
+""")
+    assert answer["waiting"] == ["one starts"]
+    assert answer["last"] == ["one starts", "one ends", "two starts", "two ends"]
+
+
+def test_a_hash_that_could_not_be_applied_is_told_to_its_own_caller_and_the_next_one_still_runs():
+    answer = _run(TURNS + """
+finishBoot();
+const broken = toggles.inTurn(booted, async () => { throw new Error("no run"); });
+const next = toggles.inTurn(booted, job("next"));
+const told = await broken.then(() => "applied", (error) => error.message);
+await flush();
+gates[0]();
+console.log(JSON.stringify({told, next: await next, started}));
+""")
+    assert answer == {"told": "no run", "next": "next", "started": ["next starts", "next ends"]}

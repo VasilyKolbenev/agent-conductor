@@ -22,6 +22,8 @@
 // panel of a hash heard in the window is therefore decided when it is heard, and the rest of it
 // (task, run, wizard) is the router's, once the boot has finished: `hear` gives the router a
 // ticket, and `after` takes the panel out of what the router would ask for a hash that has one.
+// The router applies the hashes of the window one after another (`inTurn`), each against the
+// address it carried: two hashes are two choices, and the later does not erase the earlier.
 //
 // The page and the desk's state come in as arguments; this module reaches neither by name.
 
@@ -42,6 +44,8 @@ export function createToggles({byId, panels, closeContinue, remember, render, fi
   let choices = 0;
   let booting = true;
   let applied = false;
+  // The application of the hash heard last: the next one starts when it has ended.
+  let ahead = Promise.resolve();
 
   //: A press of the toggle of `panel`: kept while the boot has not opened a panel, a toggle after.
   function press(panel) {
@@ -94,6 +98,15 @@ export function createToggles({byId, panels, closeContinue, remember, render, fi
     return Object.freeze({steps: Object.freeze(steps), reset: Object.freeze(reset)});
   }
 
+  //: `job` applies a hash once `ready` (the boot) has settled and every job given before it has
+  //: ended, so a hash heard meanwhile is applied against what the one before it left, and none is
+  //: lost to a newer one. A job that fails is told to its own caller and holds back none after it.
+  function inTurn(ready, job) {
+    const turn = ahead.then(() => ready).then(job);
+    ahead = turn.catch(() => {});
+    return turn;
+  }
+
   //: The panel the boot opens, given the one its address names: the person's, if they chose, else
   //: the one a hash heard since names. The window of presses is closed by this call, in the turn
   //: that opens the panel, so no press can fall between the two.
@@ -117,7 +130,7 @@ export function createToggles({byId, panels, closeContinue, remember, render, fi
     byId(id).addEventListener("click", () => press(panel));
   }
 
-  return Object.freeze({draw, resolve, choose, hear, after, names: NAMES,
+  return Object.freeze({draw, resolve, choose, hear, after, inTurn, names: NAMES,
     //: The boot has applied everything its address names, the wizard included.
     finish: () => { applied = true; }, applied: () => applied});
 }

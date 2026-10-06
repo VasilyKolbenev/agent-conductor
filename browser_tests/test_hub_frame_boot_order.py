@@ -8,12 +8,17 @@ the project of the real hub, and the click is the person's click on the hub's co
 
 What is judged: a press made after the click is the panel the desk opens (it replaces whatever the
 click meant), a click made after the press replaces the press (a column click is a new task, and a
-new task starts with no panel), and the desk never opens a panel that a later event withdrew.
-`test_desk_boot_presses.py` has the whole table, on a desk without a hub; this module is the same
-two orders with the hub in front of it.
+new task starts with no panel), and the desk never opens a panel that a later event withdrew. A
+language or theme the reader chooses on the page after the click is a second hash, which names no
+task: the task clicked stays, with the panel pressed between the two. `test_desk_boot_presses.py`
+has the whole table, on a desk without a hub; this module is the same orders with the hub in
+front of it.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import pytest
 from playwright.sync_api import Frame, expect
 
 from browser_tests.desk_hold import Hold, until
@@ -46,7 +51,8 @@ FACTS = """() => ({
     .filter((row) => row.getAttribute("aria-pressed") === "true").map((row) => row.dataset.taskId),
   shown: ["deskFlow", "deskPeople", "deskRun"]
     .filter((id) => !document.getElementById(id).hidden),
-  opened: window.__opened, hash: location.hash})"""
+  opened: window.__opened, hash: location.hash, lang: document.documentElement.lang,
+  theme: document.documentElement.getAttribute("data-theme")})"""
 
 
 def _booting_desk(one: LivePage) -> tuple[Hold, Frame]:
@@ -66,6 +72,24 @@ def _lands(held: Hold, frame: Frame) -> dict:
     held.land()
     frame.wait_for_function(SETTLED)
     return frame.evaluate(FACTS)
+
+
+def _lands_saying(one: LivePage, held: Hold, frame: Frame, said: Callable[[dict], bool]) -> dict:
+    """The held lists land; the desk is judged once it has settled and says what the page chose
+    last (`said`). The facts it ended on are in the failure when it never does."""
+    held.land()
+    facts: dict = {}
+
+    def done() -> bool:
+        nonlocal facts
+        facts = frame.evaluate(FACTS)
+        return said(facts) and frame.evaluate(SETTLED)
+
+    try:
+        until(one.page, "the desk to say what the page chose last", done)
+    except AssertionError as error:
+        raise AssertionError(f"{error}: {facts}") from error
+    return facts
 
 
 def test_a_press_made_after_a_task_was_chosen_in_the_column_is_the_panel_the_desk_opens(running_a):
@@ -90,3 +114,43 @@ def test_a_task_chosen_in_the_column_after_a_press_replaces_it_and_no_panel_open
     assert facts["chosen"] == ["task-docs"]
     assert (facts["shown"], facts["opened"]) == ([], [])
     assert "task=task-docs" in facts["hash"] and "panel" not in facts["hash"]
+
+
+#: What the hub does when the reader changes the page's language or theme: the minimal hash, which
+#: names no task. Each is a control of the page, pressed after the column click, and the word the
+#: desk says once it has heard it, for a reader whose page speaks `speaks`.
+PAGE_CHOICES = {
+    "language": (lambda speaks: f"seg:lang:{'ru' if speaks == 'en' else 'en'}",
+                 lambda speaks, facts: facts["lang"] == ("ru" if speaks == "en" else "en")),
+    "theme": (lambda speaks: "seg:theme:dark", lambda speaks, facts: facts["theme"] == "dark"),
+}
+
+
+@pytest.mark.parametrize("choice", list(PAGE_CHOICES))
+def test_a_language_or_theme_chosen_on_the_page_after_a_column_click_keeps_the_task_clicked(
+        running_a, lang, choice):
+    one = running_a
+    control, said = PAGE_CHOICES[choice]
+    held, frame = _booting_desk(one)
+    press(one, f"task:{A}:task-docs")
+    press(one, control(lang))
+    facts = _lands_saying(one, held, frame, lambda found: said(lang, found))
+    assert facts["chosen"] == ["task-docs"]
+    assert (facts["shown"], facts["opened"]) == ([], [])
+    assert "task=task-docs" in facts["hash"] and "panel" not in facts["hash"]
+
+
+@pytest.mark.parametrize("choice", list(PAGE_CHOICES))
+def test_a_press_between_a_column_click_and_a_language_or_theme_is_the_panel_of_the_task_clicked(
+        running_a, lang, choice):
+    one = running_a
+    control, said = PAGE_CHOICES[choice]
+    held, frame = _booting_desk(one)
+    press(one, f"task:{A}:task-docs")
+    frame.locator("#deskRunToggle").click()
+    expect(frame.locator("#deskRunToggle")).to_have_attribute("aria-expanded", "true")
+    press(one, control(lang))
+    facts = _lands_saying(one, held, frame, lambda found: said(lang, found))
+    assert facts["chosen"] == ["task-docs"]
+    assert (facts["shown"], facts["opened"]) == (["deskRun"], ["run"])
+    assert "task=task-docs" in facts["hash"] and "panel=run" in facts["hash"]

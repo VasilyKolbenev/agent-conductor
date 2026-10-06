@@ -645,25 +645,26 @@ async function reread() {
   if (state.taskId !== null && run !== null) await chooseTask(state.taskId, run);
 }
 
-//: The one listener (spec 4.5.3). A new hash is read against the last one the desk wrote: a
-//: project that is not the bound one ends the desk; a language or theme is set; a navigation
-//: key that moved is applied; a hash with none moves nothing, so the hub can send the language
-//: alone. It selects, reads and sets the appearance, and writes nothing. A hash that arrives while
-//: the desk boots is ordered with the person's presses by `toggles.hear`, and applied after it.
-async function onHashChange() {
-  const ticket = toggles.hear(readDeskHash(location.hash));
-  await booted;
+//: The one listener (spec 4.5.3). A hash is read against the last one the desk wrote: a foreign
+//: project ends the desk, a language or theme is set, a navigation key that moved is applied, and a
+//: hash with none moves nothing, so the hub can send the language alone. It writes nothing. Hashes
+//: are applied in turn, after the boot, as their events said them; `toggles.hear` orders the panel.
+async function onHashChange(event) {
+  const heard = new URL(event.newURL).hash;
+  const ticket = toggles.hear(readDeskHash(heard));
+  await toggles.inTurn(booted, () => applyHash(heard, ticket));
+}
+
+async function applyHash(heard, ticket) {
   if (state.foreign) return;
-  seen = location.hash;
-  const address = readDeskHash(seen);
-  if (foreignProject(bound, address)) {
-    enterForeign();
-    return;
-  }
-  const language = setAppearance(readPreferences(seen, locale()));
+  seen = heard;
+  const address = readDeskHash(heard);
+  if (foreignProject(bound, address)) { enterForeign(); return; }
+  const language = setAppearance(readPreferences(heard, locale()));
   const change = toggles.after(ticket, navigationChange(lastWritten, address));
   const opened = await navigate(change, address);
   if (language && !opened) await reread();
+  lastWritten = readDeskHash(addressOf());
   remember();
 }
 

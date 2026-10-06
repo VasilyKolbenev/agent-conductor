@@ -321,6 +321,15 @@ ORDER = {
     "a column click on another task then a press": (
         [("hash", COLUMN_CLICK), ("press", "deskRunToggle")], "run", DOCS, "en"),
     "a column click on another task alone": ([("hash", COLUMN_CLICK)], None, DOCS, "en"),
+    "a column click on another task then a hash of the language alone": (
+        [("hash", COLUMN_CLICK), ("hash", LANGUAGE_ONLY)], None, DOCS, "ru"),
+    "a column click on another task then a press then a hash of the language alone": (
+        [("hash", COLUMN_CLICK), ("press", "deskRunToggle"), ("hash", LANGUAGE_ONLY)],
+        "run", DOCS, "ru"),
+    "a column click on another task then a hash that names a panel": (
+        [("hash", COLUMN_CLICK), ("hash", PANEL_HASH)], "cycle", DOCS, "en"),
+    "a hash of the language alone then a column click on another task": (
+        [("hash", LANGUAGE_ONLY), ("hash", COLUMN_CLICK)], None, DOCS, "en"),
 }
 
 
@@ -330,7 +339,9 @@ def test_the_presses_and_the_hashes_made_while_the_boot_reads_are_applied_in_the
         chromium: Browser, seeded_url: str, series: str, read: str):  # noqa: F811
     """What a person pressed before a hash that names a panel is replaced by it, what they pressed
     after it replaces it, and a hash that names no panel (a language, a repeat) leaves both. The
-    boot opens only the panel it ends on: nothing is opened that a later event withdrew."""
+    boot opens only the panel it ends on: nothing is opened that a later event withdrew. Two
+    hashes are two choices, each applied against the address it carried and one after the other,
+    so a column click is not lost to the language the hub sends after it."""
     events, panel, (task, run), language = ORDER[series]
     context, page, held = _booting(chromium, seeded_url, BOOKMARK, read)
     try:
@@ -350,6 +361,41 @@ def test_the_presses_and_the_hashes_made_while_the_boot_reads_are_applied_in_the
         _says(page, panel)
         _shows(page, panel)
         assert page.evaluate("window.__opened") == ([panel] if panel else [])
+    finally:
+        close_context(context)
+
+
+#: Two fragments set in ONE turn of the page: the window fires a `hashchange` for each, and by then
+#: the address bar already says the second.
+SEND_TWO = """(hashes) => {
+  for (const hash of hashes) location.replace(location.href.split('#')[0] + hash);
+}"""
+
+
+@pytest.mark.parametrize("held", [True, False], ids=["while-the-boot-reads", "after-the-boot"])
+def test_two_hashes_set_in_one_turn_are_each_applied_against_the_address_they_carried(
+        chromium: Browser, seeded_url: str, held: bool):  # noqa: F811
+    """A `hashchange` says the address it was fired for (`newURL`), not the one the bar says by
+    the time it is heard: the column click is applied, and the language after it is applied too."""
+    want = {"task": ["task-docs"], "run": ["run-docs"], "lang": ["ru"]}
+    if held:
+        context, page, hold = _booting(chromium, seeded_url, BOOKMARK, TASKS)
+    else:
+        context = chromium.new_context(viewport={"width": 1100, "height": 1200})
+        page = context.new_page()
+        page.set_default_timeout(5000)
+        page.goto(f"{seeded_url}#task=task-fix&lang=en", wait_until="load")
+        _booted(page)
+        page.wait_for_function(ON_RUN, arg="run-fix-new")
+    try:
+        page.evaluate(SEND_TWO, [COLUMN_CLICK, LANGUAGE_ONLY])
+        if held:
+            hold.land()
+            _booted(page)
+        until(page, f"the desk to stand at {want}", lambda: _address(page) == want)
+        page.wait_for_function(ON_RUN, arg="run-docs")
+        _says(page, None)
+        _shows(page, None)
     finally:
         close_context(context)
 
