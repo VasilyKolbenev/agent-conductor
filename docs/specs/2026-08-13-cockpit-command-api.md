@@ -1230,8 +1230,9 @@ answered as before. The shapes are in the desk redesign specification, section
 
 `POST /command/project/git/setup` accepts these closed bodies:
 `{step:"init"|"exclude",actor}` explicitly confirms one local setup step;
-`{step:"first_commit",mode:"snapshot"|"empty",preview:true}` reads its preview.
-Init/exclude return `{"setup":receipt}`, 201 on their first completed receipt and
+`{step:"first_commit",mode:"snapshot"|"empty",preview:true}` reads its preview;
+`{step:"first_commit",mode:"snapshot"|"empty",paths_digest:"sha256:..."|null,actor}`
+confirms it (`paths_digest` is null exactly for `empty`). Init/exclude return `{"setup":receipt}`, 201 on their first completed receipt and
 200 for the identical actor's exact repeat. Receipts under
 `<data_root>/git/setup/<step>.json` contain `schema_version:1`, `step`,
 `requested_by`, `recorded_at`, `object_format`, `exclude` and `warnings`.
@@ -1255,9 +1256,45 @@ bare list that had no mode, never equals it, so an old preview never confirms th
 terms now shown (`paths_changed`, then a new preview). Unsafe leaves are shown
 as manual paths. Reading this preview creates no Git objects, index, ref or
 receipt. Missing author identity refuses; required signing is a shown warning.
-Actual first-commit confirmation and its recovery are not implemented by these
-accepted request forms. Every setup form requires active mode and a live owner;
-`git_setup_refused` carries one closed `reason`, never Git stderr.
+Every setup form requires active mode and a live owner; `git_setup_refused` carries
+one closed `reason`, never Git stderr.
+
+The first-commit confirmation returns `{"setup":receipt}`: 201 when this call
+completed the step, 200 for the exact repeat of the same mode, digest and actor,
+`setup_terms_changed` for any other. The receipt
+`<data_root>/git/setup/first_commit.json` holds `schema_version:1`, `step`, `mode`,
+`paths_digest`, `digest_version`, `target_ref`, `commit`, `tree`, `object_format`,
+`file_count`, `signature`, `requested_by` and `recorded_at`. The confirmation takes
+the preview again and, in `snapshot` mode, refuses `paths_changed` unless the digest of
+the versioned list equals the one sent; it refuses required signing as
+`signing_required` and a `.git`
+that is not the project's own plain directory (a linked worktree, a link) as
+`unsafe_git_route` before any object is written. Objects and the parentless commit
+are written without a lock. Inside the store transaction the product then publishes
+the install bytes, the operation record `first_commit.op.json` (read back against the
+bytes) and a private copy in `.git`, moves the copy onto `index.lock` without replacing
+anything, moves the target ref once by `update-ref <ref> <commit> <zero oid>`, installs
+the index by moving that lock onto `index` without replacing, writes the receipt, and
+retires the record before its bytes. A lock is the product's only when the whole binding
+(the marker's nonce and terms, the tree, the entry count, the bytes) proves it; an empty
+or other lock is `index_locked` and is never touched. An index of the owner that is
+equivalent to the committed tree is left exactly as it is; another index is
+`index_exists`; a ref that is not the product's commit is `head_exists`. A retry of
+the same terms by the same actor continues from what the repository shows and never
+moves the ref twice. A retry that comes before the ref is published first reads the
+branch HEAD names, the object format, the author and the signing flag again: when one
+of them is no longer the stored one the unfinished operation is replaced by a new one
+under the facts as they are now, after the product has removed only what it proves is
+its own (its lock and its copy, then the record, then the install bytes); a foreign
+lock, index or ref is never touched. After the ref is published the commit stays on its
+branch, a changed actor, mode, digest or author is `setup_terms_changed`, and the index
+is installed from the stored bytes. A repeat of a step whose receipt stands answers 200
+and removes what an interrupted finish left (the record first, its bytes after). A reload, a GET and a server start repeat nothing: the person
+continues explicitly by the same body (see `first_commit_pending` below). Every
+installed index carries the optional extension `CNDT`, and Git prints `ignoring CNDT
+extension` on stderr at every read of it until Git's own next index write. A build whose
+compatibility gate on the lowest supported Git is still open refuses this body as
+`contract_invalid`, as before.
 
 `GET /command/project/git` reads the repository facts for the task wizard:
 admission state, HEAD and object format, changed-path count excluding product

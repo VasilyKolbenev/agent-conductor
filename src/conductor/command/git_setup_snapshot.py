@@ -112,28 +112,45 @@ def _open_stamp(found):
 
 
 def _filtered(root, git, files, object_format):
-    pending, rows, size = [], [], 0
-    for row in files:
+    ids = hash_rows(root, git, files, object_format, write=False)
+    for row, object_id in zip(files, ids, strict=True):
+        row["git_oid"] = object_id
+
+
+def hash_rows(root, git, rows, object_format, write):
+    """The object id Git gives each row's bytes as the owner's clean filters make them.
+
+    `write` stores the objects (`hash-object -w`); without it nothing is written. The ids come
+    back in the order of the rows, in calls whose standard input stays under 128 KiB.
+    """
+    ids = []
+    for lines in _stdin_batches(root, rows):
+        args = ("hash-object", *(("-w",) if write else ()), "--stdin-paths")
+        raw = call(root, git, f"--work-tree={root}", *args, stdin=b"".join(lines))
+        ids += _object_ids(raw, len(lines), object_format)
+    return ids
+
+
+def _stdin_batches(root, rows):
+    """The rows' quoted absolute paths, one line each, in groups that fit one call."""
+    pending, size = [], 0
+    for row in rows:
         quoted = json.dumps((root / row["path"]).as_posix(), ensure_ascii=False)
         line = (quoted + "\n").encode("utf-8")
-        if size + len(line) > 128 * 1024:
-            _batch(root, git, rows, pending, object_format)
-            pending, rows, size = [], [], 0
+        if pending and size + len(line) > 128 * 1024:
+            yield pending
+            pending, size = [], 0
         pending.append(line)
-        rows.append(row)
         size += len(line)
     if pending:
-        _batch(root, git, rows, pending, object_format)
+        yield pending
 
 
-def _batch(root, git, rows, lines, object_format):
-    raw = call(root, git, f"--work-tree={root}", "hash-object", "--stdin-paths",
-               stdin=b"".join(lines))
+def _object_ids(raw, count, object_format):
     ids = raw.decode("ascii").splitlines()
     length = 40 if object_format == "sha1" else 64
     hexadecimal = "0123456789abcdef"
-    if len(ids) != len(rows) or any(
+    if len(ids) != count or any(
             len(oid) != length or any(c not in hexadecimal for c in oid) for oid in ids):
         raise SetupRefused("git_failed")
-    for row, oid in zip(rows, ids):
-        row["git_oid"] = oid
+    return ids

@@ -328,7 +328,11 @@ def _walk_materials_and_documents(subject, mode: str) -> None:
     if viewing:
         assert setup_answer["error"]["code"] == "project_not_active"
         for body in ({"step": "exclude", "actor": "Owner"},
-                     {"step": "first_commit", "mode": "snapshot", "preview": True}):
+                     {"step": "first_commit", "mode": "snapshot", "preview": True},
+                     {"step": "first_commit", "mode": "empty", "paths_digest": None,
+                      "actor": "Owner"},
+                     {"step": "first_commit", "mode": "snapshot",
+                      "paths_digest": "sha256:" + "a" * 64, "actor": "Owner"}):
             assert _send(subject, "POST", "/command/project/git/setup", body, 409)["error"]["code"] == "project_not_active"
         assert _view_effects(subject.command_store.project_root) == before
     else:
