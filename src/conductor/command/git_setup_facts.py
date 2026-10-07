@@ -6,7 +6,7 @@ import stat
 from pathlib import Path
 
 from .accept_git import PreviewGit
-from .containment import first_directory_violation
+from .containment import first_directory_violation, portal_violation
 from .git_setup_records import SetupRefused
 from .product_names import ExcludeWriteError, write_exclude_block
 from .project_documents import read_head
@@ -95,10 +95,14 @@ def plain_git_dir(root, git):
     """`<root>/.git` as a plain directory that is the repository's own git dir, else refuse.
 
     A first commit writes into `.git`, outside the folders the write guard covers, so a linked
-    worktree (whose `.git` is a file) and a `.git` that is a link or a portal are refused."""
+    worktree (whose `.git` is a file) and a `.git` that is a link or a portal are refused. Git names
+    the target of a link or a junction as its git dir, so the name itself is read without following
+    it: only a plain directory that is not a portal can be the route."""
     folder, named = git_dir(root, git), Path(root) / ".git"
     try:
-        same = os.path.samefile(folder, named) and stat.S_ISDIR(os.lstat(named).st_mode)
+        found = os.lstat(named)
+        same = (stat.S_ISDIR(found.st_mode) and portal_violation(named, found) is None
+                and os.path.samefile(folder, named))
     except OSError:
         same = False
     if not same:

@@ -7,6 +7,8 @@ answers the project's own `.git` directory or refuses `unsafe_git_route` before 
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from conductor.command.accept_manifest import SnapshotRefused
@@ -111,6 +113,19 @@ def test_plain_git_dir_refuses_a_dot_git_that_is_a_link_to_a_directory(tmp_path)
         (repo / ".git").symlink_to(moved, target_is_directory=True)
     except OSError as error:
         pytest.skip(str(error))
+    with pytest.raises(SetupRefused) as caught:
+        plain_git_dir(repo, real_reader(tmp_path))
+    assert caught.value.reason == "unsafe_git_route"
+
+
+@needs_git
+@pytest.mark.skipif(os.name != "nt", reason="a directory junction is a Windows portal")
+def test_plain_git_dir_refuses_a_dot_git_that_is_a_junction_to_a_directory(tmp_path):
+    import _winapi
+    repo = repository(tmp_path, "real")
+    moved = tmp_path / "elsewhere"
+    (repo / ".git").rename(moved)
+    _winapi.CreateJunction(str(moved), str(repo / ".git"))
     with pytest.raises(SetupRefused) as caught:
         plain_git_dir(repo, real_reader(tmp_path))
     assert caught.value.reason == "unsafe_git_route"

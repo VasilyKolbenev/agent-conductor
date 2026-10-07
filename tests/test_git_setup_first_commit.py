@@ -279,6 +279,19 @@ def test_first_commit_refuses_a_git_dir_that_is_a_link(tmp_path):
     assert snapshot(moved) == before and no_receipt(p) and not op_file(p).exists()
 
 
+@pytest.mark.skipif(os.name != "nt", reason="a directory junction is a Windows portal")
+def test_first_commit_refuses_a_git_dir_that_is_a_junction(tmp_path):
+    import _winapi
+    p = project(tmp_path, FILES)
+    digest = seal(p)["paths_digest"]
+    moved = tmp_path / "moved-git"
+    (p.root / ".git").rename(moved)
+    _winapi.CreateJunction(str(moved), str(p.root / ".git"))
+    before = snapshot(moved)
+    assert reason(confirm(p, digest=digest)) == "unsafe_git_route"
+    assert snapshot(moved) == before and no_receipt(p) and not op_file(p).exists()
+
+
 def linked_project(tmp_path):
     """An unborn branch checked out in a linked worktree of another repository."""
     main = repository(tmp_path)
