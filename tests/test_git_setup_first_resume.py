@@ -79,16 +79,20 @@ def test_first_commit_resume_follows_the_rows_9_8_states(row, expected):
     assert next_action(*row) == expected
 
 
-def test_first_commit_resume_od2_pending_releases_an_own_lock_over_a_matching_index():
-    """The plan's decision OD-2, PENDING its ruling; section 9.8 does not state this row.
+RULED_ROWS = [   # (stage, ref, lock, index) -> what a review ruling adds to the rows 9.8 states
+    # OD-2: 9.8 says only "own lock -> step 6", and step 6 moves index.lock onto index, which a
+    # move that never replaces cannot do over an index that stands. Off Windows a move by link
+    # that died between its halves leaves two names for one inode: the lock is OWN and the index
+    # MATCHES. The lock name is released, and the next turn finishes (the lock module counts
+    # these names: tests/test_git_setup_first_lock.py walks both crash points through this row).
+    pytest.param((REF_MOVED, Ref.AT_COMMIT, O, Index.MATCHES), Act.RELEASE_LOCK,
+                 id="ref_moved_own_lock_over_a_matching_index_after_a_two_name_crash"),
+]
 
-    9.8 says only "own lock -> step 6", and step 6 renames index.lock onto index, which would
-    replace an index that already stands. OD-2 makes the move non-replacing, so on POSIX a crash
-    between the link and the removal of the lock leaves two names for one inode: the lock is OWN
-    and the index MATCHES. The plan answers RELEASE_LOCK there. A different ruling rewrites or
-    removes this test; the rows above do not depend on it.
-    """
-    assert next_action(REF_MOVED, Ref.AT_COMMIT, O, Index.MATCHES) == Act.RELEASE_LOCK
+
+@pytest.mark.parametrize("row, expected", RULED_ROWS)
+def test_first_commit_resume_follows_the_rows_the_rulings_add(row, expected):
+    assert next_action(*row) == expected
 
 
 def _apply(step, state):

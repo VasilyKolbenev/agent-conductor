@@ -22,7 +22,7 @@ class Ref(Enum):
 
 
 class Lock(Enum):
-    """`index.lock` judged by its bytes (git_setup_first_lock)."""
+    """`index.lock` judged by the whole binding, never by its bytes alone (git_setup_first_lock)."""
 
     NONE = "none"
     OWN = "own"
