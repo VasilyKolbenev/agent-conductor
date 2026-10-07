@@ -29,31 +29,23 @@ A, B, C = "a" * 32, "b" * 32, "c" * 32
 #: The refusals that act on every row and are not repeated in it (spec 4.6.3).
 TRANSPORT = frozenset({"same_origin_denied", "csrf_denied", "malformed_request",
                        "route_not_found", "method_not_allowed", "contract_invalid"})
-#: The answers a live route gives that its row does not list, each waiting for a ruling, as
-#: (module of the test that sends the request, `METHOD path-template`, code). `Stack.post` lets
-#: one through only when the call says so with `unlisted=<code>`; every other code outside a row
-#: fails the test that met it.
+#: The test modules whose writes `Stack.post` holds to the list of the row: the hub handler tests.
+#: The tests of earlier slices that also use `Stack` are not judged.
+JUDGED = frozenset({"tests.test_hub_handlers_http", "tests.test_hub_tool_pin_route"})
+#: The answers a live route gives in a judged module that its row does not list, each waiting for
+#: a ruling, as (module of the test that sends the request, `METHOD path-template`, code).
+#: `Stack.post` lets one through only when the call says so with `unlisted=<code>`; every other
+#: code outside a row fails the test that met it.
 #:
-#: ASKED are the two of the question to the reviewer of the rows
+#: These are the two of the question to the reviewer of the rows
 #: (OPUS-H-REFUSAL-LIST-QUESTION-2026-10-07). A project whose own operation runs stays on the
 #: list: `forget` says `project_busy`, which its row (`project_not_found`, `project_running`)
 #: does not name. A login recovery asked of a hub that is closing says `operation_busy`; its row
 #: names `login_not_found` and `recover_not_needed`.
-ASKED = frozenset({
+PENDING_RULING = frozenset({
     ("tests.test_hub_handlers_http", "POST /hub/projects/<project_id>/forget", "project_busy"),
     ("tests.test_hub_handlers_http", "POST /hub/logins/<login_key>/recover", "operation_busy"),
 })
-#: FOUND are the ones this guard found beside them, in tests of earlier slices, and NOT in that
-#: question: a hub-state.json nobody can read is `registry_invalid` on activate and view
-#: (`test_activate_and_view_answer_409_registry_invalid_...`), and a change of the projects
-#: folder while an add runs is `operation_busy` (`test_parent_setting_does_not_change_...`).
-FOUND = frozenset({
-    ("tests.test_hub_http_surface", "POST /hub/projects/<project_id>/activate",
-     "registry_invalid"),
-    ("tests.test_hub_http_surface", "POST /hub/projects/<project_id>/view", "registry_invalid"),
-    ("tests.test_hub_new_projects", "POST /hub/setup/projects-home", "operation_busy"),
-})
-PENDING_RULING = ASKED | FOUND
 
 
 class Mono:
@@ -206,9 +198,12 @@ class Stack:
              unlisted: str | None = None) -> Reply:
         """A write with every header right unless the test says otherwise.
 
-        Every refusal it gets back must be in the list of the route's row (or a transport one),
-        or be a case of `PENDING_RULING` that the call names with `unlisted=<code>` (`judge`).
+        In a module of `JUDGED`, every refusal it gets back must be in the list of the route's row
+        (or a transport one), or be a case of `PENDING_RULING` that the call names with
+        `unlisted=<code>` (`judge`). A module outside `JUDGED` is not judged and may not say
+        `unlisted=`: a call that waits for a ruling nobody reads would be dead.
         """
+        module = sys._getframe(1).f_globals.get("__name__", "")
         raw = body if body is not None else json.dumps({} if payload is None else payload
                                                        ).encode("utf-8")
         headers: dict[str, str] = {}
@@ -224,8 +219,11 @@ class Stack:
             headers["Content-Type"] = content_type
         headers.update(extra or {})
         reply = request(self.port, "POST", target, headers=headers, body=raw, host=host)
-        judge("POST", target, reply, unlisted=unlisted,
-              module=sys._getframe(1).f_globals.get("__name__", ""))
+        if module in JUDGED:
+            judge("POST", target, reply, unlisted=unlisted, module=module)
+        else:
+            assert unlisted is None, (
+                f"{module} is not judged, so it has no ruling to wait for ({unlisted!r})")
         return reply
 
     def state_bytes(self) -> bytes | None:

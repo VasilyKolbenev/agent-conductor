@@ -1,11 +1,12 @@
 """The guard of `Stack.post`: a refusal a live write answers is one its row lists (spec 4.6.3).
 
-`tests/_hub_stack.py` judges every error answer of every write the hub tests make: its code must
-be a transport refusal or one the route's row names. A code outside the row passes only as a
-case `PENDING_RULING` names (module, route, code) and the call itself says so, so a code that
-nobody asked a ruling for fails the test that met it, and a named case that stops answering its
-code fails the call that waits for it. The guard is a check on the rows, so it is shown here to
-name a code that is not listed, and to be quiet for the codes that are.
+`tests/_hub_stack.py` judges every error answer of every write the hub handler tests make: its
+code must be a transport refusal or one the route's row names. A code outside the row passes
+only as a case `PENDING_RULING` names (module, route, code) and the call itself says so, so a
+code that nobody asked a ruling for fails the test that met it, and a named case that stops
+answering its code fails the call that waits for it. The guard is a check on the rows, so it is
+shown here to name a code that is not listed, and to be quiet for the codes that are. The tests
+of earlier slices, which also use `Stack`, are not judged (`JUDGED`).
 """
 from __future__ import annotations
 
@@ -16,23 +17,16 @@ from pathlib import Path
 import pytest
 
 from conductor.hub import routes
-from tests._hub_stack import (A, ASKED, FOUND, PENDING_RULING, TRANSPORT, Reply, Stack,
-                              judge, undeclared)
+from tests import _hub_stack
+from tests._hub_stack import A, PENDING_RULING, TRANSPORT, Reply, Stack, judge, undeclared
 
 FORGET = "POST", "/hub/projects/<project_id>/forget"
 TARGET = f"/hub/projects/{A}/forget"
 NAMED = frozenset({("tests.test_x", "POST /hub/projects/<project_id>/forget", "project_busy")})
-#: What the table names today: the two cases of the question to the reviewer of the rows, and the
-#: three the guard found beside them (not in that question).
+#: What the table names today: exactly the two cases of the question to the reviewer of the rows.
 ASKED_NOW = {
     ("tests.test_hub_handlers_http", "POST /hub/projects/<project_id>/forget", "project_busy"),
     ("tests.test_hub_handlers_http", "POST /hub/logins/<login_key>/recover", "operation_busy"),
-}
-FOUND_NOW = {
-    ("tests.test_hub_http_surface", "POST /hub/projects/<project_id>/activate",
-     "registry_invalid"),
-    ("tests.test_hub_http_surface", "POST /hub/projects/<project_id>/view", "registry_invalid"),
-    ("tests.test_hub_new_projects", "POST /hub/setup/projects-home", "operation_busy"),
 }
 
 
@@ -104,22 +98,52 @@ def test_a_named_case_that_stops_answering_its_code_fails_the_call_that_waits_fo
               unlisted="project_busy", pending=NAMED)
 
 
-def test_a_live_write_that_answers_a_code_outside_its_row_fails_in_a_module_no_ruling_names(stack):
+def _forget_while_its_own_operation_runs(stack) -> None:
     stack.world.gone("a")
     stack.service._operations.open_project_row("recover", A, "recover")     # stays running
+
+
+def test_a_live_write_that_answers_a_code_outside_its_row_fails_in_a_module_no_ruling_names(
+        stack, monkeypatch):
+    monkeypatch.setattr(_hub_stack, "JUDGED", frozenset({__name__}))
+    _forget_while_its_own_operation_runs(stack)
     with pytest.raises(AssertionError, match="answered 'project_busy', which its row does not"):
         stack.post(TARGET)
     with pytest.raises(AssertionError, match="is not named as waiting for a ruling"):
         stack.post(TARGET, unlisted="project_busy")
 
 
-def test_a_live_write_whose_row_lists_its_refusal_passes_the_guard(stack):
+def test_a_live_write_whose_row_lists_its_refusal_passes_the_guard(stack, monkeypatch):
+    monkeypatch.setattr(_hub_stack, "JUDGED", frozenset({__name__}))
     assert stack.post(f"/hub/projects/{'f' * 32}/forget").status == 404
 
 
-def test_the_cases_waiting_for_a_ruling_are_exactly_the_two_asked_and_the_three_found():
-    assert set(ASKED) == ASKED_NOW and set(FOUND) == FOUND_NOW
-    assert set(PENDING_RULING) == ASKED_NOW | FOUND_NOW
+def test_a_write_of_a_module_outside_the_judged_ones_is_not_held_to_the_list_of_its_row(
+        stack, monkeypatch):
+    monkeypatch.setattr(_hub_stack, "JUDGED", frozenset({"tests.test_elsewhere"}))
+    _forget_while_its_own_operation_runs(stack)
+    reply = stack.post(TARGET)
+    assert (reply.status, reply.json()["error"]["code"]) == (409, "project_busy")
+
+
+def test_a_call_of_a_module_outside_the_judged_ones_may_not_wait_for_a_ruling(stack, monkeypatch):
+    monkeypatch.setattr(_hub_stack, "JUDGED", frozenset({"tests.test_elsewhere"}))
+    _forget_while_its_own_operation_runs(stack)
+    with pytest.raises(AssertionError, match="is not judged, so it has no ruling to wait for"):
+        stack.post(TARGET, unlisted="project_busy")
+
+
+def test_the_judged_modules_are_the_hub_handler_tests_and_each_one_writes_through_the_stack():
+    assert set(_hub_stack.JUDGED) == {"tests.test_hub_handlers_http",
+                                      "tests.test_hub_tool_pin_route"}
+    for module in sorted(_hub_stack.JUDGED):
+        source = Path(importlib.import_module(module).__file__).read_text(encoding="utf-8")
+        assert ".post(" in source, f"{module} makes no write through the stack"
+
+
+def test_the_cases_waiting_for_a_ruling_are_exactly_the_two_asked_and_each_is_in_a_judged_module():
+    assert set(PENDING_RULING) == ASKED_NOW
+    assert {module for module, _route, _code in PENDING_RULING} <= set(_hub_stack.JUDGED)
 
 
 def test_each_case_waiting_for_a_ruling_is_a_live_row_that_does_not_list_its_code():

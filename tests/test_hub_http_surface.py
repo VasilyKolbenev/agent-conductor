@@ -557,9 +557,7 @@ def test_activate_and_view_answer_409_registry_invalid_when_hub_state_cannot_be_
         stack, route, capsys):
     path = stack.world.home / "hub-state.json"
     path.write_bytes(b"{not json")
-    # Neither row lists `registry_invalid` (nor did they when lane H began): the code waits for a
-    # ruling (`PENDING_RULING`), and the call says so.
-    reply = stack.post(f"/hub/projects/{A}/{route}", unlisted="registry_invalid")
+    reply = stack.post(f"/hub/projects/{A}/{route}")
     assert _code(reply, 409) == "registry_invalid"
     assert _envelope(reply)["detail"] == {"file": "hub-state.json"}
     assert path.read_bytes() == b"{not json", "the unreadable file was written over"
