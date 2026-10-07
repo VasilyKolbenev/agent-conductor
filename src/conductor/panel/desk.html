@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>December Command</title>
+<link rel="stylesheet" href="/panel/desk.css">
+<link rel="stylesheet" href="/panel/desk-flow.css">
+<link rel="stylesheet" href="/panel/desk-people.css">
+<link rel="stylesheet" href="/panel/desk-run.css">
+<script src="/panel/desk.js" type="module"></script>
+<!-- The project desk. It is served at /panel/desk.html from the first day, and
+     the hub mounts exactly that address, so it exists before any of its code
+     does. `GET /` does not answer with it yet: that is still the Studio's
+     shell, and the entry page switches in the slice that removes the five tabs.
+
+     Every reference here is an ABSOLUTE /panel/ path. One document will be
+     reachable at two addresses once the entry switches, and a relative name
+     would resolve differently at each; the absolute spelling is the one that
+     makes the two answers the same bytes. tests/test_desk_source.py holds it,
+     and holds this page to nothing inline: no style block, no style attribute,
+     no handler, and no script the test does not name.
+
+     The page carries no English. Its one literal is the product's name; every
+     other word a person reads or a screen reader speaks is a catalogue key
+     (`data-i18n` for text, `data-i18n-label` for a name) that desk.js writes in
+     the reader's language. The same test refuses a literal sentence, link text,
+     aria-label or tooltip here.
+
+     The five mounts below are the regions of the desk (spec 5.1): the rail of
+     tasks, the scene, the feed, the summary and the pult. Each stands in the
+     machine word `empty` until a module fills it and a read says otherwise; the
+     top bar's status line is the one sentence a person reads. The plate above
+     the centre is no region: it says one sentence, written in the reader's
+     language like every other word of the page, and is shown only in a project
+     the server's claim says is open for viewing (spec 5.8). -->
+</head>
+<body>
+<div class="desk-shell" id="deskShell">
+  <header class="desk-top" id="deskTop">
+    <h1 class="desk-brand">December Command</h1>
+    <p class="desk-status" id="deskStatus" role="status" aria-live="polite"></p>
+    <button id="deskNewTask" type="button" data-i18n="desk.new_task"></button>
+    <span id="deskConnection" role="status" aria-live="polite"></span>
+    <button id="deskFlowToggle" type="button" aria-controls="deskFlow" aria-expanded="false" data-i18n="desk.flow"></button>
+    <button id="deskPeopleToggle" type="button" aria-controls="deskPeople" aria-expanded="false" data-i18n="desk.people"></button>
+    <button id="deskRunToggle" type="button" aria-controls="deskRun" aria-expanded="false" data-i18n="desk.run"></button>
+    <p class="desk-note" data-i18n="desk.note"></p>
+    <a class="desk-classic" href="/panel/index.html" data-i18n="desk.classic"></a>
+  </header>
+  <nav class="desk-rail" id="deskRail" data-i18n-label="desk.rail.label" data-region="rail" data-state="empty"></nav>
+  <main class="desk-center" id="deskCenter">
+    <p class="desk-plate" id="deskPlate" role="note" data-i18n="desk.plate.view" hidden></p>
+    <section class="desk-schema" id="deskFlow" data-i18n-label="desk.flow" hidden></section>
+    <section class="desk-people" id="deskPeople" data-i18n-label="desk.people" hidden></section>
+    <section class="desk-run" id="deskRun" data-i18n-label="desk.run" hidden></section>
+    <section class="desk-scene" id="deskScene" data-i18n-label="desk.scene.label" data-region="scene" data-state="empty"></section>
+    <section class="desk-feed" id="deskFeed" data-i18n-label="desk.feed.label" data-region="feed" data-state="empty"></section>
+    <section class="desk-summary" id="deskSummary" data-i18n-label="desk.summary.label" data-region="summary" data-state="empty"></section>
+  </main>
+  <aside class="desk-pult" id="deskPult" data-i18n-label="desk.pult.label" data-region="pult" data-state="empty"></aside>
+  <section id="deskWizard" class="desk-wizard-shell" hidden></section>
+</div>
+</body>
+</html>

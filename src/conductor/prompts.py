@@ -1,16 +1,20 @@
 """Prompt vending — deterministic instruction text for agents, no LLM involved.
 
-Two pure string builders: `bootstrap_prompt` tells an agent how to create
-`conductor/map.toml`; `role_prompt` tells a role-holding agent how to keep
-its lane file and which findings still owe it a verdict. The map example is
-taken from the spec (PROTOCOL.md §2); the lane starter vended by
-`role_prompt` is deliberately NOT the commented §3 excerpt — that one stays
-in PROTOCOL.md as an illustration, while the vended template is a separate,
-copy-safe strict-JSON artifact an agent can write verbatim.
+Two pure string builders: `bootstrap_prompt` tells an agent how to fill in the
+`conductor/map.toml` that `conduct init` has already written; `role_prompt`
+tells a role-holding agent how to keep its lane file and which findings still
+owe it a verdict. Both read the artefact they talk about — `bootstrap_prompt`
+takes the map's TEXT, not just its path, because a sentence about what is in
+that file has to be derived from the file rather than from which template
+wrote it. The map example is taken from the spec (PROTOCOL.md §2); the lane
+starter vended by `role_prompt` is deliberately NOT the commented §3 excerpt
+— that one stays in PROTOCOL.md as an illustration, while the vended template
+is a separate, copy-safe strict-JSON artifact an agent can write verbatim.
 """
 from __future__ import annotations
 
 import json
+import tomllib
 
 from conductor import merge
 
@@ -19,8 +23,19 @@ class UnknownRole(Exception):
     """Raised when `role_prompt` is asked for a role id the cycle does not declare."""
 
 
-# PROTOCOL.md §2. Public: `conduct init` writes this text as the map.toml stub —
-# ONE sync point for the spec's map example.
+# PROTOCOL.md §2 — ONE sync point for the spec's map example. Public, with a
+# single reader: `templates` vends it verbatim as the `minimal` template. It is
+# neither what `conduct init` writes by default (that is
+# `templates.get(templates.DEFAULT)`) nor part of `bootstrap_prompt` any more —
+# a prompt that embeds a whole map invites an agent to replace the one already
+# on disk. Note it ends without a trailing newline; `templates` adds the one a
+# file needs.
+#
+# It is a COPY of the spec's fenced block, not an import of it, so the copy is
+# what has to be held: tests/test_templates.py::
+# test_the_minimal_template_is_the_protocol_spec_section_2_block_byte_for_byte
+# reads that block out of spec/PROTOCOL.md and requires this text back. Edit
+# one of the two and that guard names the other.
 MAP_EXAMPLE = '''schema_version = 1
 project = "web-app"
 
@@ -39,14 +54,22 @@ depends_on = ["schemas"]
 id = "implementer"
 harness = "claude-code"  # informational
 reviews = []             # role ids whose findings this role must verdict
+stage = "implement"      # optional; one cycle.phases value
 
 [[cycle.roles]]
 id = "reviewer"
 harness = "codex"
 reviews = ["implementer"]
+stage = "review"
 
 [cycle]
 phases = ["plan", "implement", "review", "human-gate"]
+# Phases are labels; a "human gate" is simply a phase name. Dedicated
+# human-gate objects were considered and cut (YAGNI): the human queue is
+# built from lanes' waits_on_human, not from the map.
+# `stage` says which phase a role works in, so a consumer can draw the cycle
+# from the map alone, before any lane reports. It is presentation and handoff
+# metadata: no §6 merge rule reads it, and it changes no computed value.
 
 [[invariants]]
 id = "main-untouched"
@@ -62,6 +85,12 @@ _AUTHOR_PLACEHOLDER = "<your-author-id>"
 # for the current UTC ISO-8601 time on every write.
 _UPDATED_PLACEHOLDER = "REPLACE-WITH-CURRENT-UTC-ISO8601"
 
+# The literal `now.task` value. Prose rather than a token, because unlike
+# `updated` it is not swapped for a computed value: the agent writes a sentence,
+# and this is the shape of the sentence. Nothing validates it, so a lane that
+# keeps it verbatim is accepted — which is why the swap instruction names it.
+_TASK_PLACEHOLDER = "REPLACE-WITH-THE-ONE-THING-YOU-ARE-DOING"
+
 _LIFECYCLE = '''Lifecycle:
 - Read the map and the other agents' lanes before acting.
 - NEVER edit another agent's lane file.
@@ -76,64 +105,401 @@ _LIFECYCLE = '''Lifecycle:
   {"ts": "<UTC ISO-8601>", "author": "<you>", "kind": "ok", "text": "closed D-2", "ref": "D-2"}
 - Run `conduct validate` before finishing a work session.'''
 
+# Who the stage hands off to. `deliver` ends the Run, so its recipient is the
+# human accepting it, not another stage — a shared header would be false there.
+_HANDOFF = "What the next stage is entitled to receive from you:"
+_HANDOFF_HUMAN = "What the human accepting this Run is entitled to receive from you:"
+
+# The Default Orbit's five stages: guiding question, handoff header, and the
+# contract owed (docs/specs/2026-08-03-product-direction.md §3). Keyed by stage
+# name; a role staged onto a project's own phase name simply misses this table
+# and gets no block — never a guessed one.
+#
+# Every line must be performable by the role that receives it: an imperative
+# only another role can carry out is worse than no imperative, because the
+# prompt already forbids editing another agent's lane.
+#
+# `goal` is unreachable from all three vended templates, which leave that stage
+# human-owned on purpose. It is kept for projects that do staff it — the
+# register is a human's, not an agent's, and that is not a defect to fix by
+# staffing goal in the default.
+_STAGE_CONTRACTS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "goal": (
+        "What are we trying to achieve, and who owns the decision?",
+        _HANDOFF,
+        ("State the intended outcome and the scope of this pass.",
+         "State what is explicitly out of scope.",
+         "List the constraints and the acceptance criteria.",
+         "List the risks you already know about.",
+         "Name the map nodes the work touches.",
+         "Name who owns the decision: a goal nobody owns is not a goal."),
+    ),
+    "detect": (
+        "What is actually true right now?",
+        _HANDOFF,
+        ("Report what you observe as findings, each with a severity.",
+         "Attach evidence to every one: a path, a log, or a reproduced command.",
+         "Name the affected components in refs, using map node ids only.",
+         "Say whether the finding reproduces, and how.",
+         "List your unknowns honestly, rather than rounding them off.",
+         "Call a finding you cannot evidence unverified, and leave it there: never "
+         "raise your confidence in place of the evidence."),
+    ),
+    "diagnose": (
+        "Why is it happening?",
+        _HANDOFF,
+        ("Record a verdict on every finding you owe one: confirmed, refuted or partial.",
+         "Separate the root cause from the symptoms it produces.",
+         "Give the evidence and the reproduction behind each verdict.",
+         "Say which hypotheses you ruled out, not only the surviving one.",
+         "List the questions still open."),
+    ),
+    "design": (
+        "What do we intend to change, and how will we know it worked?",
+        _HANDOFF,
+        ("Write the implementation plan and its architectural impact.",
+         "Name the affected components and files.",
+         "State the test strategy, the migration path and the rollback path.",
+         "State the risks, with the alternatives you considered and rejected.",
+         "State the evidence the delivery is expected to produce."),
+    ),
+    "deliver": (
+        "What changed, what was checked, and is it safe to accept?",
+        _HANDOFF_HUMAN,
+        ("Describe what changed.",
+         "List the checks you ran and attach their evidence.",
+         "Name the role that owes your findings a verdict — it is named above. If no "
+         "role does, ask for a human review with a waits_on_human entry of kind "
+         "review; your own verdict on your own finding is excluded from every "
+         "computation, so it can never stand in for one.",
+         "Leave findings that are still open in your lane: never close them silently.",
+         "Say why the result is ready.",
+         "Raise, as a waits_on_human entry, the decision that accepts it."),
+    ),
+}
+
 _VOCABULARIES = '''Closed vocabularies:
+- findings[].severity: blocker | major | minor | note
 - verdicts.*.disposition: confirmed | refuted | partial
 - map_status values: pass | fail | blocked | running | idle
 - waits_on_human.kind: decision | action | review
 - blocks entries and event ref values hold finding ids or map node ids'''
 
+# The one table an agent fills in when it has something to report. A field
+# reference and not a second document to reproduce — the worked example above it
+# carries the shape, and this says what each field is FOR.
+#
+# `claim` is why this block exists. It is required, it is not obvious from its
+# name, and it was the one required finding field the packet named nowhere: the
+# starter shipped `"findings": []`, and the pending-verdict section renders id,
+# title, severity, author, refs and evidence, so an agent that read a pending
+# finding and wrote one in the same shape produced a lane `conduct validate`
+# rejects. The severity vocabulary is stated once, with the other closed sets,
+# rather than a second time here — two copies of a closed set drift.
+_FINDING_FIELDS = '''  id          non-empty, and unique across every lane in the project
+  title       one line naming what you found
+  claim       your own assessment of it, as a short free-form label
+              (defect, risk, gap, question). Required, and the field
+              most often left out
+  severity    a value from the severity vocabulary listed further
+              down; there is no other legal value
+  detail      optional; the fuller explanation
+  evidence    optional; the path, log line or reproduced command
+  refs        optional; the map node ids this finding touches, and
+              only ids declared in the current map'''
 
-def bootstrap_prompt() -> str:
-    """Return the fixed instruction block for bootstrapping `conductor/map.toml`.
+# What `now` is for, in the one place it can be acted on. `now.phase` is the
+# sole input to the panel's Current phase and `now.task` to its current task, so
+# a packet that never mentioned them left both blank for the whole first hour of
+# every project. `role.stage` is design-time — which phase this role works in —
+# and `now.phase` is runtime; they are told apart here because the packet
+# renders the stage and used to never name the phase it is distinct from.
+_NOW_CONTRACT = '''"now" is what the panel shows while you work, so keep it current:
+- task: one short sentence about what you are doing right now.
+- since: when you started THAT task, not when you last wrote the file.
+- phase: which cycle phase you are in — one of the phases listed
+  below, and nothing else. It is where you ARE, which is not the
+  same as the stage your role is assigned to.'''
+
+
+#: Where the map lives, relative to the project root, when no caller says
+#: otherwise. `conduct init` passes the path it actually wrote.
+DEFAULT_MAP_PATH = "conductor/map.toml"
+
+#: Every line of prose a person reads in a terminal folds to this — the prompts
+#: below, hand-wrapped, and `conduct init`'s dialogue, folded at render time.
+#: Narrow enough to survive a split terminal, and the width the pins enforce:
+#: the sentences that matter most are the longest, which is exactly why
+#: hand-wrapping them regressed.
+WIDTH = 72
+
+# The one table the bootstrapping agent edits. A field reference, deliberately
+# NOT a document to reproduce: `conduct init` has already written a valid map,
+# so an example map here would invite the agent to replace it — and with it
+# every answer the person gave during setup.
+_NODE_FIELDS = '''  id          unique, and the only name a lane may use: a lane may
+              report a status only for ids declared here, and
+              anything else is warned about and ignored
+  label       the human name the panel shows
+  kind        free-form (artifact | check | component | doc | …);
+              the panel prints it, no rule computes on it
+  depends_on  ids declared in this same file. The panel draws the
+              graph from them; status does NOT propagate along
+              them, so a failing dependency never marks its
+              dependents failing by itself.'''
+
+#: The PLACEHOLDER convention, named once so code can apply it rather than
+#: restate it. A node whose label CARRIES this word anywhere is scaffolding a
+#: template wrote, not a component of anyone's project: `templates` spells it
+#: into every label it vends, and `placeholder_nodes` reads it back out of a
+#: map that has already been written — which is the only way a sentence about
+#: a map can be true of maps the templates did not write, a hand-edited one
+#: included.
+#:
+#: Anywhere, not at the start, and the choice is forced by the prose: the
+#: prompt says "no label is marked PLACEHOLDER" and init says "the placeholder
+#: nodes". A prefix test called `billing (PLACEHOLDER - replace me)` unmarked
+#: and then printed both sentences about a file where they are false. The two
+#: statements have to be the same statement, so the count was widened to the
+#: word the prose already claims to be looking for rather than the prose
+#: narrowed to the position nobody promised.
+PLACEHOLDER_LABEL = "PLACEHOLDER"
+
+
+def placeholder_nodes(map_text: str) -> tuple[int, int]:
+    """Count a written map's placeholder nodes, and its nodes.
+
+    Args:
+        map_text: The TOML text of a map that has already been written AND has
+            passed `schema.validate_map` — which requires at least one node
+            (`tests/test_schema_map.py::test_empty_nodes_is_error`). A map with
+            no `[[nodes]]` block is outside this contract: it counts as
+            `(0, 0)`, which every caller reads as "nothing is a placeholder",
+            and the sentences built on that would be vacuous rather than true.
 
     Returns:
-        A deterministic English prompt: read the project docs, write the map
-        (full commented example embedded), obey the validation rules, then
-        run `conduct validate`.
+        `(placeholders, nodes)` — how many `[[nodes]]` blocks still carry
+        `PLACEHOLDER_LABEL` somewhere in their label, and how many there are.
+        The pair, not a boolean: "every node is a placeholder" and "some node
+        is" are different claims, and a prompt that conflates them is false
+        about a half-replaced map.
+
+    Raises:
+        tomllib.TOMLDecodeError: If `map_text` is not TOML. Callers hold a map
+            that has parsed and validated already; nothing here re-checks it.
+    """
+    nodes = tomllib.loads(map_text).get("nodes", [])
+    return (sum(1 for node in nodes
+                if PLACEHOLDER_LABEL in str(node.get("label", ""))),
+            len(nodes))
+
+
+# What step 2 says about the map's nodes. One of the three, chosen by counting
+# the map that was actually written — never by which template wrote it. A
+# template name answers correctly for the four we vend and wrongly for the
+# fifth, and wrongly for every map a user has since edited; the count is right
+# for all of them. `PLACEHOLDER` is interpolated rather than retyped, so the
+# marker the prose names is the marker the counting uses.
+_STEP_EVERY_NODE_IS_A_PLACEHOLDER = (
+    "2. Open that file. Every [[nodes]] block in it is a placeholder.\n"
+    "   Replace them with the real components of this project, and add\n"
+    "   one [[nodes]] block per further component you want reported on:")
+
+_STEP_SOME_NODES_ARE_PLACEHOLDERS = (
+    "2. Open that file. Some of its [[nodes]] blocks are placeholders,\n"
+    f"   labelled {PLACEHOLDER_LABEL}. Replace those with the real\n"
+    "   components of this project, check the rest still describe it,\n"
+    "   and add one [[nodes]] block per further component you want\n"
+    "   reported on:")
+
+# Not an empty branch: the map still has to be made to describe THIS project,
+# and the agent is the one who has to check that it does. What changes is the
+# verb — check and correct, rather than replace wholesale.
+_STEP_NO_NODE_IS_A_PLACEHOLDER = (
+    "2. Open that file. No [[nodes]] block in it is a placeholder: no\n"
+    f"   label is marked {PLACEHOLDER_LABEL}, so they name components\n"
+    "   already. Check every one against THIS project, replace what\n"
+    "   does not describe it, and add one [[nodes]] block per further\n"
+    "   component you want reported on:")
+
+
+def _node_step(map_text: str) -> str:
+    """Pick the step-2 text that is true of the map that was written."""
+    placeholders, nodes = placeholder_nodes(map_text)
+    if placeholders == 0:
+        return _STEP_NO_NODE_IS_A_PLACEHOLDER
+    if placeholders == nodes:
+        return _STEP_EVERY_NODE_IS_A_PLACEHOLDER
+    return _STEP_SOME_NODES_ARE_PLACEHOLDERS
+
+
+#: What the map must still satisfy when the agent is done, listed for the
+#: agent rather than left to `conduct validate` to discover one at a time.
+#: A constant rather than eight lines inside the prompt, because the prompt
+#: crossed the function-length limit and because these are the validator
+#: rules restated -- so a reader comparing them against `schema.py` has one
+#: block to compare rather than a slice of a longer string.
+_STILL_TRUE = (
+    "What must still be true when you are done:\n"
+    "- schema_version == 1\n"
+    "- node ids are unique, and there is at least one node\n"
+    "- every depends_on entry names a node declared in this file\n"
+    "- every reviews entry names a role declared in this file\n"
+    "- every role's stage, where it has one, names one of cycle.phases\n"
+    "\n"
+    "4. Run `conduct validate` and fix anything it reports before you finish.\n"
+)
+
+
+def bootstrap_prompt(map_path: str, map_text: str) -> str:
+    """Return the instruction block for filling in an already-written map.
+
+    Args:
+        map_path: The map the agent must edit, named the way the person
+            handing this over sees it.
+        map_text: That map's TOML text, as it was written, and validated —
+            see `placeholder_nodes` for the contract, including why a map with
+            no `[[nodes]]` block is outside it. Required, and the reason is the
+            whole of this function's history: given only a path, the prompt
+            called every node a placeholder for every map, which is false of
+            the `minimal` template and of any map a user has edited.
+
+    Returns:
+        A deterministic English prompt, self-contained enough to be redirected
+        to a file and handed over on its own: what the map already decides,
+        what the agent must replace — stated from what `map_text` actually
+        holds — the field reference for the one table it edits, what must
+        still hold afterwards, and the command that checks it.
+
+    Raises:
+        tomllib.TOMLDecodeError: If `map_text` is not TOML.
     """
     return (
-        "You are bootstrapping Conduct for this project.\n"
+        "You are setting up Conduct for this project. The map you must fill\n"
+        "in is:\n"
+        "\n"
+        # On its own line, and never interpolated into a sentence: an absolute
+        # path under `--dir` is long and unwrappable, and folding prose around
+        # it pushed these lines past 130 columns.
+        f"    {map_path}\n"
+        "\n"
+        "It already exists and it already validates. Your job is to make it\n"
+        "describe THIS project — not to write a new one. The cycle, its\n"
+        "phases, and every [[cycle.roles]] block's id, harness, stage and\n"
+        "reviews value were chosen when the project was set up. They are\n"
+        "answers, not suggestions.\n"
         "\n"
         "1. Read the project's roadmap, plan, and architecture documents.\n"
-        "2. Produce `conductor/map.toml`: the project map — nodes plus an optional\n"
-        "   review cycle. A fully commented example:\n"
         "\n"
-        "```toml\n"
-        f"{MAP_EXAMPLE}\n"
-        "```\n"
+        f"{_node_step(map_text)}\n"
         "\n"
-        "Validation rules your map must satisfy:\n"
-        "- schema_version == 1\n"
-        "- node ids are unique\n"
-        "- depends_on and reviews reference existing ids\n"
-        "- at least one node\n"
-        "Everything else is optional — a map with only nodes is valid.\n"
+        f"{_NODE_FIELDS}\n"
         "\n"
-        "3. Run `conduct validate` to check the map before you finish.\n"
+        "3. Change nothing else. If the cycle is genuinely wrong for this\n"
+        "   project, say so and stop — do not restructure it on your own\n"
+        "   initiative.\n"
+        "\n"
+        f"{_STILL_TRUE}"
     )
 
 
-def _starter_template(role_id: str, author: str | None) -> str:
+def _runtime_phase(state: dict, role: dict) -> str | None:
+    """Pick the cycle phase this role's first lane write can honestly name.
+
+    Args:
+        state: A `state.json` dict as produced by `merge.merge()`.
+        role: The `state["cycle"]["roles"]` entry the prompt is vended for.
+
+    Returns:
+        The role's own `stage`, when the map declares one and it is a declared
+        phase, or None. Deliberately not a guess: `merge` warns on a `now.phase`
+        that names no `cycle.phases` value, so a seeded phase that is wrong
+        costs the reader a warning on their own lane every time they write it.
+        An unstaged role, and a project that declares no phases at all, get no
+        `phase` key — `_NOW_CONTRACT` and the rendered phase list still say what
+        the field is and which values are legal.
+    """
+    phases = state["cycle"]["phases"]
+    stage = role.get("stage")
+    return stage if isinstance(stage, str) and stage in phases else None
+
+
+def _starter_template(role_id: str, author: str | None, phase: str | None) -> str:
     """Serialize the copy-safe strict-JSON lane starter for one role.
 
     Args:
         role_id: The cycle role pre-filled into the template.
         author: The lane author, or None to emit the fill-in placeholder.
+        phase: The runtime phase to seed `now.phase` with, or None to omit the
+            key — see `_runtime_phase` for why an invented one is worse.
 
     Returns:
         A `json.dumps(..., indent=2)` lane skeleton that passes
-        `schema.validate_lane` once `updated` is swapped for a real time.
+        `schema.validate_lane` once `updated` is swapped for a real time, and
+        that draws no merge warning either. It stays EMPTY of findings,
+        verdicts and waits: it is copied verbatim into a real lane, so a worked
+        example living in it would have every new project report a fiction on
+        its first write. The worked example is rendered separately.
     """
+    now = {"task": _TASK_PLACEHOLDER, "since": _UPDATED_PLACEHOLDER}
+    if phase is not None:
+        now["phase"] = phase
     return json.dumps({
         "schema_version": 1,
         "author": author if author is not None else _AUTHOR_PLACEHOLDER,
         "role": role_id,
         "updated": _UPDATED_PLACEHOLDER,
+        "now": now,
         "map_status": {},
         "findings": [],
         "verdicts": {},
         "waits_on_human": [],
     }, indent=2)
+
+
+def _finding_example(node_ids: list[str]) -> str:
+    """Serialize one worked `findings` entry, carrying every field it may hold.
+
+    Args:
+        node_ids: The current map's node ids. Only the first is used, and an
+            empty list yields empty `refs`.
+
+    Returns:
+        A `json.dumps(..., indent=2)` finding an agent can fill in and drop
+        into `findings`. `refs` is taken from the map that was actually
+        written rather than typed here: a hardcoded node id reads as a
+        perfectly good example and warns on every project but the one it was
+        written against.
+    """
+    return json.dumps({
+        "id": "F-1",
+        "title": "one line naming what you found",
+        "claim": "defect",
+        "severity": "major",
+        "detail": "the fuller explanation, when the title is not enough",
+        "evidence": "the path, log line or reproduced command that shows it",
+        "refs": node_ids[:1],
+    }, indent=2)
+
+
+def _stage_block(stage: str | None) -> str:
+    """Render the Default Orbit contract for one stage, or nothing.
+
+    Args:
+        stage: The role's `stage` value from the map, or None when it has none.
+
+    Returns:
+        The stage's guiding question and the contract it owes, or `""` for an
+        absent stage and for any name outside the Orbit's five — a project may
+        declare its own phases, and a wrong contract is worse than none.
+    """
+    contract = _STAGE_CONTRACTS.get(stage) if isinstance(stage, str) else None
+    if contract is None:
+        return ""
+    question, handoff, owed = contract
+    lines = [f"Stage: {stage} - {question}", handoff]
+    lines.extend(f"- {line}" for line in owed)
+    return "\n".join(lines)
 
 
 def _pending_block(state: dict, role_id: str) -> str:
@@ -161,6 +527,27 @@ def _pending_block(state: dict, role_id: str) -> str:
     return "\n".join(lines)
 
 
+def _review_directions(state: dict, role: dict) -> tuple[str, str]:
+    """Render both review edges of one role for the prompt's mission lines.
+
+    Args:
+        state: A `state.json` dict as produced by `merge.merge()`.
+        role: The `state["cycle"]["roles"]` entry the prompt is vended for.
+
+    Returns:
+        `(reviewed, reviewed_by)` — whose findings this role owes verdicts on,
+        and which roles owe verdicts on this role's findings. The reverse edge
+        is what makes the `deliver` contract's "name the role that owes your
+        findings a verdict" answerable from the prompt rather than guessed.
+    """
+    reviews = role.get("reviews", [])
+    reviewers = [r["id"] for r in state["cycle"]["roles"]
+                 if role["id"] in r.get("reviews", [])]
+    return (", ".join(reviews) if reviews else "no other roles",
+            ", ".join(reviewers) if reviewers
+            else "no role — nobody owes your findings a verdict")
+
+
 def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
     """Render the state-aware working prompt for one cycle role.
 
@@ -171,10 +558,12 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
             None renders an author-agnostic prompt with fill-in placeholders.
 
     Returns:
-        A deterministic English prompt: mission line, lane-file contract with
-        a copy-safe strict-JSON starter (role and author pre-filled), the
-        lifecycle rules, closed vocabularies, the current map node ids, and —
-        last — the enriched findings still awaiting this role's verdict.
+        A deterministic English prompt: mission lines naming both review
+        directions, the lane-file contract with a copy-safe strict-JSON
+        starter (role and author pre-filled), the lifecycle rules, the
+        contract of the role's Orbit stage when it has one, closed
+        vocabularies, the current map node ids, and — last — the enriched
+        findings still awaiting this role's verdict.
 
     Raises:
         UnknownRole: If `role_id` names no `state["cycle"]["roles"]` entry.
@@ -184,37 +573,79 @@ def role_prompt(state: dict, role_id: str, author: str | None = None) -> str:
         known = ", ".join(r["id"] for r in state["cycle"]["roles"]) or "none declared"
         raise UnknownRole(
             f"role {role_id!r} is not declared in cycle.roles (known roles: {known})")
-    reviews = role.get("reviews", [])
-    reviewed = ", ".join(reviews) if reviews else "no other roles"
-    node_ids = ", ".join(n["id"] for n in state["map"]["nodes"]) or "(none)"
+    reviewed, reviewed_by = _review_directions(state, role)
+    nodes = [n["id"] for n in state["map"]["nodes"]]
+    stage_block = _stage_block(role.get("stage"))
+    lifecycle = f"{_LIFECYCLE}\n\n{stage_block}" if stage_block else _LIFECYCLE
+    return (
+        f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
+        f"you review findings from: {reviewed}.\n"
+        f"Your own findings are reviewed by: {reviewed_by}.\n"
+        "\n"
+        f"{_lane_contract(state, role, role_id, author)}"
+        "\n"
+        f"{_finding_contract(nodes)}"
+        "\n"
+        f"{lifecycle}\n"
+        "\n"
+        f"{_VOCABULARIES}\n"
+        "\n"
+        f"Current map node ids: {', '.join(nodes) or '(none)'}\n"
+        f"Cycle phases: {', '.join(state['cycle']['phases']) or '(none declared)'}\n"
+        "\n"
+        "The following findings are awaiting your verdict:\n"
+        f"{_pending_block(state, role_id)}\n"
+    )
+
+
+def _lane_contract(state: dict, role: dict, role_id: str, author: str | None) -> str:
+    """Where the agent's lane lives, what it starts as, and what to replace.
+
+    Split out of `role_prompt` with `_finding_contract` below: the prompt is one
+    long assembled document, and the two halves that carry a copyable JSON
+    starter are the ones a reader actually needs to find.
+    """
     stem = author if author is not None else _AUTHOR_PLACEHOLDER
-    swap = (f'Replace the "updated" value ({_UPDATED_PLACEHOLDER}) with the\n'
-            "current UTC ISO-8601 time on every write.")
+    swap = (f'Replace both {_UPDATED_PLACEHOLDER} values ("updated"\n'
+            'and "now.since") with real UTC ISO-8601 times, and the "now.task"\n'
+            "placeholder with what you are actually doing. Bump \"updated\" on\n"
+            "every write.")
     if author is None:
         swap += (f"\nReplace {_AUTHOR_PLACEHOLDER} with your author id — in the\n"
                  "lane file name too, not just the JSON.")
     return (
-        f'You hold the "{role_id}" role in this project\'s Conduct cycle; '
-        f"you review findings from: {reviewed}.\n"
-        "\n"
         f"Your lane file is conductor/lanes/{stem}.json; its \"author\" field\n"
         "must equal the filename stem. Start from this template (STRICT JSON —\n"
         "no comments, copy it verbatim):\n"
         "\n"
         "```json\n"
-        f"{_starter_template(role_id, author)}\n"
+        f"{_starter_template(role_id, author, _runtime_phase(state, role))}\n"
         "```\n"
         "\n"
         f"{swap}\n"
         "map_status keys must be ids from the current map, listed below —\n"
         "never invent node ids.\n"
         "\n"
-        f"{_LIFECYCLE}\n"
+        f"{_NOW_CONTRACT}\n"
+    )
+
+
+def _finding_contract(nodes: list[str]) -> str:
+    """One worked finding, and the fields every finding must carry.
+
+    The example is built from the project's own node ids and pushed through the
+    same vocabulary the validator holds, so a packet cannot advertise a shape
+    `conduct validate` would refuse.
+    """
+    return (
+        "When you have something to report, add an entry to \"findings\" with\n"
+        "this shape — do NOT copy it into your first lane, it is a worked\n"
+        "example and not a finding you have made:\n"
         "\n"
-        f"{_VOCABULARIES}\n"
+        "```json\n"
+        f"{_finding_example(nodes)}\n"
+        "```\n"
         "\n"
-        f"Current map node ids: {node_ids}\n"
-        "\n"
-        "The following findings are awaiting your verdict:\n"
-        f"{_pending_block(state, role_id)}\n"
+        "Finding fields:\n"
+        f"{_FINDING_FIELDS}\n"
     )

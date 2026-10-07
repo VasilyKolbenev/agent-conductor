@@ -1,0 +1,41 @@
+{
+  "route": "GET /hub/operations/<operation_id>",
+  "status": 200,
+  "response": {
+    "operation_id": "operation-2b7e4d19a0c84f56b3e8d1a97c052f64",
+    "kind": "add",
+    "source": "github",
+    "state": "succeeded",
+    "step": "start",
+    "project_id": "8a41b6e2c9d04f7385e1a2b6c0d94f13",
+    "code": null,
+    "detail": null,
+    "result": {
+      "folder": "landing",
+      "activated": "new",
+      "providers": "copied",
+      "git": "repo",
+      "exclude": "written",
+      "exclude_names": [
+        "/conductor/",
+        "/conductor.v3/",
+        "/.conduct*",
+        "/work/",
+        "/instructions/",
+        "/.claude-home/",
+        "/.claude-marker",
+        "/.codex-home/",
+        "/.codex-marker",
+        "/.grok-home/",
+        "/.grok-marker",
+        "/.kimi-home/",
+        "/.kimi-marker",
+        "/.dsh-home/",
+        "/.dsh-marker"
+      ],
+      "agent_instructions": ["AGENTS.md", ".claude/"],
+      "projects_home_created": false
+    }
+  },
+  "illustrative": ["response.result.exclude_names"]
+}

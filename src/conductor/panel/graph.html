@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>December — Graph</title>
+<!-- The Cockpit/Graph window. Served by the production panel route under
+     /panel/, from the allowlist of literal names in server.py. Every asset
+     path stays relative: the page is one directory of packaged files, and a
+     relative href is what keeps the served copy and the packaged copy the
+     same document. -->
+<link rel="stylesheet" href="graph.css">
+<script src="graph.js" type="module"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="shell">
+    <span class="wordmark">December — Graph</span>
+    <form class="g-run" id="runForm">
+      <!-- The dash is escaped, as it is everywhere else this grammar is
+           written down: an HTML `pattern` compiles under the `v` flag, where
+           an unescaped `-` at the end of a class is a syntax error. A pattern
+           that does not compile is IGNORED rather than enforced, which leaves
+           the attribute standing as an affordance that constrains nothing. -->
+      <label class="command-field" for="graphRunId"><span>Run id</span>
+        <input autocomplete="off" id="graphRunId" maxlength="128"
+          name="run_id" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,127}" required
+          spellcheck="false" type="text"></label>
+      <button type="submit">Load run</button>
+    </form>
+    <span class="mono" id="runFacts"></span>
+    <p class="g-notice" aria-live="polite" id="notice"></p>
+    <!-- Where the drawing on screen came from, said in its own line rather
+         than left to the reader to infer from the shape of the graph. -->
+    <div class="g-src" id="sourceLine"></div>
+  </header>
+  <div class="grid">
+    <div class="col">
+      <section class="card" id="fieldCard" aria-label="Run graph">
+        <h2>Run graph</h2>
+        <div class="g-field-scroll">
+          <div class="g-field" id="field">
+            <svg id="edges" aria-hidden="true"></svg>
+          </div>
+        </div>
+        <p class="empty" id="fieldEmpty">No run graph loaded.
+          Load a run above, or start from the product's default plan.</p>
+        <!-- Drawing the default is a Human's act and writes nothing: it puts
+             the five-step process on screen as a LOCAL DRAFT that the save
+             button may then be pressed on. -->
+        <button class="g-seed" id="seedDefault" type="button">Start from the
+          default five-step plan</button>
+      </section>
+      <section class="card" id="timelineCard" aria-label="Execution timeline">
+      </section>
+    </div>
+    <div class="col">
+      <section class="card" id="paletteCard" aria-label="Harness palette"></section>
+      <section class="card" aria-label="Compose">
+        <h2>Compose</h2>
+        <div id="composerCard"></div>
+        <!-- Persistent for the same reason as #decideStatus: a refusal must
+             be announced, and it must land beside the form it answers. -->
+        <p aria-live="polite" class="g-note g-compose-status" id="composeStatus"></p>
+      </section>
+      <section class="card" id="detailCard" aria-label="Node card">
+        <h2>Node card</h2>
+        <div id="detailBody"></div>
+        <!-- Persistent, so a refused decision is actually announced: an
+             aria-live region rebuilt in the same pass as its text is not. -->
+        <p aria-live="polite" class="g-note g-decide-status" id="decideStatus"></p>
+      </section>
+      <section class="card" id="gatesCard" aria-label="Human gates"></section>
+      <section class="card" aria-label="Write the plan">
+        <div id="saveCard"></div>
+        <!-- Persistent, for the reason #decideStatus is: the answer to a
+             write must be announced, and an aria-live region rebuilt in the
+             same pass as its text is not announced at all. -->
+        <p aria-live="polite" class="g-note g-save-status" id="saveStatus"></p>
+      </section>
+    </div>
+  </div>
+</div>
+<noscript><p class="empty">The Graph window needs JavaScript.</p></noscript>
+</body>
+</html>

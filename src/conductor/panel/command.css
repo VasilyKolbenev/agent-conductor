@@ -1,0 +1,95 @@
+#commandCockpit{min-width:0}
+#commandCockpit .command-form{display:grid;grid-template-columns:minmax(12rem,1fr) auto;
+  align-items:end;gap:10px;margin-top:8px}
+#commandCockpit .command-field{display:grid;gap:5px;min-width:0}
+#commandCockpit .command-field span{color:var(--muted);font-size:11px;font-weight:650;
+  letter-spacing:.04em;text-transform:uppercase}
+#commandCockpit input,#commandCockpit select,#commandCockpit button{min-height:44px;
+  border:1px solid var(--line);border-radius:7px;font:inherit}
+#commandCockpit input,#commandCockpit select{min-width:0;background:var(--sunk);
+  color:var(--ink);padding:0 11px}
+#commandCockpit button{background:var(--panel-lit);color:var(--ink);font-weight:700;
+  padding:0 16px;cursor:pointer}
+#commandCockpit button:disabled{cursor:not-allowed;opacity:.58}
+#commandCockpit input:focus-visible,#commandCockpit select:focus-visible,
+#commandCockpit button:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px}
+#commandCockpit .command-status{color:var(--muted);margin:10px 0 0;min-height:1.4em}
+#commandCockpit .command-summary{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 0}
+#commandCockpit .command-fact{background:var(--sunk);border:1px solid var(--line);
+  border-radius:6px;color:var(--muted);font-family:var(--mono);font-size:10.5px;
+  padding:4px 7px}
+#commandCockpit .command-controls{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+#commandCockpit .command-control{border:1px solid var(--contour-lit);border-radius:999px;
+  color:var(--ink);font-size:11px;padding:3px 8px}
+#commandCockpit .command-composer,#commandCockpit .command-review{margin-top:14px;
+  border-top:1px solid var(--line);padding-top:12px}
+#commandCockpit .command-proposal-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;min-width:0}
+#commandCockpit .command-proposal-form h3,#commandCockpit .command-arguments,
+#commandCockpit .command-proposal-form button{grid-column:1/-1}
+#commandCockpit .command-proposal-form h3,#commandCockpit .command-review h3{font-size:13px;
+  margin:0}
+#commandCockpit .command-arguments{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;border:1px solid var(--line);border-radius:7px;margin:0;padding:10px}
+#commandCockpit .command-arguments legend{color:var(--muted);font-size:11px;padding:0 5px}
+#commandCockpit select[multiple]{height:auto;padding:6px 9px}
+#commandCockpit .command-proposal-status{color:var(--muted);min-height:1.4em;margin:8px 0 0}
+#commandCockpit .command-proposal-status[data-proposal-state="created"]{color:var(--pass)}
+#commandCockpit .command-proposal-status[data-proposal-state="refused"],
+#commandCockpit .command-proposal-status[data-proposal-state="outcome-unknown"]{
+  color:var(--fail)}
+#commandCockpit .command-review{display:grid;gap:6px}
+#commandCockpit .command-review-fact{display:grid;grid-template-columns:minmax(7rem,auto) 1fr;
+  gap:8px;margin:0;min-width:0}
+#commandCockpit .command-review-fact strong{color:var(--muted);font-size:11px}
+#commandCockpit .command-review-fact span{font-family:var(--mono);font-size:10.5px;
+  overflow-wrap:anywhere}
+#commandCockpit .command-confirm{margin-top:14px;border-top:1px solid var(--line);
+  display:grid;gap:6px;padding-top:12px}
+#commandCockpit .command-confirm-form{display:grid;gap:10px;min-width:0}
+#commandCockpit .command-confirm-form h3{font-size:13px;margin:0}
+#commandCockpit .command-confirm-note{color:var(--ink);font-size:11.5px;margin:0;
+  max-width:52ch}
+#commandCockpit .command-confirm-submit{justify-self:start}
+#commandCockpit .command-confirm-status{color:var(--muted);margin:8px 0 0;
+  min-height:1.4em}
+#commandCockpit .command-confirm-status[data-confirm-state="accepted"]{color:var(--pass)}
+#commandCockpit .command-confirm-status[data-confirm-state="refused"],
+#commandCockpit .command-confirm-status[data-confirm-state="outcome-unknown"]{
+  color:var(--fail)}
+#commandCockpit .command-action-fact{display:grid;gap:8px;margin:0;min-width:0;
+  grid-template-columns:minmax(7rem,auto) 1fr}
+#commandCockpit .command-action-fact strong{color:var(--muted);font-size:11px}
+#commandCockpit .command-action-fact span{font-family:var(--mono);font-size:10.5px;
+  overflow-wrap:anywhere}
+#commandCockpit .command-gates{margin-top:12px}
+#commandCockpit .command-gates h3{color:var(--muted);font-size:11px;letter-spacing:.04em;
+  margin:0;text-transform:uppercase}
+#commandCockpit .command-gate-list{display:flex;flex-wrap:wrap;gap:6px;list-style:none;
+  margin:7px 0 0;padding:0}
+#commandCockpit .command-gate{background:var(--sunk);border:1px solid var(--line);
+  border-radius:6px;color:var(--muted);font-size:11px;padding:5px 8px}
+#commandCockpit .command-gate[data-gate-state="satisfied"]{color:var(--pass)}
+#commandCockpit .command-gate[data-gate-state="failed"],
+#commandCockpit .command-gate[data-gate-state="corrupt"]{color:var(--fail)}
+#commandCockpit .command-gate[data-gate-state="changes_requested"],
+#commandCockpit .command-gate[data-gate-state="waived"]{color:var(--wait)}
+#commandCockpit .command-history{margin:12px 0 0;padding:0;list-style:none;
+  display:grid;gap:7px;max-height:22rem;overflow:auto}
+#commandCockpit .command-record{background:var(--sunk);border:1px solid var(--line);
+  border-radius:7px;padding:9px 10px;min-width:0}
+#commandCockpit .command-record strong{display:block;color:var(--ink);font-size:12px}
+#commandCockpit .command-meta{display:flex;flex-wrap:wrap;gap:5px 10px;margin-top:4px;
+  color:var(--muted);font-family:var(--mono);font-size:10.5px;overflow-wrap:anywhere}
+#commandCockpit[data-phase="refused"] .command-status{color:var(--fail)}
+#commandCockpit[data-phase="ready"] .command-status{color:var(--pass)}
+#commandCockpit[data-phase="stale"] .command-status{color:var(--wait)}
+@media (max-width:760px){
+  #commandCockpit .command-form,#commandCockpit .command-proposal-form,
+  #commandCockpit .command-arguments{grid-template-columns:1fr}
+  #commandCockpit button{width:100%}
+}
+@media (prefers-reduced-motion:reduce){
+  #commandCockpit *{scroll-behavior:auto}
+}

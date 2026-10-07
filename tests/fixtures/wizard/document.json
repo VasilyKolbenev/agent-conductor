@@ -1,0 +1,6 @@
+{
+  "doc_id": "d-1f0a9c3e5b7d2468a1f0a9c3e5b7d246",
+  "path": "docs/spec.md",
+  "git_oid": "1111111111111111111111111111111111111111",
+  "content": "# Spec\n\nThe login form must accept a plus sign in the address.\n"
+}

@@ -1,0 +1,299 @@
+"""Pure replay relations for durable RT-2 attempt facts."""
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from .attempts import AttemptEvent, action_request_digest
+from .contracts import (
+    ActionProposal,
+    ActionRequest,
+    ActionResultReceipt,
+    ContractError,
+    EvidenceRef,
+    frozen_config_bindings,
+)
+
+#: How `ControlRuntime.authorize` spells the link from a request to the
+#: proposal it was minted from -- `idempotency_key == "dispatch-<proposal_id>"`
+#: -- and nothing else writes that key. It is the journal position a request's
+#: durable inputs are bound to: a source is bound when it is confirmed, never
+#: chosen again at execution (the owner's correction, 2026-09-06).
+PROPOSAL_KEY = "dispatch-"
+
+
+class AttemptRelationError(ValueError):
+    """A sequence of individually valid attempt facts contradicts itself."""
+
+
+def proposal_named_by(request: object) -> str | None:
+    """The proposal a request was minted from, or None for one that names none.
+
+    A request the runtime authorized always names one. A request composed by
+    hand -- a transport test's, an older fixture's -- carries whatever key its
+    author wrote: a key that names NO proposal (`idem-…`, or the bare prefix)
+    answers None, and every reader keeps the road it took before the binding
+    existed for it; a key that names a proposal the run does not hold is
+    refused by name by every reader that binds (`ArtifactHandoff`, the replay
+    judge), never answered from a later document.
+    """
+    key = getattr(request, "idempotency_key", None)
+    if not isinstance(key, str) or not key.startswith(PROPOSAL_KEY):
+        return None
+    named = key[len(PROPOSAL_KEY):]
+    return named if named else None
+
+
+def values_the_proposal_saw(
+        values: Sequence[object], proposal_id: str) -> Sequence[object] | None:
+    """Everything appended before the named proposal, or None when it is absent.
+
+    In journal order and cut at the proposal, so the same journal answers the
+    same records on every read -- the replay's, the writer's and the
+    transport's -- whatever was published after it.
+    """
+    for index, value in enumerate(values):
+        if isinstance(value, ActionProposal) and value.proposal_id == proposal_id:
+            return values[:index]
+    return None
+
+
+def proposal_by_id(values: Sequence[object], proposal_id: str) -> ActionProposal | None:
+    """The actual proposal carrying the version of its input-binding contract."""
+    return next((value for value in values
+                 if isinstance(value, ActionProposal)
+                 and value.proposal_id == proposal_id), None)
+
+
+def action_request_for(values: Sequence[object], action_id: str) -> ActionRequest | None:
+    return next((
+        value for value in values
+        if isinstance(value, ActionRequest) and value.action_id == action_id
+    ), None)
+
+
+def attempt_events_for(values: Sequence[object], action_id: str) -> list[AttemptEvent]:
+    return [
+        value for value in values
+        if isinstance(value, AttemptEvent) and value.action_id == action_id
+    ]
+
+
+def terminal_result_for(
+        values: Sequence[object], action_id: str) -> ActionResultReceipt | None:
+    """The one terminal receipt an action may already hold, if it holds one.
+
+    An action carries at most one terminal result, and that is true of the
+    action alone -- not of the attempt events it happens to have collected. The
+    predicate lives here so the store and `validate_event_result` ask the same
+    question of the same values rather than each spelling it for itself; asking
+    it in only one of the two places is how a journal with no attempt event came
+    to accept a second, contradicting receipt.
+    """
+    return next((
+        value for value in values
+        if isinstance(value, ActionResultReceipt) and value.action_id == action_id
+    ), None)
+
+
+def _bound_adapter(config: Mapping[str, Any], instance_id: str) -> str:
+    try:
+        bound = frozen_config_bindings(config).get(instance_id)
+    except ContractError as e:
+        raise AttemptRelationError(f"frozen config cannot bind attempt events: {e}") from e
+    if bound is None:
+        raise AttemptRelationError(f"frozen config declares no instance {instance_id!r}")
+    return bound
+
+
+def _hold_event_identity(action: ActionRequest, event: AttemptEvent) -> None:
+    for field in ("run_id", "attempt_id", "instance_id"):
+        if getattr(event, field) != getattr(action, field):
+            raise AttemptRelationError(
+                f"attempt event {field} does not match action {event.action_id!r}")
+    if event.request_digest != action_request_digest(action):
+        raise AttemptRelationError(
+            f"attempt event request_digest does not match action {event.action_id!r}")
+
+
+def validate_action_request(values: Sequence[object], request: ActionRequest) -> None:
+    """One attempt id names one action, held over the requests themselves.
+
+    ``validate_attempt_event`` below has said "attempt_id already belongs to
+    another action" since attempt events existed, and it said it only of the
+    EVENTS. The requests those events describe were never held to the same
+    relation, so a journal could record two authorized actions under one attempt
+    identity and remain, by every rule that existed, valid.
+
+    It did not stay quiet. The first of those actions to record an event claimed
+    the id, and from then on every other action holding it was refused an event
+    of its own -- work that had been authorized, could not proceed, and had no
+    explanation anywhere in the run. The contradiction was reachable through the
+    honest road: the attempt bound counted DISTINCT attempt ids, so repeating
+    one was also how a caller bought itself extra authorizations.
+
+    Asked of the request rather than only at authorize time because a record
+    appended directly, or a journal replayed from disk, reaches the store
+    without passing the runtime -- the same argument
+    ``_request_repeats_its_proposal`` is written under, one identity down.
+
+    Args:
+        values: The records already replayed, oldest first.
+        request: The request about to join them.
+
+    Raises:
+        AttemptRelationError: A different action already holds this attempt id.
+    """
+    for prior in values:
+        if (isinstance(prior, ActionRequest)
+                and prior.attempt_id == request.attempt_id
+                and prior.action_id != request.action_id):
+            raise AttemptRelationError(
+                f"attempt_id {request.attempt_id!r} already belongs to another "
+                f"action, {prior.action_id!r}")
+
+
+def validate_attempt_event(
+        config: Mapping[str, Any], values: Sequence[object], event: AttemptEvent) -> None:
+    action = action_request_for(values, event.action_id)
+    if action is None:
+        raise AttemptRelationError(f"attempt event names unknown action {event.action_id!r}")
+    _hold_event_identity(action, event)
+    if event.adapter_id != _bound_adapter(config, action.instance_id):
+        raise AttemptRelationError(
+            f"attempt event adapter does not match frozen binding for {action.instance_id!r}")
+    events = attempt_events_for(values, event.action_id)
+    if any(prior.phase == event.phase for prior in events):
+        raise AttemptRelationError(
+            f"action {event.action_id!r} already has an {event.phase!r} attempt event")
+    for prior in (value for value in values if isinstance(value, AttemptEvent)):
+        if prior.attempt_id == event.attempt_id and prior.action_id != event.action_id:
+            raise AttemptRelationError(
+                f"attempt_id {event.attempt_id!r} already belongs to another action")
+        if prior.recovery_ref == event.recovery_ref and prior.action_id != event.action_id:
+            raise AttemptRelationError(
+                f"recovery_ref {event.recovery_ref!r} already belongs to another action")
+    if any(isinstance(value, ActionResultReceipt) and value.action_id == event.action_id
+           for value in values):
+        raise AttemptRelationError(
+            f"attempt event cannot follow terminal result for {event.action_id!r}")
+    if event.phase == "execution_observed":
+        _validate_observed(events, event)
+
+
+def _validate_observed(events: Sequence[AttemptEvent], observed: AttemptEvent) -> None:
+    lease = next((event for event in events if event.phase == "effect_lease"), None)
+    if lease is None:
+        raise AttemptRelationError(
+            f"observed attempt event has no lease for {observed.action_id!r}")
+    for field in ("request_digest", "adapter_id", "recovery_ref"):
+        if getattr(observed, field) != getattr(lease, field):
+            raise AttemptRelationError(f"observed attempt event {field} does not match its lease")
+
+
+_OBSERVED_FINALS = {
+    "succeeded": frozenset({"succeeded", "verification_failed"}),
+    "failed": frozenset({"failed"}),
+    "cancelled": frozenset({"cancelled"}),
+    "rejected": frozenset({"failed"}),
+    "unknown": frozenset({"unknown"}),
+}
+
+
+def _validate_result_evidence(
+        values: Sequence[object], result: ActionResultReceipt,
+        observed: AttemptEvent, signer: tuple[str, str] | None = None,
+        demanded: str | None = None) -> None:
+    if signer is not None and result.outcome == "succeeded" and not result.evidence_refs:
+        raise AttemptRelationError("a named checker's success requires verification evidence")
+    if len(set(result.evidence_refs)) != len(result.evidence_refs):
+        raise AttemptRelationError("event-bearing result evidence_refs must be unique")
+    if result.evidence_refs and result.outcome != "succeeded":
+        raise AttemptRelationError("only a succeeded event-bearing result may reference evidence")
+    observed_index = next(index for index, value in enumerate(values) if value is observed)
+    eligible = {
+        value.evidence_id: value for value in values[observed_index + 1:]
+        if isinstance(value, EvidenceRef)
+    }
+    for evidence_id in result.evidence_refs:
+        _validate_evidence(eligible.get(evidence_id), evidence_id, result,
+                           observed, signer, demanded)
+
+
+def _validate_evidence(
+        evidence: EvidenceRef | None, evidence_id: str,
+        result: ActionResultReceipt, observed: AttemptEvent,
+        signer: tuple[str, str] | None = None, demanded: str | None = None) -> None:
+    """Exactly one permitted signer may verify this action.
+
+    `signer` is the (adapter, participant) pair when the frozen plan names an
+    independent verifier. With no named verifier it is `None`: only the
+    observed adapter may sign, without an independent participant field.
+
+    The CARDINALITY is the invariant and it is untouched: one permitted
+    signer, derived from frozen bytes, never from anything a caller supplies.
+
+    `demanded` is what the run's own plan requires this verification to NAME,
+    and it is the one degree of freedom the predicate below leaves. Every other
+    field of the row is pinned; `digest` is optional in the contract, so a
+    verification could stand -- and a `succeeded` receipt could rest on it --
+    without saying WHAT was checked. Four durable artifacts do exactly that and
+    they may not be rewritten, which is why this is the plan's demand and not a
+    blanket correction: `None` is what every journal that exists answers, and
+    the clause is reached only for a step whose plan asked for more."""
+    if evidence is None:
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} must follow its observed attempt event")
+    expected_uri = f"verification/{result.action_id}"
+    permitted = observed.adapter_id if signer is None else signer[0]
+    participant = None if signer is None else signer[1]
+    if (evidence.run_id != result.run_id
+            or evidence.kind != "verification" or evidence.uri != expected_uri
+            or evidence.created_by != permitted
+            or evidence.verified_by != permitted
+            or evidence.verifier_instance_id != participant
+            or evidence.verification != "verified"):
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} is not verified by "
+            f"{permitted!r}, the adapter this run's plan makes "
+            "authoritative for it")
+    if demanded == "digest" and evidence.digest is None:
+        raise AttemptRelationError(
+            f"result evidence {evidence_id!r} names no digest, and this run's "
+            "plan requires this step's verification to name what it checked")
+
+
+def validate_event_result(
+        values: Sequence[object], result: ActionResultReceipt,
+        events: Sequence[AttemptEvent], signer: tuple[str, str] | None = None, *,
+        demanded: str | None = None) -> None:
+    """Everything a terminal receipt must agree with, plus what its plan asked.
+
+    `demanded` is KEYWORD-ONLY and defaults to None, which is the whole of its
+    backward compatibility: every existing call is unchanged, and no caller can
+    slide a value into `signer`'s place by counting positions. What it carries
+    is `graph_causality.demanded_evidence` -- read from the run's frozen plan,
+    never from the receipt being judged.
+    """
+    if terminal_result_for(values, result.action_id) is not None:
+        raise AttemptRelationError(f"action {result.action_id!r} already has a terminal result")
+    lease = next((event for event in events if event.phase == "effect_lease"), None)
+    if lease is None:
+        raise AttemptRelationError(f"event-bearing result has no lease for {result.action_id!r}")
+    observed = next((
+        event for event in events if event.phase == "execution_observed"), None)
+    if observed is None:
+        _validate_lease_only_result(result)
+        return
+    if result.outcome not in _OBSERVED_FINALS[observed.outcome]:
+        raise AttemptRelationError(
+            f"result outcome {result.outcome!r} contradicts observed {observed.outcome!r}")
+    if result.exit_code != observed.exit_code:
+        raise AttemptRelationError("result exit_code does not match the observed attempt event")
+    _validate_result_evidence(values, result, observed, signer, demanded)
+
+
+def _validate_lease_only_result(result: ActionResultReceipt) -> None:
+    if result.outcome != "unknown" or result.exit_code is not None or result.evidence_refs:
+        raise AttemptRelationError(
+            "a lease-only result must be unknown with null exit_code and empty evidence")

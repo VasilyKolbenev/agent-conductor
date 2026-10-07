@@ -1,8 +1,27 @@
 """Loopback HTTP server for the Conduct panel: merge broker, routes, SSE.
 
 `build(root, port)` returns a `ThreadingHTTPServer` bound to 127.0.0.1 that
-serves the packaged panel at `/`, the merged state at `/state.json`, raw lane
-files at `/lane/<author>.json`, and a Server-Sent-Events stream at `/events`.
+serves the packaged Workflow Studio shell at `/` (the classic panel keeps its
+own file name and is served at `/panel/index.html`), the merged state at
+`/state.json`, the
+bundled harness registry at `/harnesses.json`, raw lane files at
+`/lane/<author>.json`, deterministic packets at `/handoff/<author>.md`, and a
+Server-Sent-Events stream at `/events`.
+
+Every one of those reads answers only the two exact `Host` values this process
+minted for its bound port — `127.0.0.1:<port>` and `localhost:<port>` — and
+refuses any other name before dispatch. Loopback binding keeps a stranger's
+packet off the socket but says nothing about whose page sent it, and a page
+that re-resolves its own name to loopback would otherwise read the whole
+merged project from its own origin.
+
+`/harnesses.json` is a *presentation* route and not part of Protocol v1. It
+answers with `harnesses.as_payload()` — the same bytes for every project,
+computed from the bundled registry and never from the merge — so the panel can
+draw a harness as a product rather than as a slug. `state.json` is unchanged by
+its existence, and a panel that never receives it stays fully usable with
+neutral badges.
+
 A `Watcher` daemon thread polls `conductor/` every `POLL_INTERVAL` seconds and
 re-merges every `TICK_INTERVAL` seconds regardless — lanes go stale by TIME,
 not only by file change. Startup is fail-closed (missing conductor/ or a
@@ -15,19 +34,73 @@ import copy
 import importlib.resources
 import json
 import os
+import secrets
+import socketserver
 import sys
 import threading
 import time
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from conductor import merge, store
+from conductor import harnesses, merge, project_identity, report, store
+from conductor.command.adapters import AdapterRegistry
+from conductor.command.adapters.provider import ProviderConfig, ProviderConfigError
+from conductor.command.api_contracts import ApiRefusal
+from conductor.command.contracts import canonical_json
+from conductor.command.coordinator import ExecutionCoordinator
+from conductor.command.http_api import (
+    PRODUCT_COMMAND_BUDGET,
+    CommandApi,
+    CommandResponse,
+)
+from conductor.command.http_transport import (
+    CommandSession, HttpRefusal, validate_command_host)
+from conductor.command.project_claim import Launch, ProjectIdentity
+#: Re-exported deliberately: `IDLE_CONNECTION_SECONDS` is a fact about THIS
+#: server that callers and guards read off it, and moving where it is
+#: written did not move what it is about.
+from conductor.http_framing import IDLE_CONNECTION_SECONDS, KeptConnection, frame_policy
+from conductor.command.providers import ProviderResolution, resolve_providers
+from conductor.command.run_store import RunStore
+from conductor.command.runtime import Budget
+from conductor.command.quota_service import QuotaService
+from conductor.quota_collectors import QuotaCollector
+#: Re-exported deliberately: tests and `scripts/installed_probe.py` read
+#: `PANEL_ASSETS` off `server`, and moving where the table is written did not
+#: move what it is about.
+from conductor.server_assets import ENTRY_PAGE, PANEL_ASSETS
+#: Re-exported deliberately: `_Mailbox`, `_run_frame` and `MAX_PENDING_RUNS` are
+#: read off `server` by the run-event tests, and `SSE_WAIT` is the stream's wait
+#: that callers of this server have always found here. `_Clients` and
+#: `serve_events` are used below.
+from conductor.server_events import (
+    MAX_PENDING_RUNS, SSE_WAIT, _Clients, _Mailbox, _run_frame, serve_events)
+from conductor.server_retirement import retire_resources, retire_workers
+
+#: The `/harnesses.json` body, serialized once. The registry is frozen data
+#: that no project can influence, so this is the same answer for every request
+#: of every server — building it per request would only invite the impression
+#: that something about it varies.
+HARNESSES_JSON = json.dumps(harnesses.as_payload(),
+                            ensure_ascii=False).encode("utf-8")
 
 POLL_INTERVAL = 0.5   # seconds between conductor/ fingerprint polls
 TICK_INTERVAL = 60.0  # seconds between unconditional re-merges (staleness tick)
-SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
+#: Worker threads the server-owned coordinator mints. More than one so two runs
+#: bound to two different provider instances really do execute at the same time;
+#: bounded, because the coordinator's own queue capacity is what caps admission.
+EXECUTION_WORKERS = 4
+
+
+def _command_clock() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _command_id(kind: str) -> str:
+    return f"{kind}-{secrets.token_hex(16)}"
 
 
 class Broker:
@@ -86,6 +159,17 @@ class Broker:
         with self._lock:
             return self._lane_bytes.get(author)
 
+    def project_name(self) -> str | None:
+        """This project's name, off the LAST-GOOD map rather than the last read.
+
+        A map broken by an edit in progress keeps answering with the name it
+        had, for the same reason the merged state does: losing a project's
+        identity to a syntax error is a worse answer than holding the one that
+        was true a second ago. What counts as a name at all is
+        `project_identity`'s single rule, not a second copy of it here.
+        """
+        return project_identity.project_name(self._map_data)
+
     def _merge_loaded(self, loaded: store.Loaded) -> dict:
         """Merge a snapshot, pinning the last-good map across runtime breakage."""
         map_data, map_error = loaded.map_data, loaded.map_error
@@ -133,33 +217,6 @@ def _fingerprint(cdir: Path) -> tuple[tuple[str, int, int], ...]:
     return tuple(entries)
 
 
-class _Clients:
-    """Registry of per-SSE-client wake events."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._events: set[threading.Event] = set()
-
-    def register(self) -> threading.Event:
-        """Add one client; return the event its SSE loop waits on."""
-        event = threading.Event()
-        with self._lock:
-            self._events.add(event)
-        return event
-
-    def unregister(self, event: threading.Event) -> None:
-        """Drop one client's wake event (idempotent)."""
-        with self._lock:
-            self._events.discard(event)
-
-    def wake_all(self) -> None:
-        """Set every registered client's wake event."""
-        with self._lock:
-            events = list(self._events)
-        for event in events:
-            event.set()
-
-
 class Watcher(threading.Thread):
     """Daemon thread: poll conductor/, re-merge on change or staleness tick.
 
@@ -199,49 +256,194 @@ class Watcher(threading.Thread):
             except store.StoreError:       # conductor/ vanished; keep last-good
                 continue
             if changed:
-                self._clients.wake_all()
+                self._clients.publish_state()
 
 
-class Handler(BaseHTTPRequestHandler):
-    """Routes: `/` panel, `/state.json`, `/lane/<author>.json`, `/events`."""
+class Handler(KeptConnection, BaseHTTPRequestHandler):
+    """Legacy read routes plus the exact seven frozen command routes."""
 
     server: ConductServer                  # narrowed for type checkers
 
     def do_GET(self) -> None:              # required BaseHTTPRequestHandler name
         """Dispatch a GET to the matching `_serve_*` method, else 404."""
         path = urlsplit(self.path).path
+        if path.startswith("/command"):
+            self._serve_command("GET")     # keeps its own Host gate and refusal
+            return
+        if not self._read_host_is_allowed():
+            return
         if path == "/":
             self._serve_panel()
+        elif self.path in PANEL_ASSETS:
+            self._serve_panel_asset(self.path)
         elif path == "/state.json":
             self._serve_state()
+        elif path == "/harnesses.json":
+            self._serve_harnesses()
         elif path == "/events":
             self._serve_events()
         elif path.startswith("/lane/"):
             self._serve_lane(path)
+        elif path.startswith("/handoff/"):
+            self._serve_handoff(path)
         else:
             self._send_404()
+
+    def _read_host_is_allowed(self) -> bool:
+        """Refuse a read whose Host this process never minted; say whether to go on.
+
+        Binding to 127.0.0.1 keeps a stranger's packet off this socket, but it
+        says nothing about whose PAGE sent it: a site the operator visits while
+        `conduct up` runs can re-resolve its own name to loopback and then read
+        every route here from its own origin. The panel, the merged state, the
+        raw lanes, the handoff packets and the event stream are the whole
+        project; none of them may answer a name this process did not hand out.
+
+        The check is delegated, never re-derived. It is the same function, over
+        the same ordered raw pairs, against the same session's two exact Host
+        values that the command surface already spends -- so there is one
+        allowlist to widen, not two, and a change of mind about loopback naming
+        cannot reach one arm while the other keeps the old rule.
+
+        The refusal is written in the legacy read arm's own plain prose rather
+        than the command surface's JSON envelope. That arm answers HTML,
+        markdown and raw lane bytes and has never spoken that vocabulary; the
+        difference is also what makes it visible if this gate is ever moved
+        ahead of the command branch, where it does not belong.
+
+        Returns:
+            True when dispatch may continue. False when the refusal has already
+            been sent, and the caller must return without serving anything --
+            in particular before the event stream, which commits a 200 as its
+            first act and would leave no status line for a later refusal.
+        """
+        try:
+            validate_command_host(self.headers.raw_items(),
+                                  self.server.command_session.allowed_hosts)
+        except HttpRefusal as refusal:
+            self._send_body(refusal.status, "text/plain; charset=utf-8",
+                            f"{refusal}\n".encode("utf-8"))
+            return False
+        return True
+
+    def do_POST(self) -> None:             # required BaseHTTPRequestHandler name
+        """Read one bounded command body; no legacy POST route exists."""
+        if urlsplit(self.path).path.startswith("/command"):
+            self._serve_command("POST", read_body=True)
+        else:
+            self._drain_refused_body()
+            self._send_404()
+
+    def do_HEAD(self) -> None:             # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("HEAD", head=True)
+
+    def do_OPTIONS(self) -> None:          # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("OPTIONS")
+
+    def do_TRACE(self) -> None:            # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("TRACE")
+
+    def do_CONNECT(self) -> None:          # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("CONNECT")
+
+    def do_PUT(self) -> None:              # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("PUT")
+
+    def do_PATCH(self) -> None:            # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("PATCH")
+
+    def do_DELETE(self) -> None:           # required BaseHTTPRequestHandler name
+        self._serve_wrong_method("DELETE")
 
     def log_message(self, format: str, *args: object) -> None:
         """Silence per-request stderr logs (they would pollute CLI and tests)."""
 
-    def _send_body(self, status: int, content_type: str, body: bytes) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def send_error(
+            self, code: int, message: str | None = None,
+            explain: str | None = None) -> None:
+        """Keep arbitrary command methods inside the frozen JSON refusal surface."""
+        if (code == 501
+                and urlsplit(getattr(self, "path", "")).path.startswith("/command")):
+            self._serve_command(getattr(self, "command", ""))
+            return
+        super().send_error(code, message, explain)
 
-    def _send_404(self) -> None:
-        self._send_body(404, "text/plain; charset=utf-8", b"not found\n")
+    def _serve_wrong_method(self, method: str, *, head: bool = False) -> None:
+        # Any body was already settled at the entrance (`parse_request`). Do not
+        # drain again here: the headers still announce it, so a second drain
+        # would read the NEXT request's bytes, or wait for bytes never sent.
+        if urlsplit(self.path).path.startswith("/command"):
+            self._serve_command(method, head=head)
+        else:
+            self._send_404(head=head)
+
+    def _serve_command(
+            self, method: str, *, read_body: bool = False,
+            head: bool = False) -> None:
+        """Bridge raw HTTP facts to CommandApi without normalizing headers."""
+        if method == "POST" and self.server.draining:
+            self._refuse_while_draining()
+            return
+        pairs = tuple(self.headers.raw_items())
+        body = b""
+        if read_body:
+            try:
+                length = self.server.command_api.body_length(self.path, pairs)
+            except (ApiRefusal, HttpRefusal):
+                self.close_connection = True
+            else:
+                try:
+                    body = self.rfile.read(length)
+                except OSError:
+                    body = b""
+                if len(body) != length:
+                    self.close_connection = True
+        response = self.server.command_response(method, self.path, pairs, body)
+        encoded = canonical_json(response.payload).encode("utf-8")
+        self._send_body(
+            response.status, "application/json; charset=utf-8", encoded,
+            write_body=not head)
+
+    def _refuse_while_draining(self) -> None:
+        """Answer a command POST `409 server_stopping`; nothing is executed (spec 4.1.6).
+
+        The body is consumed through the bounded door first, as for any refused
+        POST, so the answer is not sent over bytes still on the connection. Host,
+        Origin and CSRF are not consulted: this answer grants nothing and says
+        only that the server is stopping.
+        """
+        self._drain_refused_body()
+        refusal = ApiRefusal.fixed("server_stopping")
+        self._send_body(refusal.status, "application/json; charset=utf-8",
+                        canonical_json(refusal.as_dict()).encode("utf-8"))
 
     def _serve_panel(self) -> None:
-        panel = importlib.resources.files("conductor") / "panel" / "index.html"
+        """Answer `GET /` with the Workflow Studio's shell.
+
+        The front door is the Studio; the classic panel keeps its file name and
+        is reached at `/panel/index.html` from the asset allowlist. Nothing
+        about the classic panel's contents changed — only the route that gets
+        to it — and the name here is a literal, as every panel resource name in
+        this module is, so no request target can select the document served.
+        """
+        panel = importlib.resources.files("conductor") / "panel" / ENTRY_PAGE
         self._send_body(200, "text/html; charset=utf-8", panel.read_bytes())
+
+    def _serve_panel_asset(self, target: str) -> None:
+        content_type, name = PANEL_ASSETS[target]
+        asset = importlib.resources.files("conductor") / "panel" / name
+        self._send_body(200, content_type, asset.read_bytes())
 
     def _serve_state(self) -> None:
         self._send_body(200, "application/json; charset=utf-8",
                         self.server.broker.state_bytes())
+
+    def _serve_harnesses(self) -> None:
+        # Read-only presentation data. It never reaches the broker, so no
+        # project's files can change a byte of it and no merge can be delayed
+        # by it — which is the whole reason the registry is served beside the
+        # state document instead of inside it.
+        self._send_body(200, "application/json; charset=utf-8", HARNESSES_JSON)
 
     def _serve_lane(self, path: str) -> None:
         # Security-load-bearing: parse the segment, regex it, then look up the
@@ -260,34 +462,68 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_body(200, "application/json; charset=utf-8", body)
 
+    def _serve_handoff(self, path: str) -> None:
+        """Render one current lane packet; URL input never becomes a path."""
+        name = path[len("/handoff/"):]
+        if not name.endswith(".md"):
+            self._send_404()
+            return
+        author = name[:-len(".md")]
+        if not store.AUTHOR_RE.fullmatch(author):
+            self._send_404()
+            return
+        state = json.loads(self.server.broker.state_bytes())
+        try:
+            body = report.handoff(state, author).encode("utf-8")
+        except KeyError:
+            self._send_404()
+            return
+        self._send_body(200, "text/markdown; charset=utf-8", body)
+
     def _serve_events(self) -> None:
         """Stream SSE: one frame on connect, then one per broker change."""
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        wake = self.server.clients.register()
-        try:
-            self._send_frame()             # greeting: de-flakes registration race
-            while not self.server.shutting_down:
-                if not wake.wait(timeout=SSE_WAIT):
-                    continue               # timeout — re-check shutdown
-                wake.clear()
-                if self.server.shutting_down:
-                    break
-                self._send_frame()
-        except OSError:                    # incl. ConnectionAborted/Reset/BrokenPipe
-            pass                           # client vanished: this loop only
-        finally:
-            self.server.clients.unregister(wake)
+        serve_events(self)
 
-    def _send_frame(self) -> None:
-        self.wfile.write(b'data: {"kind":"state"}\n\n')
+    def _send_frame(self, frame: bytes) -> None:
+        self.wfile.write(frame)
         self.wfile.flush()
 
 
+def _resolved_providers(
+        registry: AdapterRegistry | None,
+        providers: Sequence[ProviderConfig], root: Path,
+        clock: Callable[[], str], ids: Callable[[str], str],
+        spawns_allowed: bool = True) -> ProviderResolution:
+    """Take an explicit registry OR the operator provider config, never both.
+
+    An explicitly injected registry is a test/embedding seam and is used verbatim,
+    with no descriptors; supplying provider config beside it is refused rather
+    than silently ignored. The default resolves the provider config through the
+    factory, which is empty by default, so the production server never pretends a
+    real provider is available until real providers are configured and resolve to
+    available.
+    """
+    if registry is not None:
+        if providers:
+            raise ProviderConfigError(
+                "pass either an explicit adapter registry or provider config, not both")
+        return ProviderResolution(registry=registry, contracts=())
+    return resolve_providers(providers, root=root, clock=clock, ids=ids,
+                             spawns_allowed=spawns_allowed)
+
+
+class ServerBindError(OSError):
+    """The listening socket could not be bound; nothing else in a start raises this.
+
+    `conduct up` answers it with the port to change (`bind_failed`). Any other
+    `OSError` of a start is a different fault with a different remedy
+    (`start_failed`), which is why the two are told apart here, at the one call
+    that binds, and not by the type family.
+    """
+
+
 class ConductServer(ThreadingHTTPServer):
-    """ThreadingHTTPServer wiring the broker, watcher and SSE registry."""
+    """ThreadingHTTPServer wiring broker, watcher, SSE registry and execution worker."""
 
     daemon_threads = True  # SSE handler threads must never block process exit
     # On Windows, SO_REUSEADDR lets a second bind HIJACK a live port instead
@@ -295,31 +531,123 @@ class ConductServer(ThreadingHTTPServer):
     # 1 (design: startup failure). POSIX keeps it for TIME_WAIT-free restarts.
     allow_reuse_address = os.name != "nt"
 
-    def __init__(self, address: tuple[str, int], root: Path, cdir: Path) -> None:
+    def server_bind(self) -> None:
+        """Bind exactly as TCPServer does; name the server by its literal, not by DNS.
+
+        HTTPServer.server_bind adds socket.getfqdn(host), a reverse lookup of a
+        loopback literal that nothing here reads (review ruling: macOS start).
+
+        Raises:
+            ServerBindError: The bind failed; it keeps the original error's
+                arguments and chains it as `__cause__`.
+        """
+        try:
+            socketserver.TCPServer.server_bind(self)  # honours allow_reuse_address
+        except OSError as error:
+            raise ServerBindError(*error.args) from error
+        self.server_name, self.server_port = self.server_address[:2]
+
+    def __init__(
+            self, address: tuple[str, int], root: Path, cdir: Path, *,
+            registry: AdapterRegistry | None = None,
+            providers: Sequence[ProviderConfig] = (),
+            budget: Budget = PRODUCT_COMMAND_BUDGET,
+            clock: Callable[[], str] = _command_clock,
+            ids: Callable[[str], str] = _command_id,
+            token_factory: Callable[[int], str] = secrets.token_urlsafe,
+            hub_origin: str | None = None, launch: Launch | None = None,
+            expected_project_id: str | None = None) -> None:
         # Attributes first: a failed bind makes socketserver call our
         # server_close() before __init__ finishes.
+        self._content_security_policy = frame_policy(hub_origin)   # refuses a bad origin
+        self.hub_origin = hub_origin
+        self.launch = Launch() if launch is None else launch
+        self.project_identity: ProjectIdentity | None = None      # built by `start_command`
         self.shutting_down = False
+        self._command_admission = threading.Condition()
+        self._command_posts = 0
+        self._draining = False
+        self.project_owner = None
+        self.policy_driver = None
+        self.retirement_uncertain = False
         self.broker = Broker(root)
         self.clients = _Clients()
         self.watcher = Watcher(self.broker, cdir, self.clients)
+        self.command_execution: ExecutionCoordinator | None = None
+        self.command_quotas = QuotaService()
+        self.quota_collector: QuotaCollector | None = None
         super().__init__(address, Handler)  # binds; EADDRINUSE raises here
-        self.broker.refresh()               # initial state before serving
-        self.watcher.start()
+        try:
+            from .server_policy import acquire_server_owner
+            acquire_server_owner(self, root, expected_project_id)
+            self._start_command(root, registry, providers, budget, clock, ids, token_factory)
+            self.broker.refresh()               # initial state before serving
+            self.watcher.start()
+            if self.quota_collector is not None:      # a view process has none (4.3.1)
+                self.quota_collector.start()
+        except BaseException:
+            self.server_close()
+            raise
+
+    def _start_command(self, root, registry, providers, budget, clock, ids, token_factory):
+        from .server_command import start_command
+        start_command(self, root, registry, providers, budget, clock, ids, token_factory)
 
     def shutdown(self) -> None:
-        """Stop serve_forever and wake all SSE loops so they exit promptly."""
+        """Stop serve_forever, retire the owned worker, wake all SSE loops."""
         self.shutting_down = True
         self.clients.wake_all()
-        super().shutdown()
+        try:
+            self._retire_execution()
+        finally:
+            super().shutdown()
+
+    @property
+    def content_security_policy(self) -> str:
+        """The `Content-Security-Policy` of every answer: built once at start, never changed."""
+        return self._content_security_policy
+
+    @property
+    def draining(self) -> bool:
+        return self._draining
+
+    @draining.setter
+    def draining(self, value: bool) -> None:
+        # The flag and admission count share one boundary. Reading headers or
+        # waiting for a body never admits a mutation across this transition.
+        with self._command_admission:
+            self._draining = value
+
+    def command_response(self, method, path, headers, body) -> CommandResponse:
+        """Admit a complete POST, then account for it until its mutation ends."""
+        if method != "POST":
+            return self.command_api.handle(method, path, headers, body)
+        with self._command_admission:
+            if self._draining:
+                refusal = ApiRefusal.fixed("server_stopping")
+                return CommandResponse(refusal.status, refusal.as_dict())
+            self._command_posts += 1
+        try:
+            return self.command_api.handle(method, path, headers, body)
+        finally:
+            with self._command_admission:
+                self._command_posts -= 1
+                self._command_admission.notify_all()
+
+    def wait_command_posts(self, timeout: float) -> bool:
+        """Drain waits for already admitted writes before trusting idle workers."""
+        with self._command_admission:
+            return self._command_admission.wait_for(lambda: self._command_posts == 0, timeout)
+
+    def _retire_execution(self) -> None:
+        """Retire this server's execution workers and quota collection lifetime."""
+        retire_workers(self)
 
     def server_close(self) -> None:
-        """Stop and join the watcher, wake SSE loops, close the socket."""
+        """Stop and join the watcher and worker, wake SSE loops, close the socket."""
         self.shutting_down = True
         self.clients.wake_all()
-        self.watcher.stop()
-        if self.watcher.is_alive():        # never started on a failed bind
-            self.watcher.join(timeout=POLL_INTERVAL * 2)
-        super().server_close()
+        retire_resources(self, super().server_close, POLL_INTERVAL)
 
     def handle_error(self, request: object, client_address: object) -> None:
         """Silence client aborts (panel refreshes, closed tabs); keep the rest.
@@ -332,12 +660,30 @@ class ConductServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def build(root: Path | str, port: int) -> ConductServer:
+def build(
+        root: Path | str, port: int, *,
+        registry: AdapterRegistry | None = None,
+        providers: Sequence[ProviderConfig] = (),
+        budget: Budget = PRODUCT_COMMAND_BUDGET,
+        clock: Callable[[], str] = _command_clock,
+        ids: Callable[[str], str] = _command_id,
+        token_factory: Callable[[int], str] = secrets.token_urlsafe,
+        hub_origin: str | None = None,
+        launch: Launch | None = None,
+        expected_project_id: str | None = None,
+) -> ConductServer:
     """Build the loopback panel server (fail-closed startup).
 
     Args:
         root: The project root (the directory that contains `conductor/`).
         port: TCP port to bind on 127.0.0.1; 0 lets the OS assign one.
+        hub_origin: The origin of the hub that started this child, validated by
+            `--hub-origin`; it is added to the frame policy of every answer (4.6.6).
+        launch: What `conduct up` passes on beyond the project: mode, demo, and the
+            transition and continue-after flag of a hub (4.5.1). The project id is
+            never passed in: the server reads it from its owner.
+        expected_project_id: The activation nonce the caller was told to serve
+            (`--project-id`); checked again against the owner once it is held.
 
     Returns:
         A `ConductServer` ready for `serve_forever()`; its watcher thread
@@ -347,10 +693,18 @@ def build(root: Path | str, port: int) -> ConductServer:
         StoreError: If `root` has no conductor/ directory, or map.toml is
             broken at startup. Runtime map breakage instead degrades to the
             last-good map plus a warning in `state.json`.
-        OSError: If the port cannot be bound.
+        ValueError: If `hub_origin` is not exactly `http://127.0.0.1:<port>`.
+        OwnerRefused: `project_identity_changed` when `expected_project_id` is given and
+            the owner this process holds is another project's; the server is closed.
+        ServerBindError: If the port cannot be bound (an `OSError`).
+        OSError: Any other failure of the start, after or besides the bind.
     """
     cdir = store.conductor_dir(root)
     loaded = store.load(root)
     if loaded.map_error is not None:
         raise store.StoreError(f"refusing to start: {loaded.map_error}")
-    return ConductServer(("127.0.0.1", port), Path(root), cdir)
+    return ConductServer(
+        ("127.0.0.1", port), Path(root), cdir, registry=registry,
+        providers=providers, budget=budget, clock=clock, ids=ids,
+        token_factory=token_factory, hub_origin=hub_origin, launch=launch,
+        expected_project_id=expected_project_id)

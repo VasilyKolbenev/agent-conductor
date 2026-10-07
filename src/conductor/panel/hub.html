@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>December Command</title>
+<link rel="stylesheet" href="/hub/hub.css">
+<script src="/hub/hub.js" type="module"></script>
+<!-- The hub's page: the window that holds every project. The hub answers `GET /` with this
+     document and answers `/hub/<name>` only for the files of its registry, the import closure of
+     hub.js, so every reference below is an ABSOLUTE /hub/ path. tests/test_hub_source.py holds the
+     page to nothing inline: no style block, no style attribute, no handler, and no script or
+     stylesheet it does not name. The hub's own policy (spec 4.6.2) allows no inline script or style
+     at all.
+
+     The page carries no English. Its one literal is the product's name; every other word a person
+     reads or a screen reader speaks is a catalogue key (`data-i18n-label` for a name) that hub.js
+     writes in the reader's language, and the top bar's controls are built by the page's modules.
+
+     The six mounts below are the regions of the page (spec 4.5.4): the top bar, the notices, the
+     confirmation of an action that asks first, the column of projects, the centre (the chosen
+     project) and the side (the queue of projects and the limits of the active one). The centre holds
+     two nodes: the stub, which the page redraws, and the desk, which it never does: the frame of the
+     chosen project's desk lives there and is only ever added or removed by hub-frame.js, because a
+     redraw of the node would load the desk again. The status line is the one sentence that says
+     whether the hub was read. -->
+</head>
+<body>
+<div class="hub-shell" id="hubShell" data-state="loading">
+  <header class="hub-top" id="hubTop" data-region="top" data-i18n-label="hub.top.label">
+    <h1 class="hub-brand">December Command</h1>
+    <p class="hub-path" id="hubPath" data-i18n-label="hub.path.label"></p>
+    <div class="hub-top__actions" id="hubActions"></div>
+  </header>
+  <div class="hub-banners" id="hubBanners" data-region="banners" data-i18n-label="hub.banners.label"></div>
+  <div class="hub-confirm" id="hubConfirm" data-region="confirm" data-i18n-label="hub.confirm.label"></div>
+  <nav class="hub-rail" id="hubRail" data-region="rail" data-i18n-label="hub.rail.label"></nav>
+  <main class="hub-center" id="hubCenter" data-region="center" data-i18n-label="hub.center.label">
+    <div class="hub-stub-mount" id="hubStub"></div>
+    <div class="hub-desk" id="hubDesk" hidden></div>
+  </main>
+  <aside class="hub-side" id="hubSide" data-region="side" data-i18n-label="hub.side.label"></aside>
+  <p class="hub-status" id="hubStatus" role="status" aria-live="polite"></p>
+</div>
+</body>
+</html>

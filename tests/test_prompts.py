@@ -1,10 +1,26 @@
 import json
-from datetime import datetime, timezone
+import tomllib
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from conductor import merge, prompts, schema, store
+import pytest
+from conductor import merge, prompts, schema, store, templates, validate
+from conductor.__main__ import main
 from tests.test_merge_review import MAP, lane, finding
+from tests.test_store import write_project
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+
+#: A written map to hand `bootstrap_prompt`, for the tests whose claim is not
+#: about which map it was. It takes the text and not just the path on purpose,
+#: so there is no map-less call to make.
+SCAFFOLD = templates.get(templates.DEFAULT)
+
+#: The document that declares what a lane file holds, read at test time the way
+#: `tests/test_templates.py` reads its §2. The packet's whole job is to explain
+#: the protocol to an agent, so the protocol is the only honest owner of the
+#: list of things it owes an explanation of.
+PROTOCOL = Path(__file__).resolve().parents[1] / "spec" / "PROTOCOL.md"
 
 
 def _template_block(text):
@@ -13,7 +29,7 @@ def _template_block(text):
 
 
 def test_bootstrap_prompt_names_the_contract_files():
-    text = prompts.bootstrap_prompt()
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, SCAFFOLD)
     for token in ("map.toml", "conductor/", "schema_version", "nodes", "roles"):
         assert token in text
 
@@ -62,12 +78,22 @@ def test_role_prompt_renders_every_pending_id():
 
 
 def test_bootstrap_prompt_tells_agent_to_validate():
-    assert "conduct validate" in prompts.bootstrap_prompt()
+    assert "conduct validate" in prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH,
+                                                          SCAFFOLD)
 
 
 def test_map_example_has_no_row_field():
     # ADR 0001: row is deleted from normative v1 — the vended example must not teach it.
     assert "row" not in prompts.MAP_EXAMPLE
+
+
+def test_map_example_validates_clean():
+    # The example is vended verbatim by `conduct init`, so anything wrong in it
+    # ships to every new project. Parse it for real and put it through the same
+    # validator the user's own map faces — a role staged onto a phase absent
+    # from cycle.phases, say, would otherwise never be caught here.
+    errors, warnings = schema.validate_map(tomllib.loads(prompts.MAP_EXAMPLE))
+    assert errors == [] and warnings == []
 
 
 def test_role_prompt_prefills_role_in_lane_template():
@@ -156,6 +182,141 @@ def test_role_prompt_states_lifecycle_contract():
         assert token in text
 
 
+# --- DO-2: stage-aware lifecycle contracts ---
+
+STAGED_MAP = {"schema_version": 1, "project": "p",
+              "nodes": [{"id": "n", "label": "n", "kind": "artifact"}],
+              "cycle": {"phases": ["goal", "detect", "diagnose", "design", "deliver"],
+                        "roles": [{"id": "scout", "harness": "cc", "reviews": [],
+                                   "stage": "detect"},
+                                  {"id": "impl", "harness": "cc", "reviews": [],
+                                   "stage": "deliver"},
+                                  {"id": "rev", "harness": "cx", "reviews": ["impl"]}]}}
+
+CUSTOM_MAP = {"schema_version": 1, "project": "p",
+              "nodes": [{"id": "n", "label": "n", "kind": "artifact"}],
+              "cycle": {"phases": ["recon", "ship"],
+                        "roles": [{"id": "impl", "harness": "cc", "reviews": [],
+                                   "stage": "recon"}]}}
+
+
+def test_role_prompt_renders_the_stage_contract_for_a_staged_role():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "scout", author="codex")
+    assert "Stage: detect" in text
+    assert "What is actually true right now?" in text
+    assert "unverified" in text                      # the detect contract's own word
+
+
+def test_role_prompt_stage_contracts_differ_per_stage():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    scout = prompts.role_prompt(state, "scout", author="codex")
+    impl = prompts.role_prompt(state, "impl", author="codex")
+    assert "Stage: deliver" in impl and "Stage: detect" not in impl
+    assert "Stage: detect" in scout and "Stage: deliver" not in scout
+
+
+def test_role_prompt_omits_the_stage_block_for_an_unstaged_role():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "rev", author="codex")
+    assert "Stage:" not in text
+
+
+def test_role_prompt_omits_the_stage_block_for_a_custom_phase_name():
+    # A project with its own phases is legal (spec §2): the stage is valid but
+    # is not an Orbit stage. Degrade silently — never render a wrong contract.
+    #
+    # The second half was spelled `"recon" not in text`, and that premise ended
+    # when the packet began recording the runtime phase: a lane's own now.phase
+    # is exactly where a project's phase name belongs, and the phase list is
+    # what makes the field answerable. So the two claims are separated. No
+    # stage block is rendered — every one of them opens `Stage: `. And the
+    # phase name reaches only the places a phase VALUE goes, never a line of
+    # prose, which is what the blanket assertion was standing in for.
+    state = merge.merge(CUSTOM_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "impl", author="codex")
+    assert "Stage:" not in text
+    starter = json.loads(_template_block(text).replace(
+        prompts._UPDATED_PLACEHOLDER, "2026-07-30T12:00:00+00:00"))
+    assert starter["now"]["phase"] == "recon"
+    prose = [line for line in text.splitlines() if "recon" in line
+             and line.strip() != '"phase": "recon"'
+             and not line.startswith("Cycle phases: ")]
+    assert prose == [], prose
+
+
+def test_role_prompt_keeps_the_generic_lifecycle_alongside_the_stage_block():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "scout", author="codex")
+    assert "Lifecycle:" in text
+    assert "NEVER edit another agent's lane" in text
+
+
+def test_role_prompt_ordering_trap_holds_with_a_stage_block():
+    # The pending section must stay LAST and appear exactly once, whatever
+    # else is injected above it.
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "impl", author="codex")
+    assert text.count("awaiting your verdict") == 1
+    tail = text.split("awaiting your verdict")[1]
+    assert "Stage:" not in tail and "Lifecycle:" not in tail
+
+
+def test_every_orbit_stage_has_a_contract_with_a_question_and_owed_lines():
+    for stage in ("goal", "detect", "diagnose", "design", "deliver"):
+        block = prompts._stage_block(stage)
+        assert block.startswith(f"Stage: {stage} ")
+        assert block.rstrip().endswith(".")
+        assert block.count("\n- ") >= 4               # the contract it owes
+
+
+def test_deliver_hands_off_to_the_human_not_to_a_next_stage():
+    # M15: deliver ends the Run — there is no next stage to be entitled to
+    # anything, so the shared handoff header would be a false statement.
+    deliver = prompts._stage_block("deliver")
+    assert "the human accepting this Run" in deliver
+    assert "next stage is entitled" not in deliver
+    for stage in ("goal", "detect", "diagnose", "design"):
+        assert "next stage is entitled" in prompts._stage_block(stage)
+
+
+def test_deliver_never_tells_an_agent_to_record_its_own_verdicts():
+    # C1: verdicts live in the REVIEWING role's lane. Writing them anywhere
+    # else is either forbidden (another agent's lane) or void (a self-verdict
+    # is excluded from every computation), so the contract must not ask.
+    deliver = prompts._stage_block("deliver")
+    assert "record the verdicts" not in deliver
+    assert "Name the role that owes your findings a verdict" in deliver
+    assert "waits_on_human entry of kind review" in deliver
+
+
+def test_diagnose_offers_the_whole_disposition_vocabulary():
+    # I2: `partial` is load-bearing — merge treats it as a disagreement
+    # signal. An agent offered two options will not reach for the third.
+    diagnose = prompts._stage_block("diagnose")
+    for disposition in ("confirmed", "refuted", "partial"):
+        assert disposition in diagnose
+
+
+def test_role_prompt_names_who_reviews_this_role():
+    # The reverse review edge, which the deliver contract depends on being
+    # readable rather than guessed.
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    assert "Your own findings are reviewed by: rev" in prompts.role_prompt(state, "impl")
+
+
+def test_role_prompt_says_plainly_when_no_role_reviews_you():
+    state = merge.merge(STAGED_MAP, None, [], [], 0, NOW)
+    text = prompts.role_prompt(state, "rev")
+    assert "nobody owes your findings a verdict" in text
+
+
+def test_stage_block_is_empty_for_absent_and_unknown_stages():
+    assert prompts._stage_block(None) == ""
+    assert prompts._stage_block("recon") == ""
+    assert prompts._stage_block("") == ""
+
+
 def test_role_prompt_pending_block_is_enriched():
     ls = [lane("claude", "impl", [finding("D-1"), finding("D-2")]),
           lane("codex", "rev", verdicts={"D-1": {"disposition": "confirmed", "note": ""}})]
@@ -167,3 +328,408 @@ def test_role_prompt_pending_block_is_enriched():
     assert "evidence: e" in tail
     assert "refs: n" in tail
     assert "D-1" not in tail                         # already verdicted — not re-asked
+
+
+# --- bootstrap_prompt: a deliverable someone redirects to a file ---
+
+LONG_PATH = r"C:\Users\User\Projects\a-rather-long-repository-name\conductor\map.toml"
+
+
+def _widest(text, skip=None):
+    """The longest rendered line, ignoring any line holding `skip`."""
+    lines = [l for l in text.split('\n') if not (skip and skip in l)]
+    return max((len(l) for l in lines), default=0)
+
+
+def test_the_bootstrap_prompt_stands_alone_when_redirected():
+    # `conduct init > bootstrap.txt` yields this and nothing else, so it may
+    # not lean on anything the CLI printed around it.
+    text = prompts.bootstrap_prompt("conductor/map.toml", SCAFFOLD)
+    for needed in ("conductor/map.toml", "schema_version", "[[nodes]]",
+                   "[[cycle.roles]]", "conduct validate", "depends_on"):
+        assert needed in text
+    for dangling in ("above", "below", "the rules"):
+        assert dangling not in text
+
+
+@pytest.mark.parametrize("path", ["conductor/map.toml", LONG_PATH])
+@pytest.mark.parametrize("name", [n for n, _ in templates.names()])
+def test_the_bootstrap_prompt_stays_inside_the_width(path, name):
+    # The path gets a line of its own precisely so an absolute one cannot
+    # stretch the prose: it is unwrappable, and folding sentences around it
+    # pushed two lines past 130 columns. Every template, because step 2 is now
+    # one of three hand-wrapped variants and only one of them used to exist.
+    text = prompts.bootstrap_prompt(path, templates.get(name))
+    assert _widest(text, skip=path) <= prompts.WIDTH
+    assert f"\n    {path}\n" in text          # alone on its line, never inline
+    # `skip=path` must skip exactly one line. Without this the two assertions
+    # above pass while the path is ALSO interpolated back into a sentence:
+    # the standalone line still exists, and every line the re-interpolation
+    # widened is skipped from the width check for containing the path.
+    assert text.count(path) == 1
+
+
+# --- step 2 is read off the map, so no template name can decide it ----------
+
+
+def _relabelled(text, how_many=None):
+    """A written map with its PLACEHOLDER labels filled in, as a person would.
+
+    Args:
+        text: A template's map text.
+        how_many: How many labels to replace; None replaces every one, which
+            is what a user who finished the job leaves behind.
+
+    Returns:
+        The rewritten map. Editing the file is the point: no template name
+        changes here, so anything that answers by template name answers about
+        a map that no longer exists.
+    """
+    done, out = 0, []
+    for line in text.split("\n"):
+        if (line.startswith(f'label = "{prompts.PLACEHOLDER_LABEL}')
+                and (how_many is None or done < how_many)):
+            line = f'label = "billing service {done}"'
+            done += 1
+        out.append(line)
+    assert done == (how_many or done) and done, "the fixture replaced nothing"
+    return "\n".join(out)
+
+
+def test_a_map_whose_placeholders_a_person_replaced_is_not_called_a_placeholder():
+    # The class, not the instance. `minimal` is only the map that happens to
+    # arrive without placeholders; this one has none because someone did the
+    # work, and the same sentence has to be true of it.
+    edited = _relabelled(SCAFFOLD)
+    assert prompts.placeholder_nodes(edited)[0] == 0
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, edited)
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER in text
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER not in text
+    assert prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS not in text
+
+
+#: A valid map whose one label carries the marker without opening with it —
+#: the shape `templates` never writes and a person easily does.
+_MARKER_MID_LABEL = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing (PLACEHOLDER - replace me)"
+kind = "component"
+'''
+
+
+def test_a_label_carrying_the_marker_anywhere_in_it_is_counted_as_marked():
+    # A prefix test called this label unmarked, and the prompt then printed
+    # "no label is marked PLACEHOLDER" about a file where one plainly is —
+    # a false sentence about the reader's own map, and `validate` accepts the
+    # map, so nothing else would have said so.
+    assert schema.validate_map(tomllib.loads(_MARKER_MID_LABEL))[0] == []
+    assert prompts.placeholder_nodes(_MARKER_MID_LABEL) == (1, 1)
+    text = prompts.bootstrap_prompt(prompts.DEFAULT_MAP_PATH, _MARKER_MID_LABEL)
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER in text
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER not in text
+
+
+def test_a_half_replaced_map_is_told_only_some_of_its_nodes_are_placeholders():
+    # The shape a map spends most of its life in. "Every block is a
+    # placeholder" and "none is" are both false here, so a two-way answer
+    # would be wrong exactly where a user is actually working.
+    half = _relabelled(SCAFFOLD, how_many=2)
+    placeholders, nodes = prompts.placeholder_nodes(half)
+    assert 0 < placeholders < nodes
+    text = prompts.bootstrap_prompt(LONG_PATH, half)
+    assert prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS in text
+    assert prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER not in text
+    assert prompts._STEP_NO_NODE_IS_A_PLACEHOLDER not in text
+    assert _widest(text, skip=LONG_PATH) <= prompts.WIDTH
+
+
+#: The imperative each step-2 variant exists to give, flattened to one line.
+#: Held on the VERB, never on the negation clause around it: every assertion
+#: that only pinned "Every [[nodes]] block in it is a placeholder" or "No
+#: [[nodes]] block in it is a placeholder" survived a rewrite that kept the
+#: clause word for word and told the agent to delete the real nodes, or to
+#: leave the file exactly as it found it. The clause reports a fact; the
+#: instruction is what a map either gets or does not.
+_STEP_IMPERATIVES = {
+    prompts._STEP_EVERY_NODE_IS_A_PLACEHOLDER:
+        "Replace them with the real components of this project",
+    prompts._STEP_SOME_NODES_ARE_PLACEHOLDERS:
+        "Replace those with the real components of this project, check the "
+        "rest still describe it",
+    prompts._STEP_NO_NODE_IS_A_PLACEHOLDER:
+        "Check every one against THIS project, replace what does not describe it",
+}
+
+
+def test_every_variant_of_step_two_carries_the_work_and_an_imperative_the_others_lack():
+    # Two claims, and the second is why the first is not enough. No variant may
+    # become an empty place: whichever is chosen, the agent is still told which
+    # table it edits and what to add to it. And the variants must be told apart
+    # by their instruction rather than by the sentence in front of it — being
+    # different is a RELATION between the three, so it is asserted as one,
+    # against every other variant rather than against a list someone typed.
+    owed = "add one [[nodes]] block per further component you want reported on:"
+    reached = set()
+    for written in (SCAFFOLD, _relabelled(SCAFFOLD), _relabelled(SCAFFOLD, 2)):
+        step = prompts._node_step(written)
+        assert step.startswith("2. Open that file.")
+        assert owed in " ".join(step.split())
+        reached.add(step)
+    assert reached == set(_STEP_IMPERATIVES), "a variant was never reached"
+    for variant, imperative in _STEP_IMPERATIVES.items():
+        flat = " ".join(variant.split())
+        assert imperative in flat, imperative
+        for other, elsewhere in _STEP_IMPERATIVES.items():
+            if other is not variant:
+                assert elsewhere not in flat, (imperative, elsewhere)
+
+
+# --- the vended packet is judged by the validator, not by reading it ---------
+#
+# An agent follows the packet to the letter and `conduct validate` exits 1. That
+# happened because the packet asked for a `severity` from a closed set it never
+# named, showed `"findings": []` and never the shape of one -- so `claim`, which
+# is required and is not obvious from its name, was mentioned nowhere at all --
+# and never mentioned `now`, whose `task` and `phase` are the panel's Current
+# phase and current task and so stayed blank for the whole first hour.
+#
+# Reading the packet is what let that stand. Everything below EXTRACTS the
+# packet's examples and runs them through the real `conduct validate`, on a real
+# project, so an example that would fail for its reader fails here first.
+
+#: A project the packet is vended for. TOML text and not a dict, because the
+#: state under test comes from `store.load` of this very file: the map the
+#: prompt describes and the map the validator judges are then the same bytes,
+#: rather than two hand-kept copies that can drift apart.
+PACKET_MAP = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing"
+kind = "component"
+
+[[cycle.roles]]
+id = "scout"
+harness = "cc"
+reviews = []
+stage = "detect"
+
+[cycle]
+phases = ["goal", "detect", "diagnose", "design", "deliver"]
+'''
+
+#: The same project with no phases declared at all -- legal (spec section 2),
+#: and the case where there is no runtime phase to honestly name.
+PACKET_MAP_NO_PHASES = '''schema_version = 1
+project = "shop"
+
+[[nodes]]
+id = "billing"
+label = "billing"
+kind = "component"
+
+[[cycle.roles]]
+id = "scout"
+harness = "cc"
+reviews = []
+'''
+
+
+def _json_blocks(text):
+    """Every fenced ```json document in a rendered packet, in order."""
+    return [part.split("\n```", 1)[0] for part in text.split("```json\n")[1:]]
+
+
+def _prose_of(text):
+    """A rendered packet with its fenced documents removed -- what it SAYS.
+
+    The starter carries `"now"` as a key of its own, so a claim about what the
+    packet tells an agent about `now` has to be made where the packet is
+    talking and not where it is quoting itself.
+    """
+    return "\n".join(text.split("```")[::2])
+
+
+def _spec_now_fields():
+    """Every field the protocol's own lane document gives `now` (spec §3).
+
+    Extracted rather than typed out, so a field added to `now` there reaches
+    this file on its own. An empty result is refused: a field set nothing was
+    found for would make every claim built on it vacuously true.
+    """
+    section = PROTOCOL.read_text(encoding="utf-8").split("## 3. Lane files")[1]
+    body = section[:section.index("\n## ")]
+    body = body[body.index('"now":'):]
+    depth = 0
+    for end, char in enumerate(body):
+        depth += (char == "{") - (char == "}")
+        if depth == 0 and char == "}":
+            break
+    fields = set(json.loads(body[body.index("{"):end + 1]))
+    assert fields, "PROTOCOL.md section 3 gives now no fields at all"
+    return fields
+
+
+def _packet(tmp_path, map_toml=PACKET_MAP, author="codex"):
+    """Scaffold a real project, load it the way the CLI does, and vend a packet.
+
+    Returns:
+        `(root, text)` -- the project on disk and the packet vended for it.
+    """
+    root = write_project(tmp_path, map_toml=map_toml)
+    state = validate.merged_state(store.load(root))
+    return root, prompts.role_prompt(state, "scout", author)
+
+
+def _as_written_by_an_agent(block):
+    """One extracted document with the placeholders an agent is told to swap."""
+    fresh = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    return json.loads(block.replace(prompts._UPDATED_PLACEHOLDER, fresh))
+
+
+def _validated(root, author, lane, capsys):
+    """Write `lane` into the project and report what `conduct validate` says.
+
+    The whole point of this helper: the judgement is the command a person runs,
+    not a re-reading of the packet. A clean project writes zero bytes on both
+    streams, so a merge warning is as visible here as a schema error.
+    """
+    (root / "conductor" / "lanes" / f"{author}.json").write_text(
+        json.dumps(lane, indent=2), encoding="utf-8")
+    code = main(["validate", "--dir", str(root)])
+    captured = capsys.readouterr()
+    return code, captured.out + captured.err
+
+
+def test_the_packet_offers_exactly_the_severities_the_validator_accepts(tmp_path):
+    # A closed set the packet asks a value from and never names is how
+    # severity: "high" gets written. Held as an equality in both directions:
+    # a severity the validator accepts and the packet omits fails here, and so
+    # does one the packet offers and the validator rejects.
+    _, text = _packet(tmp_path)
+    line = next((l for l in text.splitlines() if "severity" in l and "|" in l), None)
+    assert line is not None, "the packet names no severity vocabulary at all"
+    offered = {word.strip() for word in line.split(":", 1)[1].split("|")}
+    assert offered == schema.SEVERITIES
+
+
+def test_the_packet_names_every_field_a_finding_must_have(tmp_path):
+    # `claim` is the sharp edge: required, not obvious from its name, and the
+    # one required finding field the packet used to mention nowhere.
+    _, text = _packet(tmp_path)
+    reference = text.split("Finding fields:\n", 1)[-1].split("\n\n", 1)[0]
+    assert reference != text, "the packet carries no finding field reference"
+    for field in ("id", "title", "claim", "severity", "detail", "evidence", "refs"):
+        assert field in reference, field
+    # And the required four are told apart from the optional three, because
+    # "claim is a field" and "claim is a field you must fill in" are different
+    # sentences and only the second one keeps a lane valid.
+    required = reference.split("optional", 1)[0]
+    for field in ("id", "title", "claim", "severity"):
+        assert field in required, field
+
+
+def test_the_packet_explains_every_field_the_protocol_gives_now(tmp_path):
+    # The starter hands an agent the keys of `now` whether or not the packet
+    # ever says what they are for, and it validates either way -- its `task` is
+    # a placeholder and a placeholder is a legal string. An agent given the keys
+    # and no contract left `task` on that placeholder and dated `since` from its
+    # last write, so the panel's current task and Current phase, whose only
+    # inputs these are, stayed blank through the whole first hour. Held against
+    # §3 rather than a list typed here: a field added to `now` is one the packet
+    # owes a sentence about from that moment on, without anyone remembering it.
+    _, text = _packet(tmp_path)
+    block = next((para for para in _prose_of(text).split("\n\n")
+                  if '"now"' in para.split("\n", 1)[0]), None)
+    assert block is not None, "the packet says nothing about the now it vends"
+    explained = {}
+    for line in block.splitlines():
+        if line.startswith("- "):
+            field, _, sentence = line[2:].partition(":")
+            explained[field] = sentence.strip()
+    assert set(explained) == _spec_now_fields(), sorted(explained)
+    for field, sentence in explained.items():
+        assert sentence, f"{field} is listed and never explained"
+
+
+def test_a_finding_written_from_the_packets_example_is_accepted_by_the_project(
+        tmp_path, capsys):
+    # The only honest check: take the example OUT of the packet, put it in the
+    # lane the packet tells the agent to write, and run the real command.
+    root, text = _packet(tmp_path)
+    blocks = _json_blocks(text)
+    assert len(blocks) == 2, f"the packet carries {len(blocks)} json example(s), not 2"
+    starter, example = (_as_written_by_an_agent(b) for b in blocks)
+    starter["findings"] = [example]
+    code, said = _validated(root, "codex", starter, capsys)
+    assert (code, said) == (0, ""), said
+
+
+def test_the_starter_the_packet_vends_is_accepted_by_the_project(tmp_path, capsys):
+    # The starter is what an agent copies verbatim, so anything added to it --
+    # `now` included -- has to survive the same command, warnings and all. A
+    # `now.phase` naming a phase the project never declared warns here.
+    root, text = _packet(tmp_path)
+    code, said = _validated(root, "codex",
+                            _as_written_by_an_agent(_json_blocks(text)[0]), capsys)
+    assert (code, said) == (0, ""), said
+
+
+def test_the_packet_records_the_current_task_and_phase_the_panel_shows(tmp_path):
+    # `now.phase` is the sole input to the panel's Current phase and `now.task`
+    # to its current task. An agent following the packet to the letter never
+    # wrote either, so both stayed blank for the entire first hour.
+    root, text = _packet(tmp_path)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert isinstance(starter.get("now"), dict), starter.get("now")
+    assert isinstance(starter["now"].get("task"), str) and starter["now"]["task"]
+    phases = validate.merged_state(store.load(root))["cycle"]["phases"]
+    assert starter["now"].get("phase") in phases
+
+
+def test_the_copy_safe_starter_still_reports_nothing_the_agent_has_not_found(
+        tmp_path):
+    # The over-correction control. The starter is copied VERBATIM into a real
+    # lane, so a worked finding moved into it would have every new project in
+    # the world reporting a fiction on its first write -- and the example is
+    # only useful because the starter stays empty.
+    _, text = _packet(tmp_path)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert starter["findings"] == []
+    assert starter["verdicts"] == {}
+    assert starter["waits_on_human"] == []
+
+
+def test_the_packet_invents_no_node_id_and_no_phase(tmp_path):
+    # The second over-correction control, and the reason the example is derived
+    # rather than typed. A hardcoded refs entry or a hardcoded phase reads as a
+    # perfectly good example and warns on every project but the one it was
+    # written against.
+    root, text = _packet(tmp_path)
+    state = validate.merged_state(store.load(root))
+    nodes = {n["id"] for n in state["map"]["nodes"]}
+    phases = set(state["cycle"]["phases"])
+    for block in _json_blocks(text):
+        doc = _as_written_by_an_agent(block)
+        findings = doc["findings"] if isinstance(doc.get("findings"), list) else [doc]
+        for f in findings:
+            assert set(f.get("refs", [])) <= nodes, f.get("refs")
+        assert set(doc.get("map_status", {})) <= nodes
+        phase = (doc.get("now") or {}).get("phase")
+        assert phase is None or phase in phases, phase
+
+
+def test_the_packet_records_no_phase_where_the_project_declares_none(
+        tmp_path, capsys):
+    # The third control, and the one that stops "always write a phase" from
+    # becoming the fix. A project with no cycle.phases has no runtime phase to
+    # name, and naming one anyway is a warning on the reader's own lane.
+    root, text = _packet(tmp_path, map_toml=PACKET_MAP_NO_PHASES)
+    starter = _as_written_by_an_agent(_json_blocks(text)[0])
+    assert "phase" not in starter["now"], starter["now"]
+    code, said = _validated(root, "codex", starter, capsys)
+    assert (code, said) == (0, ""), said

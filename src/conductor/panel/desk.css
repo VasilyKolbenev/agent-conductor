@@ -1,0 +1,465 @@
+/* The project desk -- the shell and its five empty regions.
+
+   The palette is the approved concept's (layout-v4): an evergreen ground and a
+   lime "ion" accent in the dark theme, with a light pair. Every colour is a token
+   and the theme is one attribute. The concept's web fonts are not shipped: the
+   panel loads nothing from another origin, so the font stacks are system stacks.
+
+   Every colour-bearing declaration in this file is either a MEASURED row in
+   tests/test_desk_style.py -- resolved through the cascade, composited onto the
+   surface its chain stands on and held to its WCAG floor in every theme and
+   every media environment -- or a named EXEMPT with the reason written beside
+   it. That test also pins the tokens to the concept value by value, holds the
+   sheet to two :root blocks, the 44px target floor, and no keyframe animation. */
+:root{
+  color-scheme:dark light;
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme:light){:root{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+}}
+
+/* A stored choice overrides the OS; without it the media default stays live. */
+:root[data-theme="dark"]{
+  --space:#050908; --ground:#0a0f0d; --panel:#0e1512; --line:#24312a; --line-strong:#3a4a40;
+  --ink:#eef4e8; --muted:#a3b1a9; --faint:#839187;
+  --ion:#d4f99b; --on-ion:#10180b; --amber:#efc48b; --on-amber:#1b1305;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace;
+
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --space:#e7ece5; --ground:#eef1ed; --panel:#f8faf6; --line:#c7d1c8; --line-strong:#9aab9f;
+  --ink:#18241c; --muted:#4e6055; --faint:#607568;
+  --ion:#36520f; --on-ion:#f4f9ea; --amber:#8a6500; --on-amber:#fff7e2;
+
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;min-height:100%}
+body{background:var(--space);color:var(--ink);font:14px/1.45 var(--sans);
+     -webkit-font-smoothing:antialiased}
+h1,p{margin:0}
+button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inherit}
+:focus-visible{outline:2px solid var(--ion);outline-offset:3px}
+
+/* Every control the shell or a region module builds clears the 44px minimum
+   target height, declared over the ELEMENT TYPES rather than over a list of
+   classes: a control added later by another module is already above the floor. */
+.desk-shell button,.desk-shell select,.desk-shell input,.desk-shell textarea{min-height:44px}
+
+/* ── shell ────────────────────────────────────────────────────────────── */
+/* The rail, the centre and the pult are three columns under the top bar; under
+   900px they stack in reading order and the page never scrolls sideways. */
+.desk-shell{display:grid;grid-template-columns:248px minmax(0,1fr) 300px;
+  grid-template-rows:auto minmax(0,1fr);min-height:100vh;max-width:1280px;
+  margin:0 auto;background:var(--ground)}
+.desk-top{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;
+  gap:4px 20px;padding:0 22px;min-height:48px;border-bottom:1px solid var(--line)}
+.desk-brand{font:500 12px var(--display);letter-spacing:.26em;text-transform:uppercase}
+.desk-status{font-size:12.5px;color:var(--muted)}
+.desk-note{font-size:12px;color:var(--muted)}
+.desk-classic{margin-left:auto;display:inline-flex;align-items:center;min-height:44px;
+  font-size:12.5px;color:var(--muted);text-decoration:underline}
+#deskNewTask{padding:0 12px;border-radius:8px;background:var(--panel)}
+
+/* The six-step wizard covers this project's desk while it is open. Its controls retain their
+   own state and focus across redraws; only the outer scroll belongs to the overlay. */
+.desk-wizard-shell{position:fixed;inset:0;z-index:20;overflow:auto;padding:24px;
+  background:var(--space)}
+.desk-wizard{max-width:900px;margin:0 auto;padding:20px;background:var(--panel);
+  border-radius:14px;display:grid;gap:16px}
+.desk-wizard__head,.desk-wizard__foot{display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:12px}
+.desk-wizard__steps{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.desk-wizard__steps li{flex:1 1 130px;min-width:0;padding:6px;background:var(--ground);
+  border-radius:8px}
+.desk-wizard__steps small{display:block}
+.desk-wizard__body{display:grid;gap:14px;min-width:0}
+.desk-wizard__body label{display:grid;gap:6px;min-width:0}
+.desk-wizard input,.desk-wizard textarea,.desk-wizard select{width:100%;padding:8px;
+  font:inherit;background:var(--ground)}
+.desk-wizard textarea{min-height:100px;resize:vertical}
+.desk-wizard button{padding:6px 12px;border-radius:8px;background:var(--ground)}
+.desk-wizard__dialog{padding:14px;background:var(--ground);border-radius:8px}
+
+/* ── the five regions ─────────────────────────────────────────────────── */
+.desk-rail{min-width:0;min-height:0;padding:16px 12px;overflow:auto;
+  border-right:1px solid var(--line)}
+/* The rail's caption, and one button per task: the title, and under it the word the
+   task's newest run has earned. A pressed row stands on a panel. Amber asks for you and
+   ion says the run is going; the word is in the row as well, so no tone stands alone. */
+.desk-rail__head{margin:0 0 8px;padding:0 10px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-rail__list{display:flex;flex-direction:column;gap:4px}
+.desk-rail__none{padding:0 10px;font-size:12px;color:var(--muted)}
+.desk-task{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;
+  padding:10px 12px 11px;border-radius:12px;text-align:left;color:var(--ink);
+  overflow-wrap:anywhere}
+.desk-task[aria-pressed="true"]{background:var(--panel);box-shadow:inset 2px 0 0 var(--ion)}
+.desk-task__title{font-size:13.5px;font-weight:500;line-height:1.3}
+.desk-task__state{font-size:12px;color:var(--muted)}
+.desk-task__state[data-tone="amber"]{color:var(--amber)}
+.desk-task__state[data-tone="ion"]{color:var(--ion)}
+.desk-task__note{font-size:11.5px;line-height:1.4;color:var(--muted)}
+.desk-center{display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;min-width:0;
+  min-height:0}
+/* The plate of a project open for viewing stands above the scene and takes no row while it is
+   hidden. Amber asks for attention; its words are in it, so the tone stands alone nowhere. */
+.desk-plate{grid-row:1;margin:12px 12px 0;padding:10px 14px;border-radius:12px;
+  background:var(--panel);color:var(--amber);font-size:12.5px;overflow-wrap:anywhere}
+.desk-scene{grid-row:2;min-height:320px;min-width:0;margin:12px;border-radius:18px;
+  background:var(--space);overflow-x:auto}
+.desk-feed{grid-row:3;min-height:120px;padding:12px 22px}
+.desk-summary{grid-row:4;min-height:56px;padding:0 22px;border-top:1px solid var(--line)}
+.desk-pult{min-width:0;min-height:0;padding:16px 14px;overflow:auto;
+  border-left:1px solid var(--line)}
+
+/* ── the scene ────────────────────────────────────────────────────────── */
+/* The Studio's run deck, drawn by its own modules, in the concept's tokens: the ground the
+   Studio called `sunk` is `--space` here, the wait colour is `--amber`, and the concept has
+   no red, so a failed step is told by its word and its glyph and not by a colour. The
+   Trace is a ground card on the scene; the Orbit's ring and marks stand on the scene
+   itself; the inspector is a panel. */
+.desk-scene__note{padding:24px;font-size:13px;color:var(--muted)}
+.desk-scene__subject{padding:14px 18px 0;font-size:12.5px;color:var(--muted)}
+.desk-scene__reload{margin:0 24px 24px;padding:0 16px;border-radius:8px;
+  background:var(--panel);color:var(--ink)}
+.desk-scene .studio-deck{display:flex;flex-direction:column;gap:12px;min-width:0;
+  padding:8px 16px 16px}
+.desk-scene .studio-deck h3{margin:0;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-scene .studio-deck__head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;
+  min-width:0}
+.desk-scene .studio-lenses{display:flex;gap:16px;flex-wrap:wrap}
+.desk-scene .studio-lens{font-size:14px;padding:6px 2px}
+.desk-scene .studio-lens[aria-pressed="true"]{border-bottom:2px solid var(--ion);font-weight:700}
+.desk-scene .studio-team-roster{display:flex;flex-wrap:wrap;gap:6px}
+.desk-scene .studio-team-roster button{min-width:44px;padding:4px 8px;border-radius:6px;
+  font-size:11px;background:var(--panel);color:var(--ink)}
+.desk-scene .studio-deck__body{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.desk-scene .studio-deck__scene{min-width:0}
+.desk-scene .studio-trace{position:relative;min-width:0;height:450px;overflow-x:auto;
+  overflow-y:hidden;border-radius:18px;background:var(--ground);color:var(--ink)}
+.desk-scene .studio-trace__inner{position:relative;min-width:100%;height:450px;overflow:hidden}
+.desk-scene .studio-trace__inner svg{position:absolute;inset:0;width:100%;height:450px;
+  pointer-events:none}
+.desk-scene .studio-trace__inner svg path{fill:none;stroke:var(--faint);stroke-width:1.2}
+.desk-scene .studio-trace__inner svg .studio-trace__horizon{fill:var(--panel);
+  stroke:var(--line)}
+.desk-scene .studio-trace__inner svg .studio-trace__return,
+.desk-scene .studio-trace__inner svg [data-duty="verify"]{stroke-dasharray:4 5}
+.desk-scene .studio-trace__inner svg [data-open="true"]{stroke:var(--ion);stroke-width:2.2}
+.desk-scene .studio-trace__inner svg .studio-trace__glow{stroke-width:9;opacity:.22;
+  filter:blur(5px)}
+.desk-scene .studio-trace__inner svg .studio-trace__contour{stroke-dasharray:1 7;
+  stroke-linecap:round;opacity:.7}
+.desk-scene .studio-trace__inner svg .studio-trace__tether{stroke-width:1.4;opacity:.75}
+.desk-scene .studio-trace__inner svg .studio-trace__pip{stroke-width:1.6}
+.desk-scene .studio-trace__inner svg text{font:10px var(--sans);fill:var(--muted);
+  paint-order:stroke;stroke:var(--ground);stroke-width:5px;stroke-linejoin:round}
+.desk-scene .studio-planet{display:flex;flex-direction:column;align-items:center;gap:8px;
+  position:relative;z-index:1;min-width:0;padding:18px 8px;border-radius:24px;
+  text-align:center;overflow-wrap:anywhere;background:none}
+.desk-scene .studio-planet__orb{position:relative;display:grid;place-items:center;width:72px;
+  height:72px;border-radius:50%;border:1px solid var(--faint);font-family:var(--mono);
+  font-size:14px;letter-spacing:.04em;background:var(--panel);color:var(--ink)}
+.desk-scene .studio-planet__orb::after{content:"";position:absolute;inset:-9px;
+  border:1px solid var(--line);border-radius:50%;pointer-events:none}
+.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__orb{
+  border:3px double var(--ion);color:var(--ion)}
+.desk-scene .studio-planet[data-word="awaiting_result"] .studio-planet__orb{
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--ion) 55%,transparent)}
+.desk-scene .studio-planet[data-word="unassigned"] .studio-planet__orb,
+.desk-scene .studio-planet[data-word="blocked"] .studio-planet__orb{opacity:.72}
+.desk-scene .studio-planet__selection{font-size:12px;text-decoration:underline;
+  text-underline-offset:4px;color:var(--muted)}
+.desk-scene .studio-planet[aria-pressed="true"] .studio-planet__selection{
+  color:var(--ion);font-weight:700}
+.desk-scene .studio-trace__planet{position:absolute;top:12px;width:152px;min-width:0;gap:2px;
+  padding:0 4px;transform:translateX(-50%)}
+.desk-scene .studio-trace__planet .studio-planet__orb{width:56px;height:56px;margin-bottom:12px}
+.desk-scene .studio-trace__planet strong{max-width:100%;font-size:12px;line-height:1.25;
+  overflow-wrap:anywhere}
+.desk-scene .studio-trace__duty,.desk-scene .studio-trace__word{max-width:100%;font-size:10px;
+  line-height:1.3;overflow-wrap:anywhere}
+.desk-scene .studio-trace__step{position:absolute;top:236px;display:flex;
+  flex-direction:column;align-items:center;gap:3px;width:var(--trace-step,100px);min-width:0;
+  padding:0 2px;transform:translateX(-50%)}
+.desk-scene .studio-trace__point{display:grid;place-items:center;width:28px;height:28px;
+  margin-bottom:5px;border-radius:50%;font-size:14px;line-height:1;background:var(--ground);
+  box-shadow:0 0 0 1.5px var(--faint)}
+.desk-scene .studio-trace__step[data-kind="gate"] .studio-trace__point{border-radius:8px}
+.desk-scene .studio-trace__step[data-kind="loop"] .studio-trace__point{width:22px;height:22px;
+  margin-top:3px;font-size:11px}
+.desk-scene .studio-trace__step[data-word="runnable"] .studio-trace__point{
+  box-shadow:0 0 0 1.5px var(--ink)}
+.desk-scene .studio-trace__step[data-word="awaiting_result"] .studio-trace__point,
+.desk-scene .studio-trace__step[data-word="needs_decision"] .studio-trace__point{
+  box-shadow:0 0 0 2px var(--ion),0 0 22px color-mix(in srgb,var(--ion) 38%,transparent)}
+.desk-scene .studio-trace__step[data-word="closed"]{opacity:.62}
+.desk-scene .studio-trace__title{display:-webkit-box;max-width:100%;overflow:hidden;
+  font-size:10px;font-weight:600;line-height:1.2;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.desk-scene .studio-trace__step[aria-pressed="true"] .studio-trace__point{
+  outline:2px solid var(--ion);outline-offset:3px}
+.desk-scene .studio-trace__step[data-word="needs_decision"] .studio-trace__point{
+  color:var(--amber)}
+.desk-scene .studio-deck__fleet{position:relative;display:grid;min-width:0;
+  grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:24px 12px;
+  align-content:center;padding:32px 18px}
+.desk-scene .studio-deck__fleet[data-kind="ring"]{display:block;height:460px;min-height:0;
+  padding:0;overflow:auto}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet{position:absolute;
+  left:var(--orb-x);top:var(--orb-y);z-index:1;width:132px;gap:4px;padding:8px 4px;
+  transform:translateX(-50%)}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet--up{
+  flex-direction:column-reverse;transform:translate(-50%,-100%)}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet__orb{width:60px;height:60px}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet strong{max-width:100%;
+  font-size:12px;line-height:1.25}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet .studio-note{font-size:11px;
+  line-height:1.3}
+.desk-scene .studio-deck__fleet[data-kind="ring"] .studio-planet__selection{font-size:11px}
+.desk-scene .studio-deck__routes{position:absolute;inset:0;width:100%;height:100%;
+  pointer-events:none}
+.desk-scene .studio-deck__route{fill:none;stroke:var(--faint);stroke-width:1.2}
+.desk-scene .studio-deck__route-label{fill:none;stroke:var(--muted);stroke-width:1.5}
+.desk-scene .studio-deck__routes marker path{fill:var(--faint)}
+.desk-scene .studio-deck__mark{position:absolute;left:var(--orb-x);top:var(--orb-y);z-index:1;
+  display:flex;flex-direction:column;align-items:center;gap:3px;width:104px;padding:0;
+  font-size:10px;line-height:1.2;text-align:center;overflow-wrap:anywhere;
+  transform:translate(-50%,-13px)}
+.desk-scene .studio-deck__mark strong{max-width:100%;font-size:10px;font-weight:600}
+.desk-scene .studio-deck__mark .studio-note{font-size:10px;line-height:1.2}
+.desk-scene .studio-deck__mark-point{display:grid;place-items:center;width:26px;height:26px;
+  border-radius:8px;font-size:13px;line-height:1;background:var(--ground);
+  box-shadow:0 0 0 1.5px var(--faint)}
+.desk-scene .studio-deck__mark--loop{flex-direction:row;align-items:center;gap:8px;
+  width:auto;max-width:220px;text-align:left;white-space:nowrap;
+  transform:translate(-15px,-50%)}
+.desk-scene .studio-deck__mark--loop .studio-deck__mark-point{width:30px;height:30px;
+  border-radius:50%;font-size:15px}
+.desk-scene .studio-deck__mark[data-word="needs_decision"] .studio-deck__mark-point{
+  box-shadow:0 0 0 2px var(--ion),0 0 20px color-mix(in srgb,var(--ion) 38%,transparent)}
+.desk-scene .studio-deck__mark[aria-pressed="true"] .studio-deck__mark-point{
+  box-shadow:0 0 0 2px var(--ion),0 0 0 5px var(--ground),0 0 0 6.5px var(--ion)}
+.desk-scene .studio-deck__core{position:absolute;left:var(--orb-x);top:var(--orb-y);z-index:1;
+  max-width:150px;font-size:11px;line-height:1.3;text-align:center;overflow-wrap:anywhere;
+  transform:translate(-50%,-50%)}
+.desk-scene .studio-deck__ring{fill:none;stroke-width:1.2;opacity:.42}
+.desk-scene .studio-deck__ring[data-kind="contour"]{stroke-dasharray:2 7;stroke-linecap:round;
+  opacity:.55}
+.desk-scene .studio-deck__contour{fill:none;stroke-width:1.2;opacity:.55}
+.desk-scene .studio-deck__contour[data-open="true"]{stroke-width:2;opacity:.95}
+.desk-scene .studio-deck__contour[data-kind="return"]{stroke-dasharray:4 5}
+.desk-scene .studio-deck__word{font:10px var(--sans);opacity:.8}
+.desk-scene .studio-deck__inspector{display:flex;flex-direction:column;gap:10px;min-width:0;
+  max-height:380px;padding:16px;border-radius:16px;overflow:auto;overflow-wrap:anywhere;
+  background:var(--panel)}
+.desk-scene .studio-deck__inspector h4{margin:0;font-size:20px;font-weight:500;
+  letter-spacing:-.02em}
+.desk-scene .studio-note{font-size:12px;line-height:1.5;color:var(--muted);
+  overflow-wrap:anywhere}
+.desk-scene .studio-deck__content .studio-note{font-size:14px}
+.desk-scene .studio-inspect-more{min-width:0;font-size:14px}
+.desk-scene .studio-inspect-more summary{min-height:44px;padding:12px 0;cursor:pointer}
+.desk-scene .studio-detail-pane{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}
+.desk-scene .studio-step-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:16px}
+.desk-scene .studio-step-flow__stage{display:grid;grid-template-columns:20px minmax(0,1fr);
+  gap:12px}
+.desk-scene .studio-step-flow__stage svg{width:20px;height:20px;fill:none;stroke:var(--muted);
+  stroke-width:1.3}
+.desk-scene .studio-step-flow__body{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;
+  min-width:0;align-items:start;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.desk-scene .studio-step-flow__value{display:flex;flex-direction:column;gap:8px;min-width:0}
+.desk-scene .studio-step-flow h5{margin:0;font-size:12px;font-weight:500;letter-spacing:.04em;
+  text-transform:uppercase}
+.desk-scene .studio-document-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.desk-scene .studio-deck__content select{width:100%;min-width:0;font-size:14px}
+.desk-scene .studio-deck__steps{display:flex;flex-direction:column;gap:16px;min-width:0;
+  margin:0;padding:0;list-style:none}
+.desk-scene .studio-deck__step{display:flex;flex-direction:column;gap:5px;min-width:0}
+.desk-scene .studio-deck__about summary{display:flex;align-items:center;min-height:44px;
+  font-size:14px;cursor:pointer}
+.desk-scene .studio-deck__about .studio-note{max-width:70ch}
+.desk-shell select,.desk-shell input{font:inherit;padding:4px 8px;border:1px solid var(--faint);
+  border-radius:6px;background:var(--panel);color:var(--ink)}
+
+/* ── the feed ─────────────────────────────────────────────────────────── */
+/* The journal of the run on the scene, newest at the bottom, in a list that scrolls. A row is
+   a bubble on a panel: who and when on its first line, then one sentence, and, when it has
+   them, the reason a person gave, the sentence a check that did not pass owes, and a document
+   that opens in the row as plain text. Ion marks the attempt that is going and amber a result
+   that asks for a look; the words are in the row as well, so no tone stands alone. */
+.desk-feed__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:4px 16px;margin:0 0 8px}
+.desk-feed__title{margin:0;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-feed__order{font-size:11px;color:var(--muted)}
+.desk-feed__none{margin:0;font-size:12px;color:var(--muted)}
+.desk-feed__log{display:flex;flex-direction:column;gap:8px;max-height:260px;margin:0;
+  padding:0 4px 4px 0;overflow:auto;list-style:none}
+.desk-feed__row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;
+  padding:8px 12px;border:1px solid var(--line);border-radius:4px 14px 14px 14px;
+  background:var(--panel);font-size:13px;overflow-wrap:anywhere}
+.desk-feed__row[data-tone="ion"]{border-color:var(--ion)}
+.desk-feed__row[data-tone="amber"]{border-color:var(--amber)}
+.desk-feed__who{grid-column:1;margin:0;font-size:11.5px;color:var(--muted)}
+.desk-feed__name{font-weight:500;color:var(--ink)}
+.desk-feed__at{grid-column:2;grid-row:1;font:11px var(--mono);color:var(--muted)}
+.desk-feed__what,.desk-feed__reason,.desk-feed__note{grid-column:1/-1;margin:0}
+.desk-feed__what{color:var(--ink)}
+.desk-feed__reason,.desk-feed__note{font-size:12px;color:var(--muted)}
+.desk-feed__doc{grid-column:1/-1}
+.desk-feed__doc summary{display:flex;align-items:center;min-height:44px;font-size:12.5px;
+  color:var(--ink);cursor:pointer}
+.desk-feed__text{max-height:280px;margin:4px 0 0;padding:10px 12px;border-radius:10px;
+  overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--mono);
+  background:var(--ground);color:var(--ink)}
+.desk-feed__findings{display:flex;flex-direction:column;gap:8px;margin:4px 0 0;padding:0;
+  list-style:none}
+.desk-feed__finding p{margin:2px 0 0;font-size:12.5px;color:var(--ink)}
+.desk-feed__finding .desk-feed__where{font:11.5px var(--mono);color:var(--muted)}
+
+/* ── the summary ──────────────────────────────────────────────────────── */
+/* The bar at the foot of the centre: four counters, a strip with a segment for each task, what
+   is going on now, and the mark that opens the panel above it. Ion and amber edge the two
+   counters that ask for a look; the words and the numbers are in them as well, so no tone stands
+   alone. The panel stands over the feed, spans the centre and scrolls; a task in it is a glyph, a
+   title and what the records say, a participant a name, a role and its facts. */
+.desk-sum{position:relative}
+.desk-sum__bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;width:100%;
+  min-height:56px;padding:6px 0;text-align:left}
+.desk-sum__chips{display:flex;flex-wrap:wrap;gap:6px}
+.desk-sum__chip{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 11px;
+  border:1px solid var(--line-strong);border-radius:14px;font-size:12px}
+.desk-sum__chip[data-tone="ion"]{border-color:var(--ion)}
+.desk-sum__chip[data-tone="amber"]{border-color:var(--amber)}
+.desk-sum__chip b{font:500 12px var(--mono)}
+.desk-sum__track{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(4px,1fr);gap:3px;
+  width:150px;height:6px}
+.desk-sum__track i{border-radius:3px;background:var(--line)}
+.desk-sum__track i[data-tone="ion"]{background:var(--ion)}
+.desk-sum__track i[data-tone="amber"]{background:var(--amber)}
+.desk-sum__track i[data-tone="done"]{background:var(--faint)}
+.desk-sum__now{margin-left:auto;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__more{font-size:12px;color:var(--muted);white-space:nowrap}
+.desk-sum__panel{position:absolute;left:-22px;right:-22px;bottom:100%;z-index:5;
+  max-height:430px;padding:16px 22px 18px;overflow:auto;background:var(--panel);
+  border:1px solid var(--line-strong);border-bottom:0;border-radius:18px 18px 0 0;
+  box-shadow:0 -18px 40px rgba(0,0,0,.18)}
+.desk-sum__head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:0 0 10px}
+.desk-sum__title{margin:0;font:400 15px var(--display);letter-spacing:-.01em}
+.desk-sum__close{padding:0 14px;border-radius:8px;color:var(--ink)}
+.desk-sum__cap{margin:14px 0 4px;font:500 11px var(--display);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.desk-sum__how summary{display:flex;align-items:center;min-height:44px;font-size:12.5px;
+  color:var(--muted);cursor:pointer}
+.desk-sum__how p{margin:4px 0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__tasks,.desk-sum__people{margin:0;padding:0;list-style:none}
+.desk-sum__task{display:grid;grid-template-columns:22px minmax(0,1.3fr) minmax(0,1.7fr);
+  gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.desk-sum__glyph{font:12px var(--mono)}
+.desk-sum__glyph[data-tone="ion"]{color:var(--ion)}
+.desk-sum__glyph[data-tone="amber"]{color:var(--amber)}
+.desk-sum__task-title{font-weight:500;overflow-wrap:anywhere}
+.desk-sum__task-what{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__task-note{display:block;margin-top:2px;font-size:11.5px;color:var(--muted)}
+.desk-sum__person{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,2fr);
+  gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.desk-sum__person-name{overflow-wrap:anywhere}
+.desk-sum__person-role{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.desk-sum__facts{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.desk-sum__no-run{margin:12px 0 0;font-size:12.5px;color:var(--muted)}
+
+/* ── the console ──────────────────────────────────────────────────────── */
+/* The name of the person at this page, the project queue as the server read it, and the two
+   lines of a project in view. Amber asks for you, as in the rail; the words are in the row as
+   well, so no tone stands alone. Nothing here is a button that writes. */
+.desk-pult__head{margin:0 0 8px;padding:0 4px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-queue__head{margin:0 0 8px;padding:0 4px;font:500 11px var(--display);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-pult__actor{margin:0 0 12px;padding:0 4px;font-size:12.5px;color:var(--ink)}
+.desk-pult__who{overflow-wrap:anywhere}
+.desk-pult__change{display:inline-flex;align-items:center;padding:0 6px;font-size:12.5px;
+  color:var(--muted);text-decoration:underline}
+.desk-pult__form{display:flex;flex-direction:column;gap:8px;margin:0 0 12px;padding:0 4px}
+.desk-pult__label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}
+.desk-pult__hint{font-size:12px;color:var(--amber)}
+.desk-pult__buttons{display:flex;flex-wrap:wrap;gap:8px}
+.desk-pult__buttons button{padding:0 14px;border-radius:8px;background:var(--panel);
+  color:var(--ink)}
+.desk-queue{margin:0 0 12px}
+.desk-queue__now{padding:0 4px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__list{display:flex;flex-direction:column;gap:8px;margin:8px 0 0;padding:0;
+  list-style:none}
+.desk-queue__entry{padding:0 4px;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__entry[data-tone="amber"]{color:var(--amber)}
+.desk-queue__none{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
+/* The controls of an entry: two steps and "Remove from the queue". An unavailable control (the end
+   it cannot step past, or a write in flight) says so with aria-disabled, is dimmed by a class of
+   its own, and is not `disabled`, so it keeps the keyboard. */
+.desk-queue__acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.desk-queue__acts button{min-width:44px;padding:0 12px;border:1px solid var(--faint);
+  border-radius:8px;background:var(--panel);color:var(--ink);font-size:12.5px}
+.desk-queue__acts .desk-queue__off{opacity:.5;cursor:default}
+.desk-queue__notice{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--amber);
+  overflow-wrap:anywhere}
+.desk-queue__hint{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted);
+  overflow-wrap:anywhere}
+/* The dialog of freeing the slot: a panel under the slot line with two equal choices, each with
+   what it does said under it, and a way out. */
+.desk-queue__dialog{margin:8px 0 0;padding:10px 12px;border:1px solid var(--faint);
+  border-radius:10px;background:var(--panel)}
+.desk-queue__dialog p{margin:4px 0;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-queue__dialog-head{font-weight:700}
+.desk-queue__dialog .desk-queue__note{font-size:12px;color:var(--muted)}
+.desk-queue__choice{margin:8px 0 0}
+.desk-pult__flag{margin:8px 0 0;padding:0 4px;font-size:12px;color:var(--muted)}
+
+/* The "continue after" block: closed until a person opens it, then a switch, the runs whose
+   grant can still be continued (one mark each), the queue start, and the one line that says what
+   the flag is. A run whose grant expired has no mark and says why; every control is a 44px
+   target, the label being the target of the mark inside it. */
+.desk-flag{margin:0 0 12px;padding:0 4px}
+.desk-flag__head{display:flex;align-items:center;cursor:pointer;
+  font:500 11px var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.desk-flag summary{min-height:44px}
+.desk-flag__check{display:flex;align-items:center;gap:8px;min-height:44px;font-size:12.5px;
+  color:var(--ink);overflow-wrap:anywhere}
+.desk-flag__runs{margin:8px 0 0;padding:0;border:0}
+.desk-flag__runs legend{padding:0;font-size:12px;color:var(--muted)}
+.desk-flag__runs ul{display:flex;flex-direction:column;gap:2px;margin:4px 0 0;padding:0;
+  list-style:none}
+.desk-flag__runs li{font-size:12.5px;overflow-wrap:anywhere}
+.desk-flag__note{margin:4px 0;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.desk-flag__line{margin:8px 0;font-size:12.5px;color:var(--ink);overflow-wrap:anywhere}
+.desk-flag__verdicts{display:flex;flex-direction:column;gap:4px;margin:8px 0;padding:0;
+  list-style:none;font-size:12.5px;color:var(--amber);overflow-wrap:anywhere}
+.desk-flag__info{margin:8px 0 0}
+
+@media (max-width:900px){
+  .desk-wizard-shell{padding:8px}
+  .desk-wizard{padding:12px}
+  .desk-shell{grid-template-columns:minmax(0,1fr);grid-template-rows:auto}
+  .desk-rail{border-right:0;border-bottom:1px solid var(--line)}
+  .desk-pult{border-left:0;border-top:1px solid var(--line)}
+  .desk-scene .studio-step-flow{grid-template-columns:minmax(0,1fr)}
+  .desk-sum__now{margin-left:0}
+  .desk-sum__task{grid-template-columns:22px minmax(0,1fr)}
+  .desk-sum__task-what{grid-column:2}
+  .desk-sum__person{grid-template-columns:minmax(0,1fr)}
+}

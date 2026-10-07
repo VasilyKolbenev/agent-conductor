@@ -1,93 +1,163 @@
-# Conduct
+# December Command
+
+![December Command — your coding agents, one clear workflow](docs/assets/december-command.svg)
+
+[English](README.md) · [Русский](README.ru.md) · [Start here](docs/index.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
 
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-78914f)](LICENSE)
 
-**Your agents write lanes. You conduct.**
+**Give your coding agents a shared workflow, a separate checker, and clear points for your decisions.**
 
-Conduct is a self-hosted control plane for the AI coding harnesses already working on
-your code — Claude Code, Codex, or anything that can write a JSON file. Each agent keeps
-one file — its lane — saying what it is doing, what it found, and what it needs from you.
+December Command runs locally and brings your AI coding tools into one Studio.
+Create a task, choose a workflow, review what may run, and follow the work through execution and checking.
+You can confirm each action or authorize a bounded sequence with a limit on its work.
+Human decision steps still wait for you.
 
-*Alpha — protocol v1.*
+**December Command v0.1.0 alpha.** The V1 candidate is under acceptance; this is not a completed release announcement.
+The Python package is `agent-conductor`, and its command is `conduct`.
+See the [candidate's evidence and remaining checks](docs/release-notes-v1-alpha.md).
 
-## 60-second quickstart
+## Choose your first step
 
-Requires Python 3.11+. Not on PyPI yet — install from GitHub:
+| You want to… | Start with… |
+| --- | --- |
+| See the interface without connecting a paid account | The demo below |
+| Connect your coding tools and try a real task | [First run](docs/first-run-v1.en.md) |
+| Understand what happens after you click Run | [Architecture, with a diagram](docs/architecture.md) |
+| Make your first change, with or without an AI assistant | [Contributor guide](CONTRIBUTING.md) |
 
-```sh
-pip install git+https://github.com/VasilyKolbenev/agent-conductor.git
+## Try the demo
+
+You need **Git and Python 3.11+**. A virtual environment keeps this project's packages separate from other Python projects.
+These commands install a source checkout for exploration. Use the [first-run guide](docs/first-run-v1.en.md)
+and the identified build for release-candidate acceptance; the default branch alone does not identify that build.
+
+<details open>
+<summary><strong>Windows · PowerShell</strong></summary>
+
+```powershell
+git clone https://github.com/VasilyKolbenev/agent-conductor.git
+cd agent-conductor
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\conduct.exe demo
 ```
 
-or clone and install editable:
+</details>
+
+<details>
+<summary><strong>macOS / Linux · terminal</strong></summary>
 
 ```sh
 git clone https://github.com/VasilyKolbenev/agent-conductor.git
 cd agent-conductor
-pip install -e .
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/conduct demo
 ```
 
-Then run the bundled demo:
+</details>
 
-```sh
-conduct demo
+Open the address printed in the terminal, normally `http://127.0.0.1:7777/`.
+You should see Studio with a sample workflow and run. Try **Runs**, **Decisions**,
+the **Trace / Orbit** views, and the language and theme switches. Stop the server with **Ctrl+C**.
+If the port is busy, add `--port 8080` to the demo command.
+
+The demo uses a temporary copy of sample data. It needs no provider login and starts no paid model task.
+A successful demo shows the interface; it does not prove that your real harness accounts are configured.
+
+## From a task to a checked result
+
+```mermaid
+flowchart LR
+    T[Task and instructions] --> W[Published workflow]
+    W --> P[Preview and permission]
+    P --> D[Agent does the work]
+    D --> C[Separate checker]
+    C -->|Accept| H[Human result decision]
+    C -->|Reject with usable findings| F[Correction within granted limits]
+    F --> C
 ```
 
-Open the printed URL (`http://127.0.0.1:7777/`, or `conduct demo --port 8080` if 7777 is
-taken). You are looking at a release that went wrong: a red release gate, three findings,
-one reviewer disagreement, and one decision waiting for you (`demo/README.md` explains
-the scenario).
+The workflow decides the actual steps and return paths. The diagram shows the core idea, not every possible workflow.
+A process finishing successfully is not the same as its work being verified.
+An uncertain result stays visible and requires resolution.
 
-## Use it on your own project
+Studio has five screens: **Overview, Workflow, Runs, Decisions, and Agents**.
+It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
 
-```sh
-cd your-project
-conduct init        # scaffolds conductor/ — the map it writes is already valid
-# edit conductor/map.toml: swap in your nodes, roles, and phases
-conduct validate    # prints nothing when the map and lanes are valid
-conduct prompt --role implementer --author claude
-conduct up          # panel at http://127.0.0.1:7777/
-```
+## Bring your existing tools
 
-`conduct prompt` prints the working instructions for one agent — paste the output into
-Claude Code, Codex, or whatever harness holds that role. The agent then keeps its lane
-file (`conductor/lanes/claude.json`) up to date, and the panel reflects every write
-live.
+A **harness** is the coding application that runs the model and its tools.
+December Command coordinates these applications; you keep their accounts and payment methods.
 
-## What it is
+| V1 harness | Account route | Resource reading |
+| --- | --- | --- |
+| Claude Code | Native subscription login | Subscription windows and reset times |
+| Codex | Native subscription login | Subscription windows and reset times |
+| Kimi Code | Native subscription login | Native usage source |
+| Grok Build | Native subscription login | Native quota source |
+| DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
-- **Files are the API.** All state lives in a `conductor/` directory inside your
-  project: `map.toml` (the project map), `lanes/<author>.json` (one file per agent),
-  and `events.jsonl` (an append-only log). Any tool that writes JSON can participate.
-- **Silence is not consent.** An agent that stops reporting does not stay green — it goes
-  stale, and the panel says so. Disagreements, staleness, review coverage, and the human
-  queue are all computed from the raw lanes, so no agent can bury a conflict by declining
-  to write it down. Nothing unknown shows green.
-- **The panel is read-only and local.** It never calls an LLM, never spawns agents,
-  and binds to 127.0.0.1 only. It shows what needs your attention and what to decide.
+These are the V1 integration targets, not a claim that all five have passed live acceptance.
+Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
+[release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
+DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.
 
-## What it is not
+## Built to be understandable
 
-- Not a chat with your agents.
-- Not an orchestrator or scheduler — it never runs agents for you.
-- Not a trace warehouse.
-- Not a cloud service — no account, no network access, no API keys.
+- **Local application:** Python 3.11+, no runtime Python dependencies; the interface is plain HTML, CSS, and JavaScript.
+- **Visible authority:** inspect the task and limits before authorizing work; pause and revoke are explicit controls.
+- **Readable history:** workflow revisions, decisions, and results are recorded on disk.
+- **A separate check:** the checker evaluates the result, rather than treating the agent's own success message as proof.
 
-## How it works
+New to the code? Start with the [repository map and glossary](docs/architecture.md).
+For the agreed V1 boundary and future memory/learning work, see the [V1 / V2 roadmap](docs/v1-v2-scope.md).
 
-Each agent owns exactly one lane file and rewrites it as it works: current task, node
-statuses, findings, verdicts on other agents' findings, and questions for the human.
-The merge step reads the map and every lane and computes the project state
-deterministically — same inputs, same state, no model in the loop. The panel renders
-that state live and hands you a copyable decision brief for each wait. You answer; the
-agents move on.
+<details>
+<summary><strong>CLI reference · useful once you leave the demo</strong></summary>
 
-## Documentation
+Run `conduct --help`, or add `--help` to a command, for its flags.
+Use the executable inside your virtual environment if it is not activated.
 
-- Current normative protocol: `spec/PROTOCOL.md`
-- Accepted Harness control-plane model: `docs/adr/0001-harness-control-plane-model.md`
-- The demo scenario: `demo/README.md`
+| Command | Purpose |
+| --- | --- |
+| `conduct demo` | Open the bundled sample in a temporary directory. |
+| `conduct init` | Create project data; interactive terminals ask setup questions. |
+| `conduct validate` | Check the map and lane files. |
+| `conduct doctor` | Explain readiness problems and the next action. |
+| `conduct providers` | Configure executable paths and allowed environment-variable names. |
+| `conduct ownership` | Activate, inspect, or explicitly recover project ownership. |
+| `conduct up` | Start local Studio for the project. |
+| `conduct prompt` | Print working instructions for an agent's reporting role. |
+| `conduct report` | Print the merged lane state as Markdown. |
+| `conduct preview` | Prepare a synthetic dispatch preview without executing it. |
+| `conduct integration-smoke` | Exercise the synthetic execution road; not a live provider task. |
+| `conduct reconcile` | Inspect actions left uncertain after interruption. |
+| `conduct tools` | Pin the `git` and `gh` this product may run (`conduct tools pin git --path <absolute path>`). |
+| `conduct hub` | Serve the hub page on one loopback port (default 7700); it runs one server per project. |
+| `conduct projects add` | Check and register a local project folder using the shared harness profile. |
 
-## Status
+Project-map templates are different from Studio's workflow starters:
 
-Alpha. Protocol v1. Python 3.11+, zero runtime dependencies. CI on Windows and Linux.
-MIT license.
+- **`--template NAME`** skips the `conduct init` questions and chooses a project map:
+  - `default-orbit` — the default five-stage map.
+  - `single-harness` — one implementing role and a human decision, without a reviewer.
+  - `empty` — a minimal placeholder map.
+  - `minimal` — the protocol's example map.
+
+The bootstrap prompt follows the map: where nodes are placeholders, it tells the agent to replace them with your real components;
+where nodes already name components, it tells the agent to check each one against your project instead.
+`conduct init` does not overwrite existing project data. Follow [first run](docs/first-run-v1.en.md) for ownership activation.
+
+</details>
+
+## Join in
+
+Small fixes, clearer explanations, and reproducible bug reports all help.
+[CONTRIBUTING](CONTRIBUTING.md) explains local setup, choosing a focused check, and a first pull request.
+[Browse the documentation](docs/index.md) for tutorials, architecture, reference material, and release procedures.
+In a local checkout, the documentation entry point is `docs/index.md`.
+
+Released under the [MIT license](LICENSE).

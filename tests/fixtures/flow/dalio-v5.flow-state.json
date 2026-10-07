@@ -1,0 +1,410 @@
+{
+  "workflow_id": "cycle-3f9a1c7e",
+  "source": "draft",
+  "draft_digest": "sha256:9f008767aaee941d6c8182765e9cfb21a967fa7df5895c5cc1d073fb8cd69caa",
+  "flow": {
+    "flow_version": 1,
+    "title": "Стандартный цикл",
+    "steps": [
+      {
+        "step_id": "goal",
+        "type": "agent",
+        "title": "Goal",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "role_id": "role-thinker",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {
+          "stage": "goal",
+          "arguments": {
+            "work_item_id": "work-001",
+            "target_artifact_refs": [
+              "artifact-brief"
+            ],
+            "result_artifact_ref": "artifact-goal",
+            "review_profile": "spec"
+          }
+        }
+      },
+      {
+        "step_id": "identify",
+        "type": "agent",
+        "title": "Identify Problems",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "role_id": "role-thinker",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "quality",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {
+          "stage": "identify",
+          "arguments": {
+            "work_item_id": "work-001",
+            "target_artifact_refs": [
+              "artifact-goal"
+            ],
+            "result_artifact_ref": "artifact-problems",
+            "review_profile": "quality"
+          }
+        }
+      },
+      {
+        "step_id": "diagnose",
+        "type": "agent",
+        "title": "Diagnose Root Causes",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "role_id": "role-diagnostician",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "quality",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {
+          "stage": "diagnose",
+          "arguments": {
+            "work_item_id": "work-001",
+            "target_artifact_refs": [
+              "artifact-problems"
+            ],
+            "result_artifact_ref": "artifact-causes",
+            "review_profile": "quality"
+          }
+        }
+      },
+      {
+        "step_id": "design",
+        "type": "agent",
+        "title": "Design the Plan",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "role_id": "role-designer",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {
+          "stage": "design",
+          "arguments": {
+            "work_item_id": "work-001",
+            "target_artifact_refs": [
+              "artifact-causes"
+            ],
+            "result_artifact_ref": "artifact-plan",
+            "review_profile": "spec"
+          }
+        }
+      },
+      {
+        "step_id": "confirm-gate",
+        "type": "human",
+        "title": "Human Gate - Confirm Do",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {
+          "gate_id": "gate-confirm-do",
+          "success_requires": null
+        }
+      },
+      {
+        "step_id": "do",
+        "type": "agent",
+        "title": "Do",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "role_id": "role-implementer",
+        "capability": "dispatch",
+        "verifier_role_id": "role-checker",
+        "review_profile": null,
+        "reads": [],
+        "instruction_from": null,
+        "ext": {
+          "stage": "do",
+          "arguments": {
+            "work_item_id": "work-001",
+            "instruction_ref": "instruction-plan",
+            "profile": "implement",
+            "artifact_refs": [
+              "artifact-plan"
+            ],
+            "output_limit_profile": "normal"
+          }
+        }
+      },
+      {
+        "step_id": "correct",
+        "type": "loop",
+        "title": "Correct the rejected result",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "do",
+        "bound": 2,
+        "ext": {}
+      },
+      {
+        "step_id": "result-gate",
+        "type": "human",
+        "title": "Result Gate",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {
+          "gate_id": "gate-result",
+          "success_requires": null
+        }
+      },
+      {
+        "step_id": "retry-loop",
+        "type": "loop",
+        "title": "Turn problems into progress",
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "identify",
+        "bound": 3,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "goal",
+        "to": "identify",
+        "when": "always"
+      },
+      {
+        "from": "identify",
+        "to": "diagnose",
+        "when": "always"
+      },
+      {
+        "from": "diagnose",
+        "to": "design",
+        "when": "always"
+      },
+      {
+        "from": "design",
+        "to": "confirm-gate",
+        "when": "always"
+      },
+      {
+        "from": "confirm-gate",
+        "to": "do",
+        "when": "approved"
+      },
+      {
+        "from": "do",
+        "to": "result-gate",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "correct",
+        "when": "failed"
+      },
+      {
+        "from": "result-gate",
+        "to": "retry-loop",
+        "when": "changes_requested"
+      }
+    ],
+    "ext": {
+      "execution_contract": null
+    }
+  },
+  "revision_flow": null,
+  "diagnostics": [
+    {
+      "code": "link_outside_desk",
+      "severity": "warning",
+      "at": {
+        "link": [
+          "goal",
+          "identify",
+          "always"
+        ]
+      },
+      "params": {}
+    },
+    {
+      "code": "link_outside_desk",
+      "severity": "warning",
+      "at": {
+        "link": [
+          "identify",
+          "diagnose",
+          "always"
+        ]
+      },
+      "params": {}
+    },
+    {
+      "code": "link_outside_desk",
+      "severity": "warning",
+      "at": {
+        "link": [
+          "diagnose",
+          "design",
+          "always"
+        ]
+      },
+      "params": {}
+    },
+    {
+      "code": "link_outside_desk",
+      "severity": "warning",
+      "at": {
+        "link": [
+          "design",
+          "confirm-gate",
+          "always"
+        ]
+      },
+      "params": {}
+    },
+    {
+      "code": "loop_order",
+      "severity": "warning",
+      "at": {
+        "step_id": "correct"
+      },
+      "params": {}
+    },
+    {
+      "code": "rework_after_correction",
+      "severity": "warning",
+      "at": {
+        "step_id": "do"
+      },
+      "params": {}
+    },
+    {
+      "code": "worst_over_actions",
+      "severity": "warning",
+      "at": null,
+      "params": {}
+    },
+    {
+      "code": "worst_over_time",
+      "severity": "warning",
+      "at": null,
+      "params": {}
+    }
+  ],
+  "publishable": true,
+  "budget": {
+    "limits": {
+      "max_actions": 8,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 28800
+    },
+    "clean": {
+      "actions": 5,
+      "seconds": 10800
+    },
+    "worst": {
+      "actions": 14,
+      "seconds": 32400
+    },
+    "steps": [
+      {
+        "step_id": "goal",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "identify",
+        "attempts": 3,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "diagnose",
+        "attempts": 3,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "design",
+        "attempts": 3,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "do",
+        "attempts": 4,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 3600,
+        "clamped": false
+      }
+    ],
+    "terms_draft": {
+      "node_limits": [
+        {
+          "node_id": "goal",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        },
+        {
+          "node_id": "identify",
+          "timeout_seconds": 1800,
+          "max_attempts": 3
+        },
+        {
+          "node_id": "diagnose",
+          "timeout_seconds": 1800,
+          "max_attempts": 3
+        },
+        {
+          "node_id": "design",
+          "timeout_seconds": 1800,
+          "max_attempts": 3
+        },
+        {
+          "node_id": "do",
+          "timeout_seconds": 1800,
+          "max_attempts": 4
+        }
+      ],
+      "max_actions": 8,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 28800,
+      "duration_seconds": 36000
+    },
+    "spent": null,
+    "exhausted": false,
+    "inputs": {
+      "instructions": [
+        {
+          "step_id": "do",
+          "instruction_ref": "instruction-plan"
+        }
+      ],
+      "documents": [
+        "artifact-brief",
+        "artifact-materials"
+      ]
+    }
+  },
+  "latest_revision": null,
+  "next_revision": 1,
+  "published": null
+}

@@ -1,0 +1,134 @@
+"""The routes the desk's transport names are routes of the command canon, and no other.
+
+`desk-transport.js` spells each route it may ask as a function of the ids it is handed. Lane L
+handed over three (spec 6.2.2, 6.2.3, 9.1.6): the write `POST /command/runs/<run_id>/materials`
+and the two reads of a project's documents. This runs the real module under Node, builds the
+paths, and asks the server's own `match_route` which route each one reaches, so a spelling that
+drifted from the canon, or an id that could slip into another route, is red here and not in a
+browser. A path is also shown to be reachable by NO other verb than the one its row names.
+"""
+from __future__ import annotations
+
+import pytest
+
+from conductor.command.api_refusals import ApiRefusal
+from conductor.command.command_routes import match_route
+from tests.desk_node import run_js
+
+MODULES = {"transport": "desk-transport.js"}
+DOC = "d-" + "0123456789abcdef" * 2
+RUN = "run-2026-09-30.a"
+
+
+def _paths(rows: list[list[str]]) -> list[str]:
+    """`path.<name>(arg)` for each row of (name, argument) under Node."""
+    return run_js("""
+      console.log(JSON.stringify(d.map(([name, arg]) => transport.path[name](arg))));
+    """, MODULES, rows)
+
+
+def test_the_materials_and_document_paths_are_the_three_rows_of_route_canon_3():
+    materials, listing, one = _paths([["materials", RUN], ["projectDocuments", ""],
+                                      ["projectDocument", DOC]])
+    assert materials == f"/command/runs/{RUN}/materials"
+    assert listing == "/command/project/documents"
+    assert one == f"/command/project/documents/{DOC}"
+    assert match_route("POST", materials).name == "materials"
+    assert match_route("GET", listing).name == "project_documents"
+    reached = match_route("GET", one)
+    assert (reached.name, reached.doc_id) == ("project_document", DOC)
+    assert match_route("POST", materials).run_id == RUN
+
+
+def test_every_added_wizard_target_uses_its_canonical_command_route():
+    rows = [
+        ("git", "", "/command/project/git", "GET", "project_git"),
+        ("projectCycle", "", "/command/project/cycle", "GET", "project_cycle"),
+        ("quotas", "", "/command/quotas", "GET", "quotas"),
+        ("preparation", "task-t1", "/command/tasks/task-t1/preparation", "GET",
+         "task_preparation"),
+        ("seed", "task-t1", "/command/tasks/task-t1/seed", "POST", "task_seed"),
+        ("flowRead", "desk-standard", "/command/workflows/desk-standard/flow", "GET",
+         "workflow_flow"),
+        ("flow", "desk-standard", "/command/workflows/desk-standard/flow", "POST",
+         "workflow_flow"),
+        ("documents", "", "/command/project/documents", "GET", "project_documents"),
+        ("document", DOC, f"/command/project/documents/{DOC}", "GET", "project_document"),
+        ("queue", "", "/command/queue", "GET", "queue"),
+        ("queue", "", "/command/queue", "POST", "queue"),
+        ("queueOrder", "", "/command/queue/order", "POST", "queue_order"),
+    ]
+    paths = _paths([[name, arg] for name, arg, *_ in rows])
+    for path, (_, _, expected, method, route) in zip(paths, rows, strict=True):
+        assert path == expected
+        assert match_route(method, path).name == route
+
+
+def test_the_flag_path_is_the_one_spec_4_3_4_gives_and_is_the_canons_once_it_has_the_row():
+    """One path, read and written. Its canon row is lane H's, handed to lane L with a patch that
+    lane L had not applied when this was written, so until then the canon does not know it; the
+    day it does, this holds the route it names."""
+    (path,) = _paths([["autoContinue", ""]])
+    assert path == "/command/project/auto-continue"
+    try:
+        reached = match_route("GET", path)
+    except ApiRefusal as refused:
+        assert refused.code == "route_not_found"
+    else:
+        assert reached.name == "project_auto_continue"
+        assert match_route("POST", path).name == "project_auto_continue"
+
+
+def test_each_of_the_three_is_refused_under_the_other_verb():
+    materials, listing, one = _paths([["materials", RUN], ["projectDocuments", ""],
+                                      ["projectDocument", DOC]])
+    for method, path in (("GET", materials), ("POST", listing), ("POST", one)):
+        with pytest.raises(ApiRefusal) as refused:
+            match_route(method, path)
+        assert refused.value.code == "method_not_allowed", (method, path)
+
+
+@pytest.mark.parametrize("hostile", ["../x", "a/b", "a%2Fb", "..", "d-x", DOC.upper(),
+                                     DOC + "0", f"{DOC}/extra", "", "a b", "a?b=1"])
+def test_an_id_that_is_no_id_of_the_grammar_reaches_no_route(hostile):
+    """The ids are encoded, so a slash, a dot run or a query cannot become part of the path."""
+    materials, one = _paths([["materials", hostile], ["projectDocument", hostile]])
+    for method, path in (("POST", materials), ("GET", one)):
+        reached = None
+        try:
+            reached = match_route(method, path)
+        except ApiRefusal as refused:
+            assert refused.code == "route_not_found", (method, path, refused.code)
+        if reached is not None:  # only a well-formed id may name a run or a document
+            assert reached.name in {"materials", "project_document"}
+            assert reached.run_id == hostile or reached.doc_id == hostile
+            assert "/" not in hostile and "?" not in hostile and ".." not in hostile
+
+
+def test_the_queue_paths_are_the_four_rows_of_route_canon_4_and_the_verbs_the_canon_gives():
+    """One path read and written, its two tails POST only, and a run called `order` a run."""
+    read, order, withdraw = _paths([["queue", ""], ["queueOrder", ""], ["queueWithdraw", RUN]])
+    assert (read, order) == ("/command/queue", "/command/queue/order")
+    assert withdraw == f"/command/queue/{RUN}/withdraw"
+    assert match_route("GET", read).name == match_route("POST", read).name == "queue"
+    assert match_route("POST", order).name == "queue_order"
+    reached = match_route("POST", withdraw)
+    assert (reached.name, reached.run_id) == ("queue_withdraw", RUN)
+    for method, path in (("GET", order), ("GET", withdraw)):
+        with pytest.raises(ApiRefusal) as refused:
+            match_route(method, path)
+        assert refused.value.code == "method_not_allowed", (method, path)
+
+
+@pytest.mark.parametrize("hostile", ["../x", "a/b", "a%2Fb", "..", "", "a b", "a?b=1",
+                                     "x/withdraw"])
+def test_a_run_id_that_is_no_id_never_becomes_part_of_the_withdraw_path(hostile):
+    """The id is encoded, so a slash or a dot run cannot turn a withdraw into another route."""
+    (path,) = _paths([["queueWithdraw", hostile]])
+    try:
+        reached = match_route("POST", path)
+    except ApiRefusal as refused:
+        assert refused.code == "route_not_found", (path, refused.code)
+    else:
+        assert reached.name == "queue_withdraw" and reached.run_id == hostile
+        assert "/" not in hostile and ".." not in hostile

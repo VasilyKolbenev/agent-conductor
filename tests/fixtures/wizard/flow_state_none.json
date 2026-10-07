@@ -1,0 +1,13 @@
+{
+  "workflow_id": "desk-standard",
+  "source": "none",
+  "draft_digest": null,
+  "flow": null,
+  "revision_flow": null,
+  "diagnostics": [],
+  "publishable": false,
+  "budget": null,
+  "latest_revision": null,
+  "next_revision": 1,
+  "published": null
+}

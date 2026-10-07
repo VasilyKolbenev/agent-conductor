@@ -1,0 +1,276 @@
+"""The hub's page in a real browser, in both languages, on a fake hub over the contract fixtures.
+
+The bench (`hub_bench.py`) serves the page exactly as the hub will: `GET /` answers `hub.html`,
+`/hub/<name>` answers the files of the registry and nothing else, every response carries the hub's
+own policy (no inline script or style, frames only of a loopback address, no other origin), and
+every POST is checked as the hub checks it and recorded. So what a test reads back is what the page
+really asked for and really sent. Every test runs once in English and once in Russian: what is
+asserted about a word is asserted against the catalogue's own message for that language, never a
+literal, so a missing or swapped message fails in the language it is missing in. A test ends by
+asserting that the page raised no error, broke no policy and asked no path the hub does not serve.
+"""
+from __future__ import annotations
+
+import urllib.error
+import urllib.request
+import copy
+import json
+import re
+import threading
+import time
+
+from playwright.sync_api import expect
+
+from browser_tests.hub_bench import (CSP, FakeHub, HubPage, hub,  # noqa: F401
+                                     hub_page, lang, ready, say)
+from conductor.hub.assets import HUB_ASSETS
+
+FRAME = """() => {
+  const label = (id) => document.getElementById(id).getAttribute("aria-label");
+  const actions = [...document.querySelectorAll("#hubActions .hub-blocked")].map((one) => [
+    one.querySelector("button").textContent, one.querySelector("button").disabled,
+    one.querySelector("small").textContent]);
+  return {lang: document.documentElement.lang, title: document.title,
+    brand: document.querySelector(".hub-brand").textContent,
+    labels: ["hubTop", "hubBanners", "hubConfirm", "hubRail", "hubCenter", "hubSide"].map(label),
+    path: document.getElementById("hubPath").textContent, actions,
+    add: [...document.querySelectorAll('#hubActions [data-focus="add-project"]')].map(
+      (button) => [button.textContent, button.disabled]),
+    rail: document.querySelector(".hub-rail__head").textContent,
+    status: document.getElementById("hubStatus").textContent,
+    pressed: [...document.querySelectorAll(".hub-seg button")].map((b) => [b.dataset.focus,
+      b.getAttribute("aria-pressed")])};
+}"""
+
+
+def test_the_page_boots_under_the_hubs_own_policy_and_says_its_frame_in_its_language(
+        hub_page, lang):
+    page = hub_page
+    ready(page)
+    facts = page.page.evaluate(FRAME)
+    assert facts["lang"] == lang and facts["title"] == say(page, "hub.page_title")
+    assert facts["brand"] == "December Command"
+    assert facts["labels"] == [say(page, f"hub.{name}.label") for name in (
+        "top", "banners", "confirm", "rail", "center", "side")]
+    assert facts["path"] == say(page, "hub.path.none")
+    assert facts["actions"] == [
+        [say(page, "hub.new_task"), True, say(page, "hub.new_task.blocked")]]
+    assert facts["add"] == [[say(page, "hub.add_project"), False]]
+    assert facts["rail"].startswith(say(page, "hub.rail.heading", count="3"))
+    assert facts["status"] == say(page, "hub.status.ready")
+    assert dict(facts["pressed"])[f"seg:lang:{lang}"] == "true"
+
+
+def test_add_project_shows_the_two_terminal_commands_without_sending_a_path(hub_page, lang):
+    page = hub_page
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    guide = page.page.locator('[data-banner="first-run"]')
+    expect(guide).to_be_visible()
+    assert guide.locator("code").all_text_contents() == [
+        "conduct providers --profile",
+        'conduct projects add --dir "<absolute-folder>" --legacy-writers-stopped']
+    assert guide.locator("strong").text_content() == say(page, "hub.first.heading")
+
+
+def test_folder_choice_stays_in_hub_and_legacy_add_needs_explicit_consent(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "1" * 32
+    operation = "operation-" + "2" * 32
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    hub.answer(f"/hub/dialogs/{pick}", {"pick_id": pick, "purpose": "project",
+        "state": "picked", "folder": "проект", "project": "legacy", "code": None})
+    hub.post_answers["/hub/projects"] = (202, {"operation_id": operation})
+    hub.answer(f"/hub/operations/{operation}", {"operation_id": operation, "kind": "add",
+        "source": "folder", "state": "succeeded", "step": "start", "project_id": "a" * 32,
+        "code": None, "result": {"folder": "проект", "activated": "new",
+        "providers": "copied", "git": "not_git", "exclude": "not_git",
+        "exclude_names": None, "agent_instructions": [], "projects_home_created": False}})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    name = page.page.locator('[data-focus="folder-name"]')
+    expect(name).to_have_value("проект")
+    submit = page.page.locator('[data-focus="folder-submit"]')
+    expect(submit).to_be_disabled()
+    page.page.locator('[data-focus="folder-writers"]').check()
+    name.fill("")
+    expect(submit).to_be_disabled()
+    name.fill("проект")
+    expect(submit).to_be_enabled()
+    submit.click()
+    expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(
+        say(page, "hub.add.serving"))
+    assert hub.posts[:2] == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": "/hub/projects", "body": {"source": "folder", "pick_id": pick,
+            "name": "проект", "legacy_writers_stopped": True}}]
+    assert not any("C:\\" in str(post) for post in hub.posts)
+
+
+def test_closing_during_a_held_pick_response_cancels_only_that_late_pick(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "3" * 32
+    gate = threading.Event()
+    hub.post_gates["/hub/dialogs/folder"] = gate
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="folder-choose"]').click()
+    for _ in range(100):
+        if hub.posts:
+            break
+        time.sleep(.01)
+    assert hub.posts == [{"path": "/hub/dialogs/folder", "body": {"purpose": "project"}}]
+    page.page.locator('[data-focus="add-project"]').click()  # the top toggle is also a close path
+    expect(page.page.locator('[data-banner="folder-add"]')).to_have_count(0)
+    gate.set()
+    for _ in range(100):
+        if len(hub.posts) == 2:
+            break
+        time.sleep(.01)
+    assert hub.posts == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "project"}},
+        {"path": f"/hub/dialogs/{pick}/cancel", "body": {}}]
+
+
+def test_scratch_add_sends_only_name_and_folder_and_selects_starter(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    before = copy.deepcopy(hub.answers["/hub/projects"][1])
+    after = copy.deepcopy(before)
+    project = copy.deepcopy(after["projects"][0])
+    project.update(project_id="a" * 32, name="Fresh project", source="scratch", tasks=[])
+    after["projects"].append(project)
+    operation = "operation-" + "4" * 32
+    hub.post_answers["/hub/projects"] = (202, {"operation_id": operation})
+    hub.answer(f"/hub/operations/{operation}", {"operation_id": operation, "kind": "add",
+        "source": "scratch", "state": "succeeded", "step": "start", "project_id": "a" * 32,
+        "code": None, "result": {"folder": "fresh", "git": "not_git", "providers": "copied",
+                                  "exclude": "not_git", "projects_home_created": True}})
+    ready(page)
+    held = []
+    def hold_old_read(route):
+        if not held:
+            held.append(route)
+        else:
+            route.continue_()
+    page.page.route("**/hub/projects", hold_old_read)
+    with page.page.expect_request(lambda req: req.url.endswith("/hub/projects")):
+        hub.push({"kind": "projects"})
+    hub.answer("/hub/projects", after)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="source-scratch"]').click()
+    page.page.locator('[data-focus="scratch-folder"]').fill("fresh")
+    page.page.locator('[data-focus="folder-name"]').fill("Fresh project")
+    page.page.locator('[data-focus="folder-submit"]').click()
+    expect(page.page.locator('[data-banner="folder-add"]')).to_contain_text(say(page, "hub.add.serving"))
+    held[0].fulfill(status=200, content_type="application/json", body=json.dumps(before))
+    assert hub.posts == [{"path": "/hub/projects",
+        "body": {"source": "scratch", "folder": "fresh", "name": "Fresh project"}}]
+    expect(page.page.locator("#hubDesk iframe")).to_have_attribute("src",
+        re.compile(r"project=a{32}.*new=task.*starter=desk-starter-docs"))
+    assert "project=" + "a" * 32 in page.page.evaluate("location.hash")
+
+
+def test_scratch_parent_choice_preserves_draft_and_sends_only_the_pick(hub_page, lang):
+    page, hub = hub_page, hub_page.hub
+    pick = "pick-" + "5" * 32
+    hub.post_answers["/hub/dialogs/folder"] = (202, {"pick_id": pick})
+    hub.answer(f"/hub/dialogs/{pick}", {"pick_id": pick, "purpose": "projects_home",
+        "state": "picked", "folder": "Projects", "project": None, "code": None})
+    hub.post_answers["/hub/setup/projects-home"] = (200,
+        {"projects_home": {"state": "chosen", "name": "Projects"}})
+    ready(page)
+    page.page.locator('[data-focus="add-project"]').click()
+    page.page.locator('[data-focus="source-scratch"]').click()
+    page.page.locator('[data-focus="scratch-folder"]').fill("keep-folder")
+    page.page.locator('[data-focus="folder-name"]').fill("Keep name")
+    page.page.locator('[data-focus="projects-home"]').click()
+    expect(page.page.locator('[data-focus="scratch-folder"]')).to_have_value("keep-folder")
+    expect(page.page.locator('[data-focus="folder-name"]')).to_have_value("Keep name")
+    assert hub.posts == [
+        {"path": "/hub/dialogs/folder", "body": {"purpose": "projects_home"}},
+        {"path": "/hub/setup/projects-home", "body": {"pick_id": pick}}]
+
+
+def test_a_language_and_a_theme_chosen_on_the_page_are_written_to_its_address_and_say_every_word(
+        hub_page, lang):
+    page = hub_page
+    other = "ru" if lang == "en" else "en"
+    page.page.locator(f'[data-focus="seg:lang:{other}"]').click()
+    expect(page.page.locator("html")).to_have_attribute("lang", other)
+    assert page.page.evaluate("location.hash").count(f"lang={other}") == 1
+    assert page.page.evaluate("document.title") == say(page, "hub.page_title")
+    page.page.locator('[data-focus="seg:theme:dark"]').click()
+    expect(page.page.locator("html")).to_have_attribute("data-theme", "dark")
+    assert set(page.page.evaluate("location.hash").lstrip("#").split("&")) == {
+        f"lang={other}", "theme=dark"}
+    page.page.locator('[data-focus="seg:theme:null"]').click()
+    expect(page.page.locator("html")).not_to_have_attribute("data-theme", "dark")
+    assert "theme" not in page.page.evaluate("location.hash")
+    assert page.page.evaluate("document.activeElement.dataset.focus") == "seg:theme:null", (
+        "a pass replaces what it draws and the control that had focus is found again")
+
+
+def test_the_page_asks_only_for_the_entry_and_the_files_of_the_registry(hub_page):
+    page = hub_page
+    page.page.wait_for_load_state("networkidle")
+    doors = {"/hub/session", "/hub/projects", "/hub/limits", "/hub/setup", "/hub/events"}
+    assert set(page.hub.gets) == {"/", *HUB_ASSETS, *doors}, (
+        "every file of the registry is used; the reads and the stream are the doors; none else")
+    assert page.hub.posts == []
+
+
+def test_the_fake_hub_serves_the_registry_and_the_entry_and_nothing_else_under_its_policy(hub):
+    def get(path: str) -> tuple[int, str]:
+        try:
+            with urllib.request.urlopen(hub.url + path, timeout=5) as answer:
+                return answer.status, answer.headers["Content-Security-Policy"]
+        except urllib.error.HTTPError as error:
+            return error.code, error.headers["Content-Security-Policy"]
+
+    assert get("/") == (200, CSP) and get("/hub/hub.js") == (200, CSP)
+    assert get("/hub/hub.html")[0] == 404, "the entry page is not a row of the registry"
+    assert get("/hub/desk-flow.js")[0] == 404 and get("/panel/desk.html")[0] == 404
+    assert get("/hub/studio-i18n.js")[0] == 404 and get("/command/runs")[0] == 404
+    assert hub.faults == [
+        "a path the hub does not serve: /hub/hub.html",
+        "a path the hub does not serve: /hub/desk-flow.js",
+        "a path the hub does not serve: /panel/desk.html",
+        "a path the hub does not serve: /hub/studio-i18n.js",
+        "the page asked a child's path: /command/runs",
+        "a path the hub does not serve: /command/runs"]
+    hub.faults.clear()
+
+
+SIDE = """() => ({center: document.querySelector("#hubStub [data-case]")?.dataset.case ?? null,
+  centerText: document.getElementById("hubStub").textContent,
+  queue: [...document.querySelectorAll("#hubSide [data-queue] > *")].map((n) => n.textContent),
+  limits: [...document.querySelectorAll("#hubSide [data-limits] > *")].map(
+    (n) => n.textContent)})"""
+
+
+def test_with_nothing_read_the_centre_asks_for_a_project_and_the_side_says_no_queue_and_no_data(
+        hub, chromium, lang):
+    for path in ("/hub/projects", "/hub/limits", "/hub/setup"):
+        hub.answer(path, {"error": {"code": "registry_invalid", "message": "", "detail": None}},
+                   status=500)
+    context = chromium.new_context(viewport={"width": 1300, "height": 1000}, locale=lang)
+    try:
+        page = context.new_page()
+        page.goto(f"{hub.url}/#lang={lang}", wait_until="load")
+        opened = HubPage(page, hub, [])
+        expect(page.locator("#hubShell")).to_have_attribute("data-state", "failed")
+        facts = page.evaluate(SIDE)
+        assert facts["center"] == "choose"
+        assert facts["centerText"] == say(opened, "hub.center.choose")
+        assert facts["queue"] == [say(opened, "hub.queue.heading"),
+                                  say(opened, "hub.queue.none_active"),
+                                  say(opened, "hub.queue.empty")]
+        assert facts["limits"] == [say(opened, "hub.limits.heading"),
+                                   say(opened, "hub.limits.none")], (
+            "no reading is said as no data, and there is no card for an account nobody read")
+        assert page.evaluate("document.getElementById('hubStatus').textContent") == say(
+            opened, "hub.status.failed")
+    finally:
+        context.close()

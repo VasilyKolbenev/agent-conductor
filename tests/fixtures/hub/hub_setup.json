@@ -1,0 +1,42 @@
+{
+  "route": "GET /hub/setup",
+  "status": 200,
+  "response": {
+    "profile": "present",
+    "projects_home": {
+      "state": "default",
+      "name": "ConductProjects",
+      "default_name": "ConductProjects"
+    },
+    "tools": {
+      "gh": {
+        "state": "pinned",
+        "display": "GitHub CLI\\gh.exe",
+        "version": "2.47.1",
+        "candidates": []
+      },
+      "git": {
+        "state": "not_pinned",
+        "display": null,
+        "version": null,
+        "candidates": [
+          {
+            "candidate_id": "cand-4e1a9c07b25d4f3a8c61d09e7b2f5a13",
+            "display": "Git\\cmd\\git.exe",
+            "version": "2.45.2"
+          }
+        ]
+      }
+    },
+    "logins": [
+      {
+        "login_key": "a3f1c9e07b5d4286b0e1d7c4f9a2385e6d1b0c7f4a9e2385b6d0c1f7a4e9b238",
+        "harness": "claude-code",
+        "used_by": ["3f9c0d5a7b2e4c168a90d3e1f4b7a625"],
+        "state": "in_use"
+      }
+    ],
+    "hub_job": "none",
+    "clone_recovery": []
+  }
+}

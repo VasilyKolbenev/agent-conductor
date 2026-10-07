@@ -1,0 +1,106 @@
+/* The existing Schema renderer in the desk palette. Every selector is scoped to its panel;
+   the canvas geometry matches Studio's so positioned nodes, ports and roads stay clickable. */
+.desk-flow{display:grid;gap:14px;min-width:0;color:var(--ink);overflow-wrap:anywhere}
+.desk-flow h2,.desk-flow h3,.desk-flow p{margin:0}
+.desk-flow h2{font:500 24px/1.25 var(--display)}
+.desk-flow h3{font:600 16px/1.3 var(--sans)}
+.desk-flow button,.desk-flow select,.desk-flow input,.desk-flow textarea{min-height:44px}
+.desk-flow button{color:var(--ink);cursor:pointer}
+.desk-flow button:disabled{color:var(--muted);cursor:default}
+.desk-flow__source,.desk-flow [data-flow-saveline],.desk-flow [data-flow-notice],
+.desk-flow [data-flow-status]{font-size:12px;color:var(--muted)}
+.desk-flow__pick,.desk-flow__field{display:grid;gap:5px;min-width:0}
+.desk-flow__pick select,.desk-flow__field input,.desk-flow__field select,
+.desk-flow__field textarea,.desk-flow__quick input,.desk-flow__ext input,
+.desk-flow__ext textarea{width:100%;min-width:0;max-width:100%;padding:8px 10px;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:7px}
+.desk-flow__begin,.desk-flow__toolbar,.desk-flow__actions{display:flex;flex-wrap:wrap;
+  align-items:center;gap:8px;min-width:0}
+.desk-flow__begin button,.desk-flow__toolbar button,.desk-flow__actions button,
+.desk-flow__review button,.desk-flow__quick button,.desk-flow__diagnostics button,
+.desk-flow__inspector button{padding:7px 10px;border:1px solid var(--line);
+  border-radius:7px;background:var(--panel)}
+.desk-flow__blocked{display:inline-grid;gap:2px}
+.desk-flow__why{color:var(--muted);font-size:11px}
+.desk-flow__quick,.desk-flow__review,.desk-flow__inspector,.desk-flow__counter,
+.desk-flow__diagnostics{display:grid;gap:9px;min-width:0;padding:14px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.desk-flow__quick label,.desk-flow__ext label{display:grid;gap:5px;min-width:0}
+.desk-flow__inspector details,.desk-flow__fold{min-width:0}
+.desk-flow__inspector summary,.desk-flow__fold summary{cursor:pointer;padding:10px 0}
+.desk-flow__counter p,.desk-flow__diagnostics li{font-size:12px;line-height:1.5}
+.desk-flow__diagnostics ul{margin:0;padding-left:20px}
+.desk-flow__canvas{position:relative;min-width:0;min-height:320px;overflow:auto;
+  padding:16px;background:var(--ground);border:1px solid var(--line);border-radius:10px}
+
+/* Shared canvas's positioned layer and controls, with the desk's existing colour tokens. */
+.desk-flow__canvas svg{display:block}
+.desk-flow .studio-nodes{position:relative;min-height:40px}
+.desk-flow .studio-canvas__chrome{display:flex;flex-direction:column;gap:10px;
+  margin-bottom:12px;min-width:0}
+.desk-flow .studio-canvas__tools,.desk-flow .studio-canvas__heading{display:flex;
+  flex-wrap:wrap;gap:8px 14px;align-items:start;min-width:0}
+.desk-flow .studio-canvas__heading .studio-canvas__banner,
+.desk-flow .studio-canvas__tools .studio-palette{flex:1 1 300px}
+.desk-flow .studio-canvas__banner{display:grid;gap:3px;min-width:0}
+.desk-flow .studio-canvas__document{font-size:13px;font-weight:600}
+.desk-flow .studio-canvas__phase,.desk-flow .studio-canvas__diagnostics,
+.desk-flow .studio-canvas__runnote,.desk-flow .studio-palette__note,
+.desk-flow .studio-canvas__keys,.desk-flow .studio-canvas__positions{
+  font-size:12px;line-height:1.5;color:var(--muted)}
+.desk-flow .studio-palette,.desk-flow .studio-view,.desk-flow .studio-lenses{
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0}
+.desk-flow .studio-palette__note{flex-basis:100%}
+.desk-flow .studio-palette__add,.desk-flow .studio-view__button{
+  padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.desk-flow .studio-lens[aria-pressed="true"]{border-bottom:2px solid var(--ion)}
+.desk-flow .studio-view__level{font:11px var(--mono);color:var(--muted)}
+.desk-flow .studio-canvas__help summary{min-height:44px;cursor:pointer;padding:12px 0}
+.desk-flow .studio-canvas__stage{position:relative;transform-origin:0 0}
+.desk-flow .studio-edge{fill:none;stroke:var(--faint);stroke-width:1.2}
+.desk-flow .studio-node{position:absolute;left:var(--x);top:var(--y);width:210px;
+  display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:112px;
+  padding:8px 10px;text-align:left;overflow:hidden;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px}
+.desk-flow .studio-node[aria-pressed="true"]{border-color:var(--ink)}
+.desk-flow .studio-node--gate{border-style:dashed}
+.desk-flow .studio-node--loop{border-style:double;border-width:3px}
+.desk-flow .studio-port{position:absolute;left:var(--x);top:var(--y);
+  transform:translateY(-50%);width:20px;padding:0;touch-action:none;
+  display:flex;align-items:center;justify-content:center}
+.desk-flow .studio-node__title{font-size:14px;font-weight:640}
+.desk-flow .studio-node__meta{font-size:12px;color:var(--muted)}
+.desk-flow .studio-node__chips{display:flex;gap:4px;flex-wrap:wrap}
+.desk-flow .studio-orbit{display:flex;flex-direction:column;gap:16px;min-width:0}
+.desk-flow .studio-orbit__fleet{position:relative;min-width:0;min-height:480px}
+.desk-flow .studio-orbit__fleet::before{content:"";position:absolute;inset:72px 18%;
+  border:1px dashed var(--line);border-radius:50%;pointer-events:none}
+.desk-flow .studio-orbit__centre{position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);display:grid;gap:6px;text-align:center;max-width:30%}
+.desk-flow .studio-planet.studio-orbit__role{position:absolute;left:var(--orb-x);
+  top:var(--orb-y);transform:translate(-50%,-50%);width:128px;max-width:30%;
+  padding:8px 4px;text-align:center}
+.desk-flow .studio-planet{display:flex;flex-direction:column;align-items:center;gap:8px;
+  min-width:0;overflow-wrap:anywhere;border-radius:24px;background:none}
+.desk-flow .studio-planet__orb{position:relative;display:grid;place-items:center;
+  width:72px;height:72px;border:1px solid var(--faint);border-radius:50%;
+  background:var(--panel);color:var(--ink);font:14px var(--mono)}
+.desk-flow .studio-planet[aria-pressed="true"] .studio-planet__orb{
+  border:3px double var(--ion);color:var(--ion)}
+.desk-flow .studio-planet__selection{font-size:12px;text-decoration:underline;
+  color:var(--muted)}
+.desk-flow .studio-orbit__role .studio-planet__orb{width:72px;height:72px}
+.desk-flow .studio-orbit__duties{display:grid;gap:10px;min-width:0}
+.desk-flow .studio-orbit__steps{display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+.desk-flow .studio-orbit__step{display:grid;gap:6px;max-width:100%;padding:10px 12px;
+  background:var(--panel);border-radius:12px;text-align:left}
+.desk-flow .studio-orbit__step[aria-pressed="true"]{outline:2px solid var(--ion)}
+@media(max-width:900px){
+  .desk-flow__canvas{padding:12px}
+  .desk-flow .studio-orbit__fleet{display:flex;flex-wrap:wrap;gap:12px;min-height:0}
+  .desk-flow .studio-orbit__fleet::before{display:none}
+  .desk-flow .studio-orbit__centre{position:static;transform:none;max-width:100%;flex-basis:100%}
+  .desk-flow .studio-planet.studio-orbit__role{position:static;transform:none;max-width:100%}
+}
+
+.desk-schema{grid-row:2/5;min-width:0;padding:16px}

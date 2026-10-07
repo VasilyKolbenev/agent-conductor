@@ -1,5 +1,17 @@
 # agent-conductor — Design Specification
 
+> **Superseded — a dated design record, not the shipped product.**
+>
+> This is the v0.1 design as it stood on 2026-07-29. Much of it did not survive contact: the CLI
+> now ships fifteen commands, the panel is served from `src/conductor/panel/`, and the command
+> runtime owns child processes, so the "never spawns processes" and "panel is read-only" lines
+> below are false of the product today. So is the "or scheduling" half of the first non-goal:
+> `graph_schedule.py` computes which steps a run's plan permits now. It still executes nothing
+> on its own — the permission it computes is spent by a confirmation a person gives. Read `docs/adr/0001-harness-control-plane-model.md` and
+> `docs/specs/2026-08-03-hcp-competitive-product-direction.md` for what holds now. The text is
+> left as written: a dated record rewritten to read like the present is no longer evidence of
+> anything.
+
 - **Status:** Draft for review
 - **Date:** 2026-07-29
 - **Package:** `agent-conductor` (PyPI, verified free) · **CLI:** `conduct` · **Brand:** Conduct
@@ -270,7 +282,7 @@ must tolerate additional fields:
   "human_queue": [ { "id", "kind", "title", "why", "blocks": [], "sources": [] } ],
   "invariants": [ { "id", "ok", "broken_by": [] } ],
   "events_tail": [],        // newest-first, capped at 500
-  "kpi": { "nodes_pass", "nodes_total", "blockers", "queue", 
+  "kpi": { "nodes_pass", "nodes_total", "blockers", "queue",
            "disagreements", "broken_lanes", "stale_lanes" },
   "warnings": []            // id collisions, stale verdicts, skipped event lines, schema warnings
 }

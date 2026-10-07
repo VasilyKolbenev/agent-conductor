@@ -1,0 +1,770 @@
+"""Adapter contracts and an explicit, non-probing registry.
+
+This module has no process, filesystem, environment, or network door. It
+validates what a configured adapter claims and exposes only declared
+capabilities. The registry wraps prepare, execute, and verify so each untrusted
+seam receives reconstructed contract values and each return crosses validation
+again. `resolve` still hands back the configured adapter for internal binding;
+the Confirm runtime performs effects only through the wrappers.
+"""
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any, Protocol
+
+from ..contracts import (
+    HEALTH_STATES,
+    ActionRequest,
+    ActionResultReceipt,
+    ContractError,
+    _id,
+    _object,
+    _text,
+    _timestamp,
+    canonical_json,
+)
+from ..dispatch import validate_dispatch_arguments
+from .attempt_scope import AttemptScopeError, registered_attempt_scope
+
+
+_ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
+_INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
+#: Guards that exist only where the registration carries the seam that makes
+#: them. Named ONE BY ONE, guard and seam both, rather than as a rule about a
+#: kind of guard: a rule would excuse every claim that ever lands under it, and
+#: this is the list of claims a class can inherit and be unable to keep.
+#:
+#: `login_directory_gained_state` names the CHECKER's constant
+#: (`verify_holds.CHECKER_LOGIN_RESIDUE`), and a transport serving no review
+#: road has `verify_for` set to None by its base's `__init_subclass__` -- it
+#: inherits the method name and none of the road, so the checker's measurement
+#: is struck for it.
+#:
+#: WHAT THIS DOES NOT SAY, and an earlier version of this comment did: that the
+#: checker is the only thing that measures that directory. It is not. `LoginRoad`
+#: measures it after every spawn and `HeadlessCliTransport._dispatch` refuses on
+#: what it found (`LOGIN_RESIDUE_DETAIL`), as does the review road. Those are the
+#: DOER's own refusals, and the table carries no row of its own for them -- so
+#: for a dispatch-only transport with a pinned subscription login this filter
+#: under-reports a guard that really runs. It under-reports rather than
+#: over-claims, and no shipped provider reaches the case: subscription login is
+#: admitted only for the two protocols whose transports both serve review.
+#: Closing it means giving the doer's refusal its own row, which changes the
+#: table and the wire; it is recorded as a follow-up in
+#: `handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md` and is not
+#: to be closed by widening this filter into a rule.
+_GUARD_SEAMS = {"login_directory_gained_state": "verify_for"}
+
+
+class AdapterContractError(ValueError):
+    """An adapter claim is malformed or contradicts its registered identity."""
+
+
+class UnsupportedCapability(AdapterContractError):
+    """A caller requested a control the manifest does not declare."""
+
+
+class IndependentVerifierUnavailable(AdapterContractError):
+    """The registered adapter cannot independently judge another participant."""
+
+
+#: The closed set of reasons a publication may refuse with. It is closed so a
+#: provider cannot invent a word the run's record has no sentence for -- and
+#: that is exactly why adding a refusal here is half a change: `verify_road`
+#: keeps the sentence each of these turns into, and a key present in only one of
+#: the two either raises on the way out (no sentence, no legal key) or is dead
+#: prose. The two are held equal by a test, in the module that owns the words.
+PUBLISH_REFUSALS = frozenset({
+    "outside_subtree", "nothing_changed", "uncontained", "home_retained",
+    "tree_changed", "env_echo", "over_read_budget",
+})
+
+
+@dataclass(frozen=True)
+class VerifierBinding:
+    """The participant, adapter and model selected by the frozen configuration."""
+
+    instance_id: str
+    adapter_id: str
+    model: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("instance_id", "adapter_id"):
+            object.__setattr__(self, name, _contract(_id, name, getattr(self, name)))
+        if self.model is not None:
+            object.__setattr__(self, "model", _contract(_id, "model", self.model))
+
+
+def _material_names(name: str, values: object, *, paths: bool = False,
+                    unique: bool = True) -> tuple[str, ...]:
+    if type(values) is not tuple:
+        raise AdapterContractError(f"{name} must be a tuple")
+    for value in values:
+        if paths:
+            if (type(value) is not str or not value
+                    or any(part in ("", ".", "..") for part in value.split("/"))
+                    or any(mark in value for mark in ("\\", ":"))
+                    or any(ord(character) < 32 for character in value)):
+                raise AdapterContractError(f"{name} must contain relative work-tree paths")
+        else:
+            _contract(_id, name, value)
+    if unique and len(set(values)) != len(values):
+        raise AdapterContractError(f"{name} must not contain duplicates")
+    return values
+
+
+@dataclass(frozen=True)
+class Published:
+    """One transient, immutable doer handoff, never a durable text surface.
+
+    Documents retain the exact bound bytes the doer consumed. They cross this
+    value-only seam as frozen JSON objects; the artifact door validates their
+    document schema. No checker is allowed to replace them by a later lookup.
+    """
+
+    refusal: str | None
+    changed: tuple[str, ...]
+    after: Mapping[str, str] | None
+    input_artifact_ids: tuple[str, ...]
+    sensitive: tuple[bytes, ...] = field(repr=False)
+    instruction: str | None = field(default=None, repr=False)
+    input_documents: tuple[Mapping[str, Any], ...] = field(default=(), repr=False)
+    result_document: Mapping[str, Any] | None = field(default=None, repr=False)
+    instruction_document: Mapping[str, Any] | None = field(default=None, repr=False)
+    result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.refusal is not None and (
+                type(self.refusal) is not str or self.refusal not in PUBLISH_REFUSALS):
+            raise AdapterContractError("publish refusal must be a closed reason key")
+        _material_names("changed", self.changed, paths=True)
+        # One document may be consumed as instruction AND explicit input. This
+        # transient ordered relation preserves both uses, rather than changing
+        # the digest by deduplicating them. Durable document contracts stay put.
+        _material_names("input_artifact_ids", self.input_artifact_ids, unique=False)
+        if type(self.sensitive) is not tuple or any(
+                type(value) is not bytes for value in self.sensitive):
+            raise AdapterContractError("sensitive must be a tuple of bytes")
+        self._freeze_material()
+        _freeze_manifest(self)
+
+    def _freeze_material(self) -> None:
+        if self.after is not None:
+            if not isinstance(self.after, Mapping):
+                raise AdapterContractError("after must be a mapping of work-tree facts")
+            _material_names("after", tuple(self.after), paths=True)
+            after = {key: _contract(_text, "tree fact", value)
+                     for key, value in self.after.items()}
+            object.__setattr__(self, "after", MappingProxyType(after))
+        if self.instruction is not None:
+            _contract(_text, "instruction", self.instruction, empty=True)
+        if type(self.input_documents) is not tuple:
+            raise AdapterContractError("input_documents must be a tuple")
+        documents = tuple(_contract(_object, "input document", value)
+                          for value in self.input_documents)
+        object.__setattr__(self, "input_documents", documents)
+        if self.result_document is not None:
+            object.__setattr__(self, "result_document", _contract(
+                _object, "result document", self.result_document))
+        if self.instruction_document is not None:
+            object.__setattr__(self, "instruction_document", _contract(
+                _object, "instruction document", self.instruction_document))
+
+
+def _published(value: object) -> Published:
+    if not isinstance(value, Published):
+        raise AdapterContractError("publish must return Published")
+    return Published(
+        refusal=value.refusal, changed=value.changed, after=value.after,
+        input_artifact_ids=value.input_artifact_ids, sensitive=value.sensitive,
+        instruction=value.instruction, input_documents=value.input_documents,
+        result_document=value.result_document,
+        instruction_document=value.instruction_document, result_manifest=value.result_manifest)
+
+
+def _freeze_manifest(value):
+    from ..contracts import rebuild_manifest
+    if value.result_manifest is not None:
+        object.__setattr__(value, "result_manifest", _contract(rebuild_manifest, value.result_manifest))
+
+
+CAPABILITIES = frozenset({
+    "observe",
+    "message",
+    "dispatch",
+    "review",
+    "evidence",
+    "pause",
+    "resume",
+    "retry",
+    "stop",
+    "switch",
+    "notify",
+})
+VERIFICATION_STATES = frozenset({"verified", "unavailable", "mismatch", "error"})
+_UNRESTRICTED_COMMAND_FIELDS = frozenset({"cmd", "command", "script", "shell"})
+
+
+def _contract(call, *args, **kwargs):
+    try:
+        return call(*args, **kwargs)
+    except ContractError as e:
+        raise AdapterContractError(str(e)) from e
+
+
+def _capabilities(value: Iterable[str]) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise AdapterContractError("capabilities must be a list of declared capability ids")
+    rows = tuple(value)
+    if any(not isinstance(row, str) or row not in CAPABILITIES for row in rows):
+        unknown = [row for row in rows if not isinstance(row, str) or row not in CAPABILITIES]
+        raise AdapterContractError(
+            f"capabilities contain unsupported values {unknown!r}; "
+            f"allowed values are {sorted(CAPABILITIES)}")
+    if len(set(rows)) != len(rows):
+        raise AdapterContractError("capabilities must not contain duplicates")
+    return rows
+
+
+def _unrestricted_command_field(value: object, path: tuple[str, ...] = ()) -> str | None:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            normal = str(key).casefold().replace("-", "_")
+            if normal in _UNRESTRICTED_COMMAND_FIELDS:
+                return ".".join((*path, str(key)))
+            found = _unrestricted_command_field(item, (*path, str(key)))
+            if found is not None:
+                return found
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            found = _unrestricted_command_field(item, (*path, str(index)))
+            if found is not None:
+                return found
+    return None
+
+
+@dataclass(frozen=True)
+class AdapterManifest:
+    """Stable adapter identity and the complete set of controls it supports."""
+
+    adapter_id: str
+    display_name: str
+    vendor: str
+    version: str
+    capabilities: tuple[str, ...] | list[str]
+    docs_url: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "adapter_id", _contract(_id, "adapter_id", self.adapter_id))
+        for name in ("display_name", "vendor", "version"):
+            object.__setattr__(self, name, _contract(_text, name, getattr(self, name)))
+        object.__setattr__(self, "capabilities", _capabilities(self.capabilities))
+        if not isinstance(self.docs_url, str):
+            raise AdapterContractError("docs_url must be a string")
+        if self.docs_url and not self.docs_url.startswith("https://"):
+            raise AdapterContractError("docs_url must be empty or an https URL")
+
+    def supports(self, capability: str) -> bool:
+        return capability in self.capabilities
+
+    def as_payload(self) -> dict[str, object]:
+        return {
+            "adapter_id": self.adapter_id,
+            "display_name": self.display_name,
+            "vendor": self.vendor,
+            "version": self.version,
+            "capabilities": list(self.capabilities),
+            "docs_url": self.docs_url,
+        }
+
+
+@dataclass(frozen=True)
+class AdapterObservation:
+    """One adapter-reported observation; absence and unknown never become ready."""
+
+    adapter_id: str
+    instance_id: str
+    run_id: str
+    observed_at: str
+    health: str
+    available_capabilities: tuple[str, ...] | list[str] = ()
+    detail: str = ""
+
+    def __post_init__(self) -> None:
+        for name in ("adapter_id", "instance_id", "run_id"):
+            object.__setattr__(self, name, _contract(_id, name, getattr(self, name)))
+        object.__setattr__(
+            self, "observed_at", _contract(_timestamp, "observed_at", self.observed_at))
+        if self.health not in HEALTH_STATES:
+            raise AdapterContractError(
+                f"health must be one of {sorted(HEALTH_STATES)}, got {self.health!r}")
+        object.__setattr__(
+            self, "available_capabilities", _capabilities(self.available_capabilities))
+        object.__setattr__(
+            self, "detail", _contract(_text, "detail", self.detail, empty=True))
+
+
+@dataclass(frozen=True)
+class PreparedAction:
+    """Adapter-specific preparation bound to one unchanged ActionRequest."""
+
+    adapter_id: str
+    request: ActionRequest
+    adapter_payload: Mapping[str, Any] = field(default_factory=dict)
+    #: The model this run's FROZEN CONFIGURATION pins for the instance the
+    #: request names, or None when it pins none. It is a deployment fact, so it
+    #: travels beside the request rather than inside it: an immutable action
+    #: record that carried a model would be a durable demand for one, and a
+    #: replay of that record on a machine configured differently would either
+    #: lie or refuse.
+    #:
+    #: It is filled in by the REGISTRY from the value the runtime resolved, and
+    #: whatever an adapter returns here is discarded -- see `AdapterRegistry`.
+    #: An adapter that could name its own model would be choosing what an
+    #: operator configured.
+    model: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "adapter_id", _contract(_id, "adapter_id", self.adapter_id))
+        if not isinstance(self.request, ActionRequest):
+            raise AdapterContractError("request must be a validated ActionRequest")
+        if self.model is not None:
+            object.__setattr__(self, "model", _contract(_id, "model", self.model))
+        unsafe = _unrestricted_command_field(self.adapter_payload)
+        if unsafe is not None:
+            raise AdapterContractError(
+                f"adapter_payload contains unrestricted command field {unsafe!r}; "
+                "use a capability-specific structure or an argv vector")
+        object.__setattr__(
+            self, "adapter_payload", _contract(_object, "adapter_payload", self.adapter_payload))
+
+
+@dataclass(frozen=True)
+class AdapterVerification:
+    """An adapter's explicit verification result, separate from process outcome."""
+
+    adapter_id: str
+    action_id: str
+    state: str
+    observed_at: str
+    detail: str
+    evidence_refs: tuple[str, ...] | list[str] = ()
+    feedback: bytes | None = field(default=None, repr=False)
+    result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        _freeze_manifest(self)
+        from ..contracts import settled_feedback_bytes, FeedbackPayloadError
+        try:
+            object.__setattr__(self, "feedback", settled_feedback_bytes(self.feedback))
+        except FeedbackPayloadError:
+            raise AdapterContractError("invalid bounded feedback") from None
+        if self.feedback is not None and (self.state, self.detail) != ("mismatch", "rejected"):
+            raise AdapterContractError("feedback requires a definite independent rejection")
+        if self.feedback is not None and self.result_manifest is None:
+            raise AdapterContractError("feedback requires a result manifest")
+        for name in ("adapter_id", "action_id"):
+            object.__setattr__(self, name, _contract(_id, name, getattr(self, name)))
+        if self.state not in VERIFICATION_STATES:
+            raise AdapterContractError(
+                f"state must be one of {sorted(VERIFICATION_STATES)}, got {self.state!r}")
+        object.__setattr__(
+            self, "observed_at", _contract(_timestamp, "observed_at", self.observed_at))
+        object.__setattr__(
+            self, "detail", _contract(_text, "detail", self.detail, empty=True))
+        if isinstance(self.evidence_refs, (str, bytes)):
+            raise AdapterContractError("evidence_refs must be a list of evidence ids")
+        refs = tuple(_contract(_id, "evidence_refs", ref) for ref in self.evidence_refs)
+        if len(set(refs)) != len(refs):
+            raise AdapterContractError("evidence_refs must not contain duplicates")
+        if self.state == "verified" and not refs:
+            raise AdapterContractError("verified evidence requires at least one evidence_ref")
+        object.__setattr__(self, "evidence_refs", refs)
+
+
+class Adapter(Protocol):
+    """The four adapter seams driven by the Confirm runtime after authorization."""
+
+    manifest: AdapterManifest
+
+    def observe(self, instance_id: str, run_id: str) -> AdapterObservation: ...
+
+    def prepare(self, request: ActionRequest) -> PreparedAction: ...
+
+    def execute(self, prepared: PreparedAction) -> ActionResultReceipt: ...
+
+    def verify(
+            self, request: ActionRequest, result: ActionResultReceipt,
+    ) -> AdapterVerification: ...
+
+
+def _declared_guards(owner_class: type) -> dict[str, tuple[str, ...]] | None:
+    """The union of every class in the MRO that declares which guards it runs.
+
+    A guard belongs to the class that IMPLEMENTS it, so a mixin carrying one
+    road and a subclass adding another are two declarations of two pieces of
+    code; merging them here is what makes deleting either one take its claim
+    down with it. ``None`` when nobody declared anything at all, which is a
+    different answer from an empty declaration.
+    """
+    declared: dict[str, tuple[str, ...]] = {}
+    found = False
+    for owner in reversed(owner_class.__mro__):
+        # `vars`, never `getattr`: an inherited map read once per class would
+        # let one base's declaration answer for every subclass.
+        claimed = vars(owner).get("isolation_guards")
+        if claimed is None:
+            continue
+        if not isinstance(claimed, Mapping):
+            raise AdapterContractError(
+                "isolation_guards must map a guard name to its capabilities")
+        found = True
+        for guard, roads in claimed.items():
+            if not isinstance(guard, str) or isinstance(roads, (str, bytes)):
+                raise AdapterContractError(
+                    "an isolation guard names a string and a capability tuple")
+            merged = {*declared.get(guard, ()), *roads}
+            if not all(isinstance(road, str) for road in merged):
+                raise AdapterContractError(
+                    "an isolation guard's capabilities must be strings")
+            declared[guard] = tuple(sorted(merged))
+    return declared if found else None
+
+
+class AdapterRegistry:
+    """Adapters explicitly supplied by configuration; no discovery or global state."""
+
+    def __init__(self, adapters: Iterable[Adapter] = ()) -> None:
+        self._adapters: dict[str, Adapter] = {}
+        self._manifests: dict[str, AdapterManifest] = {}
+        self._argument_schemas: dict[str, Mapping[str, str]] = {}
+        self._independent_seams: dict[str, Mapping[str, Any]] = {}
+        self._attempt_scopes = {}
+        for adapter in adapters:
+            self.register(adapter)
+
+    def register(self, adapter: Adapter) -> None:
+        manifest = getattr(adapter, "manifest", None)
+        if not isinstance(manifest, AdapterManifest):
+            raise AdapterContractError("adapter.manifest must be an AdapterManifest")
+        missing = [name for name in ("observe", "prepare", "execute", "verify")
+                   if not callable(getattr(adapter, name, None))]
+        if missing:
+            raise AdapterContractError(f"adapter is missing protocol methods {missing}")
+        if manifest.adapter_id in self._adapters:
+            raise AdapterContractError(
+                f"adapter {manifest.adapter_id!r} is already registered")
+        # Keep the reviewed VALUE, not a pointer the adapter can still rewrite.
+        reviewed = AdapterManifest(**manifest.as_payload())
+        schemas = getattr(type(adapter), "argument_schemas", {})
+        if not isinstance(schemas, Mapping):
+            raise AdapterContractError("adapter argument_schemas must be a capability mapping")
+        reviewed_schemas: dict[str, str] = {}
+        for capability, schema in schemas.items():
+            if capability not in reviewed.capabilities:
+                raise AdapterContractError(
+                    f"argument schema names undeclared capability {capability!r}")
+            if schema not in _ARGUMENT_SCHEMAS:
+                raise AdapterContractError(
+                    f"adapter declares unknown argument schema {schema!r}")
+            reviewed_schemas[capability] = schema
+        independent = {
+            name: seam for name in (*_INDEPENDENT_SEAMS, "verification_started")
+            if callable(seam := getattr(adapter, name, None))}
+        try:
+            scope = registered_attempt_scope(adapter)
+        except AttemptScopeError as error:
+            raise AdapterContractError(str(error)) from None
+        # Publish the registration only after every supplied claim validated.
+        self._adapters[reviewed.adapter_id] = adapter
+        self._manifests[reviewed.adapter_id] = reviewed
+        self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
+        self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
+        self._attempt_scopes[reviewed.adapter_id] = scope
+
+    def attempt_scope(self, adapter_id: str):
+        """Return the registered value; no discovery or effect is performed."""
+        self.resolve(adapter_id)
+        scope = self._attempt_scopes[adapter_id]
+        return None if scope is None else scope.copied()
+
+    def resolve(self, adapter_id: str) -> Adapter:
+        safe = _contract(_id, "adapter_id", adapter_id)
+        try:
+            return self._adapters[safe]
+        except KeyError as e:
+            raise AdapterContractError(f"adapter {safe!r} is not registered") from e
+
+    def manifests(self) -> tuple[AdapterManifest, ...]:
+        # Hand back freshly built values, never the stored objects: a caller that
+        # rewrites a returned manifest through object.__setattr__ must not be able
+        # to reach controls(), _require(), or observation-width behind our back.
+        return tuple(
+            AdapterManifest(**self._manifests[adapter_id].as_payload())
+            for adapter_id in sorted(self._manifests))
+
+    def controls(self, adapter_id: str) -> tuple[str, ...]:
+        self.resolve(adapter_id)
+        return self._registered_manifest(adapter_id).capabilities
+
+    def isolation_guards(
+            self, adapter_id: str) -> Mapping[str, tuple[str, ...]] | None:
+        """Which named guards this adapter's own code runs, and on which roads.
+
+        Read off the registered adapter's CLASS and its bases, so a screen can
+        ask what protects a step without constructing anything, probing a
+        version or asking a login. Nothing is inferred from the adapter's
+        identity: what a class does not declare, this does not claim for it.
+
+        ``None`` is the third answer and it is not an absence. An adapter that
+        declares no map at all -- every plugin, and every transport written
+        before this question existed -- has told this build nothing about which
+        guards its code applies, and "nobody stated it" may not be shown as
+        "there are none" any more than it may be shown as a protection.
+
+        The union is taken over the MRO because a guard belongs to the class
+        that IMPLEMENTS it: a mixin carrying one road and a subclass adding
+        another are two separate declarations of two separate pieces of code,
+        and merging them here is what makes deleting either one take its claim
+        down with it.
+        """
+        adapter = self.resolve(adapter_id)
+        declared = _declared_guards(type(adapter))
+        if declared is None:
+            return None
+        # What the REGISTRATION cannot carry is struck, whatever a class body
+        # says. Two ways a declaration inherited from a base outruns the class
+        # that inherited it, and both are real in this tree: a subclass serving
+        # no review road would carry every review mark of its base, and a
+        # dispatch-only transport nulls the checker seam it inherited -- so the
+        # measurement that seam makes is not one it can make.
+        serves = set(self._registered_manifest(adapter_id).capabilities)
+        seams = self._independent_seams[_contract(_id, "adapter_id", adapter_id)]
+        kept: dict[str, tuple[str, ...]] = {}
+        for guard, roads in declared.items():
+            needed = _GUARD_SEAMS.get(guard)
+            if needed is not None and not callable(seams.get(needed)):
+                continue
+            served = tuple(road for road in roads if road in serves)
+            if served:
+                kept[guard] = served
+        return MappingProxyType(kept)
+
+    def observe(self, adapter_id: str, instance_id: str, run_id: str) -> AdapterObservation:
+        adapter = self._require(adapter_id, "observe")
+        registered = self._registered_manifest(adapter_id)
+        expected_instance = _contract(_id, "instance_id", instance_id)
+        expected_run = _contract(_id, "run_id", run_id)
+        observed = adapter.observe(expected_instance, expected_run)
+        if not isinstance(observed, AdapterObservation):
+            raise AdapterContractError("observe must return AdapterObservation")
+        claimed_adapter = observed.adapter_id
+        claimed_instance = observed.instance_id
+        claimed_run = observed.run_id
+        claimed_at = observed.observed_at
+        claimed_health = observed.health
+        claimed_capabilities = observed.available_capabilities
+        normalized = AdapterObservation(
+            adapter_id=claimed_adapter,
+            instance_id=claimed_instance,
+            run_id=claimed_run,
+            observed_at=claimed_at,
+            health=claimed_health,
+            available_capabilities=claimed_capabilities,
+            detail="",
+        )
+        if (normalized.adapter_id != registered.adapter_id
+                or normalized.instance_id != expected_instance
+                or normalized.run_id != expected_run):
+            raise AdapterContractError(
+                "adapter returned identity for another adapter, instance, or run")
+        undeclared = set(normalized.available_capabilities) - set(registered.capabilities)
+        if undeclared:
+            raise AdapterContractError(
+                f"observation reports undeclared capabilities {sorted(undeclared)}")
+        return normalized
+
+    def prepare(
+            self, adapter_id: str, request: ActionRequest, *,
+            model: str | None = None) -> PreparedAction:
+        """Prepare one action, and attach the model the CALLER resolved.
+
+        The model is a keyword and it is the registry's to write, not the
+        adapter's. The adapter is handed a request that says nothing about a
+        model and its answer's own `model` field is discarded below, so a
+        provider cannot name the model it will be run with -- which is the one
+        thing an operator's configuration is for. What reaches `execute` is what
+        the runtime read out of the run's frozen configuration and nothing else.
+        """
+        if not isinstance(request, ActionRequest):
+            raise AdapterContractError("request must be a validated ActionRequest")
+        routed = None if model is None else _contract(_id, "model", model)
+        adapter = self._require(adapter_id, request.capability)
+        # Compare against a VALUE taken before the adapter sees the request, so an
+        # adapter that rewrites the caller's object in place cannot satisfy the check
+        # by returning the very object both sides would otherwise read.
+        authorized = _contract(canonical_json, request)
+        handed = ActionRequest.from_dict(request.as_dict())
+        prepared = adapter.prepare(handed)
+        if not isinstance(prepared, PreparedAction):
+            raise AdapterContractError("prepare must return PreparedAction")
+        if prepared.adapter_id != self._registered_manifest(adapter_id).adapter_id:
+            raise AdapterContractError("prepared adapter_id does not match the registered adapter")
+        if _contract(canonical_json, prepared.request) != authorized:
+            raise AdapterContractError("adapter changed the ActionRequest while preparing it")
+        return PreparedAction(
+            adapter_id=prepared.adapter_id,
+            request=ActionRequest.from_dict(request.as_dict()),
+            adapter_payload=prepared.adapter_payload,
+            model=routed)
+
+    def execute(
+            self, adapter_id: str, prepared: PreparedAction) -> ActionResultReceipt:
+        """Call execute with a reconstructed request and return a reconstructed receipt."""
+        if not isinstance(prepared, PreparedAction):
+            raise AdapterContractError("execute requires a validated PreparedAction")
+        adapter = self._require(adapter_id, prepared.request.capability)
+        if prepared.adapter_id != self._registered_manifest(adapter_id).adapter_id:
+            raise AdapterContractError(
+                "prepared adapter_id does not match the registered adapter")
+        handed = PreparedAction(
+            adapter_id=prepared.adapter_id,
+            request=ActionRequest.from_dict(prepared.request.as_dict()),
+            adapter_payload=prepared.adapter_payload,
+            model=prepared.model)
+        reported = adapter.execute(handed)
+        if not isinstance(reported, ActionResultReceipt):
+            raise AdapterContractError("execute must return ActionResultReceipt")
+        return ActionResultReceipt.from_dict(reported.as_dict())
+
+    def verify(
+            self, adapter_id: str, request: ActionRequest,
+            result: ActionResultReceipt, *, verifier: VerifierBinding | None = None,
+            material: Published | None = None) -> AdapterVerification:
+        """Call verify with reconstructed facts and return a reconstructed value."""
+        adapter = self._require(adapter_id, request.capability)
+        handed = ActionRequest.from_dict(request.as_dict())
+        reported = ActionResultReceipt.from_dict(result.as_dict())
+        if verifier is None:
+            if material is not None:
+                raise AdapterContractError("verification material requires a verifier")
+            verification = adapter.verify(handed, reported)
+        else:
+            verification = self._verify_for(adapter_id, handed, reported, verifier, material)
+        if not isinstance(verification, AdapterVerification):
+            raise AdapterContractError("verify must return AdapterVerification")
+        return AdapterVerification(
+            adapter_id=verification.adapter_id,
+            action_id=verification.action_id,
+            state=verification.state,
+            observed_at=verification.observed_at,
+            detail=verification.detail,
+            evidence_refs=verification.evidence_refs, feedback=verification.feedback,
+            result_manifest=verification.result_manifest)
+
+    def verifies_independently(self, adapter_id: str, capability: str) -> bool:
+        """A registration fact, not a late claim made by a mutable adapter."""
+        manifest = self._registered_manifest(adapter_id)
+        return (manifest.supports(capability)
+                and all(name in self._independent_seams[manifest.adapter_id]
+                        for name in _INDEPENDENT_SEAMS))
+
+    def verification_started(self, adapter_id: str, request: ActionRequest) -> bool | None:
+        """Read a checker's durable claim; absent knowledge is not a negative fact."""
+        self.resolve(adapter_id)
+        seam = self._independent_seams[adapter_id].get("verification_started")
+        if seam is None:
+            return None
+        started = seam(ActionRequest.from_dict(request.as_dict()))
+        if type(started) is not bool:
+            raise AdapterContractError("verification_started must return a bool")
+        return started
+
+    def publish(
+            self, adapter_id: str, request: ActionRequest,
+            result: ActionResultReceipt) -> Published | None:
+        self._require(adapter_id, request.capability)
+        seam = self._independent_seams[adapter_id].get("publish")
+        if seam is None:
+            return None
+        return _published(seam(
+            ActionRequest.from_dict(request.as_dict()),
+            ActionResultReceipt.from_dict(result.as_dict())))
+
+    def release(self, adapter_id: str, request: ActionRequest) -> None:
+        self.resolve(adapter_id)
+        seam = self._independent_seams[adapter_id].get("release")
+        if seam is not None:
+            seam(ActionRequest.from_dict(request.as_dict()))
+
+    def _verify_for(self, adapter_id, request, result, verifier, material):
+        if not isinstance(verifier, VerifierBinding):
+            raise AdapterContractError("verifier must be a VerifierBinding")
+        binding = VerifierBinding(verifier.instance_id, verifier.adapter_id, verifier.model)
+        if binding.adapter_id != adapter_id or binding.instance_id == request.instance_id:
+            raise AdapterContractError("verifier must name this adapter and another participant")
+        if not self.verifies_independently(adapter_id, request.capability):
+            raise IndependentVerifierUnavailable(
+                f"adapter {adapter_id!r} cannot verify another participant's result")
+        return self._independent_seams[adapter_id]["verify_for"](
+            request, result, binding, _published(material))
+
+    def argument_schema(self, adapter_id: str, capability: str) -> str | None:
+        """The reviewed schema id this adapter registered for one capability.
+
+        Read out of the value settled at registration, never off the adapter
+        object. ``None`` means the adapter declared no schema for that
+        capability -- which is not the same as declaring one this build cannot
+        serve, and a caller that must know WHICH payload family it may write
+        needs to tell the two apart before it writes anything durable.
+        """
+        safe = _contract(_id, "adapter_id", adapter_id)
+        self._registered_manifest(safe)
+        return self._argument_schemas[safe].get(capability)
+
+    def validate_arguments(
+            self, adapter_id: str, capability: str, arguments: Mapping[str, Any]) -> None:
+        """Run one registry-owned pure schema; never call the mutable adapter."""
+        safe = _contract(_id, "adapter_id", adapter_id)
+        manifest = self._registered_manifest(safe)
+        if not manifest.supports(capability):
+            raise UnsupportedCapability(
+                f"adapter {safe!r} does not declare capability {capability!r}")
+        if self._argument_schemas[safe].get(capability) == "structured-process-v1":
+            validate_dispatch_arguments(arguments)
+        if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":
+            from .deep_commands import DEEP_ARGUMENT_TYPES
+
+            try:
+                argument_type = DEEP_ARGUMENT_TYPES[capability]
+                argument_type.from_dict(_plain_json(arguments))
+            except Exception:
+                raise AdapterContractError(
+                    "arguments do not match the capability's closed deep schema") from None
+
+    def _require(self, adapter_id: str, capability: str) -> Adapter:
+        adapter = self.resolve(adapter_id)
+        manifest = self._registered_manifest(adapter_id)
+        if not manifest.supports(capability):
+            raise UnsupportedCapability(
+                f"adapter {manifest.adapter_id!r} does not declare capability "
+                f"{capability!r}")
+        return adapter
+
+    def _registered_manifest(self, adapter_id: str) -> AdapterManifest:
+        safe = _contract(_id, "adapter_id", adapter_id)
+        try:
+            return self._manifests[safe]
+        except KeyError as e:
+            raise AdapterContractError(f"adapter {safe!r} is not registered") from e
+
+
+def _plain_json(value: object) -> Any:
+    """Rebuild one frozen contract value as exact JSON containers."""
+    if isinstance(value, Mapping):
+        return {key: _plain_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_plain_json(item) for item in value]
+    return value

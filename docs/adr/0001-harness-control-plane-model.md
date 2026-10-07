@@ -9,6 +9,23 @@
   `row` deletion (§2). Fixtures and tests for the v2 schema come when the
   schema is implemented, not with this ADR.
 
+> **Two decisions here were later reversed by the owner (note added 2026-09-02).**
+> The model and the vocabulary stand; these two do not:
+>
+> 1. **"No conditional-execution engine is designed or implied"** (§ the graph
+>    section) and **"No conditional-execution engine"** (Non-goals now). The v1
+>    alpha ships `src/conductor/command/graph_schedule.py`, which reads a run's
+>    plan and its journal and computes which steps may run, opening or closing
+>    each road out of a settled step by its condition.
+> 2. **"Conduct renders the graph read-only"** and **"No lane or map editing
+>    from the panel"**. The Workflow Studio drafts and publishes workflow
+>    revisions. The *lane* and *map* halves of that line still hold: no browser
+>    route writes a lane or `map.toml`.
+>
+> What the non-goals were protecting is unchanged: nothing is dispatched on a
+> timer, and no step starts without a confirmation a person gave for that exact
+> request. The scheduler's whole output is a permission or a refusal.
+
 ## Context
 
 Conduct v1 (alpha, M1–M4) is a decision dashboard: agents write lanes, a pure

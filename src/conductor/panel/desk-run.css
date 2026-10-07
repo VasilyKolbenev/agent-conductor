@@ -1,0 +1,76 @@
+/* The existing run reader in the Desk palette. The Scene owns the participant
+   diagram, so this panel keeps the durable list, passport and journal legible. */
+.desk-run{grid-row:2/5;min-width:0;overflow:auto;padding:22px;background:var(--ground)}
+.desk-run>h2{font:500 23px var(--display);margin:0 0 8px}
+.desk-run__note,.desk-run .studio-note,.desk-run .studio-run__meta,
+.desk-run .studio-fact__k,.desk-run .studio-banner{font-size:12px;color:var(--muted)}
+.desk-run__note{margin:0 0 18px}
+.desk-run .studio-runs,.desk-run .studio-runs__detail{display:grid;gap:14px;min-width:0}
+.desk-run .studio-runs__list,.desk-run .studio-runs__detail section{min-width:0;
+  padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.desk-run .studio-runs__detail h2{font:500 22px/1.3 var(--display);margin:0}
+.desk-run .studio-runs__rows{list-style:none;margin:8px 0 0;padding:0;
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:8px}
+.desk-run .studio-run{display:grid;gap:5px;width:100%;padding:10px;text-align:left;
+  border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}
+.desk-run .studio-run[aria-pressed="true"]{border-color:var(--ion)}
+.desk-run .studio-run__id{font-weight:650}
+.desk-run .studio-run-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.desk-run .studio-run-picker summary{cursor:pointer;min-height:44px}
+.desk-run .studio-section{display:grid;gap:8px;min-width:0}
+.desk-run .studio-section h3,.desk-run .studio-section h4{margin:0}
+.desk-run .studio-fact{display:flex;flex-wrap:wrap;gap:6px 12px;margin:3px 0;min-width:0}
+.desk-run .studio-fact__v,.desk-run .studio-document-text{overflow-wrap:anywhere}
+.desk-run .studio-document-text{white-space:pre-wrap}
+.desk-run .studio-positions,.desk-run .studio-artifacts,.desk-run .studio-timeline{
+  display:grid;gap:10px;padding-left:22px;min-width:0}
+.desk-run .studio-row,.desk-run .studio-position,.desk-run .studio-artifact{
+  min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px}
+.desk-run .studio-row__head{display:flex;flex-wrap:wrap;gap:5px 10px}
+.desk-run .studio-step{display:grid;gap:10px;min-width:0;padding:12px;
+  border:1px solid var(--line);border-radius:8px}
+.desk-run .studio-field{display:grid;gap:5px;min-width:0;font-size:12px}
+.desk-run .studio-field input,.desk-run .studio-field select,
+.desk-run .studio-field textarea{box-sizing:border-box;width:100%;min-width:0;
+  padding:8px 10px;border:1px solid var(--line);border-radius:7px;
+  color:var(--ink);background:var(--ground);font:inherit}
+.desk-run .studio-field textarea{min-height:130px;resize:vertical}
+.desk-run .studio-step button[type="submit"]{justify-self:start;min-height:36px}
+.desk-run .studio-decisions{display:grid;gap:14px;margin-top:18px}
+.desk-run .studio-decisions__rows{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.desk-run .studio-decision{width:100%;min-height:44px;text-align:left;display:flex;
+  flex-wrap:wrap;gap:5px 10px}
+.desk-run .studio-decisions__detail{display:grid;gap:9px;padding:15px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.desk-run .studio-unblocks{margin:0;padding-left:20px}
+.desk-pult .desk-decision-card{display:grid;gap:10px;margin-top:16px;padding:15px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel);min-width:0}
+.desk-decision-card h2,.desk-decision-card h3{margin:0}
+.desk-decision-card .studio-decisions__detail,.desk-decision-card .studio-decide{
+  display:grid;gap:9px;min-width:0}
+.desk-decision-card .studio-choices{display:grid;gap:8px;min-width:0}
+.desk-decision-card .studio-choice{display:flex;gap:8px;align-items:flex-start}
+.desk-decision-card .studio-field{display:grid;gap:5px}
+.desk-decision-card .studio-field input{box-sizing:border-box;width:100%;min-width:0;
+  padding:8px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+  background:var(--ground)}
+.desk-decision-card button[type="submit"]{min-height:44px}
+.desk-run button:not(.studio-run){padding:0 12px;border:1px solid var(--line);
+  border-radius:7px;color:var(--ink)}
+.desk-run button:disabled{color:var(--muted);cursor:default}
+.desk-run .studio-mono{font-family:var(--mono);overflow-wrap:anywhere}
+.desk-accept{display:grid;gap:9px;min-width:0;margin-top:16px;padding:15px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.desk-accept h3,.desk-accept h4,.desk-accept p{margin:0}
+.desk-accept h3{font:500 19px/1.3 var(--display)}
+.desk-accept__fact,.desk-accept__choice{overflow-wrap:anywhere}
+.desk-accept__field{display:grid;gap:5px;font-size:12px}
+.desk-accept__field input{min-width:0;padding:8px 10px;border:1px solid var(--line);
+  border-radius:7px;color:var(--ink);background:var(--ground);font:inherit}
+.desk-accept__choice{display:flex;gap:8px;align-items:flex-start}
+.desk-accept pre{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+  padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--ground)}
+.desk-accept button{justify-self:start;min-height:44px;padding:0 12px;
+  border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+.desk-accept button:disabled{color:var(--muted);cursor:default}
+@media(max-width:600px){.desk-run{padding:15px}}

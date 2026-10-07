@@ -1,0 +1,221 @@
+{
+  "workflow_id": "desk-standard",
+  "source": "published",
+  "draft_digest": null,
+  "flow": {
+    "flow_version": 1,
+    "title": "Standard",
+    "steps": [
+      {
+        "step_id": "analyst",
+        "type": "agent",
+        "title": null,
+        "purpose": "Read the brief and the materials, then write down the goal, the constraints and how the result will be checked. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-analyst",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do",
+        "type": "agent",
+        "title": null,
+        "purpose": "Carry out the task in the project folder following the instruction and the analysis. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-doer",
+        "capability": "dispatch",
+        "verifier_role_id": "role-checker",
+        "review_profile": null,
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "result",
+        "type": "human",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do-fix",
+        "type": "loop",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "do",
+        "bound": 3,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "analyst",
+        "to": "do",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "result",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "do-fix",
+        "when": "failed"
+      }
+    ],
+    "ext": {}
+  },
+  "revision_flow": {
+    "flow_version": 1,
+    "title": "Standard",
+    "steps": [
+      {
+        "step_id": "analyst",
+        "type": "agent",
+        "title": null,
+        "purpose": "Read the brief and the materials, then write down the goal, the constraints and how the result will be checked. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-analyst",
+        "capability": "review",
+        "verifier_role_id": null,
+        "review_profile": "spec",
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do",
+        "type": "agent",
+        "title": null,
+        "purpose": "Carry out the task in the project folder following the instruction and the analysis. Answer in the language of the brief.",
+        "position": null,
+        "timeout_seconds": 1800,
+        "role_id": "role-doer",
+        "capability": "dispatch",
+        "verifier_role_id": "role-checker",
+        "review_profile": null,
+        "reads": [],
+        "instruction_from": null,
+        "ext": {}
+      },
+      {
+        "step_id": "result",
+        "type": "human",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "ext": {}
+      },
+      {
+        "step_id": "do-fix",
+        "type": "loop",
+        "title": null,
+        "purpose": null,
+        "position": null,
+        "timeout_seconds": null,
+        "back_to": "do",
+        "bound": 3,
+        "ext": {}
+      }
+    ],
+    "links": [
+      {
+        "from": "analyst",
+        "to": "do",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "result",
+        "when": "success"
+      },
+      {
+        "from": "do",
+        "to": "do-fix",
+        "when": "failed"
+      }
+    ],
+    "ext": {}
+  },
+  "diagnostics": [],
+  "publishable": true,
+  "budget": {
+    "limits": {
+      "max_actions": 8,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 28800
+    },
+    "clean": {
+      "actions": 2,
+      "seconds": 5400
+    },
+    "worst": {
+      "actions": 4,
+      "seconds": 12600
+    },
+    "steps": [
+      {
+        "step_id": "analyst",
+        "attempts": 1,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 1800,
+        "clamped": false
+      },
+      {
+        "step_id": "do",
+        "attempts": 3,
+        "timeout_seconds": 1800,
+        "reserve_seconds": 3600,
+        "clamped": false
+      }
+    ],
+    "terms_draft": {
+      "node_limits": [
+        {
+          "node_id": "analyst",
+          "timeout_seconds": 1800,
+          "max_attempts": 1
+        },
+        {
+          "node_id": "do",
+          "timeout_seconds": 1800,
+          "max_attempts": 3
+        }
+      ],
+      "max_actions": 4,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 12600,
+      "duration_seconds": 16200
+    },
+    "spent": null,
+    "exhausted": false,
+    "inputs": {
+      "instructions": [
+        {
+          "step_id": "do",
+          "instruction_ref": "instruction-do"
+        }
+      ],
+      "documents": [
+        "artifact-brief",
+        "artifact-materials"
+      ]
+    }
+  },
+  "latest_revision": 1,
+  "next_revision": 2,
+  "published": null
+}

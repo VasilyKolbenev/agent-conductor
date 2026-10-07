@@ -1,0 +1,22 @@
+{
+  "as_of": "2026-09-29T09:00:00Z",
+  "max_age_seconds": 300,
+  "providers": [],
+  "snapshots": [
+    {"binding_ids": ["claude-code"], "state": "observed", "freshness": "current",
+     "windows": [{"limit_id": "5h", "window_id": "5h", "used_percent": 88, "remaining_percent": 12,
+                  "freshness": "current"}]},
+    {"binding_ids": ["codex"], "state": "observed", "freshness": "current",
+     "windows": [{"limit_id": "5h", "window_id": "5h", "used_percent": 36, "remaining_percent": 64,
+                  "freshness": "current"},
+                 {"limit_id": "week", "window_id": "week", "used_percent": 20,
+                  "remaining_percent": 80, "freshness": "current"}]},
+    {"binding_ids": ["grok-build"], "state": "missing", "freshness": "missing", "windows": []},
+    {"binding_ids": ["kimi-code"], "state": "observed", "freshness": "stale",
+     "windows": [{"limit_id": "5h", "window_id": "5h", "used_percent": 10, "remaining_percent": 90,
+                  "freshness": "stale"}]},
+    {"binding_ids": ["deepseek-harness"], "state": "observed", "freshness": "current",
+     "windows": [], "balances": [{"currency": "USD", "total_balance": "4.20"}],
+     "is_available": true}
+  ]
+}

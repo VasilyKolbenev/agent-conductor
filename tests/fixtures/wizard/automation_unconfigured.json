@@ -1,0 +1,15 @@
+{
+  "run_id": "task-bench-r1",
+  "authorization": null,
+  "control": null,
+  "state": "unconfigured",
+  "reason_code": "authorization_required",
+  "active_action_id": null,
+  "next_node_id": "analyst",
+  "spent_actions": 0,
+  "remaining_actions": 0,
+  "spent_task_seconds": 0,
+  "remaining_task_seconds": 0,
+  "expires_at": null,
+  "owner_present": true
+}

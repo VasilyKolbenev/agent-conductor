@@ -60,17 +60,22 @@ depends_on = ["schemas"]
 id = "implementer"
 harness = "claude-code"  # informational
 reviews = []             # role ids whose findings this role must verdict
+stage = "implement"      # optional; one cycle.phases value
 
 [[cycle.roles]]
 id = "reviewer"
 harness = "codex"
 reviews = ["implementer"]
+stage = "review"
 
 [cycle]
 phases = ["plan", "implement", "review", "human-gate"]
 # Phases are labels; a "human gate" is simply a phase name. Dedicated
 # human-gate objects were considered and cut (YAGNI): the human queue is
 # built from lanes' waits_on_human, not from the map.
+# `stage` says which phase a role works in, so a consumer can draw the cycle
+# from the map alone, before any lane reports. It is presentation and handoff
+# metadata: no §6 merge rule reads it, and it changes no computed value.
 
 [[invariants]]
 id = "main-untouched"
@@ -78,8 +83,12 @@ text = "main branch is never committed to directly"
 ```
 
 Validation rules: `schema_version == 1`; node ids unique; `depends_on` and
-`reviews` reference existing ids; at least one node. Everything else is
-optional — a map with only nodes is valid.
+`reviews` reference existing ids; at least one node. A role's `stage`, when
+present, MUST be a non-empty string naming one of `cycle.phases` — a map
+declaring no phases has nothing to reference, so it can carry no `stage`.
+`stage` is presentation and handoff metadata only: no merge rule in §6 reads
+it, and it changes no computed value. Everything else is optional — a map with
+only nodes is valid.
 
 ## 3. Lane files — `conductor/lanes/<author>.json`
 
@@ -195,7 +204,10 @@ fields:
   "map": { "nodes": [ { "id", "label", "kind", "depends_on": [],
                         "status": "pass|fail|blocked|running|idle|contested",
                         "contested_by": [] } ] },
-  "cycle": { "phases": [], "roles": [ { "id", "harness", "reviews": [] } ],
+  "cycle": { "phases": [],
+             // role.stage: presentation only; no rule reads it. Absent when
+             // the map omits it — never projected as null. See the note below.
+             "roles": [ { "id", "harness", "reviews": [], "stage": "implement" } ],
              "current_phase": "implement" },        // absent if undeclared
   "lanes": [ { "author", "role", "updated", "stale": false,
                "broken": false, "error": null, "now": {} } ],
@@ -211,6 +223,38 @@ fields:
   "events_tail": [],        // newest-first, capped at 500
   "kpi": { "nodes_pass", "nodes_total", "blockers", "queue",
            "disagreements", "broken_lanes", "stale_lanes" },
-  "warnings": []            // id collisions, stale verdicts, skipped event lines, schema warnings
+  "warnings": [],           // id collisions, stale verdicts, skipped event lines, schema warnings
+  "project_status": {       // strict precedence, first match wins:
+    // unknown -> map_unreadable; blocked -> human_decision, broken_lane,
+    // invariant_broken, node_failing; complete -> all_clear (every node passing,
+    // nothing open, no stale lane); active -> work_in_progress; ready -> no_lanes_yet
+    // vocabularies: merge.PROJECT_STATES, merge.STATUS_REASONS
+    "state": "unknown|blocked|complete|active|ready",
+    "reason": "human_decision",
+    "detail": "1 request waiting on you"       // the fact only, never advice
+  },
+  "next_action": {          // the single most important next move, in the same
+                            // precedence order; null when nothing needs the user
+    // kind (merge.NEXT_ACTION_KINDS): fix_map, answer_wait, fix_lane, fix_invariant,
+    // fix_node, review_finding, resolve_disagreement, resolve_contested_node,
+    // resolve_collision, check_stale_lane, start_work
+    // ref id space, by kind: answer_wait -> human_queue id; fix_lane and
+    // check_stale_lane -> lane author; fix_invariant -> invariant id; fix_node and
+    // resolve_contested_node -> map node id; review_finding, resolve_disagreement
+    // and resolve_collision -> finding id; start_work -> cycle role id or null;
+    // fix_map -> null
+    "text": "Answer the decision: ...",        // one imperative sentence
+    "kind": "answer_wait",
+    "ref": "w-config"
+  }
 }
 ```
+
+**`role.stage` versus `now.phase`.** The two answer different questions and are
+never merged: design-time `stage` says where a participant *should* work,
+runtime `now.phase` says where its lane reports it *is* working. Neither
+overwrites the other, and `stage` takes no part in `current_phase`. A role
+whose lane reports a phase other than its `stage` is *drift*: a consumer MAY
+surface it as a non-blocking, presentation-level warning, and MUST NOT treat it
+as a readiness, gate, or review rule — in particular, MUST NOT take `stage` as
+authoritative and relocate the lane to the staged phase.

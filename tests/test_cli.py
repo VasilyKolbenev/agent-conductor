@@ -1,12 +1,32 @@
-"""Tests for conductor.__main__ — the `conduct` CLI, subprocess-free.
+"""Tests for conductor.__main__ — the `conduct` CLI.
 
-Every test calls `main(argv)` directly and inspects the return code plus
-capsys-captured stdout/stderr.
+Every test but two calls `main(argv)` directly and inspects the return code
+plus capsys-captured stdout/stderr. The exceptions spawn a real child process
+because what they pin cannot exist under capsys:
+`test_up_flushes_the_url_while_it_is_still_serving` (a block-buffered stdout
+holding the URL until the server stops) and
+`test_up_on_a_genuinely_busy_port_prints_the_port_hint_from_a_real_process`
+(the bind failure and its message produced by the OS, not by a mock). Adding
+another subprocess test should need the same justification: they are slower,
+and they can hang where an in-process test merely fails.
+
+The stream contract these tests enforce is stated in `conductor.__main__`'s
+module docstring; the contract section below is its enforcement.
 """
 import json
-import tomllib
+import os
+import re
+import socket
+import subprocess
+import sys
+import threading
+from datetime import datetime, timezone
+
 import pytest
+import conductor.__main__
+from conductor import prompts, report, store, validate
 from conductor.__main__ import main
+from conductor.server import ServerBindError
 from tests.test_store import write_project, good_lane
 
 
@@ -26,16 +46,6 @@ def test_validate_referential_drift_warns_but_exits_0(tmp_path, capsys):
     root = write_project(tmp_path, lanes={"claude": lane_body})
     assert main(["validate", "--dir", str(root)]) == 0
     assert "ghost" in capsys.readouterr().out
-
-def test_init_scaffolds_and_prints_bootstrap(tmp_path, capsys):
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert (tmp_path / "conductor" / "map.toml").is_file()
-    assert (tmp_path / "conductor" / "lanes").is_dir()
-    assert "map.toml" in capsys.readouterr().out
-
-def test_init_refuses_existing(tmp_path, capsys):
-    (tmp_path / "conductor").mkdir()
-    assert main(["init", "--dir", str(tmp_path)]) == 1
 
 def test_prompt_renders_role_and_fails_on_unknown(tmp_path, capsys):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
@@ -60,20 +70,6 @@ def test_validate_broken_map_prints_error_and_exits_1(tmp_path, capsys):
 def test_validate_missing_conductor_dir_exits_1_with_stderr(tmp_path, capsys):
     assert main(["validate", "--dir", str(tmp_path)]) == 1
     assert "conductor" in capsys.readouterr().err
-
-def test_init_writes_empty_events_and_valid_toml_map(tmp_path, capsys):
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    assert (tmp_path / "conductor" / "events.jsonl").read_text(encoding="utf-8") == ""
-    data = tomllib.loads((tmp_path / "conductor" / "map.toml").read_text(encoding="utf-8"))
-    assert data["schema_version"] == 1 and data["nodes"]
-
-def test_init_then_validate_is_clean(tmp_path, capsys):
-    # The scaffold must satisfy its own validation rules end-to-end and print
-    # zero warnings (subsumes the deprecated-row check, ADR 0001).
-    assert main(["init", "--dir", str(tmp_path)]) == 0
-    capsys.readouterr()                       # isolate validate's output from init's
-    assert main(["validate", "--dir", str(tmp_path)]) == 0
-    assert capsys.readouterr().out == ""
 
 def test_validate_schema_version_warning_surfaces_in_stdout(tmp_path, capsys):
     # Pin: validate must pass loaded.warnings into merge (extra_warnings=...) —
@@ -156,6 +152,461 @@ def test_prompt_no_role_at_all_is_usage_error(tmp_path, capsys):
         main(["prompt", "--dir", str(tmp_path)])
     assert e.value.code == 2
     assert "usage" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", [
+    ["prompt"],                                   # no role at all
+    ["prompt", "scout", "--role", "scout"],       # both spellings at once
+])
+def test_a_prompt_usage_error_comes_from_the_prompt_subparser_not_the_top_level(
+        argv, tmp_path, capsys):
+    """The reader gets `prompt`'s own usage line, not the whole subcommand list.
+
+    `_cmd_prompt` raises through the parser stored as `prompt_parser`. Binding
+    that to the top-level parser still exits 2 with a usage line, so the suite
+    stays green while the message loses --role/--author and gains the command
+    list — this guards which parser reported it, not the sentence it chose.
+    """
+    with pytest.raises(SystemExit) as e:
+        main([*argv, "--dir", str(tmp_path)])
+    assert e.value.code == 2
+    err = capsys.readouterr().err
+    assert "conduct prompt: error:" in err
+    assert "--role" in err and "--author" in err
+    assert "{validate," not in err
+
+
+# --- the stream contract ---
+#
+# stdout carries only the command's primary result, suitable for redirection.
+# stderr carries dialogue, progress, explanations, usage warnings and
+# operational errors. Validation findings are `validate`'s result, so they stay
+# on stdout even when the exit code is 1. `init`'s half lives in test_init.py.
+
+
+class _FakeServer:
+    """A bound server that returns from `serve_forever` at once, as a stopped one does."""
+
+    server_address = ("127.0.0.1", 7777)
+
+    def serve_forever(self):
+        return None
+
+    def shutdown(self):
+        pass
+
+    def server_close(self):
+        pass
+
+
+def test_prompt_stdout_is_exactly_the_rendered_prompt(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    state = validate.merged_state(store.load(root))
+    assert captured.out == prompts.role_prompt(state, "reviewer")
+    assert captured.err == ""
+
+
+def test_prompt_stdout_has_no_trailing_blank_line(tmp_path, capsys):
+    # role_prompt() already ends in a newline, so print() added a second one
+    # and every redirected prompt carried a stray blank line.
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "--role", "reviewer", "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and not out.endswith("\n\n")
+
+
+def test_prompt_deprecation_warning_never_reaches_stdout(tmp_path, capsys):
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES)
+    assert main(["prompt", "reviewer", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert "deprecated" in captured.err and "deprecated" not in captured.out
+
+
+@pytest.mark.parametrize("argv, scaffolded", [
+    (["prompt", "--role", "reviewer"], False),                   # no conductor/
+    (["prompt", "--role", "ghost"], True),                       # unknown role
+    (["prompt", "--role", "reviewer", "--author", "bad name"], True),
+    (["prompt", "--role", "reviewer"], True),                    # broken map
+])
+def test_operational_errors_leave_stdout_empty(tmp_path, capsys, argv, scaffolded):
+    broken = argv == ["prompt", "--role", "reviewer"] and scaffolded
+    root = tmp_path
+    if scaffolded:
+        root = write_project(tmp_path,
+                             map_toml="= not toml" if broken else MAP_WITH_ROLES)
+    assert main([*argv, "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err != ""
+
+
+class _FrozenClock:
+    """A `datetime` stand-in whose `now` never moves, so two merges agree.
+
+    `generated_at` is the one field two merges of an unchanged project differ
+    on, and comparing the command's stdout against a second merge is a byte
+    comparison only if the clock holds still between them.
+    """
+
+    @staticmethod
+    def now(tz=None):
+        return datetime(2026, 7, 30, 12, 0, tzinfo=tz or timezone.utc)
+
+
+def test_report_stdout_is_exactly_the_rendered_report(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(validate, "datetime", _FrozenClock)
+    root = write_project(tmp_path, map_toml=MAP_WITH_ROLES,
+                         lanes={"claude": good_lane()})
+    assert main(["report", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == report.render(validate.merged_state(store.load(root)))
+    assert captured.err == ""
+
+
+def test_report_stdout_has_no_trailing_blank_line(tmp_path, capsys):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["report", "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and not out.endswith("\n\n")
+
+
+def test_report_without_a_conductor_directory_leaves_stdout_empty(tmp_path, capsys):
+    assert main(["report", "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err != ""
+
+
+def test_report_dir_selects_which_project_is_reported(tmp_path, capsys):
+    # `--dir` behaves as it does everywhere else: it chooses the project, and
+    # the report follows it rather than describing the working directory.
+    one = write_project(tmp_path / "one", map_toml=MAP_WITH_ROLES.replace(
+        'project = "p"', 'project = "alpha"'))
+    two = write_project(tmp_path / "two", map_toml=MAP_WITH_ROLES.replace(
+        'project = "p"', 'project = "beta"'))
+    assert main(["report", "--dir", str(one)]) == 0
+    first = capsys.readouterr().out
+    assert main(["report", "--dir", str(two)]) == 0
+    second = capsys.readouterr().out
+    assert first.splitlines()[0].endswith("alpha")
+    assert second.splitlines()[0].endswith("beta")
+
+
+def test_validate_findings_are_the_result_and_stay_on_stdout(tmp_path, capsys):
+    # Deliberate exception: what validate found IS what validate is for, so it
+    # belongs on stdout even though the command failed.
+    root = write_project(tmp_path, lanes={"bad": "{not json"})
+    assert main(["validate", "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert "bad" in captured.out and captured.err == ""
+
+
+def test_validate_on_a_clean_project_writes_zero_bytes(tmp_path, capsys):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["validate", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""
+
+
+def test_validate_load_error_is_stderr_with_empty_stdout(tmp_path, capsys):
+    # A missing conductor/ is not a finding about the project — it is the
+    # command failing to run at all.
+    assert main(["validate", "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and "conductor" in captured.err
+
+
+def test_up_stdout_is_exactly_the_url(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "http://127.0.0.1:7777/\n"    # pipeable, on its own
+    assert "Ctrl+C" in captured.err
+
+
+def test_demo_stdout_is_the_url_and_the_temp_path_is_not(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("conductor.server.build", lambda *a, **k: _FakeServer())
+    assert main(["demo"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "http://127.0.0.1:7777/\n"
+    assert "materialized" in captured.err and "materialized" not in captured.out
+
+
+#: The child this test really runs. It keeps everything the defect lives in --
+#: a separate process, a redirected and therefore BLOCK-BUFFERED stdout, and the
+#: real `_serve` through the real `main` -- and removes the one thing that is not
+#: the subject: building a socket server.
+#:
+#: On both macOS runners this test timed out at twenty seconds with an EMPTY
+#: stderr, on both Python versions. Empty stderr rules out the LOUD failure and
+#: nothing else -- an import error would have left a traceback, and an unflushed
+#: write would have been just as silent. What settled that half was not stderr:
+#: `flush=True` stands in `__main__` and a mutation removing it is held RED, so
+#: the remaining explanation was a child that had not reached the print at all
+#: -- which is how long a real server takes to stand up on a loaded shared
+#: runner. Raising the timeout would have measured the same thing for longer.
+#:
+#: The fake blocks in `serve_forever` exactly as the real one does, so the
+#: statement after the print still cannot return -- which is the whole condition
+#: the flush exists for. Real loopback and server construction are covered by
+#: their own tests and by the three-platform browser gate.
+_FLUSH_CHILD = '''\
+import threading
+
+from conductor import server
+from conductor.__main__ import main
+
+
+class _BlockingServer:
+    """A server with an address that never returns from `serve_forever`."""
+
+    server_address = ("127.0.0.1", 8765)
+
+    def serve_forever(self):
+        threading.Event().wait()
+
+    def server_close(self):
+        pass
+
+
+server.build = lambda *args, **kwargs: _BlockingServer()
+raise SystemExit(main(["up", "--dir", {root!r}, "--port", "0"]))
+'''
+
+
+# The one test here that needs a real child process. `capsys` cannot see this
+# defect: it does not buffer, and _FakeServer returns instead of blocking. In
+# the real thing stdout is block-buffered the moment it is redirected — the very
+# case the contract exists for — and the next statement blocks in
+# serve_forever(), so without flush=True the URL sits in the buffer until the
+# server stops and never arrives at all if the server is killed.
+# `conduct up | xargs open` would hang on an empty pipe.
+#
+# NO SOCKET IS OPENED. `server.build` is replaced by a fake carrying a fixed
+# `server_address`, so there is no free-port race and no bind to be slow about.
+# `--port 0` is still passed, so the CLI's own argument path is the production
+# one, but the OS never picks anything and the port in the URL is the fake's
+# 8765 — which is why the assertion reads the SHAPE of the URL and not a number.
+#
+# What the captured stderr settles, and what it does not. A child that failed
+# LOUDLY can be told from one that wrote nothing, and without that a broken
+# environment reads as this exact defect. That direction only: an EMPTY stderr
+# does not establish an unflushed write, because a child that never reached the
+# print is silent too. That is exactly what both macOS jobs looked like in
+# remote run #10, and there the cause was a real server failing to stand up on
+# a loaded runner — which is why one no longer stands up in this child.
+def test_up_flushes_the_url_while_it_is_still_serving(tmp_path):
+    # The read runs on a thread with a timeout: unflushed, readline() blocks
+    # forever, and a blocked reader must fail this test rather than hang it.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    child = tmp_path / "flush_child.py"
+    child.write_text(_FLUSH_CHILD.format(root=str(root)), encoding="utf-8",
+                     newline="\n")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    # Captured, not discarded; see the note above for which way it cuts.
+    proc = subprocess.Popen(
+        [sys.executable, str(child)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+    first: list[str] = []
+    reader = threading.Thread(target=lambda: first.append(proc.stdout.readline()),
+                              daemon=True)
+    reader.start()
+    reader.join(timeout=20)
+    try:
+        if not first:
+            proc.terminate()          # unblocks the reader so stderr can be read
+            assert first, ("no URL reached a redirected stdout; child stderr "
+                           f"was: {proc.stderr.read()!r}")
+        assert re.fullmatch(r"http://127\.0\.0\.1:\d+/", first[0].strip())
+        # WHILE IT IS STILL SERVING, which is the half the name claims and the
+        # old shape only implied: the child is blocked inside `serve_forever`
+        # and has not exited, so the URL cannot have arrived because the server
+        # stopped and let the buffer drain.
+        assert proc.poll() is None, "the child exited before the URL was read"
+    finally:
+        proc.terminate()
+        reader.join(timeout=5)        # let the reader observe the closed pipe
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            proc.kill()               # never let cleanup mask a real assertion
+        proc.stdout.close()
+        proc.stderr.close()
+
+
+def test_up_bind_failure_leaves_stdout_empty(tmp_path, capsys, monkeypatch):
+    def refuse(*args, **kwargs):
+        raise ServerBindError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == "" and "cannot serve" in captured.err
+
+
+def test_up_bind_failure_names_the_requested_endpoint_and_the_port_flag(
+        tmp_path, capsys, monkeypatch):
+    # The error is the one place a person actually needs --port, so it must
+    # carry: the endpoint the user asked for, the system's own reason, and the
+    # literal `--port PORT` hint. The digit-set equality is the class guard:
+    # stderr may name no number at all beyond the loopback address and the
+    # port the user requested — a substituted default port and an invented
+    # "free" alternative port both fail the same one assertion.
+    def refuse(*args, **kwargs):
+        raise ServerBindError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root), "--port", "7901"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""                       # the stream contract holds
+    assert "127.0.0.1:7901" in captured.err         # the endpoint actually asked for
+    assert "address already in use" in captured.err  # the system error, verbatim
+    assert "--port PORT" in captured.err            # placeholder, not a made-up number
+    assert set(re.findall(r"\d+", captured.err)) == {"127", "0", "1", "7901"}
+
+
+def test_demo_bind_failure_keeps_its_chatter_and_names_the_users_port(
+        capsys, monkeypatch):
+    # Same contract, reached through `demo`: the materialize note survives on
+    # stderr, and the only port-shaped number anywhere on stderr is the one
+    # the user passed. The class door is the up test's full digit-set
+    # equality on the shared _serve; this looser case-insensitive scan
+    # (numbers after `:` or `port `) is the demo-path net, tolerating the
+    # digits of the throwaway temp path it must not red on.
+    def refuse(*args, **kwargs):
+        raise ServerBindError("address already in use")
+
+    monkeypatch.setattr("conductor.server.build", refuse)
+    assert main(["demo", "--port", "7902"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "materialized" in captured.err
+    assert "127.0.0.1:7902" in captured.err
+    assert "--port PORT" in captured.err
+    assert set(re.findall(r"(?:port\s+|:)(\d+)", captured.err,
+                          flags=re.IGNORECASE)) == {"7902"}
+
+
+def test_up_and_demo_reach_the_same_serve_function_with_the_users_port(
+        tmp_path, capsys, monkeypatch):
+    # The relation that keeps the two commands from drifting apart: one mock
+    # of `_serve` intercepts both, so there is no second copy of the serving
+    # (and failing) path for `demo` to take, and both hand it the port the
+    # user typed rather than a default.
+    calls = []
+
+    def fake_serve(root, port, providers=None, plan=None):
+        calls.append(port)
+        return 23
+
+    monkeypatch.setattr(conductor.__main__, "_serve", fake_serve)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    assert main(["up", "--dir", str(root), "--port", "7903"]) == 23
+    assert main(["demo", "--port", "7904"]) == 23
+    assert calls == [7903, 7904]
+
+
+def test_up_on_a_genuinely_busy_port_prints_the_port_hint_from_a_real_process(tmp_path):
+    # The second subprocess test this file allows itself, with the same kind
+    # of justification as the flush test: the mocked tests above construct
+    # their OSError, so only a real bind against a really occupied port can
+    # prove the message a user sees is the one the mocks describe.
+    #
+    # SO_EXCLUSIVEADDRUSE hardens the fixture rather than enabling it:
+    # ConductServer already keeps SO_REUSEADDR off on Windows (server.py)
+    # precisely so a busy port refuses, so the child is refused either way.
+    # Exclusivity makes the refusal deterministic regardless of the server's
+    # socket options, keeping this test's premise intact even if that
+    # design ever regressed.
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            blocker.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        port = blocker.getsockname()[1]
+        proc = subprocess.run(
+            [sys.executable, "-m", "conductor", "up", "--dir", str(root),
+             "--port", str(port)],
+            capture_output=True, text=True, timeout=60)
+    finally:
+        blocker.close()
+    assert proc.returncode == 1
+    assert proc.stdout == ""
+    assert f"127.0.0.1:{port}" in proc.stderr
+    assert "--port PORT" in proc.stderr
+
+
+# --- only `init` may bring a project into existence --------------------------
+#
+# `preview` and `integration-smoke` build a RunStore straight from `--dir` and
+# reach `runs_root.mkdir(parents=True)`, and that `parents=True` -- meant for
+# `runs/` under an existing `conductor/` -- created `conductor/` itself in
+# whatever directory the command was pointed at. The person who ran either
+# command in the wrong place got no warning and a durable one: `conduct init`
+# refuses any existing `conductor`, so the directory was then permanently
+# unusable as a project, and the state it refused to touch was state the user
+# never created.
+#
+# `conductor/` being a directory is what the house already means by "this is a
+# Conduct project" -- `store.conductor_dir` says so, and `doctor` reports its
+# absence as "this project was never set up". So these two commands ask that
+# question before they write, and the answer they give is the one the reader
+# has already been given everywhere else.
+
+PROJECT_COMMANDS = [["preview"], ["integration-smoke"]]
+
+
+def _tree(root):
+    """Every name under `root` with its bytes — the witness for "left alone"."""
+    return {path.relative_to(root).as_posix():
+            ("dir",) if path.is_dir() else ("file", path.read_bytes())
+            for path in sorted(root.rglob("*"))}
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_a_command_that_is_not_init_creates_no_project_where_there_is_none(
+        argv, tmp_path, capsys):
+    # Enumerated before and after, so the claim is about the DIRECTORY and not
+    # about the one name a refusal happened to be written for.
+    before = _tree(tmp_path)
+    assert main([*argv, "--dir", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""                    # the stream contract holds
+    assert "conduct init" in captured.err        # and it says what to run
+    assert _tree(tmp_path) == before == {}
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_init_still_succeeds_in_a_directory_such_a_command_refused(
+        argv, tmp_path, capsys):
+    # The half that made this durable rather than merely untidy. A directory
+    # that has been previewed in must still be a directory a person can start a
+    # project in, and `init`'s own refusal is the thing that used to make it not
+    # one -- so the recovery is measured by running `init` for real.
+    assert main([*argv, "--dir", str(tmp_path)]) == 1
+    capsys.readouterr()
+    assert main(["init", "--template", "minimal", "--dir", str(tmp_path)]) == 0
+    assert "already exists" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", PROJECT_COMMANDS)
+def test_inside_a_real_project_both_commands_still_do_their_whole_job(
+        argv, tmp_path, capsys):
+    # The over-correction control, and the reason the gate is `conductor/` and
+    # not something narrower. Refusing is only correct where there is nothing to
+    # work in: inside a scaffolded project each command must still print its one
+    # canonical line and leave its run durably on disk.
+    root = write_project(tmp_path)
+    assert main([*argv, "--dir", str(root)]) == 0
+    out = capsys.readouterr().out
+    assert out.endswith("\n") and out.count("\n") == 1
+    assert json.loads(out)
+    assert (root / "conductor" / "runs").is_dir()
 
 
 def test_demo_rejects_dir_flag(capsys):

@@ -5,12 +5,29 @@ flag, or a queue de-dup. Silence is never consent.
 """
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timedelta
 
 from conductor import schema
 from conductor.schema import DEFAULT_STALENESS_MINUTES
 
 EVENTS_TAIL = 500
+BLOCKING_NODE_STATUSES = frozenset({"fail", "blocked"})
+
+# §6.1 vocabularies. Merge-computed, not schema-validated (no author writes
+# them), so they live here rather than in `schema` — consumers switch on these
+# instead of transcribing the protocol sketch.
+PROJECT_STATES = frozenset({"unknown", "blocked", "complete", "active", "ready"})
+STATUS_REASONS = frozenset({"map_unreadable", "human_decision", "broken_lane",
+                            "invariant_broken", "node_failing", "all_clear",
+                            "work_in_progress", "no_lanes_yet"})
+NEXT_ACTION_KINDS = frozenset({"fix_map", "answer_wait", "fix_lane", "fix_invariant",
+                               "fix_node", "review_finding", "resolve_disagreement",
+                               "resolve_contested_node", "resolve_collision",
+                               "check_stale_lane", "start_work"})
+# One lead-in per schema.WAIT_KINDS value: a wait is not always a question.
+WAIT_LEAD_IN = {"decision": "Answer the decision", "action": "Do the action",
+                "review": "Do the review"}
 
 
 def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
@@ -29,6 +46,28 @@ def _lane_view(entry: dict, now: datetime, warnings: list[str]) -> dict:
     return {"author": author, "role": data.get("role"), "updated": data.get("updated"),
             "stale": stale, "broken": False, "error": None,
             "now": data.get("now") or {}, "_data": data, "_dt": dt, "_future": future}
+
+
+def _kpi(nodes: list[dict], findings: list[dict], queue: list[dict],
+         disagreements: list[dict], views: list[dict]) -> dict:
+    """The seven counts §6.1 names, each read off the merged document.
+
+    Lifted out of `merge` for the project's function-length limit, and it is a
+    seam rather than a slice: every value here is a COUNT of something the
+    merge already decided, so nothing is judged in this function and nothing
+    that is judged elsewhere is counted twice. A reader asking "where does
+    `blockers` come from" gets one short answer instead of scrolling a
+    seventy-line assembly.
+    """
+    return {
+        "nodes_pass": sum(1 for n in nodes if n["status"] == "pass"),
+        "nodes_total": len(nodes),
+        "blockers": sum(1 for f in findings if f["severity"] == "blocker"),
+        "queue": len(queue),
+        "disagreements": len(disagreements),
+        "broken_lanes": sum(1 for v in views if v["broken"]),
+        "stale_lanes": sum(1 for v in views if v["stale"]),
+    }
 
 
 def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
@@ -59,49 +98,85 @@ def merge(map_data: dict | None, map_error: str | None, lanes: list[dict],
     Returns:
         The `state.json` dict per PROTOCOL.md §6.1.
     """
-    # extra_warnings: schema-version and other loader-level warnings (§4.5) —
-    # store.load collects them, callers pass them through so they surface in state.
+    map_data, warnings = _readable_map(
+        map_data, map_error, skipped_events, extra_warnings)
+    views = [_lane_view(entry, now, warnings) for entry in lanes]
+    live = [view for view in views if not view["broken"]]
+    state = _document(map_data, views, live, events, now, warnings)
+    # Derived from the finished state (both read `pending_verdicts`, which
+    # takes a whole state dict); next_action reads project_status, so order
+    # matters here.
+    state["project_status"] = _project_status(state, map_error)
+    state["next_action"] = _next_action(state, map_error)
+    return state
+
+
+def _readable_map(map_data: dict | None, map_error: str | None,
+                  skipped_events: int,
+                  extra_warnings: tuple[str, ...] | list[str]) -> tuple[dict, list[str]]:
+    """A map to merge against, and the warnings the loader and this step raise.
+
+    A map that would not load is not a refusal here: the merger represents it
+    as an empty one and SAYS so in `warnings`, because a project whose map is
+    briefly broken still has lanes, findings and a queue worth showing.
+
+    `extra_warnings` are schema-version and other loader-level warnings (§4.5)
+    that `store.load` collected; callers pass them through so they surface in
+    state rather than being dropped between the reader and the document.
+    """
     warnings: list[str] = list(extra_warnings)
     if map_data is None:
         warnings.append(f"map is unreadable: {map_error}")
         map_data = {"nodes": [], "cycle": {}, "invariants": []}
     if skipped_events:
         warnings.append(f"events.jsonl: skipped {skipped_events} malformed line(s)")
+    return map_data, warnings
 
-    views = [_lane_view(entry, now, warnings) for entry in lanes]
-    live = [v for v in views if not v["broken"]]
 
+def _document(map_data: dict, views: list[dict], live: list[dict],
+              events: list[dict], now: datetime,
+              warnings: list[str]) -> dict:
+    """The `state.json` document of §6.1, assembled from the merged parts.
+
+    Split from `merge` for the project's function-length limit, along the seam
+    that was already there: `merge` decides WHAT is true -- which lanes are
+    live, what each rule computes -- and this assembles the document those
+    answers make. Nothing is judged here; every value is either a call to a
+    rule that owns it or a rearrangement of one.
+
+    The two derived fields are deliberately NOT here: `project_status` and
+    `next_action` read the finished document, so they belong after it exists.
+
+    Every rule that appends to `warnings` is CALLED ABOVE the returned literal,
+    in the order `merge` called them before this function existed. A dict
+    literal evaluates its values in source order, so a rule invoked at its own
+    key is invoked in KEY order -- and `warnings` is a shared, ordered, public
+    list. Extracting this function put `_cycle` at the "cycle" key and
+    `_invariants` at the "invariants" key, which silently swapped two sentences
+    a reader sees in `state.json` and changed the bytes the broker fingerprints
+    for change detection. Key order and call order are two different orders and
+    this function must not conflate them again.
+    """
     nodes = _nodes(map_data, live, warnings)
     findings = _findings(map_data, views, warnings)
     queue = _human_queue(live)
     invariants = _invariants(map_data, live, warnings)
     cycle = _cycle(map_data, live, warnings)
-
-    lanes_out = [{k: v for k, v in view.items() if not k.startswith("_")}
-                 for view in views]
     disagreements = [f for f in findings if f["review_state"] == "disagreement"]
-    kpi = {
-        "nodes_pass": sum(1 for n in nodes if n["status"] == "pass"),
-        "nodes_total": len(nodes),
-        "blockers": sum(1 for f in findings if f["severity"] == "blocker"),
-        "queue": len(queue),
-        "disagreements": len(disagreements),
-        "broken_lanes": sum(1 for v in views if v["broken"]),
-        "stale_lanes": sum(1 for v in views if v["stale"]),
-    }
     return {
         "schema_version": schema.SCHEMA_VERSION,
         "generated_at": now.isoformat(),
         "project": map_data.get("project", ""),
         "map": {"nodes": nodes},
         "cycle": cycle,
-        "lanes": lanes_out,
+        "lanes": [{k: v for k, v in view.items() if not k.startswith("_")}
+                  for view in views],
         "findings": findings,
         "disagreements": disagreements,
         "human_queue": queue,
         "invariants": invariants,
         "events_tail": list(reversed(events[-EVENTS_TAIL:])),
-        "kpi": kpi,
+        "kpi": _kpi(nodes, findings, queue, disagreements, views),
         "warnings": warnings,
     }
 
@@ -303,10 +378,7 @@ def pending_verdicts(state: dict) -> dict[str, list[str]]:
 def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
     cyc = map_data.get("cycle", {}) or {}
     phases = cyc.get("phases", [])
-    out = {"phases": phases,
-           "roles": [{"id": r["id"], "harness": r.get("harness", ""),
-                      "reviews": r.get("reviews", [])}
-                     for r in cyc.get("roles", [])]}
+    out = {"phases": phases, "roles": [_role(r) for r in cyc.get("roles", [])]}
     declaring = []
     for v in live:
         phase = (v["now"] or {}).get("phase")
@@ -323,3 +395,236 @@ def _cycle(map_data: dict, live: list[dict], warnings: list[str]) -> dict:
         declaring.sort()
         out["current_phase"] = declaring[-1][1]
     return out
+
+
+def _role(role: dict) -> dict:
+    """The §6.1 role shape. `stage` is projected ONLY when the map declares one:
+    a role without it must keep its legacy shape exactly, not gain a null.
+
+    Design-time metadata; `current_phase` above is computed from lanes alone and
+    never consults it (§6.1, `role.stage` versus `now.phase`)."""
+    out = {"id": role["id"], "harness": role.get("harness", ""),
+           "reviews": role.get("reviews", [])}
+    if "stage" in role:
+        out["stage"] = role["stage"]
+    return out
+
+
+# PROTOCOL.md §6.1: project_status / next_action — is the project ready,
+# active, blocked or complete, and what happens next.
+def _project_status(state: dict, map_error: str | None) -> dict:
+    """Classify the project, first match wins on a strict precedence.
+
+    Order: unknown > human decision > broken lane > broken invariant >
+    failing node > complete > active > ready. `complete` is the only state
+    that may read as success, so its conditions are deliberately strict — a
+    stale lane, an open finding or an unmet review obligation all keep the
+    project out of it. Disagreements and stale lanes do NOT force `blocked`:
+    `blocked` means a person must act before work can continue, and `active`
+    is not a success claim. `detail` states the fact only; imperatives belong
+    to `next_action`.
+
+    Args:
+        state: The `state.json` dict, complete except for these two keys.
+        map_error: The map's load/validation error, or None.
+
+    Returns:
+        `{"state", "reason", "detail"}` per PROTOCOL.md §6.1.
+    """
+    if map_error is not None:
+        return {"state": "unknown", "reason": "map_unreadable",
+                "detail": "map.toml is unreadable"}
+    blocked = _blocked_status(state)
+    if blocked is not None:
+        return blocked
+    kpi = state["kpi"]
+    detail = _node_detail(kpi["nodes_pass"], kpi["nodes_total"], "passing")
+    if _is_complete(state):
+        return {"state": "complete", "reason": "all_clear", "detail": detail}
+    # Row 3 already diverted every broken lane, so this reads as "any lane at
+    # all"; spelled out to mirror the table's wording rather than depend on it.
+    if any(not ln["broken"] for ln in state["lanes"]):
+        return {"state": "active", "reason": "work_in_progress", "detail": detail}
+    return {"state": "ready", "reason": "no_lanes_yet",
+            "detail": "no lanes have reported yet"}
+
+
+def _node_detail(count: int, total: int, phrase: str) -> str:
+    """`N of M node(s) <phrase>`, or a plain fact when the map declares none."""
+    if not total:
+        return "no nodes declared in map.toml"
+    return f"{count} of {total} {'node' if total == 1 else 'nodes'} {phrase}"
+
+
+def _blocked_status(state: dict) -> dict | None:
+    """The four `blocked` rows of the §6.1 precedence table, in order.
+
+    Held in lockstep with the same four rows of `_next_action`: the panel
+    renders `reason` and `kind` side by side, and only a test keeps the two
+    hand-written ladders in agreement.
+    """
+    queue = state["human_queue"]
+    if queue:
+        # Kind-neutral: WAIT_KINDS covers decisions, actions and reviews.
+        plural = "" if len(queue) == 1 else "s"
+        return _blocked("human_decision", f"{len(queue)} request{plural} waiting on you")
+    broken = _broken_lanes(state)
+    if broken:
+        return _blocked("broken_lane", f"lane {broken[0]} is unreadable" if len(broken) == 1
+                        else f"{len(broken)} lanes are unreadable")
+    bad = _broken_invariants(state)
+    if bad:
+        return _blocked("invariant_broken", f"invariant {bad[0]} is broken" if len(bad) == 1
+                        else f"{len(bad)} invariants are broken")
+    failing = _failing_nodes(state)
+    if failing:
+        return _blocked("node_failing", _node_detail(len(failing),
+                                                     state["kpi"]["nodes_total"],
+                                                     "failing or blocked"))
+    return None
+
+
+def _blocked(reason: str, detail: str) -> dict:
+    return {"state": "blocked", "reason": reason, "detail": detail}
+
+
+def _is_complete(state: dict) -> bool:
+    """Every §6.1 `complete` condition — the owner's no-silent-success law.
+
+    Three clauses cannot decide the answer today: rows 2-3 of the precedence
+    table divert an open queue and a broken lane before this runs, and an
+    empty `findings` already forces `pending_verdicts` empty. They stay so
+    `complete` remains correct on its own terms if a blocked row is ever
+    demoted — the spec lists them, and this function is the last guard
+    against a false success.
+    """
+    nodes = state["map"]["nodes"]
+    return (bool(nodes) and all(n["status"] == "pass" for n in nodes)
+            and not state["findings"] and not state["human_queue"]
+            and not pending_verdicts(state)
+            and not any(ln["broken"] or ln["stale"] for ln in state["lanes"]))
+
+
+# Ties inside one kind always break on sorted id, so two merges over identical
+# inputs emit identical bytes (server.Broker's change detection depends on it).
+def _broken_lanes(state: dict) -> list[str]:
+    return sorted(ln["author"] for ln in state["lanes"] if ln["broken"])
+
+
+def _broken_invariants(state: dict) -> list[str]:
+    return sorted(i["id"] for i in state["invariants"] if not i["ok"])
+
+
+def _failing_nodes(state: dict) -> list[dict]:
+    return sorted((n for n in state["map"]["nodes"]
+                   if n["status"] in BLOCKING_NODE_STATUSES), key=lambda n: n["id"])
+
+
+def _next_action(state: dict, map_error: str | None) -> dict | None:
+    """Pick the single most important next action, by §6.1 precedence.
+
+    Rows 1-5 mirror `_project_status` row for row (tests/test_merge_status.py
+    pins the two ladders in agreement); the rest are fallbacks. A `complete`
+    project matches no row and so gets None — as does an `active` project
+    with nothing outstanding, where the next move belongs to the agents.
+
+    Args:
+        state: The `state.json` dict, with `project_status` already set.
+        map_error: The map's load/validation error, or None.
+
+    Returns:
+        `{"text", "kind", "ref"}` per PROTOCOL.md §6.1, or None.
+    """
+    if map_error is not None:
+        return _action("fix_map", None,
+                       "Fix conductor/map.toml — the project map cannot be read.")
+    queue = sorted(state["human_queue"], key=lambda w: w["id"])
+    if queue:
+        w = queue[0]
+        # `kind` is schema-validated against WAIT_KINDS, so the lead-in always
+        # resolves; `title` is schema-validated as a string when present
+        # (absent or empty falls through to the id), and renders as given.
+        lead = WAIT_LEAD_IN.get(w["kind"], "Answer the request")
+        return _action("answer_wait", w["id"], f"{lead}: {w['title'] or w['id']}")
+    broken = _broken_lanes(state)
+    if broken:
+        return _action("fix_lane", broken[0],
+                       f"Fix conductor/lanes/{broken[0]}.json — the lane cannot be read.")
+    bad = _broken_invariants(state)
+    if bad:
+        return _action("fix_invariant", bad[0], f"Restore the broken invariant {bad[0]}.")
+    failing = _failing_nodes(state)
+    if failing:
+        return _action("fix_node", failing[0]["id"],
+                       f"Fix node {failing[0]['id']} — status is {failing[0]['status']}.")
+    return _fallback_action(state)
+
+
+def _fallback_action(state: dict) -> dict | None:
+    """The §6.1 rows below the blocked ladder, in order.
+
+    Review debt, disagreement, contested node, id collision, stale lane, and
+    finally nothing-started-yet. None when nothing needs the user.
+    """
+    debt = _review_debt_action(state)
+    if debt is not None:
+        return debt
+    disputed = sorted(f["id"] for f in state["disagreements"])
+    if disputed:
+        return _action("resolve_disagreement", disputed[0],
+                       f"Resolve the disagreement on finding {disputed[0]}.")
+    # Contested and collided both mean two agents disagree with no computed
+    # winner; neither blocks the project, but neither may pass in silence.
+    contested = sorted((n for n in state["map"]["nodes"] if n["status"] == "contested"),
+                       key=lambda n: n["id"])
+    if contested:
+        node = contested[0]
+        return _action("resolve_contested_node", node["id"],
+                       f"Settle node {node['id']} — {', '.join(node['contested_by'])} "
+                       "disagree on its status.")
+    collided = Counter(f["id"] for f in state["findings"]
+                       if f["review_state"] == "suspended")
+    if collided:
+        fid = min(collided)
+        return _action("resolve_collision", fid,
+                       f"Rename the duplicate finding id {fid} — "
+                       f"{collided[fid]} lanes are using it.")
+    stale = sorted(ln["author"] for ln in state["lanes"] if ln["stale"])
+    if stale:
+        return _action("check_stale_lane", stale[0],
+                       f"Check lane {stale[0]} — it has not reported recently.")
+    if state["project_status"]["state"] == "ready":
+        return _start_work_action(state)
+    return None
+
+
+def _review_debt_action(state: dict) -> dict | None:
+    """The lowest-id unmet review obligation, named for whoever owes it."""
+    # (finding, role) pairs sorted so a tie between two owing roles is stable.
+    owed = sorted((fid, rid) for rid, fids in pending_verdicts(state).items() for fid in fids)
+    if not owed:
+        return None
+    fid, rid = owed[0]
+    # Branch on whether a lane actually holds the role, NOT on the finding's
+    # review_state: that is a per-finding aggregate (unreviewed outranks
+    # uncovered), so it would tell the user to chase an agent nobody is running
+    # whenever one reviewing role is silent and another is absent.
+    if any(ln["role"] == rid and not ln["broken"] for ln in state["lanes"]):
+        return _action("review_finding", fid, f"Get a verdict from {rid} on finding {fid}.")
+    return _action("review_finding", fid,
+                   f"Nobody is running the {rid} role — start one to review finding {fid}.")
+
+
+def _start_work_action(state: dict) -> dict:
+    """Nothing has reported yet: point at the first declared role's prompt."""
+    roles = state["cycle"]["roles"]
+    if not roles:
+        return _action("start_work", None,
+                       "Declare a role in conductor/map.toml to start work.")
+    rid = roles[0]["id"]                             # first DECLARED role, not sorted
+    return _action("start_work", rid,
+                   f"Start the {rid} agent — run: conduct prompt --role {rid}")
+
+
+def _action(kind: str, ref: str | None, text: str) -> dict:
+    return {"text": text, "kind": kind, "ref": ref}

@@ -1,0 +1,14 @@
+{
+  "git": {
+    "state": "unborn",
+    "unsupported": null,
+    "head": null,
+    "object_format": "sha1",
+    "dirty_paths": 0,
+    "exclude": "present",
+    "agent_instructions": {"found": 0, "default_include": false},
+    "remotes": [],
+    "tools": {"git": {"version": "2.47.1"}, "gh": null},
+    "signing": false
+  }
+}

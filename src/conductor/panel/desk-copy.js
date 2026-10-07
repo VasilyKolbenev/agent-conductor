@@ -1,0 +1,207 @@
+"use strict";
+// The desk's own strings, English first and Russian second, like every other copy module of
+// the panel: `studio-i18n.js` spreads this catalogue into the one table. The words of the
+// page itself (its title, its note, its link and the name of each region) live here and are
+// written into `desk.html` by `data-i18n` and `data-i18n-label`; the page carries no other
+// word than the product's own name. Where a message carries a number or a name it is a
+// named parameter, never a joined string, and no message depends on a plural form.
+export const DESK_COPY = Object.freeze({
+  // -- the page ------------------------------------------------------------------------
+  "desk.title": ["December Command — Desk", "December Command — Стол"],
+  "desk.note": [
+    "The desk is being built: the rail, the scene, the feed, the summary and the console are "
+      + "live.",
+    "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают."],
+  "desk.flow": ["Cycle editor", "Схема цикла"],
+  "desk.people": ["People", "Участники"],
+  "desk.run": ["Run details", "Запуск подробно"],
+  "desk.run.actions": ["Step and document actions use this run's saved plan and journal. Answer current gates in Your console panel.",
+    "Действия с шагами и документами опираются на сохранённый план и журнал запуска. Отвечайте на текущие гейты в Вашем пульте."],
+  "desk.run.view_blocked": ["This project is open for viewing. Make it active to write.",
+    "Проект открыт для просмотра. Сделайте его активным для записи."],
+  "desk.run.not_ready": ["A current run read is required before writing.",
+    "Для записи нужно актуальное чтение запуска."],
+  "desk.run.updating": ["Updating the run's data…", "Обновляем данные запуска…"],
+  "desk.accept.heading": ["Accept into project", "Принять в проект"],
+  "desk.accept.no_run": ["Choose a run first.", "Сначала выберите запуск."],
+  "desk.accept.reading": ["Reading acceptance facts…", "Читаем факты принятия…"],
+  "desk.accept.failed": ["Acceptance facts could not be read.", "Не удалось прочитать факты принятия."],
+  "desk.accept.actor": ["Set your name in Your console before confirming.",
+    "Укажите своё имя в Вашем пульте перед подтверждением."],
+  "desk.accept.branch": ["New local branch", "Новая локальная ветка"],
+  "desk.accept.title": ["Commit title (leave blank for task title)",
+    "Заголовок коммита (пусто — название задачи)"],
+  "desk.accept.base": ["Base commit", "Базовый коммит"],
+  "desk.accept.author": ["Git author", "Автор Git"],
+  "desk.accept.digest": ["Acceptance digest", "Дайджест принятия"],
+  "desk.accept.files": ["Files in the commit", "Файлы коммита"],
+  "desk.accept.documents": ["Documents to include", "Документы для включения"],
+  "desk.accept.skipped": ["Excluded files", "Исключённые файлы"],
+  "desk.accept.warnings": ["Warnings", "Предупреждения"],
+  "desk.accept.message": ["Commit message", "Сообщение коммита"],
+  "desk.accept.patch": ["Patch", "Изменения"],
+  "desk.accept.truncated": ["Patch preview is truncated.", "Предпросмотр изменений обрезан."],
+  "desk.accept.preview": ["Read preview", "Показать предпросмотр"],
+  "desk.accept.open": ["Open acceptance details", "Открыть принятие подробно"],
+  "desk.accept.other": ["Other condition", "Другое условие"],
+  "desk.accept.state.added": ["Added", "Добавлен"],
+  "desk.accept.state.modified": ["Modified", "Изменён"],
+  "desk.accept.state.deleted": ["Deleted", "Удалён"],
+  "desk.accept.skip.ignored_by_project": ["Ignored by project rules", "Исключён правилами проекта"],
+  "desk.accept.skip.seed_skipped": ["Skipped during seeding", "Пропущен при засеве"],
+  "desk.accept.skip.agent_instructions": ["Agent instructions", "Инструкции агента"],
+  "desk.accept.skip.agent_git_dir": ["Agent Git directory", "Каталог Git агента"],
+  "desk.accept.warning.hooks_not_run": ["Git hooks will not run", "Хуки Git не будут запущены"],
+  "desk.accept.warning.signing_required": ["Commit signing is required", "Требуется подпись коммита"],
+  "desk.accept.warning.overlay_base": ["Result overlays the current base", "Результат накладывается на текущую базу"],
+  "desk.accept.warning.base_behind_head": ["Base is behind HEAD", "База позади HEAD"],
+  "desk.accept.warning.overlap_with_head": ["Result overlaps changes in HEAD", "Результат пересекается с изменениями HEAD"],
+  "desk.accept.warning.suspicious_name": ["Review sensitive file names", "Проверьте имена конфиденциальных файлов"],
+  "desk.accept.warning.long_path_checkout": ["Checkout may have a long path", "При переключении ветки возможен длинный путь"],
+  "desk.accept.warning.lfs_pointer": ["Result contains an LFS pointer", "Результат содержит указатель LFS"],
+  "desk.accept.warning.line_endings_changed": ["Line endings changed", "Изменились окончания строк"],
+  "desk.accept.review": ["Review confirmation", "Перейти к подтверждению"],
+  "desk.accept.confirm_text": ["Confirm local branch and commit for digest {digest} as {actor}. The current branch stays unchanged.",
+    "Подтвердите локальную ветку и коммит для дайджеста {digest} от имени {actor}. Текущая ветка не меняется."],
+  "desk.accept.commit_action": ["Create local branch and commit", "Создать локальную ветку и коммит"],
+  "desk.accept.commit": ["Created commit", "Созданный коммит"],
+  "desk.accept.cancel": ["Back to preview", "Вернуться к предпросмотру"],
+  "desk.accept.refresh": ["Read acceptance record", "Прочитать запись принятия"],
+  "desk.accept.working": ["Waiting for the server…", "Ждём ответ сервера…"],
+  "desk.accept.unknown_preview": ["Preview outcome is unknown. Read acceptance facts before trying again.",
+    "Исход предпросмотра неизвестен. Прочитайте факты принятия перед новой попыткой."],
+  "desk.accept.unknown_commit": ["Commit outcome is unknown. Read the acceptance record; do not repeat automatically.",
+    "Исход создания коммита неизвестен. Прочитайте запись принятия; автоматического повтора нет."],
+  "desk.decision.heading": ["Decision needed", "Нужно решение"],
+  "desk.decision.answer_in_pult": ["Answer this gate in Your console panel.",
+    "Ответьте на этот гейт в Вашем пульте."],
+  "desk.decision.writing": ["Recording this decision…", "Записываем решение…"],
+  "desk.people.empty": ["No provider list has been read yet.", "Список харнессов ещё не прочитан."],
+  "desk.people.loading": ["Reading harnesses…", "Читаем харнессы…"],
+  "desk.people.failed": ["Harnesses could not be read.", "Не удалось прочитать харнессы."],
+  "desk.quota.head": ["Harness limits", "Лимиты харнессов"],
+  "desk.quota.no_data": ["No data", "Нет данных"],
+  "desk.quota.remaining": ["Remaining", "Осталось"],
+  "desk.quota.lowest_remaining": ["Lowest remaining", "Наименьший остаток"],
+  "desk.quota.resets": ["Resets", "Сброс"],
+  "desk.quota.balance": ["Balance", "Баланс"],
+  "desk.quota.stale": ["Stale", "Устарело"],
+  "desk.quota.empty": ["Limits have not been read yet.", "Лимиты ещё не прочитаны."],
+  "desk.quota.loading": ["Reading limits…", "Читаем лимиты…"],
+  "desk.quota.failed": ["Limits could not be read.", "Не удалось прочитать лимиты."],
+  "desk.quota.disconnected": ["Limits are not current while disconnected.",
+    "Лимиты не актуальны, пока нет связи."],
+  "desk.quota.view_snapshot": ["Active project reads limits · snapshot {time}",
+    "Лимиты читает активный проект · снимок {time}"],
+  "desk.quota.view_empty": ["No data · active project reads limits",
+    "Нет данных · лимиты читает активный проект"],
+  "desk.connection.open": ["Up to date", "Данные обновлены"],
+  "desk.connection.connecting": ["Refreshing…", "Обновление…"],
+  "desk.connection.closed": ["Data not confirmed", "Данные не подтверждены"],
+  "desk.classic": ["Classic panel", "Прежняя панель"],
+  "desk.new_task": ["＋ New task", "＋ Новая задача"],
+  // -- the terminal state: an address that claims another project ------------------------
+  "desk.foreign": [
+    "This desk is open for another project. Reload the page to continue.",
+    "Стол открыт для другого проекта. Перезагрузите страницу, чтобы продолжить."],
+  "desk.reload": ["Reload", "Перезагрузить"],
+  // -- the plate of a project open for viewing (spec 5.8) ---------------------------------------
+  "desk.plate.view": [
+    "Preview · another project is running. Agents do not start here: tasks, materials, the "
+      + "cycle and the queue are recorded, the start belongs to the active project",
+    "Просмотр · в работе другой проект. Агенты здесь не запускаются: задачи, материалы, цикл и "
+      + "очередь записываются, старт — у активного проекта"],
+  // -- the names of the five regions, as a screen reader hears them --------------------
+  "desk.rail.label": ["Tasks", "Задачи"],
+  "desk.scene.label": ["Scene", "Сцена"],
+  "desk.feed.label": ["Progress", "Ход работы"],
+  "desk.summary.label": ["Summary", "Выжимка"],
+  "desk.pult.label": ["Your console", "Ваш пульт"],
+  // -- the rail ------------------------------------------------------------------------
+  "desk.rail.none": ["This project has no tasks yet.", "В проекте пока нет задач."],
+  "desk.rail.unreadable": ["Unreadable task", "Задача не читается"],
+  // -- the scene -----------------------------------------------------------------------
+  "desk.scene.choose": ["Choose a task to see its newest run.",
+    "Выберите задачу, чтобы увидеть её новейший запуск."],
+  "desk.scene.no_run": ["This task has no run yet.", "У этой задачи ещё нет запусков."],
+  "desk.scene.unknown_run": [
+    "The newest run of this task cannot be established: a run record cannot be read.",
+    "Новейший запуск задачи не установлен: одна из записей запусков не читается."],
+  "desk.scene.task_unreadable": ["This task cannot be read, so there is no run to show.",
+    "Задача не читается, показывать нечего."],
+  "desk.scene.subject": ["{task} · run {run}", "{task} · запуск {run}"],
+  // -- the console: the name of the person at this page (spec 5.2, the actor) ---------------
+  "desk.pult.actor": ["You: {name}", "Вы: {name}"],
+  "desk.pult.actor_none": ["You: name not given", "Вы: имя не указано"],
+  "desk.pult.actor_change": ["change", "изменить"],
+  "desk.pult.actor_set": ["set", "указать"],
+  "desk.pult.actor_label": ["Your name (it signs what is recorded in your name)",
+    "Ваше имя (оно подписывает записи от вашего имени)"],
+  "desk.pult.actor_save": ["Save", "Сохранить"],
+  "desk.pult.actor_cancel": ["Cancel", "Отмена"],
+  "desk.pult.actor_hint": [
+    "Use letters and digits, then dots, hyphens or underscores; up to 128 characters.",
+    "Латинские буквы и цифры, затем точки, дефисы или подчёркивания; до 128 знаков."],
+  // -- the console: the project queue (spec 4.4.8) ---------------------------------------
+  "desk.pult.queue": ["Project queue", "Очередь проекта"],
+  "desk.pult.slot_free": ["Now: nothing is running · the slot is free",
+    "Сейчас: ничего не идёт · слот свободен"],
+  "desk.pult.slot_busy": ["Now: {task} · holds the slot", "Сейчас: {task} · держит слот"],
+  "desk.pult.slot_stuck": ["Now: {task} · stopped and holds the slot",
+    "Сейчас: {task} · остановился и держит слот"],
+  "desk.pult.slot_unavailable": ["Now: the slot is unavailable", "Сейчас: слот недоступен"],
+  "desk.pult.queue_empty": ["Nothing is queued.", "В очереди ничего нет."],
+  "desk.pult.entry_start": ["{position}. {title} · starts on its own",
+    "{position}. {title} · начнётся сама"],
+  "desk.pult.entry_confirm": ["{position}. {title} · waits for your confirmation",
+    "{position}. {title} · ждёт вашего подтверждения"],
+  "desk.pult.entry_blocked": ["{position}. {title} · cannot start",
+    "{position}. {title} · не может начаться"],
+  "desk.pult.entry_queued": ["in the queue since {time}", "в очереди с {time}"],
+  // -- the console: the "continue after" block (spec 5.8, 4.3.4) -------------------------------
+  "desk.flag.head": ["Continue after", "Продолжить после"],
+  "desk.flag.switch": [
+    "When the project's turn in the queue comes, it becomes active by itself",
+    "Когда до проекта дойдёт очередь, он станет активным сам"],
+  "desk.flag.runs": ["Continue runs", "Продолжить запуски"],
+  "desk.flag.runs_none": ["No run is waiting to be continued.",
+    "Ни один запуск не ждёт продолжения."],
+  "desk.flag.expired": ["permission expired — a new confirmation of terms is needed",
+    "разрешение истекло — нужно новое подтверждение условий"],
+  "desk.flag.queue": ["The task queue starts by itself", "Очередь задач стартует сама"],
+  "desk.flag.queue_note": [
+    "entries start on their own pre-authorizations; the terms are checked again",
+    "записи очереди начнутся по своим предразрешениям; условия сверяются заново"],
+  "desk.flag.standing": ["Flag set since {time} · {actor}", "Флаг стоит с {time} · {actor}"],
+  "desk.flag.consumed": ["Flag executed on activation {time} · {actor}",
+    "Флаг исполнен при активации {time} · {actor}"],
+  "desk.flag.changed": ["Flag not applied: the run changed after it",
+    "Флаг не применён: после него запуск изменился"],
+  "desk.flag.need_name": ["Give your name above to record the flag in it.",
+    "Укажите имя выше, чтобы записать флаг от вашего имени."],
+  "desk.flag.save": ["Save", "Сохранить"],
+  "desk.flag.clear": ["Remove the flag", "Снять флаг"],
+  "desk.flag.unknown": [
+    "The save could not be confirmed. The line above is what the server holds.",
+    "Запись не удалось подтвердить. Строка выше — то, что хранит сервер."],
+  "desk.flag.info": ["What the flag does", "Что делает флаг"],
+  "desk.flag.help": [
+    "When the project starts as the active one, the marked runs continue in your name, marked "
+      + "“by the continue flag”, one per free slot in the order of the list; the others wait for "
+      + "your “Continue”. The flag is executed once: on activation it is spent and the project "
+      + "leaves the queue. To put the project in the queue again, set the flag again.",
+    "При старте проекта в активном режиме отмеченные запуски продолжатся от вашего имени с "
+      + "отметкой «по флагу продолжения», по одному на свободный слот в порядке списка; "
+      + "остальные ждут вашего «Продолжить». Флаг исполняется один раз: при активации он "
+      + "гасится, и проект уходит из очереди. Чтобы проект снова встал в очередь, флаг ставят "
+      + "заново."],
+  // -- the console: a project in view (spec 4.4.8, 5.8) ------------------------------------
+  "desk.pult.inactive": [
+    "Project not active · the queue starts when the project becomes active",
+    "Проект не активен · очередь начнётся, когда проект станет активным"],
+  "desk.pult.flag": [
+    "Entries start by themselves after activation only if the project has “continue after” "
+      + "set with the task queue. Otherwise we ask you again after activation.",
+    "Записи начнутся сами после активации, только если у проекта стоит «продолжить после» "
+      + "с очередью задач. Иначе после активации спросим вас снова."],
+});

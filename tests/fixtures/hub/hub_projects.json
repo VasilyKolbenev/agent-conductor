@@ -1,0 +1,217 @@
+{
+  "route": "GET /hub/projects",
+  "status": 200,
+  "response": {
+    "computed_at": "2026-09-29T10:00:00Z",
+    "active_project_id": "3f9c0d5a7b2e4c168a90d3e1f4b7a625",
+    "project_queue": ["8a41b6e2c9d04f7385e1a2b6c0d94f13"],
+    "projects_home": {"state": "default", "name": "ConductProjects"},
+    "projects": [
+      {
+        "project_id": "3f9c0d5a7b2e4c168a90d3e1f4b7a625",
+        "name": "web-app",
+        "folder": "web-app",
+        "source": "folder",
+        "repo": null,
+        "state": "running",
+        "working": "active",
+        "mode": "active",
+        "queue_position": null,
+        "stopped_at": null,
+        "resume_run_id": null,
+        "auto_continue": null,
+        "state_code": null,
+        "drain_deadline": null,
+        "instance": "b71e4d09c2a84f35a6d81c0e9f3b5274",
+        "desk_url": "http://127.0.0.1:7701/panel/desk.html",
+        "data": "live",
+        "snapshot_at": null,
+        "tasks": [
+          {
+            "task": {
+              "created_at": "2026-09-29T09:10:00Z",
+              "schema_version": 1,
+              "task_id": "task-001",
+              "title": "Fix the payment form",
+              "unreadable": false,
+              "work_scope": "task-001"
+            },
+            "run": {
+              "created_at": "2026-09-29T09:12:00Z",
+              "cycle_id": "default-orbit",
+              "envelope_status": "created",
+              "graph_id": "graph-001",
+              "human_state": "not_required",
+              "last_outcome": null,
+              "mode": "policy",
+              "open_actions": 1,
+              "revision": 1,
+              "run_id": "run-001",
+              "task_id": "task-001",
+              "undecided_gates": 0,
+              "unreadable": false,
+              "workflow_id": "desk-standard"
+            },
+            "automation": {
+              "state": "running",
+              "reason_code": "action_in_flight",
+              "expires_at": "2026-09-29T11:12:00Z"
+            },
+            "attention": null
+          },
+          {
+            "task": {
+              "created_at": "2026-09-29T09:30:00Z",
+              "schema_version": 1,
+              "task_id": "task-002",
+              "title": "Add a dark theme",
+              "unreadable": false,
+              "work_scope": "task-002"
+            },
+            "run": {
+              "created_at": "2026-09-29T09:35:00Z",
+              "cycle_id": "default-orbit",
+              "envelope_status": "created",
+              "graph_id": "graph-002",
+              "human_state": "required",
+              "last_outcome": null,
+              "mode": "policy",
+              "open_actions": 0,
+              "revision": 1,
+              "run_id": "run-002",
+              "task_id": "task-002",
+              "undecided_gates": 1,
+              "unreadable": false,
+              "workflow_id": "desk-standard"
+            },
+            "automation": {
+              "state": "waiting",
+              "reason_code": "plan_waiting",
+              "expires_at": "2026-09-29T11:35:00Z"
+            },
+            "attention": {
+              "reasons": [
+                {"reason": "gate_decision", "count": 1, "sources": ["review"]}
+              ],
+              "gates": [{"node_id": "review", "gate_id": "gate-review"}],
+              "runtime": [{"node_id": "do", "opened_by": ["proposal-002"]}],
+              "journal": [
+                {
+                  "record_type": "action_proposal",
+                  "instant": "2026-09-29T09:50:00Z",
+                  "action_id": null,
+                  "node_id": "do",
+                  "proposal_id": "proposal-002"
+                }
+              ],
+              "observed_at": "2026-09-29T10:00:00Z",
+              "unreadable": false
+            }
+          }
+        ],
+        "task_queue": null
+      },
+      {
+        "project_id": "8a41b6e2c9d04f7385e1a2b6c0d94f13",
+        "name": "landing",
+        "folder": "landing",
+        "source": "github",
+        "repo": "octocat/landing",
+        "state": "stopped",
+        "working": "queued",
+        "mode": null,
+        "queue_position": 1,
+        "stopped_at": "2026-09-29T08:40:00Z",
+        "resume_run_id": "run-004",
+        "auto_continue": {
+          "schema_version": 2,
+          "flag_id": "5b0f7c2e-9a41-4d68-8e3b-1c7f2a9d4e60",
+          "revision": 3,
+          "enabled": true,
+          "actor": "Anna",
+          "set_at": "2026-09-29T08:41:00Z",
+          "resume_runs": [
+            {
+              "run_id": "run-004",
+              "authorization_id": "grant-004",
+              "authorization_digest": "sha256:6e0c41b9d7a2385f1c94e0b6a7d3258f9e1c4b70a5d2836f0b91e4c7a3d5f826",
+              "last_control_id": null
+            }
+          ],
+          "start_task_queue": true,
+          "consumed": null
+        },
+        "state_code": null,
+        "drain_deadline": null,
+        "instance": null,
+        "desk_url": null,
+        "data": "snapshot",
+        "snapshot_at": "2026-09-29T08:40:00Z",
+        "tasks": [
+          {
+            "task": {
+              "created_at": "2026-09-29T07:55:00Z",
+              "schema_version": 1,
+              "task_id": "task-001",
+              "title": "Speed up the hero image",
+              "unreadable": false,
+              "work_scope": "task-001"
+            },
+            "run": {
+              "created_at": "2026-09-29T08:00:00Z",
+              "cycle_id": "default-orbit",
+              "envelope_status": "created",
+              "graph_id": "graph-004",
+              "human_state": "not_required",
+              "last_outcome": null,
+              "mode": "policy",
+              "open_actions": 0,
+              "revision": 1,
+              "run_id": "run-004",
+              "task_id": "task-001",
+              "undecided_gates": 0,
+              "unreadable": false,
+              "workflow_id": "desk-standard"
+            },
+            "automation": {
+              "state": "restart_required",
+              "reason_code": "explicit_resume_required",
+              "expires_at": "2026-09-29T12:00:00Z"
+            },
+            "attention": null
+          }
+        ],
+        "task_queue": null
+      },
+      {
+        "project_id": "c7d2e19f4a3b485c9e60f1a2b3c4d5e6",
+        "name": "bot",
+        "folder": "idea-bot",
+        "source": "scratch",
+        "repo": null,
+        "state": "stopped",
+        "working": "stopped",
+        "mode": null,
+        "queue_position": null,
+        "stopped_at": "2026-09-28T17:30:00Z",
+        "resume_run_id": null,
+        "auto_continue": null,
+        "state_code": null,
+        "drain_deadline": null,
+        "instance": null,
+        "desk_url": null,
+        "data": "none",
+        "snapshot_at": null,
+        "tasks": [],
+        "task_queue": null
+      }
+    ],
+    "unlisted_closing": [
+      {
+        "project_id": "e5f60718293a4b6c8d9e0f1a2b3c4d5e",
+        "since": "2026-09-29T08:30:00Z",
+        "action": "relist"
+      }
+    ]
+  }
+}

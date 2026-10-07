@@ -1,0 +1,85 @@
+{
+  "terms": {
+    "run_id": "task-bench-r1",
+    "contract": "bounded-run-v1",
+    "config_digest": "sha256:c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00",
+    "graph_digest": "sha256:90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef90abcdef",
+    "provider_config_digest": "sha256:1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d1a2b3c4d",
+    "source_prefix_digest": "sha256:7c8d9e0f7c8d9e0f7c8d9e0f7c8d9e0f7c8d9e0f7c8d9e0f7c8d9e0f7c8d9e0f",
+    "node_limits": [
+      {"node_id": "analyst", "timeout_seconds": 1800, "max_attempts": 1},
+      {"node_id": "do", "timeout_seconds": 1800, "max_attempts": 3}
+    ],
+    "instruction_bindings": [
+      {"node_id": "do", "artifact_id": "doc-0ddba11a0ddba11a0ddba11a0ddba11a",
+       "content_digest": "sha256:0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a0ddba11a"}
+    ],
+    "initial_input_bindings": [
+      {"artifact_ref": "artifact-brief", "artifact_id": "doc-0badf00d0badf00d0badf00d0badf00d",
+       "content_digest": "sha256:0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d0badf00d"},
+      {"artifact_ref": "artifact-materials", "artifact_id": "doc-0defaced0defaced0defaced0defaced",
+       "content_digest": "sha256:0defaced0defaced0defaced0defaced0defaced0defaced0defaced0defaced"}
+    ],
+    "max_actions": 4,
+    "max_action_seconds": 3600,
+    "max_total_task_seconds": 12600,
+    "concurrency": 1,
+    "failure_handling": "explicit-failure-route-only",
+    "duration_seconds": 10800
+  },
+  "preview_digest": "sha256:feed5eedfeed5eedfeed5eedfeed5eedfeed5eedfeed5eedfeed5eedfeed5eed",
+  "previewed_at": "2026-09-29T10:00:00Z",
+  "provider_facts": {
+    "providers": [
+      {"config": {"provider_id": "claude-code", "executable": "claude", "protocol": "claude-code-v1",
+                  "env_allow": ["PATH"], "entrypoint": "claude_code:ClaudeCodeAdapter",
+                  "auth": "subscription", "auth_home": ".claude-home"},
+       "contract": {"provider_id": "claude-code", "display_name": "Claude Code (headless, experimental)",
+                    "vendor": "anthropic", "version": "2.1.90", "capabilities": ["dispatch", "review"],
+                    "schema_pairs": [], "lifecycle": ["observe", "prepare", "execute", "verify"],
+                    "availability": "available", "available": true,
+                    "implementation": "real_experimental", "auth": "subscription",
+                    "vendor_sandbox": null},
+       "manifest": {"adapter_id": "claude-code", "display_name": "Claude Code (headless, experimental)",
+                    "vendor": "anthropic", "version": "2.1.90", "capabilities": ["dispatch", "review"],
+                    "docs_url": "https://example.invalid/claude-code"},
+       "transport": {"task_channel": "stdin"},
+       "output_limits": {"stdout": 1048576},
+       "file_budget": 5000,
+       "input_limits": {"frame": 1048576, "stdin": 1048576, "instruction": 49152},
+       "task_channel": {"channel": "stdin", "limit": 1048576, "unit": "utf8_bytes", "scope": "task"}}
+    ]
+  },
+  "valid_until": "2026-09-29T10:05:00Z",
+  "budget": {
+    "limits": {"max_actions": 8, "max_action_seconds": 3600, "max_total_task_seconds": 28800},
+    "clean": {"actions": 2, "seconds": 5400},
+    "worst": {"actions": 4, "seconds": 12600},
+    "steps": [
+      {"step_id": "analyst", "attempts": 1, "timeout_seconds": 1800, "reserve_seconds": 1800,
+       "clamped": false},
+      {"step_id": "do", "attempts": 3, "timeout_seconds": 1800, "reserve_seconds": 3600,
+       "clamped": false}
+    ],
+    "terms_draft": {
+      "node_limits": [
+        {"node_id": "analyst", "timeout_seconds": 1800, "max_attempts": 1},
+        {"node_id": "do", "timeout_seconds": 1800, "max_attempts": 3}
+      ],
+      "max_actions": 4,
+      "max_action_seconds": 3600,
+      "max_total_task_seconds": 12600,
+      "duration_seconds": 10800
+    },
+    "spent": {
+      "actions": 2,
+      "seconds": 5400,
+      "attempts": [{"step_id": "analyst", "attempts": 1}, {"step_id": "do", "attempts": 1}]
+    },
+    "exhausted": false,
+    "inputs": {
+      "instructions": [{"step_id": "do", "instruction_ref": "instruction-do"}],
+      "documents": ["artifact-brief", "artifact-materials"]
+    }
+  }
+}

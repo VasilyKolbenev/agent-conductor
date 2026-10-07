@@ -1,0 +1,732 @@
+"""Source-level contract for the modules that WIRE the Studio together.
+
+`test_studio_source.py` holds the whole package to one shape -- the line cap,
+the layering, the sealed API list and the shell's frozen ids. This module holds
+the integrator's own files to what only they can be held to:
+
+* the reducer touches no DOM and no wire, so a rule about the SCREEN can never
+  quietly become a rule about the browser it is running in;
+* the view writes DOM and never reaches the network, so the one module that can
+  write a durable record stays the one module a reader has to audit for it;
+* the transport module is that one module (the doors left the boot module for
+  it, and the boot module now holds none), and it is pinned by COUNT rather
+  than by presence: a second `fetch(` is a second door, and a door nobody
+  counted is a door nobody reviewed;
+* the mounting modules and the shell agree about ids, vocabularies and state
+  words by construction rather than by three people remembering the same table.
+
+Two guards here read source text and are change-detectors rather than proofs;
+both say so in their own names. Everything else is a relation between two
+artifacts, so it reds when either side moves.
+
+The DOM ban is spelled the way `test_studio_source` spells it and for the same
+reason: this window's wire carries a key literally named ``document`` -- a
+workflow draft is one -- so what is banned is every way the GLOBAL is used, and
+the reducer reads that key into a local rather than through a member chain that
+would be indistinguishable from it.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from tests.test_graph_source import _code
+
+ROOT = Path(__file__).resolve().parents[1]
+PANEL = ROOT / "src" / "conductor" / "panel"
+HTML = PANEL / "studio.html"
+STORE = PANEL / "studio-store.js"
+#: The edit vocabulary and its arms moved here when the reducer reached the line
+#: cap. The three copies below are still held equal; what changed is which file
+#: the reducer's copy lives in.
+EDITS = PANEL / "studio-edits.js"
+VIEW = PANEL / "studio-view.js"
+#: The form that opens a run left the shell view when that file reached the line
+#: cap. It is the same SURFACE -- a module handed a state and a handler table
+#: that answers with DOM -- so every guard below that is about what the view may
+#: touch reads both files rather than the one the code used to live in.
+RUNFORM = PANEL / "studio-runform.js"
+#: What the view builds a run form out of, and what the Overview's readiness
+#: card asks the same question with. Both are read out of the module below by
+#: name, so the split cannot quietly leave the view importing neither.
+SHELL = PANEL / "studio-shell.js"
+PREFERENCES = PANEL / "studio-preferences.js"
+I18N = PANEL / "studio-i18n.js"
+VIEW_SURFACE = (VIEW, RUNFORM, SHELL, PREFERENCES)
+BOOT = PANEL / "studio.js"
+#: The wire doors -- the read door, the mutation door, the stream and the
+#: session token -- left the boot module for this one, so the desk can be built
+#: on the same doors. What a door's answer MEANS stays in the boot module.
+TRANSPORT_MODULE = PANEL / "desk-transport.js"
+CANVAS = PANEL / "studio-canvas.js"
+INSPECTOR = PANEL / "studio-inspector.js"
+#: The inspector's controls and its copy of the edit vocabulary moved here when
+#: that module reached the line cap. The three copies are still held equal.
+SECTIONS = PANEL / "studio-sections.js"
+#: The field primitives, split off the sections when THAT module reached the
+#: cap. It carries `commit` -- the one writer of a `set-field` edit -- so it is
+#: exactly the file a fourth copy of the vocabulary would appear in.
+FIELDS = PANEL / "studio-fields.js"
+#: Inputs and outputs, split off the sections before THAT module reached the cap
+#: a second time. It builds controls like its neighbour, so it is exactly as
+#: eligible to grow a fourth copy of the edit vocabulary, and is read below for
+#: that reason.
+ARTIFACTS = PANEL / "studio-artifacts.js"
+RUNS = PANEL / "studio-runs.js"
+PEOPLE = PANEL / "studio-people.js"
+#: The files this slice owns. Every guard below iterates this tuple, so a new
+#: file cannot join the integrator without passing all of them -- which is what
+#: `studio-runform.js` did when the shell view reached the line cap.
+#: The step road's four callbacks, split off the boot module when THAT file
+#: reached the line cap. It is the integrator's own surface -- it is handed the
+#: mutation door and decides what a press means -- so every guard below reads
+#: it too, and the transport ban is the one that pays: a module that could
+#: reach the socket itself would be a second door nobody counted.
+RUNWRITE = PANEL / "studio-runwrite.js"
+#: The focus net under every render pass, split off the boot module at the same
+#: cap. It is render machinery and reaches no socket, and it stays on this list
+#: so the transport ban keeps reading code that left the boot module.
+FOCUS = PANEL / "studio-focus.js"
+TASKFLOW = PANEL / "studio-taskflow.js"
+MOUNTS = PANEL / "studio-mounts.js"
+QUOTAFLOW = PANEL / "studio-quotaflow.js"
+AUTOMATION = PANEL / "studio-automation-flow.js"
+WORKFLOWWRITE = PANEL / "studio-workflowwrite.js"
+MINE = (AUTOMATION, WORKFLOWWRITE, SHELL, PREFERENCES, I18N, STORE, VIEW, RUNFORM,
+        RUNWRITE, FOCUS, BOOT, TRANSPORT_MODULE, TASKFLOW, MOUNTS, QUOTAFLOW)
+LINE_CAP = 800
+
+#: The frontend contract's "May import" column for these rows, verbatim. It is
+#: a PERMISSION table: a module that has not needed one of its neighbours is not
+#: a fault, and one reaching for a neighbour it was never granted is.
+PERMITTED = {
+    "studio-automation-flow.js": frozenset({"./studio-automation-model.js"}),
+    "studio-workflowwrite.js": frozenset({"./studio-model.js", "./studio-store.js", "./command-projection.js"}),
+    "studio-mounts.js": frozenset(),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                        "./desk-hash.js"}),
+    "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
+    "studio-quotaflow.js": frozenset(),
+    "studio-taskflow.js": frozenset({"./studio-tasks-model.js", "./studio-taskruns.js"}),
+    "studio-store.js": frozenset({"./studio-draft.js", "./studio-model.js", "./studio-runread.js",
+                                  "./studio-situation.js",
+                                  "./studio-quotas-model.js",
+                                  "./studio-tasks-model.js",
+                                  "./studio-controls.js",
+                                  "./studio-review.js", "./studio-edits.js",
+                                  "./studio-rundraft.js",
+                                  "./studio-runwrites.js",
+                                  "./studio-toolbardraft.js"}),
+    "studio-view.js": frozenset({"./command-view.js", "./command-projection.js",
+                                 "./studio-model.js", "./studio-runform.js",
+                                 "./studio-shell.js", "./studio-i18n.js", "./studio-taskruns.js"}),
+    #: The run form sits BELOW the view and never reaches back up: the view
+    #: imports it, and a permission to import the view is what would let the
+    #: pair close into a cycle, so it is not granted.
+    "studio-runform.js": frozenset({"./studio-i18n.js", "./command-view.js", "./studio-model.js"}),
+    #: `studio-runwrite.js` joined the row when the step road's four callbacks
+    #: left this file at the line cap. The boot module builds them, handing
+    #: over its own `write` and nothing else; it does not import the step
+    #: control itself, which is the screen's business rather than the wire's.
+    "studio.js": frozenset({"./desk-transport.js", "./studio-workflowwrite.js", "./studio-automation.js", "./studio-automation-flow.js",
+        "./command-view.js", "./command-projection.js", "./studio-model.js",
+        "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
+        "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
+        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js",
+        "./studio-taskflow.js", "./studio-mounts.js", "./studio-quotaflow.js",
+        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js"}),
+    #: What a press MEANS, and the whole of what it may reach: the two
+    #: fragments' own sentences and keys, nothing else.
+    "studio-runwrite.js": frozenset({"./studio-runstep.js",
+                                     "./studio-rundocs.js"}),
+    #: The focus net imports nothing: it reads the focused control and puts
+    #: focus back, and a neighbour it could reach would be a second opinion.
+    "studio-focus.js": frozenset(),
+    #: The wire doors translate a refusal and reach no screen, store or copy.
+    "desk-transport.js": frozenset({"./command-projection.js"}),
+}
+IMPORTS = r'from "(\./[a-z-]+\.js)";'
+
+#: Banned in all three, markup case-folded away first.
+SEALED = ("innerhtml", "outerhtml", "insertadjacenthtml", "localstorage",
+          "sessionstorage", "document.cookie", "console.", "eval(",
+          "new function(", "import(", "importscripts", "xmlhttprequest",
+          "websocket", "webtransport", "rtcpeerconnection", "sendbeacon")
+#: Every way a module reaches the DOM or the global object.
+DOM_FORMS = ("document.", "document[", "window.", "globalThis.", "self.",
+             "getelementbyid", "queryselector", "createelement",
+             "createtextnode", "addeventlistener", "appendchild",
+             "textcontent", "classlist", "dispatchevent")
+#: Banned everywhere but the boot module.
+TRANSPORT = ("fetch(", "eventsource", "navigator.", "settimeout(",
+             "setinterval(")
+#: What the boot module carries, exactly. A door is counted, not merely
+#: permitted: a second `fetch(` is a second door, and one nobody counted is one
+#: nobody reviewed.
+DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
+#: The seven targets the one mutation door may name. `proposals` and `actions`
+#: joined when a planned run became drivable from the Runs screen, and
+#: `artifacts` when a document could be published from it; each joined the
+#: DOOR rather than opening one of its own: the counts above are unchanged, so
+#: every road goes through the same `fetch(`, the same token header and the
+#: same refusal vocabulary as the four before them.
+#: `materials` joined when lane L's route `POST /command/runs/<run_id>/materials` landed
+#: (spec 6.2.3, route-canon 3), and `autoContinue` for the continue-after flag (spec 4.3.4, lane
+#: H's route, written by the block of spec 5.8), and `queue`, `queueOrder` and `queueWithdraw` for
+#: the project queue of the Pult (spec 4.4.8, lane L's route-canon 4): each one more name on the
+#: same door, the counts unchanged.
+WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
+                           "proposals", "actions", "artifacts", "tasks",
+                           "automationPreview", "automationAuthorize", "automationControl",
+                           "materials", "autoContinue", "seed", "flow", "queue",
+                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit"})
+#: Which of them are about a RUN and are therefore gated on the STREAM rather
+#: than on a workflow's readiness. Held as a subset of the targets above, so a
+#: word can never be gated by a list that does not name it.
+RUN_SCOPED = frozenset({"decisions", "proposals", "actions", "artifacts", "tasks",
+                           "automationPreview", "automationAuthorize", "automationControl"})
+#: Ids `studio.html` declares that nothing mounts into BY NAME, and why. Each
+#: is a container the stylesheet owns; a new id that mounts nothing must be
+#: argued for here rather than left unnoticed. The five nav buttons are not on
+#: this list: they are reached as a GROUP through the tablist, which is what
+#: makes their number the markup's fact rather than a list kept in two places.
+STRUCTURAL_IDS = frozenset({
+    "studioShell",      # the outer frame, reached once by the boot module
+    "studioHeader",     # a layout row; its three slots are what is written
+    "studioMain",       # the screen well; the screens inside it are written
+    "studioWorkspace",  # central layout column; the five child screens are mounts
+    "workflowCanvas",   # the pan/zoom viewport; the canvas draws in its layers
+})
+#: How the boot module reaches every nav button at once.
+TABLIST_QUERY = 'byId("studioNav").querySelectorAll("[data-screen]")'
+#: The seven words a screen container may stand in.
+SCREEN_STATES = frozenset({"empty", "loading", "ready", "stale", "refused",
+                           "failed", "disconnected"})
+#: Where a token may be read, and the sinks it may never meet on one line.
+TOKEN_NAMES = ("csrfToken", "csrf_token", "session.token")
+TOKEN_SINKS = ("textContent", "setAttribute", "element(", "dataset",
+               "localStorage", "sessionStorage", "cookie", "encodeURIComponent",
+               "querySelector", "append(", "/command", "?", "location.")
+
+
+def _expressions(source: str) -> str:
+    """This code with string LITERALS blanked and interpolations kept.
+
+    The DOM and transport guards are about a GLOBAL being used, and a global is
+    used through an identifier -- never inside a quoted sentence. Reading the
+    raw text made ``window.`` in "Live changes reach this window." indis-
+    tinguishable from ``window.fetch``: the guard reds on an honest sentence and
+    a rewrite that avoids the word buys nothing. So the sentences come out and
+    the expressions stay, INCLUDING the ``${...}`` of a template literal, which
+    is code that happens to sit inside quotes.
+    """
+    out: list[str] = []
+    at, end = 0, len(source)
+    while at < end:
+        char = source[at]
+        if char in "\"'":
+            at = _past_quoted(source, at + 1, char, end) + 1
+            out.append('""')
+            continue
+        if char == "`":
+            at = _past_template(source, at + 1, end, out)
+            out.append('""')
+            continue
+        out.append(char)
+        at += 1
+    return "".join(out)
+
+
+def _past_quoted(source: str, at: int, quote: str, end: int) -> int:
+    """The index of the closing quote, honouring one level of backslash escape."""
+    while at < end and source[at] != quote:
+        at += 2 if source[at] == "\\" else 1
+    return at
+
+
+def _past_template(source: str, at: int, end: int, out: list[str]) -> int:
+    """The index past a template literal, appending each ``${...}`` it carries.
+
+    Split out of `_expressions` so neither reader nests past the project's
+    four-level limit -- and because "where does this literal end" and "what code
+    is embedded in it" really are two questions.
+    """
+    while at < end:
+        if source[at] == "\\":
+            at += 2
+            continue
+        if source[at] == "$" and source[at + 1:at + 2] == "{":
+            at += 2
+            start, depth = at, 1
+            while at < end and depth:
+                depth += {"{": 1, "}": -1}.get(source[at], 0)
+                at += 1
+            out.append(source[start:at - 1])
+            continue
+        if source[at] == "`":
+            return at + 1
+        at += 1
+    return at
+
+
+def _ids(path: Path) -> set[str]:
+    return set(re.findall(r'id="([A-Za-z0-9_-]+)"', path.read_text(encoding="utf-8")))
+
+
+def _frozen_list(source: str, name: str) -> list[str]:
+    body = re.search(rf"{name} = Object\.freeze\(\s*\[(.*?)\]\)", source, re.DOTALL)
+    assert body, name
+    return re.findall(r'"([A-Za-z0-9_-]+)"', body.group(1))
+
+
+def _frozen_keys(source: str, name: str) -> set[str]:
+    body = re.search(rf"{name} = Object\.freeze\(\{{(.*?)\n\}}\)", source, re.DOTALL)
+    assert body, name
+    return set(re.findall(r"^\s{2}([a-z_]+):", body.group(1), re.MULTILINE))
+
+
+def test_the_comment_stripper_keeps_this_slice_s_code_and_drops_its_prose():
+    """Every guard below reads `_code`, so `_code` is proven on THESE files.
+
+    A stripper that ate one of them would turn each of those guards green while
+    proving nothing -- and these three are written in a different comment style
+    from the graph window's, so they are a different input to it.
+    """
+    boot = _code(BOOT)
+    assert "const stream = openStream();" in boot
+    assert "// Boot and router for the Workflow Studio" not in boot
+    assert len(boot.splitlines()) > 300, "the stripper removed running code"
+    store = _code(STORE)
+    assert "export function reduce(state, event) {" in store
+    assert "//: The seven words a screen container may stand in" not in store
+
+
+def test_the_expression_reader_keeps_the_code_and_drops_the_sentences():
+    """The instrument every DOM and transport guard below reads, calibrated.
+
+    An auditor that answered "" for every file would turn each of those guards
+    green while proving nothing, and one that kept quoted prose would red on a
+    sentence about a window. It is proven on a known case both ways here,
+    including the one shape that matters: code inside a template literal is
+    code, and it survives.
+    """
+    kept = _expressions('const a = "reach this window."; window.x = `${b.c}`;')
+    assert "window.x" in kept and "b.c" in kept
+    assert "reach this" not in kept
+    view = _expressions(_code(SHELL))
+    assert "export function mountShell(mounts, state, handlers) {" in view
+    assert "Live changes reach this window." not in view
+    assert len(view.splitlines()) == len(_code(SHELL).splitlines())
+
+
+def test_every_file_the_integrator_owns_sits_in_the_panel_under_the_line_cap():
+    for path in MINE:
+        assert path.is_file() and path.parent == PANEL, path
+        lines = len(path.read_text(encoding="utf-8").splitlines())
+        assert lines <= LINE_CAP, f"{path.name} is {lines} lines"
+
+
+def test_they_import_only_what_the_contract_grants_them_and_make_no_cycle():
+    """The layering, spelled as permissions, with acyclicity COMPUTED.
+
+    A permission table alone would allow a cycle the moment two modules were
+    both permitted each other, so the edges that are really there are walked.
+    """
+    edges: dict[str, set[str]] = {}
+    for path in MINE:
+        found = set(re.findall(IMPORTS, path.read_text(encoding="utf-8")))
+        assert found <= PERMITTED[path.name], (
+            path.name, sorted(found - PERMITTED[path.name]))
+        edges[path.name] = {target[2:] for target in found}
+    seen: set[str] = set()
+    stack: set[str] = set()
+
+    def walk(node: str) -> None:
+        assert node not in stack, f"import cycle through {node}"
+        if node in seen or node not in edges:
+            return
+        stack.add(node)
+        for target in sorted(edges[node]):
+            walk(target)
+        stack.discard(node)
+        seen.add(node)
+
+    for name in edges:
+        walk(name)
+
+
+def test_the_reducer_reaches_no_dom_and_no_wire():
+    """`studio-store.js` is handed a payload and answers with a value.
+
+    The bare word ``document`` is not what is banned and cannot be: a workflow
+    draft IS one, and the reducer carries the key by that name. Every way the
+    GLOBAL is used is banned instead, which is the relation this is after -- and
+    it holds only because the reducer reads that key into a local rather than
+    through a member chain no guard could tell from the global's.
+    """
+    source = _expressions(_code(STORE)).lower()
+    for forbidden in DOM_FORMS:
+        assert forbidden not in source, forbidden
+    for forbidden in TRANSPORT:
+        assert forbidden not in source, forbidden
+
+
+def test_the_view_writes_dom_through_the_builder_and_never_reaches_the_wire():
+    """The shell chrome builds nodes through `command-view.element` alone.
+
+    Banning the DOM globals here is not decoration: a module that can reach
+    `document` can reach `document.cookie`, and one that reaches the network
+    can write a durable record from a screen nobody audits for it.
+
+    Read over the whole view SURFACE rather than over one file. The claim is
+    about what the view may touch, and the run form is the view -- so a guard
+    that kept reading `studio-view.js` alone would have stopped covering the
+    code the moment it moved next door, which is precisely when a split is at
+    its most dangerous.
+    """
+    for path in VIEW_SURFACE:
+        source = _expressions(_code(path)).lower()
+        for forbidden in TRANSPORT:
+            assert forbidden not in source, (path.name, forbidden)
+        for forbidden in ("document.", "window.", "globalthis."):
+            assert forbidden not in source, (path.name, forbidden)
+        assert 'from "./command-view.js"' in path.read_text(encoding="utf-8")
+
+
+def test_the_wire_doors_are_the_transport_module_and_it_carries_exactly_these_doors():
+    """One transport module, and its doors counted rather than merely allowed.
+
+    The doors moved out of the boot module and the counts did not change. The
+    boot module may still carry a word of the list -- a timer of its own, the
+    reader's language -- but it carries no door: everything it sends or
+    receives goes through the transport module, so the count there is the
+    count of every door there is.
+    """
+    homes = (BOOT, TRANSPORT_MODULE)
+    quiet = _expressions(_code(*(path for path in MINE if path not in homes))).lower()
+    for forbidden in TRANSPORT:
+        assert forbidden not in quiet, forbidden
+    door, boot = _code(TRANSPORT_MODULE), _code(BOOT)
+    for name, count in DOOR_COUNTS:
+        assert door.count(name) == count, (name, door.count(name))
+        assert boot.count(name) == 0, (name, boot.count(name))
+
+
+def test_none_of_the_files_the_integrator_owns_reaches_a_sealed_api():
+    everything = _code(*MINE).lower()
+    for forbidden in SEALED:
+        assert forbidden not in everything, forbidden
+
+
+def test_every_id_the_boot_module_mounts_into_is_one_the_shell_declares():
+    """Derived from `studio.html`, in both directions.
+
+    Read out of the markup rather than copied here: a hand-written list would
+    agree with a shell that had been renamed underneath it. The reverse
+    direction is the one that pays -- an id the shell declares and nothing
+    mounts into is dead markup, so it must be argued for in STRUCTURAL_IDS.
+    """
+    boot = _code(BOOT, MOUNTS)
+    declared = _ids(HTML)
+    mounted = set(re.findall(r'byId\("([A-Za-z0-9_-]+)"\)', boot))
+    assert mounted, "the boot module names no mount at all"
+    assert mounted <= declared, sorted(mounted - declared)
+    # The nav buttons are reached as a group, and the query that reaches them
+    # is asserted rather than assumed -- otherwise "reached as a group" would
+    # excuse five ids nothing touches.
+    assert TABLIST_QUERY in boot
+    nav = {name for name in declared if name.startswith("nav")}
+    assert len(nav) == 5, sorted(nav)
+    accounted = mounted | nav | STRUCTURAL_IDS
+    assert declared == accounted, sorted(declared ^ accounted)
+
+
+def test_the_boot_module_names_one_mount_per_screen_and_per_state_line():
+    """Five screens, five state lines, five nav buttons -- and no sixth.
+
+    The shell's own markup is the authority on how many there are, so a screen
+    added to it without a mount here reds rather than rendering nothing.
+    """
+    declared = _ids(HTML)
+    screens = {name for name in declared if name.startswith("screen")}
+    states = {name for name in declared if name.startswith("state")
+              and name != "studioStatus"}
+    boot = _code(BOOT, MOUNTS)
+    assert len(screens) == 5 and len(states) == 5
+    for name in screens | states:
+        assert f'byId("{name}")' in boot, name
+    html = HTML.read_text(encoding="utf-8")
+    assert set(re.findall(r'data-state="([a-z]+)"', html)) <= SCREEN_STATES
+
+
+def test_the_mutation_door_names_exactly_its_reviewed_write_targets():
+    """One door, one closed list, and every name on it a real path.
+
+    The list is what makes a write to anything else unrepresentable rather
+    than screened out afterwards, so it is held against the path table beside
+    it: a target with no path could never have been reachable, and a path the
+    list forgot is a door with no name.
+
+    Four became six when the Runs screen learned to drive a planned step, and
+    seven when it learned to publish a document (R04). What did NOT change is
+    the door: the counts above still say two `fetch(` and one `method: "POST"`,
+    so the three new roads are three NAMES on one door rather than a second
+    door nobody counted.
+
+    The door lives in the transport module now. The boot module names no
+    target list of its own: a second list there would be a second opinion
+    about what may be written.
+    """
+    door = _code(TRANSPORT_MODULE)
+    named = set(_frozen_list(door, "WRITE_TARGETS"))
+    assert named == WRITE_TARGETS, sorted(named ^ WRITE_TARGETS)
+    for target in named:
+        assert re.search(rf"^\s+{target}: \(", door, re.MULTILINE), target
+    assert door.count("WRITE_TARGETS.includes(") == 1
+    assert door.count("async function submit(") == 1
+    boot = _code(BOOT)
+    assert "WRITE_TARGETS" not in boot and "function submit(" not in boot
+
+
+def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
+    """Which gate a target meets, and it is decided in exactly one place.
+
+    A decision, a proposal and a confirmation are about a RUN. Readiness names
+    one answer about one WORKFLOW, so gating them on it would shut them for a
+    reason that is not about them -- and gating a workflow write on the stream
+    alone would open it while the drawing on screen is still another
+    workflow's. The list is held to be a real subset of the write targets, so
+    a name can never be gated by a list that does not name it, and the two
+    readers of that list are counted: the door and the sentence it says.
+    """
+    boot = _code(BOOT)
+    scoped = set(_frozen_list(boot, "RUN_SCOPED"))
+    assert scoped == RUN_SCOPED, sorted(scoped ^ RUN_SCOPED)
+    assert scoped < set(_frozen_list(_code(TRANSPORT_MODULE), "WRITE_TARGETS"))
+    assert boot.count("RUN_SCOPED.includes(") == 3
+    assert ("const ready = RUN_SCOPED.includes(target)\n"
+            "      ? streamOpen : state.workflows.writeReady;") in boot, boot
+    # And a run-scoped write is RETIRED by nothing but its own answer. The
+    # workflow counter retires one workflow write with the next, which is
+    # that door's rule; a run write's ownership is per run and step in
+    # `runs.writes`, a sibling write is permitted while it is in flight, and
+    # a dropped stream reaches it through the session it was authorized
+    # under. One counter over both retired alpha's refusal when omega's
+    # write began, and the refusal that should have re-read the run said
+    # nothing at all (the slice-3 review's F).
+    assert ("const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;"
+            in boot), boot
+    assert "if (mine !== null && mine !== writeGeneration) return;" in boot, boot
+    assert boot.count("++writeGeneration") == 1, boot
+
+
+def test_a_decision_names_the_receipt_it_replaces_and_never_hard_codes_none():
+    """`supersedes: null` was a constant, and on a reopened lap it was a lie.
+
+    A gate a loop sends back around is answered again, and the second receipt
+    must NAME the first: two unsuperseded answers on one gate are a journal
+    `gate_decision` refuses to read, so the gate rendered `unknown` the moment
+    a person answered it twice. The value comes off the row the run read
+    carries -- the receipt the SERVER says is standing -- and never from
+    anything this window remembers.
+
+    Both halves are held, and they fail apart: a body that always sent `null`
+    is the defect, and a body that sent the row's field without checking its
+    type would put whatever the payload happened to hold on the wire.
+    """
+    writer = _code(RUNWRITE)
+    assert "supersedes: null" not in writer, (
+        "a decision that always supersedes nothing writes a second standing "
+        "answer on a reopened gate")
+    assert ('const supersedes = typeof row.standing === "string" '
+            "? row.standing : null;") in writer, writer
+    assert writer.count("evidence_refs: [], supersedes};") == 1, writer
+
+
+def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
+    """One answer, one identity, and no way for two people to mint one id.
+
+    The count must be ALWAYS present and must stand BEFORE the actor. As a
+    suffix it collided across people -- `bob-1` answering a gate first writes
+    the same id as `bob` answering it second -- and nothing may follow the
+    actor, because the actor is the one part of this id a person chooses.
+    """
+    writer = _code(RUNWRITE)
+    assert ("receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`"
+            in writer), writer
+    assert "${draft.actor}`\n" not in writer.replace(
+        "receipt_id: `receipt-${row.gate_id}-${answered}-${draft.actor}`", "")
+    assert ('const answered = Number.isInteger(row.answers) ? row.answers : 0;'
+            in writer), writer
+
+
+def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
+    """The one decision refusal this window acts on rather than only reports.
+
+    Its recovery is `draft_conflict`'s shape for `draft_conflict`'s reason: the
+    screen is offering an answer for a gate the server says the run has not
+    reached, so what is on screen is out of date and the READ is what makes it
+    current. A recovery that only wrote a sentence would leave the same stale
+    form under the same person, still offering the same refused answer.
+
+    The callback BODY is pinned, not merely the code it matches on: replacing
+    the re-read with a status dispatch left every substring here intact. It is
+    two statements now rather than one -- the draft is spent before the read,
+    because a landed read of the same run no longer clears one -- and the
+    re-read is still the last word.
+    """
+    writer = _code(RUNWRITE)
+    recover = re.search(
+        r'if \(result\.code !== "gate_unreached" \|\| asked !== door\.chosenRun\(\)\)'
+        r" return;\n(.*?)\n    \}\);", writer, re.DOTALL)
+    assert recover is not None, "the gate_unreached recovery is gone"
+    assert recover.group(1).split("\n") == [
+        '      door.dispatch({type: "decision-chosen", key: null});',
+        "      door.refreshRun(asked);"], recover.group(1)
+    # The road left the boot module at its line cap; the boot module hands it
+    # the door and looks nothing up itself.
+    boot = _code(BOOT)
+    assert "submitDecision: decisions.submitDecision," in boot
+    assert "gate_unreached" not in boot and "receipt_id" not in boot
+
+
+def test_the_session_token_is_read_in_one_place_and_meets_no_sink():
+    """The token goes into a request header and nowhere else.
+
+    Not a claim about intent: every line of running code that mentions it is
+    checked against the sinks that would put it on screen, in a URL or in
+    storage. A line doing both is what this reds on, so writing the token into
+    the status region -- or onto a query string -- cannot pass.
+
+    "One place" is now a module: the token, its epoch and the header that
+    carries it live in the transport module, and the boot module names none of
+    them -- it can only ask that the session be dropped.
+    """
+    door, boot = _code(TRANSPORT_MODULE), _code(BOOT)
+    lines = [line for line in door.splitlines()
+             if any(name in line for name in TOKEN_NAMES)]
+    assert lines, "the transport module never handles a session token"
+    for line in lines:
+        for sink in TOKEN_SINKS:
+            assert sink not in line, (sink, line.strip())
+    assert door.count('"X-Conduct-CSRF": session.token') == 1
+    assert door.count("let csrfToken") == 1
+    for name in (*TOKEN_NAMES, "sessionEpoch"):
+        assert name not in boot, name
+    # The shell's own markup carries no token-shaped attribute either, so a
+    # future render cannot inherit one from the document it started in.
+    assert "csrf" not in HTML.read_text(encoding="utf-8").lower()
+
+
+# -- the drafts ---------------------------------------------------------------
+#
+# What a person has typed survives everything but its own spend: the step's
+# three words, the document, the decision, the toolbar's folds and fields.
+# That circuit is `tests/test_studio_drafts.py`'s since this module reached
+# the line cap; it imports the paths above.
+
+
+def test_the_reducer_never_grants_write_readiness_by_writing_it_down():
+    """Readiness is an ANSWER, so it is never a literal in the reducer.
+
+    `writeReady: true` spelled anywhere would be this window deciding it may
+    write without a read having said so -- the exact defect the graph window's
+    reducer records beside its own declaration.
+    """
+    source = _code(STORE)
+    assert "writeReady: true" not in source
+    assert "writeReady: false" in source
+    assert source.count("writeReady: event.ready === true") == 1
+
+
+def test_the_three_edit_vocabularies_are_one_vocabulary():
+    """The reducer, the canvas and the inspector name the same closed edits.
+
+    The module table forbids the reducer importing either surface, so the three
+    copies are held equal here instead. A word added to one and not the others
+    is a control writing an edit nothing applies.
+    """
+    edits = _code(EDITS)
+    types = _frozen_list(edits, "EDIT_TYPES")
+    assert types == _frozen_list(_code(CANVAS), "EDIT_TYPES")
+    assert types == _frozen_list(_code(SECTIONS), "EDIT_TYPES")
+    fields = _frozen_list(edits, "EDIT_FIELDS")
+    assert fields == _frozen_list(_code(SECTIONS), "EDIT_FIELDS")
+    # And every edit word has an arm: the vocabulary IS the door.
+    for word in types:
+        assert re.search(rf'^\s+("{word}"|{word})[:,]', edits, re.MULTILINE), word
+    # The reducer no longer declares either list, so the three copies cannot
+    # quietly become four while this guard reads only three of them. The field
+    # primitives are checked for the same reason and it is not hypothetical
+    # there: `commit` lives in that file, and a word list beside the writer is
+    # exactly where a fourth copy would look like it belonged.
+    named = ((_code(STORE), "the reducer"), (_code(INSPECTOR), "the frame"),
+             (_code(FIELDS), "the field primitives"),
+             (_code(ARTIFACTS), "the inputs and outputs section"))
+    for name in ("EDIT_TYPES", "EDIT_FIELDS"):
+        for source, where in named:
+            assert f"const {name}" not in source, (
+                f"{name} is declared in {where} again; three copies, not four")
+
+
+
+def test_the_condition_vocabulary_is_the_python_owners_word_for_word():
+    """Two JS copies, one Python owner, held equal in both directions.
+
+    A window that offered a word the contract refuses would compose a document
+    the server rejects on save; one that offered fewer would hide a road a plan
+    may legally carry. Neither is visible from the window alone, so both copies
+    are read out of the source and compared to `graph_conditions` itself.
+    """
+    from conductor.command.graph_conditions import (
+        EDGE_CONDITIONS,
+        _CONDITIONS_BY_KIND,
+    )
+
+    transitions = _code(PANEL / "studio-transitions.js")
+    edits = _code(EDITS)
+    for source, where in ((transitions, "the transitions section"),
+                          (edits, "the reducer")):
+        assert set(_frozen_list(source, "EDGE_CONDITIONS")) == EDGE_CONDITIONS, where
+        assert len(_frozen_list(source, "EDGE_CONDITIONS")) == len(
+            EDGE_CONDITIONS), where
+    # And the per-kind families, which is what a select actually offers.
+    for source, where in ((transitions, "the transitions section"),
+                          (edits, "the reducer")):
+        body = re.search(
+            r"CONDITIONS_BY_KIND = Object\.freeze\(\{(.*?)\n\}\);",
+            source, re.DOTALL).group(1)
+        for kind, words in sorted(_CONDITIONS_BY_KIND.items()):
+            spelled = re.search(
+                rf"{kind}: Object\.freeze\(\[(.*?)\]\)", body, re.DOTALL)
+            assert spelled, f"{where} offers nothing for a {kind}"
+            assert set(re.findall(r'"([a-z_]+)"', spelled.group(1))) == set(
+                words), (where, kind)
+        assert set(re.findall(r"^  (\w+):", body, re.MULTILINE)) == set(
+            _CONDITIONS_BY_KIND), where
+
+def test_every_screen_says_the_same_seven_words():
+    """One state vocabulary across the shell, the runs screen and the people.
+
+    Three modules render a banner and each carries its own sentences; what may
+    not differ is WHICH words exist, because a browser test asserts the machine
+    word and a person reads the sentence beside it.
+    """
+    for path in (SHELL, RUNS, PEOPLE):
+        assert _frozen_keys(_code(path), "PHASE_SENTENCES") == SCREEN_STATES, path
+    assert set(_frozen_list(_code(STORE), "PHASES")) == SCREEN_STATES
+
+
+def test_the_reducer_and_the_shell_name_the_same_five_screens():
+    """The nav's data-screen words are the reducer's own vocabulary."""
+    html = HTML.read_text(encoding="utf-8")
+    assert re.findall(r'data-screen="([a-z]+)"', html) \
+        == _frozen_list(_code(STORE), "SCREENS")
+
+
+def test_write_target_reader_keeps_mixed_case_and_unknown_names_for_closed_admission():
+    source = 'const WRITE_TARGETS = Object.freeze(["draft", "automationAuthorize", "unreviewedTarget2"]);'
+    found = set(_frozen_list(source, "WRITE_TARGETS"))
+    assert found == {"draft", "automationAuthorize", "unreviewedTarget2"}
+    assert found - WRITE_TARGETS == {"unreviewedTarget2"}

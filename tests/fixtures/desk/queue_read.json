@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "about": "Lane D1's own fixtures of the task-queue read of spec 4.4.6 (GET /command/queue), which lane L's route does not serve yet. Each case is one body the server may answer; `keeps` says the desk may draw it, and `slot`, `rows` and `text` say what a desk drawing it must show in English and in Russian (the times are Moscow, UTC+3).",
+  "cases": [
+    {
+      "name": "an idle project: a free slot and an empty queue",
+      "body": {"schema_version": 1, "revision": 0, "slot": {"state": "free", "run_id": null, "reason_code": null}, "entries": []},
+      "mode": "active",
+      "text": {
+        "en": ["Project queue", "Now: nothing is running · the slot is free", "Nothing is queued."],
+        "ru": ["Очередь проекта", "Сейчас: ничего не идёт · слот свободен", "В очереди ничего нет."]
+      }
+    },
+    {
+      "name": "a busy slot and one entry that starts by itself",
+      "body": {"schema_version": 1, "revision": 3,
+        "slot": {"state": "busy", "run_id": "run-fix-new", "reason_code": "action_in_flight"},
+        "entries": [
+          {"run_id": "run-docs", "task_id": "task-docs", "title": "Write the docs", "position": 1, "kind": "start",
+           "enqueued_at": "2026-09-29T08:00:00Z", "enqueued_by": "vasya", "state": "preauthorized",
+           "reason_code": "behind", "state_since": "2026-09-29T08:00:00Z",
+           "preauthorization": {"authorized_by": "vasya", "preauthorized_at": "2026-09-29T08:00:00Z", "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001"}}
+        ]},
+      "mode": "active",
+      "text": {
+        "en": ["Project queue", "Now: Fix lost text · holds the slot", "1. Write the docs · starts on its own"],
+        "ru": ["Очередь проекта", "Сейчас: Fix lost text · держит слот", "1. Write the docs · начнётся сама"]
+      }
+    },
+    {
+      "name": "the three states and their reasons, waiting and noticed, in one queue",
+      "body": {"schema_version": 1, "revision": 9,
+        "slot": {"state": "stuck", "run_id": "run-fix-new", "reason_code": "plan_stalled"},
+        "entries": [
+          {"run_id": "run-docs", "task_id": "task-docs", "title": "Write the docs", "position": 1, "kind": "start",
+           "enqueued_at": "2026-09-29T08:00:00Z", "enqueued_by": "vasya", "state": "confirmation_required",
+           "reason_code": "terms_changed", "state_since": "2026-09-29T09:40:00Z", "preauthorization": null},
+          {"run_id": "run-check", "task_id": "task-check", "title": "Check the export", "position": 2, "kind": "resume",
+           "enqueued_at": "2026-09-29T08:10:00Z", "enqueued_by": "vasya", "state": "confirmation_required",
+           "reason_code": "server_restarted", "state_since": null, "preauthorization": null},
+          {"run_id": "run-idle", "task_id": "task-idle", "title": "", "position": 3, "kind": "start",
+           "enqueued_at": "2026-09-29T08:20:00Z", "enqueued_by": "vasya", "state": "blocked",
+           "reason_code": "receipt_conflict", "state_since": null, "preauthorization": null},
+          {"run_id": "run-twin", "task_id": "task-twin-aaaa1111", "title": "Twin", "position": 4, "kind": "start",
+           "enqueued_at": "2026-09-29T08:30:00Z", "enqueued_by": "vasya", "state": "blocked",
+           "reason_code": "run_unreadable", "state_since": null, "preauthorization": null}
+        ]},
+      "mode": "active",
+      "text": {
+        "en": ["Project queue", "Now: Fix lost text · stopped and holds the slot: the plan has no eligible next step",
+               "Give your name above to free the slot.",
+               "1. Write the docs · waits for your confirmation: the terms changed · waiting since 09/29 12:40",
+               "2. Check the export · waits for your confirmation: the server restarted · noticed · time not given",
+               "3. run-idle · cannot start: the queue and the journal disagree · remove it from the queue · in the queue since 09/29 11:20",
+               "4. Twin · cannot start: the run record cannot be read · in the queue since 09/29 11:30"],
+        "ru": ["Очередь проекта", "Сейчас: Fix lost text · остановился и держит слот: в плане нет допустимого шага",
+               "Укажите имя выше, чтобы освободить слот.",
+               "1. Write the docs · ждёт вашего подтверждения: условия изменились · ждёт с 29.09 12:40",
+               "2. Check the export · ждёт вашего подтверждения: сервер перезапускался · замечено · время не указано",
+               "3. run-idle · не может начаться: записи очереди и журнала расходятся · уберите из очереди · в очереди с 29.09 11:20",
+               "4. Twin · не может начаться: запись запуска не читается · в очереди с 29.09 11:30"]
+      }
+    },
+    {
+      "name": "a project in view: the entry waits for the project to become active",
+      "body": {"schema_version": 1, "revision": 2,
+        "slot": {"state": "unavailable", "run_id": null, "reason_code": "project_not_active"},
+        "entries": [
+          {"run_id": "run-docs", "task_id": "task-docs", "title": "Write the docs", "position": 1, "kind": "start",
+           "enqueued_at": "2026-09-29T08:00:00Z", "enqueued_by": "vasya", "state": "preauthorized",
+           "reason_code": "project_not_active", "state_since": "2026-09-29T08:00:00Z", "preauthorization": null}
+        ]},
+      "mode": "view",
+      "text": {
+        "en": ["Project queue", "Project not active · the queue starts when the project becomes active",
+               "1. Write the docs · starts on its own",
+               "Entries start by themselves after activation only if the project has “continue after” set with the task queue. Otherwise we ask you again after activation."],
+        "ru": ["Очередь проекта", "Проект не активен · очередь начнётся, когда проект станет активным",
+               "1. Write the docs · начнётся сама",
+               "Записи начнутся сами после активации, только если у проекта стоит «продолжить после» с очередью задач. Иначе после активации спросим вас снова."]
+      }
+    },
+    {
+      "name": "an unavailable slot in an active project",
+      "body": {"schema_version": 1, "revision": 1,
+        "slot": {"state": "unavailable", "run_id": null, "reason_code": "owner_required"},
+        "entries": []},
+      "mode": "active",
+      "text": {
+        "en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+               "Nothing is queued."],
+        "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+               "В очереди ничего нет."]
+      }
+    }
+  ]
+}

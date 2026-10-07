@@ -79,6 +79,23 @@ def _validate_nodes(data: dict, errors: list[str], warnings: list[str]) -> None:
                 errors.append(f"map: node {nid!r} depends_on unknown id {dep!r}")
 
 
+def _validate_role_stage(role: dict, rid: Any, phases: list[str],
+                         errors: list[str]) -> None:
+    """`stage` (optional, spec §2): which declared phase a role works in.
+
+    Design-time presentation and handoff metadata — no merge rule reads it.
+    Validated as a reference all the same: a map declaring no phases (or an
+    unreadable `phases`) offers nothing to reference, so any stage is invalid.
+    """
+    if "stage" not in role:
+        return
+    stage = role["stage"]
+    if not isinstance(stage, str) or not stage:
+        errors.append(f"map: role {rid!r} stage must be a non-empty string, got {stage!r}")
+    elif stage not in phases:
+        errors.append(f"map: role {rid!r} stage {stage!r} is not in cycle.phases {phases}")
+
+
 def _validate_cycle(data: dict, errors: list[str]) -> None:
     if "cycle" not in data:
         return
@@ -86,6 +103,13 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
     if not isinstance(cycle, dict):
         errors.append("map: cycle must be a table")
         return
+
+    # `cycle.phases` read once: `declared_phases` is the set a role's `stage`
+    # must name, and the shape check below is "did anything fall out of it?", so
+    # the two cannot drift. Malformed `phases` yields none — no substring match.
+    raw_phases = cycle.get("phases", [])
+    declared_phases = ([p for p in raw_phases if isinstance(p, str)]
+                       if isinstance(raw_phases, list) else [])
 
     roles = cycle.get("roles", [])
     if not isinstance(roles, list):
@@ -106,6 +130,7 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
         rid = r.get("id")
         if "harness" in r and not isinstance(r["harness"], str):
             errors.append(f"map: role {rid!r} harness must be a string, got {r['harness']!r}")
+        _validate_role_stage(r, rid, declared_phases, errors)
         reviews = r.get("reviews", [])
         if not isinstance(reviews, list):
             errors.append(f"map: role {rid!r} reviews must be a list")
@@ -117,10 +142,9 @@ def _validate_cycle(data: dict, errors: list[str]) -> None:
             elif reviewed not in role_ids:
                 errors.append(f"map: role {rid!r} reviews unknown role {reviewed!r}")
 
-    if "phases" in cycle:
-        phases = cycle["phases"]
-        if not isinstance(phases, list) or not all(isinstance(p, str) for p in phases):
-            errors.append("map: cycle.phases must be a list of strings")
+    if "phases" in cycle and (not isinstance(raw_phases, list)
+                              or len(declared_phases) != len(raw_phases)):
+        errors.append("map: cycle.phases must be a list of strings")
 
 
 def _validate_invariants(data: dict, errors: list[str]) -> None:
@@ -215,6 +239,39 @@ def _validate_lane_map_status(data: dict, where: str, errors: list[str]) -> None
                           f"{sorted(NODE_STATUSES)}")
 
 
+def _optional_string_list(
+        holder: dict, key: str, subject: str, where: str,
+        errors: list[str]) -> None:
+    """One optional key that, when present, must be a list of strings.
+
+    `findings[].refs` and `waits_on_human[].blocks` are the same rule written
+    twice, and both were written as a `for` inside an `else` inside an `if`
+    inside a `for` -- five levels, which is one more than this project allows
+    and about three more than a reader needs to see the rule. Naming it removes
+    the nest from both callers and leaves one place to correct if the rule ever
+    changes.
+
+    Absent is legal and says nothing; the key is optional in the protocol.
+
+    Args:
+        holder: The finding or wait carrying the key.
+        key: The key to check.
+        subject: How to name the holder in a message, already quoted.
+        where: The lane the message is about.
+        errors: The list every schema error is appended to.
+    """
+    if key not in holder:
+        return
+    value = holder[key]
+    if not isinstance(value, list):
+        errors.append(f"{where}: {subject} {key} must be a list")
+        return
+    for item in value:
+        if not isinstance(item, str):
+            errors.append(f"{where}: {subject} {key} element must be a string, "
+                          f"got {item!r}")
+
+
 def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
     if "findings" not in data:
         return
@@ -241,16 +298,7 @@ def _validate_lane_findings(data: dict, where: str, errors: list[str]) -> None:
             if key in f and not isinstance(f[key], str):
                 errors.append(f"{where}: finding {fid!r} {key} must be a string, "
                               f"got {f[key]!r}")
-        if "refs" in f:
-            refs = f["refs"]
-            if not isinstance(refs, list):
-                errors.append(f"{where}: finding {fid!r} refs must be a list")
-            else:
-                for ref in refs:
-                    if not isinstance(ref, str):
-                        errors.append(
-                            f"{where}: finding {fid!r} refs element must be a string, "
-                            f"got {ref!r}")
+        _optional_string_list(f, "refs", f"finding {fid!r}", where, errors)
 
 
 def _validate_lane_verdicts(data: dict, where: str, errors: list[str]) -> None:
@@ -285,16 +333,10 @@ def _validate_lane_waits(data: dict, where: str, errors: list[str]) -> None:
         if not _in_vocab(w.get("kind"), WAIT_KINDS):
             errors.append(f"{where}: wait {wid!r} kind {w.get('kind')!r} "
                           f"not in {sorted(WAIT_KINDS)}")
-        if "blocks" in w:
-            blocks = w["blocks"]
-            if not isinstance(blocks, list):
-                errors.append(f"{where}: wait {wid!r} blocks must be a list")
-            else:
-                for b in blocks:
-                    if not isinstance(b, str):
-                        errors.append(
-                            f"{where}: wait {wid!r} blocks element must be a string, "
-                            f"got {b!r}")
+        if "title" in w and not isinstance(w["title"], str):
+            errors.append(f"{where}: wait {wid!r} title must be a string, "
+                          f"got {w['title']!r}")
+        _optional_string_list(w, "blocks", f"wait {wid!r}", where, errors)
 
 
 def _validate_lane_invariants(data: dict, where: str, errors: list[str]) -> None:

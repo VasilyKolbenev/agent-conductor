@@ -1,0 +1,464 @@
+"""The desk shell in a real Chromium, against the real server of a one-project `conduct up`.
+
+`/panel/desk.html` is what a hub mounts, so this is the address it boots at: the
+production `server.build` over a seeded project with no provider configured and
+no agent running -- the single-project server a person gets from `conduct up`,
+answering every request itself. Nothing is fed through a seam; whatever is on
+screen arrived through a real read of a real route.
+
+What this module holds, each as a measurement and not a reading of source:
+
+- the page boots with no console error and no uncaught exception, and every file
+  its module graph fetches answers 200 (the census is spelled out, not derived
+  from the server's own allowlist, which would only agree with itself);
+- the five regions of spec 5.1 are mounted and say in `data-state` what became
+  of the read that feeds them: the rail, the summary and the pult `ready`, the
+  scene and the feed, which follow a chosen task, still `empty` and childless
+  until one is chosen; the rail of a project with no tasks says so and the
+  summary draws nothing for it (what they draw for a project that has tasks is
+  `test_desk_rail_scene.py`'s and `test_desk_summary.py`'s, and the feed's is
+  `test_desk_feed.py`'s);
+- a read that is refused, never answered or abandoned at its deadline puts the
+  regions it feeds, and the whole shell and its one sentence, in the word it earned
+  (`refused` or `failed`): a shell that wrote `ready` whatever came back would
+  pass every check above, because the server answers both reads;
+- the shell of a project with no tasks reads exactly `/command/tasks`, `/command/runs` and the
+  project queue `/command/queue` and writes nothing -- no other command route, no method but
+  GET, nothing in browser storage. The project route and its header are lane H's, and are not
+  faked here. The projection fixture closes `/events` after its first request;
+- the page never scrolls sideways, at the desk's width and stacked under 900px.
+
+A fact and its sentence are read in ONE evaluation: two round trips let a read
+land between them (the failure `test_studio_rendered.py` had on CI).
+"""
+from __future__ import annotations
+
+import json
+import threading
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from urllib.parse import urlsplit
+
+import pytest
+from playwright.sync_api import Browser, Page, Route
+
+from browser_tests.desk_hold import close_context
+from browser_tests.desk_settled import SETTLED
+from conductor import server
+from tests.test_store import good_lane, write_project
+
+#: Every file the desk page's module graph fetches, with the answer each owes:
+#: the page, its sheet and boot module, the transport and the refusal vocabulary
+#: it translates with, the grammar of the address (the reader of its language),
+#: the element helper the region modules draw with, and the catalogue (with its
+#: fifteen copy modules) that says a word in the reader's language.
+DESK_BOOT_ASSETS = {
+    "desk.html": 200, "desk.css": 200, "desk-flow.css": 200, "desk-people.css": 200,
+    "desk-run.css": 200,
+    "desk.js": 200, "desk-transport.js": 200,
+    "command-projection.js": 200, "studio-i18n.js": 200,
+    "desk-hash.js": 200, "desk-embed.js": 200, "command-view.js": 200, "desk-copy.js": 200,
+    "desk-status-copy.js": 200,
+    # What the boot module judges a read with, and the rail it draws from it.
+    "studio-tasks-model.js": 200, "studio-model.js": 200, "studio-taskruns.js": 200,
+    "studio-draft.js": 200, "studio-focus.js": 200, "desk-rail.js": 200,
+    "desk-status.js": 200, "desk-pult.js": 200, "desk-time.js": 200,
+    # The continue-after flag: its model, and the door that reads and writes it.
+    "desk-flag-model.js": 200, "desk-flag.js": 200,
+    # The queue's door, and the model that judges what it reads.
+    "desk-queue-model.js": 200, "desk-queue.js": 200,
+    # What a press on the queue block means, and the words of its controls.
+    "desk-pult-flow.js": 200, "desk-pult-copy.js": 200,
+    # The feed: what it draws from, the words it says and the module that draws it.
+    "desk-feed-model.js": 200, "desk-feed-copy.js": 200, "desk-feed.js": 200,
+    # What says whether a task was closed: the reads, and the model they ask.
+    "desk-closing.js": 200, "desk-summary-model.js": 200,
+    # The summary: the module that draws it and the words it says.
+    "desk-summary.js": 200, "desk-summary-copy.js": 200,
+    # The scene, and the Studio's run deck it hands one frozen run read to, with what the
+    # deck and the run-read judges are built from.
+    "desk-scene.js": 200, "studio-participants.js": 200, "studio-feedback.js": 200,
+    "studio-runread.js": 200, "studio-runwords.js": 200, "studio-rundocs.js": 200,
+    "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-situation.js": 200,
+    "studio-feedback-model.js": 200, "studio-controls.js": 200,
+    "studio-automation-providers.js": 200,
+    "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
+    "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
+    "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
+    "studio-runform-copy.js": 200, "studio-runs-copy.js": 200,
+    "studio-runstep-copy.js": 200, "studio-view-copy.js": 200,
+    "studio-workflow-copy.js": 200, "studio-workflow-detail-copy.js": 200,
+    "desk-wizard-copy.js": 200, "desk-flow-copy.js": 200,
+    # The live new-task overlay: host, reducer, renderer and their pure step modules.
+    "desk-wizard-host.js": 200, "desk-wizard.js": 200,
+    "desk-wizard-model.js": 200, "desk-wizard-materials.js": 200,
+    "desk-wizard-cycle.js": 200, "desk-wizard-roles.js": 200,
+    "desk-wizard-base.js": 200, "desk-wizard-team.js": 200,
+    "desk-wizard-digest.js": 200, "desk-wizard-input.js": 200,
+    "desk-wizard-prep.js": 200, "desk-wizard-launch.js": 200,
+    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200,
+    "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
+    "desk-wizard-card.js": 200,
+    # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
+    "desk-people-host.js": 200, "desk-run-host.js": 200,
+    "desk-panels.js": 200, "desk-toggles.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
+    "studio-isolation.js": 200, "studio-runhead.js": 200,
+    "studio-quotas-model.js": 200,
+    "studio-quotaflow.js": 200, "studio-quotas.js": 200, "studio-people.js": 200,
+    # The run host's write doors (step and document actions): the binding of the run's
+    # facts, the host, the Studio's two run-write modules and the store they reduce with,
+    # and the reducers and ceilings that store is built from.
+    "desk-run-binding.js": 200, "desk-run-write-host.js": 200,
+    "studio-runwrite.js": 200, "studio-runwrites.js": 200, "studio-store.js": 200,
+    "studio-edits.js": 200, "studio-review.js": 200, "studio-rundraft.js": 200,
+    "studio-toolbardraft.js": 200, "studio-ceilings.js": 200,
+    # The acceptance block of a chosen run, mounted in the console by the run host.
+    "desk-accept-host.js": 200,
+    "desk-flow-host.js": 200, "desk-flow.js": 200, "desk-flow-model.js": 200,
+    "desk-flow-draw.js": 200, "desk-flow-diag.js": 200, "desk-flow-edits.js": 200,
+    "desk-flow-fields.js": 200, "desk-flow-graph.js": 200, "desk-flow-inspector.js": 200,
+    "desk-flow-loops.js": 200, "desk-flow-shape.js": 200, "desk-flow-branches.js": 200,
+    "desk-flowwrite.js": 200, "desk-quickcycle.js": 200,
+    "studio-canvas.js": 200, "studio-canvas-flow.js": 200,
+    "studio-canvas-edges.js": 200, "studio-layout.js": 200, "studio-orbit.js": 200,
+    # The one live projection stream, which refreshes reads after a signal.
+    "desk-stream.js": 200,
+}
+#: The regions, the word each stands in once the reads have landed, and why.
+REGION_WORDS = (
+    ("deskRail", "ready"),     # fed by the tasks read and the runs read
+    ("deskScene", "empty"),    # follows a chosen task
+    ("deskFeed", "empty"),     # follows the run on the scene
+    ("deskSummary", "ready"),  # fed by the lists; it draws nothing for a project with no tasks
+    ("deskPult", "ready"),     # draws the name of the person, which no read feeds
+)
+#: Every word the page carries itself, read in ONE evaluation: the document's language and
+#: title, the note and the link in the top bar, the accessible name of each region and the
+#: sentence the top bar says once the reads have landed.
+PAGE_WORDS = """() => ({
+  lang: document.documentElement.lang, title: document.title,
+  note: document.querySelector(".desk-note").innerText.trim(),
+  link: document.querySelector(".desk-classic").innerText.trim(),
+  labels: ["deskRail", "deskScene", "deskFeed", "deskSummary", "deskPult"].map(
+    (id) => document.getElementById(id).getAttribute("aria-label")),
+  said: document.getElementById("deskStatus").innerText.trim()})"""
+#: What the page says in each language the address can choose, spelled out here and not
+#: read back from the catalogue the page loads.
+PAGE_LANGUAGES = {
+    "en": {
+        "lang": "en", "title": "December Command — Desk",
+        "note": "The desk is being built: the rail, the scene, the feed, the summary and the "
+                "console are live.",
+        "link": "Classic panel",
+        "labels": ["Tasks", "Scene", "Progress", "Summary", "Your console"],
+        "said": "Read."},
+    "ru": {
+        "lang": "ru", "title": "December Command — Стол",
+        "note": "Стол в разработке: рельс, сцена, лента, выжимка и пульт работают.",
+        "link": "Прежняя панель",
+        "labels": ["Задачи", "Сцена", "Ход работы", "Выжимка", "Ваш пульт"],
+        "said": "Данные прочитаны."},
+}
+#: One evaluation for everything a region test asks: word, children and words.
+REGION_FACTS = """(ids) => ({
+  shell: document.getElementById("deskShell").getAttribute("data-state"),
+  said: document.getElementById("deskStatus").innerText.trim(),
+  lang: document.documentElement.lang,
+  regions: ids.map((id) => {
+    const node = document.getElementById(id);
+    return {id, word: node.getAttribute("data-state"),
+            children: node.childElementCount, text: node.textContent.trim()};
+  })})"""
+#: The layout facts, again in one evaluation: where each region stands and by how
+#: much the page overflows sideways.
+LAYOUT_FACTS = """(ids) => ({
+  overflow: document.documentElement.scrollWidth - window.innerWidth,
+  boxes: Object.fromEntries(ids.map((id) => {
+    const box = document.getElementById(id).getBoundingClientRect();
+    return [id, {x: box.x, y: box.y, width: box.width, height: box.height}];
+  }))})"""
+#: The widths the page is measured at, from a small phone to a wide screen, both sides of the
+#: 900px break included, and the largest window that stacks.
+SWEPT_WIDTHS = (320, 375, 414, 600, 768, 899, 900, 901, 1024, 1280, 1440, 1920)
+STACKED_UP_TO = 900
+#: A rule that widens one region only in a window under 400px: the overflow a two-width
+#: test at 800 and 1280 cannot see.
+PLANTED_NARROW_OVERFLOW = "@media (max-width:400px){.desk-feed{min-width:600px}}"
+#: The sentences the top bar says for the two phases a bad read earns, spelled
+#: out here and not read back from the catalogue the page loads.
+SAID_REFUSED = "This read was refused. Nothing below is newer than the refusal."
+SAID_FAILED = "This read failed. Nothing below is newer than the failure."
+#: A refusal in the server's own vocabulary: a status and a body whose code the
+#: page's refusal table knows. A code it did not know would be read as no answer.
+REFUSAL_BODY = json.dumps({"error": {"code": "same_origin_denied"}})
+#: The page's read deadline is 20 s. A window that must reach it is given timers
+#: where anything that long fires after three seconds, so a read nobody answers
+#: is abandoned by the page's own deadline instead of after a twenty-second wait.
+SHORT_DEADLINE = """(() => {
+  const real = window.setTimeout.bind(window);
+  window.setTimeout = (fn, ms, ...rest) => real(fn, ms >= 10000 ? 3000 : ms, ...rest);
+})();"""
+#: How each of the two reads is made to answer, and what the desk must then say:
+#: (row name, tasks read, runs read, rail, summary, shell and its sentence).
+#: `real` passes through to the server; `refused` is a 403 with a known code;
+#: `unanswered` aborts the request; `held` is never answered at all.
+PHASE_ROWS = (
+    ("refused-then-unanswered", "refused", "unanswered", "failed", "failed",
+     "failed", SAID_FAILED),
+    ("refused-then-real", "refused", "real", "refused", "ready",
+     "refused", SAID_REFUSED),
+    ("unanswered-then-real", "unanswered", "real", "failed", "ready",
+     "failed", SAID_FAILED),
+    ("held-until-the-deadline-then-real", "held", "real", "failed", "ready",
+     "failed", SAID_FAILED),
+)
+
+
+@dataclass
+class Desk:
+    """One booted desk window and everything it said and asked, in order."""
+
+    page: Page
+    problems: list[str] = field(default_factory=list)
+    served: list[tuple[str, int]] = field(default_factory=list)
+    asked: list[tuple[str, str, bool]] = field(default_factory=list)
+
+
+@pytest.fixture(scope="session")
+def desk_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    """The desk at its own address, over a real seeded one-project server."""
+    root = write_project(tmp_path_factory.mktemp("desk-shell"),
+                         lanes={"claude": good_lane()})
+    httpd = server.build(root, 0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address[:2]
+    try:
+        yield f"http://{host}:{port}/panel/desk.html"
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
+        httpd.server_close()
+        assert not thread.is_alive(), "desk server did not stop"
+
+
+@pytest.fixture
+def desk(chromium: Browser, desk_url: str) -> Iterator[Desk]:
+    """One isolated desk window, booted: the shell has settled its reads."""
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    window = Desk(page)
+    page.on("console", lambda message: window.problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: window.problems.append(str(error)))
+    page.on("response", lambda response: window.served.append(
+        (response.url, response.status)))
+    page.on("request", lambda request: window.asked.append(
+        (request.method, urlsplit(request.url).path,
+         "x-conduct-project" in request.headers)))
+    # The projection-only fixture records one SSE request and closes it without retrying.
+    # Live SSE and reconnect behavior have a separate browser witness.
+    page.route("**/events", lambda route: route.fulfill(status=204))
+    page.goto(desk_url, wait_until="load")
+    # A real signal that the reads settled -- the shell's own word -- never a clock.
+    page.wait_for_selector('#deskShell[data-state="ready"]')
+    page.wait_for_selector('#deskShell[data-connection="closed"]')
+    try:
+        yield window
+    finally:
+        close_context(context)
+
+
+def test_the_desk_boots_from_its_own_address_with_no_error_and_every_file_answering_200(
+        desk: Desk) -> None:
+    served = {url.rsplit("/", 1)[1]: status for url, status in desk.served
+              if "/panel/" in url}
+    assert served == DESK_BOOT_ASSETS
+    assert any(path == "/events" and method == "GET" for method, path, _ in desk.asked)
+    assert desk.problems == []
+
+
+def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_stay_empty(
+        desk: Desk) -> None:
+    facts = desk.page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
+    assert [(row["id"], row["word"]) for row in facts["regions"]] == list(REGION_WORDS)
+    by_id = {row["id"]: row for row in facts["regions"]}
+    assert all(row["children"] == 0 and row["text"] == "" for name, row in by_id.items()
+               if name not in ("deskRail", "deskSummary", "deskPult"))
+    # The summary draws nothing for a project with no tasks; the rail of one says so; the
+    # console says its heading, the line that asks for the name and the queue this server reads
+    # (it has no owner: its slot is unavailable, and nothing is queued), then what its hosts
+    # mount into it: the harness limits (not current: the projection stream is closed), the
+    # card of the decisions bound to a chosen task (a child that says nothing until a run is
+    # chosen) and the acceptance block, which asks for a run.
+    assert by_id["deskSummary"]["children"] == 0
+    assert by_id["deskPult"]["children"] == 6
+    assert by_id["deskPult"]["text"] == (
+        "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
+        "the project has no ownerNothing is queued."
+        "Harness limitsLimits are not current while disconnected.No data"
+        "Accept into projectChoose a run first.")
+    assert by_id["deskRail"]["children"] == 2
+    assert by_id["deskRail"]["text"] == "TasksThis project has no tasks yet."
+    assert facts["shell"] == "ready" and facts["said"] == "Read." and facts["lang"] == "en"
+    assert desk.problems == []
+
+
+def _answer(how: str, held: list[Route]) -> Callable[[Route], None]:
+    """The handler that makes one routed read answer the way `how` says."""
+    def handle(route: Route) -> None:
+        if how == "real":
+            route.continue_()
+        elif how == "refused":
+            route.fulfill(status=403, content_type="application/json", body=REFUSAL_BODY)
+        elif how == "unanswered":
+            route.abort("failed")
+        else:
+            held.append(route)
+    return handle
+
+
+@pytest.mark.parametrize(
+    "tasks,runs,rail,summary,shell,said",
+    [pytest.param(*row[1:], id=row[0]) for row in PHASE_ROWS])
+def test_a_refused_or_unanswered_read_puts_its_region_and_the_shell_in_the_word_it_earned(
+        chromium: Browser, desk_url: str, tasks: str, runs: str,
+        rail: str, summary: str, shell: str, said: str) -> None:
+    """Every word here is a read the page did not get, and each row names its own.
+
+    The word of a task is a fact of both lists, so the rail says the worst of the tasks
+    read and the runs read; the summary is fed by the runs read alone; the shell says
+    the worst of the regions, in the one sentence a person reads. Two reads that fail
+    differently tell `refused` from `failed` on the regions they feed and `failed` from
+    `ready` on the shell, so a page that wrote one word whatever came back, or that
+    mixed the two up, is red on some row.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    uncaught: list[str] = []
+    page.on("pageerror", lambda error: uncaught.append(str(error)))
+    if "held" in (tasks, runs):
+        page.add_init_script(SHORT_DEADLINE)
+    held: list[Route] = []
+    page.route("**/command/tasks", _answer(tasks, held))
+    page.route("**/command/runs", _answer(runs, held))
+    try:
+        page.goto(desk_url, wait_until="load")
+        page.wait_for_function(SETTLED)
+        facts = page.evaluate(REGION_FACTS, [ident for ident, _ in REGION_WORDS])
+    finally:
+        close_context(context)
+    words = [(row["id"], row["word"]) for row in facts["regions"]]
+    assert words == [("deskRail", rail), ("deskScene", "empty"), ("deskFeed", "empty"),
+                     ("deskSummary", summary), ("deskPult", "ready")]
+    assert all(row["children"] == 0 and row["text"] == "" for row in facts["regions"]
+               if row["id"] != "deskPult")
+    assert (facts["shell"], facts["said"]) == (shell, said)
+    assert uncaught == []
+
+
+@pytest.mark.parametrize("language", list(PAGE_LANGUAGES))
+def test_every_word_the_page_carries_is_said_in_the_language_the_address_chooses(
+        chromium: Browser, desk_url: str, language: str) -> None:
+    """The page's HTML holds no English: what a reader sees arrives from the catalogue.
+
+    `#lang=en` and `#lang=ru` choose the language, and the document, its title, its note,
+    its link and the name of every region follow, together with the sentence the top bar
+    says. The English row is what the page said before it had a catalogue, so a page that
+    kept its literals would pass it and fail the Russian one.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+    problems: list[str] = []
+    page.on("console", lambda message: problems.append(message.text)
+            if message.type == "error" else None)
+    page.on("pageerror", lambda error: problems.append(str(error)))
+    try:
+        page.goto(f"{desk_url}#lang={language}", wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        words = page.evaluate(PAGE_WORDS)
+    finally:
+        close_context(context)
+    assert words == PAGE_LANGUAGES[language]
+    assert problems == []
+
+
+def test_the_shell_of_a_project_with_no_tasks_reads_the_claim_and_the_two_lists_only(
+        desk: Desk) -> None:
+    command = [(method, path, header) for method, path, header in desk.asked
+               if path.startswith("/command/")]
+    assert command[0] == ("GET", "/command/project", False), "the claim is the first read"
+    assert sorted(command) == [("GET", "/command/project", False),
+                               ("GET", "/command/queue", False),
+                               ("GET", "/command/runs", False),
+                               ("GET", "/command/tasks", False)]
+    assert {method for method, _path, _header in desk.asked} == {"GET"}
+    assert desk.page.evaluate("() => [localStorage.length, sessionStorage.length]") == [0, 0]
+    assert desk.problems == []
+
+
+def _sweep(page: Page) -> dict[int, dict]:
+    """The layout facts at each swept width, one evaluation per width."""
+    ids = [ident for ident, _ in REGION_WORDS]
+    facts = {}
+    for width in SWEPT_WIDTHS:
+        page.set_viewport_size({"width": width, "height": 900})
+        facts[width] = page.evaluate(LAYOUT_FACTS, ids)
+    return facts
+
+
+def test_the_page_does_not_scroll_sideways_at_any_swept_width_and_stacks_up_to_900px(
+        desk: Desk) -> None:
+    """Twelve widths from a phone to a wide screen, the two sides of the 900px break included.
+
+    The claim is the sweep's, and it is stated as the sweep: at every width in the table the
+    page's scroll width is no wider than the window, and the regions stand in the layout that
+    width owes them -- three columns above 900px, one stacked reading order at 900px and under.
+    """
+    for width, facts in _sweep(desk.page).items():
+        boxes = facts["boxes"]
+        assert facts["overflow"] <= 0, (width, facts["overflow"])
+        assert all(box["width"] > 0 for box in boxes.values()), (width, boxes)
+        assert boxes["deskScene"]["y"] < boxes["deskFeed"]["y"] < boxes["deskSummary"]["y"], width
+        if width <= STACKED_UP_TO:
+            assert boxes["deskRail"]["y"] < boxes["deskScene"]["y"] < boxes["deskPult"]["y"], width
+        else:
+            assert boxes["deskRail"]["x"] < boxes["deskScene"]["x"] < boxes["deskPult"]["x"], width
+            assert boxes["deskRail"]["y"] == boxes["deskPult"]["y"] > 0, width
+    assert desk.problems == []
+
+
+def test_the_sweep_sees_an_overflow_that_only_a_narrow_window_shows(
+        chromium: Browser, desk_url: str) -> None:
+    """The regression for the old two-width test: a region wider than a phone.
+
+    A rule that widens the feed only under 400px leaves 800px and 1280px, the two widths the
+    test used to look at, exactly as they were. Sweeping finds it at 320px and 375px and
+    nowhere else, so a page that scrolled sideways on a phone can no longer pass.
+    """
+    context = chromium.new_context(viewport={"width": 1280, "height": 900})
+    page = context.new_page()
+
+    def widen(route: Route) -> None:
+        real = route.fetch()
+        route.fulfill(response=real, body=real.text() + PLANTED_NARROW_OVERFLOW)
+
+    page.route("**/panel/desk.css", widen)
+    try:
+        page.goto(desk_url, wait_until="load")
+        page.wait_for_selector('#deskShell[data-state="ready"]')
+        overflowing = {width for width, facts in _sweep(page).items() if facts["overflow"] > 0}
+    finally:
+        close_context(context)
+    assert overflowing == {320, 375}
+    assert not overflowing & {800, 1280}
+
+
+def test_the_classic_panel_link_is_a_visible_focusable_target_of_44px(desk: Desk) -> None:
+    link = desk.page.locator(".desk-classic")
+    assert link.get_attribute("href") == "/panel/index.html"
+    link.focus()
+    assert desk.page.evaluate(
+        "() => document.activeElement.classList.contains('desk-classic')")
+    assert link.bounding_box()["height"] >= 44
+    assert desk.problems == []

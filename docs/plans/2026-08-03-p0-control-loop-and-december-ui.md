@@ -1,0 +1,763 @@
+# Plan — the P0 control loop and the December visual system
+
+- **Status:** Plan — coordination document, not a specification
+- **Date:** 2026-08-03
+- **Branch:** `feature/p0-control-loop`
+- **Contracts:** `spec/PROTOCOL.md` (Protocol v1, normative) and
+  `docs/adr/0001-harness-control-plane-model.md` (accepted model) remain the only binding
+  documents. Nothing here changes either of them.
+- **Public direction:** `docs/specs/2026-08-03-product-direction.md`
+- **Precedent:** `docs/plans/2026-07-30-m1-m4-implementation.md`
+
+The M1–M4 chunk had a written plan, and every task in it could be picked up and executed
+without asking anyone a question. This chunk — the P0 control loop plus the December visual
+system — has been driven from conversation instead. This document closes that gap. It
+records what has shipped, what is queued and in what order, what each queued slice owes, what
+the owner has decided and when, and which questions are still the owner's to answer. It does not
+specify implementations: where a rule is normative the authority is `spec/PROTOCOL.md`, and
+where the model is at stake it is ADR 0001.
+
+Every claim below about current behaviour was checked against the code on this branch. Where
+the conversation and the code disagreed, the code won and the disagreement is written down.
+
+## 1. Brand and vocabulary
+
+The public brand is **December**. Tagline: *"Build your Orbit. Control the cycle."* December
+is a self-hosted control plane for individually assembled AI-harness work cycles.
+
+| Term | Meaning |
+|---|---|
+| **December** | The brand and the product. |
+| **Orbit** | An individually assembled work cycle. |
+| **Harness** | An execution environment (Claude Code, Codex, Cursor, a custom adapter). |
+| **Node** | A role or a step inside a stage. |
+| **Gate** | A transition condition, or a human decision. |
+| **Run** | One pass through an Orbit. |
+
+The v0.1.0 distribution stays `agent-conductor` and the CLI stays `conduct`, deliberately.
+The public rename follows the alpha only after trademark, domain, repository and package
+clearance; §8.7 records the later owner decision that superseded the earlier pre-PyPI course.
+
+The tagline belongs in the README, in onboarding, and in empty states — not on the working
+dashboard, where a person is mid-task and a slogan above their queue is noise.
+
+## 2. Status — what has shipped on this branch
+
+Base for this chunk is `c2c79cd` (the M1–M4 tip).
+
+| Slice | Commits | What landed |
+|---|---|---|
+| **S1** project status and next action | `125d9f7` `55da0fa` `8c62473` | `project_status` and `next_action` in `state.json` §6.1 — a strict precedence ladder, one imperative sentence, ordering pinned by tests. |
+| **DO-1** public product direction | `ba3b736` | `docs/specs/2026-08-03-product-direction.md` — five stages, eight product laws, the Orbit/Stage/Node/Harness/Gate/Run levels. |
+| **DO-1b** optional `role.stage` | `49c301f` `688878b` `9009d75` `57266ef` | `cycle.roles[].stage` in Protocol v1 as presentation metadata, projected only when declared; additivity proven on both branches. |
+| **DO-2** Default Orbit template and stage-aware prompts | `b9ff514` `db88fdd` `df70fcb` | The `default-orbit` template (five phases, five staged roles), `prompts._STAGE_CONTRACTS`, and the vacuous `agreed` state disclosed. |
+| **DO-3/S4** guided init | `2f4aabf` | `conduct init` wizard, four vended templates, deterministic `--template`, scaffold-then-validate, printed next steps. |
+| **DO-4/REG-1** harness registry and measurement hardening | `829ba00` | Registry data and neutral fallbacks, Gemini CLI and OpenCode owner-confirmed, machine-probing ban, and an honest mutation instrument. |
+| **S5** deterministic report | `de68d35` | `conduct report` projects one merged state to Markdown without recomputing it. |
+| **S7** readiness doctor | `a6d5934` `4e303e8` | `conduct doctor` explains setup blockers and safe next commands without probing the machine. |
+| **DEC-UI-1–4** December panel and Orbit | `39c9397` `97619e9` `f177953` | Precision Cockpit themes, data-derived light, a cycle-driven responsive Orbit, harness identity and observed-SSE-only motion. |
+| **DO-6** lane drill-down and handoff | `06c09a7` | Read-only harness-lane details and a deterministic handoff packet from the same brokered state. |
+| **DO-7** alpha release preparation | `3a00544` | December Command v0.1.0 metadata, reconciled release prose, tracked competitive direction and clean-wheel smoke. |
+
+All planned alpha slices above are integrated. DO-7 adds no orchestration or write surface;
+post-alpha execution remains governed by §8.7 and the competitive product-direction document.
+
+### Final gate numbers
+
+Re-pinned 2026-08-10 in one run on frozen HEAD `3a00544959422e1d8d028ac1eb4c371767719a5d`.
+The mutation harness ran against a one-shot `git archive`; its provenance resolved both the
+source root and `conductor.merge` to that export, not to the editable working tree.
+
+| Gate | Command | Result |
+|---|---|---|
+| Test suite | `.venv\Scripts\python -m pytest -q` | **1750 passed, 4 skipped** |
+| Mutation baseline | targeted tests on unmutated export | **102 passed** |
+| Mutation harness | `scripts/mutate_merge.py --root <export>` | **15/15 mutations killed** |
+| Working tree | `git status --porcelain` in the same run | **clean** |
+
+The first attempt produced no final number: two nested pytest processes were refused access to
+the host `%TEMP%`, the suite exited non-zero, and the mutation phase did not start. The accepted
+run set `TEMP` and `TMP` once for the complete process tree; no assertion or product file changed.
+The full evidence and the separate clean-wheel smoke are recorded in
+`docs/audits/2026-08-10-alpha-closeout.md`.
+
+## 3. The queue
+
+The owner's approved order, reconciled with the December UI slices. Two reconciliations matter,
+because the two lists were written separately and overlap:
+
+- **DEC-UI-2 supersedes what was previously listed as DO-5/S2** (Orbit presentation). One slice,
+  not two; the DO-5/S2 label is retired.
+- **DEC-UI-3 covers the panel half of DO-4's branding.** DO-4 ships the registry *data* and its
+  Python surface; DEC-UI-3 renders it. Neither is run twice.
+
+```
+DO-4     harness registry
+DEC-UI-1 brand foundation
+DEC-UI-2 Orbit presentation     (owner checkpoint before implementation)
+DEC-UI-3 harness identity
+DEC-UI-4 motion and polish
+S5       conduct report
+S7       conduct doctor
+DO-6/S3+S6 harness drawer and handoff
+DO-7     verification and documentation
+```
+
+### DO-4 — harness registry
+
+The bundled known-harness registry from ADR 0001 §6: harness type id, display name, monogram,
+light/dark accent, documentation URL, adapter id, plus a deterministic fallback for unknown
+types. Data only — no protocol key is added and no merge rule reads it.
+
+- Files: a new module under `src/conductor/` (registry data + lookup), `tests/`.
+- Starter set `CC` Claude Code, `CX` Codex, `CU` Cursor, `WS` Windsurf; no official logos
+  without license verification.
+- Precedence per ADR 0001 §6: project/user override → adapter manifest → bundled registry →
+  deterministic custom fallback. Only the last two exist in this slice.
+- **Carried from the DO-3/S4 review:** the AST ban on machine probing parses the source of
+  `conductor.__main__` and `conductor.templates` only, while `__main__` imports
+  `conductor.demo` (which imports `shutil`) and `conductor.server` (which imports `os`). A
+  `shutil.which` planted in either of those and called from `init` would not be caught today.
+  DO-4 must widen the ban to the modules the init path actually reaches, because DO-4 — a
+  registry of known harnesses — is where the temptation to detect the installed ones is highest.
+- Acceptance: `state.json` is byte-identical before and after for every existing fixture; an
+  unregistered harness takes its display name from the incoming string, a deterministic monogram
+  from that same string, and the fixed neutral accent of the theme in force — no hash-derived
+  colour, and `custom` and unrecognised harnesses alike stay neutral; the widened ban is verified
+  by the same sabotage method as the original; the mutation harness and the suite stay green.
+
+### DEC-UI-1 — brand foundation
+
+The December palette, the mark, the wordmark and the brand shell, as one token layer the later
+UI slices consume. No layout is redesigned here.
+
+- Files: `src/conductor/panel/index.html`, `tests/test_panel_smoke.py`, `README.md` (tagline).
+- Palette lives once in `:root` (§4). Today's accent is teal (`--accent:#33b3a4` dark,
+  `#00857a` light); December Red replaces it in the reserved roles only.
+- Today's `--fail` is `#e0645c`, close enough to December Red `#E44955` that the two would read
+  alike at a glance. Both themes now settle this and this slice implements both. In the
+  **light** theme, `--accent` `#c92f42` and `--fail` `#b42318` (§8.3). In the **dark** theme,
+  `--fail` moves to `#e0703a` while December Red is retained at full strength as the accent
+  (§8.4). No semantic value is invented by this slice; all of them are the owner's.
+- The light theme stays (`@media (prefers-color-scheme:light)`), on the *Winter Daylight*
+  palette — decision §8.3, 2026-08-03. **Its token values are approved** (§4, §8.3) and this
+  slice implements them.
+- The contrast constraint that travelled with the light-theme decision is **satisfied by the
+  approved palette rather than outstanding**: December Red at `#E44955` on a light background
+  falls below the 4.5:1 ratio required for normal text, and the approved light `--accent`
+  `#c92f42` is that darkened variant. The obligation to *measure and record* remains.
+- **Accent and fail are both reds in the light theme.** `--accent` `#c92f42` and `--fail`
+  `#b42318` differ by roughly a 1.24:1 luminance ratio — the coordinator's estimate, which this
+  slice must replace with a precise measurement. §4 forbids the current state and a failure from
+  looking alike, and the mitigation the palette relies on is structural rather than chromatic:
+  statuses always carry glyph, text and shape, and the accent is reserved for the current stage,
+  human-control points, the primary action and focus — roles that rarely occupy the same
+  position as a status chip.
+- **`fail` and `wait` are both warm hues in the dark theme.** `#e0703a` (orange-coral) and
+  `#c9971f` (gold) are adjacent on the wheel. Under red-green colour-vision deficiency — the
+  common form — orange and gold converge, so the pair that separates *"this failed"* from
+  *"this is waiting"* may not be separable by hue for a meaningful share of users. This is stated
+  as a fact to measure, not an objection to the palette: the owner's glyph/text/shape rule is the
+  mitigation, and this obligation is what proves the rule is load-bearing rather than decorative.
+- The document title already follows the target pattern — `document.title = "Conduct — N
+  waiting on you"` — so `December — N waiting on you` is a one-word swap plus a test update.
+- Acceptance: smoke tests pin the title pattern and the mark; every foreground/background pair
+  the slice ships has a measured contrast ratio recorded as a number, not an assumption;
+  `fail` and `wait` are each measured against `panel` and `sunk` in both themes; every
+  accent/`fail` pair is measured precisely rather than estimated, and the slice enumerates the
+  places where an accent element and a `fail` element can appear within one field of view and
+  shows that they stay distinguishable without relying on hue alone; the two common CVD types are
+  simulated and the slice records whether `fail` and `wait` remain separable under each; the
+  glyph-and-text differentiation is shown to be genuinely load-bearing — the states are still
+  tellable apart with colour removed entirely, not merely accompanied by a glyph; no
+  state is conveyed by colour alone; no invented identifier of any kind appears in the shell —
+  no run id, no synthesised session or build label (§8.2); no `innerHTML` introduced.
+
+### DEC-UI-2 — Orbit presentation *(owner checkpoint before implementation)*
+
+Replaces the current cycle ring with the Orbit as the dominant spatial graph: five stages, the
+trajectory that connects them and returns to the first, the current stage, and roles grouped
+under the stage they are staged to. **Unblocked by §8.1 (2026-08-03):** the stages display as
+*Goal, Detect, Diagnose, Design, Deliver* — the shipped protocol ids, capitalised — and no
+alternative label is introduced.
+
+The trajectory carries no history, and the slice ships none: every connection is the same
+neutral contour, and the return to the first stage is told from a step by its dash and its
+missing arrow head rather than by a colour. Displaying the travelled part is reserved (§8.6).
+
+- Files: `src/conductor/panel/index.html` (`drawRing`, `renderCycle`), `tests/test_panel_smoke.py`.
+- The panel joins `lane.role → cycle.roles[].stage`. It does not do this today: `renderCycle`
+  reads `id`, `harness` and `reviews` only, and the string `stage` does not appear anywhere in
+  the panel. The join is new work, not existing behaviour.
+- `stage` is never duplicated into lanes, and never used to relocate a lane (§6).
+- A stage with no participant is a legitimate shape — the `default-orbit` template deliberately
+  stages nobody to `goal`.
+- Acceptance: every computed value in `state.json` is unchanged; the five stage labels are the
+  capitalised protocol ids and nothing else; no invented identifier of any kind appears in the
+  shell, and what would have been headed *This Run* is headed **Recent activity** (§8.2); drift
+  between `stage` and `now.phase` renders as a non-blocking presentation warning; the narrow
+  layout degrades to a vertical sequence of stages; smoke tests cover both layouts.
+
+### DEC-UI-3 — harness identity
+
+Renders the DO-4 registry: monogram badge and accent per harness in the agents block and the
+detail card.
+
+- Files: `src/conductor/panel/index.html`, `tests/test_panel_smoke.py`.
+- Acceptance: an unknown harness gets the neutral badge and a minimal card, never a blank or a
+  guessed brand; branding never changes an ordering, a status or a queue position; the badge is
+  never the only carrier of a status.
+
+### DEC-UI-4 — motion and polish
+
+Functional motion only (§5), and the removal of what is decorative today.
+
+- Files: `src/conductor/panel/index.html`.
+- The permanent glow on the current phase (`.pulse rect{animation:glow 2s ease-in-out
+  infinite}`) is gone already: DEC-UI-2 deleted it with the old cycle ring in b8b80bf, and
+  tests/test_panel_style.py holds that nothing references it. What is left for this slice is
+  what the owner settled on 2026-08-09. The live dot becomes a **static** connection
+  indicator — a blink with no event behind it is fake telemetry, which the Precision Cockpit
+  direction forbids — so the panel is left with no perpetual motion at all. In its place the
+  Orbit gets one short transition, on an **observed** change of the current phase: a first
+  drawing exists, two consecutive state documents arrived over a live SSE connection, and they
+  name different phases. A reload, a reconnect, the first frame after either, a new
+  `generated_at` and a new queue each fail one of those and move nothing. Under
+  `prefers-reduced-motion` the transition is instant.
+- The **travelled trajectory** is not implemented in v1. Protocol v1 records no run history, so
+  the third kind of movement §5 sketches has no subject; it is reserved with the accent role in
+  §8.6 and stays reserved.
+- `@media (prefers-reduced-motion:reduce)` already disables both; the guard must keep covering
+  every animation added here.
+- Acceptance: no animation runs when nothing changed; every new animation is listed in the
+  reduced-motion guard; a reviewer can state, per animation, which real event triggers it.
+
+### S5 — `conduct report`
+
+A deterministic report over `state.json`, fit to attach to a pull request: the decision brief,
+the queue, findings with evidence as authored, and what is unknown.
+
+- Files: a new module under `src/conductor/`, `src/conductor/__main__.py`, `tests/`.
+- Acceptance: a pure function of `state.json` — same input, same bytes; no field invented and
+  none inferred; nothing unverified rendered as verified; no network.
+
+### S7 — `conduct doctor`
+
+Readiness, kept strictly distinct from schema validation: what is wrong with this project's
+setup and how to fix it, rather than whether the files parse.
+
+- Files: a new module under `src/conductor/`, `src/conductor/__main__.py`, `tests/`.
+- Acceptance: `validate` behaviour and exit codes unchanged; `doctor` never reports green on an
+  unknown; each finding names a concrete next command.
+
+### DO-6/S3+S6 — harness drawer and handoff
+
+The per-harness drill-down over current lane data, plus the deterministic handoff packet.
+
+- Files: `src/conductor/panel/index.html` (the detail card, `#det`), the S5 module, `tests/`.
+- Acceptance: only fields that exist in the §6.1 output contract are shown; model, prompt and
+  skills stay absent until the data exists (§6); the drawer's structure is extensible without
+  placeholders that imply missing data is empty rather than unknown.
+
+### DO-7 — verification and documentation
+
+Close the chunk: README and docs reconciled with what shipped, cross-document consistency
+checked, both gates green, and the mutation harness extended to cover any merge rule added
+along the way.
+
+- **DO-7 owns the final gate re-pin** (§2). On a frozen HEAD, the test suite, the mutation
+  harness and a clean-tree check are re-run *together*, in one run, and only that single run's
+  results become the chunk's final numbers. Intermediate measurements taken along the way are
+  signed with their own commit and are not merged into it.
+- **DO-7 ran the mutation harness on a throwaway export.** At the time, crash-safe restore had
+  not landed, so `scripts/mutate_merge.py --root <export>` made a hard-kill poison disposable.
+  The provenance trap in §2 still applied: the export isolated files, not imports. The accepted
+  measurement and its audit remain historical facts. The post-alpha completion in §10 now
+  creates and verifies its own disposable copy, so future in-tree runs no longer rely on the
+  caller exporting the source for crash safety.
+
+## 4. The December visual system
+
+The owner's specification, recorded as given.
+
+### Direction — Precision Cockpit, decided 2026-08-05
+
+**Decision: the December surface is a *Precision Cockpit*** — the minimal, premium
+instrument panel of a car or a real spacecraft. Matte dark surfaces, thin cool contours,
+local functional lighting, and one dominant instrument: the Orbit. The intensity of the
+light reflects real activity and real need for attention. No fake telemetry, no decorative
+HUD, no wall-to-wall neon, no perpetual animation.
+
+The direction is a material-and-light layer **over** the palette below, not a replacement
+for it. The owner's tokens are unchanged by it: `--ground` `#07090D`, `--panel` `#10141B`
+and `--sunk` `#0B0E14` already *are* matte dark surfaces and `--line` `#262D38` already is
+a cool contour. What the direction adds is that they become a named system rather than a
+set of coincidences.
+
+**Responsibility is split between two slices.** DEC-UI-1 lays down the material and light
+system **without changing layout**; DEC-UI-2 turns the Orbit into the central instrument
+cluster. Neither does the other's half.
+
+Two constraints travel with the direction and bind every slice that touches the panel:
+
+- **Light must be derived from data.** Every light level names a concrete field or
+  computation from `state.json` that drives it. A level with no source behind it is fake
+  telemetry, which is §8.2's ban on invented identifiers in its visual form. The absence of
+  attention is itself a valid state: a panel with nothing waiting is meant to look calmly
+  unlit, not uniformly glowing.
+- **Light and accent are different channels.** Light intensity is carried by material and
+  contour — surface lightness, contour weight and brightness, depth — and never by the
+  accent hue. A lit card does not turn red; it gets lighter and its contour gets crisper.
+  December Red stays on the five roles below. In the light theme the mechanism inverts:
+  Winter Daylight is an instrument panel in daylight, so depth and contour carry the light
+  level there, because a white card cannot be made lighter.
+
+### Palette
+
+Both themes are the owner's and both are approved: the dark surfaces and text ramp, the
+*Winter Daylight* light set (decision §8.3), and the dark semantic triple (decision §8.4) — the
+last two approved 2026-08-03. Values are recorded verbatim as supplied, hex case included.
+
+| Token | Role | dark (approved) | light — Winter Daylight (approved) |
+|---|---|---|---|
+| ground | Page background | `#07090D` | `#f3f5f7` |
+| panel | Card surface | `#10141B` | `#ffffff` |
+| sunk | Recessed surface | `#0B0E14` | `#e9edf1` |
+| line | Borders and rules | `#262D38` | `#d5dce4` |
+| ink | Primary text | `#F3F6F8` | `#11161d` |
+| muted | Secondary text | `#B9C2CC` | `#4e5965` |
+| faint | Tertiary text | `#7F8A98` | `#697684` |
+| **December Red** / accent | Reserved — see below | `#E44955` | `#c92f42` |
+| pass | Operational status | `#3fa86a` (§8.4) | `#247a4b` |
+| wait | Operational status | `#c9971f` (§8.4) | `#8a6500` |
+| fail | Operational status | `#e0703a` (§8.4) | `#b42318` |
+
+Both columns are now complete. December Red `#E44955` is retained as the full brand accent in
+the dark theme; it is the failure colour that moved away from it, not the accent that gave up
+colour (§8.4).
+
+December Red is reserved for five things and nothing else: the current Orbit stage,
+human-control points, the primary action, focus and selection, and a small brand mark. It is
+never used as a large filled surface. A sixth role — the travelled part of the trajectory —
+was reserved here until 2026-08-10, when the owner reserved the display itself until a
+structural Run history exists (§8.6).
+
+Operational statuses — pass, wait, fail — keep their own semantics, stay compact, and are
+always distinguished by **glyph, text and shape as well as colour, never by colour alone**
+(owner, 2026-08-03, §8.4). The current state and a failure must never look alike.
+
+A barely-perceptible coordinate or star texture is allowed. No planets, no rockets, no galaxy
+illustrations, no permanent decorative animation.
+
+### Brand shell
+
+In the top area: a December mark built from a circle, trajectories crossing it and one red dot;
+the wordmark; the project name and the active Orbit name; the live state and an honestly
+labelled **last update**, computed from `state.json`'s `generated_at`. Document title:
+`December — N waiting on you`.
+
+**No run identity appears in the shell** (decision §8.2, 2026-08-03). Protocol v1 has none —
+`state.json` carries `generated_at`, not a run identity — and run identity stays deferred
+(ADR 0001 §2; product direction §3.4, §7.2). The shell may not display an invented or
+synthesised identifier of any kind, and where an earlier draft would have said *This Run* it
+says **Recent activity** until P1 ships run identity.
+
+## 5. Motion, responsive, accessibility
+
+**Motion.** Only functional motion is allowed:
+
+- a short pulse movement on a *real* phase change;
+- a brief accent on a new queue item.
+
+A soft refresh of the travelled trajectory was a third allowance. It goes with the display it
+would have moved: §8.6 reserves that display until a structural Run history exists, so in v1
+there is nothing for such a refresh to be a refresh *of*, and inventing one would be motion
+with no event behind it.
+
+No perpetual Orbit motion. `prefers-reduced-motion` is respected for every animation.
+
+**Responsive.** On desktop the Orbit is the dominant spatial graph. On narrow and mobile
+viewports it becomes a vertical sequence of stages — the same information, re-laid out, not a
+reduced subset.
+
+**Accessibility.** Full keyboard navigation with visible focus. No state conveyed by colour
+alone — the glyph, text and shape rule (§4, §8.4) is what makes this hold, and both approved
+palettes depend on it holding. Existing XSS hygiene is preserved: every
+state-derived string enters the DOM as a text node or a `setAttribute` value, never through
+`innerHTML`, because lane authors are untrusted input. Contrast is checked, not assumed.
+
+## 6. Semantic constraints
+
+The part a redesign is most likely to erode. None of it is negotiable inside a UI slice.
+
+- **`stage` stays presentation and handoff metadata.** It must not affect readiness,
+  `review_state`, merge semantics, the human queue, gates, transitions, or `project_status`.
+  Protocol v1 §2 and §6.1 say so normatively, and `merge._role` projects it only when the map
+  declares it.
+- **The join is one-way.** The panel joins `lane.role → cycle.roles[].stage`; `stage` is never
+  duplicated into lanes.
+- **Design-time `stage` and runtime `now.phase` never overwrite each other.** A mismatch is
+  *drift*: a non-blocking, presentation-level warning. A consumer must not take `stage` as
+  authoritative and relocate the lane to the staged phase (§6.1 note).
+- **No first-class Human Gate node before the corresponding v2 decision.** The existing human
+  queue — computed from `waits_on_human`, never authored — may be *presented* as a control
+  point. The protocol may not be quietly changed to acquire a gate entity, and absence of a
+  wait is still not approval.
+- **Harness stays distinct from model.** ADR 0001 §1: a model is an internal setting of a
+  harness adapter, not a level of the model.
+- **Brand metadata must not influence merge or protocol semantics.** If branding needs a
+  contract extension, that is a separate additive slice — never a rider on a visual commit.
+- **Do not show model, prompt or skills until those data exist in the output contract.** An
+  extensible detail-panel structure is fine; invented values are not.
+
+## 7. Technical constraints
+
+- **The panel stays single-file, no-build, no-dependency.** `conduct up` hands the browser one
+  static asset; a bundler or an ES-module split would be a new toolchain in a stdlib-only
+  project.
+- **Read-only semantics.** The panel never writes; loopback only.
+- **The single-file waiver** (owner, 2026-08-03; revised 2026-08-08 and 2026-08-10, §8.5) exempts
+  `src/conductor/panel/index.html` from the 800-line global cap, on four conditions, all recorded
+  in the file itself:
+    - sections stay marked with their banners;
+    - the source is never minified or compressed to fit;
+    - Every new panel invariant is pinned in the matching `tests/test_panel_*.py` module.
+      `test_panel_smoke.py` guards basic loading and the structural contract; it is not the
+      mandatory home for every panel guard.
+    - crossing 1600 lines triggers an architecture audit; 2000 lines is the alpha ceiling, and
+      a forecast beyond it stops the slice for a split proposal rather than another increase.
+
+  (The M1–M4 closeout audit recorded this waiver as living only in session history; it is now
+  written into the panel source, so that finding is closed.)
+- **Protocol changes and visual redesign never share a commit.**
+- **Internal protocol keys are not renamed without a separate decision.**
+
+### Headroom arithmetic — the structural risk of this chunk
+
+| Measure | Lines |
+|---|---|
+| `panel/index.html` at M1–M4 closeout | 829 |
+| `panel/index.html` before the UI chunk (`2f4aabf`) | **844** |
+| `panel/index.html` after DO-6 (`9541746`) | **1657** |
+| Mandatory architecture-audit trigger | 1600 |
+| Alpha ceiling under the waiver | 2000 |
+| **Remaining after DO-6** | **343** |
+
+The trigger fired after DO-6 and the architecture review is recorded in
+`docs/audits/2026-08-10-panel-1600-line-audit.md`. The alpha keeps the single-file constraint:
+the source is still sectioned, unminified and below 2000, while the invariant circuits already
+live in focused `tests/test_panel_*.py` modules. The remaining 343 lines are defect headroom,
+not a feature budget. Any post-alpha interactive control work starts with a split proposal;
+DO-7 may reconcile documentation and fix release blockers, but adds no new panel surface.
+
+## 8. Resolved decisions
+
+The owner answered all three of the chunk's open questions on **2026-08-03**, and closed a
+fourth the same day — §8.4, a gap the light-theme approval exposed rather than one the chunk
+started with. The reasoning is kept rather than deleted: whoever reopens one of these is owed
+the argument that closed it.
+
+### 8.1 Stage naming — resolved 2026-08-03, no rename
+
+**Decision: keep the shipped ids, display them capitalised.** The canonical protocol ids stay
+`goal, detect, diagnose, design, deliver`; the UI shows *Goal, Detect, Diagnose, Design,
+Deliver* and introduces no alternative marketing labels. **No code change is required** — the
+shipped values already match the decision, which is option (c) below. The earlier UI brief
+wording, *Goals → Problems → Diagnosis → Design → Doing*, is **superseded**, and every place in
+this document that carried it has been corrected. **DEC-UI-2 is unblocked by this.**
+
+The reasoning, kept. The shipped values are three things at once: the `cycle.phases` of the
+`default-orbit` template, the keys of `prompts._STAGE_CONTRACTS`, and the vocabulary documented
+in the public product direction §3.2.
+
+| Option | What it means |
+|---|---|
+| **(a)** Keep the ids, show different labels | Protocol untouched; the panel maps id → display label. Two vocabularies exist, and the public direction keeps the old one. |
+| **(b)** Rename the protocol phase ids to the superseded brief | One vocabulary everywhere. Touches the template, `_STAGE_CONTRACTS`, the direction, the spec examples, the demo fixtures. |
+| **(c) — chosen** Keep both aligned as they are | The superseded names are dropped; nothing changes. |
+
+The asymmetry that made this urgent, and that (b) would have had to pay for: a role's `stage`
+MUST name a declared phase (`spec/PROTOCOL.md` §2), so renaming the phases orphans every staged
+role and the map stops validating until each `stage` is renamed in the same edit. The template
+ships five staged roles. `_STAGE_CONTRACTS` is keyed by the same strings, and `prompts` returns
+an empty stage block for a key it does not know — so a partial rename would silently drop the
+stage contract out of every prompt. Today only vended files are affected and a rename is a
+mechanical edit. Once users have committed their own maps, the same rename is a breaking change
+with no migration written.
+
+### 8.2 Run identity — resolved 2026-08-03, not introduced early
+
+**Decision: no run identity in the shell.** `Run id` is removed from the brand-shell
+specification in §4. Protocol v1 has no run identity — `state.json` carries `generated_at` — and
+it stays ADR-deferred (ADR 0001 §2; product direction §3.4, §7.2). The header instead shows the
+live state and an honestly labelled **last update** computed from that `generated_at`, and
+wherever this document or a DEC-UI slice would have said *This Run* it says **Recent activity**
+until P1 ships run identity.
+
+No invented or synthesised identifier of any kind may appear in the shell — not a run id, not a
+session number, not a build label. DEC-UI-1 and DEC-UI-2 carry that as acceptance.
+
+### 8.3 Light theme — resolved 2026-08-03, kept; token values approved
+
+**Decision: `prefers-color-scheme: light` support is retained, on the owner's *Winter Daylight*
+palette, and the token values below are the owner's and are approved.** Nothing about the light
+theme is outstanding, and **DEC-UI-1 may implement it**.
+
+| token | light — Winter Daylight (approved) |
+|---|---|
+| `--ground` | `#f3f5f7` |
+| `--panel` | `#ffffff` |
+| `--sunk` | `#e9edf1` |
+| `--line` | `#d5dce4` |
+| `--ink` | `#11161d` |
+| `--muted` | `#4e5965` |
+| `--faint` | `#697684` |
+| `--accent` | `#c92f42` |
+| `--pass` | `#247a4b` |
+| `--wait` | `#8a6500` |
+| `--fail` | `#b42318` |
+
+The reasoning, kept. An earlier revision of this entry carried a **coordinator's proposal**
+awaiting sign-off — `#F2F5F8 / #FFFFFF / #E8EDF2 / #D3DBE4 / #0D1319 / #4A5763 / #77848F` with
+December Red at `#C8323E`. That proposal is **superseded in full** by the table above. It is
+recorded only so a future reader can tell the two apart: the values above are the owner's, they
+are what ships, and the proposal never was. The approved set also goes further than the proposal
+did — it supplies the semantic triple (`pass`, `wait`, `fail`), which the proposal did not
+address at all.
+
+The measurable constraint that travelled with the decision is now **satisfied rather than
+outstanding**: December Red at `#E44955` on a light background falls below the 4.5:1 contrast
+ratio required for normal text, and `--accent` `#c92f42` is the darkened variant that answers it.
+The obligation it created survives the approval — DEC-UI-1 still measures every
+foreground/background pair it ships and records the numbers, because approval of a value is not
+a measurement of it.
+
+The approval also exposed something the proposal had not: `--accent` `#c92f42` and `--fail`
+`#b42318` are both reds, roughly 1.24:1 apart in luminance by the coordinator's estimate. That
+is not a defect — the separation is meant to be structural, not chromatic — but it is a
+measurement DEC-UI-1 owes, and it is written into that slice's acceptance in §3.
+
+### 8.4 Dark semantic triple — resolved 2026-08-03, variant A approved
+
+**Decision: the dark theme's `pass`/`wait`/`fail` are the owner's values below, approved.** The
+owner's original dark palette (§4) supplied surfaces, the text ramp and December Red but no
+semantic triple, and the panel had been shipping its own unapproved values. That gap is closed.
+
+| token | dark (approved) |
+|---|---|
+| `--pass` | `#3fa86a` |
+| `--wait` | `#c9971f` |
+| `--fail` | `#e0703a` |
+
+**These exact hex values were approved, not merely the direction.** Variant A was put to the
+owner with these values and blessed as it stood; a future reader may treat them as literal, and
+a change to any one of them is a new decision rather than an adjustment within an approved
+direction.
+
+The reasoning, kept, because it constrains future changes more than the values do. The problem
+was that today's dark `--fail` `#e0645c` sits very close to December Red `#E44955` — the same
+collision the light theme has between accent and fail, but more acute, because in a dark theme
+both are light marks on a near-black field and cannot be separated by lightness the way the
+light theme separates them. Two ways out existed: move the failure colour, or take the colour
+away from the accent and let form and position carry it. **The owner chose to move the failure
+colour and to retain December Red as the full brand accent** — the current state, focus and
+human-action points must not lose the brand colour, and must not come to look like a failure.
+So failure moves to orange-coral and the warning stays gold.
+
+One standing rule travels with the decision, and it is a rule rather than a nicety precisely
+because the palette leans on it: `pass`, `wait` and `fail` are always distinguished by **glyph,
+text and shape as well as colour, never by colour alone**. §4 and §5 already carried the weaker
+*glyph + text* form of this; it is now the stronger form and applies to both themes.
+
+What the decision leaves for DEC-UI-1 to measure, not to reopen: `#e0703a` and `#c9971f` are
+adjacent warm hues, and under the common form of red-green colour-vision deficiency orange and
+gold converge. The mitigation is the standing rule above; the obligation to prove it holds is
+written into DEC-UI-1's acceptance in §3.
+
+### 8.5 Where a panel invariant is pinned — resolved 2026-08-10, the waiver's third condition widened
+
+**Decision, as given:**
+
+> Every new panel invariant is pinned in the matching tests/test_panel_*.py module.
+> test_panel_smoke.py guards basic loading and the structural contract; it is not the
+> mandatory home for every panel guard.
+
+§7 and the copy of the four conditions inside `src/conductor/panel/index.html` both carry the
+new wording. The condition has to read the same in both places or the panel's own record of the
+waiver stops being the record.
+
+The reasoning, kept. The condition was written when one module held everything the panel
+promised. It no longer does: `tests/test_panel_cascade.py` owns the parsing and the cascade
+model, `test_panel_colour.py` the colorimetry as a self-contained circuit, `test_panel_contrast.py`
+the measured pairs, `test_panel_style.py` the stylesheet's structural relations,
+`test_panel_orbit.py` the Orbit's geometry and stage vocabulary, `test_panel_harness.py` the
+harness channel rule, and `test_panel_smoke.py` the served response and the id contract. Two
+forces produced that split and both are the owner's: a guard belongs with the class it closes,
+and a test file over 800 lines gives up the self-contained circuit inside it rather than growing
+(the rule of 2026-08-04, which is what moved the colorimetry out of the contrast module).
+
+Read literally, the old condition ordered the geometry, cascade, contrast and branding guards
+back into `test_panel_smoke.py`. The 800-line cap on test files is not what the panel's waiver
+suspends — the waiver names one HTML file — and the guards outside the smoke module already run
+to 2927 lines against a smoke module of 270, so the literal reading is not merely undesirable
+but unreachable. It would also put unrelated guards behind one module's fixtures and dissolve
+the one thing a module name is good for: telling a reader which class of claim was closed where.
+
+What the condition buys is unchanged, and it is the part worth keeping: no surface ships
+unguarded. It is the module that moved, not the obligation. Specifically **not** implied by
+this decision: gathering the Orbit's checks into `test_panel_smoke.py` for literal compliance
+with the old wording. Geometry, cascade, contrast and branding stay in the modules that own them.
+
+### 8.6 The travelled trajectory — resolved 2026-08-10, reserved rather than a v1 accent role
+
+**Decision, as given:**
+
+> Displaying the travelled trajectory is reserved until a structural Run history exists.
+> It is not implemented in v1: the interface does not derive it from the current phase,
+> does not accumulate it client-side, and does not simulate historical data.
+
+December Red is therefore reserved for **five** roles, not six (§4); DEC-UI-1's accent list and
+DEC-UI-2's description of what the Orbit shows (§3) drop it; and §5's soft refresh of the
+travelled trajectory goes with it.
+
+The reasoning, kept. Protocol v1 records no run history. `state.json`'s `cycle` carries the
+declared phases, the roles, and at most the one phase a lane is reporting right now — there is
+no field in it that could make a travelled path true, and run identity is ADR-deferred (§8.2,
+ADR 0001 §2). Each of the three ways to draw one anyway is an invention of exactly the kind this
+document bans elsewhere: deriving the path from `now.phase` asserts that every earlier phase was
+completed, which the merger never says; accumulating it in the browser makes the picture depend
+on how long a tab happened to stay open, so two people looking at the same project see different
+histories; and simulated history is fake telemetry, which §4's rule that light must be derived
+from data already forbids.
+
+The role therefore had no subject, and the panel had already settled the question in the other
+direction while the plan still listed it: no part of the trajectory may be painted with the
+accent or with a status colour, and the return to the first stage is told from a step by its
+dash and its missing arrow head. The DEC-UI-2 review found that contradiction and correctly
+declined to fix it in the guards, because the guards were quoting §4 faithfully and the
+contradiction was the plan's. This entry is that repair. Nothing in the panel is implemented to
+satisfy it and nothing needs to be: reserving a display is a decision not to build one.
+
+### 8.7 December Command — the 2026-08-10 owner directive, acknowledged
+
+**Decision (owner, 2026-08-10; binding).** The product's full name is **December Command**;
+the brand stays **December**; the market category is **Harness Control Plane**. The naming
+discussion is closed and is not reopened here. The authoritative record is
+`docs/specs/2026-08-03-hcp-competitive-product-direction.md` (§1.2, §4.9–§4.11, §8 P3, and
+the "14-day December Command strike" section). That file becomes tracked at
+integration/DO-7 **deliberately** — this supersedes the 2026-08-03 disclosure decision to
+keep it untracked, and its historical evidence is not rewritten.
+
+**What this changes for the alpha: the packaging course, nothing else.** v0.1.0 ships under
+the distribution name `agent-conductor`, CLI `conduct`, Protocol v1, read-only panel
+semantics. No broad rename happens during DO-7. This supersedes the 2026-08-08 packaging
+decision that the first public release must ship as `december-orbit`, and it supersedes
+§1's sentence that the rename lands before any PyPI publish: the public rename to December
+Command happens post-alpha, only after trademark, domain, repository and package clearance.
+The alpha scope stays frozen; no v2 execution or orchestration functionality enters it.
+
+**What this changes after the alpha.** The owner superseded the 14-day calendar on
+2026-08-11 with the binding four-day strike in
+`docs/plans/2026-08-11-december-command-v2-four-day-strike.md`: Day 1 contracts, run
+identity, evidence, receipts, adapter SDK, Observe/Propose; Day 2 deep Claude Code and
+Codex execution plus Confirm, recovery and switching; Day 3 Cockpit commands, Human Gates,
+history, Policy, Orbit editing and parallel execution; Day 4 hostile review, packaging,
+demo and conditional public rename. The architecture decisions still precede their code;
+none enters through an incidental UI change or a silent Protocol v1 edit. The product laws
+travel intact: Orbit advances only from verified state, an accepted command is never a
+successful result, and there is no hidden fully-autonomous mode.
+
+## 9. Still open
+
+These two are for the owner. Nothing in this section is decided.
+
+### 9.1 December terminology in CLI strings
+
+Should the panel and the CLI surface December terminology in user-facing strings — "Orbit",
+"Run", the wordmark — before the package rename, while the command is still `conduct` and the
+package still `agent-conductor`? Splitting the vocabulary between the docs and the terminal has
+a cost; so does holding the brand back behind a rename that has not been scheduled.
+
+### 9.2 Which deferred ADR decision does DEC-UI press against first?
+
+ADR 0001 defers five: run identity, narrow panel writes for receipts, the action protocol,
+evidence verification, and policy effects. §8.2 settles the run-identity half by designing
+around the gap — the shell shows a last update, never an identity — so what remains open is the
+receipts half: the human-control points in §4 are the visual half of decision receipts, and no
+receipt exists. Is DEC-UI expected to design around that gap as well, or to open the decision?
+
+## 10. Backlog
+
+Five items recorded; all five are complete.
+
+- **Completed 2026-08-10 — give `scripts/mutate_merge.py` a crash-safe restore.** Atomic restore
+  alone cannot cover a hard kill before the restore call. The implemented boundary is stronger:
+  `measure_in_scratch` copies the requested project to an external disposable directory,
+  rejects symlinks, junctions and reparse points instead of following a copy cycle, verifies the
+  copy's import identity and clean baseline, and passes only its `merge.py` to the mutation loop.
+  The requested merge engine is never imported or written. `--verify-only` crosses the same
+  snapshot and import boundary, skipping only the baseline and mutations. A hard kill may orphan
+  a mutated scratch directory, but it cannot poison the project being measured. Ordinary
+  restores inside the scratch tree retain the retry and content-hash proof; source `__pycache__`
+  cleanup remains for compatibility, while subprocesses keep `PYTHONDONTWRITEBYTECODE=1`.
+- **Rendered-result browser testing.** The panel's guards read source text: the `<style>`
+  block parsed into rules, the `<script>` block read as characters. Nothing renders. So they
+  prove what the panel *declares* — its structure — and not what a browser produces from it,
+  and the same behaviour written a different way goes straight through. That is not a
+  hypothesis: two reviews executed fourteen sabotages of exactly this kind, among them
+  `querySelector("html")` for `documentElement`, a class assembled as `"card li" + "t"`, a
+  class reached through `style.boxShadow`, an attribute order the regex could not follow,
+  `(st.glyph + " " + st.label) && ""` keeping every guarded substring while producing an empty
+  string, `insertAdjacentHTML` for `innerHTML`, and `box-shadow: inset` and `filter:
+  hue-rotate` as paints outside the closed list. Chasing each spelling is not the answer and
+  the owner has closed that route; closing the class needs assertions on the **rendered
+  result** rather than on the source. Post-alpha this becomes a **separate browser-test job**
+  with Playwright driving Chromium, asserting computed styles and composited colours off a
+  live page. It is a **dev/CI dependency only**, and it leaves the three product constraints
+  intact: the runtime stays stdlib-only, the panel stays a single file, and there is still no
+  build step. **Delivered 2026-08-10:** `browser_tests/test_panel_rendered.py` drives the real
+  loopback server in both December themes, checks rendered status channels and interaction
+  invariance, measures the browser's composited status-chip colours, and exercises both wide
+  and narrow Orbit layouts. `.github/workflows/ci.yml` runs it as an independent Chromium job;
+  the regular suite does not collect it and the runtime dependency set remains empty.
+- **Completed 2026-08-10 — validate `waits_on_human[].title` as a string.** The implemented
+  boundary: `schema._validate_lane_waits` rejects a non-string `title`, naming the wait's id
+  and the received value, in the style of the `detail`/`evidence` checks on findings. Absent
+  and empty titles stay legal — `merge._next_action` falls back to the wait's id — so no
+  previously valid lane became invalid, and merge and report are byte-identical on valid
+  documents. A lane carrying a non-string title now breaks in `store.load`, so the repr never
+  reaches the panel's first sentence or the report's Decision brief; the merger still renders
+  `title` as given, by design. The former pins in `tests/test_report.py` are rewritten as one
+  boundary test plus two outside-the-contract guards on that render-as-given behaviour.
+- **Completed 2026-08-10 — serve failure names `--port`.** `up` and `demo` share `__main__._serve`;
+  on OSError it prints `cannot serve on 127.0.0.1:{port}: {error}. To try a different port, rerun
+  with --port PORT.` to stderr, exit 1 — only the requested port, PORT literal, no probing or retry,
+  stdout's bare flushed URL intact. `tests/test_cli.py`: two mocked bind failures whose digit-set
+  relation bars any other port name, a `_serve` routing pin, a real child refused by a busy socket.
+- **Completed 2026-08-11 — six guards on `conduct report` now hold their sentence by
+  relation, not by vocabulary.** Each of the six diversions recorded here was first
+  reproduced green on the clean tree, then closed in `tests/test_report_claim_guards.py`:
+  the empty-queue and the empty-findings sections are held whole by canonical snapshots
+  named as change sentinels (1, 4); every non-blank rendered line outside the verbatim
+  fences — heading, bullet and bare paragraph alike, the RG1-1 widening — must move with
+  some §6.1 field or sit on one reviewed static list (2); vacuous `agreed`
+  is judged by an independent truth table over the assigned/nobody pair, its expected side
+  literals the test owns rather than `verify()` output (3); findings order is measured
+  against a document order no sort produces, and forward and reverse re-sorts both red (5);
+  the `Verification` line is pinned whole and each field it names is moved independently,
+  the rendered verdict landing on the reviewed row for that move (6). The vocabulary
+  guards — `_AGREEMENT_WORDS` with its sentence splitter, the code-span-only sentinel
+  sweep, the `no reviewer assigned` substring pair — and their orphaned helpers left
+  `tests/test_report.py` only after every contour was red on the plan's wording and on a
+  reworded twin: twelve single-diversion `pytest -q` runs, all red, and the tree with
+  every diversion reverted green (`1768 passed, 4 skipped`).
+- ~~**The README does not document `--template` or the wizard.**~~ **Closed.** The README now
+  carries a "What `conduct init` writes" section: the wizard's three questions, `--template`,
+  the four vended maps — the item said three, and `templates.names()` returns four — and the
+  path without a terminal, which writes `default-orbit` without waiting for an answer. The same
+  slice added the `conduct report` the README had never mentioned, and `docs/release-smoke.md`,
+  the procedure a person runs against a release candidate before publishing. What holds all of
+  it is a relation rather than a rewrite: `tests/test_docs_commands.py` reads the subcommand
+  list off the parser `__main__._build_parser()` builds and requires the README and the release
+  smoke to name exactly that set, in both directions, so the next command added or renamed
+  moves both documents or reds the suite.

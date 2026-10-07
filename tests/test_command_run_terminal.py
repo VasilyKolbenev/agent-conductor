@@ -1,0 +1,539 @@
+"""A run records that its plan ENDED, once, and nothing follows it.
+
+The verdict is durable rather than computed, and the reason is monotonicity: a
+superseding decision can flip a gate from satisfied to failed, closing one road
+and opening another, so a run a person was told had finished would silently
+reopen behind them. Writing it down makes *this run ended* a fact later records
+are judged against.
+
+What this module holds, and how each claim fails on its own:
+
+- **it is a record kind like the nine before it.** Same identity rule, same
+  idempotent retry, same canonical wrapper, same replay.
+- **it belongs to a plan.** A run following no graph has no terminal to record
+  and no `graph_id` to name one with, so the record is refused outright -- which
+  is also the whole reason no journal written before graphs can ever hold one.
+- **it happens once.** A second terminal under any id is refused, so one
+  identity can never carry two sets of facts recorded at two instants.
+- **nothing follows it.** The whole-journal rule, held on the raw-replay road
+  where a hand-written journal arrives.
+
+- **it says what this run's own records support.** The verdict is recomputed
+  from the plan's bytes and the journal's prefix and compared entry for entry,
+  so a terminal whose partitions were altered by a single name is refused on the
+  append road AND again on the raw-replay road. That is what stops the record
+  being a stored projection: it cannot say anything the plan does not.
+
+The plan these tests use is deliberately the smallest one that ends -- a single
+task carrying no capability, which is settled by arriving and is settled the
+moment the plan is written. A terminal is then reachable from an empty journal,
+so the record's own rules are driven without a run first being played out.
+"""
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from conductor.command.artifacts import ArtifactDocument
+from conductor.command.attempts import AttemptEvent
+from conductor.command.contracts import ContractError, canonical_json
+from conductor.command.graph_definition import (
+    GraphDefinition,
+    GraphEdge,
+    GraphNode,
+)
+from conductor.command.graph_schedule import schedule
+from conductor.command.run_store import (
+    CorruptRun,
+    RecordConflict,
+    RunClosed,
+    RunStore,
+    StoreError,
+    snapshot_digest,
+)
+from conductor.command.run_terminal import TERMINAL_STATES, RunTerminal
+from conductor.command import run_store as run_store_module
+from tests.test_command_run_store import CONFIG, a_decision, a_run
+
+RUN_ID = "run-001"
+NOW = "2026-08-30T10:00:00Z"
+
+
+def a_plan(**changes) -> GraphDefinition:
+    """The smallest plan that ENDS: one step carried out by nobody.
+
+    A task naming no capability is settled by arriving, so this plan is complete
+    the moment it is written and a terminal is reachable from an empty journal.
+    """
+    body = dict(graph_id="graph-note", run_id=RUN_ID, created_at=NOW,
+                nodes=(GraphNode(node_id="note", kind="task", title="Note"),),
+                edges=())
+    body.update(changes)
+    return GraphDefinition(**body)
+
+
+def a_store(tmp_path, *, with_graph=True):
+    store = RunStore(tmp_path)
+    store.create_run(
+        a_run(run_id=RUN_ID, config_digest=snapshot_digest(CONFIG)), CONFIG)
+    if with_graph:
+        store.append(a_plan())
+    return store
+
+
+def a_terminal(**changes) -> RunTerminal:
+    """The verdict this plan's own records support, unless a caller bends it."""
+    values = {
+        "terminal_id": "terminal-001", "run_id": RUN_ID,
+        "graph_id": "graph-note", "state": "complete",
+        "settled_nodes": ("note",), "unreachable_nodes": (),
+        "recorded_at": NOW,
+    }
+    values.update(changes)
+    return RunTerminal(**values)
+
+
+def an_artifact() -> ArtifactDocument:
+    """A record this run relates to in no way at all."""
+    return ArtifactDocument(
+        artifact_id="artifact-document-001", artifact_ref="artifact-brief",
+        run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
+        content="# Goal\nShip the bounded alpha.")
+
+
+def an_attempt_event() -> AttemptEvent:
+    """The record the runtime writes around an effect, naming no durable request.
+
+    Its own relation rule would refuse it for that. The witness below shows the
+    ending refusing it FIRST, which is the whole point of the arm's position.
+    """
+    return AttemptEvent(
+        event_id="effect-lease-event-001", run_id=RUN_ID, action_id="action-1",
+        attempt_id="attempt-001", instance_id="claude-dev",
+        adapter_id="deep-dispatch", phase="effect_lease", recorded_at=NOW,
+        request_digest="sha256:" + "0" * 64, recovery_ref="recovery-001",
+        outcome=None, exit_code=None, schema_version=2)
+
+
+def journal_lines(store):
+    text = (store.run_path(RUN_ID) / "records.jsonl").read_text(encoding="utf-8")
+    return [json.loads(line) for line in text.splitlines() if line]
+
+
+def raw_append(store, kind, value):
+    """Write one canonical record straight into the journal, past every door."""
+    line = json.dumps({"record": value.as_dict(), "record_type": kind},
+                      ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":")) + "\n"
+    with (store.run_path(RUN_ID) / "records.jsonl").open("ab") as stream:
+        stream.write(line.encode("utf-8"))
+
+
+# -- the record contract -------------------------------------------------------
+
+
+def test_the_terminal_carries_the_verdict_and_the_two_partitions_and_no_more():
+    """It restates no node phase, no outcome and no pass count: those stay
+    computed, where a second copy could not disagree with the first."""
+    terminal = a_terminal()
+
+    assert set(terminal.as_dict()) == set(RunTerminal._FIELDS)
+    assert set(RunTerminal._FIELDS) == {
+        "schema_version", "terminal_id", "run_id", "graph_id", "state",
+        "settled_nodes", "unreachable_nodes", "recorded_at"}
+    assert terminal.schema_version == 2
+
+
+@pytest.mark.parametrize("state", sorted(TERMINAL_STATES))
+def test_a_run_may_end_on_either_of_the_two_words(state):
+    assert a_terminal(state=state).state == state
+
+
+@pytest.mark.parametrize("state", ["open", "", "COMPLETE", "running", None, 1])
+def test_a_state_that_is_not_an_ending_is_refused(state):
+    """`open` above all: a run that has not ended has nothing to record, and a
+    record saying "not yet" goes stale the instant after it is written."""
+    with pytest.raises(ContractError):
+        a_terminal(state=state)
+
+
+def test_open_is_never_a_word_this_record_can_carry():
+    assert "open" not in TERMINAL_STATES
+    assert TERMINAL_STATES == frozenset({"complete", "stalled"})
+
+
+def test_a_node_recorded_as_both_settled_and_unreachable_is_refused():
+    """A step is one or the other; both is a verdict that contradicts itself."""
+    with pytest.raises(ContractError, match="never both"):
+        a_terminal(settled_nodes=("goal", "do"), unreachable_nodes=("do",))
+
+
+def test_a_partition_repeating_a_node_is_refused():
+    with pytest.raises(ContractError):
+        a_terminal(settled_nodes=("goal", "goal"))
+
+
+def test_both_partitions_may_be_empty_only_where_the_plan_supports_it():
+    """No shape rule ties the two together; the relation that does is the
+    schedule's, and it arrives with the schedule."""
+    terminal = a_terminal(state="stalled", settled_nodes=(),
+                          unreachable_nodes=())
+
+    assert (terminal.settled_nodes, terminal.unreachable_nodes) == ((), ())
+
+
+def test_the_record_round_trips_through_its_own_canonical_document():
+    terminal = a_terminal()
+
+    rebuilt = RunTerminal.from_dict(terminal.as_dict())
+
+    assert rebuilt == terminal
+    assert rebuilt.as_dict() == terminal.as_dict()
+    assert canonical_json(rebuilt.as_dict()) == canonical_json(terminal.as_dict())
+
+
+def test_a_document_carrying_a_field_this_record_has_no_place_for_is_refused():
+    with pytest.raises(ContractError, match="unsupported field"):
+        RunTerminal.from_dict({**a_terminal().as_dict(), "run_state": "open"})
+
+
+@pytest.mark.parametrize("missing", [
+    "terminal_id", "run_id", "graph_id", "state", "settled_nodes",
+    "unreachable_nodes", "recorded_at"])
+def test_every_fact_but_the_schema_is_required(missing):
+    document = a_terminal().as_dict()
+    document.pop(missing)
+    with pytest.raises(ContractError):
+        RunTerminal.from_dict(document)
+
+
+# -- it is a record kind like the nine before it -------------------------------
+
+
+def test_the_terminal_remains_registered_beside_bounded_authorization_history():
+    contract, identity = run_store_module._RECORDS["run_terminal"]
+
+    assert (contract, identity) == (RunTerminal, "terminal_id")
+    assert len(run_store_module._RECORDS) == 13
+
+
+def test_a_terminal_is_appended_and_recovered_whole(tmp_path):
+    store = a_store(tmp_path)
+    terminal = a_terminal()
+
+    assert store.append(terminal) is True
+
+    rows = [row for row in store.read(RUN_ID).records
+            if row.kind == "run_terminal"]
+    assert len(rows) == 1
+    assert rows[0].value == terminal
+
+
+def test_the_journal_holds_the_terminal_in_the_one_canonical_spelling(tmp_path):
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    wrapper = journal_lines(store)[-1]
+
+    assert set(wrapper) == {"record", "record_type"}
+    assert wrapper["record_type"] == "run_terminal"
+    assert RunTerminal.from_dict(wrapper["record"]).as_dict() == wrapper["record"]
+
+
+def test_an_identical_terminal_is_a_retry_and_writes_no_second_line(tmp_path):
+    """The first of the three roads a second append can take."""
+    store = a_store(tmp_path)
+
+    assert store.append(a_terminal()) is True
+    assert store.append(a_terminal()) is False
+
+    assert [row["record_type"] for row in journal_lines(store)] == [
+        "graph_definition", "run_terminal"]
+
+
+def test_the_same_terminal_id_carrying_different_facts_is_a_conflict(tmp_path):
+    """The second road: one identity may never carry two verdicts."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    with pytest.raises(RecordConflict, match="already records different facts"):
+        store.append(a_terminal(state="stalled"))
+
+    assert len(journal_lines(store)) == 2
+
+
+# -- a terminal belongs to a plan ---------------------------------------------
+
+
+def test_a_run_that_follows_no_graph_has_no_terminal_to_record(tmp_path):
+    """The whole of the plan-less exemption, from the other side: such a run
+    can never hold one, so every rule keyed off a standing terminal is vacuous
+    for every journal written before graphs existed."""
+    store = a_store(tmp_path, with_graph=False)
+
+    with pytest.raises(StoreError, match="follows no graph"):
+        store.append(a_terminal())
+
+    assert journal_lines(store) == []
+
+
+def test_a_terminal_naming_a_graph_this_run_does_not_follow_is_refused(tmp_path):
+    store = a_store(tmp_path)
+
+    with pytest.raises(StoreError, match="graph-elsewhere"):
+        store.append(a_terminal(graph_id="graph-elsewhere"))
+
+    assert [row["record_type"] for row in journal_lines(store)] == [
+        "graph_definition"]
+
+
+# -- a run records its terminal once ------------------------------------------
+
+
+def test_a_second_terminal_under_another_id_is_refused_and_the_first_stands(
+        tmp_path):
+    """The third road, and the one a fresh id would otherwise walk straight
+    through: nothing is re-minted, so two calls at two instants cannot record
+    two different sets of facts."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    with pytest.raises(RecordConflict, match="already recorded its terminal"):
+        store.append(a_terminal(terminal_id="terminal-002", state="stalled"))
+
+    rows = [row.value for row in store.read(RUN_ID).records
+            if row.kind == "run_terminal"]
+    assert [row.terminal_id for row in rows] == ["terminal-001"]
+
+
+def test_the_journal_replays_to_the_same_single_terminal(tmp_path):
+    """Replay is a pure function of bytes already written, so it says what the
+    append road said, and says it again."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    first = store.read(RUN_ID)
+    second = store.read(RUN_ID)
+
+    assert [row.kind for row in first.records] == [
+        "graph_definition", "run_terminal"]
+    assert [row.value for row in first.records] == [
+        row.value for row in second.records]
+    assert first.warnings == second.warnings == ()
+
+
+# -- it says what this run's own records support -------------------------------
+
+
+def test_the_recorded_verdict_is_the_one_the_plan_itself_computes(tmp_path):
+    """The positive control: what is written is what `schedule` says, so the
+    refusals below are about disagreement and not about the comparison."""
+    store = a_store(tmp_path)
+    computed = schedule(a_plan(), (a_plan(),))
+
+    assert store.append(a_terminal()) is True
+
+    terminal = store.read(RUN_ID).records[-1].value
+    assert (terminal.state, terminal.settled_nodes, terminal.unreachable_nodes) \
+        == (computed.run_state, computed.settled, computed.unreachable)
+
+
+def a_gated_plan() -> GraphDefinition:
+    """A plan whose verdict cannot be read off the drawing alone.
+
+    The one-step plan above is complete the moment it is written, so a
+    recomputation that ignored the journal entirely would still agree with it.
+    Here nothing settles until a Human answers the gate, so the verdict is a
+    fact of the RECORDS and a recomputation over an empty prefix says `open`.
+    """
+    return GraphDefinition(
+        graph_id="graph-gated", run_id=RUN_ID, created_at=NOW,
+        nodes=(GraphNode(node_id="gate", kind="gate", title="Gate",
+                         gate_id="gate-1"),
+               GraphNode(node_id="note", kind="task", title="Note")),
+        edges=(GraphEdge(from_node="gate", to_node="note"),))
+
+
+def test_the_verdict_is_recomputed_from_this_runs_records_and_not_its_plan(
+        tmp_path):
+    """The terminal of a run that only ended because of what it did.
+
+    Before the decision the plan is `open` and no terminal may be recorded at
+    all; after it, exactly one verdict is supported. A recomputation that read
+    the plan without its journal would refuse the honest record here.
+    """
+    store = RunStore(tmp_path)
+    store.create_run(
+        a_run(run_id=RUN_ID, config_digest=snapshot_digest(CONFIG)), CONFIG)
+    store.append(a_gated_plan())
+    terminal = a_terminal(graph_id="graph-gated",
+                          settled_nodes=("gate", "note"))
+
+    with pytest.raises(StoreError, match="does not match what this run"):
+        store.append(terminal)
+
+    store.append(a_decision(run_id=RUN_ID, gate_id="gate-1"))
+    assert store.append(terminal) is True
+    assert store.read(RUN_ID).records[-1].value == terminal
+
+
+@pytest.mark.parametrize("bent", [
+    {"settled_nodes": ()},
+    {"settled_nodes": ("note", "ghost")},
+    {"unreachable_nodes": ("note",), "settled_nodes": ()},
+    {"state": "stalled"},
+])
+def test_a_terminal_altered_by_one_entry_is_refused_on_append(tmp_path, bent):
+    """One name added, one removed, one partition swapped, one word changed."""
+    store = a_store(tmp_path)
+
+    with pytest.raises(StoreError, match="does not match what this run"):
+        store.append(a_terminal(**bent))
+
+    assert [row["record_type"] for row in journal_lines(store)] == [
+        "graph_definition"]
+
+
+@pytest.mark.parametrize("bent", [
+    {"settled_nodes": ()},
+    {"state": "stalled"},
+])
+def test_a_terminal_altered_by_one_entry_is_refused_on_replay(tmp_path, bent):
+    """The same rule against bytes this process did not write.
+
+    `schedule` is a pure function of the plan and the prefix before the record,
+    and `_validate_records` replays each record against exactly that prefix --
+    so a forgery written straight into the journal is judged by the same
+    arithmetic that would have refused it at the door.
+    """
+    store = a_store(tmp_path)
+    raw_append(store, "run_terminal", a_terminal(**bent))
+
+    with pytest.raises(CorruptRun, match="breaks replay causality"):
+        store.read(RUN_ID)
+
+
+def test_an_honest_terminal_written_straight_into_the_journal_replays(tmp_path):
+    """The calibration for the two above: raw bytes are not what is refused."""
+    store = a_store(tmp_path)
+    raw_append(store, "run_terminal", a_terminal())
+
+    recovered = store.read(RUN_ID)
+
+    assert [row.kind for row in recovered.records] == [
+        "graph_definition", "run_terminal"]
+
+
+# -- nothing follows a recorded terminal --------------------------------------
+
+
+def test_a_journal_carrying_a_record_after_its_terminal_is_corrupt(tmp_path):
+    """The replay rule, driven the only way it can be driven -- by writing the
+    bytes a hostile or a broken writer would have written."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+    raw_append(store, "graph_definition", a_plan(graph_id="graph-second"))
+
+    with pytest.raises(CorruptRun, match="follows the run terminal"):
+        store.read(RUN_ID)
+
+
+def test_the_refusal_names_the_kind_that_followed_the_terminal(tmp_path):
+    """An operator has to know WHAT came after it, not merely that something
+    did -- the journal is append-only and the row cannot be pointed at."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+    raw_append(store, "graph_definition", a_plan(graph_id="graph-second"))
+
+    with pytest.raises(CorruptRun) as caught:
+        store.read(RUN_ID)
+
+    assert "graph_definition follows the run terminal" in str(caught.value)
+
+
+def test_the_store_refuses_any_record_after_a_terminal_before_the_byte(tmp_path):
+    """The append-road half of the rule above, which had only a replay half.
+
+    `_hold_terminal_is_last` is written over the record list as READ, so it
+    judged nothing about the record being appended: every direct appender -- the
+    runtime's attempt events and result receipts, the artifact handoff, the
+    observation seam -- wrote its byte and only the NEXT read called the journal
+    corrupt. A product cannot repair what it has already written down, so the
+    rule has to be asked where the record can still be refused.
+
+    Two kinds, deliberately: one nothing in the run relates to, and one whose own
+    relation rules would have refused it for a different reason. Both are refused
+    for THIS reason, which is what "any record" means.
+
+    The TYPE is asserted here, where it is raised, and not only where it is
+    translated. A store raising a bare `StoreError` carrying this exact sentence
+    passes every message-shaped assertion and then answers the wire
+    `store_error` (500) for a run that merely ended -- the misreport the
+    translation arm exists to prevent, reported as a server fault.
+    """
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+    before = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
+
+    with pytest.raises(RunClosed, match="accepts no further records"):
+        store.append(an_artifact())
+    with pytest.raises(RunClosed, match="accepts no further records"):
+        store.append(an_attempt_event())
+
+    assert (store.run_path(RUN_ID) / "records.jsonl").read_bytes() == before
+    assert [row.kind for row in store.read(RUN_ID).records] == [
+        "graph_definition", "run_terminal"]
+
+
+def test_the_store_refusal_names_the_run_and_the_terminal_that_stands(tmp_path):
+    """An operator has to know WHICH ending refused them, not merely that one
+    did: a run's journal is append-only and carries at most one."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    with pytest.raises(RunClosed) as caught:
+        store.append(an_artifact())
+
+    assert RUN_ID in str(caught.value) and "terminal-001" in str(caught.value)
+
+
+def test_the_store_refusal_translates_to_run_terminal():
+    """The depth answers the wire in the word the doors already say.
+
+    Coded by TYPE and placed before the general `StoreError` arm, which is what
+    keeps a finished run from being reported as a server fault. `store_error`
+    would tell a caller their request was fine and this build was broken.
+
+    This half is only worth anything joined to the other: it is the store's own
+    exception that must reach here, which is why the witnesses above name the
+    type rather than the sentence.
+    """
+    from conductor.command.api_contracts import ERROR_STATUS, refusal_from_exception
+
+    refusal = refusal_from_exception(RunClosed("anything at all"))
+
+    assert refusal.code == "run_terminal"
+    assert refusal.status == ERROR_STATUS["run_terminal"] == 409
+    assert refusal.detail == {}
+
+
+def test_a_terminal_that_is_last_replays_clean(tmp_path):
+    """The positive control: the rule above is about POSITION and nothing else."""
+    store = a_store(tmp_path)
+    store.append(a_terminal())
+
+    recovered = store.read(RUN_ID)
+
+    assert [row.kind for row in recovered.records][-1] == "run_terminal"
+
+
+def test_the_rule_is_vacuous_on_every_journal_that_holds_no_terminal(tmp_path):
+    """It cannot change the verdict on any journal that exists, because none
+    holds one."""
+    store = a_store(tmp_path)
+
+    recovered = store.read(RUN_ID)
+
+    assert [row.kind for row in recovered.records] == ["graph_definition"]
+    assert recovered.warnings == ()

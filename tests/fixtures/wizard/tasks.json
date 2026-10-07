@@ -1,0 +1,8 @@
+{
+  "tasks": [
+    {"created_at": "2026-09-27T09:59:00Z", "schema_version": 1, "task_id": "task-a",
+     "title": "Add a search box", "unreadable": false, "work_scope": "task-a"},
+    {"created_at": "2026-09-28T13:49:00Z", "schema_version": 1, "task_id": "task-b",
+     "title": "Fix the login form", "unreadable": false, "work_scope": "task-b"}
+  ]
+}

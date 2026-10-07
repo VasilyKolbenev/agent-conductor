@@ -1,0 +1,21 @@
+{
+  "run": {"run_id": "task-b-r1"},
+  "config": {
+    "instances": [
+      {"id": "inst-analyst", "adapter": "claude-code"},
+      {"id": "inst-doer", "adapter": "codex"},
+      {"id": "inst-checker", "adapter": "claude-code"}
+    ]
+  },
+  "graph": {
+    "definition": {
+      "nodes": [
+        {"node_id": "analyst", "kind": "task", "instance_id": "inst-analyst",
+         "verifier_instance_id": null},
+        {"node_id": "do", "kind": "task", "instance_id": "inst-doer",
+         "verifier_instance_id": "inst-checker"},
+        {"node_id": "result", "kind": "gate", "instance_id": null, "verifier_instance_id": null}
+      ]
+    }
+  }
+}
