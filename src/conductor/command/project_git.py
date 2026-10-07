@@ -17,8 +17,12 @@ from .adapters.process import CommandSpec, ContainmentError, ProcessRunner
 from .product_names import PRODUCT_TOP_NAMES
 
 #: Flags every git call of the product carries (spec 9.3). Hooks are switched off by the
-#: environment, never by a flag.
-GIT_FLAGS = ("-c", "core.fsmonitor=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false")
+#: environment, never by a flag. The file monitor is switched off with an EMPTY value, never with
+#: `false`: Git 2.31 reads the value as the path of a hook program, so `false` names the program
+#: `false`, which each index command starts twice and whose run leaves an `FSMN` extension in every
+#: index written. The empty value is "off" on 2.31 and on later Gits (measured), and `tool_env`
+#: says the same in the environment.
+GIT_FLAGS = ("-c", "core.fsmonitor=", "-c", "gc.auto=0", "-c", "maintenance.auto=false")
 READ_TIMEOUT_SECONDS = 60
 #: What one read may bring back; a longer answer is cut and says so.
 READ_OUTPUT_LIMIT = 1024 * 1024

@@ -55,6 +55,11 @@ _OID = {"sha1": re.compile(r"[0-9a-f]{40}"), "sha256": re.compile(r"[0-9a-f]{64}
 _NONCE = re.compile(r"[0-9a-f]{16}")
 _INSTALL_NAME = re.compile(re.escape(INSTALL) + r"[0-9a-f]{16}")
 _HEADS = "refs/heads/"
+#: The one spelling of a branch a signature wait may name. The owner pastes two commands built
+#: from it into a terminal, and Git's own rule for a name (`check-ref-format`) lets through what a
+#: shell reads as code, as a redirect or as more than one word (review ruling); these characters
+#: mean nothing to PowerShell, cmd or a POSIX shell. Git still judges everything else about it.
+_SIGNABLE_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]+")
 _OP_KEYS = frozenset({
     "schema_version", "stage", "nonce", "mode", "paths_digest", "digest_version", "target_ref",
     "object_format", "expected_tree", "commit", "install_sha256", "message_sha256", "file_count",
@@ -115,6 +120,20 @@ def _oid(value: object, object_format: str) -> str:
     return value
 
 
+def signable_ref(ref: object) -> bool:
+    """True when `ref` is a branch the two commands of a signature wait may name."""
+    return type(ref) is str and _SIGNABLE_REF.fullmatch(ref) is not None
+
+
+def _utf8(value: object, limit: int = 1024) -> str:
+    """`_text`, and text that encodes as strict UTF-8. JSON lets a lone surrogate through, and
+    the answer that shows a stored text is written as UTF-8: one such character would end the
+    GET without an answer, so a record that holds one is damage."""
+    text = _text(value, limit)
+    text.encode("utf-8")                    # UnicodeEncodeError is a ValueError: damage
+    return text
+
+
 def _terms(row: dict, tree: str) -> None:
     """The fields an op and its receipt both carry, judged once for both."""
     if type(row["object_format"]) is not str or row["object_format"] not in _OID:
@@ -129,7 +148,7 @@ def _terms(row: dict, tree: str) -> None:
     count = row["file_count"]
     if type(count) is not int or not 0 <= count <= MAX_FILES:
         raise ValueError("file count")
-    ref = _text(row["target_ref"], 240)
+    ref = _utf8(row["target_ref"], 240)
     if not ref.startswith(_HEADS) or len(ref) == len(_HEADS):
         raise ValueError("target ref")
     human_identity("requested_by", row["requested_by"])
@@ -146,6 +165,8 @@ def _check(op: Op) -> None:
     _terms(row, op.expected_tree)
     if (op.commit is None) != (op.stage == AWAITING_SIGNATURE):
         raise ValueError("commit and stage")
+    if op.stage == AWAITING_SIGNATURE and not signable_ref(op.target_ref):
+        raise ValueError("signing ref")           # the wait would show a command a shell can run
     if op.commit is not None:
         _oid(op.commit, op.object_format)
     _digest("install_sha256", op.install_sha256)
@@ -156,7 +177,7 @@ def _check(op: Op) -> None:
     if type(author) is not dict or set(author) != {"name", "email"}:
         raise ValueError("author")
     for field in ("name", "email"):
-        _text(author[field])
+        _utf8(author[field])
     _timestamp("started_at", op.started_at)
 
 
@@ -187,7 +208,7 @@ def read_op(root: Path) -> Op | None:
         op = _op(json.loads(_read(root, path, OP_LIMIT), object_pairs_hook=_object))
         read_install(root, op)
         return op
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):   # the decoder's depth limit
         raise SetupRefused("setup_damaged") from None
 
 
@@ -351,5 +372,5 @@ def read_receipt(root: Path) -> dict | None:
         if not os.path.lexists(path):
             return None
         return _receipt(json.loads(_read(root, path, RECEIPT_LIMIT), object_pairs_hook=_object))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):   # the decoder's depth limit
         raise SetupRefused("setup_damaged") from None

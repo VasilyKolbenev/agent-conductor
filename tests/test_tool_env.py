@@ -58,7 +58,7 @@ def test_no_git_variable_of_the_owner_passes_and_the_git_config_count_is_the_lit
     assert _git_variables(env) == {
         "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": f"{HOME}/git/hooks-empty",
-        "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": "false"}
+        "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": ""}
     assert "SSH_ASKPASS" not in env and "GCM_INTERACTIVE" in env
 
 
@@ -88,7 +88,7 @@ def test_the_literals_are_the_values_of_section_8_9():
         "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C",
         "GIT_CONFIG_COUNT": "2",
         "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": f"{HOME}/git/hooks-empty",
-        "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": "false"}
+        "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": ""}
 
 
 def test_an_owner_value_can_never_replace_a_literal():

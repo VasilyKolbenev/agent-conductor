@@ -34,13 +34,17 @@ NEVER_TRANSFERRED = (
     "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST",
     "GIT_ASKPASS", "SSH_ASKPASS")
 
+# The file monitor (`GIT_CONFIG_KEY_1`) is switched off with an EMPTY value, never with `false`:
+# Git 2.31 reads the value as the path of a hook program, so `false` would name the program
+# `false`. The empty value is "off" on 2.31 and on later Gits (`command/project_git.GIT_FLAGS`
+# carries the same value for every `process_git_read`).
 _LITERALS = {
     "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1",
     "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never",
     "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C",
     "GIT_CONFIG_COUNT": "2",
     "GIT_CONFIG_KEY_0": "core.hooksPath",
-    "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": "false",
+    "GIT_CONFIG_KEY_1": "core.fsmonitor", "GIT_CONFIG_VALUE_1": "",
 }
 _DARWIN_DIRS = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
 _LINUX_DIRS = ("/usr/bin", "/bin")

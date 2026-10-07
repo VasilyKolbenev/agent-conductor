@@ -1,9 +1,9 @@
 """The scratch repository of the first-commit probes builds its index with the product's own argv.
 
 A probe that builds the bytes with another command line than the product's proves nothing about
-the product's bytes: on Git 2.31 the flags of every Git call (`core.fsmonitor=false`) change what
-the index holds, and a helper that left them out reported a pass for bytes the product would have
-refused. The witness spies on the commands the helper sends and compares each with the argv the
+the product's bytes: on Git 2.31 the flags of every Git call (the file monitor among them) change
+what the index holds, and a helper that left them out reported a pass for bytes the product would
+have refused. The witness spies on the commands the helper sends and compares each with the argv the
 product modules name, read from the product and not from the helper.
 """
 import pytest

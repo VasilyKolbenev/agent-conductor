@@ -1269,6 +1269,25 @@ route starts no Git process and reports only the local Git-entry state and the
 saved instruction choice. It does not write Git metadata. The response is the
 `{"git": ...}` shape in desk redesign specification section 6.2.1.
 
+The same answer carries `first_commit_pending`, the closed description of a first
+commit that was started and not finished: `null`, or `{"state":"unfinished",
+"terms"}`, or `{"state":"awaiting_signature","terms","signing":{"tree",
+"target_ref","message_path"}}` (the three facts of the typed `signing_required`
+refusal), or `{"state":"damaged"}`. `terms` is `{mode,paths_digest,digest_version,
+requested_by,file_count,target_ref,author:{name,email}}` exactly as the confirmation
+stored it; how far the product got is not shown. The key is read from the stored
+records of the first commit and is `null` when none stands, when its receipt stands,
+in view mode and in every state but `unborn` and `repo` (no file is read for it
+there). It is a read: it starts no Git process, writes nothing, grants nothing and
+repeats nothing, and a reload, a GET or a server start continue nothing. A record
+that cannot be read or proven is `damaged`; the answer is still 200 and nothing is
+deleted. Every stored text of `terms` is valid UTF-8, and a stored wait for a
+signature names only a branch of `refs/heads/` followed by letters, digits, `.`, `_`,
+`-` and `/`, because the owner pastes the commands built from it into a terminal; any
+other record is `damaged`. The person continues by repeating the first-commit confirmation with
+`mode` and `paths_digest` taken from `terms` and the actor who acts now; the server
+judges that repeat again, from the stored terms.
+
 `GET /command/runs/<run_id>/accept` reads the complete durable run inventory, frozen
 workflow revision, queue and current driver facts. It works in view mode without
 reading the work tree or starting Git. The response contains `kind`, `basis`,

@@ -277,9 +277,10 @@ def test_without_the_pin_every_owner_setting_changes_the_bytes_of_the_current_gi
 @for_every_format
 def test_the_pin_wins_over_the_monitor_setting_the_environment_of_every_git_call_carries(
         tmp_path, monkeypatch, which, fmt):
-    """The product's environment (`tool_env`) says `core.fsmonitor=false` as well; on Git 2.31
-    that names a program, and only a later `-c` of the pin takes it back. The first assertion is
-    the calibration: with no flag at all, the environment alone does reach the old Git."""
+    """An environment that says `core.fsmonitor=false` (the product's own did until it said the
+    empty value); on Git 2.31 that names a program, and only a later `-c` takes it back. The
+    first assertion is the calibration: with no flag at all, the environment alone does reach the
+    old Git."""
     for name, value in {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor",
                         "GIT_CONFIG_VALUE_0": "false"}.items():
         monkeypatch.setenv(name, value)

@@ -6,6 +6,7 @@ never a Git state.
 """
 import json
 import os
+import string
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -84,6 +85,11 @@ DAMAGE = {
     "ref_outside_heads": lambda b: b.update(target_ref="refs/tags/trunk"),
     "ref_with_a_control_character": lambda b: b.update(target_ref="refs/heads/a\nb"),
     "actor_with_a_control_character": lambda b: b.update(requested_by="Own\x07er"),
+    "ref_with_a_lone_surrogate": lambda b: b.update(target_ref="refs/heads/\ud800"),
+    "actor_with_a_lone_surrogate": lambda b: b.update(requested_by="Own\ud800er"),
+    "author_name_a_lone_surrogate": lambda b: b.update(author={**AUTHOR, "name": "\ud800"}),
+    "author_email_a_lone_surrogate": lambda b: b.update(
+        author={**AUTHOR, "email": "a\udc80@example.invalid"}),
     "digest_version_one": lambda b: b.update(digest_version=1),
     "digest_version_a_float": lambda b: b.update(digest_version=2.0),
     "signing_as_a_word": lambda b: b.update(signing="false"),
@@ -94,6 +100,8 @@ DAMAGE = {
     "commit_missing_at_locked": lambda b: b.update(stage=LOCKED, commit=None),
     "commit_missing_at_ref_moved": lambda b: b.update(stage=REF_MOVED, commit=None),
     "commit_set_at_awaiting_signature": lambda b: b.update(stage=AWAITING_SIGNATURE),
+    "awaiting_signature_on_a_branch_a_shell_reads": lambda b: b.update(
+        stage=AWAITING_SIGNATURE, commit=None, signing=True, target_ref="refs/heads/a$(calc)"),
     "digest_missing_for_a_snapshot": lambda b: b.update(paths_digest=None),
     "digest_present_for_an_empty_commit": lambda b: b.update(mode="empty"),
     "unknown_mode": lambda b: b.update(mode="everything"),
@@ -145,6 +153,60 @@ def test_first_commit_op_record_that_is_not_one_json_object_is_setup_damaged(tmp
         with pytest.raises(SetupRefused, match="setup_damaged"):
             records.read_op(tmp_path)
         assert op_file(tmp_path).read_bytes() == raw, what      # a refusal rewrites nothing
+
+
+def test_first_commit_records_nested_far_deeper_than_any_record_are_setup_damaged(tmp_path):
+    """16000 bytes of brackets fit the size limit and are deeper than a JSON decoder allows on
+    the older Pythons: that is a damaged record, not an exception of the decoder's own."""
+    records.start(tmp_path, an_op(), DATA)
+    nested = b"[" * 8000 + b"]" * 8000
+    receipt = setup_dir(tmp_path) / records.RECEIPT_NAME
+    for path, read in ((op_file(tmp_path), records.read_op), (receipt, records.read_receipt)):
+        path.write_bytes(nested)
+        damaged(read, tmp_path)
+
+
+# Branch names that `git check-ref-format` accepts (measured: Git 2.31.1 and 2.52.0) and that a
+# shell reads as code, a redirect, a variable, a glob or more than one word.
+SHELL_READS = (
+    "refs/heads/a$(calc)", "refs/heads/x;y&z|w", "refs/heads/q`\"r's", "refs/heads/<b>",
+    "refs/heads/a%PATH%", "refs/heads/a!b", "refs/heads/a{b,c}", "refs/heads/a=b",
+    "refs/heads/a#b", "refs/heads/a+b", "refs/heads/a@b",
+    "refs/heads/ветка")
+READABLE = ("refs/heads/main", "refs/heads/trunk", "refs/heads/feature/a-b_c.d", "refs/heads/v1.0")
+
+
+def a_wait(**changes):
+    return an_op(stage=AWAITING_SIGNATURE, commit=None, signing=True, **changes)
+
+
+def test_a_signature_wait_may_name_only_a_branch_of_letters_digits_dot_underscore_dash_slash():
+    safe = string.ascii_letters + string.digits + "._/-"
+    for code in range(32, 127):
+        assert records.signable_ref("refs/heads/a" + chr(code) + "b") == (chr(code) in safe)
+    for ref in (*SHELL_READS, "refs/tags/a", "refs/heads/", "refs/heads", "", "refs/heads/a\n",
+                None, 7):
+        assert not records.signable_ref(ref)
+    for ref in READABLE:
+        assert records.signable_ref(ref)
+
+
+@pytest.mark.parametrize("ref", SHELL_READS)
+def test_first_commit_op_that_waits_for_a_signature_on_a_branch_a_shell_reads_is_not_stored(
+        tmp_path, ref):
+    damaged(records.start, tmp_path, a_wait(target_ref=ref), DATA)
+    assert not setup_dir(tmp_path).exists()                     # nothing is published for it
+
+
+def test_first_commit_op_may_name_any_branch_git_allows_unless_a_signature_is_awaited(tmp_path):
+    for ref in SHELL_READS:
+        op = records.start(tmp_path, an_op(target_ref=ref), DATA)
+        assert records.read_op(tmp_path) == op and op.target_ref == ref
+        records.retire(tmp_path, op)
+    for ref in READABLE:
+        op = records.start(tmp_path, a_wait(target_ref=ref), DATA)
+        assert records.read_op(tmp_path) == op
+        records.retire(tmp_path, op)
 
 
 def test_first_commit_op_stage_advances_only_forward(tmp_path):
@@ -295,7 +357,8 @@ def test_first_commit_receipt_is_written_once_and_read_closed(tmp_path):
     path = setup_dir(tmp_path) / records.RECEIPT_NAME
     bad = [{**row, "extra": 1}, {**row, "mode": "x"}, {**row, "signature": "yes"},
            {**row, "digest_version": 1}, {**row, "schema_version": 2},
-           {key: value for key, value in row.items() if key != "tree"}]
+           {key: value for key, value in row.items() if key != "tree"},
+           {**row, "target_ref": "refs/heads/\ud800"}]
     for body in bad:
         path.write_bytes(encode(body))
         damaged(records.read_receipt, tmp_path)
