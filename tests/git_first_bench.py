@@ -13,6 +13,7 @@ import functools
 
 import pytest
 
+from conductor.command import git_setup
 from conductor.ownership import data_root
 from tests.git_first_readers import product_reader, reader_binary
 from tests.git_repo_helpers import git
@@ -74,3 +75,24 @@ def seal(folder, mode="snapshot"):
     """The preview of the first commit as the route answers it: the terms a person is shown."""
     body = dict(step="first_commit", mode=mode, preview=True)
     return request(folder, "POST", PATH, body).payload["setup"]
+
+
+@pytest.fixture
+def confirm_door(monkeypatch):
+    """The tests of the driver prove it with the route's confirm door open; the real door opens
+    only after the compatibility gate on the lowest supported Git is closed (plan Task 8.7).
+    Nothing outside a test ever sets this."""
+    monkeypatch.setattr(git_setup, "_CONFIRM_OPEN", True)
+
+
+def confirm(folder, mode="snapshot", digest=None, actor="Owner"):
+    """The confirm body as the route takes it; a snapshot without a digest is sealed first."""
+    if digest is None and mode == "snapshot":
+        digest = seal(folder)["paths_digest"]
+    body = dict(step="first_commit", mode=mode, paths_digest=digest, actor=actor)
+    return request(folder, "POST", PATH, body)
+
+
+def op_file(folder):
+    """Where the operation record of the first commit stands."""
+    return data_root(folder.root) / "git" / "setup" / "first_commit.op.json"
