@@ -16,6 +16,7 @@ import time
 import pytest
 
 from conductor.command import operator_config
+from conductor.hub import registry
 from tests._hub_stack import A, B, Stack
 from tests.test_hub_owner_command import Running, fake
 from tests.test_login_recovery_prepare import legacy_lease
@@ -70,10 +71,11 @@ def _code(reply, status: int) -> str:
     return _envelope(reply)["code"]
 
 
-def _refused_and_unchanged(stack, target: str, status: int, code: str, body=None) -> None:
+def _refused_and_unchanged(stack, target: str, status: int, code: str, body=None, *,
+                           unlisted: str | None = None) -> None:
     before = stack.state_bytes()
     calls, launched = len(stack.world.spawner.calls), len(stack.command.seen)
-    assert _code(stack.post(target, body), status) == code, target
+    assert _code(stack.post(target, body, unlisted=unlisted), status) == code, target
     assert stack.state_bytes() == before, f"{code} changed hub-state.json"
     assert len(stack.world.spawner.calls) == calls
     assert len(stack.command.seen) == launched, f"{code} still ran an owner command"
@@ -130,13 +132,31 @@ def test_recover_refuses_by_the_rules_of_the_table_and_changes_nothing(stack):
 
 def test_a_project_with_a_running_operation_refuses_every_other_move_project_busy_first(stack):
     # Project A is stopped with a closed head, so each move below would otherwise be judged by its
-    # own rules (`recover` would be `recover_not_needed`): the busy refusal comes FIRST.
+    # own rules (`recover` would be `recover_not_needed`): the busy refusal comes FIRST. The row of
+    # `forget` does not list `project_busy`: that case waits for a ruling (`PENDING_RULING`).
     stack.world.gone("a")
     stack.service._operations.open_project_row("recover", A, "recover")   # stays running
     for target in ("activate", "view", "stop", "forget", "recover", "providers"):
-        _refused_and_unchanged(stack, f"/hub/projects/{A}/{target}", 409, "project_busy")
+        _refused_and_unchanged(stack, f"/hub/projects/{A}/{target}", 409, "project_busy",
+                               unlisted="project_busy" if target == "forget" else None)
     stack.world.gone("b")
     assert stack.post(f"/hub/projects/{B}/view").status == 202           # another project is free
+
+
+@pytest.mark.parametrize("kind", ["recover", "providers"])
+def test_forget_while_an_operation_of_the_project_runs_keeps_the_project_and_answers_project_busy(
+        stack, kind):
+    # `project_busy` is not in the row of `forget`: the code waits for a ruling (`PENDING_RULING`).
+    stack.world.gone("a")
+    stack.service._operations.open_project_row(kind, A, kind)             # stays running
+    before = stack.state_bytes()
+    reply = stack.post(f"/hub/projects/{A}/forget", unlisted="project_busy")
+    assert _code(reply, 409) == "project_busy"
+    assert stack.state_bytes() == before and stack.world.spawner.calls == []
+    assert registry.load(stack.world.home).project(A) is not None, "the project left the list"
+    stack.service._operations.update_row(
+        stack.service._operations.running_for(A), state="succeeded")
+    assert stack.post(f"/hub/projects/{A}/forget").status == 200          # free again: it goes
 
 
 def test_a_hub_that_is_closing_refuses_a_new_recovery_and_starts_no_command(stack):
@@ -355,7 +375,10 @@ def test_a_hub_that_is_closing_refuses_a_new_login_recovery_and_starts_no_comman
         stack, tmp_path, monkeypatch):
     _login, _box, key = _leased_login(stack, tmp_path, monkeypatch)
     stack.service.close_operations()
-    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "operation_busy")
+    # `operation_busy` is not in the row of this route (`login_not_found`, `recover_not_needed`):
+    # the code waits for a ruling (`PENDING_RULING`), and the call says so.
+    _refused_and_unchanged(stack, f"/hub/logins/{key}/recover", 409, "operation_busy",
+                           unlisted="operation_busy")
 
 
 # -- POST /hub/projects/<project_id>/providers -------------------------------------------------

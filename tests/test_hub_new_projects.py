@@ -141,7 +141,8 @@ def test_parent_setting_does_not_change_a_running_add(stack):
         "operation_id": ident, "kind": "add", "source": "folder", "state": "running",
         "step": "admit", "project_id": None, "code": None, "detail": None, "result": None}
     before = registry.load(stack.service._home).projects_home
-    response = stack.post("/hub/setup/projects-home", {"default": True})
+    # The row lists no `operation_busy`: the code waits for a ruling (`PENDING_RULING`).
+    response = stack.post("/hub/setup/projects-home", {"default": True}, unlisted="operation_busy")
     assert response.status == 409 and response.json()["error"]["code"] == "operation_busy"
     assert registry.load(stack.service._home).projects_home == before
 
