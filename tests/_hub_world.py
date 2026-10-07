@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from conductor.hub import instance, registry, spawn, state, supervisor
+from conductor.ownership_errors import OwnerRefused
 
 START = datetime(2026, 9, 30, 10, 0, 0, tzinfo=timezone.utc)
 PIDS = {"a": 101, "b": 202, "c": 303}
@@ -90,7 +91,9 @@ class World:
         self.home = tmp_path / "home"
         self.clock = Clock()
         self.alive: set[int] = set()
-        self.heads: dict[str, str] = {}
+        self.heads: dict[str, str | None] = {}
+        self.unreadable: set[str] = set()          # projects whose head cannot be read
+        self.nonces: dict[str, str] = {}           # a head that belongs to another activation
         self.spawner = FakeSpawner()
         self.hub = instance.HubInstance.acquire(self.home)
         self.store = state.HubStateStore(self.home, self.hub)
@@ -120,7 +123,11 @@ class World:
 
     def _head_of(self, root):
         name = next(n for n, known in self.roots.items() if known == str(root))
-        return root, {"phase": self.heads[name], "nonce": id_of(name)}
+        if name in self.unreadable:
+            raise OwnerRefused("ownership_lost", "the ownership head cannot be read")
+        if self.heads[name] is None:               # a project that was never activated
+            return root, None
+        return root, {"phase": self.heads[name], "nonce": self.nonces.get(name, id_of(name))}
 
     # -- what a child leaves on disk ----------------------------------------------------------
 

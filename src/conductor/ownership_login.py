@@ -57,6 +57,12 @@ def _route(auth_home):
     return home, home.parent / (".conduct-login-" + key)
 
 
+def box_key(auth_home):
+    """The login folder, its box and the box's key; reads the folder's identity, writes nothing."""
+    home, box = _route(auth_home)
+    return home, box, box.name[len(".conduct-login-"):]
+
+
 def _prepare(home, box):
     try:
         box.mkdir()

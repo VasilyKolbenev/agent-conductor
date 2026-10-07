@@ -28,8 +28,9 @@ from typing import Any
 from conductor import ownership_native, ownership_records, tool_pins
 from conductor.command import project_git, operator_config, providers
 from conductor.hub import (
-    clone, dialogs, events, github, instance, job, lifecycle, operations, reader, refusals, registry, snapshots, state, summary,
-    supervisor, project_targets)
+    clone, dialogs, events, github, instance, job, lifecycle, logins, operations, owner_ops,
+    reader, refusals, registry, snapshots, state, summary, supervisor, project_targets,
+    tool_candidates)
 from conductor.hub.refusals import HubRefusal
 
 DEFAULT_PROJECTS_HOME = "ConductProjects"
@@ -40,6 +41,11 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 _ALIVE = ("starting", "running", "stopping", "stop_overdue")
 _UNRECOVERED = ("recovery_required", "stop_uncertain")
 _TOOLS = ("gh", "git")
+_CANDIDATE = re.compile(r"cand-[0-9a-f]{32}")
+#: What a pin file that is the problem is called in the refusal's detail: the closed words of the
+#: `reason` of `tool_version_unreadable`. Every code `tool_pins` proposes for its file is a key.
+PIN_FILE_REASONS = {"tools_file_invalid": "corrupt", "tools_file_unreadable": "unreadable",
+                    "tools_file_unwritable": "unwritable"}
 _RECOVER_CLONES = ("to finish them, stop the hub, then run: conduct ownership recover-clones "
                    "(run it with --prepare-restart first when it says a preparation is needed)")
 
@@ -75,7 +81,9 @@ class HubService:
                  job_policy: Callable[[], str] = job.own_policy,
                  folder_ok: Callable[[registry.Project], bool] | None = None,
                  pick_resolver: Callable[[str], operations.FolderPick | None] | None = None,
-                 operation_popen=None, dialog_popen=None) -> None:
+                 operation_popen=None, dialog_popen=None, owner_popen=None,
+                 candidates: tool_candidates.ToolCandidates | None = None,
+                 pin_run: tool_pins.Runner | None = None) -> None:
         self._home = Path(home)
         self._sup, self._store, self._snapshots = sup, store, snapshot_store
         self._reader, self._ledger, self._bus = child_reader, ledger, bus
@@ -95,9 +103,23 @@ class HubService:
         options = {} if operation_popen is None else {"popen": operation_popen}
         self._operations = operations.Operations(self._home, bus, start=self._start_added,
             status=self._added_status, clone_cancel=self._clones.cancel, **options)
+        self._logins = logins.LoginView(self._home, lambda: self._registry().projects,
+                                        sup.has_live_active, self._closing_owed)
+        self._candidates = (tool_candidates.ToolCandidates(self._home) if candidates is None
+                            else candidates)
+        self._pin_run = pin_run
+        owner_options = {} if owner_popen is None else {"popen": owner_popen}
+        self._owner_ops = owner_ops.OwnerOps(self._home, self._operations, sup,
+                                             status=self._added_status, policy=self._job_policy,
+                                             **owner_options)
 
     def start(self) -> None:
-        """Seed the ledger of first-seen moments from the snapshots the last hub left."""
+        """Seed the ledger of first-seen moments from the snapshots the last hub left.
+
+        It also starts the one search for git and gh candidates of this hub's life, on a thread
+        of its own; the page reads the setup again when it ends.
+        """
+        self._candidates.start(lambda: self._bus.publish("setup"))
         try:
             self._clone_recovery = self._clones.recover()
             said = [f"clone attempt {ident} is unfinished: {self._clones.unfinished[ident]}"
@@ -144,19 +166,23 @@ class HubService:
                                        stored=self._snapshots.get_limits())
 
     def setup(self) -> dict[str, Any]:
-        """`GET /hub/setup`: the profile, `<projects-home>`, the pins, and the hub's own job.
+        """`GET /hub/setup`: the profile, `<projects-home>`, the pins, the logins, the hub's job.
 
-        `logins` is empty until the profile is read (a later slice): the boxes of the logins are
-        found from the profile and the registered projects' `providers.json`.
+        The logins are found from the profile and the registered projects' `providers.json`;
+        a registry nobody can read lists none.
         """
         try:
             home_value = registry.load(self._home).projects_home
         except registry.RegistryError:
             home_value = None
+        try:
+            found_logins = self._logins.entries()
+        except HubRefusal:
+            found_logins = []
         return {"profile": self._profile(),
                 "projects_home": {**self._projects_home(home_value),
                                   "default_name": DEFAULT_PROJECTS_HOME},
-                "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": [],
+                "tools": {tool: self._tool(tool) for tool in _TOOLS}, "logins": found_logins,
                 "hub_job": self._job_policy(),
                 "clone_recovery": [{"operation_id": ident, "code": "clone_cleanup_incomplete"}
                                    for ident in self._clone_recovery]}
@@ -185,6 +211,7 @@ class HubService:
         self._dialogs.close()
 
     def close_operations(self) -> bool:
+        self._owner_ops.close()
         return self._operations.close_clones()
 
     def add_project(self, body: dict[str, Any]) -> tuple[int, dict[str, str]]:
@@ -363,6 +390,93 @@ class HubService:
         self._move(lambda: self._sup.forget(project_id), project_id)
         return 200, {"project_id": project_id}
 
+    def recover(self, project_id: str) -> tuple[int, dict[str, str]]:
+        """`POST .../recover`: run `conduct ownership recover` for the project (ADR-8).
+
+        Only a person's click starts it. The command judges the record itself (the boot, the
+        holds, the whole history); the hub learns the result from the ownership head.
+        """
+        project = self._require(project_id)
+        self._owner_ops.require_free(project_id)
+        try:
+            self._sup.require_recoverable(project_id)
+        except supervisor.SupervisorRefused as refused:
+            raise HubRefusal(refused.code, {"project_id": project_id}) from refused
+        return 202, {"operation_id": self._owner_ops.recover(project)}
+
+    def providers(self, project_id: str) -> tuple[int, dict[str, str]]:
+        """`POST .../providers`: apply the shared profile to a project (8.7).
+
+        A stopped project gets the copy and nothing else. A live child is drained first and, once
+        the copy has ended, started again in the same mode, but only while everything it was
+        asked under still holds (`OwnerOps.providers`); a child that was already stopping, or
+        whose pipe the hub had closed, is drained and copied and not brought back. The mode, the
+        restart and the owner's moves so far are one look of the supervisor (`providers_plan`).
+        """
+        project = self._require(project_id)
+        self._owner_ops.require_free(project_id)
+        self._profile_problem()
+        plan = self._plan(project)
+        alive = plan.status.lifecycle.state in _ALIVE
+        ident = self._owner_ops.providers(
+            project, mode=plan.status.mode if alive else None, restart=plan.restart,
+            generation=plan.generation)
+        return 202, {"operation_id": ident}
+
+    def _profile_problem(self) -> None:
+        """Refuse `profile_absent` / `profile_invalid` before anything is drained or written."""
+        path = self._home / PROFILE_FILE
+        if not path.exists():
+            raise HubRefusal("profile_absent")
+        try:
+            operator_config.load_provider_configs(path)
+        except operator_config.OperatorConfigError as error:
+            raise HubRefusal("profile_invalid") from error
+
+    def recover_login(self, login_key: str) -> tuple[int, dict[str, str]]:
+        """`POST .../recover` of a login: run `conduct ownership recover-login` for its folder.
+
+        The key names a login the hub itself found; the folder is the hub's, never the page's. A
+        second click while the recovery runs is that operation again (no refusal).
+        """
+        try:
+            found = self._logins.find(login_key)
+        except HubRefusal:
+            found = None                   # a registry nobody can read names no login
+        if found is None:
+            raise HubRefusal("login_not_found")
+        running = self._owner_ops.running_login(found.key)
+        if running is None and self._logins.state(found) != "unclosed":
+            raise HubRefusal("recover_not_needed")
+        return 202, {"operation_id": running or self._owner_ops.recover_login(
+            found.key, found.auth_home)}
+
+    def pin_tool(self, tool: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """`POST /hub/tools/<tool>/pin`: pin a candidate the hub itself found (spec 8.8).
+
+        The page names an id; the path is the hub's own. The pin is made only while the tool
+        still says the version the person was shown. A pin file that is the problem is told apart
+        from a tool whose version cannot be read by `detail.reason`.
+        """
+        ident = body["candidate_id"]
+        if type(ident) is not str or _CANDIDATE.fullmatch(ident) is None:
+            raise HubRefusal("contract_invalid")
+        found = self._candidates.get(tool, ident)
+        if found is None:
+            raise HubRefusal("candidate_not_found")
+        try:
+            pin = tool_pins.pin_tool(tool, found.path, folder=self._home, run=self._pin_run,
+                                     expect_version=found.version)
+        except tool_pins.ToolPinError as error:
+            if error.code in PIN_FILE_REASONS:
+                raise HubRefusal("tool_version_unreadable",
+                                 {"reason": PIN_FILE_REASONS[error.code]}) from error
+            raise HubRefusal(error.code) from error
+        self._verified.pop(tool, None)
+        self._bus.publish("setup")
+        return 200, {"tool": tool, "state": "pinned", "version": pin.version,
+                     "display": _tool_entry("pinned", pin)["display"]}
+
     def queue_order(self, order: object) -> tuple[int, dict[str, Any]]:
         """`POST /hub/queue/order`: reorder the queue; anything but a permutation writes nothing."""
         if not isinstance(order, list) or not all(
@@ -391,6 +505,13 @@ class HubService:
         except state.HubStateError as error:
             raise HubRefusal("registry_invalid", {"file": state.FILE_NAME}) from error
 
+    def _closing_owed(self) -> bool:
+        """Whether a project still owes its closure; a state nobody can read says yes."""
+        try:
+            return bool(self._state().closing)
+        except HubRefusal:
+            return True
+
     def _require(self, project_id: str) -> registry.Project:
         found = self._registry().project(project_id)
         if found is None:
@@ -409,9 +530,24 @@ class HubService:
             status = self._supervised(project.project_id)
         except supervisor.SupervisorRefused as refused:
             raise HubRefusal("project_not_found", {"project_id": project.project_id}) from refused
+        return self._at_its_folder(project, status)
+
+    def _at_its_folder(self, project: registry.Project,
+                       status: supervisor.ProjectStatus) -> supervisor.ProjectStatus:
+        """The status, or `missing` when the folder is not the listed one and no port is known."""
         if status.port is None and not self._folder_ok(project):
             return replace(status, lifecycle=lifecycle.Lifecycle("missing"))
         return status
+
+    def _plan(self, project: registry.Project) -> supervisor.ProvidersPlan:
+        """The supervisor's one look at a project a profile copy is about to touch."""
+        try:
+            plan = self._sup.providers_plan(project.project_id)
+        except supervisor.SupervisorRefused as refused:
+            raise HubRefusal("project_not_found", {"project_id": project.project_id}) from refused
+        except state.HubStateError as error:
+            raise HubRefusal("registry_invalid", {"file": state.FILE_NAME}) from error
+        return replace(plan, status=self._at_its_folder(project, plan.status))
 
     def _row(self, project: registry.Project, current: state.HubState) -> dict[str, Any]:
         status = self._status(project)
@@ -444,14 +580,15 @@ class HubService:
         try:
             pin = tool_pins.read_pin(tool, self._home)
         except tool_pins.ToolPinError:
-            return _tool_entry("unreadable", None)
+            return _tool_entry("unreadable", None)       # the file is the owner's to fix: no offer
         if pin is None:
-            return _tool_entry("not_pinned", None)
+            return _tool_entry("not_pinned", None, self._candidates.offered(tool, settled=False))
         held = self._verified.get(tool)
         if held is None or held[0] != pin:
             held = (pin, self._verified_state(tool))
             self._verified[tool] = held
-        return _tool_entry(held[1], pin)
+        return _tool_entry(held[1], pin,
+                           self._candidates.offered(tool, settled=held[1] == "pinned"))
 
     def _verified_state(self, tool: str) -> str:
         try:
@@ -499,7 +636,12 @@ class HubService:
         return None
 
     def _move(self, act: Callable[[], object], project_id: str) -> None:
-        """Carry out a move of the supervisor; its refusals become the closed list's."""
+        """Carry out a move of the supervisor; its refusals become the closed list's.
+
+        A project whose own operation (a recovery, a profile copy) runs is refused `project_busy`
+        before anything is written.
+        """
+        self._owner_ops.require_free(project_id)
         try:
             act()
         except supervisor.SupervisorRefused as refused:
@@ -549,7 +691,8 @@ def _folder_is_the_listed_one(project: registry.Project) -> bool:
         return False
 
 
-def _tool_entry(found: str, pin: tool_pins.ToolPin | None) -> dict[str, Any]:
+def _tool_entry(found: str, pin: tool_pins.ToolPin | None,
+                candidates: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     display = None if pin is None else f"{Path(pin.path).parent.name}{os.sep}{Path(pin.path).name}"
     return {"state": found, "display": display, "version": None if pin is None else pin.version,
-            "candidates": []}
+            "candidates": [] if candidates is None else candidates}

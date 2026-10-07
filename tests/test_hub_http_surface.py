@@ -312,7 +312,9 @@ LIVE = {("GET", "/"), ("GET", "/hub/<name>"), ("GET", "/hub/session"), ("GET", "
         ("POST", "/hub/setup/projects-home"),
         ("POST", "/hub/projects/<project_id>/activate"),
         ("POST", "/hub/projects/<project_id>/view"), ("POST", "/hub/projects/<project_id>/stop"),
-        ("POST", "/hub/projects/<project_id>/forget"), ("POST", "/hub/queue/order")}
+        ("POST", "/hub/projects/<project_id>/forget"), ("POST", "/hub/queue/order"),
+        ("POST", "/hub/projects/<project_id>/recover"), ("POST", "/hub/logins/<login_key>/recover"),
+        ("POST", "/hub/projects/<project_id>/providers"), ("POST", "/hub/tools/<tool>/pin")}
 
 
 def test_the_live_routes_are_these_and_are_all_rows_of_the_table():
@@ -320,24 +322,9 @@ def test_the_live_routes_are_these_and_are_all_rows_of_the_table():
     assert LIVE <= {(row.method, row.path) for row in routes.HUB_ROUTES}
 
 
-def test_a_route_of_the_table_with_no_handler_yet_answers_route_not_found_and_says_so(stack):
-    ids = {"project_id": A, "operation_id": "operation-" + "0" * 32, "pick_id": "pick-" + "0" * 32,
-           "login_key": "ab" * 32, "tool": "gh", "owner": "octocat"}
-    bodies = {"/hub/dialogs/folder": {"purpose": "project"},
-              "/hub/setup/projects-home": {"default": True},
-              "/hub/tools/<tool>/pin": {"candidate_id": "cand-" + "0" * 32},
-              "/hub/projects": {"source": "scratch", "folder": "x", "name": "x"}}
-    checked = 0
-    for row in routes.HUB_ROUTES:
-        if (row.method, row.path) in LIVE:
-            continue
-        target = re.sub(r"<([a-z_]+)>", lambda hit: ids[hit.group(1)], row.path)
-        reply = stack.get(target) if row.method == "GET" else stack.post(
-            target, bodies.get(row.path, {}))
-        assert _code(reply, 404) == "route_not_found", (row.method, row.path)
-        assert _envelope(reply)["detail"] == {"reason": "not in this build"}
-        checked += 1
-    assert checked == len(routes.HUB_ROUTES) - len(LIVE) == 4
+def test_every_row_of_the_table_has_a_handler():
+    assert set(server.LIVE_ROUTES) == {(row.method, row.path) for row in routes.HUB_ROUTES}
+    assert LIVE == {(row.method, row.path) for row in routes.HUB_ROUTES}
 
 
 def test_hub_dialog_issues_only_a_pick_id_and_reads_a_safe_folder_name(stack, tmp_path):
@@ -598,6 +585,7 @@ def server_refusal():
 
 def test_a_project_that_cannot_be_used_is_refused_by_what_state_it_is_in(stack):
     stack.world.put_status("b", "stop_uncertain")                       # not confirmed stopped
+    stack.world.heads["b"] = "opened"                                   # and its head still says so
     _refused_and_unchanged(stack, ACTIVATE.format(B), 409, "recovery_required")
     _refused_and_unchanged(stack, f"/hub/projects/{B}/view", 409, "recovery_required")
     stack.world.put_status("c", "refused", code="project_identity_changed")
@@ -683,7 +671,9 @@ def test_every_refusal_of_a_live_route_that_the_table_names_was_reached_above_or
                "project_not_running", "project_queue_changed", "operation_not_found",
                "pick_not_found", "dialog_busy", "dialog_unavailable",
                "gh_not_pinned", "gh_changed", "gh_not_logged_in", "gh_unreachable", "gh_failed",
-               "operation_not_cancellable"}
+               "operation_not_cancellable", "recover_not_needed", "login_not_found",
+               "profile_absent", "profile_invalid", "candidate_not_found", "git_too_old",
+               "tool_version_unreadable"}
     # Folder and scratch admission are live. GitHub clone remains a separate delivery.
     add_declared = {"name_invalid", "folder_invalid", "windows_name_unsafe", "repo_invalid",
                     "pick_invalid", "legacy_writers_unconfirmed", "folder_exists",

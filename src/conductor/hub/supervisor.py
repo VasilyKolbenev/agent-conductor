@@ -29,22 +29,28 @@ import re
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 from conductor import ownership_records, process_identity, up_status
 from conductor.hub import lifecycle as words
 from conductor.hub import registry, spawn, state
+from conductor.hub.supervisor_records import (
+    ChildReport, ProjectStatus, ProvidersPlan, RunScan, Seen, UnlistedClosing)
 from conductor.ownership_errors import OwnerRefused
 
 START_TIMEOUT_SECONDS = 30.0
 #: The refusals of a route that changes who is active or starts a child (4.6.5).
 CODES = frozenset({"project_not_found", "project_running", "project_not_running",
                    "project_busy", "already_active", "active_not_closed",
-                   "hub_in_kill_on_close_job", "project_queue_changed"})
+                   "hub_in_kill_on_close_job", "project_queue_changed", "recover_not_needed"})
 _INSTANT = "%Y-%m-%dT%H:%M:%SZ"
 _WORKING = ("serving", "stopping", "stop_overdue")
+#: The lifecycle states of a child that a profile copy may bring back after it.
+_RESTARTABLE = ("starting", "running")
+#: The lifecycle states that ask for a recovery (the same two `HubService` refuses a move on).
+_UNRECOVERED = ("recovery_required", "stop_uncertain")
 #: The only name a child's status file can have (`--status-file` must be `<project-id>.json`).
 _STATUS_NAME = re.compile(r"[0-9a-f]{32}\.json")
 
@@ -59,68 +65,14 @@ class SupervisorRefused(Exception):
         super().__init__(f"{code}: {detail}" if detail else code)
 
 
-@dataclass(frozen=True)
-class Seen:
-    """What one look at a project found: its status file, its process, and the hub's own child."""
-
-    record: up_status.StatusRecord | None
-    fresh: bool
-    own: spawn.Child | None
-    liveness: str
-    live: bool
-    mode: str | None
-    unreadable: bool = False
-
-
-@dataclass(frozen=True)
-class RunScan:
-    """What `run/` says: the mode of every live process, and the status files nobody can read."""
-
-    live: dict[str, str]
-    unreadable: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class UnlistedClosing:
-    """A project that left the list while it still owes a closure (tech lead, 30.09, rule b).
-
-    The hub cannot prove it closed without its root, so the entry blocks every next active child.
-    `action` is what the page offers: put the project back in the list (the add dialog with the
-    same folder, which finds the same root and id again).
-    """
-
-    project_id: str
-    since: str
-    action: str = "relist"
-
-
-@dataclass(frozen=True)
-class ChildReport:
-    """A child the hub started, at the hub's exit: its drain deadline and whether it is gone."""
-
-    project_id: str
-    drain_deadline: datetime | None
-    done: bool
-
-
-@dataclass(frozen=True)
-class ProjectStatus:
-    """A project in the words of 4.6.4: its lifecycle, working state, mode and drain deadline."""
-
-    lifecycle: words.Lifecycle
-    working: str
-    mode: str | None
-    drain_deadline: datetime | None
-    #: The port the child reported, while its process lives (`desk_url` is made from it, 4.6.4).
-    port: int | None = None
-    #: A 32-hex id the hub mints for each process it sees, so a restart is a new value.
-    instance: str | None = None
-    #: When the child last wrote `stopped`; `None` while it is anything else.
-    stopped_at: datetime | None = None
-
-
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _reads_the_head(record: up_status.StatusRecord) -> bool:
+    """Whether a dead process's record reads by the head of its project (D-H1)."""
+    return record.state in (*_WORKING, "stop_uncertain") or (
+        record.state == "refused" and record.code == "recovery_required")
 
 
 class Supervisor:
@@ -148,6 +100,11 @@ class Supervisor:
         self._retried: set[str] = set()
         self._codes: dict[str, str] = {}
         self._failed: dict[str, str] = {}
+        #: Per project: how many moves of the owner were made (see `ProvidersPlan.generation`).
+        self._generation: dict[str, int] = {}
+        #: Per project: the child whose pipe the hub has closed. It is draining, whatever its
+        #: status file says until it writes `stopping`.
+        self._ended: dict[str, spawn.Child] = {}
 
     # -- the moves a person asks for ------------------------------------------------------------
 
@@ -171,6 +128,7 @@ class Supervisor:
             updated = self._switch(lambda s: state.begin_switch(
                 s, project_id, kind="manual", transition_id=self._new_id(),
                 since=self._now_iso(), flag=flag, previous=previous))
+            self._bump(project_id)
             self._drain(current.active_project_id, project_id)
             self._codes.pop(project_id, None)
             self._awaiting.discard(project_id)
@@ -188,6 +146,7 @@ class Supervisor:
             raise SupervisorRefused("already_active", project.project_id)
         for held in (self._failed, self._codes):
             held.pop(project.project_id, None)
+        self._bump(project.project_id)
         self._awaiting.add(project.project_id)
         return current
 
@@ -205,6 +164,7 @@ class Supervisor:
                 raise SupervisorRefused("already_active", project_id)
             if self._seen(project).live:
                 raise SupervisorRefused("project_running", project_id)
+            self._bump(project_id)
             self._launch(project, mode="view")
 
     def stop(self, project_id: str, *, next_flag: state.Flag | None = None) -> None:
@@ -224,6 +184,7 @@ class Supervisor:
                 raise SupervisorRefused("project_not_running", project_id)
             current = self._store.load()
             if current.active_project_id != project_id:
+                self._bump(project_id)
                 self._drain(project_id)
                 return
             entry = self._entry(project_id, seen) if seen.fresh else None
@@ -232,6 +193,7 @@ class Supervisor:
             self._switch(lambda s: state.stop_active(
                 s, entry, transition_id=self._new_id(), since=self._now_iso(),
                 next_flag=next_flag))
+            self._bump(project_id)
             self._drain(project_id)
             self._awaiting.discard(project_id)
 
@@ -305,6 +267,7 @@ class Supervisor:
                 registry.remove_project(project_id, self._home)
             except registry.RegistryError as error:
                 raise SupervisorRefused("project_not_found", error.detail) from error
+            self._bump(project_id)
             self._awaiting.discard(project_id)
 
     def unlisted_closing(self) -> tuple[UnlistedClosing, ...]:
@@ -320,6 +283,135 @@ class Supervisor:
             return tuple(UnlistedClosing(entry.project_id, entry.since)
                          for entry in self._store.load().closing
                          if entry.project_id not in listed)
+
+    # -- recovery: what the hub asks of the owner commands and learns from the head -------------
+
+    def require_recoverable(self, project_id: str) -> registry.Project:
+        """The project, if a recovery command has something to do; else refuse.
+
+        Raises:
+            SupervisorRefused: `project_not_found`, `project_running` (a process of it may
+                live), `recover_not_needed` (it reads neither `recovery_required` nor
+                `stop_uncertain` and its head is a finished phase of this project).
+        """
+        with self._lock:
+            project = self._project(project_id)
+            seen = self._seen(project)
+            if seen.live:
+                raise SupervisorRefused("project_running", project_id)
+            asks = self._lifecycle(project, seen).state in _UNRECOVERED
+            if not asks and self._head_phase(project) in words.SETTLED_HEADS:
+                raise SupervisorRefused("recover_not_needed", project_id)
+            return project
+
+    def recovered(self, project_id: str) -> None:
+        """The recovery command succeeded: forget the stale failure and, for the active project
+        with no transition waiting, start it by the restart table (no transition, no flag)."""
+        with self._lock:
+            for held in (self._failed, self._codes):
+                held.pop(project_id, None)
+            try:
+                current = self._store.load()
+            except state.HubStateError:
+                return              # nothing is started on a state nobody can read
+            if current.active_project_id == project_id and self._waiting(current) is None:
+                self._awaiting.add(project_id)
+
+    def closure_of(self, project_id: str) -> str:
+        """`alive`, `closed` (dead and the head a finished phase) or `uncertain` (dead, not so).
+
+        Raises:
+            SupervisorRefused: `project_not_found`.
+        """
+        with self._lock:
+            project = self._project(project_id)
+            if self._seen(project).live:
+                return "alive"
+            closed = self._head_phase(project) in words.SETTLED_HEADS
+            return "closed" if closed else "uncertain"
+
+    def drain_project(self, project_id: str) -> bool:
+        """End the pipe of the hub's OWN live child of a project (EOF only; nothing else changes).
+
+        Returns:
+            True when the hub's own child was asked; False when no such child lives (a process
+            the hub did not start is never signalled).
+
+        Raises:
+            SupervisorRefused: `project_not_found`.
+        """
+        with self._lock:
+            self._project(project_id)
+            child = self._children.get(project_id)
+            if child is None or child.poll() is not None:
+                return False
+            self._drain(project_id)
+            return True
+
+    def providers_plan(self, project_id: str) -> ProvidersPlan:
+        """The look a profile copy begins with: the status, whether to restart, the generation.
+
+        The three are read in one hold of the lock, so no move of the owner comes between them.
+        A child the hub has asked to end (a stop, a switch, a start that timed out closed its
+        pipe) is never planned for a restart, even while its status file still says `serving`.
+
+        Raises:
+            SupervisorRefused: `project_not_found`.
+        """
+        with self._lock:
+            found = self.status(project_id)
+            own = self._children.get(project_id)
+            open_pipe = own is not None and own.poll() is None
+            restart = (open_pipe and self._ended.get(project_id) is not own
+                       and found.lifecycle.state in _RESTARTABLE)
+            return ProvidersPlan(found, restart, self._generation.get(project_id, 0))
+
+    def has_live_active(self) -> bool:
+        """Whether an `active` process lives, or a status file cannot be read (fail closed)."""
+        with self._lock:
+            found = self._scan()
+            return bool(found.unreadable) or "active" in found.live.values()
+
+    def restart_in_mode(self, project_id: str, mode: str, *, root: str,
+                        allowed: Callable[[], bool], generation: int) -> bool:
+        """Start a project again in the mode its child was drained in, if all still holds.
+
+        A courtesy to a person who asked for something else (a profile copy), never a decision
+        of the hub's: not made once the choice has moved on. The conditions are judged here,
+        under the lock, and the start is made in the same step, so no move of the owner comes
+        between them: `allowed()` (the hub is not closing); the project is registered with this
+        `root`, its process gone and its head finished; and, for `active`, it is still the active
+        project, no transition waits, nothing is left to close and nothing else runs (the
+        restart table then starts it, with no transition and no flag); for `view`, it has not
+        become the active project. `generation` is the one `providers_plan` gave when the copy
+        began: a move of the owner on this project since then (a stop, a view, an activate, a
+        forget) is a choice the start does not override.
+
+        Returns:
+            True when asked to start again (an active one by the next `tick`, a view one at
+            once); False when a condition no longer holds and nothing was done.
+
+        Raises:
+            SupervisorRefused: the start itself was refused.
+        """
+        with self._lock:
+            if not allowed() or self._generation.get(project_id, 0) != generation:
+                return False
+            try:
+                project, current = self._project(project_id), self._store.load()
+            except (SupervisorRefused, state.HubStateError):
+                return False
+            if project.root != root or self.closure_of(project_id) != "closed":
+                return False
+            if mode == "active" and current.active_project_id == project_id and (
+                    self._waiting(current) is None and not current.closing
+                    and not self._busy(project_id)):
+                self.activate(project_id)
+                return True
+            if mode == "view" and current.active_project_id != project_id:
+                self.view(project_id)
+                return True
+            return False
 
     # -- the loop --------------------------------------------------------------------------------
 
@@ -395,12 +487,21 @@ class Supervisor:
         return Seen(record, fresh, own, liveness, own_alive or liveness != "dead", mode,
                     unreadable)
 
-    def _head_phase(self, project: registry.Project) -> str | None:
+    def _head_phase(self, project: registry.Project) -> str:
+        """The phase of this project's own head, or `UNREADABLE`: never `None`.
+
+        The checks `state.proven_closed` makes before it believes a head: the head must be
+        readable, exist (an activated project) and belong to THIS activation (the registry id
+        is the activation nonce). No head, a read error and a head of another activation all
+        read `UNREADABLE`, which no table row treats as finished.
+        """
         try:
             _, head = self._head_of(project.root)
         except (OwnerRefused, OSError):
-            return None
-        return None if head is None else head["phase"]
+            return words.UNREADABLE
+        if head is None or head.get("nonce") != project.project_id:
+            return words.UNREADABLE
+        return head["phase"]
 
     def _lifecycle(self, project: registry.Project, seen: Seen) -> words.Lifecycle:
         pid = project.project_id
@@ -411,7 +512,7 @@ class Supervisor:
         pending = None if seen.own is None or record is not None else (
             "alive" if own_alive else "exited")
         head = None
-        if record is not None and seen.liveness == "dead" and record.state in _WORKING:
+        if record is not None and seen.liveness == "dead" and _reads_the_head(record):
             head = self._head_phase(project)
         prior = self._prior.get(pid)
         found = words.derive(record, seen.liveness, pending=pending, head_phase=head,
@@ -528,7 +629,16 @@ class Supervisor:
         for project_id in project_ids:
             child = self._children.get(project_id) if project_id else None
             if child is not None and child.poll() is None:
-                child.close_stdin()
+                self._end_pipe(child)
+
+    def _end_pipe(self, child: spawn.Child) -> None:
+        """Close the pipe of a child, and remember that the hub did (`providers_plan` reads it)."""
+        child.close_stdin()
+        self._ended[child.project_id] = child
+
+    def _bump(self, project_id: str) -> None:
+        """A move of the owner on this project: a copy that looked before it must not restart."""
+        self._generation[project_id] = self._generation.get(project_id, 0) + 1
 
     def _can_begin(self, current: state.HubState, closed: list[str],
                    waiting: state.Transition) -> bool:
@@ -554,7 +664,10 @@ class Supervisor:
                 self._awaiting.discard(project_id)
                 continue
             seen = self._seen(project)
-            action = words.restart_action(seen.record, seen.liveness)
+            uncertain = seen.record is not None and seen.record.state == "stop_uncertain"
+            action = words.restart_action(
+                seen.record, seen.liveness,
+                head_phase=self._head_phase(project) if uncertain else None)
             if action == "offer_recover":
                 self._awaiting.discard(project_id)
             elif action == "start" and not current.closing and not self._busy(project_id):
@@ -612,7 +725,7 @@ class Supervisor:
                 continue
             ready = seen.fresh and seen.record is not None and seen.record.state != "starting"
             if not ready and (now - started).total_seconds() >= self._timeout:
-                seen.own.close_stdin()
+                self._end_pipe(seen.own)
                 self._timed_out.add(pid)
                 self._codes[pid] = "start_timeout"
 

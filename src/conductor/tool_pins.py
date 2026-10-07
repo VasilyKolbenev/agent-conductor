@@ -10,7 +10,7 @@ the owner's to fix. The version of a tool is read by running it in the environme
 Lane L reads pins with `read_pin(tool)`. `pin_tool` is what `conduct tools pin` (and,
 later, the hub's pin route) calls; `verify_pin` is the check a hub makes at start and a
 child once per process. Every refusal is a `ToolPinError` whose `code` is a code the spec
-names (`SPEC_CODES`) or one of the two proposals (`PROPOSED_CODES`); no other can be built.
+names (`SPEC_CODES`) or one of the three proposals (`PROPOSED_CODES`); no other can be built.
 """
 from __future__ import annotations
 
@@ -51,9 +51,12 @@ Runner = Callable[[list[str], Mapping[str, str]], str]
 SPEC_CODES = frozenset({"git_not_pinned", "gh_not_pinned", "git_changed", "gh_changed",
                         "git_too_old", "tool_version_unreadable"})
 #: Proposals: the spec has no name for a `tools.json` that is not the schema, nor for one that
-#: cannot be written (the lock that is not taken counts as that). `registry_invalid` and
-#: `profile_invalid` are the analogues for other files. They stay until the tech lead rules.
-PROPOSED_CODES = frozenset({"tools_file_invalid", "tools_file_unwritable"})
+#: cannot be read, nor for one that cannot be written (the lock that is not taken counts as
+#: that). `registry_invalid` and `profile_invalid` are the analogues for other files. The three
+#: are told apart because the person has three different things to do about them. They stay
+#: until the tech lead rules.
+PROPOSED_CODES = frozenset({"tools_file_invalid", "tools_file_unreadable",
+                            "tools_file_unwritable"})
 
 
 class ToolPinError(Exception):
@@ -118,7 +121,8 @@ def load_pins(folder: Path | str | None = None) -> ToolPins:
     """Read `tools.json`; a missing file is no pins at all.
 
     Raises:
-        ToolPinError: `tools_file_invalid`: the file exists and is not the schema.
+        ToolPinError: `tools_file_invalid`: the file exists and is not the schema;
+            `tools_file_unreadable`: it exists and cannot be read.
     """
     path = tools_file(folder)
     try:
@@ -126,7 +130,8 @@ def load_pins(folder: Path | str | None = None) -> ToolPins:
     except FileNotFoundError:
         return ToolPins()
     except OSError as error:
-        raise ToolPinError("tools_file_invalid", f"{path.name} cannot be read: {error}") from error
+        raise ToolPinError("tools_file_unreadable",
+                           f"{path.name} cannot be read: {error}") from error
     try:
         return _pins_from(_strict_json(raw.decode("utf-8")))
     except ValueError as error:                       # incl. JSON and UTF-8 decode errors
@@ -137,7 +142,7 @@ def read_pin(tool: str, folder: Path | str | None = None) -> ToolPin | None:
     """The pin of one tool, or `None` when it is not pinned (no file, or a `null` entry).
 
     Raises:
-        ToolPinError: `tools_file_invalid`, see `load_pins`.
+        ToolPinError: `tools_file_invalid` or `tools_file_unreadable`, see `load_pins`.
         ValueError: `tool` is not `git` or `gh`.
     """
     return load_pins(folder).get(tool)
@@ -289,8 +294,38 @@ def _too_old(version: str) -> bool:
 # -- the operations ------------------------------------------------------------------
 
 
+def _absolute(tool: str, path: object) -> str:
+    _checked(tool)
+    if not (isinstance(path, str) and path and os.path.isabs(path)):
+        raise ToolPinError("tool_version_unreadable",
+                           "the path of the tool must be absolute, so no version can be read")
+    return path
+
+
+def probe_version(tool: str, path: str, *, folder: Path | str | None = None,
+                  run: Runner | None = None, source: Mapping[str, str] | None = None) -> str:
+    """The `major.minor.patch` that the tool at `path` says, read the way a pin reads it.
+
+    It runs `<path> --version` in the environment `tool_env` builds and nothing else: no file is
+    read, made or written, so a person can be shown what a pin would say before one is made.
+
+    Args:
+        tool: `git` or `gh`.
+        path: The absolute path of the executable.
+        folder: `<conduct-home>` unless a test says another (only `tool_env` looks at it).
+        run: Runs `[path, "--version"]`; the real process unless a test stands in.
+        source: The owner's environment for `tool_env`; `os.environ` by default.
+
+    Raises:
+        ToolPinError: `tool_version_unreadable` (also for a relative path).
+        ValueError: `tool` is not `git` or `gh`.
+    """
+    return _read_version(tool, _absolute(tool, path), _folder(folder), source, run)
+
+
 def pin_tool(tool: str, path: str, *, folder: Path | str | None = None,
-             run: Runner | None = None, source: Mapping[str, str] | None = None) -> ToolPin:
+             run: Runner | None = None, source: Mapping[str, str] | None = None,
+             expect_version: str | None = None) -> ToolPin:
     """Pin `tool` at `path`: read its version, refuse a git that is too old, write the file.
 
     Args:
@@ -299,18 +334,21 @@ def pin_tool(tool: str, path: str, *, folder: Path | str | None = None,
         folder: `<conduct-home>` unless a test says another.
         run: Runs `[path, "--version"]`; the real process unless a test stands in.
         source: The owner's environment for `tool_env`; `os.environ` by default.
+        expect_version: The version a person was shown for this path. When it is given and the
+            tool says another one now, nothing is written.
 
     Raises:
         ToolPinError: `tool_version_unreadable` (also for a relative path), `tools_file_invalid`
-            (the file is left as it is), `git_too_old`, `tools_file_unwritable`.
+            or `tools_file_unreadable` (the file is left as it is), `<tool>_changed` (the version
+            is not `expect_version`), `git_too_old`, `tools_file_unwritable`.
     """
-    _checked(tool)
-    if not (isinstance(path, str) and path and os.path.isabs(path)):
-        raise ToolPinError("tool_version_unreadable",
-                           "the path of the tool must be absolute, so no version can be read")
+    _absolute(tool, path)
     where = _folder(folder)
     load_pins(where)              # an invalid file refuses before anything runs; read again below
     version = _read_version(tool, path, where, source, run)
+    if expect_version is not None and version != expect_version:
+        raise ToolPinError(f"{tool}_changed", f"{tool} at this path now says {version}, "
+                           f"and {expect_version} was shown")
     if tool == "git" and _too_old(version):
         raise ToolPinError("git_too_old", f"git {version} is older than "
                            f"{MIN_GIT[0]}.{MIN_GIT[1]}, which the hooks-off environment needs")

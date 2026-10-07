@@ -216,10 +216,10 @@ def test_a_relative_path_is_tool_version_unreadable_and_says_why_before_anything
 
 SPEC_NAMES = {"git_not_pinned", "gh_not_pinned", "git_changed", "gh_changed", "git_too_old",
               "tool_version_unreadable"}
-PROPOSED_NAMES = {"tools_file_invalid", "tools_file_unwritable"}
+PROPOSED_NAMES = {"tools_file_invalid", "tools_file_unreadable", "tools_file_unwritable"}
 
 
-def test_the_spec_codes_and_the_two_proposals_are_the_whole_list():
+def test_the_spec_codes_and_the_three_proposals_are_the_whole_list():
     assert tool_pins.SPEC_CODES == frozenset(SPEC_NAMES)
     assert tool_pins.PROPOSED_CODES == frozenset(PROPOSED_NAMES)
 
@@ -422,3 +422,97 @@ def test_a_write_that_fails_lets_go_of_the_lock(tmp_path, monkeypatch):
         assert _code(lambda: _pin(tmp_path)) == "tools_file_unwritable"
     monkeypatch.setattr(tool_pins, "LOCK_ATTEMPTS", 1)   # a lock still held would refuse at once
     assert _pin(tmp_path).version == "2.47.1"
+
+
+# -- the hub's two needs: a version read that pins nothing, and a pin bound to what was shown -----
+
+
+def test_pin_tool_with_an_expected_version_refuses_a_different_one_in_its_own_changed_code(
+        tmp_path):
+    target = _put(tmp_path, _document(gh=GH_ENTRY))
+    before = target.read_bytes()
+    for tool, path in (("git", ABS_GIT), ("gh", ABS_GH)):
+        def pin(tool=tool, path=path):
+            tool_pins.pin_tool(tool, path, folder=tmp_path, run=_says(f"{tool} version 2.50.0\n"),
+                               source={}, expect_version="2.47.1")
+        assert _code(pin) == f"{tool}_changed"
+    assert target.read_bytes() == before
+    assert not (tmp_path / "tools.lock").exists(), "a refused pin must not reach the write"
+
+
+def test_pin_tool_with_the_expected_version_pins_it_and_without_one_behaves_as_before(tmp_path):
+    pin = _pin(tmp_path, expect_version="2.47.1")
+    assert pin == ToolPin("git", ABS_GIT, "2.47.1")
+    other = _pin(tmp_path, tool="gh", path=ABS_GH, text="gh version 2.62.0\n")
+    assert other == ToolPin("gh", ABS_GH, "2.62.0")
+    assert tool_pins.load_pins(tmp_path) == ToolPins(pin, other)
+
+
+def test_a_version_that_moved_is_told_before_a_git_that_is_too_old(tmp_path):
+    assert _code(lambda: _pin(tmp_path, text="git version 2.30.9\n",
+                              expect_version="2.47.1")) == "git_changed"
+    assert not (tmp_path / "tools.json").exists()
+
+
+def test_probe_version_reads_the_version_in_the_built_environment_and_writes_nothing(tmp_path):
+    seen = []
+
+    def spy(argv, env):
+        seen.append((argv, dict(env)))
+        return "git version 2.47.1\n"
+
+    folder = tmp_path / "not-there-yet"
+    owner = {"GH_TOKEN": "planted", "GIT_DIR": "/elsewhere", "PATH": "/owner/bin"}
+    version = tool_pins.probe_version("git", ABS_GIT, folder=folder, run=spy, source=owner)
+    assert version == "2.47.1"
+    (argv, env), = seen
+    assert argv == [ABS_GIT, "--version"]
+    assert "GH_TOKEN" not in env and "GIT_DIR" not in env
+    assert env["PATH"].split(os.pathsep)[0] == os.path.dirname(ABS_GIT)
+    assert not folder.exists(), "a probe pins nothing: no file, no lock, not even the folder"
+
+
+def test_probe_version_refuses_a_relative_path_before_anything_runs(tmp_path):
+    def probe():
+        tool_pins.probe_version("git", "relative/git", folder=tmp_path,
+                                run=_raises(AssertionError("ran")), source={})
+    with pytest.raises(ToolPinError) as caught:
+        probe()
+    assert caught.value.code == "tool_version_unreadable" and "absolute" in caught.value.detail
+    with pytest.raises(ValueError, match="hg"):
+        tool_pins.probe_version("hg", ABS_GIT, folder=tmp_path, run=_says("hg version 1.2.3\n"))
+
+
+def test_probe_version_names_a_tool_that_cannot_run_or_does_not_say_its_version(tmp_path):
+    def probe(run):
+        return lambda: tool_pins.probe_version("gh", ABS_GH, folder=tmp_path, run=run, source={})
+    assert _code(probe(_raises(OSError(2, "no such file")))) == "tool_version_unreadable"
+    assert _code(probe(_says("hello\n"))) == "tool_version_unreadable"
+
+
+# -- a pin file that cannot be read is not a pin file that is not the schema ---------------------
+
+
+def test_a_pin_file_that_cannot_be_read_is_told_apart_from_one_that_is_not_the_schema(
+        tmp_path):
+    (tmp_path / "tools.json").mkdir()     # a folder where the file belongs: the read itself fails
+    assert _code(lambda: tool_pins.load_pins(tmp_path)) == "tools_file_unreadable"
+    (tmp_path / "tools.json").rmdir()
+    _put(tmp_path, b"{ not json")
+    assert _code(lambda: tool_pins.load_pins(tmp_path)) == "tools_file_invalid"
+
+
+def test_a_pin_file_that_cannot_be_read_refuses_a_pin_and_a_check_before_the_tool_runs(tmp_path):
+    (tmp_path / "tools.json").mkdir()
+
+    def pin():
+        tool_pins.pin_tool("git", ABS_GIT, folder=tmp_path, run=_raises(AssertionError("ran")),
+                           source={})
+
+    def verify():
+        tool_pins.verify_pin("git", folder=tmp_path, run=_raises(AssertionError("ran")),
+                             source={})
+
+    assert _code(pin) == "tools_file_unreadable"
+    assert _code(verify) == "tools_file_unreadable"
+    assert (tmp_path / "tools.json").is_dir(), "nothing was written over it"

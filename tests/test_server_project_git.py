@@ -141,6 +141,7 @@ def test_the_environment_is_the_one_builder_of_spec_8_9_and_nothing_of_the_owner
 
 REASONS = [
     ("git_not_pinned", "not_pinned"), ("tools_file_invalid", "not_pinned"),
+    ("tools_file_unreadable", "not_pinned"),
     ("git_changed", "version_changed"), ("tool_version_unreadable", "missing")]
 
 

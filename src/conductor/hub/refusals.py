@@ -73,6 +73,16 @@ OPERATION_CODES_BY_STEP: Mapping[str, tuple[str, ...]] = MappingProxyType({
 OPERATION_ERROR_CODES = frozenset(
     code for codes in OPERATION_CODES_BY_STEP.values() for code in codes)
 
+_RESTART_CODES = frozenset({"recovery_required", "login_recovery_required"})
+#: The typed reasons `detail.reason` of a failed operation row may hold, each with the top codes
+#: it may stand beside: a closed map, never text a command printed. `recovery_required` is the
+#: typed reason behind a `subprocess_failed` of a step that does not list that code; the other
+#: four tell a recovery that needs a restart or a preparation which of the two it is.
+OPERATION_DETAIL_REASONS: Mapping[str, frozenset[str]] = MappingProxyType({
+    "recovery_required": frozenset({"subprocess_failed"}),
+    "restart_needed": _RESTART_CODES, "prepare_needed": _RESTART_CODES,
+    "other_environment": _RESTART_CODES, "not_proven": _RESTART_CODES})
+
 _HUB_MESSAGES: Mapping[str, str] = MappingProxyType({
     "same_origin_denied": "the request does not come from this hub's own page",
     "csrf_denied": "the request does not carry this hub's current token",
