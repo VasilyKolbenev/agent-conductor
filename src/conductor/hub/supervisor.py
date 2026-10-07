@@ -29,13 +29,15 @@ import re
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 from conductor import ownership_records, process_identity, up_status
 from conductor.hub import lifecycle as words
 from conductor.hub import registry, spawn, state
+from conductor.hub.supervisor_records import (
+    ChildReport, ProjectStatus, RunScan, Seen, UnlistedClosing)
 from conductor.ownership_errors import OwnerRefused
 
 START_TIMEOUT_SECONDS = 30.0
@@ -59,66 +61,6 @@ class SupervisorRefused(Exception):
             raise ValueError(f"{code!r} is not a code a route refuses with")
         self.code, self.detail = code, detail
         super().__init__(f"{code}: {detail}" if detail else code)
-
-
-@dataclass(frozen=True)
-class Seen:
-    """What one look at a project found: its status file, its process, and the hub's own child."""
-
-    record: up_status.StatusRecord | None
-    fresh: bool
-    own: spawn.Child | None
-    liveness: str
-    live: bool
-    mode: str | None
-    unreadable: bool = False
-
-
-@dataclass(frozen=True)
-class RunScan:
-    """What `run/` says: the mode of every live process, and the status files nobody can read."""
-
-    live: dict[str, str]
-    unreadable: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class UnlistedClosing:
-    """A project that left the list while it still owes a closure (tech lead, 30.09, rule b).
-
-    The hub cannot prove it closed without its root, so the entry blocks every next active child.
-    `action` is what the page offers: put the project back in the list (the add dialog with the
-    same folder, which finds the same root and id again).
-    """
-
-    project_id: str
-    since: str
-    action: str = "relist"
-
-
-@dataclass(frozen=True)
-class ChildReport:
-    """A child the hub started, at the hub's exit: its drain deadline and whether it is gone."""
-
-    project_id: str
-    drain_deadline: datetime | None
-    done: bool
-
-
-@dataclass(frozen=True)
-class ProjectStatus:
-    """A project in the words of 4.6.4: its lifecycle, working state, mode and drain deadline."""
-
-    lifecycle: words.Lifecycle
-    working: str
-    mode: str | None
-    drain_deadline: datetime | None
-    #: The port the child reported, while its process lives (`desk_url` is made from it, 4.6.4).
-    port: int | None = None
-    #: A 32-hex id the hub mints for each process it sees, so a restart is a new value.
-    instance: str | None = None
-    #: When the child last wrote `stopped`; `None` while it is anything else.
-    stopped_at: datetime | None = None
 
 
 def _utc_now() -> datetime:
