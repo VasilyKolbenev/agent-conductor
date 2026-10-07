@@ -503,9 +503,33 @@ def _held_stop(stack, monkeypatch):
     return entered, go
 
 
-def _the_copy_ends_or_starts_a_child(stack, ident: str, name: str) -> dict:
-    """The drained child leaves; the row of the copy ends, or is seen starting a child again."""
+def _watched_drain(stack, monkeypatch) -> threading.Event:
+    """An event that is set once the copy has drained a child that was still alive.
+
+    The child must be seen alive by that drain: a child that left first is not drained, and then
+    no plan of a restart is ever tried, whatever the plan said.
+    """
+    sup = stack.world.supervisor
+    real, asked = sup.drain_project, threading.Event()
+
+    def drain_project(*args, **kwargs):
+        answer = real(*args, **kwargs)
+        if answer:
+            asked.set()
+        return answer
+
+    monkeypatch.setattr(sup, "drain_project", drain_project)
+    return asked
+
+
+def _the_copy_ends_or_starts_a_child(stack, ident: str, name: str,
+                                     drained: threading.Event) -> dict:
+    """The drained child leaves; the row of the copy ends, or is seen starting a child again.
+
+    The child leaves only after the copy's own drain found it alive (`_watched_drain`).
+    """
     child = stack.world.spawner.children[-1]
+    assert drained.wait(10), "the copy never drained the child"
     _wait_until(lambda: child.closed)
     stack.world.gone(name, "stopped", head="closed")
 
@@ -522,6 +546,7 @@ def test_an_owner_stop_that_lands_while_a_profile_copy_drains_is_not_undone_by_i
     _a_profile(stack, tmp_path)
     assert stack.post(f"/hub/projects/{B}/view").status == 202
     stack.world.running("b", mode="view")
+    drained = _watched_drain(stack, monkeypatch)
     entered, go = _held_stop(stack, monkeypatch)
     stopped = []
     owner = threading.Thread(target=lambda: stopped.append(stack.post(f"/hub/projects/{B}/stop")))
@@ -531,21 +556,22 @@ def test_an_owner_stop_that_lands_while_a_profile_copy_drains_is_not_undone_by_i
     go.set()
     owner.join(10)
     assert [reply.status for reply in stopped] == [202]
-    row = _the_copy_ends_or_starts_a_child(stack, ident, "b")
+    row = _the_copy_ends_or_starts_a_child(stack, ident, "b", drained)
     assert len(stack.world.spawner.started("b")) == 1, "the child the owner stopped came back"
     assert (row["step"], row["state"], row["result"]) == ("providers", "succeeded", COPIED)
 
 
 def test_a_stop_that_closed_the_pipe_before_the_child_said_stopping_is_not_undone_by_a_copy(
-        stack, tmp_path):
+        stack, tmp_path, monkeypatch):
     _a_profile(stack, tmp_path)
     assert stack.post(f"/hub/projects/{B}/view").status == 202
     child = stack.world.spawner.children[-1]
     stack.world.running("b", mode="view")
+    drained = _watched_drain(stack, monkeypatch)
     assert stack.post(f"/hub/projects/{B}/stop").status == 202
     assert child.closed and _row(stack, B)["state"] == "running"         # it has not said stopping
     ident = stack.post(f"/hub/projects/{B}/providers").json()["operation_id"]
-    row = _the_copy_ends_or_starts_a_child(stack, ident, "b")
+    row = _the_copy_ends_or_starts_a_child(stack, ident, "b", drained)
     assert len(stack.world.spawner.started("b")) == 1, "the child the owner stopped came back"
     assert (row["step"], row["state"], row["result"]) == ("providers", "succeeded", COPIED)
 
