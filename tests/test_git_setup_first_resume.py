@@ -74,9 +74,19 @@ SPEC_ROWS = [   # (stage, ref, lock, index) -> what the prose of 9.8 and S4 stat
 ]
 
 
+def _as_the_spec_says(step):
+    """What 9.8 states of a step: the act, or a refusal's reason and whether it frees a lock.
+
+    Which copy a refusal removes is a decision of the plan with its own rows (`RULED_ROWS`), so
+    these rows must not assert it."""
+    if isinstance(step, Refuse):
+        return Refuse(step.reason, release_own_lock=step.release_own_lock)
+    return step
+
+
 @pytest.mark.parametrize("row, expected", SPEC_ROWS)
 def test_first_commit_resume_follows_the_rows_9_8_states(row, expected):
-    assert next_action(*row) == expected
+    assert _as_the_spec_says(next_action(*row)) == _as_the_spec_says(expected)
 
 
 RULED_ROWS = [   # (stage, ref, lock, index) -> what a review ruling adds to the rows 9.8 states
@@ -87,12 +97,33 @@ RULED_ROWS = [   # (stage, ref, lock, index) -> what a review ruling adds to the
     # these names: tests/test_git_setup_first_lock.py walks both crash points through this row).
     pytest.param((REF_MOVED, Ref.AT_COMMIT, O, Index.MATCHES), Act.RELEASE_LOCK,
                  id="ref_moved_own_lock_over_a_matching_index_after_a_two_name_crash"),
+    # Decision E: a final refusal also drops the operation's own copy in `.git`. The copy is
+    # proved by the stored install bytes and laid again from them by a later repeat, so a refusal
+    # never leaves a `conduct-first-index-*` behind. Neither the record nor its bytes are touched.
+    pytest.param((PREPARED, Ref.OTHER, N, A), Refuse("head_exists", drop_copy=True),
+                 id="a_foreign_ref_before_the_lock_drops_the_copy"),
+    pytest.param((REF_MOVED, Ref.ABSENT, O, A),
+                 Refuse("head_exists", release_own_lock=True, drop_copy=True),
+                 id="a_ref_that_vanished_after_ref_moved_frees_the_lock_and_drops_the_copy"),
+    pytest.param((PREPARED, Ref.ABSENT, O, Index.OTHER),
+                 Refuse("index_exists", release_own_lock=True, drop_copy=True),
+                 id="an_index_found_under_the_own_lock_frees_the_lock_and_drops_the_copy"),
+    pytest.param((REF_MOVED, Ref.AT_COMMIT, N, Index.OTHER),
+                 Refuse("index_exists", drop_copy=True),
+                 id="another_index_after_the_ref_moved_drops_the_copy"),
 ]
 
 
 @pytest.mark.parametrize("row, expected", RULED_ROWS)
 def test_first_commit_resume_follows_the_rows_the_rulings_add(row, expected):
     assert next_action(*row) == expected
+
+
+def test_first_commit_resume_drops_the_own_copy_on_every_final_refusal_but_a_damaged_record():
+    refusals = [(row, step) for row in EVERY if isinstance(step := next_action(*row), Refuse)]
+    assert {step.reason for _, step in refusals} == {"head_exists", "index_locked", "index_exists"}
+    assert not [row for row, step in refusals if not step.drop_copy], "a refusal keeps the copy"
+    assert next_action("", Ref.ABSENT, Lock.NONE, Index.ABSENT) == Refuse("setup_damaged")
 
 
 def _apply(step, state):
