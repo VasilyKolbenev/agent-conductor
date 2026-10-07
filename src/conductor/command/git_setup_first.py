@@ -9,7 +9,10 @@ the product's own lock; the index is installed by moving that proven lock withou
 
 A retry of the same terms by the same actor walks the same table from whatever the repository
 shows, so no path can skip a check another path makes. Whether an index is the product's is never
-judged by its tree: an equivalent index of the owner is left exactly as it is (OD-3).
+judged by its tree: an equivalent index of the owner is left exactly as it is (OD-3). A retry that
+comes before the ref was published is an entry of the write like the first one: the branch HEAD
+names, the object format, the author and the signing flag are read again, and a changed one
+replaces the stored operation (`_supersede`) by a new one under the facts as they are now.
 
 The performers `_do_<action>` are looked up by name on every turn: they are the seams the tests
 patch to make a crash happen between two named effects.
@@ -19,13 +22,14 @@ from __future__ import annotations
 import os
 import stat
 import sys
+from dataclasses import asdict
 
 from . import git_setup_first_lock as lock
 from . import git_setup_first_records as records
 from .accept_plumbing import ref_oid
 from .adapters.harness_workspace import root_turn
 from .containment import portal_violation
-from .git_setup_facts import author_now, call, first_facts, plain_git_dir
+from .git_setup_facts import admitted, author_now, call, first_facts, frozen_facts, plain_git_dir
 from .git_setup_first_index import binding_of
 from .git_setup_first_prepare import prepare
 from .git_setup_first_resume import (
@@ -69,7 +73,7 @@ def confirm(api, request) -> tuple[int, dict]:
     with root_turn(root, wait=0):
         row = records.read_receipt(root)
         if row is not None:
-            return _repeat(row, request)
+            return _repeat(api, row, request)
         op = records.read_op(root)
         if op is not None:
             if _stored_terms_hold(api, op, request):
@@ -80,27 +84,74 @@ def confirm(api, request) -> tuple[int, dict]:
             return 201, {"setup": _write(api, request, prepared)}
 
 
-def _repeat(row: dict, request) -> tuple[int, dict]:
-    """The receipt answers an exact repeat; any other actor or terms refuse."""
+def _repeat(api, row: dict, request) -> tuple[int, dict]:
+    """The receipt answers an exact repeat; any other actor or terms refuse.
+
+    An op that still stands beside the receipt is what a finish that died left behind: the receipt
+    is authoritative, and this repeat cleans it up (the copy, then the record, then its bytes). A
+    cleanup that cannot be done is tried again by the next repeat and never changes the answer."""
     if (row["mode"], row["paths_digest"], row["requested_by"]) != (
             request.mode, request.digest, request.actor):
         raise SetupRefused("setup_terms_changed")
+    try:
+        op = records.read_op(api._store.project_root)
+        if op is not None:
+            with api._store.transaction():
+                _clean_up(api, op)
+    except (SetupRefused, GitReadFailed, OSError):
+        pass
     return 200, {"setup": row}
 
 
+def _clean_up(api, op) -> None:
+    """Remove the own copy, proved by the stored bytes, then retire the op beside a receipt."""
+    root, git = api._store.project_root, api._project_git
+    lock.drop_copy(plain_git_dir(root, git), op.nonce, records.read_install(root, op))
+    records.retire(root, op)
+
+
 def _stored_terms_hold(api, op, request) -> bool:
-    """May this request continue the stored op, judged now?
+    """May this request continue the stored op, judged now? (OD-8, OD-9 and OD-10.)
 
     The body, the actor and the CURRENT author must be the stored ones; another one inherits
-    nothing (OD-8, OD-9)."""
+    nothing. While the ref the op names is absent and the record has not said `ref_moved`, a resume
+    is an entry of the write like `_write`: the branch HEAD names, the object format and the
+    signing flag must also still be the frozen ones, or the stored op would move its commit onto
+    a branch HEAD no longer names, or publish an unsigned commit where signing is now required.
+    After the ref was published the commit is on its branch: the frozen facts are not read again
+    and the decision table finishes the install."""
     root, git = api._store.project_root, api._project_git
-    return (op.mode, op.paths_digest, op.requested_by, op.author) == (
-        request.mode, request.digest, request.actor, author_now(root, git))
+    if (op.mode, op.paths_digest, op.requested_by) != (request.mode, request.digest, request.actor):
+        return False
+    admitted(root, git)
+    if op.stage == REF_MOVED or ref_oid(root, git, op.target_ref.removeprefix("refs/heads/")):
+        return author_now(root, git) == op.author
+    return _frozen(frozen_facts(root, git)) == _frozen(asdict(op))
 
 
 def _supersede(api, op) -> None:
-    """Changed terms never replace a stored op yet: they refuse and nothing is undone."""
-    raise SetupRefused("setup_terms_changed")
+    """Changed terms replace an unfinished op, and only before the ref was published (OD-6).
+
+    Only what the stored bytes prove is the product's own is undone: its lock and its copy; a
+    foreign lock or index stays. The op record is retired BEFORE its install bytes, never the
+    other way round. A ref that is not our commit is `head_exists` (the own lock and copy go, as
+    the table's own refusal does, and the record stays); a ref at our commit, or a record at
+    `ref_moved`, is `setup_terms_changed` and nothing is undone.
+    """
+    root, git = api._store.project_root, api._project_git
+    with api._store.transaction():
+        ref, folder = ref_state(root, git, op), plain_git_dir(root, git)
+        held = lock.lock_state(folder, binding_of(op))
+        if ref is Ref.OTHER:
+            _refuse(api, op, Refuse("head_exists", release_own_lock=held is Lock.OWN,
+                                    drop_copy=True))
+        if ref is Ref.AT_COMMIT or op.stage == REF_MOVED:
+            raise SetupRefused("setup_terms_changed")
+        data = records.read_install(root, op)         # the proof of the copy needs the bytes first
+        if held is Lock.OWN:
+            lock.release_own_lock(folder, binding_of(op))
+        lock.drop_copy(folder, op.nonce, data)
+        records.retire(root, op)
 
 
 def _prepare(api, request) -> tuple[dict, object, bytes]:

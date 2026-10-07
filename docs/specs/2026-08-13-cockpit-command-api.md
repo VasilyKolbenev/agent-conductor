@@ -1281,7 +1281,15 @@ or other lock is `index_locked` and is never touched. An index of the owner that
 equivalent to the committed tree is left exactly as it is; another index is
 `index_exists`; a ref that is not the product's commit is `head_exists`. A retry of
 the same terms by the same actor continues from what the repository shows and never
-moves the ref twice. A reload, a GET and a server start repeat nothing: the person
+moves the ref twice. A retry that comes before the ref is published first reads the
+branch HEAD names, the object format, the author and the signing flag again: when one
+of them is no longer the stored one the unfinished operation is replaced by a new one
+under the facts as they are now, after the product has removed only what it proves is
+its own (its lock and its copy, then the record, then the install bytes); a foreign
+lock, index or ref is never touched. After the ref is published the commit stays on its
+branch, a changed actor, mode, digest or author is `setup_terms_changed`, and the index
+is installed from the stored bytes. A repeat of a step whose receipt stands answers 200
+and removes what an interrupted finish left (the record first, its bytes after). A reload, a GET and a server start repeat nothing: the person
 continues explicitly by the same body (see `first_commit_pending` below). Every
 installed index carries the optional extension `CNDT`, and Git prints `ignoring CNDT
 extension` on stderr at every read of it until Git's own next index write. A build whose

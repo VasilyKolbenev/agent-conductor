@@ -13,7 +13,8 @@ import functools
 
 import pytest
 
-from conductor.command import git_setup
+from conductor.command import git_setup, git_setup_first
+from conductor.command.run_store import StoreError
 from conductor.ownership import data_root
 from tests.git_first_readers import product_reader, reader_binary
 from tests.git_repo_helpers import git
@@ -96,3 +97,35 @@ def confirm(folder, mode="snapshot", digest=None, actor="Owner"):
 def op_file(folder):
     """Where the operation record of the first commit stands."""
     return data_root(folder.root) / "git" / "setup" / "first_commit.op.json"
+
+
+def terms_of(folder, mode="snapshot"):
+    """The digest a confirmation of `mode` carries, taken from a preview now: None for `empty`.
+    A repeat after a crash cannot ask for it again (the preview refuses while the lock stands)."""
+    return seal(folder)["paths_digest"] if mode == "snapshot" else None
+
+
+def crash_after(monkeypatch, name, *, owner=git_setup_first, times=1):
+    """Let the named function of `owner` do its effect, then fail like a crash (HTTP 500).
+
+    Returns the function that puts the real one back: the process that died has restarted."""
+    real, left = getattr(owner, name), [times]
+
+    def wrapper(*args, **kwargs):
+        result = real(*args, **kwargs)
+        left[0] -= 1
+        if left[0] == 0:
+            raise StoreError("simulated interruption after " + name)
+        return result
+
+    monkeypatch.setattr(owner, name, wrapper)
+    return lambda: monkeypatch.setattr(owner, name, real)
+
+
+def crashed(monkeypatch, folder, name, mode="snapshot", digest=None, *, owner=git_setup_first):
+    """Confirm, crash right after `name` has done its effect, and restart: what is left is the
+    state a process that died there leaves, and the next confirm is the exact repeat of this one."""
+    restart = crash_after(monkeypatch, name, owner=owner)
+    answer = confirm(folder, mode, digest=digest)
+    restart()
+    assert answer.status == 500, answer.payload
