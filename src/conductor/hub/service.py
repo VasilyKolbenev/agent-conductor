@@ -409,17 +409,18 @@ class HubService:
 
         A stopped project gets the copy and nothing else. A live child is drained first and, once
         the copy has ended, started again in the same mode, but only while everything it was
-        asked under still holds (`OwnerOps.providers`); a child that was already stopping is
-        drained and copied and not brought back.
+        asked under still holds (`OwnerOps.providers`); a child that was already stopping, or
+        whose pipe the hub had closed, is drained and copied and not brought back. The mode, the
+        restart and the owner's moves so far are one look of the supervisor (`providers_plan`).
         """
         project = self._require(project_id)
         self._owner_ops.require_free(project_id)
         self._profile_problem()
-        found = self._status(project)
-        alive = found.lifecycle.state in _ALIVE
+        plan = self._plan(project)
+        alive = plan.status.lifecycle.state in _ALIVE
         ident = self._owner_ops.providers(
-            project, mode=found.mode if alive else None,
-            restart=found.lifecycle.state in ("starting", "running"))
+            project, mode=plan.status.mode if alive else None, restart=plan.restart,
+            generation=plan.generation)
         return 202, {"operation_id": ident}
 
     def _profile_problem(self) -> None:
@@ -529,9 +530,24 @@ class HubService:
             status = self._supervised(project.project_id)
         except supervisor.SupervisorRefused as refused:
             raise HubRefusal("project_not_found", {"project_id": project.project_id}) from refused
+        return self._at_its_folder(project, status)
+
+    def _at_its_folder(self, project: registry.Project,
+                       status: supervisor.ProjectStatus) -> supervisor.ProjectStatus:
+        """The status, or `missing` when the folder is not the listed one and no port is known."""
         if status.port is None and not self._folder_ok(project):
             return replace(status, lifecycle=lifecycle.Lifecycle("missing"))
         return status
+
+    def _plan(self, project: registry.Project) -> supervisor.ProvidersPlan:
+        """The supervisor's one look at a project a profile copy is about to touch."""
+        try:
+            plan = self._sup.providers_plan(project.project_id)
+        except supervisor.SupervisorRefused as refused:
+            raise HubRefusal("project_not_found", {"project_id": project.project_id}) from refused
+        except state.HubStateError as error:
+            raise HubRefusal("registry_invalid", {"file": state.FILE_NAME}) from error
+        return replace(plan, status=self._at_its_folder(project, plan.status))
 
     def _row(self, project: registry.Project, current: state.HubState) -> dict[str, Any]:
         status = self._status(project)

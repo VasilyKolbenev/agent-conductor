@@ -296,7 +296,8 @@ class OwnerOps:
         else:
             self._fail(ident, ran, "recover_login")
 
-    def providers(self, project: registry.Project, *, mode: str | None, restart: bool) -> str:
+    def providers(self, project: registry.Project, *, mode: str | None, restart: bool,
+                  generation: int) -> str:
         """Open the `providers` operation of a project and apply the shared profile to it.
 
         Args:
@@ -304,9 +305,13 @@ class OwnerOps:
             mode: The mode of its live child (`active`, `view`), or `None` when none lives. A live
                 child of the hub's own is drained first (EOF only, nothing is ended).
             restart: Whether to start the child again afterwards; `False` for one that was
-                already stopping. The restart is made only while every condition it was asked
-                under still holds (`Supervisor.restart_in_mode`), and the row ends with the copy's
-                own result when it is not.
+                already stopping or whose pipe the hub had closed. The restart is made only
+                while every condition it was asked under still holds
+                (`Supervisor.restart_in_mode`), and the row ends with the copy's own result when
+                it is not.
+            generation: The owner's moves on the project as the same look that gave `mode` and
+                `restart` counted them (`Supervisor.providers_plan`): a later move ends the
+                restart.
 
         Raises:
             HubRefusal: `project_busy` when an operation of the project runs, or the hub is
@@ -315,11 +320,11 @@ class OwnerOps:
         self._require_open("project_busy", project.project_id)
         ident = self._ledger.open_project_row("providers", project.project_id,
                                               "drain" if mode else "providers")
-        self._thread(self._providers, ident, project, mode, restart)
+        self._thread(self._providers, ident, project, mode, restart, generation)
         return ident
 
     def _providers(self, ident: str, project: registry.Project, mode: str | None,
-                   restart: bool) -> None:
+                   restart: bool, generation: int) -> None:
         drained = mode is not None and self._sup.drain_project(project.project_id)
         if drained and not self._wait_for_the_drain(ident, project.project_id):
             return
@@ -329,7 +334,7 @@ class OwnerOps:
         if failure is None:
             self._ledger.update_row(ident, result={**BLANK_RESULT, "providers": "copied"})
         if drained and restart and mode is not None:
-            self._restarted(ident, project, mode, failure)
+            self._restarted(ident, project, mode, failure, generation)
         else:
             self._settle(ident, failure, None)
 
@@ -351,10 +356,11 @@ class OwnerOps:
         return False
 
     def _restarted(self, ident: str, project: registry.Project, mode: str,
-                   failure: tuple[str, dict | None] | None) -> None:
+                   failure: tuple[str, dict | None] | None, generation: int) -> None:
         try:
             asked = self._sup.restart_in_mode(project.project_id, mode, root=project.root,
-                                              allowed=lambda: not self._closing.is_set())
+                                              allowed=lambda: not self._closing.is_set(),
+                                              generation=generation)
         except supervisor.SupervisorRefused as refused:
             self._settle(ident, failure, _start_code(refused.code))
             return

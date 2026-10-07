@@ -141,7 +141,8 @@ def test_providers_for_a_stopped_project_copies_only_and_never_starts(world, mon
     copy = Copy()
     ledger, ops = _ops(world, copy)
     steps = _steps(ledger, monkeypatch)
-    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False))
+    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False,
+                                        generation=_gen(world, "a")))
     assert copy.seen[0][3:] == ["providers", "--dir", world.roots["a"], "--from-profile"]
     assert steps == ["providers"] and world.spawner.calls == []
     assert (row["kind"], row["state"], row["code"], row["detail"]) == (
@@ -170,7 +171,8 @@ def test_providers_for_a_running_project_drains_copies_and_starts_in_the_same_mo
     copy = Copy(_probe(world, child, name))
     ledger, ops = _ops(world, copy)
     steps = _steps(ledger, monkeypatch)
-    ident = ops.providers(_project(world, name), mode=mode, restart=True)
+    ident = ops.providers(_project(world, name), mode=mode, restart=True,
+                          generation=_gen(world, name))
     _child_ends(world, child, name)
     _until(lambda: ledger.get(ident)["step"] == "start", "the start step")
     if mode == "active":
@@ -192,7 +194,8 @@ def test_the_active_project_stays_active_and_the_queue_is_untouched_by_a_provide
     child = _running_child(world, "a", "active")
     before = (world.home / "hub-state.json").read_bytes()
     ledger, ops = _ops(world, Copy())
-    ident = ops.providers(_project(world, "a"), mode="active", restart=True)
+    ident = ops.providers(_project(world, "a"), mode="active", restart=True,
+                          generation=_gen(world, "a"))
     _child_ends(world, child, "a")
     _until(lambda: ledger.get(ident)["step"] == "start")
     world.supervisor.tick()
@@ -207,7 +210,8 @@ def test_the_active_project_stays_active_and_the_queue_is_untouched_by_a_provide
 def test_a_child_that_was_already_stopping_is_drained_and_copied_but_never_brought_back(world):
     child = _running_child(world, "b", "view")
     ledger, ops = _ops(world, Copy())
-    ident = ops.providers(_project(world, "b"), mode="view", restart=False)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=False,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     row = settled(ledger, ident)
     world.supervisor.tick()
@@ -218,7 +222,8 @@ def test_a_child_that_was_already_stopping_is_drained_and_copied_but_never_broug
 def test_providers_restarts_the_project_even_when_the_copy_failed_and_says_so(world):
     child = _running_child(world, "b", "view")
     ledger, ops = _ops(world, Copy(err="owner_busy: x\n", code=1))
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     _until(lambda: len(world.spawner.started("b")) == 2, "the restart")
     world.running("b", mode="view")
@@ -253,7 +258,16 @@ def _another_is_active_and_gone(world, ops, name):
 
 
 def _the_project_became_active(world, ops, name):
-    world.supervisor.activate(id_of(name))              # what the queue's hand-over does
+    world.supervisor.activate(id_of(name))              # the owner's own choice
+
+
+def _the_place_was_handed_over_to_it(world, ops, name):
+    """The queue's hand-over: the active project stopped and its place went to this one."""
+    world.supervisor.activate(id_of("c"))
+    world.supervisor.tick()
+    world.running("c")
+    world.store.update(lambda s: state.enqueue(s, id_of(name), F1))
+    world.supervisor.stop(id_of("c"))                   # no move of the owner on `name`
 
 
 def _another_active_process_lives(world, ops, name):
@@ -270,6 +284,22 @@ def _root_changed(world, ops, name):
                          root_identity=(77, 1), name=name, folder=world.home, now=iso(START))
 
 
+def _gen(world, name: str) -> int:
+    """The generation of a project as the look a copy begins with reads it."""
+    return world.supervisor.providers_plan(id_of(name)).generation
+
+
+def _listed_again(world, name: str) -> None:
+    registry.add_project(project_id=id_of(name), root=world.roots[name],
+                         root_identity=("abc".index(name) + 1, 1), name=name, folder=world.home,
+                         now=iso(START))
+
+
+def _forgotten_and_listed_again(world, ops, name):
+    world.supervisor.forget(id_of(name))
+    _listed_again(world, name)
+
+
 CONDITIONS = [
     ("a", "active", "drain_not_finished", _outside_process),
     ("a", "active", "hub_closing", _hub_closing),
@@ -281,8 +311,10 @@ CONDITIONS = [
     ("b", "view", "drain_not_finished", _outside_process),
     ("b", "view", "hub_closing", _hub_closing),
     ("b", "view", "project_became_active", _the_project_became_active),
+    ("b", "view", "place_handed_over_to_it", _the_place_was_handed_over_to_it),
     ("b", "view", "project_unregistered", _project_unregistered),
-    ("b", "view", "root_changed", _root_changed)]
+    ("b", "view", "root_changed", _root_changed),
+    ("b", "view", "project_forgotten_and_listed_again", _forgotten_and_listed_again)]
 
 
 @pytest.mark.parametrize("copied", [True, False], ids=["copy-succeeded", "copy-failed"])
@@ -293,7 +325,8 @@ def test_the_restart_after_a_providers_copy_needs_every_one_of_its_conditions(
     child = _running_child(world, name, mode)
     copy = Copy(err="" if copied else "owner_busy: x\n", code=0 if copied else 1, hold=True)
     ledger, ops = _ops(world, copy)
-    ident = ops.providers(_project(world, name), mode=mode, restart=True)
+    ident = ops.providers(_project(world, name), mode=mode, restart=True,
+                          generation=_gen(world, name))
     _child_ends(world, child, name)
     assert copy.entered.wait(10), "the copy never began"
     break_it(world, ops, name)
@@ -316,7 +349,8 @@ def test_a_hub_that_exits_while_the_copy_runs_never_revives_the_child_by_any_mov
         monkeypatch.setattr(world.supervisor, move, lambda *a, **k: pytest.fail("a move was made"))
     copy = Copy(hold=True)
     ledger, ops = _ops(world, copy)
-    ident = ops.providers(_project(world, "a"), mode="active", restart=True)
+    ident = ops.providers(_project(world, "a"), mode="active", restart=True,
+                          generation=_gen(world, "a"))
     _child_ends(world, child, "a")
     assert copy.entered.wait(10)
     ops.close()
@@ -334,7 +368,8 @@ def test_a_drain_that_ends_stop_uncertain_fails_the_operation_with_that_code_and
     copy = Copy()
     ledger, ops = _ops(world, copy)
     steps = _steps(ledger, monkeypatch)
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b", status="stop_uncertain", head="opened")
     row = settled(ledger, ident)
     assert (row["state"], row["code"], row["step"]) == ("failed", "stop_uncertain", "drain")
@@ -347,7 +382,8 @@ def test_providers_on_a_live_process_the_hub_did_not_start_goes_to_the_copy_and_
     copy = Copy(err="owner_busy: x\n", code=1)
     ledger, ops = _ops(world, copy)
     steps = _steps(ledger, monkeypatch)
-    row = settled(ledger, ops.providers(_project(world, "c"), mode="active", restart=True))
+    row = settled(ledger, ops.providers(_project(world, "c"), mode="active", restart=True,
+                                        generation=_gen(world, "c")))
     assert (row["state"], row["code"]) == ("failed", "owner_busy")
     assert steps == ["drain", "providers"] and world.spawner.calls == []
 
@@ -357,7 +393,8 @@ def test_a_hub_that_closes_while_a_providers_operation_waits_starts_nothing_and_
     child = _running_child(world, "b", "view")
     copy = Copy()
     ledger, ops = _ops(world, copy)
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _until(lambda: child.closed, "the drain request")
     ops.close()                                             # the child has not left yet
     row = settled(ledger, ident)
@@ -373,7 +410,8 @@ def test_a_child_that_never_reads_running_ends_the_operation_start_timeout(world
     child = _running_child(world, "b", "view")
     clock = Mono()
     ledger, ops = _ops(world, Copy(), status=lambda _pid: ("stopped", None), clock=clock)
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     _until(lambda: ledger.get(ident)["step"] == "start")
 
@@ -394,7 +432,8 @@ def test_a_child_that_fails_to_start_ends_the_operation_with_a_code_of_the_start
         world, seen, code):
     child = _running_child(world, "b", "view")
     ledger, ops = _ops(world, Copy(), status=lambda _pid: seen)
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     row = settled(ledger, ident)
     assert (row["state"], row["code"]) == ("failed", code) and row["result"] == COPIED
@@ -404,7 +443,8 @@ def test_a_copy_that_failed_keeps_its_own_code_when_the_start_fails_as_well(worl
     child = _running_child(world, "b", "view")
     ledger, ops = _ops(world, Copy(err="owner_busy: x\n", code=1),
                        status=lambda _pid: ("failed", "bind_failed"))
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     row = settled(ledger, ident)
     assert (row["state"], row["code"], row["result"]) == ("failed", "owner_busy", None)
@@ -415,7 +455,8 @@ def test_a_start_the_job_refuses_ends_the_operation_with_that_code_and_keeps_the
     child = _running_child(world, "b", "view")
     copy = Copy(hold=True)
     ledger, ops = _ops(world, copy)
-    ident = ops.providers(_project(world, "b"), mode="view", restart=True)
+    ident = ops.providers(_project(world, "b"), mode="view", restart=True,
+                          generation=_gen(world, "b"))
     _child_ends(world, child, "b")
     assert copy.entered.wait(10)
     world.spawner.refusal = spawn.SpawnRefused("hub_in_kill_on_close_job", "a job")
@@ -433,7 +474,8 @@ def test_a_project_in_recovery_required_meets_providers_as_subprocess_failed_not
     world.gone("a", "serving", head="opened")               # dead, head left opened
     err = "recovery_required: previous owner did not close the project\n"
     ledger, ops = _ops(world, Copy(err=err, code=1))
-    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False))
+    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False,
+                                        generation=_gen(world, "a")))
     assert (row["state"], row["code"], row["detail"]) == (
         "failed", "subprocess_failed", {"reason": "recovery_required"})
     assert "previous owner" not in json.dumps(row) and world.roots["a"] not in json.dumps(row)
@@ -449,7 +491,8 @@ def test_a_project_in_recovery_required_meets_providers_as_subprocess_failed_not
 def test_a_providers_failure_without_a_typed_reason_has_a_null_detail(world, err, code):
     world.gone("a")
     ledger, ops = _ops(world, Copy(err=err, code=1))
-    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False))
+    row = settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False,
+                                        generation=_gen(world, "a")))
     assert (row["state"], row["code"], row["detail"]) == ("failed", code, None)
 
 
@@ -459,7 +502,8 @@ def test_no_command_the_hub_runs_for_a_profile_carries_a_prepare_flag(world, err
     world.gone("a")
     copy = Copy(err=err, code=1)
     ledger, ops = _ops(world, copy)
-    settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False))
+    settled(ledger, ops.providers(_project(world, "a"), mode=None, restart=False,
+                                  generation=_gen(world, "a")))
     assert copy.seen and not [arg for argv in copy.seen for arg in argv if "prepare" in arg]
 
 
@@ -467,10 +511,12 @@ def test_a_second_operation_on_the_project_while_one_runs_is_refused_project_bus
     world.gone("a")
     copy = Copy(hold=True)
     ledger, ops = _ops(world, copy)
-    first = ops.providers(_project(world, "a"), mode=None, restart=False)
+    first = ops.providers(_project(world, "a"), mode=None, restart=False,
+                          generation=_gen(world, "a"))
     assert copy.entered.wait(10)
     with pytest.raises(refusals.HubRefusal) as busy:
-        ops.providers(_project(world, "a"), mode=None, restart=False)
+        ops.providers(_project(world, "a"), mode=None, restart=False,
+                      generation=_gen(world, "a"))
     assert busy.value.code == "project_busy"
     with pytest.raises(refusals.HubRefusal) as other:
         ops.recover(_project(world, "a"))
@@ -485,7 +531,8 @@ def test_a_hub_that_is_closing_starts_no_profile_copy(world):
     ledger, ops = _ops(world, copy)
     ops.close()
     with pytest.raises(refusals.HubRefusal) as sealed:
-        ops.providers(_project(world, "a"), mode=None, restart=False)
+        ops.providers(_project(world, "a"), mode=None, restart=False,
+                      generation=_gen(world, "a"))
     assert sealed.value.code == "project_busy" and copy.seen == []
     assert ledger.running_for(id_of("a")) is None
 
@@ -514,39 +561,46 @@ def test_restart_in_mode_asks_the_active_project_for_the_restart_table_and_start
         world):
     _ended(world, "a", "active")
     assert world.supervisor.restart_in_mode(
-        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True) is True
+        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True,
+        generation=_gen(world, "a")) is True
     assert len(world.spawner.started("a")) == 1             # by the next tick, not now
     world.supervisor.tick()
     again = world.spawner.started("a")[-1]
     assert (again["mode"], again["transition"], again["auto_continue"]) == ("active", None, None)
     _ended(world, "b", "view")
     assert world.supervisor.restart_in_mode(
-        id_of("b"), "view", root=world.roots["b"], allowed=lambda: True) is True
+        id_of("b"), "view", root=world.roots["b"], allowed=lambda: True,
+        generation=_gen(world, "b")) is True
     assert world.spawner.started("b")[-1]["mode"] == "view"
 
 
 def test_restart_in_mode_does_nothing_for_a_mode_it_does_not_know_or_a_closure_not_proven(world):
     _ended(world, "b", "view")
     assert world.supervisor.restart_in_mode(
-        id_of("b"), "stopped", root=world.roots["b"], allowed=lambda: True) is False
+        id_of("b"), "stopped", root=world.roots["b"], allowed=lambda: True,
+        generation=_gen(world, "b")) is False
     world.heads["b"] = "opened"
     assert world.supervisor.restart_in_mode(
-        id_of("b"), "view", root=world.roots["b"], allowed=lambda: True) is False
+        id_of("b"), "view", root=world.roots["b"], allowed=lambda: True,
+        generation=_gen(world, "b")) is False
     assert len(world.spawner.started("b")) == 1
 
 
 def test_restart_in_mode_does_nothing_on_a_hub_state_nobody_can_read(world):
     _ended(world, "a", "active")
+    looked = _gen(world, "a")
     (world.home / "hub-state.json").write_bytes(b"{not json")
     assert world.supervisor.restart_in_mode(
-        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True) is False
+        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True,
+        generation=looked) is False
 
 
 def test_restart_in_mode_does_not_ask_an_active_project_that_a_transition_is_about_to_start(
         world):
     world.supervisor.activate(id_of("a"))                   # A is active; its start is waiting
     assert world.supervisor.restart_in_mode(
-        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True) is False
+        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True,
+        generation=_gen(world, "a")) is False
     world.supervisor.tick()
     assert len(world.spawner.started("a")) == 1             # started once, by the transition
 
@@ -556,7 +610,8 @@ def test_restart_in_mode_does_not_ask_an_active_project_while_a_closure_is_owed(
     owed = state.ClosingEntry(id_of("c"), 4812, "windows:1", "1" * 32, "2026-09-30T10:00:00Z")
     world.store.update(lambda current: dataclasses.replace(current, closing=(owed,)))
     assert world.supervisor.restart_in_mode(
-        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True) is False
+        id_of("a"), "active", root=world.roots["a"], allowed=lambda: True,
+        generation=_gen(world, "a")) is False
 
 
 def test_the_decision_and_the_start_are_one_step_under_the_supervisors_lock(world, monkeypatch):
@@ -571,7 +626,7 @@ def test_the_decision_and_the_start_are_one_step_under_the_supervisors_lock(worl
 
         monkeypatch.setattr(world.supervisor, method, spy)
         assert world.supervisor.restart_in_mode(
-            id_of(name), mode, root=world.roots[name],
+            id_of(name), mode, root=world.roots[name], generation=_gen(world, name),
             allowed=lambda: held.append(("allowed", _lock_is_held_by_another_thread(
                 world.supervisor))) or True) is True
     assert held == [("allowed", True), ("_restart_the_active", True),

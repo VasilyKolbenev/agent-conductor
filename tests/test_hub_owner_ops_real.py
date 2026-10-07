@@ -157,7 +157,7 @@ def test_a_real_profile_copy_into_a_stopped_project_succeeds_and_leaves_the_logi
     login = real.login()
     real.profile(login)
     before = _bytes_under(login)
-    row = real.settled(real.ops.providers(project, mode=None, restart=False))
+    row = real.settled(real.ops.providers(project, mode=None, restart=False, generation=0))
     assert (row["state"], row["code"]) == ("succeeded", None), row
     assert row["result"]["providers"] == "copied"
     assert _bytes_under(login) == before
@@ -170,7 +170,7 @@ def test_a_real_profile_copy_with_a_live_owner_in_this_process_fails_owner_busy(
     project = real.project()
     real.profile(real.login())
     with ownership.acquire_owner(Path(project.root)):
-        row = real.settled(real.ops.providers(project, mode=None, restart=False))
+        row = real.settled(real.ops.providers(project, mode=None, restart=False, generation=0))
     assert (row["state"], row["code"]) == ("failed", "owner_busy"), row
     assert not (ownership.data_root(Path(project.root)) / "providers.json").exists()
 
@@ -180,7 +180,7 @@ def test_a_real_profile_copy_into_an_abandoned_project_keeps_the_typed_recovery_
     project = real.project()
     real.profile(real.login())
     real.abandon(project, boot)
-    row = real.settled(real.ops.providers(project, mode=None, restart=False))
+    row = real.settled(real.ops.providers(project, mode=None, restart=False, generation=0))
     assert (row["state"], row["code"]) == ("failed", "subprocess_failed"), row
     assert row["detail"] == {"reason": "recovery_required"}
     assert str(project.root) not in json.dumps(row)

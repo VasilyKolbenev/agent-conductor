@@ -17,6 +17,7 @@ import pytest
 
 from conductor.command import operator_config
 from conductor.hub import registry
+from conductor.hub.refusals import HubRefusal
 from tests._hub_stack import A, B, Stack
 from tests.test_hub_owner_command import Running, fake
 from tests.test_login_recovery_prepare import legacy_lease
@@ -483,3 +484,81 @@ def test_a_hub_that_is_closing_refuses_a_profile_copy_and_starts_no_command(stac
     stack.world.gone("a")
     stack.service.close_operations()
     _refused_and_unchanged(stack, f"/hub/projects/{A}/providers", 409, "project_busy")
+
+
+# -- the owner's choice stands under a profile copy (D-H3, R4) ----------------------------------
+
+
+def _held_stop(stack, monkeypatch):
+    """Hold the owner's stop inside the supervisor, past every check of the service."""
+    sup = stack.world.supervisor
+    real, entered, go = sup.stop, threading.Event(), threading.Event()
+
+    def stop(*args, **kwargs):
+        entered.set()
+        assert go.wait(10), "the stop was never let go"
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(sup, "stop", stop)
+    return entered, go
+
+
+def _the_copy_ends_or_starts_a_child(stack, ident: str, name: str) -> dict:
+    """The drained child leaves; the row of the copy ends, or is seen starting a child again."""
+    child = stack.world.spawner.children[-1]
+    _wait_until(lambda: child.closed)
+    stack.world.gone(name, "stopped", head="closed")
+
+    def over() -> bool:
+        found = stack.get(f"/hub/operations/{ident}").json()
+        return found["state"] != "running" or found["step"] == "start"
+
+    _wait_until(over)
+    return stack.get(f"/hub/operations/{ident}").json()
+
+
+def test_an_owner_stop_that_lands_while_a_profile_copy_drains_is_not_undone_by_its_restart(
+        stack, tmp_path, monkeypatch):
+    _a_profile(stack, tmp_path)
+    assert stack.post(f"/hub/projects/{B}/view").status == 202
+    stack.world.running("b", mode="view")
+    entered, go = _held_stop(stack, monkeypatch)
+    stopped = []
+    owner = threading.Thread(target=lambda: stopped.append(stack.post(f"/hub/projects/{B}/stop")))
+    owner.start()
+    assert entered.wait(10), "the stop never reached the supervisor"      # it passed `project_busy`
+    ident = stack.post(f"/hub/projects/{B}/providers").json()["operation_id"]   # B reads running
+    go.set()
+    owner.join(10)
+    assert [reply.status for reply in stopped] == [202]
+    row = _the_copy_ends_or_starts_a_child(stack, ident, "b")
+    assert len(stack.world.spawner.started("b")) == 1, "the child the owner stopped came back"
+    assert (row["step"], row["state"], row["result"]) == ("providers", "succeeded", COPIED)
+
+
+def test_a_stop_that_closed_the_pipe_before_the_child_said_stopping_is_not_undone_by_a_copy(
+        stack, tmp_path):
+    _a_profile(stack, tmp_path)
+    assert stack.post(f"/hub/projects/{B}/view").status == 202
+    child = stack.world.spawner.children[-1]
+    stack.world.running("b", mode="view")
+    assert stack.post(f"/hub/projects/{B}/stop").status == 202
+    assert child.closed and _row(stack, B)["state"] == "running"         # it has not said stopping
+    ident = stack.post(f"/hub/projects/{B}/providers").json()["operation_id"]
+    row = _the_copy_ends_or_starts_a_child(stack, ident, "b")
+    assert len(stack.world.spawner.started("b")) == 1, "the child the owner stopped came back"
+    assert (row["step"], row["state"], row["result"]) == ("providers", "succeeded", COPIED)
+
+
+def test_the_look_before_a_profile_copy_says_in_words_that_the_state_or_the_project_is_gone(
+        stack):
+    project = stack.service._require(A)
+    registry.remove_project(A, stack.world.home)
+    with pytest.raises(HubRefusal) as gone:
+        stack.service._plan(project)
+    assert (gone.value.code, dict(gone.value.detail)) == ("project_not_found", {"project_id": A})
+    (stack.world.home / "hub-state.json").write_bytes(b"{not json")
+    with pytest.raises(HubRefusal) as unreadable:
+        stack.service._plan(stack.service._require(B))
+    assert (unreadable.value.code, dict(unreadable.value.detail)) == (
+        "registry_invalid", {"file": "hub-state.json"})

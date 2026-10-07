@@ -71,3 +71,18 @@ class ProjectStatus:
     instance: str | None = None
     #: When the child last wrote `stopped`; `None` while it is anything else.
     stopped_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class ProvidersPlan:
+    """What one look, under the supervisor's lock, says of a project a profile copy will touch."""
+
+    status: ProjectStatus
+    #: Whether the child may be started again once the copy has ended: it is the hub's own, it is
+    #: starting or running, and the hub has not closed its pipe (a stop, a switch and a start that
+    #: timed out each do). A child that was asked to end is drained and copied and not brought
+    #: back, whatever its status file still says.
+    restart: bool
+    #: How many moves of the owner (activate, view, stop, forget) the supervisor had made on this
+    #: project at the look; `Supervisor.restart_in_mode` refuses once a later one has moved it.
+    generation: int
