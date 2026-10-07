@@ -5,8 +5,8 @@ service, the reader, the supervisor and the registry) over a world of fakes that
 what the page reads is what the hub really answers and what it writes is judged by the hub's own
 rules. The fixture bench (`hub_bench.py`) proves the page against the contract; this proves the
 contract against the page: the answers are the live ones (`status` of a project that has not run, a
-`starting` line after a real `202`, `unlisted_closing` from a real forget, a real `404` for a route
-that is not built), and a pass of the hub's loop reaches the page as a frame on the real stream.
+`starting` line after a real `202`, `unlisted_closing` from a real forget, a real recover taken as
+an operation), and a pass of the hub's loop reaches the page as a frame on the real stream.
 Every test runs once in English and once in Russian and ends by asserting that the page raised no
 error, broke no policy and asked for nothing outside the hub's entry, its files and its doors.
 """
@@ -62,16 +62,18 @@ def test_make_active_is_a_real_202_and_the_passes_that_follow_reach_the_page_as_
     assert one.reads("/hub/projects") > reads, "a pass of the loop is a frame, and a frame is a read"
 
 
-def test_a_stuck_project_offers_recover_and_the_real_hub_says_that_route_is_not_built(
+def test_a_stuck_project_offers_recover_and_the_real_hub_takes_the_press_as_an_operation(
         live_page):
+    """The recover route is built (lane H, POST /hub/projects/<id>/recover): the page says the
+    hub took the press, and it asked for it once."""
     one, live = live_page, live_page.live
     ready(one)
     live.world.gone("b", "stop_uncertain", head="opened")
     live.tick()
     wait_for(one, "the stuck project to show", lambda f: line_of(f, B)["actions"] == ["recover"])
     press(one, f"act:{B}:recover")
-    expect(one.page.locator("#hubStatus")).to_have_text(say(one, "hub.notice.not_built"))
-    assert one.writes() == [f"/hub/projects/{B}/recover"], "one post, and the hub refused it"
+    expect(one.page.locator("#hubStatus")).to_have_text(say(one, "hub.notice.accepted"))
+    assert one.writes() == [f"/hub/projects/{B}/recover"], "one post, and the hub took it"
 
 
 def test_a_project_forgotten_while_it_owes_its_closing_is_named_by_the_page_from_the_hubs_list(
