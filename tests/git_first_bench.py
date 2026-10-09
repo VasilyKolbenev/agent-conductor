@@ -38,9 +38,12 @@ class Spy:
         return [args for args, _ in self.calls if word in args]
 
 
-def project(tmp_path, files=None, name="first", branch="trunk", *, which="current", fmt="sha1"):
+def project(tmp_path, files=None, name="first", branch="trunk", *, which="current", fmt="sha1",
+            ref_format="files"):
     """An unborn project; its reader (the current or the isolated old Git) runs no hook and may
-    use an owned index. `folder.git(...)` is the reader's own Git, for every look at the repo."""
+    use an owned index. `folder.git(...)` is the reader's own Git, for every look at the repo.
+    A `fmt` of sha256 or a `ref_format` of reftable makes the repository with that format, and
+    skips where the Git cannot."""
     binary = reader_binary(which)                # `old` skips while G-old is open; wrong one fails
     folder = Folder(tmp_path, name=name)
     root = folder.root
@@ -54,11 +57,13 @@ def project(tmp_path, files=None, name="first", branch="trunk", *, which="curren
     folder.spy = Spy(product_reader(root, binary, cwd, env=env, index_root=root))
     folder.api._project_git = folder.spy
     folder.git = functools.partial(git, binary=binary)
-    if fmt == "sha256":
-        made = folder.git("init", "-q", "--object-format=sha256", "-b", branch, str(root),
+    if fmt == "sha256" or ref_format == "reftable":
+        options = [*(["--object-format=sha256"] if fmt == "sha256" else []),
+                   *(["--ref-format=reftable"] if ref_format == "reftable" else [])]
+        made = folder.git("init", "-q", *options, "-b", branch, str(root),
                           cwd=tmp_path, check=False)
         if made.returncode != 0:
-            pytest.skip("this git cannot make a sha256 repository")
+            pytest.skip("this git cannot make a repository with " + " ".join(options))
         assert step(folder, "exclude").status == 201     # the exclusion block, as init writes it
     else:
         assert step(folder).status == 201        # the explicit init the desk does first

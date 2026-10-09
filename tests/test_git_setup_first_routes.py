@@ -184,6 +184,46 @@ def test_a_resume_refuses_a_dot_git_that_gained_a_commondir_while_it_waited(tmp_
     assert not ref_exists(p, "trunk") and no_receipt(p)
 
 
+def reftable_project(tmp_path, how: str):
+    """A project whose refs are kept by the reftable backend, made by `init` or by `refs migrate`;
+    it skips where the Git has no reftable."""
+    if how == "init":
+        return project(tmp_path, FILES, ref_format="reftable")
+    p = project(tmp_path, FILES)
+    moved = p.git("refs", "migrate", "--ref-format=reftable", cwd=p.root, check=False)
+    if moved.returncode != 0:
+        pytest.skip("this git has no reftable")
+    return p
+
+
+@with_the_door
+@for_every_portal
+@pytest.mark.parametrize("how", ["init", "migrate"])
+def test_first_commit_refuses_a_reftable_folder_that_is_a_portal_and_writes_nothing_outside(
+        tmp_path, kind, how):
+    p = reftable_project(tmp_path, how)
+    digest = terms_of(p, "snapshot")
+    outside = tmp_path / "outside"
+    divert(p.root / ".git", "reftable", outside, kind)
+    before = listing(outside)
+    answer = confirm(p, "snapshot", digest=digest)
+    assert verdict(answer, outside, before) == ("unsafe_git_route", True)
+    assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
+
+
+@with_the_door
+@pytest.mark.parametrize("how", ["init", "migrate"])
+def test_first_commit_refuses_a_reftable_repository_and_writes_nothing_below_dot_git(
+        tmp_path, how):
+    p = reftable_project(tmp_path, how)
+    digest = terms_of(p, "snapshot")
+    dot = p.root / ".git"
+    before = listing(dot)
+    answer = confirm(p, "snapshot", digest=digest)
+    assert verdict(answer, dot, before) == ("unsafe_git_route", True)
+    assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
+
+
 @with_the_door
 def test_first_commit_writes_through_plain_nested_folders_of_the_ref_the_reflog_and_the_objects(
         tmp_path):

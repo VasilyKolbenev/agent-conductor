@@ -81,11 +81,16 @@ def ref_route(git_dir: Path, target_ref: str) -> None:
 
     Every existing component is judged, the nested ones of the branch name included: the ref
     `refs/heads/a/b`, its reflog `logs/refs/heads/a/b` and the reflog of `HEAD`, which Git appends
-    to when the branch HEAD names moves.
+    to when the branch HEAD names moves. A repository whose refs are kept by the reftable backend
+    is refused outright: Git writes its ref and its reflog into tables under `reftable`, a place
+    none of these walks judges (`refs/heads` is a plain file there), and the product's reading of a
+    missing ref knows the files backend only.
 
     Raises:
         SetupRefused: `unsafe_git_route`; nothing was written.
     """
+    if os.path.lexists(git_dir / "reftable"):
+        raise SetupRefused("unsafe_git_route")
     parts = tuple(target_ref.split("/"))
     if any(not part or part in (".", "..") or _BAD_PART & set(part) for part in parts):
         raise SetupRefused("unsafe_git_route")
