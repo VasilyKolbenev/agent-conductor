@@ -28,7 +28,7 @@ from tests.test_git_setup_first_commit import (
     an_owner_index, install_files, no_receipt, own_leftovers, owner_ref, text, trunk_exists)
 from tests.test_git_setup_first_driver import an_operation
 from tests.test_git_setup_first_records import an_op
-from tests.test_git_setup_first_recovery import FILES, expected_status, git_path
+from tests.test_git_setup_first_recovery import FILES, expected_status, git_path, own_copies
 
 pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
 for_both_modes = pytest.mark.parametrize("mode", ["snapshot", "empty"])
@@ -163,8 +163,13 @@ def test_a_resume_before_the_ref_supersedes_when_a_frozen_term_changed(
     answer = confirm(p, mode, digest=digest)
     if change == "signing_on":
         assert reason(answer) == "signing_required"
-        assert trunk_moves(p) == [] and text(p, "rev-list", "--all") == ""
-        assert no_receipt(p) and own_leftovers(p) == []       # the old op is superseded
+        assert trunk_moves(p) == [] and text(p, "rev-list", "--all") == "" and no_receipt(p)
+        wait, detail = records.read_op(p.root), answer.payload["error"]["detail"]
+        assert (wait.stage, wait.signing, wait.commit) == ("awaiting_signature", True, None)
+        assert wait.nonce != stored["nonce"] and detail["tree"] == wait.expected_tree
+        assert detail["target_ref"] == "refs/heads/trunk" == wait.target_ref
+        assert [path.name for path in install_files(p)] == [f"first_commit.index-{wait.nonce}"]
+        assert not git_path(p, "index.lock").exists() and not own_copies(p)   # the old op is gone
     elif change == "retarget":
         receipt = answer.payload["setup"]
         assert answer.status == 201 and receipt["target_ref"] == "refs/heads/main2"
