@@ -261,6 +261,9 @@ PERMITTED_IMPORTS = {
     #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
     #: functions over the card's slice. It reaches the card's own module and nothing else.
     "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),
+    #: The rules of connecting git and of the first commit: the shapes of the answers, the bodies,
+    #: the two commands of a wait for a signature, the one switch. It imports nothing.
+    "desk-wizard-git.js": frozenset(),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
     "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",

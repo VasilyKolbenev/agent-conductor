@@ -39,6 +39,7 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                 "./desk-wizard-roles.js"},
         "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                 "./desk-wizard-roles.js"},
+        "desk-wizard-git.js": set(),
         "desk-wizard-materials.js": set(), "desk-wizard-cycle.js": set(),
         "desk-wizard-roles.js": set(), "desk-wizard-digest.js": set()}
 #: The renderer: it builds elements, so it reaches the view's helper and the words, and no store,

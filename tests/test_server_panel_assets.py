@@ -174,6 +174,7 @@ ASSETS = {
     "/panel/desk-wizard-prep.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-launch.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-skip.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-git.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-run.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-draw.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-prepare-view.js": "text/javascript; charset=utf-8",

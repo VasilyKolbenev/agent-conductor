@@ -111,6 +111,7 @@ DESK_ASSETS = {
     "/panel/desk-wizard-prep.js": ("text/javascript; charset=utf-8", "desk-wizard-prep.js"),
     "/panel/desk-wizard-launch.js": ("text/javascript; charset=utf-8", "desk-wizard-launch.js"),
     "/panel/desk-wizard-skip.js": ("text/javascript; charset=utf-8", "desk-wizard-skip.js"),
+    "/panel/desk-wizard-git.js": ("text/javascript; charset=utf-8", "desk-wizard-git.js"),
     "/panel/desk-wizard-run.js": ("text/javascript; charset=utf-8", "desk-wizard-run.js"),
     "/panel/desk-wizard-draw.js": ("text/javascript; charset=utf-8", "desk-wizard-draw.js"),
     "/panel/desk-wizard-prepare-view.js": (
