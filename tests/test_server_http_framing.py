@@ -562,11 +562,14 @@ def test_a_stop_while_the_stream_sends_heartbeats_ends_it_without_a_frame_of_its
         thread.join(timeout=PATIENCE)
 
 
-def test_the_shipped_heartbeat_is_rare_enough_to_be_bounded_and_frequent_enough_to_free_a_leaver():
-    """One comment per 5 to 15 s; a leaver is freed by the second write after it left.
+def test_the_shipped_heartbeat_period_is_5_to_15_s_and_two_periods_and_one_wait_are_at_most_31_s():
+    """The shipped figures, as arithmetic: one comment per 5 to 15 s.
 
-    The first write after a departure is accepted and brings the reset back; the second one
-    fails. So a departed client is released within two periods and one wait: half a minute.
+    Two periods and one wait are the release time IF the first write after a departure is
+    accepted and the second one fails. That held on the loopback of one Windows host (15.1 s and
+    30.2 s measured) and is not promised for a client that vanishes without answering, so this
+    pins the numbers the code states, not the release. What a departure does to the mailbox and
+    the thread is shown, at a scaled wait, by the first test of this group.
     """
     period = server_events.SSE_PING_EVERY * server_events.SSE_WAIT
     assert 5.0 <= period <= 15.0, period
