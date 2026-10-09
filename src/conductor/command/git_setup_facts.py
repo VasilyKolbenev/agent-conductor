@@ -15,6 +15,12 @@ from .project_git import GitReadFailed, repository_admission
 from .project_git_state import _checked, _signing
 from .template_store import _leaf_violation
 
+#: The global option of the reads that PROVE a first commit. Git answers a read of `<oid>` with
+#: the bytes of the object a `refs/replace/<oid>` ref names, while the name stays `<oid>`. A proof
+#: that a commit, a tree or a blob is what was recorded must read the object stored under that
+#: name, so these reads (and only these) carry it (review ruling).
+REAL_OBJECTS = "--no-replace-objects"
+
 
 def call(root, git, *args, **keywords):
     return _checked(git(["--no-optional-locks", "-C", str(root), *args], True, **keywords))

@@ -30,7 +30,8 @@ from . import git_setup_first_signing as signing
 from .accept_plumbing import ref_oid
 from .adapters.harness_workspace import root_turn
 from .containment import portal_violation
-from .git_setup_facts import admitted, author_now, call, first_facts, frozen_facts, plain_git_dir
+from .git_setup_facts import (
+    REAL_OBJECTS, admitted, author_now, call, first_facts, frozen_facts, plain_git_dir)
 from .git_setup_first_index import binding_of
 from .git_setup_first_prepare import prepare
 from .git_setup_first_resume import (
@@ -235,7 +236,7 @@ def _objects_present(root, git, shown: dict, made) -> None:
     names = list(wanted)
     for start in range(0, len(names), _PER_BATCH):
         batch = names[start:start + _PER_BATCH]
-        raw = call(root, git, "cat-file", "--batch-check",
+        raw = call(root, git, REAL_OBJECTS, "cat-file", "--batch-check",
                    stdin="".join(f"{name}\n" for name in batch).encode("ascii"))
         found = [line.split(" ") for line in raw.decode("ascii").splitlines()]
         if [(row[0], row[1]) for row in found if len(row) == 3] != [
@@ -287,8 +288,10 @@ def index_state(root, git, tree: str, folder) -> Index:
     The existence and the type of the file are judged first and apart: an absent index also
     compares equal to the empty tree, so `diff-index` alone would read "nothing there" as
     "installed". Only exit 0 of one `diff-index --cached --quiet` over a plain file that did not
-    change under the read is `MATCHES` (review ruling OD-3); exit 1 is another tree. An error, a
-    timeout, a cut answer and a file that changed under the read are refusals, never success.
+    change under the read is `MATCHES` (review ruling OD-3); exit 1 is another tree. The tree is the
+    one stored under `tree`: a replacement ref cannot make an index of another tree equivalent.
+    An error, a timeout, a cut answer and a file that changed under the read are refusals, never
+    success.
 
     Raises:
         GitReadFailed: `git_timed_out`, or `git_failed` for every answer that cannot be judged.
@@ -299,8 +302,8 @@ def index_state(root, git, tree: str, folder) -> Index:
         return Index.ABSENT
     if before == _ODD:
         return Index.OTHER
-    answer = git(["--no-optional-locks", "-C", str(root), "diff-index", "--cached", "--quiet",
-                  tree], True)
+    answer = git(["--no-optional-locks", "-C", str(root), REAL_OBJECTS, "diff-index", "--cached",
+                  "--quiet", tree], True)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.truncated or _look(path) != before:

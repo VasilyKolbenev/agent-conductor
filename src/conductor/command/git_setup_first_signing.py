@@ -30,6 +30,7 @@ from . import git_setup_first_records as records
 from .accept_manifest import SnapshotRefused, sha256
 from .accept_plumbing import _AUTHOR, ref_oid
 from .accept_snapshot import _put, _read
+from .git_setup_facts import REAL_OBJECTS
 from .git_setup_first_pending import message_path_of
 from .git_setup_first_records import Op
 from .git_setup_first_resume import REF_MOVED
@@ -99,8 +100,9 @@ def stored_message(root: Path, op: Op) -> bytes:
 
 
 def _tree_present(root: Path, git, tree: str) -> None:
-    """The tree the owner commits must still be an object of the repository."""
-    answer = git(["--no-optional-locks", "-C", str(root), "cat-file", "-t", tree], True)
+    """The tree the owner commits must still be an object of the repository, under its own name."""
+    answer = git(["--no-optional-locks", "-C", str(root), REAL_OBJECTS, "cat-file", "-t", tree],
+                 True)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated or answer.output.strip() != b"tree":
@@ -180,11 +182,15 @@ def _remove_message(root: Path, op: Op) -> None:
 def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
     """Read the commit at `oid` once and judge it by the stored terms.
 
+    The commit is read without replacement refs: the bytes judged are the bytes of the object
+    the branch names, which is the object the receipt will record, never those of another commit
+    that a `refs/replace/<oid>` ref says should be read in its place.
+
     Raises:
         GitReadFailed: `git_timed_out`, Git did not answer in time.
     """
-    answer = git(["--no-optional-locks", "-C", str(root), "cat-file", "commit", oid], True,
-                 output_limit=COMMIT_LIMIT)
+    answer = git(["--no-optional-locks", "-C", str(root), REAL_OBJECTS, "cat-file", "commit", oid],
+                 True, output_limit=COMMIT_LIMIT)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated:
