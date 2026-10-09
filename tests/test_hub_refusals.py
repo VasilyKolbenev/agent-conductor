@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import re
 
 import pytest
 
@@ -99,6 +100,17 @@ def test_every_code_of_both_lists_has_one_fixed_message_and_no_message_lacks_a_c
         assert message and message == message.strip() and message.isascii(), code
         assert "_" not in message, f"{code}: a message that says a raw code"
     assert len(set(refusals.hub_messages().values())) == len(codes), "two codes share a sentence"
+
+
+def test_operation_busy_says_a_closing_hub_too_and_registry_invalid_says_the_hub_state_too():
+    """`operation_busy` is also what a hub that is closing answers (an add, the login recovery);
+    `registry_invalid` is also what a hub state that cannot be read answers. Neither sentence
+    names a file."""
+    said = refusals.hub_messages()
+    assert "being added" in said["operation_busy"] and "closing" in said["operation_busy"]
+    assert "project list" in said["registry_invalid"] and "hub state" in said["registry_invalid"]
+    for code in ("operation_busy", "registry_invalid"):
+        assert len(said[code]) <= 70 and not re.search(r"[\\/]|\.json", said[code]), code
 
 
 def _catalogue() -> dict[str, list[str]]:
