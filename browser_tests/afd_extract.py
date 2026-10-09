@@ -8,7 +8,9 @@ nobody needs.
 
 So, around each such failure -- a ``requestfailed`` line's ``at=`` time and
 server port, or, for a 10055 named only in a traceback, the time its record was
-written -- this keeps:
+written and the ports its own host snapshot says the test talked to -- this
+keeps (and with no port of the test it keeps nothing but counts, because no
+other event of the runner is proven to be the test's):
 
 - every AFD event in the window whose address is loopback on that port, and
   every one whose ``Status`` is an NTSTATUS error or warning or whose
@@ -71,6 +73,8 @@ _AT = re.compile(r" at=(\S+)")
 _PORT = re.compile(r"^requestfailed https?://(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/")
 _TIME = re.compile(r"^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)$")
 _RENDERED = re.compile(r"^(?:(\d{1,3}(?:\.\d{1,3}){3})|\[([0-9A-Fa-f:.]+)\]):(\d{1,5})$")
+#: The ports a failing test talked to, as its host snapshot records them.
+_SNAPSHOT_PORTS = re.compile(r'"loopback_ports": \[([\d,\s]*)\]')
 
 
 @dataclass(frozen=True)
@@ -111,8 +115,21 @@ def _failed_request(record: str, line: str) -> dict[str, object] | None:
         return None
     port = _PORT.match(line)
     return {"record": record, "anchor": "requestfailed", "url": line.split()[1],
-            "at": at.group(1), "port": int(port.group(1)) if port else None,
+            "at": at.group(1), "ports": [int(port.group(1))] if port else [],
+            "correlation": "requestfailed-url" if port else None,
             "before_seconds": BEFORE_SECONDS}
+
+
+def _record_written(path: Path, text: str) -> dict[str, object]:
+    """A record that names 10055 only in a traceback: anchored where it was written,
+    tied to the test by the ports its own host snapshot says the test talked to."""
+    written = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc)
+    found = _SNAPSHOT_PORTS.search(text)
+    ports = sorted({int(port) for port in re.findall(r"\d+", found.group(1))}) if found else []
+    return {"record": path.name, "anchor": "record-written", "url": None,
+            "at": written.isoformat(timespec="milliseconds"), "ports": ports,
+            "correlation": "record-snapshot" if ports else None,
+            "before_seconds": RECORD_BEFORE_SECONDS}
 
 
 def failures(watch_dir: Path) -> tuple[list[dict[str, object]], int]:
@@ -120,7 +137,8 @@ def failures(watch_dir: Path) -> tuple[list[dict[str, object]], int]:
 
     A record's requestfailed lines answer with their own times and ports; a
     record that names 10055 only elsewhere (a traceback) answers once, with the
-    time it was written and no port.
+    time it was written and the ports of its own host snapshot. A row with no
+    port has no proven tie to the test: it is counted, never selected from.
     """
     rows: list[dict[str, object]] = []
     for path in sorted(watch_dir.glob("*.failure.txt")):
@@ -128,10 +146,7 @@ def failures(watch_dir: Path) -> tuple[list[dict[str, object]], int]:
         found = [row for line in text.splitlines()
                  if (row := _failed_request(path.name, line.strip())) is not None]
         if not found and any(names_10055(line) for line in text.splitlines()):
-            written = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc)
-            found = [{"record": path.name, "anchor": "record-written", "url": None,
-                      "at": written.isoformat(timespec="milliseconds"), "port": None,
-                      "before_seconds": RECORD_BEFORE_SECONDS}]
+            found = [_record_written(path, text)]
         rows.extend(found)
     latest = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
     rows.sort(key=lambda row: _utc(str(row["at"])) or latest)
@@ -227,13 +242,15 @@ def address(value: str) -> tuple[str, int | None] | None:
         return None
 
 
-def _loopback_on(event: Event, port: int | None) -> bool:
+def _loopback_on(event: Event, ports: frozenset[int]) -> bool:
+    """Loopback on one of the test's own ports -- never "any loopback port"."""
     found = address(event.value("address") or "")
-    if found is None or not ipaddress.ip_address(found[0]).is_loopback:
+    if not ports or found is None or not ipaddress.ip_address(found[0]).is_loopback:
         return False
     seen_port = found[1] if found[1] is not None else _number(event.value("port"))
     # A separate Port field may come in either byte order; both are the one port.
-    return port is None or seen_port in (port, int.from_bytes(port.to_bytes(2, "big"), "little"))
+    return any(seen_port in (port, int.from_bytes(port.to_bytes(2, "big"), "little"))
+               for port in ports)
 
 
 def _failed(event: Event) -> bool:
@@ -292,9 +309,12 @@ def _owner(event: Event) -> tuple[str, str | None]:
 def _selected(window: _Window) -> list[Event]:
     """The failure's own events: loopback on its port; failed, in a process that
     has such loopback events (another process's failure is only counted); and
-    every other event of the same endpoints."""
-    port = window.row.get("port")
-    wanted = port if isinstance(port, int) else None
+    every other event of the same endpoints. With no port of the test, nothing."""
+    ports = window.row.get("ports")
+    wanted = frozenset(port for port in ports if isinstance(port, int)) \
+        if isinstance(ports, list) else frozenset()
+    if not wanted:
+        return []
     loopback = [_loopback_on(event, wanted) for event in window.held]
     owners = {_owner(event) for event, mark in zip(window.held, loopback) if mark}
     marked = [mark or (_failed(event) and _owner(event) in owners)
@@ -315,6 +335,8 @@ def _report(window: _Window, first: datetime.datetime | None, last: datetime.dat
     start = window.at - datetime.timedelta(seconds=window.before)
     end = window.at + datetime.timedelta(seconds=AFTER_SECONDS)
     return {**window.row, "window": [start.isoformat(), end.isoformat()],
+            # No port of the test: no event of the runner is published as this failure's.
+            "correlation_gap": not window.row.get("ports"),
             "in_trace": bool(first and last and first <= window.at <= last),
             "window_covered": bool(first and last and first <= start and last >= end),
             "events_in_window": len(window.held) + window.over, "held_over_cap": window.over,

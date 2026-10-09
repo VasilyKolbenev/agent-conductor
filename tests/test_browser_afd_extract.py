@@ -46,7 +46,9 @@ def _trace(tmp_path: Path, *events: str, close: bool = True) -> Path:
 def _row(port: int | None = 50123, at: str = FAILED_AT,
          before: float = afd_extract.BEFORE_SECONDS) -> dict[str, object]:
     return {"record": "x.failure.txt", "anchor": "requestfailed",
-            "url": "http://127.0.0.1:50123/panel/desk.js", "at": at, "port": port,
+            "url": "http://127.0.0.1:50123/panel/desk.js", "at": at,
+            "ports": [] if port is None else [port],
+            "correlation": None if port is None else "requestfailed-url",
             "before_seconds": before}
 
 
@@ -178,9 +180,9 @@ def test_failures_come_from_the_gate_records_in_time_order_with_their_port(
         "  requestfailed http://127.0.0.1:50123/panel/old.js net::ERR_NO_BUFFER_SPACE\n",
         encoding="utf-8")
     rows, total = afd_extract.failures(tmp_path)
-    assert total == 2 and [(row["record"], row["port"], row["before_seconds"])
-                           for row in rows] == [("a.setup.failure.txt", 50123, 10.0),
-                                                ("b.call.failure.txt", 61000, 10.0)]
+    assert total == 2 and [(row["record"], row["ports"], row["before_seconds"])
+                           for row in rows] == [("a.setup.failure.txt", [50123], 10.0),
+                                                ("b.call.failure.txt", [61000], 10.0)]
     monkeypatch.setattr(afd_extract, "MAX_FAILURES", 1)
     rows, total = afd_extract.failures(tmp_path)
     assert total == 2 and len(rows) == 1
@@ -188,11 +190,16 @@ def test_failures_come_from_the_gate_records_in_time_order_with_their_port(
 
 def test_a_10055_named_only_in_a_traceback_is_anchored_where_its_record_was_written(
         tmp_path: Path) -> None:
-    record = tmp_path / "c.call.failure.txt"
-    record.write_text("E   OSError: [WinError 10055] An operation on a socket could not be "
-                      "performed\n  owner pid 10055\n", encoding="utf-8")
     written = datetime.datetime(2026, 10, 9, 10, 0, 30, tzinfo=datetime.timezone.utc)
-    os.utime(record, (written.timestamp(), written.timestamp()))
+    traceback = ("E   OSError: [WinError 10055] An operation on a socket could not be "
+                 "performed\n  owner pid 10055\n")
+    # One record whose host snapshot names the ports the test talked to, one with none.
+    (tmp_path / "b.call.failure.txt").write_text(
+        traceback + 'host snapshot at the failure, before teardown:\n{\n "loopback_ports": [\n'
+        "  49495,\n  61000\n ],\n \"pytest_pid\": 10055\n}\n", encoding="utf-8")
+    (tmp_path / "c.call.failure.txt").write_text(traceback, encoding="utf-8")
+    for name in ("b.call.failure.txt", "c.call.failure.txt"):
+        os.utime(tmp_path / name, (written.timestamp(), written.timestamp()))
     (tmp_path / "d.call.failure.txt").write_text("  owner pid 10055\n", encoding="utf-8")
     # A long traceback reprints source; a docstring there is not a failure.
     (tmp_path / "e.call.failure.txt").write_text(
@@ -200,10 +207,30 @@ def test_a_10055_named_only_in_a_traceback_is_anchored_where_its_record_was_writ
         '        """A module answering `net::ERR_NO_BUFFER_SPACE` or WSAENOBUFS."""\n',
         encoding="utf-8")
     rows, total = afd_extract.failures(tmp_path)
-    assert total == 1 and rows == [{
-        "record": "c.call.failure.txt", "anchor": "record-written", "url": None,
-        "at": "2026-10-09T10:00:30.000+00:00", "port": None,
-        "before_seconds": afd_extract.RECORD_BEFORE_SECONDS}]
+    common = {"anchor": "record-written", "url": None, "at": "2026-10-09T10:00:30.000+00:00",
+              "before_seconds": afd_extract.RECORD_BEFORE_SECONDS}
+    assert total == 2 and rows == [
+        {"record": "b.call.failure.txt", **common, "ports": [49495, 61000],
+         "correlation": "record-snapshot"},
+        {"record": "c.call.failure.txt", **common, "ports": [], "correlation": None}]
+
+
+def test_a_failure_with_no_port_of_the_test_publishes_counts_only(tmp_path: Path) -> None:
+    xml = _trace(
+        tmp_path,
+        _event("2026-10-09T10:00:04.9000000Z", 4,
+               {"Process": "0xP", "Endpoint": "0xA", "Address": SERVER}),
+        _event("2026-10-09T10:00:04.9010000Z", 6,
+               {"Process": "0xP", "Endpoint": "0xA", "Error": "10055"}))
+    no_port = {**_row(port=None), "anchor": "record-written", "url": None}
+    failure = afd_extract.extract(xml, [no_port], 1, None)["failures"][0]
+    assert failure["selected"] == [] and failure["selected_total"] == 0
+    assert failure["correlation_gap"] is True and failure["events_in_window"] == 2
+    assert failure["failed_statuses"] == {"status=None error=10055": 1}
+    # Counts only: no address, pointer or alias of any runner event leaves.
+    public = json.dumps(failure)
+    for gone in ("127.0.0.1:50123", "0xP", "0xA", "P1", "E1"):
+        assert gone not in public, gone
 
 
 def test_a_separate_port_field_matches_in_either_byte_order(tmp_path: Path) -> None:

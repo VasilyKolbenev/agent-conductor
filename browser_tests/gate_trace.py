@@ -165,8 +165,13 @@ def _gap_before_start(trace_dir: Path) -> dict[str, object] | None:
 
 def start(trace_dir: Path, record: Path,
           clock: Callable[[], float] = time.monotonic) -> Session | None:
-    """Start the one trace, or record why not. Returns the session only when
-    netsh's own status names this trace's file as running."""
+    """Start the one trace, or record why not.
+
+    Once the start is sent, this answers for the session even when netsh's status
+    could not confirm it: only a status that answers "no session" proves there is
+    nothing to watch. A stop still needs netsh to name this file. The deadline
+    counts from before the start, so a slow start never extends it.
+    """
     config: dict[str, object] = {"provider": PROVIDER, "level": LEVEL,
                                  "parameters": list(PARAMETERS),
                                  "max_seconds": MAX_SECONDS, **_identity()}
@@ -181,15 +186,21 @@ def start(trace_dir: Path, record: Path,
     config = {**config, "command": ["netsh", "trace", *arguments], "trace_file": str(trace_file)}
     # Written BEFORE the start: whatever fails after it, a stop knows the file.
     _write(record / CONFIG, {**config, "available": False, "gap": {"reason": "starting"}})
+    deadline = clock() + MAX_SECONDS
     code, said = _netsh(*arguments)
-    _, status = _netsh("show", "status")
-    config = {**config, "start_exit": code, "start_said": _tail(said), "started_at": _now()}
-    if trace_file.name.lower() not in status.lower():
-        _write(record / CONFIG, {**config, "available": False,
-                                 "gap": {"reason": "start-failed", "status": _tail(status)}})
+    status_code, status = _netsh("show", "status")
+    config = {**config, "start_exit": code, "start_said": _tail(said), "started_at": _now(),
+              "status_exit": status_code, "status": _tail(status)}
+    absent = _not_running(status_code, status, trace_file)
+    if absent is True:
+        _write(record / CONFIG, {**config, "available": False, "gap": {"reason": "start-failed"}})
         return None
-    _write(record / CONFIG, {**config, "available": True})
-    return Session(trace_file, clock() + MAX_SECONDS)
+    if absent is False:
+        _write(record / CONFIG, {**config, "available": True})
+    else:  # sent and not confirmed: it may run, so it is watched as ours
+        _write(record / CONFIG, {**config, "available": "unknown",
+                                 "gap": {"reason": "start-unconfirmed"}})
+    return Session(trace_file, deadline)
 
 
 def _configured_file(record: Path) -> Path | None:
@@ -247,23 +258,38 @@ def watch(child: subprocess.Popen[bytes], session: Session, watch_dir: Path,
         time.sleep(POLL_SECONDS)
 
 
+def _not_running(code: object, status: str, trace_file: Path) -> bool | None:
+    """What netsh's status PROVES about this trace's session: True when it answered
+    and names no such session, False when it names this file, None when it cannot
+    say (no answer, or text it does not recognise)."""
+    text = status.lower()
+    if trace_file.name.lower() in text:
+        return False
+    if isinstance(code, int) and (NO_SESSION in text or "trace file" in text):
+        return True
+    return None
+
+
 def stop_own(trace_file: Path, record: Path, reason: str,
              hit: dict[str, str] | None, name: str = STOP) -> dict[str, object]:
     """Stop the trace session only while netsh's status names this trace's file.
 
     The stop comes first, before anything that could fail on the way to the
-    record. A status that never answered is "unknown", not "not ours".
+    record. "stopped" means netsh's LAST answer proves the session is not
+    running; a status that never answered proves nothing either way.
     """
     code, status = _netsh("show", "status")
-    ours = trace_file.name.lower() in status.lower()
-    stop_code, said, after = None, "", status
+    before = _not_running(code, status, trace_file)
+    ours = before is False
+    stop_code, said, after_code, after = None, "", code, status
     if ours:
         stop_code, said = _netsh("stop", timeout=STOP_SECONDS)
-        _, after = _netsh("show", "status")
+        after_code, after = _netsh("show", "status")
+    absent = _not_running(after_code, after, trace_file)
     result: dict[str, object] = {
         "reason": reason, "hit": hit, "at": _now(), "ours_running": ours,
-        "status_unknown": code in ("timed-out", "not-started"),
-        "stopped": trace_file.name.lower() not in after.lower()}
+        "status_unknown": before is None, "stopped": absent is True,
+        "last_status_unknown": absent is None, "last_status_exit": after_code}
     result = {**result, "stop_exit": stop_code, "stop_said": _tail(said)} if ours \
         else {**result, "status": _tail(status)}
     _write(record / name, result)
@@ -325,28 +351,37 @@ def decode(trace_file: Path, watch_dir: Path) -> dict[str, object]:
 
 
 def stop_step(record: Path) -> None:
-    """Before the reversed order: stop the session if it is still ours."""
+    """Before the reversed order: stop the session if it is still ours. When netsh
+    cannot prove it is gone, the record says the reversed order may have run traced."""
     trace_file = _configured_file(record)
-    if trace_file is not None:
-        stop_own(trace_file, record, "before-the-reversed-order", None, name=BEFORE_REVERSE)
+    if trace_file is None:
+        return
+    result = stop_own(trace_file, record, "before-the-reversed-order", None,
+                      name=BEFORE_REVERSE)
+    if result["stopped"] is not True:
+        _write(record / BEFORE_REVERSE, {**result, "limitation": (
+            "netsh did not prove the session gone before the reversed order; that order "
+            "may have run while it was still tracing")})
 
 
 def extract_step(record: Path, watch_dir: Path) -> None:
     """After both orders: stop once more if still ours, then decode and select once.
-    A session that would not stop is never decoded live."""
+    Only a session netsh proves gone is decoded; a possibly live file never is."""
     config = _read(record / CONFIG) or {}
     trace_file = _configured_file(record)
-    if trace_file is not None:
-        stopped = stop_own(trace_file, record, "before-decoding", None, name=BEFORE_DECODE)
-        if stopped["status_unknown"] or (stopped["ours_running"] and not stopped["stopped"]):
-            _write(record / EXTRACT, {"decoded": False, "reason":
-                                      "the session may still run; a live file is not decoded"})
-            return
-    if config.get("available") is not True or trace_file is None:
+    before_reverse = _read(record / BEFORE_REVERSE)
+    if trace_file is None or config.get("available") is False:
         _write(record / EXTRACT, {"decoded": False, "reason": "no trace was collected",
                                   "gap": config.get("gap")})
         return
-    _write(record / EXTRACT, decode(trace_file, watch_dir))
+    stopped = stop_own(trace_file, record, "before-decoding", None, name=BEFORE_DECODE)
+    if stopped["stopped"] is not True:
+        _write(record / EXTRACT, {"decoded": False, "reason":
+                                  "the session may still run; a live file is not decoded",
+                                  "before_reverse": before_reverse})
+        return
+    _write(record / EXTRACT, {**decode(trace_file, watch_dir), "start": config.get("available"),
+                              "before_reverse": before_reverse})
 
 
 def main(argv: list[str] | None = None) -> int:

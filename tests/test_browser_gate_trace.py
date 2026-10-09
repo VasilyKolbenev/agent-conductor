@@ -352,7 +352,8 @@ def test_the_extract_stops_its_own_session_then_decodes_and_selects(
     assert cwd == trace_file.parent
     extract = _record(place, gate_trace.EXTRACT)
     assert extract["decoded"] is True and extract["versions"] == {"chromium": "131.0"}
-    assert extract["failures_total"] == 1 and extract["failures"][0]["port"] == 50123
+    assert extract["failures_total"] == 1 and extract["failures"][0]["ports"] == [50123]
+    assert extract["before_reverse"] is None and extract["start"] is True
 
 
 def test_an_extract_whose_selection_breaks_still_answers_0_and_says_why(
@@ -371,24 +372,98 @@ def test_an_extract_whose_selection_breaks_still_answers_0_and_says_why(
     assert fake.stops() == 1
 
 
-@pytest.mark.parametrize("status", ["unknown", "still-running"])
-def test_a_session_that_may_still_run_is_never_decoded_live(
-        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+OURS = "Status: Running\nTrace File: {file}"
+#: netsh's answers in call order (status, then stop and status when the first names ours).
+STOP_SCRIPTS = {
+    "the status never answers": [("timed-out", "")],
+    "the stop said yes and the session stayed": [(0, OURS), (0, "stopped"), (0, OURS)],
+    "the stop and the last status never answered": [
+        (0, OURS), ("timed-out", ""), ("timed-out", "")],
+}
+
+
+def _scripted(answers: list[tuple[object, str]], trace_file: Path):
+    left = list(answers)
+
+    def netsh(*arguments: str, timeout: float = 0) -> tuple[object, str]:
+        code, said = left.pop(0) if len(left) > 1 else left[0]
+        return code, said.format(file=trace_file)
+    return netsh
+
+
+@pytest.mark.parametrize("script", sorted(STOP_SCRIPTS))
+def test_a_session_netsh_does_not_prove_gone_is_never_decoded_live(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch, script: str) -> None:
     trace_file = _collected(place)
-    if status == "unknown":
-        fake: object = lambda *arguments, **options: ("timed-out", "")
-    else:
-        stubborn = FakeNetsh(place["marker"], running=str(trace_file))
-
-        def fake(*arguments: str, timeout: float = 0) -> tuple[object, str]:
-            found = stubborn(*arguments, timeout=timeout)
-            stubborn.running = str(trace_file)  # the stop said yes; the session did not go
-            return found
-
-    monkeypatch.setattr(gate_trace, "_netsh", fake)
+    monkeypatch.setattr(gate_trace, "_netsh", _scripted(STOP_SCRIPTS[script], trace_file))
     assert _extract(place) == 0
-    assert _record(place, gate_trace.EXTRACT) == {
-        "decoded": False, "reason": "the session may still run; a live file is not decoded"}
+    extract = _record(place, gate_trace.EXTRACT)
+    assert extract["decoded"] is False
+    assert extract["reason"] == "the session may still run; a live file is not decoded"
+    assert _record(place, gate_trace.BEFORE_DECODE)["stopped"] is False
+
+
+def test_an_unanswered_status_after_the_stop_is_not_a_proven_stop(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    mine = place["afd"] / ("afd-" + "2" * 32 + ".etl")
+    monkeypatch.setattr(gate_trace, "_netsh", _scripted(
+        STOP_SCRIPTS["the stop and the last status never answered"], mine))
+    result = gate_trace.stop_own(mine, place["record"], "deadline", None)
+    assert result["ours_running"] is True and result["stopped"] is False
+    assert result["last_status_unknown"] is True and result["last_status_exit"] == "timed-out"
+
+
+def test_a_stop_before_the_reversed_order_that_proves_nothing_says_so(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    trace_file = _collected(place)
+    monkeypatch.setattr(gate_trace, "_netsh", _scripted(
+        STOP_SCRIPTS["the status never answers"], trace_file))
+    assert gate_trace.main(["--stop", "--record", str(place["record"])]) == 0
+    record = _record(place, gate_trace.BEFORE_REVERSE)
+    assert record["stopped"] is False and "may have run while it was still tracing" in str(
+        record["limitation"])
+
+
+class UnconfirmedStart(FakeNetsh):
+    """The start goes through, but the status right after it never answers."""
+
+    def __init__(self, marker: Path, clock: dict[str, float] | None = None) -> None:
+        super().__init__(marker)
+        self.clock, self.just_started = clock, False
+
+    def __call__(self, *arguments: str, timeout: float = 0) -> tuple[object, str]:
+        if arguments == ("show", "status") and self.just_started:
+            self.just_started = False
+            self.calls.append(arguments)
+            return "timed-out", ""
+        found = super().__call__(*arguments, timeout=timeout)
+        if arguments[0] == "start" and arguments[1] != "help":
+            self.just_started = True
+            if self.clock is not None:
+                self.clock["now"] += 600.0  # a slow start
+        return found
+
+
+def test_a_start_netsh_did_not_confirm_is_still_watched_and_stopped_once_proven_ours(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = UnconfirmedStart(place["marker"])
+    # 99 would mean nobody watched: the gate waits for the stop the record must cause.
+    assert _run(place, fake, monkeypatch, code=1, mode="record") == 1
+    config = _record(place, gate_trace.CONFIG)
+    assert config["available"] == "unknown" and config["gap"] == {"reason": "start-unconfirmed"}
+    stop = _record(place, gate_trace.STOP)
+    assert stop["reason"] == "first-no-buffer-space" and stop["stopped"] is True
+    starts = [call for call in fake.calls if call[0] == "start" and call[1] != "help"]
+    assert len(starts) == 1 and fake.stops() == 1
+
+
+def test_the_deadline_counts_from_before_the_start(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 100.0}
+    monkeypatch.setattr(gate_trace, "_netsh", UnconfirmedStart(place["marker"], clock))
+    session = gate_trace.start(place["afd"], place["record"], clock=lambda: clock["now"])
+    assert session is not None and clock["now"] == 700.0
+    assert session.deadline == 100.0 + gate_trace.MAX_SECONDS
 
 
 def test_the_extract_after_no_trace_says_so_and_stops_nothing(
