@@ -33,12 +33,17 @@ import threading
 
 import pytest
 
-from conductor import server
+from conductor import server, server_events
 from tests.test_store import good_lane, write_project
 
 #: Long enough that a real answer always arrives, short enough that a hung read
 #: fails the test instead of the suite. Never raised to make a road pass.
 PATIENCE = 5.0
+#: The stream's wait, scaled down so that a heartbeat (the shipped count of waits) comes in a
+#: third of a second. Only the wait is scaled; the count between two comments is the shipped one.
+FAST_WAIT = 0.02
+GREETING = 'data: {"kind":"state"}'
+PING = ": ping"
 
 
 def _serving(root_dir, idle: float | None = None):
@@ -369,3 +374,111 @@ def test_a_client_that_vanishes_mid_stream_takes_nothing_with_it(live):
             again.close()
     finally:
         after.close()
+
+
+# -- an idle stream notices a client that left, and leaves a quiet one alone ----
+
+
+def _stream_blocks(wire: Wire) -> list[str]:
+    """The whole blocks of the stream body read so far; a block still arriving is not one."""
+    _head, found, body = wire.buffer.partition(b"\r\n\r\n")
+    if not found:
+        return []
+    return body.decode("utf-8").split("\n\n")[:-1]
+
+
+def _read_blocks_until(wire: Wire, done, why: str) -> list[str]:
+    """Read the stream until `done(blocks)`; a stream that stays silent fails with `why`."""
+    while not done(_stream_blocks(wire)):
+        try:
+            assert wire._fill(), f"the stream closed before {why}"
+        except TimeoutError:
+            pytest.fail(f"no {why} within {PATIENCE} s")
+    return _stream_blocks(wire)
+
+
+def _open_stream(address) -> Wire:
+    wire = Wire(address, f"127.0.0.1:{address[1]}")
+    wire.send("GET /events HTTP/1.1")
+    _read_blocks_until(wire, lambda blocks: GREETING in blocks, "the greeting")
+    return wire
+
+
+def test_a_client_that_left_an_idle_stream_frees_its_mailbox_and_thread_by_itself(
+        live, monkeypatch):
+    """A leaver is noticed by a write, so an idle stream must write: no event, no stop.
+
+    The real socket is closed by the client after the greeting. Nothing is published and the
+    server is not stopped, which are the only two things that used to end this loop.
+    """
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    srv, address = live
+    before = set(threading.enumerate())
+    wire = _open_stream(address)
+    held = [thread for thread in threading.enumerate()
+            if thread not in before and "process_request_thread" in thread.name]
+    assert len(held) == 1 and len(srv.clients._mailboxes) == 1, "control: one stream is held"
+
+    wire.close()
+
+    held[0].join(PATIENCE)
+    assert not held[0].is_alive(), "the thread of the client that left was never released"
+    assert not srv.clients._mailboxes, "the mailbox of the client that left was never released"
+
+
+def test_a_quiet_live_client_hears_only_comments_and_keeps_its_stream_for_the_next_signal(
+        live, monkeypatch):
+    """Quiet is not gone: the comments change no state, and a real signal still arrives."""
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    srv, address = live
+    wire = _open_stream(address)
+    try:
+        quiet = _read_blocks_until(wire, lambda blocks: blocks.count(PING) >= 3,
+                                   "three heartbeats")
+        assert quiet == [GREETING] + [PING] * (len(quiet) - 1), (
+            f"a quiet client was told more than the greeting and comments: {quiet}")
+
+        srv.clients.publish_state()
+
+        after = _read_blocks_until(wire, lambda blocks: blocks.count(GREETING) == 2,
+                                   "the signal published after the quiet")
+        assert set(after) == {GREETING, PING}, after
+    finally:
+        wire.close()
+
+
+def test_a_stop_while_the_stream_sends_heartbeats_ends_it_without_a_frame_of_its_own(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    _root, srv, thread, address = _serving(tmp_path)
+    stopped = False
+    wire = _open_stream(address)
+    try:
+        _read_blocks_until(wire, lambda blocks: PING in blocks, "a heartbeat")
+        srv.shutdown()
+        stopped = True
+        while True:
+            try:
+                if not wire._fill():
+                    break
+            except TimeoutError:
+                pytest.fail(f"the stream was still open {PATIENCE} s after the stop")
+        blocks = _stream_blocks(wire)
+        assert blocks.count(GREETING) == 1 and set(blocks) <= {GREETING, PING}, blocks
+    finally:
+        wire.close()
+        if not stopped:
+            srv.shutdown()
+        srv.server_close()
+        thread.join(timeout=PATIENCE)
+
+
+def test_the_shipped_heartbeat_is_rare_enough_to_be_bounded_and_frequent_enough_to_free_a_leaver():
+    """One comment per 5 to 15 s; a leaver is freed by the second write after it left.
+
+    The first write after a departure is accepted and brings the reset back; the second one
+    fails. So a departed client is released within two periods and one wait: half a minute.
+    """
+    period = server_events.SSE_PING_EVERY * server_events.SSE_WAIT
+    assert 5.0 <= period <= 15.0, period
+    assert 2 * period + server_events.SSE_WAIT <= 31.0
