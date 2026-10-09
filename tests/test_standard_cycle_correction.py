@@ -336,9 +336,13 @@ def test_a_grant_that_budgets_one_planning_attempt_refuses_the_replanned_lap_hon
     cycle.until("the result gate", lambda: cycle.outcomes("do") == ["succeeded"])
     status, body = cycle.decide("gate-result", "changes", action="request_changes")
     assert status == 201, body
-    reason = cycle.until("an honest refusal", lambda: True)
+    # Wait for the refusal itself: right after the decision the driver can say
+    # "waiting" (nothing runnable yet), which is quiet but is not the answer.
+    cycle.until("an honest refusal",
+                lambda: cycle.subject.policy_driver.reason(RUN) == "admission_refused")
     time.sleep(0.3)
-    assert reason == "admission_refused" and len(cycle.outcomes("identify")) == 1
+    assert cycle.subject.policy_driver.reason(RUN) == "admission_refused"
+    assert len(cycle.outcomes("identify")) == 1
 
 
 def test_revision_four_had_no_correction_road(standard):
