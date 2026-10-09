@@ -1266,10 +1266,9 @@ completed the step, 200 for the exact repeat of the same mode, digest and actor,
 `paths_digest`, `digest_version`, `target_ref`, `commit`, `tree`, `object_format`,
 `file_count`, `signature`, `requested_by` and `recorded_at`. The confirmation takes
 the preview again and, in `snapshot` mode, refuses `paths_changed` unless the digest of
-the versioned list equals the one sent; it refuses required signing as
-`signing_required` and a `.git`
-that is not the project's own plain directory (a linked worktree, a link) as
-`unsafe_git_route` before any object is written. Objects and the parentless commit
+the versioned list equals the one sent; it refuses a `.git` that is not the
+project's own plain directory (a linked worktree, a link, or a link or reparse point on a
+folder Git writes below it) as `unsafe_git_route` before any object is written. Objects and the parentless commit
 are written without a lock. Inside the store transaction the product then publishes
 the install bytes, the operation record `first_commit.op.json` (read back against the
 bytes) and a private copy in `.git`, moves the copy onto `index.lock` without replacing
@@ -1295,6 +1294,26 @@ installed index carries the optional extension `CNDT`, and Git prints `ignoring 
 extension` on stderr at every read of it until Git's own next index write. A build whose
 compatibility gate on the lowest supported Git is still open refuses this body as
 `contract_invalid`, as before.
+
+When Git is set to sign (`signing: true` in the preview) the product never signs, never makes
+the commit and never moves a ref. It writes the objects and the marked index bytes, STORES the
+intent (the install bytes, the exact message in `<data_root>/git/msg-first-<32 hex>.txt` and the
+operation record at the stage `awaiting_signature`) and only then answers `409 git_setup_refused`
+with the typed detail `{reason:"signing_required", tree, target_ref, message_path}`. The owner runs
+`git commit-tree <tree> -S -F <message_path>` and `git update-ref <target_ref> <oid> <zero>`, where
+`<zero>` is as long as the tree's object id, so that only a branch that does not exist yet can be
+created. The same body repeated recognises that commit by the STORED terms and never by a new
+preview: its tree is the stored tree, it has no parent, its one author is the author that was
+shown, its body is the stored message to the byte, and it carries the signature header of the
+object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The product then
+installs the index through the same driver as the unsigned road and answers 201 with
+`signature:"present"`; it never moves the ref. Only the presence of a signature is checked: its
+validity and the trust of its key are not, and no verifying program is run. While the branch does
+not exist the answer is `signing_required` again, built from the stored intent; any other commit,
+an unsigned one included, is `head_exists`; a changed actor or author after the commit exists is
+`setup_terms_changed`, and before it exists a changed actor, author, branch HEAD names or signing
+flag replaces the wait. A branch name outside `refs/heads/[A-Za-z0-9._/-]+` cannot take this road
+(the two commands are pasted into a terminal): `signing_ref_unsupported`, nothing written.
 
 `GET /command/project/git` reads the repository facts for the task wizard:
 admission state, HEAD and object format, changed-path count excluding product
