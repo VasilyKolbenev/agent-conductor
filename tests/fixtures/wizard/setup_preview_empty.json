@@ -1,0 +1,16 @@
+{
+  "setup": {
+    "step": "first_commit",
+    "mode": "empty",
+    "head": null,
+    "target_ref": "refs/heads/main",
+    "object_format": "sha1",
+    "author": {"name": "First Author", "email": "first@example.invalid"},
+    "signing": false,
+    "files": [],
+    "manual": [],
+    "warnings": [],
+    "digest_version": 2,
+    "paths_digest": "sha256:5a6b7c8d9e0f1a2b5a6b7c8d9e0f1a2b5a6b7c8d9e0f1a2b5a6b7c8d9e0f1a2b"
+  }
+}

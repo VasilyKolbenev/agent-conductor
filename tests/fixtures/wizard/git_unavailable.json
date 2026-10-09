@@ -9,6 +9,7 @@
     "agent_instructions": {"found": 0, "default_include": false},
     "remotes": [],
     "tools": {"git": null, "gh": null},
-    "signing": false
+    "signing": false,
+    "first_commit_pending": null
   }
 }

@@ -1,0 +1,17 @@
+{
+  "setup": {
+    "schema_version": 1,
+    "step": "first_commit",
+    "mode": "snapshot",
+    "paths_digest": "sha256:9f2c1ad04b7e5d36c8a1f0e24b95d7c3a6e8b10f4d2c97a5e3b6180d4f7a29c1",
+    "digest_version": 2,
+    "target_ref": "refs/heads/main",
+    "commit": "5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b5e4d3c2b",
+    "tree": "9c3e5f1a7b2d4086e1f3a5c7d9b0e2f4a6c8d1e3",
+    "object_format": "sha1",
+    "file_count": 4,
+    "signature": "not_required",
+    "requested_by": "Owner",
+    "recorded_at": "2026-10-09T18:30:00Z"
+  }
+}
