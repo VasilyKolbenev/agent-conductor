@@ -18,6 +18,7 @@ from pathlib import Path
 from ..ownership_records import ACTIVE, HOME, LEGACY
 from .adapters.agent_instructions import AGENT_INSTRUCTION_NAMES
 from .adapters.harness_workspace import INSTRUCTION_DIR
+from .containment import portal_violation
 from .providers import PROVIDER_CATALOG
 from .work_layout import WORK_DIR
 
@@ -89,7 +90,8 @@ def write_exclude_block(git_dir: str | os.PathLike[str]) -> str:
 
     Returns:
         `not_git` when there is no such entry; `deferred` when it is not a plain folder (a linked
-        worktree keeps its exclude elsewhere, and a visible step of the child writes it);
+        worktree keeps its exclude elsewhere, and a visible step of the child writes it; a link
+        or a junction is never followed);
         `present` when the block is already there and equal; otherwise `written`. The owner's
         lines are kept byte for byte and only the marked block is replaced.
 
@@ -115,13 +117,17 @@ def write_exclude_block(git_dir: str | os.PathLike[str]) -> str:
 
 
 def _kind(path: Path) -> int | None:
-    """The file type of `path` without following a link, or None when nothing is there."""
+    """The file type of `path` without following a link, or None when nothing is there.
+
+    A junction or any other reparse point is a link, whatever its mode says: on Windows the mode
+    of a junction reads as a folder, and a folder here would be written through."""
     try:
-        return stat.S_IFMT(os.lstat(path).st_mode)
+        found = os.lstat(path)
     except FileNotFoundError:
         return None
     except OSError:
         raise ExcludeWriteError("the git folder could not be read") from None
+    return stat.S_IFLNK if portal_violation(path, found) is not None else stat.S_IFMT(found.st_mode)
 
 
 def _plain_folder(path: Path) -> None:

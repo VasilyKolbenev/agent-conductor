@@ -8,6 +8,7 @@ from pathlib import Path
 from .accept_git import PreviewGit
 from .containment import first_directory_violation, portal_violation
 from .git_setup_records import SetupRefused
+from .git_setup_routes import dot_git_is_no_portal
 from .product_names import ExcludeWriteError, write_exclude_block
 from .project_documents import read_head
 from .project_git import GitReadFailed, repository_admission
@@ -48,6 +49,7 @@ def git_dir(root, git, *, common=False):
 
 
 def exclude(root, git):
+    dot_git_is_no_portal(root)            # the name `.git` first: Git's answer has followed it
     common = git_dir(root, git, common=True)
     target = common / "info" / "exclude"
     if first_directory_violation((common, common / "info")) or _leaf_violation(target):
@@ -97,12 +99,15 @@ def plain_git_dir(root, git):
     A first commit writes into `.git`, outside the folders the write guard covers, so a linked
     worktree (whose `.git` is a file) and a `.git` that is a link or a portal are refused. Git names
     the target of a link or a junction as its git dir, so the name itself is read without following
-    it: only a plain directory that is not a portal can be the route."""
+    it: only a plain directory that is not a portal can be the route. The common directory must be
+    this same folder: a plain file `commondir` inside `.git` sends the objects, the refs and the
+    reflogs to another folder, which the walks below `.git` would never look at."""
     folder, named = git_dir(root, git), Path(root) / ".git"
     try:
         found = os.lstat(named)
         same = (stat.S_ISDIR(found.st_mode) and portal_violation(named, found) is None
-                and os.path.samefile(folder, named))
+                and os.path.samefile(folder, named)
+                and os.path.samefile(git_dir(root, git, common=True), named))
     except OSError:
         same = False
     if not same:

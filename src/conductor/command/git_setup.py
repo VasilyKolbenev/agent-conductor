@@ -15,6 +15,7 @@ from .adapters.process import OwnershipError, ProcessRunner
 from .api_refusals import ApiRefusal
 from .authorization_terms import human_identity
 from .contract_values import ContractError, _digest
+from .git_setup_first_signing import SigningWait
 from .git_setup_records import SetupRefused, publish, receipt
 from .git_setup_snapshot import preview
 from .project_git import GitReadFailed, has_git_entry
@@ -83,6 +84,9 @@ def _refusals():
         raise ApiRefusal.git_setup_refused("task_run_active") from None
     except (OwnershipError, OwnerRefused):
         raise ApiRefusal.fixed("project_not_active") from None
+    except SigningWait as error:
+        raise ApiRefusal.signing_required_setup(
+            error.tree, error.target_ref, error.message_path) from None
     except SetupRefused as error:
         raise ApiRefusal.git_setup_refused(error.reason) from None
     except SnapshotRefused as error:

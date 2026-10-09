@@ -146,16 +146,6 @@ def test_first_commit_requires_the_shown_paths_digest(tmp_path):
     assert snapshot(p.root / ".git") == before
 
 
-def test_first_commit_with_required_signing_is_refused_before_any_object_is_written(tmp_path):
-    p = project(tmp_path, FILES)
-    p.git("config", "commit.gpgsign", "true", cwd=p.root)
-    shown = seal(p)
-    assert shown["signing"] is True and shown["warnings"] == ["signing_required"]
-    before = snapshot(p.root / ".git")
-    assert reason(confirm(p, digest=shown["paths_digest"])) == "signing_required"
-    assert snapshot(p.root / ".git") == before and not op_file(p).exists() and no_receipt(p)
-
-
 def test_first_commit_refuses_an_old_digest_as_paths_changed(tmp_path):
     p = project(tmp_path, FILES)
     shown = seal(p)

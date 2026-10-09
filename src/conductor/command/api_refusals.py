@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from dataclasses import FrozenInstanceError, dataclass
 from types import MappingProxyType
 
+from .git_setup_signable import signable_ref
 from .http_transport import HttpRefusal
 
 ERROR_STATUS = MappingProxyType({
@@ -255,7 +256,7 @@ GIT_SETUP_REASONS = (
     "unsafe_directory", "unsafe_git_route", "git_exclude_failed", "git_identity_missing",
     "head_exists", "index_exists", "index_locked", "too_many_files", "paths_changed",
     "setup_damaged", "setup_terms_changed", "task_run_active", "git_failed", "git_timed_out",
-    "signing_required")
+    "signing_required", "signing_ref_unsupported")
 
 #: The reasons of `seed_refused` (spec 9.1.3), in the order of that table. The list is closed in
 #: `ApiRefusal.seed_refused`; two of them name a commit, the base that moved or the base that
@@ -287,6 +288,33 @@ def _signing_detail(detail: dict) -> bool:
             and all(part and not part.startswith(".") and not part.endswith(".lock")
                     for part in branch.split("/"))
             and re.fullmatch(r"conductor(?:\.v3)?/git/msg-acc-[0-9a-f]{32}\.txt", detail["message_path"]) is not None)
+
+
+#: The typed facts of a first-commit signature wait: the tree the owner commits, the branch the
+#: second command creates, and the file that holds the exact message, relative to the project.
+_SETUP_SIGNING_FIELDS = ("reason", "tree", "target_ref", "message_path")
+_SETUP_MESSAGE = re.compile(r"conductor(?:\.v3)?/git/msg-first-[0-9a-f]{32}\.txt")
+
+
+def _setup_signing_detail(detail: dict) -> bool:
+    """The one Git-setup exception to a detail of a single word: four closed facts.
+
+    The owner pastes two commands built from these facts into a terminal, so each fact is held to
+    the narrowest spelling: the branch to the signable set (and to Git's own rules as a second
+    wall), the tree to an object id, the file to the name the product gives it.
+    """
+    if set(detail) != set(_SETUP_SIGNING_FIELDS) or any(
+            type(value) is not str for value in detail.values()):
+        return False
+    ref = detail["target_ref"]
+    return (detail["reason"] == "signing_required"
+            and _OBJECT_ID.fullmatch(detail["tree"]) is not None
+            and signable_ref(ref) and len(ref) <= 240 and ".." not in ref
+            and not ref.endswith(".")
+            and all(part and not part.startswith(".") and not part.endswith(".lock")
+                    for part in ref.split("/"))
+            and _SETUP_MESSAGE.fullmatch(detail["message_path"]) is not None)
+
 
 #: Every refusal that may carry a detail, as `(code, fields, sentence)`. A
 #: closed table rather than a condition, because the closure is the point: a
@@ -354,6 +382,8 @@ _REVIEWED_FACTS = (
      lambda facts: f"the Git setup step was refused: {facts['reason']}"),
     ("accept_refused", _SIGNING_FIELDS,
      lambda facts: "the result cannot be accepted: signing_required"),
+    ("git_setup_refused", _SETUP_SIGNING_FIELDS,
+     lambda facts: f"the Git setup step was refused: {facts['reason']}"),
     # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
     # it is is the one fact a person can act on (spec 4.3.4).
     ("contract_invalid", ("run_id",),
@@ -377,8 +407,12 @@ def _reviewed_fact(code: str, message: str, detail: dict) -> bool:
     for reviewed, fields, sentence in _REVIEWED_FACTS:
         if code != reviewed or set(detail) != set(fields):
             continue
-        safe = (_signing_detail(detail) if code == "accept_refused" and fields == _SIGNING_FIELDS
-                else all(_safe_detail(detail[key]) for key in fields))
+        if code == "accept_refused" and fields == _SIGNING_FIELDS:
+            safe = _signing_detail(detail)
+        elif code == "git_setup_refused" and fields == _SETUP_SIGNING_FIELDS:
+            safe = _setup_signing_detail(detail)
+        else:
+            safe = all(_safe_detail(detail[key]) for key in fields)
         if safe and message == sentence(detail):
             return True
     return False
@@ -521,6 +555,15 @@ class ApiRefusal(Exception):
             raise ValueError("Git setup reason must be one of the closed list") from None
         return cls(_REFUSAL_BUILD, "git_setup_refused",
                    f"the Git setup step was refused: {reason}", {"reason": reason})
+
+    @classmethod
+    def signing_required_setup(cls, tree: str, target_ref: str, message_path: str) -> "ApiRefusal":
+        """Say the first commit waits for the owner's signature, and name what the two commands
+        need: the tree, the branch and the file of the message (all relative or hex, no prose)."""
+        detail = dict(reason="signing_required", tree=tree, target_ref=target_ref,
+                      message_path=message_path)
+        return cls(_REFUSAL_BUILD, "git_setup_refused",
+                   "the Git setup step was refused: signing_required", detail)
 
     @classmethod
     def materials_refused(cls, reason: str) -> "ApiRefusal":

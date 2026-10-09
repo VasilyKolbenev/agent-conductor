@@ -26,6 +26,7 @@ from dataclasses import asdict
 
 from . import git_setup_first_lock as lock
 from . import git_setup_first_records as records
+from . import git_setup_first_signing as signing
 from .accept_plumbing import ref_oid
 from .adapters.harness_workspace import root_turn
 from .containment import portal_violation
@@ -35,6 +36,8 @@ from .git_setup_first_prepare import prepare
 from .git_setup_first_resume import (
     Act, Index, LOCKED, Lock, REF_MOVED, Ref, Refuse, next_action)
 from .git_setup_records import SetupRefused
+from .git_setup_routes import objects_route, ref_route
+from .git_setup_signable import signable_ref
 from .git_setup_snapshot import preview
 from .project_git import GitReadFailed
 
@@ -76,12 +79,40 @@ def confirm(api, request) -> tuple[int, dict]:
             return _repeat(api, row, request)
         op = records.read_op(root)
         if op is not None:
-            if _stored_terms_hold(api, op, request):
-                return _resume(api, op)
-            _supersede(api, op)
+            answer = _continue(api, op, request)
+            if answer is not None:
+                return answer
         prepared = _prepare(api, request)               # outside the store transaction (OD-10)
         with api._store.transaction():
             return 201, {"setup": _write(api, request, prepared)}
+
+
+def _continue(api, op, request) -> tuple[int, dict] | None:
+    """Continue the stored op when its terms hold, else replace it; None when a fresh write follows.
+
+    The freshness of the terms is asked first for every op, a wait for a signature included, so
+    that no road enters a write without the check the other makes. A wait is judged and replaced
+    by the signed road's own functions: the driver's table never sees it."""
+    holds = _stored_terms_hold(api, op, request)
+    if op.stage == records.AWAITING_SIGNATURE:
+        return _wait(api, op, holds)
+    if holds:
+        return _resume(api, op)
+    _supersede(api, op)
+    return None
+
+
+def _wait(api, op, holds: bool) -> tuple[int, dict] | None:
+    """A wait for the owner's signature: judged by the stored intent, or replaced.
+
+    The owner's recognised commit moves the record to `ref_moved` and the driver of the unsigned
+    road installs the index: this road never moves the ref. None means the wait was replaced."""
+    root, git = api._store.project_root, api._project_git
+    with api._store.transaction():
+        if holds:
+            return 201, {"setup": drive(api, signing.wait(root, git, op))}
+        signing.supersede_wait(root, git, op)
+    return None
 
 
 def _repeat(api, row: dict, request) -> tuple[int, dict]:
@@ -134,11 +165,16 @@ def _supersede(api, op) -> None:
 
     Only what the stored bytes prove is the product's own is undone: its lock and its copy; a
     foreign lock or index stays. The op record is retired BEFORE its install bytes, never the
-    other way round. A ref that is not our commit is `head_exists` (the own lock and copy go, as
-    the table's own refusal does, and the record stays); a ref at our commit, or a record at
-    `ref_moved`, is `setup_terms_changed` and nothing is undone.
+    other way round. A ref that is somebody else's is judged first, even when the record says
+    `ref_moved`: the own lock and copy go, as the table's own refusal does, the record and its
+    install bytes stay, the installed index, the foreign files and the ref are not touched, no new
+    operation begins, and the answer is `head_exists`. Only then does a ref at our commit, or a
+    record at `ref_moved` with no foreign ref, answer `setup_terms_changed`; nothing is undone.
+    A wait for a signature is never replaced here: it has files this function does not know.
     """
     root, git = api._store.project_root, api._project_git
+    if op.stage == records.AWAITING_SIGNATURE:
+        raise SetupRefused("setup_damaged")
     with api._store.transaction():
         ref, folder = ref_state(root, git, op), plain_git_dir(root, git)
         held = lock.lock_state(folder, binding_of(op))
@@ -160,9 +196,11 @@ def _prepare(api, request) -> tuple[dict, object, bytes]:
     shown = preview(root, git, request.mode)
     if request.mode == "snapshot" and shown["paths_digest"] != request.digest:
         raise SetupRefused("paths_changed")             # an old (version 1) digest lands here
-    if shown["signing"]:
-        raise SetupRefused("signing_required")
-    plain_git_dir(root, git)                            # objects go into `.git`: check it first
+    if shown["signing"] and not signable_ref(shown["target_ref"]):
+        raise SetupRefused("signing_ref_unsupported")   # the two commands could not carry it safely
+    folder = plain_git_dir(root, git)                   # objects go into `.git`: check it first,
+    objects_route(folder)                               # then where they and the ref will land
+    ref_route(folder, shown["target_ref"])
     text = message(request.mode, len(shown["files"]))
     return shown, prepare(root, git, shown, text, request.mode, request.digest), text
 
@@ -177,6 +215,8 @@ def _write(api, request, prepared) -> dict:
     _objects_present(root, git, shown, made)
     op = records.new_op(request.mode, request.digest, request.actor, shown, made,
                         api._clock(), text)
+    if shown["signing"]:
+        signing.await_signature(root, op, made.install, text)      # stores the intent, refuses
     return drive(api, records.start(root, op, made.install))
 
 
@@ -318,6 +358,7 @@ def _do_mark_locked(api, op):
 
 def _do_move_ref(api, op):
     root, git = api._store.project_root, api._project_git
+    ref_route(plain_git_dir(root, git), op.target_ref)    # the one ref write, start and resume
     answer = git(["-C", str(root), "update-ref", "-m", REFLOG, op.target_ref, op.commit,
                   "0" * len(op.commit)], True)
     if answer.exit_code != 0 and ref_state(root, git, op) is Ref.ABSENT:
