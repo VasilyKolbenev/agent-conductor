@@ -108,7 +108,7 @@ _HUB_MESSAGES: Mapping[str, str] = MappingProxyType({
     "review_harness_missing": "no harness is set up to review a project started from scratch",
     "operation_busy": "another project is being added, or this hub is closing",
     "registry_busy": "the project list is being changed by another process",
-    "registry_invalid": "the project list or the hub state cannot be read",
+    "registry_invalid": "the project list or the hub state is unavailable",
     "dialog_busy": "a folder dialog is already open",
     "dialog_unavailable": "this machine cannot show a folder dialog",
     "profile_absent": "no harness profile is set up",

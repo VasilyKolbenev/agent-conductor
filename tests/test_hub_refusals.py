@@ -113,6 +113,13 @@ def test_operation_busy_says_a_closing_hub_too_and_registry_invalid_says_the_hub
         assert len(said[code]) <= 70 and not re.search(r"[\\/]|\.json", said[code]), code
 
 
+def test_registry_invalid_says_the_hub_state_is_unavailable_and_not_that_it_cannot_be_read():
+    """The same code answers a hub state that cannot be written, and a lost hub lock; a
+    sentence that says only "cannot be read" is false for those."""
+    said = refusals.hub_messages()["registry_invalid"]
+    assert "unavailable" in said and "cannot be read" not in said, said
+
+
 def _catalogue() -> dict[str, list[str]]:
     return run_js("console.log(JSON.stringify(copy.HUB_COPY));", None,
                   modules={"copy": "hub-copy.js"})

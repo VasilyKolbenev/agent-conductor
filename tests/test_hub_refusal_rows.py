@@ -7,12 +7,16 @@ handler read (or no file, where it names none), the unreadable file is byte for 
 no child was started, and no owner command ran. `activate` and `view` (hub state) are held in
 `test_hub_http_surface.py`, the registry read of `GET /hub/projects` there too, `project_busy` of
 `forget` and `operation_busy` of the login recovery in `test_hub_handlers_http.py` and
-`operation_busy` of the projects home in `test_hub_new_projects.py`.
+`operation_busy` of the projects home in `test_hub_new_projects.py`. The last scenario is the other
+cause of the same code, a hub state nobody can write: it holds the facts that apply to it.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from conductor import atomic_replace
 from conductor.command import operator_config
 from tests._hub_stack import A, Stack
 from tests.test_provider_profile import config
@@ -105,3 +109,27 @@ def test_a_read_on_a_hub_state_nobody_can_read_is_409_registry_invalid(stack, ca
     error = _envelope(reply)
     assert (error["code"], error["detail"]) == ("registry_invalid", {"file": "hub-state.json"})
     _nothing_else_happened(stack, path, capsys)
+
+
+# -- the other cause of the same code: a hub state that cannot be written ------------------------
+
+
+def test_an_activate_on_a_hub_state_nobody_can_write_is_409_registry_invalid_and_not_unreadable(
+        stack, monkeypatch):
+    """A write that fails answers the code of an unreadable file; its sentence must not say that
+    a read failed."""
+    real = atomic_replace.replace_bytes
+
+    def refuse(path, payload, **options):
+        if Path(path).name == "hub-state.json":
+            raise PermissionError("denied")
+        return real(path, payload, **options)
+
+    monkeypatch.setattr(atomic_replace, "replace_bytes", refuse)
+    reply = stack.post(f"/hub/projects/{A}/activate")
+    assert reply.status == 409, (reply.status, reply.body[:200])
+    error = _envelope(reply)
+    assert (error["code"], error["detail"]) == ("registry_invalid", {"file": "hub-state.json"})
+    assert "unavailable" in error["message"] and "cannot be read" not in error["message"]
+    assert stack.world.spawner.calls == [], "a child was started on a state nobody could write"
+    assert stack.launched == [], "an owner command ran on a state nobody could write"

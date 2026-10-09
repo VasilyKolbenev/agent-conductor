@@ -193,6 +193,16 @@ def test_operation_busy_says_a_closing_hub_too_and_registry_invalid_the_hub_stat
         assert len(text) <= 70 and not re.search(r"[\\/]|\.json", text), text
 
 
+def test_registry_invalid_says_the_hub_state_is_unavailable_in_both_languages_not_unreadable():
+    """The same code answers a hub state that cannot be written, and a lost hub lock; a clause
+    that says only "cannot be read" ("не читаются") is false for those."""
+    en, ru = js("""
+      show(["en", "ru"].map((locale) => copy.codeWords(locale, "registry_invalid")));
+    """)
+    assert "unavailable" in en and "cannot be read" not in en, en
+    assert "недоступн" in ru and "не читаются" not in ru, ru
+
+
 def _hub_refusals():
     """The hub's own module of closed lists, or None while lane H has not written it."""
     try:
