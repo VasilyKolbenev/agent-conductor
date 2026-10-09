@@ -1296,7 +1296,12 @@ is installed from the stored bytes. A repeat of a step whose receipt stands answ
 and removes what an interrupted finish left (the record first, its bytes after). A reload, a GET and a server start repeat nothing: the person
 continues explicitly by the same body (see `first_commit_pending` below). Every
 installed index carries the optional extension `CNDT`, and Git prints `ignoring CNDT
-extension` on stderr at every read of it until Git's own next index write. A build whose
+extension` on stderr when it reads an index file that still carries it. Any Git command
+that writes the index writes it without the marker, an ordinary `status` included, so
+the line can appear once, several times or never. The marker proves the ownership of the
+lock and of the stored install bytes only: an installed index that the owner's Git
+rewrote with an equivalent tree is left as it is and the operation finishes, another
+tree is `index_exists`, and a receipt is never undone by a later rewrite. A build whose
 compatibility gate on the lowest supported Git is still open refuses this body as
 `contract_invalid`, as before.
 

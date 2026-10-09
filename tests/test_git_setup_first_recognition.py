@@ -152,8 +152,10 @@ def test_a_really_signed_first_commit_is_recognised_and_its_index_installed(
     header = "gpgsig-sha256" if fmt == "sha256" else "gpgsig"
     raw = p.git("cat-file", "commit", oid, cwd=p.root).stdout.decode("utf-8")
     assert f"{header} -----BEGIN SSH SIGNATURE-----" in raw
-    assert text(p, "status", "--porcelain") == expected_status(mode)
-    assert verify(git_path(p, "index").read_bytes(), fmt).marker[0] == nonce
+    index = git_path(p, "index")
+    assert verify(index.read_bytes(), fmt).marker[0] == nonce        # before any owner command
+    assert text(p, "--no-optional-locks", "status", "--porcelain") == expected_status(mode)
+    assert verify(index.read_bytes(), fmt).marker[0] == nonce        # the read left it alone
     assert text(p, "rev-list", "--count", "HEAD") == "1" and own_leftovers(p) == []
     assert product_moves(p) == [] and not no_receipt(p)
 
