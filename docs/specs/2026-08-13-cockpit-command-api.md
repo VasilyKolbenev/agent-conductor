@@ -1267,8 +1267,9 @@ completed the step, 200 for the exact repeat of the same mode, digest and actor,
 `file_count`, `signature`, `requested_by` and `recorded_at`. The confirmation takes
 the preview again and, in `snapshot` mode, refuses `paths_changed` unless the digest of
 the versioned list equals the one sent; it refuses a `.git` that is not the
-project's own plain directory (a linked worktree, a link, or a link or reparse point on a
-folder Git writes below it) as `unsafe_git_route` before any object is written. Objects and the parentless commit
+project's own plain directory (a linked worktree, a link, a `commondir` file that names another
+folder, or a link or reparse point on a folder Git writes below it) as `unsafe_git_route` before
+any object is written. Objects and the parentless commit
 are written without a lock. Inside the store transaction the product then publishes
 the install bytes, the operation record `first_commit.op.json` (read back against the
 bytes) and a private copy in `.git`, moves the copy onto `index.lock` without replacing

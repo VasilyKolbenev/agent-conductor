@@ -68,6 +68,18 @@ def divert(folder: Path, relative: str, outside: Path, kind: str) -> None:
     make_portal(link, outside, kind)
 
 
+def commondir_stub(p, outside: Path) -> None:
+    """Move the repository to `outside`; leave a plain `.git` whose `commondir` file names it.
+
+    The stub holds only `HEAD` and `commondir`: Git then keeps its objects, refs and reflogs in the
+    folder `outside`, though the git dir it names is still `<root>/.git`."""
+    dot = p.root / ".git"
+    dot.rename(outside)
+    dot.mkdir()
+    (dot / "HEAD").write_bytes((outside / "HEAD").read_bytes())
+    (dot / "commondir").write_text(str(outside), encoding="utf-8")
+
+
 def remove_portal(link: Path) -> None:
     try:
         os.rmdir(link)                    # a junction, and a directory symlink on Windows
@@ -145,6 +157,31 @@ def test_a_resume_refuses_a_portal_that_appeared_before_the_ref_moves_and_goes_o
     answer = confirm(p, digest=digest)
     assert answer.status == 201, answer.payload
     assert ref_exists(p, NESTED) and own_leftovers(p) == []
+
+
+@with_the_door
+def test_first_commit_refuses_a_plain_dot_git_whose_commondir_sends_objects_and_refs_outside(
+        tmp_path):
+    p = project(tmp_path, FILES)
+    digest = terms_of(p, "snapshot")
+    outside = tmp_path / "outside.git"
+    commondir_stub(p, outside)
+    before = listing(outside)
+    answer = confirm(p, "snapshot", digest=digest)
+    assert verdict(answer, outside, before) == ("unsafe_git_route", True)
+    assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
+
+
+@with_the_door
+def test_a_resume_refuses_a_dot_git_that_gained_a_commondir_while_it_waited(tmp_path, monkeypatch):
+    p = project(tmp_path, FILES)
+    digest = terms_of(p, "snapshot")
+    crashed(monkeypatch, p, "_do_mark_locked", digest=digest)
+    outside = tmp_path / "outside.git"
+    commondir_stub(p, outside)
+    before = listing(outside)
+    assert verdict(confirm(p, digest=digest), outside, before) == ("unsafe_git_route", True)
+    assert not ref_exists(p, "trunk") and no_receipt(p)
 
 
 @with_the_door
