@@ -35,6 +35,7 @@ from .git_setup_first_prepare import prepare
 from .git_setup_first_resume import (
     Act, Index, LOCKED, Lock, REF_MOVED, Ref, Refuse, next_action)
 from .git_setup_records import SetupRefused
+from .git_setup_routes import objects_route, ref_route
 from .git_setup_snapshot import preview
 from .project_git import GitReadFailed
 
@@ -134,9 +135,11 @@ def _supersede(api, op) -> None:
 
     Only what the stored bytes prove is the product's own is undone: its lock and its copy; a
     foreign lock or index stays. The op record is retired BEFORE its install bytes, never the
-    other way round. A ref that is not our commit is `head_exists` (the own lock and copy go, as
-    the table's own refusal does, and the record stays); a ref at our commit, or a record at
-    `ref_moved`, is `setup_terms_changed` and nothing is undone.
+    other way round. A ref that is somebody else's is judged first, even when the record says
+    `ref_moved`: the own lock and copy go, as the table's own refusal does, the record and its
+    install bytes stay, the installed index, the foreign files and the ref are not touched, no new
+    operation begins, and the answer is `head_exists`. Only then does a ref at our commit, or a
+    record at `ref_moved` with no foreign ref, answer `setup_terms_changed`; nothing is undone.
     """
     root, git = api._store.project_root, api._project_git
     with api._store.transaction():
@@ -162,7 +165,9 @@ def _prepare(api, request) -> tuple[dict, object, bytes]:
         raise SetupRefused("paths_changed")             # an old (version 1) digest lands here
     if shown["signing"]:
         raise SetupRefused("signing_required")
-    plain_git_dir(root, git)                            # objects go into `.git`: check it first
+    folder = plain_git_dir(root, git)                   # objects go into `.git`: check it first,
+    objects_route(folder)                               # then where they and the ref will land
+    ref_route(folder, shown["target_ref"])
     text = message(request.mode, len(shown["files"]))
     return shown, prepare(root, git, shown, text, request.mode, request.digest), text
 
@@ -318,6 +323,7 @@ def _do_mark_locked(api, op):
 
 def _do_move_ref(api, op):
     root, git = api._store.project_root, api._project_git
+    ref_route(plain_git_dir(root, git), op.target_ref)    # the one ref write, start and resume
     answer = git(["-C", str(root), "update-ref", "-m", REFLOG, op.target_ref, op.commit,
                   "0" * len(op.commit)], True)
     if answer.exit_code != 0 and ref_state(root, git, op) is Ref.ABSENT:
