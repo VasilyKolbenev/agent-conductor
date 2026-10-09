@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import http.client
+import io
 import json
 import socket
 import threading
@@ -49,14 +50,26 @@ def _start(tmp_path, *, adapters=()):
 
 
 def _read_frame(response) -> str:
-    """Read exactly one SSE frame, blocking until its terminating blank line."""
+    """Read exactly one SSE frame, blocking until its terminating blank line.
+
+    A block of comments only -- the stream's ": ping" heartbeat after a quiet
+    spell -- is not a frame, exactly as an EventSource ignores it: on a loaded
+    machine a signal can take longer than one heartbeat period to arrive.
+    """
     lines: list[bytes] = []
     while True:
         line = response.readline()
         assert line, "the SSE stream ended before its next frame"
+        if line.startswith(b":") or (line == b"\n" and not lines):
+            continue
         lines.append(line)
         if line == b"\n":
             return b"".join(lines).decode("utf-8")
+
+
+def test_the_frame_reader_passes_over_a_heartbeat_as_an_event_source_does():
+    stream = io.BytesIO(b": ping\n\n: ping\n\ndata: {\"kind\":\"state\"}\n\n")
+    assert _read_frame(stream) == 'data: {"kind":"state"}\n\n'
 
 
 def _request(subject, method, path, body=None, *, headers=None):
