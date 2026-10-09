@@ -126,6 +126,30 @@ def test_a_head_retarget_while_a_signature_is_awaited_replaces_the_wait_with_the
     assert not [args for args, _ in p.spy.calls if "update-ref" in args]
 
 
+def test_a_retarget_to_a_branch_a_shell_could_read_replaces_the_wait_then_refuses_the_new_branch(
+        tmp_path, signing_key, monkeypatch):
+    p = signing_project(tmp_path, signing_key, FILES)
+    digest = terms_of(p)
+    detail = waits(p, "snapshot", digest)
+    p.git("symbolic-ref", "HEAD", "refs/heads/a$(calc)", cwd=p.root)       # not a signable branch
+    seen, real = [], signing._remove_message
+
+    def watching(root, op):
+        seen.append((op_file(p).exists(), install_files(p)))       # the record is gone by now
+        return real(root, op)
+
+    monkeypatch.setattr(signing, "_remove_message", watching)
+    asked = len(p.spy.calls)
+    answer = confirm(p, digest=digest)
+    assert reason(answer) == "signing_ref_unsupported"
+    assert answer.payload["error"]["detail"] == {"reason": "signing_ref_unsupported"}
+    assert seen == [(False, [])]                              # the old record was retired first
+    assert not op_file(p).exists() and install_files(p) == [] and no_receipt(p)
+    assert not (p.root / detail["message_path"]).exists() and not own_copies(p)
+    assert not git_path(p, "index").exists() and not git_path(p, "index.lock").exists()
+    assert not [args for args, _ in p.spy.calls[asked:] if writes(args)]
+
+
 @for_both_formats
 def test_turning_signing_off_while_a_signature_is_awaited_replaces_the_wait_with_the_unsigned_road(
         tmp_path, signing_key, fmt):

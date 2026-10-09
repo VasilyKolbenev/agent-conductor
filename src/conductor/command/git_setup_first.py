@@ -136,9 +136,11 @@ def _repeat(api, row: dict, request) -> tuple[int, dict]:
 
 
 def _clean_up(api, op) -> None:
-    """Remove the own copy, proved by the stored bytes, then retire the op beside a receipt."""
+    """Remove the own copy, proved by the stored bytes, the message file of a signed road, then
+    retire the op beside a receipt."""
     root, git = api._store.project_root, api._project_git
     lock.drop_copy(plain_git_dir(root, git), op.nonce, records.read_install(root, op))
+    signing.remove_finished_message(root, op)
     records.retire(root, op)
 
 
@@ -391,9 +393,11 @@ def _do_release_lock(api, op):
 
 
 def _do_finish(api, op) -> dict:
-    """The receipt, then the own copy, then the op record, and only after it its install bytes."""
+    """The receipt, then the own copy, the message file of a signed road, the op record, and only
+    after it the install bytes."""
     root, git = api._store.project_root, api._project_git
     row = records.write_receipt(root, records.receipt_of(op, api._clock()))
     lock.drop_copy(plain_git_dir(root, git), op.nonce, records.read_install(root, op))
+    signing.remove_finished_message(root, op)
     records.retire(root, op)
     return row

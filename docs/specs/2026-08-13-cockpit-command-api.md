@@ -1315,9 +1315,11 @@ with the typed detail `{reason:"signing_required", tree, target_ref, message_pat
 created. The same body repeated recognises that commit by the STORED terms and never by a new
 preview: its tree is the stored tree, it has no parent, its one author is the author that was
 shown, its body is the stored message to the byte, and it carries the signature header of the
-object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The product then
+object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The commit is
+read as the object the branch names, without replacement refs. The product then
 installs the index through the same driver as the unsigned road and answers 201 with
-`signature:"present"`; it never moves the ref. Only the presence of a signature is checked: its
+`signature:"present"`; it never moves the ref, and once the receipt stands it removes the message
+file, if it is still the plain file it wrote. Only the presence of a signature is checked: its
 validity and the trust of its key are not, and no verifying program is run. While the branch does
 not exist the answer is `signing_required` again, built from the stored intent; any other commit,
 an unsigned one included, is `head_exists`; a changed actor or author after the commit exists is

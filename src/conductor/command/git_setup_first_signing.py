@@ -12,7 +12,8 @@ carry another digest, and once the owner's commit exists the preview refuses `he
 record has a table of its own, apart from the driver's: the ref is absent (the wait goes on), it
 is the owner's recognised commit (the record moves to `ref_moved` with that commit and the driver
 installs the index, as on the unsigned road), or it is anything else (`head_exists`). Nothing in
-this module can write a ref, a lock or an index.
+this module can write a ref, a lock or an index. The message file lives until the receipt of the
+finished road stands; then the finish removes it, and only the plain file this intent wrote.
 
 What is checked of the signature is that it is PRESENT: the commit carries the signature header of
 its object format and the first line of that header is an armour line. Whether the signature is
@@ -167,6 +168,19 @@ def _is_ours(root: Path, git, op: Op, found: str) -> bool:
     except SetupRefused:
         return False
     return recognised(root, git, op, message, found)
+
+
+def remove_finished_message(root: Path, op: Op) -> None:
+    """Remove the message file of a signed road whose receipt stands; nothing for an unsigned op.
+
+    The owner's `commit-tree -F` was its only reader and the commit is recognised, so the file has
+    no use left. It goes BEFORE the operation record is retired: a crash in between leaves the
+    record beside the receipt, and the next repeat finishes the cleanup; the other order would
+    leave a file that no record names. Only the plain file this intent wrote is removed
+    (`_remove_message` proves it by its place and its digest); a failure to remove never changes
+    the answer that the receipt gives."""
+    if op.signing:
+        _remove_message(root, op)
 
 
 def _remove_message(root: Path, op: Op) -> None:
