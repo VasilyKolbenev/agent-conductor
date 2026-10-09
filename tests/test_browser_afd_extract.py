@@ -238,9 +238,22 @@ def test_a_separate_port_field_matches_in_either_byte_order(tmp_path: Path) -> N
     xml = _trace(tmp_path, *(
         _event("2026-10-09T10:00:04.9000000Z", 4,
                {"Endpoint": f"0x{port}", "Address": "127.0.0.1", "Port": str(port)})
-        for port in (50123, swapped, 50124)))
+        for port in (50123, swapped, 50124)),
+        # An address that carries its own port is in network order: its twin is
+        # another process's port, never the test's.
+        _event("2026-10-09T10:00:04.9100000Z", 4,
+               {"Endpoint": "0xT", "Address": f"127.0.0.1:{swapped}"}))
     selected = afd_extract.extract(xml, [_row()], 1, None)["failures"][0]["selected"]
-    assert [event["fields"]["Port"] for event in selected] == ["50123", str(swapped)]
+    assert [event["fields"].get("Port", event["fields"]["Address"]) for event in selected] == [
+        "50123", str(swapped)]
+
+
+def test_a_snapshot_port_out_of_range_is_dropped_not_fatal(tmp_path: Path) -> None:
+    (tmp_path / "a.call.failure.txt").write_text(
+        'E   OSError: [WinError 10055]\n{\n "loopback_ports": [\n  49495,\n  80000\n ]\n}\n',
+        encoding="utf-8")
+    rows, _ = afd_extract.failures(tmp_path)
+    assert rows[0]["ports"] == [49495]
 
 
 @pytest.mark.parametrize(("raw", "decoded"), [

@@ -379,6 +379,8 @@ STOP_SCRIPTS = {
     "the stop said yes and the session stayed": [(0, OURS), (0, "stopped"), (0, OURS)],
     "the stop and the last status never answered": [
         (0, OURS), ("timed-out", ""), ("timed-out", "")],
+    "the last status is text it does not recognise": [
+        (0, OURS), (0, "stopped"), (0, "Le service ne répond pas")],
 }
 
 
@@ -425,17 +427,19 @@ def test_a_stop_before_the_reversed_order_that_proves_nothing_says_so(
 
 
 class UnconfirmedStart(FakeNetsh):
-    """The start goes through, but the status right after it never answers."""
+    """The start goes through, but the status right after it cannot say (by default it
+    never answers; ``answer`` gives another reply that proves nothing)."""
 
-    def __init__(self, marker: Path, clock: dict[str, float] | None = None) -> None:
+    def __init__(self, marker: Path, clock: dict[str, float] | None = None,
+                 answer: tuple[object, str] = ("timed-out", "")) -> None:
         super().__init__(marker)
-        self.clock, self.just_started = clock, False
+        self.clock, self.answer, self.just_started = clock, answer, False
 
     def __call__(self, *arguments: str, timeout: float = 0) -> tuple[object, str]:
         if arguments == ("show", "status") and self.just_started:
             self.just_started = False
             self.calls.append(arguments)
-            return "timed-out", ""
+            return self.answer
         found = super().__call__(*arguments, timeout=timeout)
         if arguments[0] == "start" and arguments[1] != "help":
             self.just_started = True
@@ -444,9 +448,11 @@ class UnconfirmedStart(FakeNetsh):
         return found
 
 
+@pytest.mark.parametrize("answer", [("timed-out", ""), (0, "Le service ne répond pas")])
 def test_a_start_netsh_did_not_confirm_is_still_watched_and_stopped_once_proven_ours(
-        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = UnconfirmedStart(place["marker"])
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch,
+        answer: tuple[object, str]) -> None:
+    fake = UnconfirmedStart(place["marker"], answer=answer)
     # 99 would mean nobody watched: the gate waits for the stop the record must cause.
     assert _run(place, fake, monkeypatch, code=1, mode="record") == 1
     config = _record(place, gate_trace.CONFIG)
@@ -455,6 +461,58 @@ def test_a_start_netsh_did_not_confirm_is_still_watched_and_stopped_once_proven_
     assert stop["reason"] == "first-no-buffer-space" and stop["stopped"] is True
     starts = [call for call in fake.calls if call[0] == "start" and call[1] != "help"]
     assert len(starts) == 1 and fake.stops() == 1
+
+
+class FirstStopUnproven(FakeNetsh):
+    """The first stop goes through, but the status right after it never answers."""
+
+    def __init__(self, marker: Path) -> None:
+        super().__init__(marker)
+        self.just_stopped = False
+
+    def __call__(self, *arguments: str, timeout: float = 0) -> tuple[object, str]:
+        if arguments == ("show", "status") and self.just_stopped:
+            self.just_stopped = False
+            self.calls.append(arguments)
+            return "timed-out", ""
+        found = super().__call__(*arguments, timeout=timeout)
+        self.just_stopped = arguments == ("stop",) and self.stops() == 1
+        return found
+
+
+def test_a_stop_netsh_did_not_prove_gets_one_more_at_the_next_boundary(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FirstStopUnproven(place["marker"])
+    assert _run(place, fake, monkeypatch, code=1, mode="record") == 1
+    first, second = _record(place, gate_trace.STOP), _record(place, gate_trace.STOP_AGAIN)
+    assert first["stopped"] is False and first["last_status_unknown"] is True
+    assert second["reason"] == "second-stop" and second["stopped"] is True
+    # The session was already gone at the second look: no second stop was sent.
+    assert fake.stops() == 1
+
+
+def test_an_extract_after_a_start_that_broke_midway_still_stops_and_reads(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    trace_file = _collected(place)
+    (place["record"] / gate_trace.CONFIG).write_text(json.dumps(
+        {"available": False, "gap": {"reason": "starting"}, "trace_file": str(trace_file)}),
+        encoding="utf-8")
+    fake = FakeNetsh(place["marker"], running=str(trace_file))
+    monkeypatch.setattr(gate_trace, "_netsh", fake)
+    monkeypatch.setattr(gate_trace, "_call", _writes_xml)
+    assert _extract(place) == 0
+    assert fake.stops() == 1 and _record(place, gate_trace.EXTRACT)["decoded"] is True
+
+
+def test_an_earlier_proof_of_absence_lets_the_extract_read_through_a_silent_status(
+        place: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    _collected(place)
+    (place["record"] / gate_trace.BEFORE_REVERSE).write_text(
+        json.dumps({"stopped": True}), encoding="utf-8")
+    monkeypatch.setattr(gate_trace, "_netsh", lambda *arguments, **options: ("timed-out", ""))
+    monkeypatch.setattr(gate_trace, "_call", _writes_xml)
+    assert _extract(place) == 0
+    assert _record(place, gate_trace.EXTRACT)["decoded"] is True
 
 
 def test_the_deadline_counts_from_before_the_start(

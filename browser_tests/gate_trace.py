@@ -47,6 +47,7 @@ import json
 import logging
 import os
 import platform
+import re
 import secrets
 import subprocess
 import sys
@@ -68,13 +69,15 @@ PARAMETERS = ("capture=no", "report=disabled", "correlation=disabled", "persiste
 NAMES = ("provider", "level", "traceFile", *(item.split("=")[0] for item in PARAMETERS))
 MAX_SECONDS = 45 * 60
 NO_SESSION = "no trace session currently in progress"
+#: A status line naming a trace file at all: "Trace File:   <path>".
+_OTHER_FILE = re.compile(r"^\s*trace file\s*:\s*\S", re.IGNORECASE | re.MULTILINE)
 POLL_SECONDS = 1.0
 NETSH_SECONDS = 120
 STOP_SECONDS = 600
 DECODE_SECONDS = 1800
-CONFIG, STOP, BEFORE_REVERSE, BEFORE_DECODE, EXTRACT = (
-    "trace-config.json", "trace-stop.json", "trace-stop-before-reverse.json",
-    "trace-stop-before-decode.json", "afd-extract.json")
+CONFIG, STOP, STOP_AGAIN, BEFORE_REVERSE, BEFORE_DECODE, EXTRACT = (
+    "trace-config.json", "trace-stop.json", "trace-stop-second.json",
+    "trace-stop-before-reverse.json", "trace-stop-before-decode.json", "afd-extract.json")
 WINDOWS = sys.platform == "win32"
 
 
@@ -186,10 +189,10 @@ def start(trace_dir: Path, record: Path,
     config = {**config, "command": ["netsh", "trace", *arguments], "trace_file": str(trace_file)}
     # Written BEFORE the start: whatever fails after it, a stop knows the file.
     _write(record / CONFIG, {**config, "available": False, "gap": {"reason": "starting"}})
-    deadline = clock() + MAX_SECONDS
+    deadline, sent_at = clock() + MAX_SECONDS, _now()
     code, said = _netsh(*arguments)
     status_code, status = _netsh("show", "status")
-    config = {**config, "start_exit": code, "start_said": _tail(said), "started_at": _now(),
+    config = {**config, "start_exit": code, "start_said": _tail(said), "start_sent_at": sent_at,
               "status_exit": status_code, "status": _tail(status)}
     absent = _not_running(status_code, status, trace_file)
     if absent is True:
@@ -260,12 +263,15 @@ def watch(child: subprocess.Popen[bytes], session: Session, watch_dir: Path,
 
 def _not_running(code: object, status: str, trace_file: Path) -> bool | None:
     """What netsh's status PROVES about this trace's session: True when it answered
-    and names no such session, False when it names this file, None when it cannot
-    say (no answer, or text it does not recognise)."""
+    "no session", or answered 0 naming another trace file (one netsh session runs
+    at a time, and this never starts a second); False when it names this file; None
+    when it cannot say (no answer, or text it does not recognise)."""
     text = status.lower()
     if trace_file.name.lower() in text:
         return False
-    if isinstance(code, int) and (NO_SESSION in text or "trace file" in text):
+    if isinstance(code, int) and NO_SESSION in text:
+        return True
+    if code == 0 and _OTHER_FILE.search(status):
         return True
     return None
 
@@ -293,7 +299,8 @@ def stop_own(trace_file: Path, record: Path, reason: str,
     result = {**result, "stop_exit": stop_code, "stop_said": _tail(said)} if ours \
         else {**result, "status": _tail(status)}
     _write(record / name, result)
-    LOG.info("AFD trace: %s (%s)", reason, "stopped" if ours else "not ours or not running")
+    LOG.info("AFD trace: %s (stop %s; proven gone: %s)", reason,
+             "sent" if ours else "not sent", absent is True)
     return result
 
 
@@ -310,12 +317,19 @@ def _guarded(record: Path, function: Callable[..., object], *arguments: object) 
 
 
 def _trace_until_stop(child: subprocess.Popen[bytes], session: Session, record: Path,
-                      watch_dir: Path) -> None:
+                      watch_dir: Path, clock: Callable[[], float] = time.monotonic) -> None:
+    """Watch, then stop. A stop netsh does not prove gets ONE more at the next
+    boundary -- the deadline or the gate's end, whichever comes first."""
     reason, hit = "watch-failed", None
     try:
         reason, hit = watch(child, session, watch_dir)
     finally:
-        stop_own(session.trace_file, record, reason, hit)
+        first = stop_own(session.trace_file, record, reason, hit)
+    if first["stopped"] is True:
+        return
+    while child.poll() is None and clock() < session.deadline:
+        time.sleep(POLL_SECONDS)
+    stop_own(session.trace_file, record, "second-stop", None, name=STOP_AGAIN)
 
 
 def run(trace_dir: Path, record: Path, watch_dir: Path, gate: list[str]) -> int:
@@ -364,18 +378,28 @@ def stop_step(record: Path) -> None:
             "may have run while it was still tracing")})
 
 
+def _proven_gone(record: Path) -> bool:
+    """Whether an earlier stop record already proved the session gone. It cannot
+    come back: nothing here ever starts a second session."""
+    return any((_read(record / name) or {}).get("stopped") is True
+               for name in (STOP, STOP_AGAIN, BEFORE_REVERSE))
+
+
 def extract_step(record: Path, watch_dir: Path) -> None:
     """After both orders: stop once more if still ours, then decode and select once.
     Only a session netsh proves gone is decoded; a possibly live file never is."""
     config = _read(record / CONFIG) or {}
     trace_file = _configured_file(record)
     before_reverse = _read(record / BEFORE_REVERSE)
-    if trace_file is None or config.get("available") is False:
+    gap = config.get("gap") if isinstance(config.get("gap"), dict) else {}
+    # "starting" was left by a start that broke after netsh may have begun: not "none".
+    if trace_file is None or (config.get("available") is False
+                              and gap.get("reason") != "starting"):
         _write(record / EXTRACT, {"decoded": False, "reason": "no trace was collected",
                                   "gap": config.get("gap")})
         return
     stopped = stop_own(trace_file, record, "before-decoding", None, name=BEFORE_DECODE)
-    if stopped["stopped"] is not True:
+    if stopped["stopped"] is not True and not _proven_gone(record):
         _write(record / EXTRACT, {"decoded": False, "reason":
                                   "the session may still run; a live file is not decoded",
                                   "before_reverse": before_reverse})

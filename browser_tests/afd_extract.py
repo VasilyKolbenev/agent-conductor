@@ -113,10 +113,11 @@ def _failed_request(record: str, line: str) -> dict[str, object] | None:
     at = _AT.search(line)
     if not (line.startswith("requestfailed") and NO_BUFFER in line and at):
         return None
-    port = _PORT.match(line)
+    found = _PORT.match(line)
+    port = int(found.group(1)) if found and 0 < int(found.group(1)) < 65536 else None
     return {"record": record, "anchor": "requestfailed", "url": line.split()[1],
-            "at": at.group(1), "ports": [int(port.group(1))] if port else [],
-            "correlation": "requestfailed-url" if port else None,
+            "at": at.group(1), "ports": [] if port is None else [port],
+            "correlation": None if port is None else "requestfailed-url",
             "before_seconds": BEFORE_SECONDS}
 
 
@@ -125,7 +126,8 @@ def _record_written(path: Path, text: str) -> dict[str, object]:
     tied to the test by the ports its own host snapshot says the test talked to."""
     written = datetime.datetime.fromtimestamp(path.stat().st_mtime, datetime.timezone.utc)
     found = _SNAPSHOT_PORTS.search(text)
-    ports = sorted({int(port) for port in re.findall(r"\d+", found.group(1))}) if found else []
+    ports = sorted({int(port) for port in re.findall(r"\d+", found.group(1))
+                    if 0 < int(port) < 65536}) if found else []
     return {"record": path.name, "anchor": "record-written", "url": None,
             "at": written.isoformat(timespec="milliseconds"), "ports": ports,
             "correlation": "record-snapshot" if ports else None,
@@ -247,8 +249,10 @@ def _loopback_on(event: Event, ports: frozenset[int]) -> bool:
     found = address(event.value("address") or "")
     if not ports or found is None or not ipaddress.ip_address(found[0]).is_loopback:
         return False
-    seen_port = found[1] if found[1] is not None else _number(event.value("port"))
+    if found[1] is not None:  # the address carries its port in network order: exact only
+        return found[1] in ports
     # A separate Port field may come in either byte order; both are the one port.
+    seen_port = _number(event.value("port"))
     return any(seen_port in (port, int.from_bytes(port.to_bytes(2, "big"), "little"))
                for port in ports)
 
