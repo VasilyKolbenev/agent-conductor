@@ -14,7 +14,6 @@ from __future__ import annotations
 import http.client
 import json
 import socket
-import sys
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,23 +28,6 @@ A, B, C = "a" * 32, "b" * 32, "c" * 32
 #: The refusals that act on every row and are not repeated in it (spec 4.6.3).
 TRANSPORT = frozenset({"same_origin_denied", "csrf_denied", "malformed_request",
                        "route_not_found", "method_not_allowed", "contract_invalid"})
-#: The test modules whose writes `Stack.post` holds to the list of the row: the hub handler tests.
-#: The tests of earlier slices that also use `Stack` are not judged.
-JUDGED = frozenset({"tests.test_hub_handlers_http", "tests.test_hub_tool_pin_route"})
-#: The answers a live route gives in a judged module that its row does not list, each waiting for
-#: a ruling, as (module of the test that sends the request, `METHOD path-template`, code).
-#: `Stack.post` lets one through only when the call says so with `unlisted=<code>`; every other
-#: code outside a row fails the test that met it.
-#:
-#: These are the two of the question to the reviewer of the rows
-#: (OPUS-H-REFUSAL-LIST-QUESTION-2026-10-07). A project whose own operation runs stays on the
-#: list: `forget` says `project_busy`, which its row (`project_not_found`, `project_running`)
-#: does not name. A login recovery asked of a hub that is closing says `operation_busy`; its row
-#: names `login_not_found` and `recover_not_needed`.
-PENDING_RULING = frozenset({
-    ("tests.test_hub_handlers_http", "POST /hub/projects/<project_id>/forget", "project_busy"),
-    ("tests.test_hub_handlers_http", "POST /hub/logins/<login_key>/recover", "operation_busy"),
-})
 
 
 class Mono:
@@ -116,27 +98,13 @@ def undeclared(method: str, target: str, reply: Reply) -> str | None:
     return None if code in TRANSPORT or code in row.refusals else code
 
 
-def judge(method: str, target: str, reply: Reply, *, module: str, unlisted: str | None = None,
-          pending: frozenset[tuple[str, str, str]] = PENDING_RULING) -> None:
+def judge(method: str, target: str, reply: Reply) -> None:
     """Hold an answer to the list of its row; raise `AssertionError` when it is not.
 
-    An error answer is a transport code or one the row names. The one way outside is a case that
-    `pending` names for this `module`, and then the call must say `unlisted=<code>` and that code,
-    no other, must be what came back: a call that waits for a case nobody named fails, and so does
-    a call whose named case no longer answers.
+    An error answer is a transport code or one the row names; there is no other way through.
     """
-    if unlisted is not None:
-        try:
-            route = f"{method} {routes.match(method, target).route.path}"
-        except HubRefusal:
-            route = target
-        assert (module, route, unlisted) in pending, (
-            f"{module}: {route} -> {unlisted!r} is not named as waiting for a ruling")
     found = undeclared(method, target, reply)
-    assert found == unlisted, (
-        f"{method} {target} answered {found!r}, which its row does not list" if unlisted is None
-        else f"{method} {target} was to answer {unlisted!r} outside its row, and answered "
-        f"{found or reply.status!r}")
+    assert found is None, f"{method} {target} answered {found!r}, which its row does not list"
 
 
 def raw_exchange(port: int, payload: bytes, *, wait: float = 3.0) -> bytes:
@@ -194,16 +162,13 @@ class Stack:
 
     def post(self, target: str, payload: Any = None, *, token: str | None = "default",
              origin: str | None = "default", content_type: str | None = "application/json",
-             body: bytes | None = None, host: str | None = "default", extra: dict | None = None,
-             unlisted: str | None = None) -> Reply:
+             body: bytes | None = None, host: str | None = "default",
+             extra: dict | None = None) -> Reply:
         """A write with every header right unless the test says otherwise.
 
-        In a module of `JUDGED`, every refusal it gets back must be in the list of the route's row
-        (or a transport one), or be a case of `PENDING_RULING` that the call names with
-        `unlisted=<code>` (`judge`). A module outside `JUDGED` is not judged and may not say
-        `unlisted=`: a call that waits for a ruling nobody reads would be dead.
+        Every refusal it gets back, in whatever test, must be in the list of the route's row or a
+        transport one (`judge`).
         """
-        module = sys._getframe(1).f_globals.get("__name__", "")
         raw = body if body is not None else json.dumps({} if payload is None else payload
                                                        ).encode("utf-8")
         headers: dict[str, str] = {}
@@ -219,11 +184,7 @@ class Stack:
             headers["Content-Type"] = content_type
         headers.update(extra or {})
         reply = request(self.port, "POST", target, headers=headers, body=raw, host=host)
-        if module in JUDGED:
-            judge("POST", target, reply, unlisted=unlisted, module=module)
-        else:
-            assert unlisted is None, (
-                f"{module} is not judged, so it has no ruling to wait for ({unlisted!r})")
+        judge("POST", target, reply)
         return reply
 
     def state_bytes(self) -> bytes | None:
