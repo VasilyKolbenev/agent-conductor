@@ -18,7 +18,7 @@ import pytest
 
 from conductor.command.git_setup_facts import exclude
 from conductor.command.git_setup_records import SetupRefused
-from conductor.command.product_names import BLOCK_BEGIN
+from conductor.command.product_names import BLOCK_BEGIN, ExcludeWriteError, write_exclude_block
 from conductor.ownership import data_root
 from tests.git_first_bench import (  # noqa: F401
     confirm, confirm_door, crashed, project, seal, terms_of)
@@ -298,6 +298,31 @@ def test_the_exclude_step_refuses_a_dot_git_that_is_a_portal_and_publishes_no_re
     answer = step(folder, "exclude")
     assert verdict(answer, outside, before) == ("unsafe_git_route", True)
     assert not (data_root(folder.root) / "git" / "setup" / "exclude.json").exists()
+
+
+@for_every_portal
+def test_the_block_writer_defers_a_dot_git_that_is_a_portal_and_leaves_its_target_alone(
+        tmp_path, kind):
+    repo = repository(tmp_path, "real")
+    outside = tmp_path / "elsewhere"
+    divert(repo, ".git", outside, kind)
+    before = listing(outside)
+    answer = write_exclude_block(repo / ".git")
+    assert (answer, listing(outside) == before) == ("deferred", True)
+
+
+@for_every_portal
+def test_the_block_writer_refuses_an_info_folder_that_is_a_portal_and_leaves_its_target_alone(
+        tmp_path, kind):
+    repo = repository(tmp_path, "real")
+    outside = tmp_path / "elsewhere"
+    divert(repo / ".git", "info", outside, kind)
+    before = listing(outside)
+    try:
+        answer = write_exclude_block(repo / ".git")
+    except ExcludeWriteError as refused:
+        answer = refused.code
+    assert (answer, listing(outside) == before) == ("git_exclude_failed", True)
 
 
 def test_exclude_writes_a_plain_dot_git_once_and_then_finds_its_block_present(tmp_path):
