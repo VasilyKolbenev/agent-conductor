@@ -1267,11 +1267,14 @@ completed the step, 200 for the exact repeat of the same mode, digest and actor,
 `file_count`, `signature`, `requested_by` and `recorded_at`. The confirmation takes
 the preview again and, in `snapshot` mode, refuses `paths_changed` unless the digest of
 the versioned list equals the one sent; it refuses a `.git` that is not the
-project's own plain directory (a linked worktree, a link, a `commondir` file that names another
-folder, or a link or reparse point on a folder Git writes below it) or whose refs are kept by the
-reftable backend (not supported in V1) as `unsafe_git_route` before any object is written.
-Objects and the parentless commit
-are written without a lock. Inside the store transaction the product then publishes
+project's own plain directory (a linked worktree, a link, or a `commondir` file that names
+another folder), or whose refs are kept by the reftable backend (not supported in V1), as
+`unsafe_git_route` before any object is written. The same refusal stands for a link or reparse
+point on `objects`, on an existing two-hex folder below it, on `objects/pack` (a blob above
+`core.bigFileThreshold` is streamed into a pack), or on an existing component of the target
+ref, of `logs/refs/heads/<name>` or of `logs/HEAD`; the check reads those names when it runs
+and is not isolation from a process that swaps a folder afterwards. Objects and the parentless
+commit are written without a lock. Inside the store transaction the product then publishes
 the install bytes, the operation record `first_commit.op.json` (read back against the
 bytes) and a private copy in `.git`, moves the copy onto `index.lock` without replacing
 anything, moves the target ref once by `update-ref <ref> <commit> <zero oid>`, installs

@@ -224,6 +224,39 @@ def test_first_commit_refuses_a_reftable_repository_and_writes_nothing_below_dot
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
 
 
+def project_with_a_large_blob(tmp_path):
+    """A project whose file `big.bin` is above `core.bigFileThreshold`: Git streams such a blob
+    into a pack under `objects/pack` instead of writing a loose object."""
+    p = project(tmp_path, {**FILES, "big.bin": b"x" * 4096})
+    p.git("config", "core.bigFileThreshold", "1k", cwd=p.root)
+    return p
+
+
+@with_the_door
+@for_every_portal
+def test_first_commit_refuses_a_portal_at_objects_pack_where_git_streams_a_large_blob(
+        tmp_path, kind):
+    p = project_with_a_large_blob(tmp_path)
+    digest = terms_of(p, "snapshot")
+    outside = tmp_path / "outside"
+    divert(p.root / ".git", "objects/pack", outside, kind)
+    before = listing(outside)
+    answer = confirm(p, "snapshot", digest=digest)
+    assert verdict(answer, outside, before) == ("unsafe_git_route", True)
+    assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
+
+
+@with_the_door
+def test_first_commit_streams_a_blob_above_the_big_file_threshold_into_the_plain_pack_folder(
+        tmp_path):
+    p = project_with_a_large_blob(tmp_path)
+    pack_folder = p.root / ".git" / "objects" / "pack"
+    assert list(pack_folder.glob("pack-*")) == []
+    answer = confirm(p, "snapshot")
+    assert answer.status == 201, answer.payload
+    assert len(list(pack_folder.glob("pack-*.pack"))) == 1 and ref_exists(p, "trunk")
+
+
 @with_the_door
 def test_first_commit_writes_through_plain_nested_folders_of_the_ref_the_reflog_and_the_objects(
         tmp_path):

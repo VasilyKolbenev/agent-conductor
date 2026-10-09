@@ -1,10 +1,11 @@
 """The folders below a plain `.git` that Git writes through when a first commit is made.
 
 The project's write guard covers the root and the tracked product paths, not the places where Git
-puts its own files: a loose object goes into `objects/<two hex digits>/`, a new branch into
-`refs/heads/<name>` (the name may nest), and its reflogs into `logs/refs/heads/<name>` and
-`logs/HEAD`. A symlink, a junction or any other reparse point on such a path sends the write
-outside the project. These checks read the existing names on the actual destinations with `lstat`,
+puts its own files: a loose object goes into `objects/<two hex digits>/`, a blob above
+`core.bigFileThreshold` into a pack under `objects/pack`, a new branch into `refs/heads/<name>`
+(the name may nest), and its reflogs into `logs/refs/heads/<name>` and `logs/HEAD`. A symlink, a
+junction or any other reparse point on such a path sends the write outside the project. These
+checks read the existing names on the actual destinations with `lstat`,
 top down and following nothing, and refuse `unsafe_git_route` at the first portal. A name that does
 not exist yet is Git's to create as a plain folder, and a file where a folder belongs is Git's own
 refusal to give. A passing check proves the route only at the instant it was read: it is not
@@ -54,17 +55,19 @@ def _is_fan_out(name: str) -> bool:
 
 
 def objects_route(git_dir: Path) -> None:
-    """Refuse `unsafe_git_route` when a loose object could be written through a portal.
+    """Refuse `unsafe_git_route` when an object could be written through a portal.
 
     The tree and the commit are named only once they are written, so every existing fan-out
-    folder is judged, with `objects` itself; a folder Git creates later is a plain one.
+    folder is judged, with `objects` itself; a folder Git creates later is a plain one. A blob
+    above `core.bigFileThreshold` is not written loose: Git streams it into a pack under
+    `objects/pack`, so that folder is judged too.
 
     Raises:
         SetupRefused: `unsafe_git_route`; nothing was written.
     """
     objects = git_dir / "objects"
     refused = SetupRefused("unsafe_git_route")
-    if _portal_on(git_dir, ("objects",)):
+    if _portal_on(git_dir, ("objects",)) or _portal_on(objects, ("pack",)):
         raise refused
     try:
         names = os.listdir(objects)
