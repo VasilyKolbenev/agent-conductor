@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from conductor.server import Handler
 
 SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
+#: Quiet waits between two heartbeat comments: one per 15 s, the figure the hub's own stream
+#: uses. A client that left is told from one that is only quiet by a write that fails. The first
+#: write after the departure is accepted and brings the reset back, the second one fails, so an
+#: idle stream frees its mailbox and thread within 2 * SSE_PING_EVERY waits and one more.
+SSE_PING_EVERY = 15
+#: A comment: an EventSource ignores it, and it carries no `data`, no `id` and no event.
+SSE_PING = b": ping\n\n"
 MAX_PENDING_RUNS = 256
 _COMMAND_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
@@ -110,7 +117,11 @@ class _Clients:
 
 
 def serve_events(handler: Handler) -> None:
-    """Stream SSE: one frame on connect, then one per broker change."""
+    """Stream SSE: one frame on connect, then one per broker change.
+
+    A stream that stays quiet writes a flushed comment every `SSE_PING_EVERY` waits, which is
+    how the loop learns that its client left; the comment is no signal and never sets a mailbox.
+    """
     handler.send_response(200)
     handler.send_header("Content-Type", "text/event-stream")
     handler.send_header("Cache-Control", "no-store")
@@ -124,8 +135,12 @@ def serve_events(handler: Handler) -> None:
     mailbox = handler.server.clients.register()
     try:
         handler._send_frame(b'data: {"kind":"state"}\n\n')
+        quiet = 0
         while not handler.server.shutting_down:
             if not mailbox.wait(timeout=SSE_WAIT):
+                quiet += 1
+                if quiet % SSE_PING_EVERY == 0:
+                    handler._send_frame(SSE_PING)
                 continue               # timeout — re-check shutdown
             if handler.server.shutting_down:
                 break

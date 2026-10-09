@@ -176,6 +176,33 @@ def test_the_code_words_are_exactly_the_union_of_the_three_closed_lists_of_the_s
     assert len(ALL_CODES) == 90 and "hub.code.unknown" not in rows
 
 
+def test_operation_busy_says_a_closing_hub_too_and_registry_invalid_the_hub_state_too():
+    """`operation_busy` is also what a hub that is closing answers; `registry_invalid` is also
+    what a hub state that cannot be read answers. Both clauses are short and name no file."""
+    said = js("""
+      show(Object.fromEntries(["operation_busy", "registry_invalid"].map((code) =>
+        [code, ["en", "ru"].map((locale) => copy.codeWords(locale, code))])));
+    """)
+    busy_en, busy_ru = said["operation_busy"]
+    assert "being added" in busy_en and "closing" in busy_en, busy_en
+    assert "добавля" in busy_ru and "закрыва" in busy_ru, busy_ru
+    invalid_en, invalid_ru = said["registry_invalid"]
+    assert "registry" in invalid_en and "hub state" in invalid_en, invalid_en
+    assert "реестр" in invalid_ru and "состояни" in invalid_ru, invalid_ru
+    for text in (*said["operation_busy"], *said["registry_invalid"]):
+        assert len(text) <= 70 and not re.search(r"[\\/]|\.json", text), text
+
+
+def test_registry_invalid_says_the_hub_state_is_unavailable_in_both_languages_not_unreadable():
+    """The same code answers a hub state that cannot be written, and a lost hub lock; a clause
+    that says only "cannot be read" ("не читаются") is false for those."""
+    en, ru = js("""
+      show(["en", "ru"].map((locale) => copy.codeWords(locale, "registry_invalid")));
+    """)
+    assert "unavailable" in en and "cannot be read" not in en, en
+    assert "недоступн" in ru and "не читаются" not in ru, ru
+
+
 def _hub_refusals():
     """The hub's own module of closed lists, or None while lane H has not written it."""
     try:
