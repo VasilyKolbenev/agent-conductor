@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 
 import pytest
 
@@ -387,14 +388,107 @@ def _stream_blocks(wire: Wire) -> list[str]:
     return body.decode("utf-8").split("\n\n")[:-1]
 
 
-def _read_blocks_until(wire: Wire, done, why: str) -> list[str]:
-    """Read the stream until `done(blocks)`; a stream that stays silent fails with `why`."""
+def _fill_before(wire: Wire, deadline: float, failure: str, clock) -> bool:
+    """One read of the wire that waits no longer than what is left until `deadline`.
+
+    The socket's own wait is per read and a heartbeat is data: it ends a read without ending the
+    wait, so only the clock can. Fails with `failure` when the deadline falls. The socket gets
+    its own wait back afterwards.
+    """
+    remaining = deadline - clock()
+    if remaining <= 0:
+        pytest.fail(failure)
+    wire.sock.settimeout(remaining)
+    try:
+        return wire._fill()
+    except TimeoutError:
+        pytest.fail(failure)
+    finally:
+        wire.sock.settimeout(PATIENCE)
+
+
+def _read_blocks_until(wire: Wire, done, why: str, *, budget: float = PATIENCE,
+                       clock=time.monotonic) -> list[str]:
+    """Read the stream until `done(blocks)`; a stream that gives no `why` within `budget` fails.
+
+    The budget is ONE deadline for the whole call, however many heartbeats arrive inside it.
+    """
+    deadline = clock() + budget
     while not done(_stream_blocks(wire)):
-        try:
-            assert wire._fill(), f"the stream closed before {why}"
-        except TimeoutError:
-            pytest.fail(f"no {why} within {PATIENCE} s")
+        open_still = _fill_before(wire, deadline, f"no {why} within {budget} s", clock)
+        assert open_still, f"the stream closed before {why}"
     return _stream_blocks(wire)
+
+
+def _read_until_closed(wire: Wire, failure: str, *, budget: float = PATIENCE,
+                       clock=time.monotonic) -> list[str]:
+    """Read until the server closes the stream; `failure` is what a stream that stays open past
+    `budget` says. One deadline for the whole call, however many heartbeats arrive inside it."""
+    deadline = clock() + budget
+    while _fill_before(wire, deadline, failure, clock):
+        pass
+    return _stream_blocks(wire)
+
+
+class _OnlyHeartbeats:
+    """A stream that says its greeting and then nothing but ": ping", and a clock that moves one
+    second per read; it ends after `closes_after` reads, or never."""
+
+    RUNAWAY = 1000
+
+    class _Socket:
+        def __init__(self) -> None:
+            self.wait = None
+
+        def settimeout(self, seconds: float | None) -> None:
+            self.wait = seconds
+
+    def __init__(self, closes_after: int | None = None) -> None:
+        self.sock = self._Socket()
+        self.buffer = b"HTTP/1.1 200 OK\r\n\r\n" + GREETING.encode() + b"\n\n"
+        self.closes_after = closes_after
+        self.now = 0.0
+        self.reads = 0
+        self.waits: list[float | None] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def _fill(self) -> bool:
+        self.reads += 1
+        if self.reads > self.RUNAWAY:
+            raise RuntimeError(f"still reading comments after {self.RUNAWAY} reads")
+        if self.closes_after is not None and self.reads > self.closes_after:
+            return False
+        self.waits.append(self.sock.wait)
+        self.now += 1.0
+        self.buffer += PING.encode() + b"\n\n"
+        return True
+
+
+def test_a_wait_for_a_signal_that_never_comes_fails_at_its_deadline_though_comments_keep_coming():
+    wire = _OnlyHeartbeats()
+    with pytest.raises(pytest.fail.Exception, match="no signal nobody published within 5.0 s"):
+        _read_blocks_until(wire, lambda blocks: blocks.count(GREETING) == 2,
+                           "signal nobody published", budget=5.0, clock=wire.clock)
+    assert wire.reads == 5, "the wait went on past the second its deadline fell"
+    assert wire.waits == [5.0, 4.0, 3.0, 2.0, 1.0], "a later read started a new, longer wait"
+    assert wire.sock.wait == PATIENCE, "the socket's own wait was not given back"
+
+
+def test_a_wait_for_the_end_of_a_stream_fails_at_its_deadline_though_comments_keep_coming():
+    wire = _OnlyHeartbeats()
+    with pytest.raises(pytest.fail.Exception, match="still open after the stop"):
+        _read_until_closed(wire, "the stream was still open after the stop", budget=5.0,
+                           clock=wire.clock)
+    assert wire.reads == 5, "the wait went on past the second its deadline fell"
+    assert wire.waits == [5.0, 4.0, 3.0, 2.0, 1.0], "a later read started a new, longer wait"
+
+
+def test_a_wait_for_the_end_of_a_stream_returns_what_came_before_the_close():
+    wire = _OnlyHeartbeats(closes_after=3)
+    blocks = _read_until_closed(wire, "never", budget=5.0, clock=wire.clock)
+    assert blocks == [GREETING, PING, PING, PING]
 
 
 def _open_stream(address) -> Wire:
@@ -457,13 +551,8 @@ def test_a_stop_while_the_stream_sends_heartbeats_ends_it_without_a_frame_of_its
         _read_blocks_until(wire, lambda blocks: PING in blocks, "a heartbeat")
         srv.shutdown()
         stopped = True
-        while True:
-            try:
-                if not wire._fill():
-                    break
-            except TimeoutError:
-                pytest.fail(f"the stream was still open {PATIENCE} s after the stop")
-        blocks = _stream_blocks(wire)
+        blocks = _read_until_closed(
+            wire, f"the stream was still open {PATIENCE} s after the stop")
         assert blocks.count(GREETING) == 1 and set(blocks) <= {GREETING, PING}, blocks
     finally:
         wire.close()

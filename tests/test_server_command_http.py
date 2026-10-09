@@ -1,11 +1,15 @@
 """Real loopback coverage for the frozen Cockpit command routes."""
 from __future__ import annotations
 
+import contextlib
 import http.client
 import io
 import json
 import socket
 import threading
+import time
+
+import pytest
 
 from conductor import server
 from conductor.command.adapters import AdapterRegistry
@@ -49,16 +53,43 @@ def _start(tmp_path, *, adapters=()):
     return subject, store
 
 
-def _read_frame(response) -> str:
+#: How long one frame may take to arrive. The loaded-machine allowance these tests always had;
+#: the connections that read frames are opened with it too.
+FRAME_BUDGET = 20.0
+
+
+def _wait_at_most(response, seconds: float) -> None:
+    """Let the next read of a real HTTP response wait no longer than `seconds`.
+
+    The socket's own wait is a per-read figure and a heartbeat renews it; a stream with no
+    socket (an in-memory one, a double) has no wait to cut.
+    """
+    if isinstance(response, http.client.HTTPResponse):
+        response.fp.raw._sock.settimeout(seconds)
+
+
+def _read_frame(response, *, budget: float = FRAME_BUDGET, clock=time.monotonic) -> str:
     """Read exactly one SSE frame, blocking until its terminating blank line.
 
     A block of comments only -- the stream's ": ping" heartbeat after a quiet
     spell -- is not a frame, exactly as an EventSource ignores it: on a loaded
     machine a signal can take longer than one heartbeat period to arrive.
+
+    The heartbeat comes more often than the socket gives up, so skipping comments must not
+    renew the wait: the whole read has ONE deadline on the monotonic clock, and every read
+    inside it waits no longer than what is left of it.
     """
+    deadline = clock() + budget
+    failure = f"no SSE frame within {budget} s"
     lines: list[bytes] = []
     while True:
-        line = response.readline()
+        remaining = deadline - clock()
+        assert remaining > 0, failure
+        _wait_at_most(response, remaining)
+        try:
+            line = response.readline()
+        except TimeoutError:
+            raise AssertionError(failure) from None
         assert line, "the SSE stream ended before its next frame"
         if line.startswith(b":") or (line == b"\n" and not lines):
             continue
@@ -70,6 +101,69 @@ def _read_frame(response) -> str:
 def test_the_frame_reader_passes_over_a_heartbeat_as_an_event_source_does():
     stream = io.BytesIO(b": ping\n\n: ping\n\ndata: {\"kind\":\"state\"}\n\n")
     assert _read_frame(stream) == 'data: {"kind":"state"}\n\n'
+
+
+class _OnlyHeartbeats:
+    """A stream that says nothing but ": ping", and a clock that moves one second per line."""
+
+    RUNAWAY = 1000
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.lines = 0
+
+    def clock(self) -> float:
+        return self.now
+
+    def readline(self) -> bytes:
+        self.lines += 1
+        if self.lines > self.RUNAWAY:
+            raise RuntimeError(f"still reading comments after {self.RUNAWAY} lines")
+        self.now += 1.0
+        return b": ping\n" if self.lines % 2 else b"\n"
+
+
+def test_a_frame_reader_that_hears_only_heartbeats_fails_at_its_deadline_and_not_never():
+    feed = _OnlyHeartbeats()
+    with pytest.raises(AssertionError, match="no SSE frame within 5.0 s"):
+        _read_frame(feed, budget=5.0, clock=feed.clock)
+    assert feed.lines == 5, "the reader read on past the second its deadline fell"
+
+
+@contextlib.contextmanager
+def _response_over(sent: bytes, *, socket_wait: float):
+    """A real `HTTPResponse` on one end of a socket pair, `sent` already written by the other.
+
+    Yields the response and the socket it reads from.
+    """
+    ours, theirs = socket.socketpair()
+    try:
+        theirs.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                       b"Connection: close\r\n\r\n" + sent)
+        ours.settimeout(socket_wait)
+        response = http.client.HTTPResponse(ours)
+        response.begin()
+        try:
+            yield response, ours
+        finally:
+            response.close()
+    finally:
+        ours.close()
+        theirs.close()
+
+
+def test_the_frame_reader_returns_data_that_follows_heartbeats_on_a_real_socket():
+    sent = b": ping\n\n: ping\n\ndata: {\"kind\":\"state\"}\n\n"
+    with _response_over(sent, socket_wait=3.0) as (response, _socket):
+        assert _read_frame(response, budget=3.0) == 'data: {"kind":"state"}\n\n'
+
+
+def test_a_read_on_a_real_socket_waits_no_longer_than_what_is_left_of_the_budget():
+    """A heartbeat arrived and nothing more: the next read must not get a full socket wait."""
+    with _response_over(b": ping\n\n", socket_wait=4.0) as (response, held):
+        with pytest.raises(AssertionError, match="no SSE frame within 0.3 s"):
+            _read_frame(response, budget=0.3)
+        assert held.gettimeout() <= 0.3, "the read kept the socket's own, longer wait"
 
 
 def _request(subject, method, path, body=None, *, headers=None):
@@ -185,7 +279,7 @@ def test_real_http_writes_a_plan_once_and_signals_it_by_identifier_only(tmp_path
     # The stream is read while a loaded machine may still be delivering; the
     # derivation module waits this long for the same reason.
     connection = http.client.HTTPConnection(
-        "127.0.0.1", subject.server_address[1], timeout=20)
+        "127.0.0.1", subject.server_address[1], timeout=FRAME_BUDGET)
     try:
         connection.request("GET", "/events")
         stream = connection.getresponse()
@@ -215,7 +309,7 @@ def test_real_http_writes_a_plan_once_and_signals_it_by_identifier_only(tmp_path
 def test_real_http_publishes_an_artifact_and_only_its_run_identifier(tmp_path):
     subject, store = _start(tmp_path)
     connection = http.client.HTTPConnection(
-        "127.0.0.1", subject.server_address[1], timeout=20)
+        "127.0.0.1", subject.server_address[1], timeout=FRAME_BUDGET)
     document = {
         "artifact_id": "artifact-document-001",
         "artifact_ref": "artifact-brief",
