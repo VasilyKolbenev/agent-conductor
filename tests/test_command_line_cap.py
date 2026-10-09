@@ -88,6 +88,7 @@ CAPPED = (
     "tests/test_git_setup_first_lock.py",
     "tests/test_git_setup_first_pending.py",
     "tests/test_git_setup_first_prepare.py",
+    "tests/test_git_setup_first_recognition.py",
     "tests/test_git_setup_first_records.py",
     "tests/test_git_setup_first_recovery.py",
     "tests/test_git_setup_first_resume.py",

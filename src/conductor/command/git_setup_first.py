@@ -102,13 +102,17 @@ def _continue(api, op, request) -> tuple[int, dict] | None:
     return None
 
 
-def _wait(api, op, holds: bool) -> None:
-    """A wait for the owner's signature: judged by the stored intent, or replaced."""
+def _wait(api, op, holds: bool) -> tuple[int, dict] | None:
+    """A wait for the owner's signature: judged by the stored intent, or replaced.
+
+    The owner's recognised commit moves the record to `ref_moved` and the driver of the unsigned
+    road installs the index: this road never moves the ref. None means the wait was replaced."""
     root, git = api._store.project_root, api._project_git
     with api._store.transaction():
         if holds:
-            signing.wait(root, git, op)
+            return 201, {"setup": drive(api, signing.wait(root, git, op))}
         signing.supersede_wait(root, git, op)
+    return None
 
 
 def _repeat(api, row: dict, request) -> tuple[int, dict]:

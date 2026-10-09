@@ -9,8 +9,16 @@ object format, the tree, the author as shown, the message digest). Only then doe
 
 A repeat reads that record, never a new preview: a preview of a folder that changed since would
 carry another digest, and once the owner's commit exists the preview refuses `head_exists`. The
-record has a table of its own, apart from the driver's: the ref is absent (the wait goes on) or it
-is not. Nothing in this module can write a ref, a lock or an index.
+record has a table of its own, apart from the driver's: the ref is absent (the wait goes on), it
+is the owner's recognised commit (the record moves to `ref_moved` with that commit and the driver
+installs the index, as on the unsigned road), or it is anything else (`head_exists`). Nothing in
+this module can write a ref, a lock or an index.
+
+What is checked of the signature is that it is PRESENT: the commit carries the signature header of
+its object format and the first line of that header is an armour line. Whether the signature is
+valid, and whether its key is trusted, is not checked, and no program that could check it is run:
+Git's `verify-commit`, `gpg` and `ssh-keygen` are never started, and nothing here reads
+`gpg.program`. The receipt says `present`; it never says verified.
 """
 from __future__ import annotations
 
@@ -20,15 +28,22 @@ from typing import NoReturn
 
 from . import git_setup_first_records as records
 from .accept_manifest import SnapshotRefused, sha256
-from .accept_plumbing import ref_oid
+from .accept_plumbing import _AUTHOR, ref_oid
 from .accept_snapshot import _put, _read
 from .git_setup_first_pending import message_path_of
 from .git_setup_first_records import Op
+from .git_setup_first_resume import REF_MOVED
 from .git_setup_records import SetupRefused
 from .project_git import GitReadFailed
 
 #: A commit message of this product is a few lines; the file is read back at no more than this.
 MESSAGE_LIMIT = 4096
+#: The owner's commit is read once and at no more than this; a longer one is not the intended one.
+COMMIT_LIMIT = 64 * 1024
+#: The signature header of each object format, and the armour lines a signature begins with.
+_HEADER = {"sha1": "gpgsig", "sha256": "gpgsig-sha256"}
+_ARMOUR = frozenset({"-----BEGIN PGP SIGNATURE-----", "-----BEGIN SSH SIGNATURE-----",
+                     "-----BEGIN SIGNED MESSAGE-----"})
 
 
 class SigningWait(SetupRefused):
@@ -96,23 +111,31 @@ def _branch(op: Op) -> str:
     return op.target_ref.removeprefix("refs/heads/")
 
 
-def wait(root: Path, git, op: Op) -> NoReturn:
+def wait(root: Path, git, op: Op) -> Op:
     """Judge a wait whose terms still hold: the ref is absent, or it is not.
 
     The intent is checked first (the message file and the tree object), and a missing or damaged
     one is `setup_damaged` with nothing removed. While the ref is absent the answer is the same
-    refusal as the first, built from the STORED intent. A ref that exists is not the product's
-    commit: `head_exists`.
+    refusal as the first, built from the STORED intent. A ref at the owner's recognised commit
+    moves the record to `ref_moved` with that commit; the caller then hands it to the driver,
+    which installs the index and never moves the ref. Any other commit at the ref is `head_exists`
+    (an unsigned one included) and the record stays as it is.
+
+    Returns:
+        The record at `ref_moved`, carrying the commit the owner made.
 
     Raises:
         SigningWait: The ref is absent and the owner has not made the commit yet.
         SetupRefused: `setup_damaged` or `head_exists`.
     """
-    stored_message(root, op)
+    message = stored_message(root, op)
     _tree_present(root, git, op.expected_tree)
-    if ref_oid(root, git, _branch(op)) is None:
+    found = ref_oid(root, git, _branch(op))
+    if found is None:
         raise _waiting(root, op)
-    raise SetupRefused("head_exists")
+    if not recognised(root, git, op, message, found):
+        raise SetupRefused("head_exists")
+    return records.advance(root, op, REF_MOVED, commit=found)
 
 
 def supersede_wait(root: Path, git, op: Op) -> None:
@@ -121,15 +144,27 @@ def supersede_wait(root: Path, git, op: Op) -> None:
     Nothing of `.git` is the product's yet, so nothing is released. The operation record goes
     FIRST (`retire` then removes the install bytes), and the message file last, so a crash between
     the steps leaves a file that nothing names and never a record without its files. A ref that
-    exists is judged, not replaced.
+    exists is judged, not replaced: the owner's recognised commit makes the changed terms
+    `setup_terms_changed` (the original terms can still complete it), any other is `head_exists`.
 
     Raises:
-        SetupRefused: `head_exists`, the ref exists.
+        SetupRefused: `setup_terms_changed` or `head_exists`, the ref exists.
     """
-    if ref_oid(root, git, _branch(op)) is not None:
-        raise SetupRefused("head_exists")
+    found = ref_oid(root, git, _branch(op))
+    if found is not None:
+        raise SetupRefused(
+            "setup_terms_changed" if _is_ours(root, git, op, found) else "head_exists")
     records.retire(root, op)
     _remove_message(root, op)
+
+
+def _is_ours(root: Path, git, op: Op, found: str) -> bool:
+    """Whether the commit at the ref is the intended one; a lost message file says no."""
+    try:
+        message = stored_message(root, op)
+    except SetupRefused:
+        return False
+    return recognised(root, git, op, message, found)
 
 
 def _remove_message(root: Path, op: Op) -> None:
@@ -140,3 +175,63 @@ def _remove_message(root: Path, op: Op) -> None:
             path.unlink()
     except (OSError, SnapshotRefused):
         return                                  # a file that is not the stored message is not ours
+
+
+def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
+    """Read the commit at `oid` once and judge it by the stored terms.
+
+    Raises:
+        GitReadFailed: `git_timed_out`, Git did not answer in time.
+    """
+    answer = git(["--no-optional-locks", "-C", str(root), "cat-file", "commit", oid], True,
+                 output_limit=COMMIT_LIMIT)
+    if answer.timed_out or answer.exit_code is None:
+        raise GitReadFailed("git_timed_out")
+    if answer.exit_code != 0 or answer.truncated:
+        return False                            # no commit, or more than the intended one holds
+    return recognises(answer.output, op, message)
+
+
+def recognises(raw: bytes, op: Op, message: bytes) -> bool:
+    """Whether `raw`, a commit object, is the owner's signed root commit for the stored terms.
+
+    The tree is the stored tree, there is no parent, the one author is the author shown, the body
+    is the stored message to the byte, and a signature header of the repository's object format is
+    present and begins with an armour line. The committer is whoever ran the command and is not
+    compared. Presence is all that is judged of the signature: not its validity, not its key.
+    """
+    head, divider, body = raw.partition(b"\n\n")
+    if not divider or body != message:
+        return False
+    try:
+        rows = _headers(head.decode("utf-8"))
+    except UnicodeDecodeError:
+        return False
+
+    def named(key: str) -> list[str]:
+        return [value for name, value in rows if name == key]
+
+    return (named("tree") == [op.expected_tree] and not named("parent")
+            and _is_author(named("author"), op.author)
+            and _is_armoured(named(_HEADER[op.object_format])))
+
+
+def _headers(block: str) -> list[tuple[str, str]]:
+    """The header lines of a commit; a line that starts with a space continues the one before."""
+    rows: list[list[str]] = []
+    for line in block.split("\n"):
+        if line.startswith(" ") and rows:
+            rows[-1][1] += "\n" + line[1:]
+        else:
+            key, _, value = line.partition(" ")
+            rows.append([key, value])
+    return [(key, value) for key, value in rows]
+
+
+def _is_author(values: list[str], author: dict) -> bool:
+    found = _AUTHOR.fullmatch(values[0]) if len(values) == 1 else None
+    return found is not None and {"name": found[1], "email": found[2]} == author
+
+
+def _is_armoured(values: list[str]) -> bool:
+    return len(values) == 1 and values[0].split("\n", 1)[0] in _ARMOUR
