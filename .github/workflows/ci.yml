@@ -112,6 +112,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # The ONE AFD trace the review ruling of 07.10 allows, and its switch: Windows,
+    # a push (never a pull request) of the integration branch, the first attempt
+    # of the run, and only the push whose head commit names that attempt. Every
+    # other run traces nothing.
+    env:
+      AFD_TRACE: ${{ matrix.os == 'windows-latest' && github.event_name == 'push' && github.ref == 'refs/heads/feature/v1-desk-integration' && github.run_attempt == '1' && contains(github.event.head_commit.message, '[afd-trace-1]') }}
     defaults:
       run:
         shell: bash
@@ -146,9 +152,32 @@ jobs:
       # --keep-going: one module, one process, one chance, in order -- but an
       # ordinary red module no longer hides the modules after it, so one run names
       # every failure. The verdict stays red; a timeout still ends the order.
+      #
+      # When AFD_TRACE is on (above: one Windows run), and around the forward order
+      # alone, ONE built-in AFD ETW session: netsh trace, provider
+      # Microsoft-Windows-Winsock-AFD at level 4, to name the operation and status
+      # behind the loopback ERR_NO_BUFFER_SPACE no other platform shows. The
+      # wrapper stops it at the first failure record naming 10055, at 45 minutes
+      # or when the gate ends, and answers with the gate's own exit code: the
+      # trace never changes the verdict. The raw trace stays in $RUNNER_TEMP/afd,
+      # outside every upload.
       - name: Browser gate
         id: gate
-        run: python browser_tests/gate.py --keep-going --artifacts "$RUNNER_TEMP/bg"
+        run: |
+          if [ "$AFD_TRACE" = "true" ]; then
+            python -m browser_tests.gate_trace --trace-dir "$RUNNER_TEMP/afd" --record "$RUNNER_TEMP/bg/afd" --watch "$RUNNER_TEMP/bg" -- python browser_tests/gate.py --keep-going --artifacts "$RUNNER_TEMP/bg"
+          else
+            python browser_tests/gate.py --keep-going --artifacts "$RUNNER_TEMP/bg"
+          fi
+
+      # Whatever happened above, the session stops here if it is still ours, before
+      # the reversed order can start. Reading it waits until after that order, so
+      # the reversed order starts on the host state it always starts on. Both
+      # answer 0 whatever they found: a trace that could not be taken or read is a
+      # recorded gap, not a verdict.
+      - name: Stop the AFD trace
+        if: always() && env.AFD_TRACE == 'true'
+        run: python -m browser_tests.gate_trace --stop --record "$RUNNER_TEMP/bg/afd"
 
       # The reversed order runs after an ORDINARY red too, never after a cancel, a
       # failed install or an order the gate itself stopped (a timeout leaves the
@@ -182,6 +211,13 @@ jobs:
         run: >
           python browser_tests/gate.py --reverse --keep-going
           --artifacts "$RUNNER_TEMP/bgr"
+
+      # After both orders: stop once more if the session is somehow still ours, then
+      # decode it and keep only the selected loopback events (bg/afd/afd-extract.json).
+      # Before the clean-checkout check, so that check covers the decoder too.
+      - name: Read the AFD trace
+        if: always() && env.AFD_TRACE == 'true'
+        run: python -m browser_tests.gate_trace --extract --record "$RUNNER_TEMP/bg/afd" --watch "$RUNNER_TEMP/bg"
 
       # The same fail-closed check, and the browser job needs it MORE: a browser
       # writes profiles, caches and its own engine log wherever it is pointed,

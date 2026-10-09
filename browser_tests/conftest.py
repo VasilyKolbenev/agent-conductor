@@ -19,6 +19,7 @@ an ordinary local run.
 """
 from __future__ import annotations
 
+import datetime
 import os
 import re
 from collections.abc import Iterator
@@ -114,9 +115,13 @@ def _remember(page: object) -> list[str]:
     page.on("response", lambda answer: said.append(
         f"refused {answer.status} {answer.request.method} {answer.url}")
         if answer.status >= 400 else None)
+    # When this process heard of the failure, in UTC, the clock a host trace stamps
+    # its events with. The sync API delivers events only inside a Playwright call,
+    # so this can trail the failure itself; the browser's own start time is 0 on a
+    # request that got no response, so it is the nearest time there is.
     page.on("requestfailed", lambda request: said.append(
-        f"requestfailed {request.url} "
-        f"{(request.failure or '')!s}"))
+        f"requestfailed {request.url} {(request.failure or '')!s} at="
+        f"{datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='milliseconds')}"))
     return said
 
 
