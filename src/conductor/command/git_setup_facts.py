@@ -8,6 +8,7 @@ from pathlib import Path
 from .accept_git import PreviewGit
 from .containment import first_directory_violation, portal_violation
 from .git_setup_records import SetupRefused
+from .git_setup_routes import dot_git_is_no_portal
 from .product_names import ExcludeWriteError, write_exclude_block
 from .project_documents import read_head
 from .project_git import GitReadFailed, repository_admission
@@ -48,6 +49,7 @@ def git_dir(root, git, *, common=False):
 
 
 def exclude(root, git):
+    dot_git_is_no_portal(root)            # the name `.git` first: Git's answer has followed it
     common = git_dir(root, git, common=True)
     target = common / "info" / "exclude"
     if first_directory_violation((common, common / "info")) or _leaf_violation(target):

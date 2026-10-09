@@ -1,12 +1,13 @@
-"""The folders below `.git` that a first commit writes through are plain ones (ruling R1).
+"""The folders below `.git` that a first commit writes through are plain ones (rulings R1 and R2).
 
 Git writes the objects, the ref and its reflogs below `.git` by paths of its own choosing, and the
 write guard of the project does not cover them. A link, a junction or another portal on such a path
 sends the write outside the project, so the product looks at the actual destinations before it asks
 Git to write, and again before the one write a resume still has to make. Every witness makes a real
 portal (a symlink wherever the host allows one, a junction on Windows) and judges the folder the
-portal leads to, not only the answer. A structural check, not isolation from a process that swaps
-a folder between the check and the write.
+portal leads to, not only the answer. `exclude` is the other writer into `.git`: it judges the NAME
+`.git` before the git dir that Git names follows it. A structural check, not isolation from a
+process that swaps a folder between the check and the write.
 """
 from __future__ import annotations
 
@@ -15,11 +16,16 @@ from pathlib import Path
 
 import pytest
 
+from conductor.command.git_setup_facts import exclude
+from conductor.command.git_setup_records import SetupRefused
+from conductor.command.product_names import BLOCK_BEGIN
+from conductor.ownership import data_root
 from tests.git_first_bench import (  # noqa: F401
     confirm, confirm_door, crashed, project, seal, terms_of)
-from tests.git_repo_helpers import needs_git
-from tests.test_git_setup import reason
+from tests.git_repo_helpers import commit, git, needs_git, real_reader, repository
+from tests.test_git_setup import reason, step
 from tests.test_git_setup_first_commit import FILES, no_receipt, own_leftovers
+from tests.test_seed_routes import Folder
 
 pytestmark = [needs_git]
 with_the_door = pytest.mark.usefixtures("confirm_door")
@@ -155,3 +161,50 @@ def test_first_commit_writes_through_plain_nested_folders_of_the_ref_the_reflog_
     assert p.git("rev-parse", "HEAD", cwd=p.root).stdout.decode().strip() == receipt["commit"]
     assert (folder / "objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904").is_file()
     assert (folder / "logs/refs/heads/feature/deep").is_file()
+
+
+@for_every_portal
+def test_exclude_refuses_a_dot_git_that_is_a_portal_and_leaves_its_target_as_it_was(
+        tmp_path, kind):
+    repo = repository(tmp_path, "real")
+    outside = tmp_path / "elsewhere"
+    divert(repo, ".git", outside, kind)
+    before = listing(outside)
+    try:
+        outcome = exclude(repo, real_reader(tmp_path))
+    except SetupRefused as refused:
+        outcome = refused.reason
+    assert (outcome, listing(outside) == before) == ("unsafe_git_route", True)
+
+
+@for_every_portal
+def test_the_exclude_step_refuses_a_dot_git_that_is_a_portal_and_publishes_no_receipt(
+        tmp_path, kind):
+    folder = Folder(tmp_path)
+    git("init", "-q", cwd=folder.root)
+    outside = tmp_path / "elsewhere"
+    divert(folder.root, ".git", outside, kind)
+    before = listing(outside)
+    answer = step(folder, "exclude")
+    assert verdict(answer, outside, before) == ("unsafe_git_route", True)
+    assert not (data_root(folder.root) / "git" / "setup" / "exclude.json").exists()
+
+
+def test_exclude_writes_a_plain_dot_git_once_and_then_finds_its_block_present(tmp_path):
+    repo = repository(tmp_path, "plain")
+    reader = real_reader(tmp_path)
+    assert exclude(repo, reader) == "written"
+    assert exclude(repo, reader) == "present"
+    assert BLOCK_BEGIN in (repo / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+
+
+def test_exclude_still_writes_the_common_dir_of_a_linked_worktree_whose_dot_git_is_a_file(
+        tmp_path):
+    main = repository(tmp_path)
+    commit(main, {"owner.txt": "keep\n"})
+    linked = tmp_path / "linked"
+    git("worktree", "add", "--detach", str(linked), "HEAD", cwd=main)
+    assert (linked / ".git").is_file()
+    assert exclude(linked, real_reader(tmp_path)) == "written"
+    assert BLOCK_BEGIN in (main / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert not (linked / "info").exists()

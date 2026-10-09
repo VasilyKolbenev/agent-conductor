@@ -92,3 +92,24 @@ def ref_route(git_dir: Path, target_ref: str) -> None:
     routes = (parts, ("logs", *parts), ("logs", "HEAD"))
     if any(_portal_on(git_dir, route) for route in routes):
         raise SetupRefused("unsafe_git_route")
+
+
+def dot_git_is_no_portal(root: Path) -> None:
+    """Refuse `unsafe_git_route` when the name `<root>/.git` is itself a portal.
+
+    Git names the target of a link or a junction as the git dir, so a route judged by Git's answer
+    has lost the name that led there. This reads the name first. A `.git` that is a regular file
+    (a linked worktree) is not a portal and passes: its common directory has its own contract.
+
+    Raises:
+        SetupRefused: `unsafe_git_route`; nothing was written.
+    """
+    named = Path(root) / ".git"
+    try:
+        found = os.lstat(named)
+    except FileNotFoundError:
+        return                                   # no repository here: Git's answer says so
+    except OSError:
+        raise SetupRefused("unsafe_git_route") from None
+    if portal_violation(named, found) is not None:
+        raise SetupRefused("unsafe_git_route")
