@@ -199,7 +199,8 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-prep.js",
                                        "./desk-wizard-launch.js",
                                        "./desk-wizard-run.js",
-                                       "./desk-wizard-skip.js"}),
+                                       "./desk-wizard-skip.js",
+                                       "./desk-wizard-git.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.

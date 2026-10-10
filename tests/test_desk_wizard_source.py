@@ -24,7 +24,7 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                  "./desk-wizard-base.js", "./desk-wizard-team.js",
                                  "./desk-wizard-input.js", "./desk-wizard-prep.js",
                                  "./desk-wizard-launch.js", "./desk-wizard-run.js",
-                                 "./desk-wizard-skip.js"},
+                                 "./desk-wizard-skip.js", "./desk-wizard-git.js"},
         "desk-wizard-input.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                  "./desk-wizard-materials.js", "./desk-wizard-team.js",
                                  "./desk-wizard-prep.js"},

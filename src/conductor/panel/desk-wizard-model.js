@@ -52,6 +52,7 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
   prepareGate as judgePrepare} from "./desk-wizard-run.js";
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
+import {pendingOf} from "./desk-wizard-git.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -72,7 +73,8 @@ export const suggestAssignment = suggest;
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
 export const REASONS = Object.freeze([
   "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
-  "git_stops", "git_reading", "git_failed", "starter_needs_git", "materials_over_count",
+  "git_stops", "git_reading", "git_failed", "git_unfinished", "starter_needs_git",
+  "materials_over_count",
   "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
@@ -179,7 +181,7 @@ function taskPublication(state, lang) {
 
 //: Where the agents get their code, said from the one git read and the mode.
 export function gitReading(state) {
-  return gitFacts(state.reads.git, state.mode);
+  return gitFacts(state.reads.git, state.mode, pendingOf(state.reads.git));
 }
 
 export function availableKinds(state) {

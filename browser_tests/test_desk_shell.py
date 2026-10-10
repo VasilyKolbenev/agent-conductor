@@ -96,7 +96,7 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-base.js": 200, "desk-wizard-team.js": 200,
     "desk-wizard-digest.js": 200, "desk-wizard-input.js": 200,
     "desk-wizard-prep.js": 200, "desk-wizard-launch.js": 200,
-    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200,
+    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200, "desk-wizard-git.js": 200,
     "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
     "desk-wizard-card.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.

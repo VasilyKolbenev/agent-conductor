@@ -63,6 +63,16 @@ export const WIZARD_COPY = Object.freeze({
     + "Агенты получат копию HEAD на момент старта"],
   "wizard.git.reading": ["Reading the project's git…", "Читаем git проекта…"],
   "wizard.git.failed": ["The project's git could not be read.", "Git проекта не удалось прочитать."],
+  "wizard.git.repo_pending": ["The branch {ref} stands at commit {commit}, but the product's first "
+    + "commit is not finished", "Ветка {ref} стоит на коммите {commit}, но первый коммит "
+    + "продукта не закончен"],
+  "wizard.git.repo_awaiting": ["The branch {ref} stands at commit {commit}, but the product has "
+    + "not yet checked that this is the commit it waited for", "Ветка {ref} стоит на коммите "
+    + "{commit}, но продукт ещё не проверил, что это тот коммит, которого он ждал"],
+  "wizard.git.repo_damaged": ["The branch {ref} stands at commit {commit}, but the saved record "
+    + "of the product's first commit cannot be proven, so it is not shown as done",
+    "Ветка {ref} стоит на коммите {commit}, но сохранённую запись первого коммита продукта "
+    + "подтвердить нельзя, поэтому он не показан как сделанный"],
   "wizard.git.command_safe": ["Run this in a terminal in the project folder. The product never "
     + "writes safe.directory itself:", "Выполните в терминале в корне проекта. "
     + "Продукт сам safe.directory не пишет:"],
@@ -97,6 +107,9 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.reason.git_failed": ["The git state could not be read: read it again with the button "
     + "at the top of the step.", "Не удалось прочитать состояние git: прочитайте ещё раз кнопкой "
     + "вверху шага."],
+  "wizard.reason.git_unfinished": ["The first commit is not finished: continue it or check it "
+    + "again in the git block above.", "Первый коммит не закончен: продолжите его или проверьте "
+    + "снова в блоке git выше."],
   "wizard.reason.starter_needs_git": ["This mode needs a git repository first.",
     "Для этого режима сначала нужен git-репозиторий."],
   // -- step 2: the materials ------------------------------------------------------------
