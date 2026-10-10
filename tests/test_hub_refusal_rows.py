@@ -4,11 +4,13 @@ A file the hub cannot read (`registry.json`, `hub-state.json`) is `409 registry_
 reads and on the writes whose handler reads it: stop, recover, providers, forget, the projects
 home and the queue order. Every scenario holds the same four facts: the answer names the file the
 handler read (or no file, where it names none), the unreadable file is byte for byte as it was,
-no child was started, and no owner command ran. `activate` and `view` (hub state) are held in
-`test_hub_http_surface.py`, the registry read of `GET /hub/projects` there too, `project_busy` of
-`forget` and `operation_busy` of the login recovery in `test_hub_handlers_http.py` and
-`operation_busy` of the projects home in `test_hub_new_projects.py`. The last scenario is the other
-cause of the same code, a hub state nobody can write: it holds the facts that apply to it.
+no child was started, and no owner command ran. Only that one file is compared: the rest of the
+hub's folder is not, so none of these says that the handler wrote nothing anywhere. `activate`
+and `view` (hub state) are held in `test_hub_http_surface.py`, the registry read of
+`GET /hub/projects` there too, `project_busy` of `forget` and `operation_busy` of the login
+recovery in `test_hub_handlers_http.py` and `operation_busy` of the projects home in
+`test_hub_new_projects.py`. The last scenario is the other cause of the same code, a hub state
+nobody can write: it holds the facts that apply to it.
 """
 from __future__ import annotations
 
@@ -51,7 +53,7 @@ def _damage(stack, name: str):
     return path
 
 
-def _nothing_else_happened(stack, path, capsys) -> None:
+def _the_file_is_kept_and_nothing_ran(stack, path, capsys) -> None:
     assert path.read_bytes() == BROKEN, "the unreadable file was written over"
     assert stack.world.spawner.calls == [], "a child was started on a file nobody could read"
     assert stack.launched == [], "an owner command ran on a file nobody could read"
@@ -67,7 +69,7 @@ MOVES = [("stop", "registry.json"), ("stop", "hub-state.json"),
 
 
 @pytest.mark.parametrize(("route", "name"), MOVES)
-def test_a_project_move_on_a_file_nobody_can_read_is_409_registry_invalid_and_writes_nothing(
+def test_a_project_move_on_a_file_nobody_can_read_is_409_registry_invalid_and_keeps_that_file(
         stack, capsys, route, name):
     if route == "providers":                  # a profile is judged before the state is read
         operator_config.save_provider_configs(
@@ -78,7 +80,7 @@ def test_a_project_move_on_a_file_nobody_can_read_is_409_registry_invalid_and_wr
     assert reply.status == 409, (reply.status, reply.body[:200])
     error = _envelope(reply)
     assert (error["code"], error["detail"]) == ("registry_invalid", {"file": name})
-    _nothing_else_happened(stack, path, capsys)
+    _the_file_is_kept_and_nothing_ran(stack, path, capsys)
 
 
 def test_a_queue_order_on_a_hub_state_nobody_can_read_is_409_registry_invalid(stack, capsys):
@@ -87,7 +89,7 @@ def test_a_queue_order_on_a_hub_state_nobody_can_read_is_409_registry_invalid(st
     assert reply.status == 409, (reply.status, reply.body[:200])
     error = _envelope(reply)
     assert (error["code"], error["detail"]) == ("registry_invalid", {"file": "hub-state.json"})
-    _nothing_else_happened(stack, path, capsys)
+    _the_file_is_kept_and_nothing_ran(stack, path, capsys)
 
 
 def test_the_projects_home_on_a_registry_nobody_can_read_is_409_registry_invalid(stack, capsys):
@@ -95,7 +97,7 @@ def test_the_projects_home_on_a_registry_nobody_can_read_is_409_registry_invalid
     reply = stack.post("/hub/setup/projects-home", {"default": True})
     assert reply.status == 409, (reply.status, reply.body[:200])
     assert _envelope(reply)["code"] == "registry_invalid"
-    _nothing_else_happened(stack, path, capsys)
+    _the_file_is_kept_and_nothing_ran(stack, path, capsys)
 
 
 # -- the two reads -----------------------------------------------------------------------------
@@ -108,7 +110,7 @@ def test_a_read_on_a_hub_state_nobody_can_read_is_409_registry_invalid(stack, ca
     assert reply.status == 409, (reply.status, reply.body[:200])
     error = _envelope(reply)
     assert (error["code"], error["detail"]) == ("registry_invalid", {"file": "hub-state.json"})
-    _nothing_else_happened(stack, path, capsys)
+    _the_file_is_kept_and_nothing_ran(stack, path, capsys)
 
 
 # -- the other cause of the same code: a hub state that cannot be written ------------------------

@@ -188,7 +188,8 @@ export const HUB_COPY = Object.freeze({
   "hub.banner.login": ["The login of {harness} is not closed", "Вход {harness} не закрыт"],
   "hub.banner.home_invalid": ["The folder for new projects cannot be used",
     "Папку для новых проектов нельзя использовать"],
-  "hub.banner.registry": ["The project registry cannot be read", "Реестр не читается"],
+  "hub.banner.registry": ["The project registry or the hub state is unavailable",
+    "Реестр проектов или состояние hub недоступны"],
   "hub.unlisted.note": ["A project taken off the list is not closed yet (since {time}): no other "
     + "project starts until it is.", "Проект, убранный из списка, ещё не закрыт (с {time}): другой "
     + "проект не запустится, пока он не будет закрыт."],

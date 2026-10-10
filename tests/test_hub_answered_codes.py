@@ -13,14 +13,15 @@ import json
 
 import pytest
 
-from conductor.hub import refusals, routes
+from conductor.hub import lifecycle, refusals, routes
 from conductor.hub.refusals import HubRefusal
 from tests import _hub_stack
 from tests._hub_stack import A, TRANSPORT, Reply, Stack, judge, undeclared
 
 FORGET = "POST", "/hub/projects/<project_id>/forget"
 TARGET = f"/hub/projects/{A}/forget"
-#: A code no list of the hub holds: the guard must name it on any route.
+#: A code that none of the lists read by `_lists_of_codes` holds: the guard must name it on any
+#: route.
 UNKNOWN = "a_code_no_list_of_the_hub_holds"
 
 
@@ -40,8 +41,23 @@ def stack(tmp_path):
     made.close()
 
 
+def _lists_of_codes() -> dict[str, frozenset[str]]:
+    """Every list of codes the hub keeps: the two closed lists of the spec, the transport names,
+    the state codes a project can carry, and the refusals the rows name."""
+    return {
+        "the route refusals": frozenset(refusals.HUB_ERROR_STATUS),
+        "the operation codes": refusals.OPERATION_ERROR_CODES,
+        "the transport names": TRANSPORT,
+        "the state codes": lifecycle.STATE_CODES,
+        "the refusals of the rows": frozenset(
+            code for row in routes.HUB_ROUTES for code in row.refusals),
+    }
+
+
 def test_the_guard_names_a_code_the_row_does_not_list():
-    assert UNKNOWN not in refusals.HUB_ERROR_STATUS
+    lists = _lists_of_codes()
+    assert all(lists.values()), "control: each list read holds codes"
+    assert [name for name, codes in lists.items() if UNKNOWN in codes] == []
     assert undeclared("POST", TARGET, _error(409, UNKNOWN)) == UNKNOWN
     assert undeclared("GET", "/hub/limits", _error(409, UNKNOWN)) == UNKNOWN
 

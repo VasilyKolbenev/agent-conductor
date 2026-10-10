@@ -75,7 +75,9 @@ WORKING = ("active", "queued", "stopped", "view")
 #: an unfinished project (`stop_uncertain`, `recovery_required`, `not_active`) are not here: the
 #: spec says "the OS needs a restart" for them, which a review ruling found wrong once a legacy
 #: record or a changed boot environment needs a preparation first. They are held by
-#: `test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart`.
+#: `test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart`. The registry
+#: banner carries the short label the 4.6.5 ruling gives, not the older «Реестр не читается» of the
+#: banner row in 4.1.10: that sentence is false of a busy registry and of an unwritable hub state.
 SPEC_WORDS = {
     "hub.working.active": "В работе", "hub.working.view": "Просмотр",
     "hub.working.stopped": "Остановлен", "hub.working.stopped_since": "Остановлен · с {time}",
@@ -104,7 +106,8 @@ SPEC_WORDS = {
     "hub.waiting.heading": "Ждут вас",
     "hub.banner.profile_absent": "Харнессы не настроены",
     "hub.banner.tools": "git / gh не закреплены или изменились",
-    "hub.banner.login": "Вход {harness} не закрыт", "hub.banner.registry": "Реестр не читается",
+    "hub.banner.login": "Вход {harness} не закрыт",
+    "hub.banner.registry": "Реестр проектов или состояние hub недоступны",
     "hub.banner.job": "Проекты из этого hub не запускаются: он внутри задания Windows",
     "hub.banner.job_how": "Остановите hub (Ctrl+C) и запустите conduct hub из отдельного окна "
                           "терминала, а не из встроенного терминала другого приложения",
@@ -201,6 +204,21 @@ def test_registry_invalid_says_the_hub_state_is_unavailable_in_both_languages_no
     """)
     assert "unavailable" in en and "cannot be read" not in en, en
     assert "недоступн" in ru and "не читаются" not in ru, ru
+
+
+def test_the_registry_banner_is_true_of_every_cause_that_shows_it_in_both_languages():
+    """The page shows it when the project list is refused as `registry_invalid` (a registry or a
+    hub state that cannot be read or written, or a lost hub lock) and as `registry_busy` (the
+    registry is held by someone else). "Cannot be read" is false of all but the first of those."""
+    en, ru = js("""
+      show(["en", "ru"].map((locale) => copy.hubText(locale, "hub.banner.registry")));
+    """)
+    assert "unavailable" in en and "cannot be read" not in en, en
+    assert "недоступн" in ru and "не читается" not in ru, ru
+    assert "registry" in en and "hub state" in en, en
+    assert "реестр" in ru.lower() and "состояни" in ru, ru
+    for text in (en, ru):
+        assert len(text) <= 70 and not re.search(r"[\\/]|\.json", text), text
 
 
 def _hub_refusals():
