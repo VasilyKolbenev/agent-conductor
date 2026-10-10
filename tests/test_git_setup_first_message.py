@@ -13,12 +13,10 @@ import os
 
 import pytest
 
-from conductor.command import git_setup_first_lock as lock_module
 from conductor.command import git_setup_first_records as records
 from conductor.command import git_setup_first_signing as signing
 from conductor.command.git_setup_first_index import verify
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
-from conductor.command.run_store import StoreError
 from conductor.ownership import data_root
 from tests.git_first_bench import (  # noqa: F401
     confirm, confirm_door, crashed, op_file, terms_of)
@@ -103,19 +101,24 @@ def test_a_message_file_that_is_no_longer_the_one_the_product_wrote_is_kept(
     assert not no_receipt(p) and own_leftovers(p) == []
 
 
-def test_a_finish_that_died_after_the_receipt_has_the_message_removed_by_the_next_repeat(
+def test_a_finish_that_died_right_after_the_receipt_has_the_message_removed_by_the_next_repeat(
         tmp_path, monkeypatch, signing_key):
     p = signing_project(tmp_path, signing_key, FILES)
     digest = terms_of(p)
     owner_makes_the_commit(p, waits(p, "snapshot", digest))
-    real = lock_module.drop_copy
-
-    def dies(*args, **keywords):
-        raise StoreError("simulated interruption after the receipt")
-
-    monkeypatch.setattr(lock_module, "drop_copy", dies)
-    assert confirm(p, "snapshot", digest=digest).status == 500
-    monkeypatch.setattr(lock_module, "drop_copy", real)
+    crashed(monkeypatch, p, "write_receipt", "snapshot", digest, owner=records)
     assert not no_receipt(p) and op_file(p).exists() and len(message_files(p)) == 1
+    assert confirm(p, "snapshot", digest=digest).status == 200
+    assert message_files(p) == [] and own_leftovers(p) == []
+
+
+def test_a_finish_that_died_after_the_message_was_removed_has_its_record_retired_by_the_repeat(
+        tmp_path, monkeypatch, signing_key):
+    p = signing_project(tmp_path, signing_key, FILES)
+    digest = terms_of(p)
+    owner_makes_the_commit(p, waits(p, "snapshot", digest))
+    crashed(monkeypatch, p, "remove_finished_message", "snapshot", digest, owner=signing)
+    assert message_files(p) == [] and not no_receipt(p)             # the message went first ...
+    assert op_file(p).exists()                                      # ... the record is still here
     assert confirm(p, "snapshot", digest=digest).status == 200
     assert message_files(p) == [] and own_leftovers(p) == []
