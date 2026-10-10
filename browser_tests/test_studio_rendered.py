@@ -131,7 +131,8 @@ BOOT_ASSETS = {
     "studio-workflow-detail-copy.js": 200, "studio-notice-copy.js": 200,
     # The wizard's catalogue and the desk's own words, spread into the shared table, so the
     # entry route fetches them too.
-    "desk-wizard-copy.js": 200, "desk-copy.js": 200, "desk-status-copy.js": 200,
+    "desk-wizard-copy.js": 200, "desk-wizard-git-copy.js": 200, "desk-copy.js": 200,
+    "desk-status-copy.js": 200,
     "desk-flow-copy.js": 200, "desk-feed-copy.js": 200, "desk-summary-copy.js": 200,
     "desk-pult-copy.js": 200,
     # Readings, bounded automation and typed checker findings.

@@ -79,7 +79,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-digest.js", "desk-wizard-input.js", "desk-wizard-prep.js",
            "desk-wizard-launch.js", "desk-wizard-skip.js", "desk-wizard-run.js",
-           "desk-wizard-git.js",
+           "desk-wizard-git.js", "desk-wizard-git-run.js", "desk-wizard-git-copy.js",
            "desk-wizard-copy.js",
            "desk-wizard-draw.js",
            "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js",

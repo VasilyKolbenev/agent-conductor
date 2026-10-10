@@ -52,7 +52,8 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
   prepareGate as judgePrepare} from "./desk-wizard-run.js";
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
-import {pendingOf} from "./desk-wizard-git.js";
+import {FIRST_COMMIT_CONFIRM_OPEN, initialGit, pendingOf} from "./desk-wizard-git.js";
+import {FIRST_WORDS, firstFacts, pressBlock} from "./desk-wizard-git-run.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -67,7 +68,8 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
-  launchFacts, resumeView, wizardExit, wizardHash};
+  launchFacts, resumeView, wizardExit, wizardHash,
+  FIRST_WORDS, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -151,7 +153,8 @@ export function initialWizard(opening) {
       refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
     history: {runs: {}, revisions: {}}, run: resumed ? resumeOpening(opening) : initialRun(),
-    launch: initialLaunch(actor)});
+    launch: initialLaunch(actor),
+    git: initialGit(FIRST_COMMIT_CONFIRM_OPEN, opening.setupDoor)});
 }
 
 // -- step 1: the task ------------------------------------------------------------------

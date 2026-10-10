@@ -102,6 +102,12 @@ FAMILIES = {
     "launch_lines": "wizard.launch.line.{}", "skip_steps": "wizard.launch.skip_step.{}",
     "skip_stops": "wizard.launch.skip_stop.{}", "skip_status": "wizard.launch.skip_status.{}",
     "launch_stages": "wizard.launch.check.stage.{}",
+    "first_why": "wizard.first.why.{}", "first_lost": "wizard.first.lost.{}",
+    "first_busy": "wizard.first.busy.{}", "first_done": "wizard.first.done.{}",
+    "first_unsent": "wizard.first.unsent.{}", "first_next": "wizard.first.next.{}",
+    "first_codes": "error.{}", "first_manual": "wizard.first.manual.{}",
+    "first_warning": "wizard.first.warning.{}", "first_pending": "wizard.first.pending.{}",
+    "first_mode": "wizard.first.mode.{}",
 }
 
 
@@ -141,7 +147,9 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
         statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS, launch_why: wiz.LAUNCH_WHY,
         launch_notes: wiz.LAUNCH_NOTES, launch_refusals: wiz.LAUNCH_REFUSALS,
         launch_lines: wiz.CARD_LINES, skip_steps: wiz.SKIP_STEPS, skip_stops: wiz.SKIP_STOPS,
-        skip_status: wiz.SKIP_STATUS, launch_stages: wiz.LAUNCH_STAGES};
+        skip_status: wiz.SKIP_STATUS, launch_stages: wiz.LAUNCH_STAGES,
+        ...Object.fromEntries(Object.entries(wiz.FIRST_WORDS).map(
+          ([family, list]) => [`first_${family}`, list]))};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {

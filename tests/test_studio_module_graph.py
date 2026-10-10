@@ -46,7 +46,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -200,7 +200,8 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-launch.js",
                                        "./desk-wizard-run.js",
                                        "./desk-wizard-skip.js",
-                                       "./desk-wizard-git.js"}),
+                                       "./desk-wizard-git.js",
+                                       "./desk-wizard-git-run.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.
@@ -265,6 +266,14 @@ PERMITTED_IMPORTS = {
     #: The rules of connecting git and of the first commit: the shapes of the answers, the bodies,
     #: the two commands of a wait for a signature, the one switch. It imports nothing.
     "desk-wizard-git.js": frozenset(),
+    #: The git block of step 2 as the wizard's state holds it: one press, one request, the
+    #: answers folded back, what the view draws. It reaches the base, the name rule, the
+    #: step's git facts and the pure rules, and never the model that imports it.
+    "desk-wizard-git-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-launch.js",
+                                         "./desk-wizard-materials.js",
+                                         "./desk-wizard-git.js"}),
+    #: The words of the git block, one frozen catalogue; `studio-i18n.js` spreads it in.
+    "desk-wizard-git-copy.js": frozenset(),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
     "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
