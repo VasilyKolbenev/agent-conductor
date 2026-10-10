@@ -23,6 +23,7 @@ Git's `verify-commit`, `gpg` and `ssh-keygen` are never started, and nothing her
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import NoReturn
@@ -196,9 +197,14 @@ def _remove_message(root: Path, op: Op) -> None:
 def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
     """Read the commit at `oid` once and judge it by the stored terms.
 
-    The commit is read without replacement refs: the bytes judged are the bytes of the object
-    the branch names, which is the object the receipt will record, never those of another commit
-    that a `refs/replace/<oid>` ref says should be read in its place.
+    The commit is read without replacement refs, and the bytes read must hash to `oid` in the
+    object format of the op. Without the hash the bytes could belong to another object than the
+    one the receipt will record: `cat-file commit` follows a tag object to the commit it points
+    at, and returns the content of a loose object stored under a name that is not its own, both
+    with or without replacement refs. The hash makes the bytes judged the bytes of `oid` itself.
+
+    Returns:
+        False when `oid` is not a commit of that name, or is longer than the intended one.
 
     Raises:
         GitReadFailed: `git_timed_out`, Git did not answer in time.
@@ -209,7 +215,14 @@ def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated:
         return False                            # no commit, or more than the intended one holds
+    if _commit_id(op.object_format, answer.output) != oid:
+        return False                            # the bytes of another object, read under this name
     return recognises(answer.output, op, message)
+
+
+def _commit_id(object_format: str, raw: bytes) -> str:
+    """The object id Git gives a commit whose content is `raw`."""
+    return hashlib.new(object_format, b"commit %d\0" % len(raw) + raw).hexdigest()
 
 
 def recognises(raw: bytes, op: Op, message: bytes) -> bool:

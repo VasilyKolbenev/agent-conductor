@@ -1316,7 +1316,9 @@ created. The same body repeated recognises that commit by the STORED terms and n
 preview: its tree is the stored tree, it has no parent, its one author is the author that was
 shown, its body is the stored message to the byte, and it carries the signature header of the
 object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The commit is
-read as the object the branch names, without replacement refs. The product then
+read without replacement refs, and the bytes read must hash to the object id the branch
+names: `cat-file` follows a tag object to the commit it points at, and a branch that names a
+tag is `head_exists`, never that commit. The product then
 installs the index through the same driver as the unsigned road and answers 201 with
 `signature:"present"`; it never moves the ref, and once the receipt stands it removes the message
 file, if it is still the plain file it wrote. Only the presence of a signature is checked: its
