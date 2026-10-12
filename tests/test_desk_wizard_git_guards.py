@@ -1,8 +1,9 @@
 """Source guards of the git block: the one switch, the one target, honest words, text as text.
 
-Each guard is a function of source text that returns the faults it finds, so the same function is
-run on the real modules (and finds none) and on planted strings (and finds the planted fault): a
-guard that has never been seen to fail proves nothing. What a press does is
+Each guard is a function of source text that returns the faults it finds (`early_flip`, the one
+yes-or-no guard, returns whether the flip is early), so the same function is run on the real
+modules (and finds none) and on planted strings (and finds the planted fault): a guard that has
+never been seen to fail proves nothing. What a press does is
 `tests/test_desk_wizard_git_run.py`; what is drawn is in `browser_tests/test_desk_wizard_git*.py`.
 """
 from __future__ import annotations
@@ -129,30 +130,30 @@ def test_the_switch_guard_names_a_second_reader_a_missing_literal_and_a_non_bool
     assert switch_faults({**real, SWITCH_MODULE: both})
 
 
-def test_the_desk_never_opens_the_confirm_while_the_route_it_guards_is_closed():
-    """One direction only: lane L may delete or flip its switch first; the desk is flipped after.
+def early_flip(route: str, desk: str) -> bool:
+    """Whether the desk's literal is true while the route still names its own switch as false.
 
-    The guard fails exactly when the desk's literal is true and the route still names its own
-    switch as false, which is the one state where a press would reach a door that answers 422. A
-    route whose switch is true, or gone, constrains nothing: the flip is the tech lead's.
+    That is the one state where a press would reach a door that answers 422. A route whose switch
+    is true, or gone, constrains nothing: the flip is the tech lead's.
     """
-    route = ROUTE.read_text(encoding="utf-8")
-    desk = _code_of(SWITCH_MODULE)
     closed = re.search(r"^_CONFIRM_OPEN\s*=\s*False\b", route, re.MULTILINE) is not None
-    open_desk = re.search(rf"^export const {SWITCH} = true;$", desk, re.MULTILINE) is not None
-    assert not (open_desk and closed), "the desk's switch is open and the route's is closed"
+    opened = re.search(rf"^export const {SWITCH} = true;$", desk, re.MULTILINE) is not None
+    return opened and closed
+
+
+def test_the_desk_never_opens_the_confirm_while_the_route_it_guards_is_closed():
+    """One direction only: lane L may delete or flip its switch first; the desk is flipped after."""
+    route = ROUTE.read_text(encoding="utf-8")
+    assert not early_flip(route, _code_of(SWITCH_MODULE)), (
+        "the desk's switch is open and the route's is closed")
 
 
 def test_the_one_direction_guard_fails_for_an_open_desk_beside_a_closed_route_only():
-    def fails(route: str, desk: str) -> bool:
-        closed = re.search(r"^_CONFIRM_OPEN\s*=\s*False\b", route, re.MULTILINE) is not None
-        opened = re.search(rf"^export const {SWITCH} = true;$", desk, re.MULTILINE) is not None
-        return opened and closed
     shut, open_, gone = "_CONFIRM_OPEN = False\n", "_CONFIRM_OPEN = True\n", "x = 1\n"
     desk_open, desk_shut = f"export const {SWITCH} = true;", f"export const {SWITCH} = false;"
-    assert fails(shut, desk_open) is True
-    assert [fails(shut, desk_shut), fails(open_, desk_open), fails(gone, desk_open),
-            fails(open_, desk_shut), fails(gone, desk_shut)] == [False] * 5
+    assert early_flip(shut, desk_open) is True
+    assert [early_flip(shut, desk_shut), early_flip(open_, desk_open), early_flip(gone, desk_open),
+            early_flip(open_, desk_shut), early_flip(gone, desk_shut)] == [False] * 5
 
 
 def test_the_block_asks_only_the_one_setup_target_and_names_no_endpoint_of_its_own():
