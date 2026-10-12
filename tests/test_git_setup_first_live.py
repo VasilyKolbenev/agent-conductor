@@ -28,6 +28,7 @@ from types import SimpleNamespace
 import pytest
 
 from conductor import ownership_transition, server, tool_pins
+from conductor.command.product_names import is_product_path
 from conductor.command.project_claim import Launch
 from conductor.ownership import data_root
 from tests.git_first_bench import confirm, project
@@ -151,9 +152,12 @@ def judge_repository(p, shown, receipt, mode):
     rows = [row.split("\t", 1) for row in text(p, "ls-tree", "-r", "HEAD").splitlines()]
     committed = {path: meta.split()[2] for meta, path in rows}
     status = text(p, "status", "--porcelain").splitlines()
+    # An activated folder holds the fence FILE `conductor`, which the `/conductor/` line of the
+    # exclusion block does not match; the product never commits it and its own views skip it.
+    owner_status = [line for line in status if not is_product_path(line[3:])]
     if mode == "snapshot":
         assert committed == {row["path"]: row["git_oid"] for row in shown["files"]}
-        assert sorted(committed) == sorted(FILES) and status == []
+        assert sorted(committed) == sorted(FILES) and owner_status == []
         message = f"Первый коммит: {count} файлов (Conduct)\n\nConduct-Setup: first-commit\n"
     else:
         assert committed == {} and {"?? a.txt", "?? docs/"} <= set(status)
