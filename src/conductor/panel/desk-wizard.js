@@ -20,10 +20,11 @@ import {WIZARD_COPY} from "./desk-wizard-copy.js";
 import {action, choice, instantText, later, textField, timeText} from "./desk-wizard-draw.js";
 import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
+import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
 import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
-  canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading,
-  instructionFields, materialsEstimate, nextStep, preselection, rosterStatus, stepStates,
-  taskFields} from "./desk-wizard-model.js";
+  canAdvance, closeBusy, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, firstFacts,
+  gitReading, instructionFields, materialsEstimate, nextStep, preselection, rosterStatus,
+  stepStates, taskFields} from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -95,14 +96,19 @@ function foot(ctx) {
       "aria-live": "polite", text: why})]);
 }
 
-//: The warning shown while the owner has asked to close with materials that are not saved.
+//: The warning shown while the owner has asked to close with materials that are not saved, or
+//: with a request of the git block still working (closing does not stop it, and its answer is
+//: not seen).
 function closing(ctx) {
   if (ctx.wizard.closing !== "confirm") return [];
+  const busy = closeBusy(ctx.wizard), kept = ctx.wizard.materials.items.length > 0;
+  const lines = [...(busy ? [element("p", {text: ctx.t("wizard.first.close_busy")})] : []),
+    ...(kept ? [element("p", {text: ctx.t("wizard.close.warning")})] : [])];
   return [element("div", {className: "desk-wizard__dialog", role: "alertdialog",
-    "aria-modal": "true", "data-close-dialog": ""}, [
-    element("p", {text: ctx.t("wizard.close.warning")}),
+    "aria-modal": "true", "data-close-dialog": ""}, [...lines,
     action("wizard:close:keep", ctx.t("wizard.close.keep"), () => ctx.send({type: "close-cancel"})),
-    action("wizard:close:discard", ctx.t("wizard.close.discard"), () => ctx.leave())])];
+    action("wizard:close:discard",
+      ctx.t(kept ? "wizard.close.discard" : "wizard.first.close_anyway"), () => ctx.leave())])];
 }
 
 // -- step 1: the task --------------------------------------------------------------------
@@ -140,17 +146,22 @@ function commandBlock(ctx, command) {
     [element("p", {text: lead}), ...COMMANDS[command].map((line) => element("code", {text: line}))]);
 }
 
-function exitButton(ctx, id) {
+function exitButton(ctx, id, facts) {
   const key = `wizard:git:${id}`, label = ctx.t(`wizard.exit.${id}`);
   const node = id === "reread" ? action(key, label, () => ctx.send({type: "reread", name: "git"}))
     : id === "run_without_git" ? choice(key, label, "switch",
       ctx.wizard.materials.withoutGit, () => ctx.send({type: "run-without-git"}))
-    : later(ctx, id, key, label);
+    : firstExit(ctx, id, facts);
   return element("span", {"data-git-exit": id}, [node]);
 }
 
+//: The exits the read offers, without the first commit's own while its panel is open.
+function exitsShown(git, facts) {
+  return git.exits.filter((id) => !(id === "first_commit" && facts.shown.panel));
+}
+
 function gitPanel(ctx) {
-  const git = gitReading(ctx.wizard), dirty = git.params.dirty;
+  const git = gitReading(ctx.wizard), dirty = git.params.dirty, facts = firstFacts(ctx.wizard);
   const parts = [element("h3", {text: ctx.t("wizard.git.heading")}),
     element("p", {className: "desk-wizard__git-sentence", text: gitSentence(ctx, git)})];
   if (git.state === "repo" && typeof dirty === "number" && dirty > 0) {
@@ -158,10 +169,13 @@ function gitPanel(ctx) {
       text: ctx.t("wizard.git.dirty", {count: String(dirty)})}));
   }
   if (git.command !== null) parts.push(commandBlock(ctx, git.command));
-  if (git.exits.length > 0) {
+  parts.push(...firstName(ctx, facts));
+  const exits = exitsShown(git, facts);
+  if (exits.length > 0) {
     parts.push(element("div", {className: "desk-wizard__exits"},
-      git.exits.map((id) => exitButton(ctx, id))));
+      exits.map((id) => exitButton(ctx, id, facts))));
   }
+  parts.push(...firstPanel(ctx, facts));
   return element("section", {className: "desk-wizard__git", "data-git-state": git.state}, parts);
 }
 

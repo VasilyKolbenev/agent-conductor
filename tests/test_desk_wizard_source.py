@@ -52,18 +52,22 @@ RENDERER = "desk-wizard.js"
 #: the two others hold what it draws from: the controls every step is made of, and step 5.
 DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
                     "./desk-wizard-copy.js", "./desk-wizard-draw.js",
-                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js"},
+                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js",
+                    "./desk-wizard-git-view.js"},
          "desk-wizard-draw.js": {"./command-view.js"},
          "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
                                          "./desk-wizard-model.js"},
          "desk-wizard-card.js": {"./command-view.js", "./desk-wizard-draw.js",
-                                 "./desk-wizard-model.js"}}
+                                 "./desk-wizard-model.js"},
+         "desk-wizard-git-view.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                     "./desk-wizard-git.js"}}
 #: What each drawing module hands the ones above it, and nothing else.
 DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
                  "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
                                          "timeText"],
                  "desk-wizard-prepare-view.js": ["prepareBody"],
-                 "desk-wizard-card.js": ["runBody"]}
+                 "desk-wizard-card.js": ["runBody"],
+                 "desk-wizard-git-view.js": ["firstExit", "firstName", "firstPanel"]}
 #: Data only: the catalogue holds strings and nothing else.
 DATA = ("desk-wizard-copy.js", "desk-wizard-git-copy.js")
 IMPORTS = r'from "(\./[a-z-]+\.js)";'

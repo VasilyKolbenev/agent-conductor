@@ -81,12 +81,8 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.exit.connect_git": ["Connect git", "Подключить git"],
   "wizard.exit.run_without_git": ["Run without git", "Запустить без git"],
   "wizard.exit.reread": ["Read again", "Перечитать"],
-  "wizard.later.connect_git": ["Connecting git comes in a later step: its door is not open yet.",
-    "Подключение git появится позже: его дверь ещё не открыта."],
   "wizard.later.connect_git_view": ["Connecting git waits until this project becomes active.",
     "Подключение git ждёт, пока проект станет активным."],
-  "wizard.later.first_commit": ["The first commit comes in a later step: its door is not open yet.",
-    "Первый коммит появится позже: его дверь ещё не открыта."],
   "wizard.later.run_without_git": ["Running without git comes in a later step: seeding is not "
     + "open yet.", "Запуск без git появится позже: засев ещё не открыт."],
   "wizard.later.from_starter_docs": ["Taking the starter documents comes in a later step.",

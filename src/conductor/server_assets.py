@@ -121,6 +121,8 @@ DESK_ASSETS = {
     "/panel/desk-wizard-prepare-view.js": (
         "text/javascript; charset=utf-8", "desk-wizard-prepare-view.js"),
     "/panel/desk-wizard-card.js": ("text/javascript; charset=utf-8", "desk-wizard-card.js"),
+    "/panel/desk-wizard-git-view.js": (
+        "text/javascript; charset=utf-8", "desk-wizard-git-view.js"),
     "/panel/desk-wizard-copy.js": ("text/javascript; charset=utf-8", "desk-wizard-copy.js"),
     "/panel/desk-wizard.js": ("text/javascript; charset=utf-8", "desk-wizard.js"),
     "/panel/desk-flow-shape.js": ("text/javascript; charset=utf-8", "desk-flow-shape.js"),

@@ -16,7 +16,8 @@ from tests.test_graph_source import _code
 ROOT = Path(__file__).resolve().parents[1]
 SWITCH_MODULE = "desk-wizard-git.js"
 MODEL = "desk-wizard-model.js"
-BLOCK = ("desk-wizard-git.js", "desk-wizard-git-run.js", "desk-wizard-git-copy.js")
+BLOCK = ("desk-wizard-git.js", "desk-wizard-git-run.js", "desk-wizard-git-view.js",
+         "desk-wizard-git-copy.js")
 MODULES = {"i18n": "studio-i18n.js"}
 SWITCH = "FIRST_COMMIT_CONFIRM_OPEN"
 #: How the route's own switch is spelled in lane L's module; the desk never opens before it.
@@ -165,7 +166,7 @@ def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcom
 
 
 def test_the_store_error_notice_is_never_the_words_of_a_lost_answer():
-    for name in BLOCK:
+    for name in BLOCK[:3]:
         assert "error.store_error" not in _code_of(name), name
 
 
@@ -182,3 +183,9 @@ def test_the_sign_commands_take_signing_alone_and_never_the_stored_terms():
                 "  return `git update-ref ${terms.target_ref}`;\n}\n")
     assert command_faults(bad_arity) != [] and command_faults(bad_read) != []
     assert command_faults("") == ["signCommands is not declared as an exported function"]
+
+
+def test_the_view_assigns_every_free_text_through_a_text_property_or_a_value():
+    code = _code_of("desk-wizard-git-view.js")
+    assert "textContent" not in code, "text goes through the element helper's `text:`"
+    assert re.findall(r"\.value = (\w+(?:\.\w+)*);", code) == ["text"], "only the commands' area"

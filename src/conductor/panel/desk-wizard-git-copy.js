@@ -104,6 +104,7 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.busy.continue": ["Continuing the first commit: working. A large project takes a "
     + "while. Do not close this window.", "Продолжаем первый коммит: идёт работа. Большой "
     + "проект занимает время. Не закрывайте окно."],
+  "wizard.first.close_anyway": ["Close anyway", "Закрыть всё равно"],
   "wizard.first.close_busy": ["A request is still working. Closing the window does not stop it, "
     + "but you will not see its answer: open the wizard again to read the project.",
     "Запрос ещё выполняется. Закрытие окна его не остановит, но ответа вы не увидите: откройте "
@@ -221,6 +222,10 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.sign.commit": ["1. Make the signed commit; it prints an id:", "1. Сделайте "
     + "подписанный коммит; он напечатает идентификатор:"],
   "wizard.first.sign.update": ["2. Put the branch on it:", "2. Поставьте на него ветку:"],
+  "wizard.first.sign.label_commit": ["Command 1: make the signed commit", "Команда 1: сделать "
+    + "подписанный коммит"],
+  "wizard.first.sign.label_update": ["Command 2: put the branch on the commit", "Команда 2: "
+    + "поставить ветку на коммит"],
   "wizard.first.sign.oid": ["Replace <oid> in the second command with the id the first command "
     + "printed.", "Замените <oid> во второй команде на идентификатор, который напечатала "
     + "первая."],

@@ -222,14 +222,19 @@ function outcome(found) {
     cause: found.cause ?? null};
 }
 
+//: A request that had the window waiting for it is over: a dialog that asked "close anyway?" for
+//: no other reason has nothing left to ask.
+const stillAsking = (state) => (state.closing === "confirm" && state.materials.items.length === 0
+  ? null : state.closing);
+
 function settle(state, found) {
-  const git = {...state.git, sending: null};
+  const git = {...state.git, sending: null}, closing = stillAsking(state);
   if (found.status === "done" && found.kind === "preview") {
-    return evolve(state, {git: {...git, preview: found.preview, result: null}});
+    return evolve(state, {closing, git: {...git, preview: found.preview, result: null}});
   }
   const spent = found.status === "done" ? ["confirm", "continue"].includes(found.kind)
     : SPENDS_PREVIEW.includes(found.reason);
-  const next = evolve(state, {git: {...git, result: outcome(found),
+  const next = evolve(state, {closing, git: {...git, result: outcome(found),
     preview: spent ? null : git.preview, list: spent ? false : git.list}});
   const nothing = found.status === "unsent" || found.reason === "index_locked";
   return nothing ? next : dropGitRead(next);

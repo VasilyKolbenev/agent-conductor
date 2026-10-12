@@ -28,6 +28,8 @@
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
 //   roles {owner, instructions}, history {runs, revisions},
+//   git {open, door, panel, mode, preview, list, seq, sending, result}: the git block of step 2
+//          (`desk-wizard-git-run.js` says what each field is),
 //   run {phase, pressed, lang, settled, done, attempts, seq, prep, ...}: the chain of step 5
 //   (`desk-wizard-prep.js` says what each field is).
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
@@ -53,7 +55,8 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
 import {FIRST_COMMIT_CONFIRM_OPEN, initialGit, pendingOf} from "./desk-wizard-git.js";
-import {FIRST_WORDS, firstFacts, pressBlock} from "./desk-wizard-git-run.js";
+import {FIRST_WORDS, GIT_HANDLERS, closeBusy, firstFacts, gitWanted, landGit, pressBlock}
+  from "./desk-wizard-git-run.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -69,7 +72,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
   launchFacts, resumeView, wizardExit, wizardHash,
-  FIRST_WORDS, firstFacts, pressBlock};
+  FIRST_WORDS, closeBusy, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -86,7 +89,7 @@ export const REASONS = Object.freeze([
   "resume_pending", "prepare_not_done"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
-export const LATER = Object.freeze(["connect_git", "first_commit",
+export const LATER = Object.freeze([
   "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle"]);
 
 export function isLater(control) {
@@ -209,9 +212,10 @@ export function documentPicker(state) {
     state.materials.items);
 }
 
-//: Closing with cards that no server holds yet loses them, so it asks first (spec 6.2.2).
+//: Closing with cards that no server holds yet loses them, and closing while a request works
+//: leaves its outcome unseen, so it asks first (spec 6.2.2).
 export function closeNeedsWarning(state) {
-  return state.materials.items.length > 0;
+  return state.materials.items.length > 0 || closeBusy(state);
 }
 
 function materialsGate(state) {
@@ -460,7 +464,7 @@ export function wantedAsks(state) {
   const filling = state.run.resume === null
     ? [...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)] : [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)), ...filling,
-    ...runWanted(state), ...launchWanted(state)];
+    ...runWanted(state), ...launchWanted(state), ...gitWanted(state)];
 }
 
 function readOf(result) {
@@ -547,10 +551,14 @@ const CARD_ASKS = Object.freeze(["launch_queue", "launch_automation", "launch_ru
   "launch_holder", "launch_preview", "launch_prep", "launch_authorize", "launch_enqueue",
   "launch_skip_enqueue", "launch_skip_order", "launch_skip_pause", "launch_skip_resume"]);
 
+//: The asks of the git block: the four bodies of the setup route (a continue is a confirm).
+const GIT_ASKS = Object.freeze(["git_init", "git_exclude", "git_preview", "git_confirm"]);
+
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   .map((name) => [name, answerRead(name)])),
   ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])),
-  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])), document: answerDocument,
+  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])),
+  ...Object.fromEntries(GIT_ASKS.map((name) => [name, landGit])), document: answerDocument,
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
@@ -566,8 +574,11 @@ function answered(state, event) {
   return Object.hasOwn(ANSWERS, ask.name) ? ANSWERS[ask.name](state, ask, result) : state;
 }
 
+//: The git read is held while a press of the git block works: a read that meets the project in
+//: the middle of a write says nothing about it, and the answer asks for the read again anyway.
 function reread(state, event) {
   if (!READ_NAMES.includes(event.name) && event.name !== "documents") return state;
+  if (event.name === "git" && closeBusy(state)) return state;
   const {[event.name]: _dropped, ...reads} = state.reads;
   return evolve(state, {reads, asked: state.asked.filter((id) => id !== `read:${event.name}`)});
 }
@@ -708,7 +719,8 @@ const HANDLERS = {
   "resume-edit": resumeEdit,
   "resume-restart": resumeRestart,
   tick: cardTick,
-  "actor-edit": cardActor,
+  "actor-edit": (state, event) => (closeBusy(state) ? state : cardActor(state, event)),
+  ...GIT_HANDLERS,
   "launch-start": cardStart,
   "launch-enqueue": cardEnqueue,
   "launch-refresh": cardRefresh,

@@ -213,7 +213,7 @@ PERMITTED_IMPORTS = {
     "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
                                  "./command-view.js", "./studio-i18n.js",
                                  "./desk-wizard-draw.js", "./desk-wizard-prepare-view.js",
-                                 "./desk-wizard-card.js"}),
+                                 "./desk-wizard-card.js", "./desk-wizard-git-view.js"}),
     #: The controls every step of the wizard is drawn from (a keyed button, a choice, a control
     #: whose door is not open, a text field, the format of an instant and of a duration). They
     #: build elements through the view's helper and reach nothing else.
@@ -227,6 +227,11 @@ PERMITTED_IMPORTS = {
     #: wire.
     "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
                                       "./desk-wizard-model.js"}),
+    #: The git block of step 2 drawn: connecting git, the first commit, the wait, the last answer.
+    #: It draws what the model's facts say through the shared controls, and never a store or a
+    #: wire.
+    "desk-wizard-git-view.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                          "./desk-wizard-git.js"}),
     #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
     #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
     "desk-wizard-copy.js": frozenset(),

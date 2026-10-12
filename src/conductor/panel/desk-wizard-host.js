@@ -119,6 +119,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const task = tasks.find((row) => row.task_id === taskId);
     wizard = initialWizard({newTaskId: taskId, nonce: nonceValue, actor: actor ?? "",
       viewMode: mode === "view", starterId: resume?.starterId ?? start.starterId,
+      setupDoor: typeof path.gitSetup === "function",
       ...(resume === null ? {} : {resume, taskWritten: true, title: task?.title ?? ""})});
     entrance = keys.new === "task" ? "new" : "prepare";
     timer = setInterval(() => dispatch({type: "tick", now: new Date().toISOString()}), 1000);
