@@ -83,6 +83,18 @@ def seal(folder, mode="snapshot"):
     return request(folder, "POST", PATH, body).payload["setup"]
 
 
+@pytest.fixture
+def confirm_door():
+    """States that the route's confirm door is open. It patches nothing.
+
+    The door is open in the code (plan Task 8.7), so no test needs this fixture any more. It
+    remains only for lane D2, whose `tests/test_desk_wizard_git_contract.py` imports it and marks
+    its module with it, so that the tests of both lanes work once both are merged. Delete it
+    when D2 drops that import; `test_a_test_that_still_uses_the_confirm_door_fixture_...` in
+    `tests/test_git_setup_first_live.py` goes with it.
+    """
+
+
 def confirm(folder, mode="snapshot", digest=None, actor="Owner"):
     """The confirm body as the route takes it; a snapshot without a digest is sealed first."""
     if digest is None and mode == "snapshot":

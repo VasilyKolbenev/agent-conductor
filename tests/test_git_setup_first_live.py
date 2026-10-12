@@ -7,6 +7,8 @@ meets it:
 * `test_the_confirm_body_is_accepted_by_the_route_with_no_patch` replaces the closed-door test of
   `tests/test_git_setup.py` (one id per mode): the body that answered 422 answers 201, and nothing
   is patched;
+* `test_a_test_that_still_uses_the_confirm_door_fixture_...` holds the fixture that lane D2 still
+  imports: it patches nothing and the test behind it meets the open door;
 * `test_no_confirm_door_flag_remains_in_the_source` fails while the constant that closed the door
   stands anywhere in `src/conductor/command`;
 * the live test starts a real server on a real socket over an activated folder whose Git is the
@@ -28,10 +30,11 @@ from types import SimpleNamespace
 import pytest
 
 from conductor import ownership_transition, server, tool_pins
+from conductor.command import git_setup
 from conductor.command.product_names import is_product_path
 from conductor.command.project_claim import Launch
 from conductor.ownership import data_root
-from tests.git_first_bench import confirm, project
+from tests.git_first_bench import confirm, confirm_door, project  # noqa: F401
 from tests.git_first_readers import READERS, reader_binary
 from tests.git_repo_helpers import empty_home_environment, git, needs_git, snapshot
 from tests.test_command_http_api import NOW, TOKEN
@@ -51,6 +54,13 @@ def test_the_confirm_body_is_accepted_by_the_route_with_no_patch(tmp_path, mode)
     answer = confirm(p, mode)
     assert answer.status == 201, answer.payload
     assert answer.payload["setup"]["mode"] == mode
+
+
+@pytest.mark.usefixtures("confirm_door")
+def test_a_test_that_still_uses_the_confirm_door_fixture_gets_an_open_door_and_no_flag(tmp_path):
+    answer = confirm(project(tmp_path, FILES), "snapshot")
+    assert answer.status == 201, answer.payload
+    assert not hasattr(git_setup, "_CONFIRM_OPEN")
 
 
 def test_no_confirm_door_flag_remains_in_the_source():
