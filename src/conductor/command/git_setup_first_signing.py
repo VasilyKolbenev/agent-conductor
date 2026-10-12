@@ -103,7 +103,7 @@ def stored_message(root: Path, op: Op) -> bytes:
 
 def _tree_present(root: Path, git, tree: str) -> None:
     """The tree the owner commits must still be an object of the repository, under its own name."""
-    answer = git(["--no-optional-locks", "-C", str(root), REAL_OBJECTS, "cat-file", "-t", tree],
+    answer = git(["--no-optional-locks", "-C", str(root), *REAL_OBJECTS, "cat-file", "-t", tree],
                  True)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
@@ -197,11 +197,12 @@ def _remove_message(root: Path, op: Op) -> None:
 def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
     """Read the commit at `oid` once and judge it by the stored terms.
 
-    The commit is read without replacement refs, and the bytes read must hash to `oid` in the
-    object format of the op. Without the hash the bytes could belong to another object than the
-    one the receipt will record: `cat-file commit` follows a tag object to the commit it points
-    at, and returns the content of a loose object stored under a name that is not its own, both
-    with or without replacement refs. The hash makes the bytes judged the bytes of `oid` itself.
+    The commit is read without replacement refs, whatever the repository's own setting is, and
+    the bytes read must hash to `oid` in the object format of the op. Without the hash the bytes
+    could belong to another object than the one the receipt will record: `cat-file commit`
+    follows a tag object to the commit it points at, and returns the content of a loose object
+    stored under a name that is not its own, both with or without replacement refs. The hash
+    makes the bytes judged the bytes of `oid` itself.
 
     Returns:
         False when `oid` is not a commit of that name, or is longer than the intended one.
@@ -209,8 +210,8 @@ def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
     Raises:
         GitReadFailed: `git_timed_out`, Git did not answer in time.
     """
-    answer = git(["--no-optional-locks", "-C", str(root), REAL_OBJECTS, "cat-file", "commit", oid],
-                 True, output_limit=COMMIT_LIMIT)
+    answer = git(["--no-optional-locks", "-C", str(root), *REAL_OBJECTS, "cat-file", "commit",
+                  oid], True, output_limit=COMMIT_LIMIT)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated:

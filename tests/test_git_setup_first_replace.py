@@ -8,6 +8,13 @@ with. Every test plants a real replacement with the Git that made the repository
 judgement that the replacement would have changed. Nothing here makes the product look at more
 of the repository than before.
 
+A repository can also switch replacement refs on for itself, and on Git 2.31 (the lowest the
+product accepts) `core.useReplaceRefs=true` in its configuration outweighs
+`--no-replace-objects`. The reads therefore also carry `-c core.useReplaceRefs=false`, which
+outweighs the repository's own setting, and the four tests that replace an object the proof reads
+(the commit, a blob, the tree of a wait, the tree of the index) run with that setting unset and
+set to `true`.
+
 One more way to judge the bytes of another object than the one that is recorded: `cat-file commit
 <oid>` follows a tag object to the commit it points at. A branch that names a tag of the intended
 signed commit (Git writes it only where a replacement ref stands for the tag; a hand-written ref
@@ -37,24 +44,40 @@ from tests.test_git_setup_first_recovery import FILES, git_path
 
 pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
 for_every_reader = pytest.mark.parametrize("which", READERS)
+#: A repository can switch replacement refs on for itself: on Git 2.31 `core.useReplaceRefs=true`
+#: in the repository's own configuration outweighs `--no-replace-objects` (a newer Git keeps to it).
+with_the_repository_setting = pytest.mark.parametrize(
+    "use_refs", [None, "true"], ids=["default_setting", "use_replace_refs_true"])
+
+
+#: How a test reads an object as stored, whatever the repository's own setting is.
+THE_OBJECT_ITSELF = ("-c", "core.useReplaceRefs=false", "--no-replace-objects")
 
 
 def raw_commit(p, oid, *flags) -> str:
     return p.git(*flags, "cat-file", "commit", oid, cwd=p.root).stdout.decode("utf-8")
 
 
+def replace(p, original: str, other: str, use_refs: str | None) -> None:
+    """Make `refs/replace/<original>` name `other`; `use_refs` is the repository's own setting."""
+    p.git("replace", original, other, cwd=p.root)
+    if use_refs is not None:
+        p.git("config", "core.useReplaceRefs", use_refs, cwd=p.root)
+
+
 @for_every_reader
+@with_the_repository_setting
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_a_replacement_ref_does_not_let_an_unsigned_commit_pass_as_the_signed_one(
-        tmp_path, signing_key, fmt, which):
+        tmp_path, signing_key, fmt, which, use_refs):
     p = signing_project(tmp_path, signing_key, FILES, fmt=fmt, which=which)
     digest = terms_of(p)
     detail = waits(p, "snapshot", digest)
     unsigned = owner_makes_the_commit(p, detail, unsigned=True)     # the branch stands at A
     signed = owner_makes_the_commit(p, detail, publish=False)       # B: the intended signed commit
-    p.git("replace", unsigned, signed, cwd=p.root)
+    replace(p, unsigned, signed, use_refs)
     assert "gpgsig" in raw_commit(p, unsigned)                      # Git reads B where A is named
-    assert "gpgsig" not in raw_commit(p, unsigned, "--no-replace-objects")
+    assert "gpgsig" not in raw_commit(p, unsigned, *THE_OBJECT_ITSELF)
     refs = snapshot(p.root / ".git" / "refs")
     assert reason(confirm(p, digest=digest)) == "head_exists"
     assert snapshot(p.root / ".git" / "refs") == refs               # the branch and the replacement
@@ -137,14 +160,15 @@ def test_a_branch_whose_object_file_holds_the_signed_commit_under_another_name_i
 
 
 @for_every_reader
+@with_the_repository_setting
 def test_a_replacement_ref_does_not_stand_in_for_a_blob_the_entry_check_found_gone(
-        tmp_path, monkeypatch, which):
+        tmp_path, monkeypatch, which, use_refs):
     p = project(tmp_path, TWO_FILES, which=which)
     digest = seal(p)["paths_digest"]
 
     def replaced_and_gone(made):
         gone, other = (row["git_oid"] for row in made[0]["files"][:2])
-        p.git("replace", gone, other, cwd=p.root)                   # the name now reads as `other`
+        replace(p, gone, other, use_refs)                           # the name now reads as `other`
         remove_object(p, gone)
 
     damage_after_prepare(monkeypatch, replaced_and_gone)
@@ -154,11 +178,13 @@ def test_a_replacement_ref_does_not_stand_in_for_a_blob_the_entry_check_found_go
 
 
 @for_every_reader
-def test_a_replacement_ref_does_not_stand_in_for_the_tree_of_a_wait(tmp_path, signing_key, which):
+@with_the_repository_setting
+def test_a_replacement_ref_does_not_stand_in_for_the_tree_of_a_wait(
+        tmp_path, signing_key, which, use_refs):
     p = signing_project(tmp_path, signing_key, FILES, which=which)
     digest = terms_of(p)
     tree = waits(p, "snapshot", digest)["tree"]
-    p.git("replace", tree, an_empty_tree(p), cwd=p.root)            # the tree now reads as empty
+    replace(p, tree, an_empty_tree(p), use_refs)                    # the tree now reads as empty
     remove_object(p, tree)
     stored = snapshot(p.root / ".git" / "refs")
     assert reason(confirm(p, digest=digest)) == "setup_damaged"
@@ -174,8 +200,9 @@ def trees_of_the_owners_index(p, tmp_path) -> str:
 
 
 @for_every_reader
+@with_the_repository_setting
 def test_a_replacement_ref_does_not_let_an_index_of_another_tree_pass_as_installed(
-        tmp_path, monkeypatch, which):
+        tmp_path, monkeypatch, which, use_refs):
     p = project(tmp_path, FILES, which=which)
     digest = terms_of(p, "snapshot")
     crashed(monkeypatch, p, "_do_mark_ref_moved", "snapshot", digest)
@@ -184,7 +211,7 @@ def test_a_replacement_ref_does_not_let_an_index_of_another_tree_pass_as_install
     theirs = trees_of_the_owners_index(p, tmp_path)
     committed = records.read_op(p.root).expected_tree
     assert theirs != committed
-    p.git("replace", committed, theirs, cwd=p.root)                 # the tree reads as theirs
+    replace(p, committed, theirs, use_refs)                         # the tree reads as theirs
     index = git_path(p, "index")
     before = (index.read_bytes(), index.stat().st_ino, index.stat().st_mtime_ns)
     assert reason(confirm(p, "snapshot", digest=digest)) == "index_exists"

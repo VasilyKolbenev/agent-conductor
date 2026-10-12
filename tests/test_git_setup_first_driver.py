@@ -99,7 +99,8 @@ def test_index_state_reads_only_exit_zero_as_equivalent_and_exit_one_as_another_
 def test_index_state_asks_one_read_only_diff_of_the_owners_index_and_names_no_file_for_it(tmp_path):
     reader = Reader(GitAnswer(0, b""))
     first.index_state("root", reader, TREE, a_folder_with_an_index(tmp_path))
-    assert reader.calls == [(("--no-optional-locks", "-C", "root", "--no-replace-objects",
+    assert reader.calls == [(("--no-optional-locks", "-C", "root", "-c",
+                              "core.useReplaceRefs=false", "--no-replace-objects",
                               "diff-index", "--cached", "--quiet", TREE), True, {})]
 
 
@@ -398,7 +399,8 @@ def test_the_objects_the_write_relies_on_are_asked_for_in_calls_under_the_stdin_
     sizes = [len(keywords["stdin"]) for _, keywords in reader.calls]
     assert len(sizes) == 3 and max(sizes) <= 128 * 1024
     assert all("--batch-check" in args for args, _ in reader.calls)
-    assert all("--no-replace-objects" in args[:args.index("cat-file")] for args, _ in reader.calls)
+    assert all(("-c", "core.useReplaceRefs=false", "--no-replace-objects")
+               == args[args.index("-c"):args.index("cat-file")] for args, _ in reader.calls)
 
 
 @pytest.mark.parametrize("damage", ["blob_missing", "tree_missing", "commit_missing",

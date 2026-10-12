@@ -1316,7 +1316,9 @@ created. The same body repeated recognises that commit by the STORED terms and n
 preview: its tree is the stored tree, it has no parent, its one author is the author that was
 shown, its body is the stored message to the byte, and it carries the signature header of the
 object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The commit is
-read without replacement refs, and the bytes read must hash to the object id the branch
+read without replacement refs, whatever the repository's own `core.useReplaceRefs` says (the
+lowest supported Git lets that setting outweigh `--no-replace-objects`, so the read sets both),
+and the bytes read must hash to the object id the branch
 names: `cat-file` follows a tag object to the commit it points at, and a branch that names a
 tag is `head_exists`, never that commit. The product then
 installs the index through the same driver as the unsigned road and answers 201 with
