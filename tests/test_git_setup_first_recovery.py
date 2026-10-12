@@ -87,15 +87,22 @@ def watch_the_install_bytes(monkeypatch):
 
 def finished_once(p, mode, installed, config):
     """What the exact repeat leaves after any crash: one commit, one move of the ref, the stored
-    bytes installed, none of the product's own files left, the owner's files and config kept."""
+    bytes installed, none of the product's own files left, the owner's files and config kept.
+
+    The installed bytes are judged FIRST, before any command of the owner's Git that may write the
+    index: an ordinary `git status` is allowed to refresh the stat cache and rewrite the file
+    without the optional marker, so it may be the next writer of the index. The read that must
+    leave the bytes alone says so (`--no-optional-locks`), and they are judged again after it."""
+    index = git_path(p, "index")
+    assert index.read_bytes() == installed
+    assert os.lstat(index).st_nlink == 1
     assert text(p, "rev-list", "--count", "HEAD") == "1"
     assert len(p.spy.argv("update-ref")) == 1
     assert own_leftovers(p) == []
-    assert text(p, "status", "--porcelain") == expected_status(mode)
+    assert text(p, "--no-optional-locks", "status", "--porcelain") == expected_status(mode)
+    assert index.read_bytes() == installed
     assert git_path(p, "config").read_bytes() == config
     assert [(p.root / name).read_bytes() for name in FILES] == list(FILES.values())
-    assert git_path(p, "index").read_bytes() == installed
-    assert os.lstat(git_path(p, "index")).st_nlink == 1
 
 
 # --- gate row 8: the lock is proved by bytes -----------------------------------------------------
@@ -309,6 +316,39 @@ def test_an_equivalent_owner_index_is_left_untouched_and_the_operation_finishes(
     assert own_leftovers(p) == [] and not no_receipt(p)
     later = [args for args, _ in p.spy.calls[asked:]]
     assert later and not [args for args in later if writes(args)]
+
+
+@for_every_reader
+@for_both_modes
+def test_an_index_the_owners_git_rewrote_after_the_install_is_left_untouched_and_finishes(
+        tmp_path, monkeypatch, mode, which):
+    """The window after the install and before the receipt. The optional marker proves the lock
+    and the stored bytes, not the file the owner's Git may rewrite at any time: a rewrite of an
+    equivalent tree is left as it is, the explicit repeat finishes, and a later rewrite does not
+    undo the receipt. The rewrite is forced by a command that always writes the index (`read-tree`),
+    so the witness cannot pass on a system where a plain `status` leaves the file alone."""
+    p = project(tmp_path, FILES, which=which)
+    digest = terms_of(p, mode)
+    installed = watch_the_install_bytes(monkeypatch)
+    crashed(monkeypatch, p, "_do_install_index", mode, digest)
+    index = git_path(p, "index")
+    assert index.read_bytes() == installed[0] and no_receipt(p)
+    assert not git_path(p, "index.lock").exists() and stage_of(p) == "ref_moved"
+    p.git("read-tree", "HEAD", cwd=p.root)                # a real Git command that writes the index
+    rewritten = index.read_bytes()
+    assert rewritten != installed[0] and b"CNDT" not in rewritten      # rewritten, marker gone
+    before = (rewritten, os.lstat(index).st_ino, os.lstat(index).st_mtime_ns)
+    asked = len(p.spy.calls)
+    assert confirm(p, mode, digest=digest).status == 201
+    assert (index.read_bytes(), os.lstat(index).st_ino, os.lstat(index).st_mtime_ns) == before
+    assert own_leftovers(p) == [] and not no_receipt(p)
+    later = [args for args, _ in p.spy.calls[asked:]]
+    assert later and not [args for args in later if writes(args)]      # no second update-ref
+    assert len(p.spy.argv("update-ref")) == 1
+    assert text(p, "--no-optional-locks", "status", "--porcelain") == expected_status(mode)
+    p.git("add", "owner.txt", cwd=p.root)                 # a later rewrite, even of another tree
+    after = index.read_bytes()
+    assert confirm(p, mode, digest=digest).status == 200 and index.read_bytes() == after
 
 
 def test_an_absent_index_in_mode_empty_is_installed_and_never_read_as_the_empty_tree(

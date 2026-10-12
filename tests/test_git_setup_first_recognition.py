@@ -152,10 +152,13 @@ def test_a_really_signed_first_commit_is_recognised_and_its_index_installed(
     header = "gpgsig-sha256" if fmt == "sha256" else "gpgsig"
     raw = p.git("cat-file", "commit", oid, cwd=p.root).stdout.decode("utf-8")
     assert f"{header} -----BEGIN SSH SIGNATURE-----" in raw
-    assert text(p, "status", "--porcelain") == expected_status(mode)
-    assert verify(git_path(p, "index").read_bytes(), fmt).marker[0] == nonce
+    index = git_path(p, "index")
+    assert verify(index.read_bytes(), fmt).marker[0] == nonce        # before any owner command
+    assert text(p, "--no-optional-locks", "status", "--porcelain") == expected_status(mode)
+    assert verify(index.read_bytes(), fmt).marker[0] == nonce        # the read left it alone
     assert text(p, "rev-list", "--count", "HEAD") == "1" and own_leftovers(p) == []
     assert product_moves(p) == [] and not no_receipt(p)
+    assert not (p.root / detail["message_path"]).exists()        # it went with the receipt
 
 
 @needs_git
@@ -258,7 +261,7 @@ def test_the_recognised_commit_enters_the_same_install_driver_and_resumes_from_i
 
 @needs_git
 @pytest.mark.usefixtures("confirm_door")
-def test_the_verification_level_is_stated_and_the_product_runs_no_verifying_program(
+def test_the_receipt_states_the_level_present_and_no_git_call_of_the_product_verifies(
         tmp_path, signing_key):
     p, digest, detail = project_waiting(tmp_path, signing_key)
     owner_makes_the_commit(p, detail)

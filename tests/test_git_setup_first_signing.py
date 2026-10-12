@@ -81,7 +81,7 @@ def test_signing_required_stores_its_intent_before_it_refuses_and_names_the_two_
 
 
 @for_both_modes
-def test_the_refusal_made_no_commit_no_ref_no_index_no_lock_no_copy_and_ran_no_signing_program(
+def test_the_refusal_made_no_commit_no_ref_no_index_no_lock_no_copy_and_no_git_call_asked_to_sign(
         tmp_path, signing_key, mode):
     p = signing_project(tmp_path, signing_key, FILES)
     digest = terms_of(p, mode)
@@ -332,16 +332,20 @@ def test_a_wait_whose_message_file_was_edited_is_setup_damaged_and_nothing_is_re
     stored = (snapshot(setup_dir(p)), snapshot(p.root / ".git"))
     assert reason(confirm(p, digest=digest)) == "setup_damaged"
     assert (snapshot(setup_dir(p)), snapshot(p.root / ".git")) == stored
+    assert (p.root / detail["message_path"]).read_bytes() == b"another message\n"    # kept too
 
 
 def test_a_wait_whose_tree_object_is_gone_is_setup_damaged_and_nothing_is_removed(
         tmp_path, signing_key):
     p = signing_project(tmp_path, signing_key, FILES)
     digest = terms_of(p)
-    tree = waits(p, "snapshot", digest)["tree"]
+    detail = waits(p, "snapshot", digest)
+    tree = detail["tree"]
     loose = p.root / ".git" / "objects" / tree[:2] / tree[2:]
     loose.chmod(0o666)                                       # Git writes its objects read-only
     loose.unlink()
-    stored = snapshot(setup_dir(p))
+    stored = (snapshot(setup_dir(p)), snapshot(p.root / ".git"))
+    message = (p.root / detail["message_path"]).read_bytes()
     assert reason(confirm(p, digest=digest)) == "setup_damaged"
-    assert snapshot(setup_dir(p)) == stored
+    assert (snapshot(setup_dir(p)), snapshot(p.root / ".git")) == stored
+    assert (p.root / detail["message_path"]).read_bytes() == message         # and the message file

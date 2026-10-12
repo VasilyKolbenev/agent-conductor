@@ -12,7 +12,8 @@ carry another digest, and once the owner's commit exists the preview refuses `he
 record has a table of its own, apart from the driver's: the ref is absent (the wait goes on), it
 is the owner's recognised commit (the record moves to `ref_moved` with that commit and the driver
 installs the index, as on the unsigned road), or it is anything else (`head_exists`). Nothing in
-this module can write a ref, a lock or an index.
+this module can write a ref, a lock or an index. The message file lives until the receipt of the
+finished road stands; then the finish removes it, and only the plain file this intent wrote.
 
 What is checked of the signature is that it is PRESENT: the commit carries the signature header of
 its object format and the first line of that header is an armour line. Whether the signature is
@@ -22,6 +23,7 @@ Git's `verify-commit`, `gpg` and `ssh-keygen` are never started, and nothing her
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from typing import NoReturn
@@ -30,6 +32,7 @@ from . import git_setup_first_records as records
 from .accept_manifest import SnapshotRefused, sha256
 from .accept_plumbing import _AUTHOR, ref_oid
 from .accept_snapshot import _put, _read
+from .git_setup_facts import REAL_OBJECTS
 from .git_setup_first_pending import message_path_of
 from .git_setup_first_records import Op
 from .git_setup_first_resume import REF_MOVED
@@ -99,8 +102,9 @@ def stored_message(root: Path, op: Op) -> bytes:
 
 
 def _tree_present(root: Path, git, tree: str) -> None:
-    """The tree the owner commits must still be an object of the repository."""
-    answer = git(["--no-optional-locks", "-C", str(root), "cat-file", "-t", tree], True)
+    """The tree the owner commits must still be an object of the repository, under its own name."""
+    answer = git(["--no-optional-locks", "-C", str(root), *REAL_OBJECTS, "cat-file", "-t", tree],
+                 True)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated or answer.output.strip() != b"tree":
@@ -167,6 +171,19 @@ def _is_ours(root: Path, git, op: Op, found: str) -> bool:
     return recognised(root, git, op, message, found)
 
 
+def remove_finished_message(root: Path, op: Op) -> None:
+    """Remove the message file of a signed road whose receipt stands; nothing for an unsigned op.
+
+    The owner's `commit-tree -F` was its only reader and the commit is recognised, so the file has
+    no use left. It goes BEFORE the operation record is retired: a crash in between leaves the
+    record beside the receipt, and the next repeat finishes the cleanup; the other order would
+    leave a file that no record names. Only the plain file this intent wrote is removed
+    (`_remove_message` proves it by its place and its digest); a failure to remove never changes
+    the answer that the receipt gives."""
+    if op.signing:
+        _remove_message(root, op)
+
+
 def _remove_message(root: Path, op: Op) -> None:
     """Remove the message file only when it is the plain file this intent wrote."""
     path = message_file(root, op)
@@ -180,16 +197,33 @@ def _remove_message(root: Path, op: Op) -> None:
 def recognised(root: Path, git, op: Op, message: bytes, oid: str) -> bool:
     """Read the commit at `oid` once and judge it by the stored terms.
 
+    The commit is read without replacement refs, whatever the repository's own setting is, and
+    the bytes read must hash to `oid` in the object format of the op. Without the hash the bytes
+    could belong to another object than the one the receipt will record: `cat-file commit`
+    follows a tag object to the commit it points at, and returns the content of a loose object
+    stored under a name that is not its own, both with or without replacement refs. The hash
+    makes the bytes judged the bytes of `oid` itself.
+
+    Returns:
+        False when `oid` is not a commit of that name, or is longer than the intended one.
+
     Raises:
         GitReadFailed: `git_timed_out`, Git did not answer in time.
     """
-    answer = git(["--no-optional-locks", "-C", str(root), "cat-file", "commit", oid], True,
-                 output_limit=COMMIT_LIMIT)
+    answer = git(["--no-optional-locks", "-C", str(root), *REAL_OBJECTS, "cat-file", "commit",
+                  oid], True, output_limit=COMMIT_LIMIT)
     if answer.timed_out or answer.exit_code is None:
         raise GitReadFailed("git_timed_out")
     if answer.exit_code != 0 or answer.truncated:
         return False                            # no commit, or more than the intended one holds
+    if _commit_id(op.object_format, answer.output) != oid:
+        return False                            # the bytes of another object, read under this name
     return recognises(answer.output, op, message)
+
+
+def _commit_id(object_format: str, raw: bytes) -> str:
+    """The object id Git gives a commit whose content is `raw`."""
+    return hashlib.new(object_format, b"commit %d\0" % len(raw) + raw).hexdigest()
 
 
 def recognises(raw: bytes, op: Op, message: bytes) -> bool:

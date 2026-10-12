@@ -432,26 +432,43 @@ def test_first_commit_checks_the_frozen_terms_and_objects_at_the_entry_of_the_wr
     assert not trunk_exists(p)
 
 
+def still_marked(raw: bytes, nonce: str) -> bool:
+    """Whether the index bytes still carry the extension of this operation: its header and the
+    nonce in its value (the signature of the format is not shared with Git's own extensions)."""
+    return b"CNDT" in raw and f"v1;nonce={nonce}".encode("ascii") in raw
+
+
 @for_every_reader
 @pytest.mark.parametrize("fmt", FORMATS)
 @for_both_modes
-def test_the_installed_index_carries_the_marker_and_costs_one_ignored_line_per_read(
+def test_the_installed_index_carries_the_marker_and_reading_it_while_it_does_costs_one_ignored_line(
         tmp_path, mode, fmt, which):
     p = project(tmp_path, FILES, fmt=fmt, which=which)
     receipt = confirm(p, mode).payload["setup"]
-    data = (p.root / ".git" / "index").read_bytes()
+    index = p.root / ".git" / "index"
+    data = index.read_bytes()                       # the marked bytes, before any owner command
     marker = verify(data, fmt, entries=receipt["file_count"]).marker
     assert marker is not None and len(data) not in (65, 89)
     assert marker[1] == terms_hash(
         nonce=marker[0], mode=mode, digest_version=receipt["digest_version"],
         paths_digest=receipt["paths_digest"], target_ref=receipt["target_ref"],
         object_format=fmt, expected_tree=receipt["tree"], file_count=receipt["file_count"])
-    for _ in range(2):
-        for command in (("status", "--porcelain"), ("diff-index", "--cached", "--quiet", "HEAD")):
+    for _ in range(2):          # reads that leave the file alone read the marked bytes every time
+        for command in (("--no-optional-locks", "status", "--porcelain"),
+                        ("--no-optional-locks", "diff-index", "--cached", "--quiet", "HEAD")):
             done = p.git(*command, cwd=p.root)
             assert done.returncode == 0 and notice_lines(done) == [NOTICE], command
+            assert index.read_bytes() == data, command
+    # An ordinary `status` reads the marked bytes (one line) and may then be the next writer.
+    done = p.git("status", "--porcelain", cwd=p.root)
+    assert done.returncode == 0 and notice_lines(done) == [NOTICE]
+    carries = still_marked(index.read_bytes(), marker[0])
+    assert carries or index.read_bytes() != data       # an untouched file still carries its marker
+    done = p.git("diff-index", "--cached", "--quiet", "HEAD", cwd=p.root)
+    assert done.returncode == 0 and notice_lines(done) == ([NOTICE] if carries else [])
     (p.root / "a.txt").write_bytes(b"changed\n")
-    p.git("add", "a.txt", cwd=p.root)
+    p.git("add", "a.txt", cwd=p.root)                # a command that does write the index
+    assert not still_marked(index.read_bytes(), marker[0])
     assert notice_lines(p.git("status", "--porcelain", cwd=p.root)) == []
 
 

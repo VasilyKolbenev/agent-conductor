@@ -1296,7 +1296,12 @@ is installed from the stored bytes. A repeat of a step whose receipt stands answ
 and removes what an interrupted finish left (the record first, its bytes after). A reload, a GET and a server start repeat nothing: the person
 continues explicitly by the same body (see `first_commit_pending` below). Every
 installed index carries the optional extension `CNDT`, and Git prints `ignoring CNDT
-extension` on stderr at every read of it until Git's own next index write. A build whose
+extension` on stderr when it reads an index file that still carries it. Any Git command
+that writes the index writes it without the marker, an ordinary `status` included, so
+the line can appear once, several times or never. The marker proves the ownership of the
+lock and of the stored install bytes only: an installed index that the owner's Git
+rewrote with an equivalent tree is left as it is and the operation finishes, another
+tree is `index_exists`, and a receipt is never undone by a later rewrite. A build whose
 compatibility gate on the lowest supported Git is still open refuses this body as
 `contract_invalid`, as before.
 
@@ -1310,9 +1315,15 @@ with the typed detail `{reason:"signing_required", tree, target_ref, message_pat
 created. The same body repeated recognises that commit by the STORED terms and never by a new
 preview: its tree is the stored tree, it has no parent, its one author is the author that was
 shown, its body is the stored message to the byte, and it carries the signature header of the
-object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The product then
+object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The commit is
+read without replacement refs, whatever the repository's own `core.useReplaceRefs` says (the
+lowest supported Git lets that setting outweigh `--no-replace-objects`, so the read sets both),
+and the bytes read must hash to the object id the branch
+names: `cat-file` follows a tag object to the commit it points at, and a branch that names a
+tag is `head_exists`, never that commit. The product then
 installs the index through the same driver as the unsigned road and answers 201 with
-`signature:"present"`; it never moves the ref. Only the presence of a signature is checked: its
+`signature:"present"`; it never moves the ref, and once the receipt stands it removes the message
+file, if it is still the plain file it wrote. Only the presence of a signature is checked: its
 validity and the trust of its key are not, and no verifying program is run. While the branch does
 not exist the answer is `signing_required` again, built from the stored intent; any other commit,
 an unsigned one included, is `head_exists`; a changed actor or author after the commit exists is
