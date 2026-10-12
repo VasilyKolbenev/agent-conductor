@@ -28,12 +28,17 @@ import {GIT_SETUP_CODES, GIT_SETUP_REASONS, KINDS, MANUAL_REASONS, MODES, REFUSA
 //: Why a control is drawn disabled, in the order they are judged.
 export const BLOCK_WORDS = Object.freeze(["door_missing", "confirm_door_closed",
   "project_not_active", "git_reading", "not_offered", "busy", "actor_invalid", "preview_missing"]);
+//: A reason that asks for another line of what to do next when the press was made in a wait for
+//: the person's signature: the shared notice says the repository has a first commit, and the
+//: wait's own line says what the branch must hold instead.
+const WAIT_NEXT = Object.freeze({head_exists: "head_exists_signing"});
 //: The closed words of the block, by family: each is `wizard.first.<family>.<word>` in the
 //: catalogue (the other codes are `error.<code>` of the shared notices).
 export const FIRST_WORDS = Object.freeze({why: BLOCK_WORDS,
   lost: Object.freeze(["head", "reading", "pending", "done", "none", "other", "nothing_written"]),
   busy: KINDS, done: Object.freeze(["init", "exclude", "confirm", "signature_present"]),
-  unsent: UNSENT_CODES, next: GIT_SETUP_REASONS, codes: GIT_SETUP_CODES, manual: MANUAL_REASONS,
+  unsent: UNSENT_CODES, next: Object.freeze([...GIT_SETUP_REASONS, ...Object.values(WAIT_NEXT)]),
+  codes: GIT_SETUP_CODES, manual: MANUAL_REASONS,
   warning: WARNING_WORDS,
   pending: Object.freeze(["unfinished", "awaiting_signature", "damaged", "unreadable"]),
   mode: Object.freeze([...MODES, "starter"])});
@@ -113,6 +118,11 @@ function verdictOf(kind, read) {
   return `wizard.first.lost.${read.state === "reading" ? "reading" : VERDICTS[kind](read)}`;
 }
 
+//: The word of the line that says what to do next: the reason's own, or the wait's where the
+//: press was made in a wait for a signature and the reason has one.
+const nextWord = (result) => (result.waiting && Object.hasOwn(WAIT_NEXT, result.reason)
+  ? WAIT_NEXT[result.reason] : result.reason);
+
 function resultFacts(result, read) {
   if (result === null) return null;
   const facts = {...result, notice: null, next: null, action: null, verdict: null};
@@ -121,7 +131,7 @@ function resultFacts(result, read) {
   if (result.status !== "refused") return facts;
   const reason = result.reason;
   return {...facts, notice: reason === null ? `error.${result.code}` : `git_setup.reason.${reason}`,
-    next: reason === null ? null : `wizard.first.next.${reason}`,
+    next: reason === null ? null : `wizard.first.next.${nextWord(result)}`,
     action: reason === null ? "none" : REFUSAL_ACTIONS[reason]};
 }
 
@@ -160,8 +170,10 @@ function press(kind) {
     const git = state.git, seq = git.seq + 1, id = `write:git:${kind}:${seq}`;
     const ask = {id, name: NAMES[kind], door: "write", target: "gitSetup", subject: null,
       body: BODIES[kind](state)};
+    // Whether the person pressed in a wait for a signature: the answer's words are judged by it.
+    const waiting = readOf(state).pending?.state === "awaiting_signature";
     return evolve(state, {git: {...git, seq, result: null,
-      sending: {id, kind, mode: git.mode, ask}}});
+      sending: {id, kind, mode: git.mode, ask, waiting}}});
   };
 }
 
@@ -217,10 +229,10 @@ function dropGitRead(state) {
   return evolve(state, {reads, asked: state.asked.filter((id) => id !== "read:git")});
 }
 
-function outcome(found) {
+function outcome(found, waiting) {
   return {status: found.status, kind: found.kind, code: found.code ?? null,
     reason: found.reason ?? null, tool: found.tool ?? null, receipt: found.receipt ?? null,
-    cause: found.cause ?? null};
+    cause: found.cause ?? null, waiting};
 }
 
 //: A request that had the window waiting for it is over: a dialog that asked "close anyway?" for
@@ -229,13 +241,14 @@ const stillAsking = (state) => (state.closing === "confirm" && state.materials.i
   ? null : state.closing);
 
 function settle(state, found) {
-  const git = {...state.git, sending: null}, closing = stillAsking(state);
+  const sending = state.git.sending, closing = stillAsking(state);
+  const git = {...state.git, sending: null};
   if (found.status === "done" && found.kind === "preview") {
     return evolve(state, {closing, git: {...git, preview: found.preview, result: null}});
   }
   const spent = found.status === "done" ? ["confirm", "continue"].includes(found.kind)
     : SPENDS_PREVIEW.includes(found.reason);
-  const next = evolve(state, {closing, git: {...git, result: outcome(found),
+  const next = evolve(state, {closing, git: {...git, result: outcome(found, sending.waiting),
     preview: spent ? null : git.preview, list: spent ? false : git.list}});
   return found.status === "unsent" ? next : dropGitRead(next);
 }

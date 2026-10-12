@@ -255,7 +255,8 @@ def test_an_unsigned_commit_on_the_branch_keeps_the_wait_and_the_notice_offers_n
     bench.control("wizard:git:continue").click()
     expect(result(bench)).to_have_attribute("data-git-notice", "git_setup.reason.head_exists")
     text = result(bench).inner_text()
-    assert bench.say("wizard.first.next.head_exists") in text
+    assert bench.say("wizard.first.next.head_exists_signing") in text
+    assert bench.say("wizard.first.next.head_exists") not in text, "the plain line is not this one"
     assert not re.search(r"delete|удали(?:те|ть)", text, re.IGNORECASE)
     expect(pending_of(bench)).to_have_attribute("data-git-pending", "awaiting_signature")
     expect(bench.control("wizard:git:continue")).to_be_enabled()

@@ -8,6 +8,8 @@ is NOT sent while a control says why it cannot be pressed.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -21,6 +23,8 @@ LANGS = ("ru", "en")
 OTHER_CODES = ("project_not_active", "contract_invalid", "windows_path_too_long",
                "tool_unavailable")
 ROW = {"length": 1, "sha256": "sha256:" + "1a" * 32, "git_oid": "1f" * 20, "git_mode": "100644"}
+#: What only a wait for a signature may say: there are two commands and a second check.
+WAIT_WORDS = re.compile(r"two commands|check again|двумя командами|проверьте снова", re.IGNORECASE)
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -288,6 +292,8 @@ def test_each_reason_of_the_route_shows_its_notice_and_what_to_do_and_sends_noth
         text = result(bench).inner_text()
         assert bench.say(f"git_setup.reason.{reason}") in text, reason
         assert bench.say(f"wizard.first.next.{reason}") in text, reason
+        if reason == "head_exists":
+            assert not WAIT_WORDS.search(text), "a plain confirm has no commands to run again"
         assert len(world.posts()) == before + 1, f"{reason}: one press, one request"
         for banned in (bench.say("wizard.first.lost.head"),):
             assert banned not in text, f"{reason}: a refusal is not an unknown outcome"

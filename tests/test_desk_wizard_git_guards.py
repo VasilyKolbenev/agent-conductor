@@ -204,6 +204,16 @@ def test_the_store_error_notice_is_never_the_words_of_a_lost_answer():
         assert "error.store_error" not in _code_of(name), name
 
 
+def test_the_plain_head_exists_line_names_no_commands_and_the_signature_wait_line_does():
+    catalogue = _catalogue()
+    commands = re.compile(r"command|check again|команд|проверьте снова", re.IGNORECASE)
+    plain = catalogue["wizard.first.next.head_exists"]
+    wait = catalogue["wizard.first.next.head_exists_signing"]
+    assert not any(commands.search(said) for said in plain), "a plain confirm has no commands"
+    assert all(commands.search(said) for said in wait), "a wait for a signature has two"
+    assert plain != wait
+
+
 def test_no_module_of_the_block_can_put_a_text_on_the_page_as_markup_or_draws_a_progress_bar():
     assert markup_faults({name: _code_of(name) for name in BLOCK}) == []
     planted = {"v.js": "node.innerHTML = text;", "w.js": 'element("progress", {})'}

@@ -468,6 +468,32 @@ def test_a_press_the_desks_own_door_turned_away_is_unsent_and_asks_nothing_again
                     None]]
 
 
+def test_head_exists_gets_the_signature_wait_line_only_when_the_press_was_made_in_a_wait():
+    out = js("""
+      const line = (state) => run.firstFacts(land(state, reasonOf("head_exists"))).result.next;
+      const press = (name) => drive(opened({}, name), {type: "git-continue"});
+      show({confirm: line(drive(previewed(), {type: "git-confirm"})),
+        wait: line(press("pending_signature")),
+        waitSha256: line(press("pending_signature_sha256")),
+        unfinished: line(press("pending_unfinished"))});
+    """)
+    plain, wait = "wizard.first.next.head_exists", "wizard.first.next.head_exists_signing"
+    assert out == {"confirm": plain, "wait": wait, "waitSha256": wait, "unfinished": plain}
+
+
+def test_a_press_made_in_a_wait_keeps_its_line_when_a_late_read_answer_lands_first():
+    out = js("""
+      const sent = drive(opened({}, "pending_signature"), {type: "git-continue"});
+      const ask = {id: "read:git", name: "git", door: "read", target: "git", subject: null,
+        body: null};
+      const late = wiz.reduceWizard(sent, {type: "answered", ask,
+        result: ok({git: d.reads.unborn})});
+      show({pendingNow: run.firstFacts(late).pending,
+        line: run.firstFacts(land(late, reasonOf("head_exists"))).result.next});
+    """)
+    assert out == {"pendingNow": None, "line": "wizard.first.next.head_exists_signing"}
+
+
 def test_connecting_git_posts_the_init_body_for_not_git_and_for_nothing_else():
     out = js("""
       const sent = drive(opened({}, "not_git"), {type: "git-init"});
