@@ -20,15 +20,13 @@ from conductor.command.git_setup_facts import exclude
 from conductor.command.git_setup_records import SetupRefused
 from conductor.command.product_names import BLOCK_BEGIN, ExcludeWriteError, write_exclude_block
 from conductor.ownership import data_root
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, project, seal, terms_of)
+from tests.git_first_bench import confirm, crashed, project, seal, terms_of
 from tests.git_repo_helpers import commit, git, needs_git, real_reader, repository
 from tests.test_git_setup import reason, step
 from tests.test_git_setup_first_commit import FILES, no_receipt, own_leftovers
 from tests.test_seed_routes import Folder
 
 pytestmark = [needs_git]
-with_the_door = pytest.mark.usefixtures("confirm_door")
 KINDS = ["symlink", *(["junction"] if os.name == "nt" else [])]
 for_every_portal = pytest.mark.parametrize("kind", KINDS)
 NESTED = "feature/deep"
@@ -104,7 +102,6 @@ def ref_exists(p, branch: str) -> bool:
     return found.returncode == 0
 
 
-@with_the_door
 @for_every_portal
 @pytest.mark.parametrize("relative, mode, branch", DESTINATIONS)
 def test_first_commit_refuses_a_portal_on_a_write_path_and_writes_nothing_outside(
@@ -121,7 +118,6 @@ def test_first_commit_refuses_a_portal_on_a_write_path_and_writes_nothing_outsid
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, branch)
 
 
-@with_the_door
 def test_first_commit_refuses_a_reflog_that_is_a_link_to_a_file_and_leaves_that_file_alone(
         tmp_path):
     p = project(tmp_path, FILES)
@@ -141,7 +137,6 @@ def test_first_commit_refuses_a_reflog_that_is_a_link_to_a_file_and_leaves_that_
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
 
 
-@with_the_door
 @for_every_portal
 def test_a_resume_refuses_a_portal_that_appeared_before_the_ref_moves_and_goes_on_without_it(
         tmp_path, monkeypatch, kind):
@@ -159,7 +154,6 @@ def test_a_resume_refuses_a_portal_that_appeared_before_the_ref_moves_and_goes_o
     assert ref_exists(p, NESTED) and own_leftovers(p) == []
 
 
-@with_the_door
 def test_first_commit_refuses_a_plain_dot_git_whose_commondir_sends_objects_and_refs_outside(
         tmp_path):
     p = project(tmp_path, FILES)
@@ -172,7 +166,6 @@ def test_first_commit_refuses_a_plain_dot_git_whose_commondir_sends_objects_and_
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
 
 
-@with_the_door
 def test_a_resume_refuses_a_dot_git_that_gained_a_commondir_while_it_waited(tmp_path, monkeypatch):
     p = project(tmp_path, FILES)
     digest = terms_of(p, "snapshot")
@@ -196,7 +189,6 @@ def reftable_project(tmp_path, how: str):
     return p
 
 
-@with_the_door
 @for_every_portal
 @pytest.mark.parametrize("how", ["init", "migrate"])
 def test_first_commit_refuses_a_reftable_folder_that_is_a_portal_and_writes_nothing_outside(
@@ -211,7 +203,6 @@ def test_first_commit_refuses_a_reftable_folder_that_is_a_portal_and_writes_noth
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
 
 
-@with_the_door
 @pytest.mark.parametrize("how", ["init", "migrate"])
 def test_first_commit_refuses_a_reftable_repository_and_writes_nothing_below_dot_git(
         tmp_path, how):
@@ -232,7 +223,6 @@ def project_with_a_large_blob(tmp_path):
     return p
 
 
-@with_the_door
 @for_every_portal
 def test_first_commit_refuses_a_portal_at_objects_pack_where_git_streams_a_large_blob(
         tmp_path, kind):
@@ -246,7 +236,6 @@ def test_first_commit_refuses_a_portal_at_objects_pack_where_git_streams_a_large
     assert own_leftovers(p) == [] and no_receipt(p) and not ref_exists(p, "trunk")
 
 
-@with_the_door
 def test_first_commit_streams_a_blob_above_the_big_file_threshold_into_the_plain_pack_folder(
         tmp_path):
     p = project_with_a_large_blob(tmp_path)
@@ -257,7 +246,6 @@ def test_first_commit_streams_a_blob_above_the_big_file_threshold_into_the_plain
     assert len(list(pack_folder.glob("pack-*.pack"))) == 1 and ref_exists(p, "trunk")
 
 
-@with_the_door
 def test_first_commit_writes_through_plain_nested_folders_of_the_ref_the_reflog_and_the_objects(
         tmp_path):
     p = project(tmp_path, {}, branch=NESTED)

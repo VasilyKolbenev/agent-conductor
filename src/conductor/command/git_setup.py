@@ -23,11 +23,6 @@ from .project_routes import _hold_git_allowed
 from .seed_record import read_seed
 
 MODES = frozenset({"snapshot", "empty"})
-#: Publication stays closed until the compatibility gate on the lowest supported Git is closed
-#: (review ruling OD-11): while this is False the confirm shape is refused `contract_invalid`,
-#: as it was before the writer existed. It is the one place an index of ours can reach an owner's
-#: repository through the route, and a test, never a setting, opens it.
-_CONFIRM_OPEN = False
 
 
 @dataclass(frozen=True)
@@ -54,8 +49,7 @@ def parse(body: object) -> Request:
             and type(body["mode"]) is str and body["mode"] in MODES
             and body["preview"] is True):
         return Request("preview", mode=body["mode"])
-    if (_CONFIRM_OPEN and step == "first_commit"
-            and keys == {"step", "mode", "paths_digest", "actor"}):
+    if step == "first_commit" and keys == {"step", "mode", "paths_digest", "actor"}:
         return _confirmation(body)
     raise ContractError("Git setup accepts init/exclude confirmation or first_commit preview")
 

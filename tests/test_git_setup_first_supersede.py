@@ -20,8 +20,7 @@ from conductor.command import git_setup_first as first
 from conductor.command import git_setup_first_lock as lock_module
 from conductor.command import git_setup_first_records as records
 from conductor.command.git_setup_first_index import verify
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, op_file, project, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, project, terms_of
 from tests.git_repo_helpers import needs_git, snapshot
 from tests.test_git_setup import reason
 from tests.test_git_setup_first_commit import (
@@ -30,7 +29,7 @@ from tests.test_git_setup_first_driver import an_operation
 from tests.test_git_setup_first_records import an_op
 from tests.test_git_setup_first_recovery import FILES, expected_status, git_path, own_copies
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 for_both_modes = pytest.mark.parametrize("mode", ["snapshot", "empty"])
 NO_SUCH = "sha256:" + "0" * 64
 

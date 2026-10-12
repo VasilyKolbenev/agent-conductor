@@ -29,8 +29,7 @@ import pytest
 
 from conductor.command import git_setup_first_records as records
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, project, seal, terms_of)
+from tests.git_first_bench import confirm, crashed, project, seal, terms_of
 from tests.git_first_readers import READERS
 from tests.git_first_signing import (  # noqa: F401
     FORMATS, owner_makes_the_commit, signing_key, signing_project, waits)
@@ -42,7 +41,7 @@ from tests.test_git_setup_first_commit import (
 from tests.test_git_setup_first_recognition import an_empty_tree
 from tests.test_git_setup_first_recovery import FILES, git_path
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 for_every_reader = pytest.mark.parametrize("which", READERS)
 #: A repository can switch replacement refs on for itself: on Git 2.31 `core.useReplaceRefs=true`
 #: in the repository's own configuration outweighs `--no-replace-objects` (a newer Git keeps to it).
