@@ -182,10 +182,12 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.next.setup_damaged": ["Nothing was deleted. This version has nothing safe to "
     + "send: look at the project's git yourself.", "Ничего не удалено. В этой версии нечего "
     + "безопасно отправить: посмотрите git проекта сами."],
-  "wizard.first.next.setup_terms_changed": ["Another name or git author is acting now. The name "
-    + "that confirmed it can still finish it: type that name above, then continue.",
-    "Сейчас действует другое имя или другой автор git. Закончить может имя, которое "
-    + "подтверждало: введите его выше и продолжите."],
+  "wizard.first.next.setup_terms_changed": ["Another name or git author is acting now, and a "
+    + "confirmation is not inherited. Only the person who confirmed this step can finish it, "
+    + "under their own name. If the git author changed, set user.name and user.email back.",
+    "Сейчас действует другое имя или другой автор git, а чужое подтверждение не наследуется. "
+    + "Закончить шаг может только тот, кто его подтвердил, под своим именем. Если автор git "
+    + "изменился, верните прежние user.name и user.email."],
   "wizard.first.next.task_run_active": ["A run holds the project: wait for it, then try "
     + "again.", "Проект занят запуском: дождитесь его и повторите."],
   "wizard.first.next.git_failed": ["Git did not answer: check git in a terminal, then read the "

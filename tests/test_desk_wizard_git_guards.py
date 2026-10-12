@@ -73,6 +73,20 @@ def word_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
     return faults
 
 
+def coaching_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
+    """A next-step line that tells the person to type a name into the name field.
+
+    The field holds the name of whoever acts now: a line that says which name to type coaches a
+    person to act under another person's name, which the route's contract forbids.
+    """
+    en = re.compile(r"\b(?:type|enter|put|write|use) (?:that|the|this|their|his|her) name",
+                    re.IGNORECASE)
+    ru = re.compile(r"(?:введите|впишите|укажите|используйте) (?:его|это|то|имя)", re.IGNORECASE)
+    return [f"{key} tells the person to type a name" for key, (said_en, said_ru) in
+            catalogue.items() if key.startswith("wizard.first.next.")
+            and (en.search(said_en) or ru.search(said_ru))]
+
+
 def markup_faults(sources: dict[str, str]) -> list[str]:
     """Any way a text could reach the page as markup."""
     pattern = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|createContextualFragment"
@@ -148,11 +162,16 @@ def test_the_block_asks_only_the_one_setup_target_and_names_no_endpoint_of_its_o
     assert target_faults(planted) == ["x.js asks target seed", "y.js names an endpoint"]
 
 
-def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcome_a_verdict():
-    out = run_js("""
+def _catalogue() -> dict[str, tuple[str, str]]:
+    """Every message of the one table, as `key: (English, Russian)`."""
+    return run_js("""
       console.log(JSON.stringify(Object.fromEntries(Object.entries(i18n.MESSAGES).map(
         ([key, row]) => [key, [row.en, row.ru]]))));
     """, modules=MODULES)
+
+
+def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcome_a_verdict():
+    out = _catalogue()
     assert any(key.startswith("wizard.first.busy.") for key in out)
     assert word_faults(out) == []
     planted = {"wizard.first.busy.confirm": ("Working, 60% done", "Работаем"),
@@ -163,6 +182,21 @@ def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcom
         "wizard.first.busy.confirm carries a figure",
         "wizard.first.lost.head says cancelled or failed",
         "wizard.first.unsent.route_not_found says cancelled or failed"]
+
+
+def test_no_next_step_line_coaches_a_person_to_type_another_persons_name():
+    catalogue = _catalogue()
+    assert any(key.startswith("wizard.first.next.") for key in catalogue)
+    assert coaching_faults(catalogue) == []
+    planted = {"wizard.first.next.setup_terms_changed": (
+        "Another name or git author is acting now. The name that confirmed it can still finish "
+        "it: type that name above, then continue.",
+        "Сейчас действует другое имя или другой автор git. Закончить может имя, которое "
+        "подтверждало: введите его выше и продолжите."),
+        "wizard.first.next.git_failed": ("Check git in a terminal.", "Проверьте git."),
+        "wizard.first.done.init": ("Type the name.", "Введите имя.")}
+    assert coaching_faults(planted) == [
+        "wizard.first.next.setup_terms_changed tells the person to type a name"]
 
 
 def test_the_store_error_notice_is_never_the_words_of_a_lost_answer():

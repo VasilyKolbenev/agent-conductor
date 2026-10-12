@@ -165,11 +165,19 @@ def test_the_continue_posts_the_stored_mode_and_digest_and_the_name_of_now_not_t
     assert "git_preview" not in writes(world), "a continue never asks for a new preview"
     expect(pending_of(bench)).to_have_attribute("data-git-pending", "unfinished")
     assert bench.say("wizard.first.next.setup_terms_changed") in result(bench).inner_text()
-    bench.control("wizard:git:actor").fill("Owner")
-    expect(bench.control("wizard:git:continue")).to_be_enabled()
+    assert bench.control("wizard:git:actor").input_value() == "Anna", "the desk types no name"
+    assert terms(bench)["by"] == bench.say("wizard.first.pending.by", name="Owner")
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_person_who_confirmed_finishes_the_unfinished_commit_under_their_own_name(
+        bench, lang):
+    world = at_materials(bench, lang, "git_pending_unfinished", actor="Owner")
+    open_door(bench)
     bench.control("wizard:git:continue").click()
     expect(result(bench)).to_have_attribute("data-git-result", "done")
-    assert world.posts()[1]["body"]["actor"] == "Owner"
+    assert world.posts() == [{"name": "git_confirm", "body": {
+        "step": "first_commit", "mode": "snapshot", "paths_digest": STORED, "actor": "Owner"}}]
     assert pending_of(bench).count() == 0
     expect(bench.page.locator("[data-git-state]")).to_have_attribute("data-git-state", "repo")
 
