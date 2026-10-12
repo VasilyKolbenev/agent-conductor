@@ -390,17 +390,34 @@ def test_a_refusal_that_asks_for_a_new_preview_drops_the_old_one_and_the_confirm
     assert [row[0] for row in out] == ["paths_changed", "signing_ref_unsupported"]
 
 
-def test_a_locked_index_offers_the_press_again_and_does_not_send_it_or_read_anything():
+def test_a_locked_index_offers_the_same_press_again_and_asks_only_the_git_read_again():
     out = js("""
       const sent = drive(previewed(), {type: "git-confirm"});
       const locked = land(sent, reasonOf("index_locked"));
-      const facts = run.firstFacts(locked);
-      show({action: facts.result.action, wants: fresh(locked).map((ask) => ask.id),
-        readStands: locked.reads.git !== undefined, preview: locked.git.preview !== null,
-        block: facts.blocks.confirm, sending: locked.git.sending});
+      const wants = fresh(locked).map((ask) => ask.id);
+      const facts = run.firstFacts(wants.includes("read:git") ? withRead(locked, "unborn")
+        : locked);
+      show({action: facts.result.action, wants, readDropped: locked.reads.git === undefined,
+        preview: locked.git.preview !== null, block: facts.blocks.confirm,
+        sending: locked.git.sending});
     """)
-    assert out == {"action": "retry", "wants": [], "readStands": True, "preview": True,
-                   "block": None, "sending": None}
+    assert out == {"action": "retry", "wants": ["read:git"], "readDropped": True,
+                   "preview": True, "block": None, "sending": None}
+
+
+def test_every_answer_to_a_continue_asks_the_git_read_again_a_locked_index_included():
+    out = js("""
+      const rows = ["pending_unfinished", "pending_unfinished_unborn", "pending_signature"].map(
+        (name) => {
+          const landed = land(drive(opened({}, name), {type: "git-continue"}),
+            reasonOf("index_locked"));
+          return [name, run.firstFacts(landed).result.action, landed.reads.git === undefined,
+            fresh(landed).map((ask) => ask.id)];
+        });
+      show(rows);
+    """)
+    assert out == [[name, "retry", True, ["read:git"]] for name in (
+        "pending_unfinished", "pending_unfinished_unborn", "pending_signature")]
 
 
 def test_a_timed_out_confirm_may_have_left_an_operation_so_the_read_is_asked_again():

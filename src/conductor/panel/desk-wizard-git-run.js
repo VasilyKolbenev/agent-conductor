@@ -15,8 +15,9 @@
 //     resent, the git read is dropped and asked again (the one thing the desk repeats by itself),
 //     the preview stays, and the read says whether the first commit is pending, done or not
 //     recorded. A lost answer is not worded as a cancel or as a failure;
-//   - after every other answer but a locked index (nothing changed) and the desk's own door turning
-//     the press away (nothing was sent) the read is asked again too.
+//   - after every other answer but the desk's own door turning the press away (nothing was sent)
+//     the read is asked again too, a locked index included: the stored operation can have moved
+//     before the lock was met, and a continue is always answered from the stored terms.
 import {evolve} from "./desk-wizard-base.js";
 import {isActor} from "./desk-wizard-launch.js";
 import {gitFacts} from "./desk-wizard-materials.js";
@@ -236,8 +237,7 @@ function settle(state, found) {
     : SPENDS_PREVIEW.includes(found.reason);
   const next = evolve(state, {closing, git: {...git, result: outcome(found),
     preview: spent ? null : git.preview, list: spent ? false : git.list}});
-  const nothing = found.status === "unsent" || found.reason === "index_locked";
-  return nothing ? next : dropGitRead(next);
+  return found.status === "unsent" ? next : dropGitRead(next);
 }
 
 /** Fold the answer of the press in flight in; an answer to anything else changes nothing. */

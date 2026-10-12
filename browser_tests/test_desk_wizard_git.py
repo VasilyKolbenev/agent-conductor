@@ -304,7 +304,7 @@ def test_a_refusal_that_means_try_again_offers_the_same_press_and_does_not_make_
     expect(result(bench)).to_have_attribute("data-git-notice", "git_setup.reason.index_locked")
     expect(bench.control("wizard:git:confirm")).to_be_enabled()
     assert writes(world) == ["git_preview", "git_confirm"], "nothing is resent by itself"
-    assert [row[0] for row in bench.asks()].count("read:git") == 1, "a locked index changed nothing"
+    assert [row[0] for row in bench.asks()].count("read:git") == 2, "the read is asked again too"
     world.unforce("git_confirm")
     bench.control("wizard:git:confirm").click()
     expect(result(bench)).to_have_attribute("data-git-result", "done")

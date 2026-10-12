@@ -172,9 +172,8 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.next.index_exists": ["Your staged work was left untouched. Commit it or "
     + "unstage it yourself, then prepare a new preview.", "Ваши подготовленные изменения не "
     + "тронуты. Закоммитьте их или снимите с подготовки сами и подготовьте новый предпросмотр."],
-  "wizard.first.next.index_locked": ["Another git process holds the index and nothing was "
-    + "changed. Press the button again when it is done.", "Другой процесс git держит индекс, "
-    + "ничего не изменено. Нажмите кнопку снова, когда он закончит."],
+  "wizard.first.next.index_locked": ["Another git process holds the index. Try again when it is "
+    + "done.", "Другой процесс git держит индекс. Повторите, когда он закончит."],
   "wizard.first.next.too_many_files": ["Exclude or move some files (the limit is 5000), then "
     + "prepare a new preview.", "Исключите или уберите часть файлов (предел 5000) и "
     + "подготовьте новый предпросмотр."],
