@@ -15,13 +15,19 @@ only what the git read says.
    branch moved; the page reads `repo` with `unfinished`, shows the stored terms, and "Continue"
    answers `201`, with exactly ONE move of the branch across both lives.
 
+3. A real desk whose transport has no setup target. The host tells the wizard at its opening
+   whether the transport has a door for the route (one line in `desk-wizard-host.js`); with none,
+   every press of the block is drawn disabled beside its reason and nothing is posted. No stand-in
+   host can show that line, so the page is served the transport WITHOUT the target.
+
 What the test serves differently from the product, and why. The switch of the confirm
 (`FIRST_COMMIT_CONFIRM_OPEN`) is one literal that the tech lead flips when lane L opens the route;
 the route's own switch is held open by the fixture, and the page gets the module with its literal
 set. The write door's target `gitSetup` is lane D1's two lines in `desk-transport.js`; until they
-are in the product the page gets the transport with exactly those two lines. Each change is made
-only while the product lacks it and is asserted to have happened once, so the day the product has
-them the page is served the product's own bytes with no edit here.
+are in the product the page gets the transport with exactly those two lines (scenarios 1 and 2),
+and the third scenario is served the transport without them, taken out once the product has them.
+Each change is asserted to have happened once, so no edit stays here silently: the day the product
+has the lines, scenarios 1 and 2 are served the product's own bytes.
 
 Requirements, stated because a browser module may not skip: the current Git and `ssh-keygen`.
 """
@@ -56,6 +62,15 @@ FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n", "owner.txt": b"mine\n"}
 MODES = ("snapshot", "empty")
 JS = "text/javascript; charset=utf-8"
 SWITCH = "export const FIRST_COMMIT_CONFIRM_OPEN = false;"
+#: Lane D1's two lines in `desk-transport.js`: the text without the target, and with it.
+TARGET_LINES = (('  git: () => "/command/project/git",\n',
+                 '  git: () => "/command/project/git",\n'
+                 '  gitSetup: () => "/command/project/git/setup",\n'),
+                ('"acceptPreview", "acceptCommit"]);',
+                 '"acceptPreview", "acceptCommit", "gitSetup"]);'))
+#: Two animation frames: whatever a click started has been sent, and been reported, by then.
+QUIET = """() => new Promise((done) => requestAnimationFrame(
+  () => requestAnimationFrame(done)))"""
 
 
 def call(base: str, method: str, path: str, token: str | None = None,
@@ -170,29 +185,36 @@ def signing(project: Real, key: Path) -> None:
         git("config", name, value, cwd=project.root)
 
 
-def modules() -> dict[str, bytes]:
-    """The two modules the page is served with an edit, while the product lacks the edit."""
+def with_target(transport: str, present: bool) -> bytes:
+    """The transport with lane D1's two lines put in (`present`) or taken out, each exactly once."""
+    for without, with_ in TARGET_LINES:
+        before, after = (without, with_) if present else (with_, without)
+        assert transport.count(before) == 1, before
+        transport = transport.replace(before, after)
+    assert ("gitSetup" in transport) is present
+    return transport.encode("utf-8")
+
+
+def modules(door: bool = True) -> dict[str, bytes]:
+    """The modules the page is served with an edit, while the product differs from what it needs.
+
+    With `door` the transport has the setup target and the confirm's switch is open. Without it
+    the transport has no setup target and the switch is the product's own."""
     served: dict[str, bytes] = {}
     transport = (PANEL / "desk-transport.js").read_text(encoding="utf-8")
-    if "gitSetup" not in transport:
-        for old, new in (('  git: () => "/command/project/git",\n',
-                          '  git: () => "/command/project/git",\n'
-                          '  gitSetup: () => "/command/project/git/setup",\n'),
-                         ('"acceptPreview", "acceptCommit"]);',
-                          '"acceptPreview", "acceptCommit", "gitSetup"]);')):
-            assert transport.count(old) == 1, old
-            transport = transport.replace(old, new)
-        served["desk-transport.js"] = transport.encode("utf-8")
+    if ("gitSetup" in transport) is not door:
+        served["desk-transport.js"] = with_target(transport, door)
     switch = (PANEL / "desk-wizard-git.js").read_text(encoding="utf-8")
-    if SWITCH in switch:
+    if door and SWITCH in switch:
         served["desk-wizard-git.js"] = switch.replace(SWITCH, SWITCH.replace("false", "true")
                                                       ).encode("utf-8")
     return served
 
 
-def fresh_page(chromium: Browser) -> tuple[Page, list[str], list[tuple[str, str]]]:
+def fresh_page(chromium: Browser, door: bool = True
+               ) -> tuple[Page, list[str], list[tuple[str, str]]]:
     """A new browser context with no memory of anything; what its page reports as a fault; and
-    every request it makes, as (method, path)."""
+    every request it makes, as (method, path). `door` is whether its transport has the target."""
     context = chromium.new_context(viewport={"width": 1100, "height": 1500})
     page = context.new_page()
     page.set_default_timeout(15000)
@@ -202,7 +224,7 @@ def fresh_page(chromium: Browser) -> tuple[Page, list[str], list[tuple[str, str]
     page.on("pageerror", lambda error: faults.append(str(error)))
     page.on("console", lambda message: faults.append(message.text)
             if message.type == "error" else None)
-    for name, body in modules().items():
+    for name, body in modules(door).items():
         page.route(f"**/panel/{name}", served(body))
     return page, faults, asked
 
@@ -257,6 +279,32 @@ def test_the_fixture_serves_a_page_whose_git_read_answers(chromium, real):
         wizard_at_materials(page, real)
         expect(page.locator('[data-git-state="unborn"]')).to_have_count(1)
         expect(page.locator('[data-focus="wizard:git:first_commit"]')).to_be_enabled()
+        assert faults == []
+    finally:
+        page.context.close()
+
+
+def test_a_desk_whose_transport_has_no_setup_target_draws_each_git_press_disabled_and_posts_nothing(
+        chromium, real):
+    """The host line `setupDoor: typeof path.gitSetup === "function"` is the only thing that keeps
+    the real desk from drawing controls that have no door; no bench host can show it."""
+    page, faults, asked = fresh_page(chromium, door=False)
+    try:
+        wizard_at_materials(page, real)
+        said = page.evaluate("""async () => (await import("/panel/studio-i18n.js")).message(
+          "en", "wizard.first.why.door_missing", {})""")
+        expect(page.locator('[data-git-state="unborn"]')).to_have_count(1)
+        page.locator('[data-focus="wizard:git:first_commit"]').click()
+        expect(page.locator('[data-focus="wizard:git:preview"]')).to_be_disabled()
+        pressed = page.locator("[data-git-first] [data-blocked]").evaluate_all(
+            """nodes => nodes.map((node) => [node.dataset.blocked,
+              node.querySelector("button").disabled, node.querySelector("small").textContent])""")
+        assert {key for key, _, _ in pressed} >= {"wizard:git:preview", "wizard:git:confirm"}
+        assert all(disabled and words == said for _, disabled, words in pressed), pressed
+        for key, _, _ in pressed:
+            page.locator(f'[data-focus="{key}"]').click(force=True)
+        page.evaluate(QUIET)
+        assert posts(asked) == [], "a press that has no door sends nothing"
         assert faults == []
     finally:
         page.context.close()
