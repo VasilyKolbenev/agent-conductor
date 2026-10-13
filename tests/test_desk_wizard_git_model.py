@@ -202,3 +202,16 @@ def test_the_models_exports_carry_the_block_vocabulary_and_its_facts():
     assert out["facts"] == "function"
     assert out["block"] == "not_offered", "the confirm exists only inside the opened panel"
     assert out["shown"]["panel"] is False
+
+
+#: What `manual[].reason` can be in the current preview, read from `git_setup_snapshot._manual`:
+#: its own three words and the codes that `containment.portal_violation` and
+#: `first_directory_violation` give for a listed path. Twelve is that set united with all of
+#: `RouteViolationCode`, which this path does not give: `missing`, `outside_root`,
+#: `root_not_descendant` and `parent_traversal` are never returned for a listed file.
+MANUAL_REASONS = ("unportable_name", "irregular_file", "hard_link", "symlink", "junction",
+                  "reparse_point", "unreadable", "not_directory")
+
+
+def test_the_desk_has_words_for_exactly_the_eight_reasons_the_current_preview_can_give():
+    assert sorted(js("show(g.MANUAL_REASONS);")) == sorted(MANUAL_REASONS)

@@ -88,6 +88,27 @@ def coaching_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
             and (en.search(said_en) or ru.search(said_ru))]
 
 
+FALLBACK = "wizard.first.manual.other"
+
+
+def fallback_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
+    """The words for a `manual` reason the desk has none for: the code, and that the file stays out.
+
+    A row of the `manual` list is a file the product does not commit. When the desk cannot say why,
+    the row must still carry the code, so that a person can name it, and must say the file is left
+    out, so that a bare code is never read as a file that goes in.
+    """
+    left_en = re.compile(r"\bleft out\b|\bnot (?:committed|added|included)\b", re.IGNORECASE)
+    left_ru = re.compile(r"не попад|не будет|не войд", re.IGNORECASE)
+    en, ru = catalogue.get(FALLBACK, ("", ""))
+    faults = []
+    if "{code}" not in en or "{code}" not in ru:
+        faults.append(f"{FALLBACK} does not carry the code")
+    if not left_en.search(en) or not left_ru.search(ru):
+        faults.append(f"{FALLBACK} does not say the file is left out")
+    return faults
+
+
 def markup_faults(sources: dict[str, str]) -> list[str]:
     """Any way a text could reach the page as markup."""
     pattern = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|createContextualFragment"
@@ -222,6 +243,15 @@ def test_no_next_step_line_coaches_a_person_to_type_another_persons_name():
         "wizard.first.done.init": ("Type the name.", "Введите имя.")}
     assert coaching_faults(planted) == [
         "wizard.first.next.setup_terms_changed tells the person to type a name"]
+
+
+def test_the_words_for_an_unknown_manual_reason_carry_its_code_and_say_the_file_is_left_out():
+    assert fallback_faults(_catalogue()) == []
+    assert fallback_faults({FALLBACK: ("reason: {code}", "причина: {code}")}) == [
+        f"{FALLBACK} does not say the file is left out"]
+    assert fallback_faults({FALLBACK: ("Left out.", "Не попадёт в коммит.")}) == [
+        f"{FALLBACK} does not carry the code"]
+    assert len(fallback_faults({})) == 2, "a missing message fails both ways"
 
 
 def test_the_store_error_notice_is_never_the_words_of_a_lost_answer():

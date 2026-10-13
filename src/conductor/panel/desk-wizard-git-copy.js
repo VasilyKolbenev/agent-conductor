@@ -71,7 +71,12 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.manual.irregular_file": ["not a regular file", "не обычный файл"],
   "wizard.first.manual.unportable_name": ["a name that does not travel between systems",
     "имя, которое нельзя переносить между системами"],
-  "wizard.first.manual.other": ["reason: {code}", "причина: {code}"],
+  "wizard.first.manual.unreadable": ["a folder on its path cannot be read",
+    "папка на пути к нему не читается"],
+  "wizard.first.manual.not_directory": ["a part of its path is not a folder",
+    "часть пути к нему — не папка"],
+  "wizard.first.manual.other": ["left out of the commit, for a reason this screen does not "
+    + "explain: {code}", "не попадёт в коммит, причину этот экран не объясняет: {code}"],
   // -- why a control waits -------------------------------------------------------------
   "wizard.first.why.door_missing": ["This build of the desk has no door to the git setup step "
     + "yet.", "В этой сборке у экрана ещё нет двери к шагу подключения git."],

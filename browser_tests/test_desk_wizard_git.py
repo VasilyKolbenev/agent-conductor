@@ -23,6 +23,10 @@ LANGS = ("ru", "en")
 OTHER_CODES = ("project_not_active", "contract_invalid", "windows_path_too_long",
                "tool_unavailable")
 ROW = {"length": 1, "sha256": "sha256:" + "1a" * 32, "git_oid": "1f" * 20, "git_mode": "100644"}
+#: The values of `manual[].reason` the current preview can give: the same eight that
+#: `tests/test_desk_wizard_git_model.py` holds the desk's list to.
+MANUAL_REASONS = ("unportable_name", "irregular_file", "hard_link", "symlink", "junction",
+                  "reparse_point", "unreadable", "not_directory")
 #: What only a wait for a signature may say: there are two commands and a second check.
 WAIT_WORDS = re.compile(r"two commands|check again|двумя командами|проверьте снова", re.IGNORECASE)
 
@@ -161,6 +165,23 @@ def test_a_text_chosen_by_the_owner_or_a_foreign_file_stays_text_in_the_preview(
     assert "<script>1</script>" in bench.text("[data-git-manual-row]")
     assert bench.say("wizard.first.manual.other", code="made_up") in bench.text(
         "[data-git-manual-row]"), "a reason the desk has no words for is said by its code"
+    assert bench.page.locator("[data-git-manual] [data-git-manual-row]").count() == 1, (
+        "an unknown reason stays in the list of files that are left out")
+    assert "<script>1</script>" not in bench.text("[data-git-file]"), "and never among the files"
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_each_of_the_eight_reasons_a_file_is_left_out_is_drawn_in_its_own_words(bench, lang):
+    at_materials(bench, lang)
+    rows = [{"path": f"left/{reason}.txt", "reason": reason} for reason in MANUAL_REASONS]
+    patch_preview(bench, {"manual": rows})
+    to_preview(bench)
+    expect(bench.page.locator("[data-git-manual] [data-git-manual-row]")).to_have_count(8)
+    for reason in MANUAL_REASONS:
+        drawn = bench.text(f'[data-git-manual-row="left/{reason}.txt"]')
+        assert bench.say(f"wizard.first.manual.{reason}") in drawn, reason
+        assert bench.say("wizard.first.manual.other", code=reason) not in drawn, reason
     assert bench.problems == []
 
 
