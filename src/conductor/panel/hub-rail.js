@@ -183,8 +183,17 @@ export function projectLine(project, ctx) {
     ? hubText(ctx.locale, "hub.state.stop_overdue_hint") : null};
 }
 
-/** The entries of the «⋯» menu of a project: opening for viewing, closing a view, leaving the list. */
-export function menuItems(project) {
+//: The states in which the shared profile may be copied into a project (spec 8.7): nothing is
+//: half-way (starting, stopping) and nothing waits for a recovery or for another process. One
+//: route does it all; the hub drains a child that runs and starts it again, so the words say
+//: «and restart» only where a child runs.
+const PROFILE_STATES = Object.freeze(["stopped", "running", "failed"]);
+
+/**
+ * The entries of the «⋯» menu of a project: opening for viewing, closing a view, copying the shared
+ * profile into the project (only while `ctx.profile` says it is `present`), leaving the list.
+ */
+export function menuItems(project, ctx = {}) {
   if (!isObject(project) || !STATES.includes(project.state)) return [];
   const items = [];
   const free = !ALIVE.includes(project.state);
@@ -193,6 +202,10 @@ export function menuItems(project) {
   }
   if (project.working === "view" && !free) {
     items.push({id: "close_view", target: "projectStop", key: "hub.act.view_close"});
+  }
+  if (ctx.profile === "present" && PROFILE_STATES.includes(project.state)) {
+    items.push({id: "apply_profile", target: "projectProviders", key: project.state === "running"
+      ? "hub.act.apply_profile_restart" : "hub.act.apply_profile"});
   }
   if (free) items.push({id: "forget", target: "projectForget", key: "hub.act.forget"});
   return items;
@@ -395,7 +408,7 @@ function actionButtons(view, project, said, handlers) {
 }
 
 function menuBlock(view, ctx, project, handlers) {
-  const items = menuItems(project);
+  const items = menuItems(project, {profile: view.profile});
   if (items.length === 0) return [];
   const opened = view.menu === project.project_id, {locale} = ctx;
   const toggle = button(`menu:${project.project_id}`, hubText(locale, "hub.act.menu"),

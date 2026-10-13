@@ -97,6 +97,8 @@ SPEC_WORDS = {
     "hub.act.recheck": "Проверить снова", "hub.act.recover": "Восстановить",
     "hub.act.forget": "Убрать из списка", "hub.act.raise": "Поднять", "hub.act.lower": "Опустить",
     "hub.act.clear_flag": "Снять флаг", "hub.act.recover_login": "Восстановить вход",
+    "hub.act.apply_profile": "Применить профиль",
+    "hub.act.apply_profile_restart": "Применить профиль и перезапустить",
     "hub.confirm.switch": "Сейчас в работе {name}: он остановится на контрольной точке — "
                           "текущий шаг закончится сам.",
     "hub.confirm.stop": "Текущий шаг закончится сам, новые шаги не начнутся. Отменить остановку "

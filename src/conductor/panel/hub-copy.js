@@ -163,6 +163,9 @@ export const HUB_COPY = Object.freeze({
   "hub.act.lower": ["Lower", "Опустить"],
   "hub.act.clear_flag": ["Clear the flag", "Снять флаг"],
   "hub.act.recover_login": ["Recover the login", "Восстановить вход"],
+  "hub.act.apply_profile": ["Apply the profile", "Применить профиль"],
+  "hub.act.apply_profile_restart": ["Apply the profile and restart",
+    "Применить профиль и перезапустить"],
   "hub.act.menu": ["⋯", "⋯"],
   "hub.confirm.switch": ["{name} is in progress now: it will stop at a checkpoint — its current step "
     + "will finish on its own.", "Сейчас в работе {name}: он остановится на контрольной точке — "

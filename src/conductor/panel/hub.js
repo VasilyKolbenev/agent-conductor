@@ -672,7 +672,7 @@ function render() {
   const view = {locale: state.locale, theme: state.theme, prefs: prefs(), hubPort: location.port,
     projects: state.projects, activeId: state.activeId, queue: state.queue,
     selection: state.selection, menu: state.menu, noticed: state.noticed, limits: state.limits,
-    now: Date.now()};
+    profile: state.setup?.profile ?? null, now: Date.now()};
   mountRail(byId("hubRail"), view, handlers);
   mountCenter(byId("hubStub"), view, handlers);
   drawDesk();

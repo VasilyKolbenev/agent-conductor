@@ -267,3 +267,95 @@ def test_the_sentence_of_a_row_follows_the_language_of_the_page(hub_page, lang):
     expect(page.page.locator("html")).to_have_attribute("lang", other)
     expect(banner).to_contain_text(say(page, "hub.reason.recover.prepare_needed"))
     assert banner.text_content().count("conduct ownership recover --prepare-restart") == 1
+
+
+# -- «Применить профиль» and «…и перезапустить»: one entry, one route ----------------------------
+
+
+def menu_items(page: HubPage, project: str) -> list[list[str]]:
+    """The entries of the menu of a project, opened: their keys and labels."""
+    press(page, f"menu:{project}")
+    return page.page.evaluate("""(id) => [...document.querySelectorAll(
+      `.hub-project[data-project-id="${id}"] .hub-project__items button`)].map(
+      (b) => [b.dataset.focus, b.textContent])""", project)
+
+
+def test_the_menu_of_a_stopped_project_offers_the_profile_and_one_press_sends_one_empty_body(
+        hub_page):
+    page = hub_page
+    ready(page)
+    items = menu_items(page, BOT)
+    assert [key for key, _ in items] == [f"act:{BOT}:view_open", f"act:{BOT}:apply_profile",
+                                         f"act:{BOT}:forget"]
+    assert dict(items)[f"act:{BOT}:apply_profile"] == say(page, "hub.act.apply_profile")
+    page.hub.post_answers[f"/hub/projects/{BOT}/providers"] = (202, {"operation_id": OP})
+    operation_at(page, op_row("providers", "running", project_id=BOT))
+    press(page, f"act:{BOT}:apply_profile")
+    expect(page.page.locator(OPERATION)).to_contain_text(say(page, "hub.op.running"))
+    assert page.hub.posts == [{"path": f"/hub/projects/{BOT}/providers", "body": {}}], (
+        "no confirmation is asked and one empty body is sent")
+
+
+def test_the_menu_of_a_running_project_says_restart_and_sends_the_same_request(hub_page):
+    page = hub_page
+    ready(page)
+    items = menu_items(page, WEB)
+    assert items == [[f"act:{WEB}:apply_profile", say(page, "hub.act.apply_profile_restart")]]
+    page.hub.post_answers[f"/hub/projects/{WEB}/providers"] = (202, {"operation_id": OP})
+    operation_at(page, op_row("providers", "succeeded", project_id=WEB,
+                              result={"providers": "copied"}))
+    press(page, f"act:{WEB}:apply_profile")
+    expect(page.page.locator("#hubStatus")).to_have_text(say(page, "hub.op.done.providers"))
+    assert page.hub.posts == [{"path": f"/hub/projects/{WEB}/providers", "body": {}}]
+    expect(page.page.locator(OPERATION)).to_have_count(0)
+
+
+def test_a_profile_copy_that_met_a_project_not_closed_properly_names_the_recovery_first(hub_page):
+    page = hub_page
+    ready(page)
+    menu_items(page, BOT)
+    page.hub.post_answers[f"/hub/projects/{BOT}/providers"] = (202, {"operation_id": OP})
+    operation_at(page, op_row("providers", "failed", code="subprocess_failed", project_id=BOT,
+                              detail={"reason": "recovery_required"}))
+    press(page, f"act:{BOT}:apply_profile")
+    banner = page.page.locator(OPERATION)
+    expect(banner).to_contain_text(say(page, "hub.reason.recovery_required"))
+    assert clause(page, "subprocess_failed") not in banner.text_content()
+
+
+def test_a_profile_copy_that_failed_for_its_own_code_says_the_clause_of_that_code(hub_page):
+    page = hub_page
+    ready(page)
+    menu_items(page, BOT)
+    page.hub.post_answers[f"/hub/projects/{BOT}/providers"] = (202, {"operation_id": OP})
+    operation_at(page, op_row("providers", "failed", code="owner_busy", project_id=BOT))
+    press(page, f"act:{BOT}:apply_profile")
+    expect(page.page.locator(OPERATION)).to_contain_text(
+        say(page, "hub.op.failed", reason=clause(page, "owner_busy")))
+
+
+@pytest.mark.parametrize("code", ["profile_absent", "profile_invalid", "project_busy"])
+def test_a_refusal_of_the_profile_route_is_said_in_the_clause_of_its_code(hub_page, code):
+    page = hub_page
+    ready(page)
+    menu_items(page, BOT)
+    page.hub.refuse(f"/hub/projects/{BOT}/providers", 409, code)
+    press(page, f"act:{BOT}:apply_profile")
+    expect(page.page.locator("#hubStatus")).to_have_text(
+        say(page, "hub.notice.refused", reason=clause(page, code)))
+    assert page.hub.posts == [{"path": f"/hub/projects/{BOT}/providers", "body": {}}]
+    expect(page.page.locator(OPERATION)).to_have_count(0)
+
+
+@pytest.mark.parametrize("profile", ["absent", "invalid"])
+def test_no_profile_is_offered_while_the_profile_is_absent_or_invalid(hub_page, profile):
+    page = hub_page
+    setup = fixture("hub_setup.json")
+    setup["profile"] = profile
+    page.hub.answer("/hub/setup", setup)
+    page.page.reload()
+    ready(page)
+    keys = [key for key, _ in menu_items(page, BOT)]
+    assert keys == [f"act:{BOT}:view_open", f"act:{BOT}:forget"]
+    assert page.page.locator(f'[data-focus="menu:{WEB}"]').count() == 0, (
+        "a running project has no menu at all while there is nothing in it")
