@@ -1446,6 +1446,28 @@ recorded the push answers 200 with the standing record, another digest is `push_
 and another actor `acceptance_exists`. One press at a time acts on a run in a process, and the
 store's transaction is held only for the write of `push.json`, never across a network call.
 
+The pull request is made for one head: the commit, the branch and the repository of `push.json`,
+against the `base` of the body. Its check BEFORE any creation changes nothing outside: the remote
+head must still be that commit (else `pr_mismatch` with `mismatch:"remote_head_moved"`), and
+`gh pr list --repo O/R --head <branch> --state all --json number,url,state,headRefName,
+headRefOid,baseRefName,isCrossRepository,isDraft` is read. A pull request with that commit, that
+base and no fork is the head's own: it is recorded and answers 200, and nothing is created.
+Another one on the branch is `pr_mismatch` (`other_head`, `other_base` or `cross_repository`) and
+nothing is created. Then `gh pr create --repo O/R --base <base> --head <branch> --title <title>
+--body-file - [--draft]` runs with the body on standard input, and the check runs again, the
+remote head and the list. The pull request found is recorded and answers 201 whether or not it
+is the head's own: when it is not, `pr.json` holds what it is in `mismatch` (`{head_oid, base,
+cross_repository}`; `null` for the head's own), the response says so and no creation is ever
+repeated. `gh` not signed in answers `gh_not_logged_in` and is the one failure that is known to
+have created nothing; any other failure of the creation (a timeout, a broken connection) is
+unknown, and the list is read before anything else: a pull request there is recorded, and none
+answers `pr_create_failed`, after which a new press starts from the check. Every failure of gh in
+this route other than not signed in is `pr_create_failed`; a remote that does not answer before
+the check is `pr_create_failed` too (`push_auth_failed` when git could not sign in). A press
+with `"check":true` stops after the check and answers 200 `{"pull_request": null}` when the
+branch has none. The standing record answers 200 to a press that names its base, and
+`pr_mismatch` with `other_base` to any other. `pr.json` gains the field `mismatch`.
+
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
 composes the items into the one document `artifact-materials` and appends it

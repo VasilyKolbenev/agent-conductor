@@ -22,7 +22,7 @@ _FIELDS = {
     "push": {"schema_version", "acceptance_id", "remote", "push_url", "remote_repo", "ref", "commit",
              "push_digest", "remote_oid", "requested_by", "pushed_at"},
     "pr": {"schema_version", "acceptance_id", "repo", "number", "url", "draft", "base", "head_ref",
-           "head_oid", "requested_by", "created_at"},
+           "head_oid", "mismatch", "requested_by", "created_at"},
 }
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 
@@ -93,7 +93,20 @@ def _validate(kind, value):
         if not _text(value["head_ref"]).startswith("conduct/"):
             raise ValueError("head ref")
         _oid(value["head_oid"])
+        _mismatch(value["mismatch"])
     return value
+
+
+def _mismatch(value):
+    """`null`, or what a pull request that is not the pushed commit's own actually is."""
+    if value is None:
+        return
+    if type(value) is not dict or set(value) != {"head_oid", "base", "cross_repository"}:
+        raise ValueError("mismatch")
+    _oid(value["head_oid"])
+    _text(value["base"])
+    if type(value["cross_repository"]) is not bool:
+        raise ValueError("mismatch")
 
 
 def read_records(root, run_id, *, task_id=None, kind=None):
