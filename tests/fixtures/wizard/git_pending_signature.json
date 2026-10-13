@@ -1,0 +1,31 @@
+{
+  "git": {
+    "state": "unborn",
+    "unsupported": null,
+    "head": null,
+    "object_format": "sha1",
+    "dirty_paths": 0,
+    "exclude": "present",
+    "agent_instructions": {"found": 0, "default_include": false},
+    "remotes": [],
+    "tools": {"git": {"version": "2.47.1"}, "gh": null},
+    "signing": true,
+    "first_commit_pending": {
+      "state": "awaiting_signature",
+      "terms": {
+        "mode": "snapshot",
+        "paths_digest": "sha256:9f2c1ad04b7e5d36c8a1f0e24b95d7c3a6e8b10f4d2c97a5e3b6180d4f7a29c1",
+        "digest_version": 2,
+        "requested_by": "Owner",
+        "file_count": 2,
+        "target_ref": "refs/heads/main",
+        "author": {"name": "First Author", "email": "first@example.invalid"}
+      },
+      "signing": {
+        "tree": "9c3e5f1a7b2d4086e1f3a5c7d9b0e2f4a6c8d1e3",
+        "target_ref": "refs/heads/main",
+        "message_path": "conductor.v3/git/msg-first-0123456789abcdef0123456789abcdef.txt"
+      }
+    }
+  }
+}

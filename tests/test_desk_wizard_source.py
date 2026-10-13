@@ -24,7 +24,8 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                  "./desk-wizard-base.js", "./desk-wizard-team.js",
                                  "./desk-wizard-input.js", "./desk-wizard-prep.js",
                                  "./desk-wizard-launch.js", "./desk-wizard-run.js",
-                                 "./desk-wizard-skip.js"},
+                                 "./desk-wizard-skip.js", "./desk-wizard-git.js",
+                                 "./desk-wizard-git-run.js"},
         "desk-wizard-input.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                  "./desk-wizard-materials.js", "./desk-wizard-team.js",
                                  "./desk-wizard-prep.js"},
@@ -39,6 +40,9 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                 "./desk-wizard-roles.js"},
         "desk-wizard-team.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                 "./desk-wizard-roles.js"},
+        "desk-wizard-git.js": set(),
+        "desk-wizard-git-run.js": {"./desk-wizard-base.js", "./desk-wizard-launch.js",
+                                   "./desk-wizard-materials.js", "./desk-wizard-git.js"},
         "desk-wizard-materials.js": set(), "desk-wizard-cycle.js": set(),
         "desk-wizard-roles.js": set(), "desk-wizard-digest.js": set()}
 #: The renderer: it builds elements, so it reaches the view's helper and the words, and no store,
@@ -48,20 +52,24 @@ RENDERER = "desk-wizard.js"
 #: the two others hold what it draws from: the controls every step is made of, and step 5.
 DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
                     "./desk-wizard-copy.js", "./desk-wizard-draw.js",
-                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js"},
+                    "./desk-wizard-prepare-view.js", "./desk-wizard-card.js",
+                    "./desk-wizard-git-view.js"},
          "desk-wizard-draw.js": {"./command-view.js"},
          "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
                                          "./desk-wizard-model.js"},
          "desk-wizard-card.js": {"./command-view.js", "./desk-wizard-draw.js",
-                                 "./desk-wizard-model.js"}}
+                                 "./desk-wizard-model.js"},
+         "desk-wizard-git-view.js": {"./command-view.js", "./desk-wizard-draw.js",
+                                     "./desk-wizard-git.js"}}
 #: What each drawing module hands the ones above it, and nothing else.
 DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
                  "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
                                          "timeText"],
                  "desk-wizard-prepare-view.js": ["prepareBody"],
-                 "desk-wizard-card.js": ["runBody"]}
+                 "desk-wizard-card.js": ["runBody"],
+                 "desk-wizard-git-view.js": ["firstExit", "firstName", "firstPanel"]}
 #: Data only: the catalogue holds strings and nothing else.
-DATA = ("desk-wizard-copy.js",)
+DATA = ("desk-wizard-copy.js", "desk-wizard-git-copy.js")
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 FUNCTION_CAP = 50
 #: A clock, a random source, storage and the DOM: what a pure module must never reach for.
@@ -93,7 +101,8 @@ def test_the_wizard_modules_import_only_the_siblings_each_is_granted():
         assert set(re.findall(IMPORTS, _source(name))) <= granted, name
     for name in PURE:
         assert set(re.findall(IMPORTS, _source(name))) == PURE[name], name
-    assert re.findall(IMPORTS, _source(DATA[0])) == []
+    for name in DATA:
+        assert re.findall(IMPORTS, _source(name)) == [], name
 
 
 def test_the_wizard_modules_reach_no_clock_no_randomness_no_storage_and_no_dom():

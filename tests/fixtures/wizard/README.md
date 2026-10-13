@@ -7,7 +7,11 @@ difference is settled in the fixture or in the route, on the record.
 
 | File | Read | Spec |
 |---|---|---|
-| `git_<state>.json` (eight files) | `GET /command/project/git`, one per `state` | 6.2.1 |
+| `git_<state>.json` (eight files) | `GET /command/project/git`, one per `state`; eleven keys, the eleventh `first_commit_pending: null` | 6.2.1; lane L's `L-to-D1-D2-first-commit-pending.md` |
+| `git_pending_*.json` (six files) | the same read with a pending first commit: `unfinished` after the branch moved (`repo`), `unfinished` before it (`unborn`), `unfinished` with `mode: "empty"` and a null digest, `awaiting_signature` with a SHA-1 and a SHA-256 tree, `damaged` | pending sections 2-4 |
+| `setup_receipt_init.json` | the answer of `POST /command/project/git/setup` for `{step:"init"}` (and, with `step: "exclude"`, for the exclusion step): the seven-key step receipt | contract section 1; `git_setup_records.receipt` |
+| `setup_preview_snapshot.json`, `setup_preview_empty.json`, `setup_preview_signing.json` | the 12-key preview of `{step:"first_commit", mode, preview:true}`: rows with `git_mode`, `manual` rows, `suspicious_name`, the digest of the empty list for `empty`, `signing_required` | contract section 2 |
+| `setup_receipt_commit.json`, `setup_receipt_commit_signed.json` | the 13-key receipt of the confirm: `signature` `not_required` and `present` | contract section 3 |
 | `documents.json`, `documents_truncated.json` | `GET /command/project/documents` | 6.2.2, 9.5 |
 | `document.json` | `GET /command/project/documents/<doc_id>` | 9.5 |
 | `workflows.json`, `workflows_served.json` | `GET /command/workflows`: rows, `starters`, `providers`; the second without the two owed provider facts (below) | 7.9, 5.6.6 |
@@ -17,6 +21,10 @@ difference is settled in the fixture or in the route, on the record.
 | `quotas.json` | `GET /command/quotas` (the keys the roles step reads) | 5.6.6, 6.3 |
 | `previous_run.json`, `previous_revision.json` | `GET /command/runs/<id>` and `GET /command/workflows/<id>/revisions/<n>` of the last run | 7.10 |
 | `flow_state_none.json` | `GET /command/workflows/<id>/flow` of a workflow with neither a draft nor a revision: `source: "none"`, `flow: null`, `draft_digest: null` (the `workflow_id` is overwritten per cycle) | 7.1 |
+
+The `git_*` and `setup_*` files are held to the contract's key sets by
+`tests/test_desk_wizard_git_fixtures.py` (written by hand from lane L's two handoffs). Their values
+are invented; their keys are the contract's.
 
 The provider rows of `workflows.json` are the server's own (`provider_projection`: `provider_id`,
 `display_name`, `availability`, `implementation`, `auth`, `controls`, `vendor_sandbox`; the roads a

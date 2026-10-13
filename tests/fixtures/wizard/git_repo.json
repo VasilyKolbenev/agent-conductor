@@ -9,6 +9,7 @@
     "agent_instructions": {"found": 4, "default_include": false},
     "remotes": [{"name": "origin", "github": "owner/repo", "url_has_credentials": false}],
     "tools": {"git": {"version": "2.47.1"}, "gh": null},
-    "signing": false
+    "signing": false,
+    "first_commit_pending": null
   }
 }

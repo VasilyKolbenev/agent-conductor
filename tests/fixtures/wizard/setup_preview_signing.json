@@ -1,0 +1,23 @@
+{
+  "setup": {
+    "step": "first_commit",
+    "mode": "snapshot",
+    "head": null,
+    "target_ref": "refs/heads/main",
+    "object_format": "sha1",
+    "author": {"name": "First Author", "email": "first@example.invalid"},
+    "signing": true,
+    "files": [
+      {"path": "README.md", "length": 120,
+       "sha256": "sha256:1a2b3c4d5e6f70811a2b3c4d5e6f70811a2b3c4d5e6f70811a2b3c4d5e6f7081",
+       "git_oid": "1f0a9c3e1f0a9c3e1f0a9c3e1f0a9c3e1f0a9c3e", "git_mode": "100644"},
+      {"path": "src/app.py", "length": 2048,
+       "sha256": "sha256:2b3c4d5e6f7081922b3c4d5e6f7081922b3c4d5e6f7081922b3c4d5e6f708192",
+       "git_oid": "2e1b0d4f2e1b0d4f2e1b0d4f2e1b0d4f2e1b0d4f", "git_mode": "100644"}
+    ],
+    "manual": [],
+    "warnings": ["signing_required"],
+    "digest_version": 2,
+    "paths_digest": "sha256:9f2c1ad04b7e5d36c8a1f0e24b95d7c3a6e8b10f4d2c97a5e3b6180d4f7a29c1"
+  }
+}
