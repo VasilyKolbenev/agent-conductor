@@ -275,13 +275,10 @@ def test_changing_the_mode_drops_the_preview_and_the_confirm_waits_for_a_new_one
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_the_starter_connects_git_and_then_makes_only_an_empty_first_commit(bench, lang):
-    world = at_materials(bench, lang, "git_not_git", starter="desk-starter-docs")
-    assert bench.say("wizard.first.connect.starter") in bench.text("[data-git-connect]")
-    assert bench.page.locator('[data-git-exit="run_without_git"]').count() == 0
-    bench.control("wizard:git:connect_git").click()
-    expect(bench.control("wizard:git:first_commit")).to_be_enabled()
+def test_the_starter_makes_only_an_empty_first_commit_from_the_first_commit_button(bench, lang):
+    world = at_materials(bench, lang, "git_unborn", starter="desk-starter-docs")
     open_door(bench)
+    assert bench.page.locator('[data-git-exit="run_without_git"]').count() == 0
     bench.control("wizard:git:first_commit").click()
     assert bench.page.locator("[data-focus^='wizard:git:mode:']").count() == 0, "no mode to choose"
     assert bench.text("[data-git-mode]") == bench.say("wizard.first.mode.starter")
@@ -289,8 +286,8 @@ def test_the_starter_connects_git_and_then_makes_only_an_empty_first_commit(benc
     expect(bench.page.locator('[data-git-preview="empty"]')).to_have_count(1)
     bench.control("wizard:git:confirm").click()
     expect(bench.page.locator("[data-git-state]")).to_have_attribute("data-git-state", "repo")
-    assert writes(world) == ["git_init", "git_preview", "git_confirm"]
-    assert world.posts()[2]["body"]["paths_digest"] is None
+    assert writes(world) == ["git_preview", "git_confirm"]
+    assert world.posts()[1]["body"]["paths_digest"] is None
     expect(bench.control("wizard:next")).to_be_enabled()
     assert bench.problems == []
 

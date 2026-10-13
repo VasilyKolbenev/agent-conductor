@@ -89,14 +89,19 @@ function frozen(value) {
   return Object.freeze(value);
 }
 
+//: The message the product gives an empty first commit (lane L's contract, section 3: fixed, not a
+//: setting). The page may show it beside the starter's second step; a test holds it to the
+//: product's own constant.
+export const EMPTY_COMMIT_MESSAGE = "Начало проекта (Conduct)";
+
 //: The slice the wizard keeps for this block: the switch (copied once from the literal above), the
 //: door (whether the desk's transport has the target the setup route is reached by: only an
 //: explicit `false` closes it, so a host that does not say is not blamed), the panel and the mode
-//: the person chose, the validated preview, the press counter, the request in flight and the last
-//: answer's words.
+//: the person chose, the validated preview, the press counter, the request in flight, the last
+//: answer's words and the starter's chain of two steps (null until it is pressed).
 export function initialGit(open, door = true) {
   return {open: open === true, door: door !== false, panel: null, mode: null, preview: null,
-    list: false, seq: 0, sending: null, result: null};
+    list: false, seq: 0, sending: null, result: null, chain: null};
 }
 
 // -- the shapes of the answers --------------------------------------------------------------

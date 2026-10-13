@@ -58,7 +58,7 @@ def test_the_switch_is_one_boolean_and_the_slice_copies_it_and_only_true_opens_i
     assert out["junk"] == [False, False, False], "only the boolean true opens it"
     assert out["slice"] == {"open": False, "door": True, "panel": None, "mode": None,
                             "preview": None, "list": False, "seq": 0, "sending": None,
-                            "result": None}
+                            "result": None, "chain": None}
 
 
 def test_a_preview_is_taken_only_with_its_exact_keys_and_for_the_mode_asked():

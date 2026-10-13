@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from conductor.command.git_setup_first import TITLES
 from tests.desk_wizard_node import PANEL, run_js
 from tests.test_graph_source import _code
 
@@ -59,13 +60,19 @@ def target_faults(sources: dict[str, str]) -> list[str]:
     return faults
 
 
+#: The words that speak of a request whose outcome the desk may not know: the wait, the lost answer,
+#: the press that was turned away, and the chain's status and skipped-step words.
+UNKNOWN_OUTCOME_WORDS = ("wizard.first.busy.", "wizard.first.lost.", "wizard.first.unsent.",
+                         "wizard.first.chain.status.", "wizard.first.chain.skipped.")
+
+
 def word_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
     """A busy, lost or unsent word that promises progress or names a verdict it does not know."""
     banned_en = re.compile(r"cancel|fail|error|abort", re.IGNORECASE)
     banned_ru = re.compile(r"отмен|ошибк|не удалось|сбой", re.IGNORECASE)
     faults = []
     for key, (en, ru) in catalogue.items():
-        if not key.startswith(("wizard.first.busy.", "wizard.first.lost.", "wizard.first.unsent.")):
+        if not key.startswith(UNKNOWN_OUTCOME_WORDS):
             continue
         if "%" in en or "%" in ru or re.search(r"\d", en + ru):
             faults.append(f"{key} carries a figure")
@@ -218,16 +225,21 @@ def _catalogue() -> dict[str, tuple[str, str]]:
 
 def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcome_a_verdict():
     out = _catalogue()
-    assert any(key.startswith("wizard.first.busy.") for key in out)
+    assert all(any(key.startswith(prefix) for key in out) for prefix in UNKNOWN_OUTCOME_WORDS)
     assert word_faults(out) == []
     planted = {"wizard.first.busy.confirm": ("Working, 60% done", "Работаем"),
                "wizard.first.lost.head": ("The request was cancelled", "Запрос отменён"),
                "wizard.first.unsent.route_not_found": ("It is fine", "Не удалось отправить"),
-               "wizard.first.next.git_failed": ("It failed 3 times", "Сбой")}
+               "wizard.first.next.git_failed": ("It failed 3 times", "Сбой"),
+               "wizard.first.chain.status.lost": ("The step failed", "Шаг не выполнен"),
+               "wizard.first.chain.skipped.read": ("Skipped after 3 tries", "Пропущен"),
+               "wizard.first.chain.title": ("Create the repository: 2 steps", "Создать: 2 шага")}
     assert word_faults(planted) == [
         "wizard.first.busy.confirm carries a figure",
         "wizard.first.lost.head says cancelled or failed",
-        "wizard.first.unsent.route_not_found says cancelled or failed"]
+        "wizard.first.unsent.route_not_found says cancelled or failed",
+        "wizard.first.chain.status.lost says cancelled or failed",
+        "wizard.first.chain.skipped.read carries a figure"]
 
 
 def test_no_next_step_line_coaches_a_person_to_type_another_persons_name():
@@ -282,6 +294,12 @@ def test_the_sign_commands_take_signing_alone_and_never_the_stored_terms():
                 "  return `git update-ref ${terms.target_ref}`;\n}\n")
     assert command_faults(bad_arity) != [] and command_faults(bad_read) != []
     assert command_faults("") == ["signCommands is not declared as an exported function"]
+
+
+def test_the_commit_message_the_chain_shows_is_the_one_the_product_writes():
+    out = run_js('console.log(JSON.stringify(g.EMPTY_COMMIT_MESSAGE ?? null));',
+                 modules={"g": SWITCH_MODULE})
+    assert out == TITLES["empty"], "the page says the message the empty first commit really has"
 
 
 def test_the_view_assigns_every_free_text_through_a_text_property_or_a_value():

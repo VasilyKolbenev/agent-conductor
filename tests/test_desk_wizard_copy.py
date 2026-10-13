@@ -107,7 +107,8 @@ FAMILIES = {
     "first_unsent": "wizard.first.unsent.{}", "first_next": "wizard.first.next.{}",
     "first_codes": "error.{}", "first_manual": "wizard.first.manual.{}",
     "first_warning": "wizard.first.warning.{}", "first_pending": "wizard.first.pending.{}",
-    "first_mode": "wizard.first.mode.{}",
+    "first_mode": "wizard.first.mode.{}", "first_chain_status": "wizard.first.chain.status.{}",
+    "first_chain_skipped": "wizard.first.chain.skipped.{}",
 }
 
 

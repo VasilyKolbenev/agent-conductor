@@ -10,7 +10,7 @@
 // press is one event of the model's closed table handed to the host through `ctx.send`.
 import {element} from "./command-view.js";
 import {action, choice, later, textField} from "./desk-wizard-draw.js";
-import {MANUAL_REASONS, WARNING_WORDS} from "./desk-wizard-git.js";
+import {EMPTY_COMMIT_MESSAGE, MANUAL_REASONS, WARNING_WORDS} from "./desk-wizard-git.js";
 
 const line = (value, attributes = {}) => element("p", {...attributes, text: value});
 
@@ -27,25 +27,41 @@ function press(ctx, facts, spec, onPress) {
 // -- the exits and the name -----------------------------------------------------------------
 
 function connectBlock(ctx, facts) {
-  const starter = ctx.wizard.mode.starterId !== null;
   return element("div", {className: "desk-wizard__connect", "data-git-connect": ""}, [
     line(ctx.t("wizard.first.connect.effect")), element("code", {text: "git init"}),
     line(ctx.t("wizard.first.connect.exclude")),
-    ...(starter ? [line(ctx.t("wizard.first.connect.starter"))] : []),
     press(ctx, facts, {kind: "init", key: "wizard:git:connect_git",
       label: ctx.t("wizard.exit.connect_git")}, () => ctx.send({type: "git-init"}))]);
+}
+
+//: The starter's «Создать репозиторий: 2 шага»: both steps with their effects and what they run
+//: (`git init`, and the fixed message the product gives the empty commit), then the one button.
+function chainBlock(ctx, facts) {
+  const step = (name, parts) => element("li", {"data-git-chain-step": name},
+    [line(ctx.t(`wizard.first.chain.step_${name}`)), ...parts]);
+  return element("div", {className: "desk-wizard__chain", "data-git-chain": ""}, [
+    element("h4", {text: ctx.t("wizard.first.chain.title")}),
+    line(ctx.t("wizard.first.chain.intro")), element("ol", {}, [
+      step("init", [line(ctx.t("wizard.first.connect.effect")), element("code", {text: "git init"}),
+        line(ctx.t("wizard.first.connect.exclude"))]),
+      step("commit", [line(ctx.t("wizard.first.commit.effect_empty")),
+        line(ctx.t("wizard.first.chain.message")),
+        element("code", {text: EMPTY_COMMIT_MESSAGE})])]),
+    press(ctx, facts, {kind: "chain", key: "wizard:git:chain",
+      label: ctx.t("wizard.first.chain.title")}, () => ctx.send({type: "git-chain"}))]);
 }
 
 /** The exit `connect_git` (what it does, and the button) or `first_commit` (opens the panel). */
 export function firstExit(ctx, id, facts) {
   const view = ctx.wizard.mode.view;
   if (id === "connect_git") {
+    if (facts.starter) return chainBlock(ctx, facts);
     return view ? later(ctx, id, "wizard:git:connect_git", ctx.t("wizard.exit.connect_git"))
       : connectBlock(ctx, facts);
   }
+  const wait = view ? "project_not_active" : (facts.phase === "busy" ? "busy" : null);
   return action("wizard:git:first_commit", ctx.t("wizard.exit.first_commit"),
-    () => ctx.send({type: "git-start"}),
-    view ? ctx.t("wizard.first.why.project_not_active") : null);
+    () => ctx.send({type: "git-start"}), wait === null ? null : ctx.t(`wizard.first.why.${wait}`));
 }
 
 /** The field the person's name is typed in, wherever a press that carries it can be made. */
@@ -216,13 +232,35 @@ function resultLines(ctx, result) {
     ...(result.next === null ? [] : [line(ctx.t(result.next))])];
 }
 
-function resultView(ctx, facts) {
-  const result = facts.result;
-  if (result === null) return [];
-  return [element("div", {className: "desk-wizard__result", role: "status",
+function resultBox(ctx, result) {
+  return element("div", {className: "desk-wizard__result", role: "status",
     "data-git-result": result.status, "data-git-result-kind": result.kind,
     "data-git-notice": result.status === "refused" ? result.notice : null},
-  resultLines(ctx, result))];
+  resultLines(ctx, result));
+}
+
+function resultView(ctx, facts) {
+  return facts.result === null ? [] : [resultBox(ctx, facts.result)];
+}
+
+// -- the starter's chain, link by link ------------------------------------------------------
+
+function chainRow(ctx, row) {
+  return element("li", {"data-git-chain-row": row.link, "data-git-chain-status": row.status}, [
+    element("span", {text: ctx.t(`wizard.first.chain.step_${row.link}`)}),
+    element("small", {text: ` ${ctx.t(`wizard.first.chain.status.${row.status}`)}`}),
+    ...(row.result === null ? [] : [resultBox(ctx, row.result)]),
+    ...(row.skipped === null ? [] : [line(ctx.t(`wizard.first.chain.skipped.${row.skipped}`))])]);
+}
+
+//: What each link came to, and, when the repository stands with no commit, the way on by hand.
+function chainRows(ctx, facts) {
+  const chain = facts.chain;
+  if (chain === null) return [];
+  return [element("div", {className: "desk-wizard__chain-rows", "data-git-chain-rows": chain.stage},
+    [element("ol", {}, chain.rows.map((row) => chainRow(ctx, row))),
+      ...(chain.byHand ? [line(ctx.t("wizard.first.chain.by_hand"), {"data-git-by-hand": ""})]
+        : [])])];
 }
 
 /** The block under the exits: the wait, the exclusion step, the first commit, the last answer. */
@@ -234,7 +272,7 @@ export function firstPanel(ctx, facts) {
   if (facts.shown.exclude) parts.push(excludeBlock(ctx, facts));
   if (facts.shown.panel) parts.push(commitPanel(ctx, facts));
   if (facts.shown.pending) parts.push(pendingView(ctx, facts));
-  parts.push(...resultView(ctx, facts));
+  parts.push(...chainRows(ctx, facts), ...resultView(ctx, facts));
   if (parts.length === 0) return [];
   const root = element("section", {className: "desk-wizard__first", "data-git-first": "",
     "data-git-phase": facts.phase, "aria-busy": facts.phase === "busy" ? "true" : "false"},
