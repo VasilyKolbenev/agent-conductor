@@ -396,7 +396,7 @@ async function readChoice(taskId, runId = null, fresh = () => true) {
 }
 
 //: The name of a person, in the desk's shared compatibility range (ADR-4d, canon row L42): the
-//: id grammar, so one value passes the decision receipt and the routes. The routes take more.
+//: id grammar, because a gate decision's receipt takes only an id (`command/contracts.py`).
 const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 //: Put the keyboard where a press that replaced its own control means it to be.
