@@ -27,6 +27,7 @@ import {codeWords, hubText} from "./hub-copy.js";
 import {createOnboarding} from "./hub-onboarding.js";
 import {folderForm} from "./hub-add.js";
 import {createFrameHost, frameAddress} from "./hub-frame.js";
+import {FOLLOWED, createFollower} from "./hub-ops.js";
 import {confirmWords, mountRail, node, noticedMap, projectLine, unlistedNotes} from "./hub-rail.js";
 import {mountCenter, mountSide} from "./hub-stub.js";
 
@@ -72,9 +73,10 @@ const WRITE_TARGETS = Object.freeze({
 const IDS = Object.freeze({pick: /^pick-[0-9a-f]{32}$/, tool: /^(?:gh|git)$/,
   owner: /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/,
   project: /^[0-9a-f]{32}$/, login: /^[0-9a-f]{64}$/, operation: /^operation-[0-9a-f]{32}$/});
-//: The frames that make the page read again, by kind, and the read each makes.
+//: The frames that make the page read again, by kind, and the read each makes. An `operation` frame
+//: makes the page read that operation, if it follows it (it is not a read of the table).
 const FRAMES = Object.freeze({projects: "projects", project: "projects", limits: "limits",
-  setup: "setup"});
+  setup: "setup", operation: null});
 //: The states of a tool (`git`, `gh`) that ask a person to look.
 const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable"]);
 
@@ -208,6 +210,19 @@ const adding = createOnboarding({state, write, read, render, refresh, select, is
   schedule: (call, delay) => setTimeout(call, delay),
   invalidateProjects: () => { projectReadEpoch += 1; }});
 
+//: The operations a press began (a recovery, a profile copy), each followed by its id.
+const operations = createFollower({read, schedule: (call, delay) => setTimeout(call, delay),
+  cancel: (handle) => clearTimeout(handle), changed: () => render(), settled: operationSettled});
+
+//: A followed operation ended: a success is said in the status line (a failure stays as its
+//: banner, and only the notice that said the hub "took it" is taken down), and the page reads again
+//: what the operation may have changed. The follower asks for the drawing.
+function operationSettled(event) {
+  if (event.key !== null) state.notice = {key: event.key, code: null};
+  else if (state.notice?.key === "hub.notice.accepted") state.notice = null;
+  refreshAll();
+}
+
 // -- the stream: frames are identifiers ------------------------------------------------------------
 
 //: A frame the page takes: an object of a known kind whose identifiers fit their grammar.
@@ -219,7 +234,8 @@ function frameOf(data) {
     return null;
   }
   if (!isObject(frame) || !Object.hasOwn(FRAMES, frame.kind)) return null;
-  const fits = frame.kind !== "project" || IDS.project.test(String(frame.project_id));
+  const fits = (frame.kind !== "project" || IDS.project.test(String(frame.project_id)))
+    && (frame.kind !== "operation" || IDS.operation.test(String(frame.operation_id)));
   return fits ? frame : null;
 }
 
@@ -232,7 +248,9 @@ function openStream() {
   };
   stream.onmessage = (event) => {
     const frame = frameOf(event.data);
-    if (frame !== null) refresh(FRAMES[frame.kind]);
+    if (frame === null) return;
+    if (frame.kind === "operation") operations.touch(frame.operation_id);
+    else refresh(FRAMES[frame.kind]);
   };
   stream.onerror = () => {
     state.stream = "lost";
@@ -332,6 +350,15 @@ function followResume(project, runId) {
   writeAddress();
 }
 
+//: The operation a press began, when the hub answered with its id: the page follows it by that
+//: id. The same id again is the same row (a login recovery pressed twice).
+function followAnswer(action, project, payload) {
+  const id = payload?.operation_id;
+  if (!Object.hasOwn(FOLLOWED, action.target) || !IDS.operation.test(String(id))) return;
+  operations.follow(FOLLOWED[action.target], id,
+    action.subject ?? String(project?.name ?? project?.folder ?? ""));
+}
+
 async function perform(action, project) {
   if (state.busy) return;
   Object.assign(state, {busy: true, confirm: null, menu: null});
@@ -341,6 +368,7 @@ async function perform(action, project) {
   Object.assign(state, {busy: false, notice: noticeOf(answer)});
   if (answer.status !== "accepted") state.intent = null;
   else if (action.resume) followResume(project, action.resume);
+  if (answer.status === "accepted") followAnswer(action, project, answer.payload);
   render();
   await refreshAll();
 }
@@ -483,7 +511,7 @@ function loginBanner(one) {
   const press = node("button", {type: "button", "data-focus": `login:${one.login_key}`,
     text: hubText(state.locale, "hub.act.recover_login")});
   press.addEventListener("click", () => perform({id: "recover_login", target: "loginRecover",
-    params: {login: one.login_key}, confirm: null}, null));
+    params: {login: one.login_key}, confirm: null, subject: String(one.harness)}, null));
   return banner("login", hubText(state.locale, "hub.banner.login", {harness: String(one.harness)}),
     [press]);
 }
@@ -528,6 +556,20 @@ function unlistedBanners() {
     one.exact));
 }
 
+//: One banner for each operation the page follows: a running one says so, a failed one says the
+//: sentence of its row and can be dismissed (a succeeded one is gone, and the status line says it).
+function operationBanners() {
+  return operations.rows(state.locale).map((one) => {
+    const dismiss = node("button", {type: "button", "data-focus": `op:${one.id}:dismiss`,
+      text: hubText(state.locale, "hub.op.dismiss")});
+    dismiss.addEventListener("click", () => operations.dismiss(one.id));
+    const made = banner("operation", one.subject === "" ? one.text : `${one.subject} · ${one.text}`,
+      one.phase === "failed" ? [dismiss] : []);
+    made.dataset.phase = one.phase;
+    return made;
+  });
+}
+
 function banners() {
   const registry = state.registryBad ? [banner("registry",
     hubText(state.locale, "hub.banner.registry"))] : [];
@@ -544,7 +586,7 @@ function banners() {
     consent: (value) => { state.add.consent = value; render(); },
   })] : [];
   byId("hubBanners").replaceChildren(...registry, ...form, ...first,
-    ...setupBanners(), ...unlistedBanners());
+    ...setupBanners(), ...unlistedBanners(), ...operationBanners());
 }
 
 function firstRun() {

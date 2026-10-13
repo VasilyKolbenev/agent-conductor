@@ -25,6 +25,7 @@ HUB_ASSETS = MappingProxyType({
     "/hub/hub-onboarding.js": (_JS, "hub-onboarding.js"),
     "/hub/hub-github.js": (_JS, "hub-github.js"),
     "/hub/hub-copy.js": (_JS, "hub-copy.js"),
+    "/hub/hub-ops.js": (_JS, "hub-ops.js"),
     "/hub/hub-frame.js": (_JS, "hub-frame.js"),
     "/hub/hub-rail.js": (_JS, "hub-rail.js"),
     "/hub/hub-stub.js": (_JS, "hub-stub.js"),
