@@ -174,13 +174,14 @@ DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
 #: `materials` joined when lane L's route `POST /command/runs/<run_id>/materials` landed
 #: (spec 6.2.3, route-canon 3), and `autoContinue` for the continue-after flag (spec 4.3.4, lane
 #: H's route, written by the block of spec 5.8), and `queue`, `queueOrder` and `queueWithdraw` for
-#: the project queue of the Pult (spec 4.4.8, lane L's route-canon 4): each one more name on the
-#: same door, the counts unchanged.
+#: the project queue of the Pult (spec 4.4.8, lane L's route-canon 4), and `gitSetup` for the
+#: wizard's Git step (spec 5.6.8, 12): each one more name on the same door, the counts unchanged.
 WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
                            "proposals", "actions", "artifacts", "tasks",
                            "automationPreview", "automationAuthorize", "automationControl",
                            "materials", "autoContinue", "seed", "flow", "queue",
-                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit"})
+                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit",
+                           "gitSetup"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.
