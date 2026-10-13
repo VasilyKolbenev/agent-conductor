@@ -234,6 +234,8 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/commit", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/push", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/pull-request", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
@@ -1393,6 +1395,27 @@ are full and of the same format, the branch is validated under `conduct/`, and
 `message_path` is only `conductor[.v3]/git/msg-acc-<32 hex>.txt` relative to the
 project. No commit or ref is created until the owner uses the terminal; a later
 explicit retry verifies the complete result before writing its receipt.
+
+`POST /command/runs/<run_id>/accept/push` and `POST /command/runs/<run_id>/accept/pull-request`
+are the second and third of the three separate, shown steps of an accepted result (desk redesign
+section 9.7); neither is reachable from the commit route. A server started to view the project
+refuses both `project_not_active` (409) before it reads the body. The push takes one of two closed
+bodies: the terms `{"acceptance_id","remote","preview":true}`, or the confirmation
+`{"acceptance_id","remote","push_digest","actor"}` with the one optional key `"check":true`. The
+pull request takes the closed body `{"acceptance_id","base","title","body","draft","actor"}` with
+the same optional `"check":true`. `acceptance_id` is `acc-` and 32 lowercase hex, `remote` and
+`actor` follow the ids and the identity of the commit route, `base` is a branch name, `title` is
+one line of at most 256 characters, `body` is text of at most 32 768 characters, and `draft` is a
+boolean. Any other key or value is `contract_invalid`. After the body, the push answers
+`accept_refused` `push_requires_commit` until a commit record stands, and the pull request answers
+`pr_requires_push` until a push record stands. Both then need the pinned gh: a server that has none
+answers `tool_unavailable` with `{tool:"gh", reason}`. `accept_refused` gains these closed reasons:
+`push_requires_commit`, `push_not_permitted`, `push_rejected`, `push_terms_changed`,
+`push_url_ambiguous`, `push_destination_mismatch`, `remote_url_has_credentials`,
+`push_auth_failed`, `push_timed_out`, `push_unconfirmed`, `pr_requires_push`, `gh_not_logged_in`,
+`pr_mismatch` and `pr_create_failed`. `pr_mismatch` carries a second detail field, `mismatch`, one
+word of `remote_head_moved`, `other_head`, `other_base` and `cross_repository`; no other reason
+carries it.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,

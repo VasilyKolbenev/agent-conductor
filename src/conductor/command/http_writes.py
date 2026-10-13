@@ -75,6 +75,12 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "accept_preview":
         from .accept_preview import preview
         return preview(api, route.run_id, body)
+    if route.name == "accept_push":
+        from .accept_push import push
+        return push(api, route.run_id, body)
+    if route.name == "accept_pull_request":
+        from .accept_pull_request import pull_request
+        return pull_request(api, route.run_id, body)
     if route.name.startswith("automation_"):
         from .policy_routes import route as policy_route
         return policy_route(api, route.name, route.run_id, body)

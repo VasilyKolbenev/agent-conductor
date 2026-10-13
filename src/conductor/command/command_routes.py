@@ -64,6 +64,8 @@ COMMAND_ROUTES = (
     ("GET", "/command/runs/<run_id>/accept"),
     ("POST", "/command/runs/<run_id>/accept/preview"),
     ("POST", "/command/runs/<run_id>/accept/commit"),
+    ("POST", "/command/runs/<run_id>/accept/push"),
+    ("POST", "/command/runs/<run_id>/accept/pull-request"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
     ("GET", "/command/queue"),
@@ -78,7 +80,8 @@ _RUN_ROUTE = re.compile(
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
     r"(?:/(automation/preview|automation/authorize|automation/control|automation|"
-    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|accept/preview|accept/commit|accept|graph))?\Z")
+    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|"
+    r"accept/pull-request|accept/push|accept/preview|accept/commit|accept|graph))?\Z")
 _WORKFLOW_ROUTE = re.compile(
     r"/command/workflows/(?P<workflow_id>[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The revision number is a tail of the `revisions` tail rather than a fourth
