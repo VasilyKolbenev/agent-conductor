@@ -18,15 +18,14 @@ from conductor.command import git_setup_first_signing as signing
 from conductor.command.git_setup_first_index import verify
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
 from conductor.ownership import data_root
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, op_file, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, terms_of
 from tests.git_first_signing import (  # noqa: F401
     owner_makes_the_commit, signing_key, signing_project, waits)
 from tests.git_repo_helpers import needs_git
 from tests.test_git_setup_first_commit import install_files, no_receipt, own_leftovers
 from tests.test_git_setup_first_recovery import FILES, git_path
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 CRASHES = [pytest.param("_put", signing, id="after_the_message_file"),
            pytest.param("start", records, id="after_the_operation_record")]
 

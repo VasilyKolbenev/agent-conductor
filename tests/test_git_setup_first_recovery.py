@@ -6,7 +6,7 @@ leaves. The exact repeat of the same confirmation must then finish the operation
 repository and the records show, whatever the working folder says by then. Two tests are rows of
 gate G-old (row 8) and run with the isolated Git 2.31 as the reader and as the owner's own Git
 when `CONDUCT_OLD_GIT` names it, in both modes and both object formats; the others use the
-current reader. The route's confirm door is held open by `confirm_door` until it opens for real.
+current reader. The route's confirm door has been open for real since Task 8.7.
 """
 from __future__ import annotations
 
@@ -20,8 +20,7 @@ from conductor.command import git_setup_first_lock as lock_module
 from conductor.command import git_setup_first_records as records
 from conductor.command.git_setup_first_index import verify
 from conductor.command.project_git import GitAnswer
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crash_after, crashed, op_file, project, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, project, terms_of
 from tests.git_first_readers import READERS
 from tests.git_repo_helpers import needs_git, snapshot
 from tests.test_git_setup import reason
@@ -29,7 +28,7 @@ from tests.test_git_setup_first_commit import (
     an_owner_index, install_files, no_receipt, own_leftovers, text, trunk_exists)
 from tests.test_git_setup_first_driver import an_operation
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n", "owner.txt": b"mine\n"}
 GRID = [("snapshot", "sha1"), ("snapshot", "sha256"), ("empty", "sha1"), ("empty", "sha256")]
 for_every_reader = pytest.mark.parametrize("which", READERS)

@@ -22,7 +22,7 @@ from conductor.command.git_setup_first_resume import Act, Index
 from conductor.command.git_setup_records import SetupRefused
 from conductor.command.project_git import GitAnswer, GitReadFailed
 from conductor.ownership import data_root
-from tests.git_first_bench import confirm, confirm_door, op_file, project, seal  # noqa: F401
+from tests.git_first_bench import confirm, op_file, project, seal
 from tests.git_repo_helpers import needs_git, snapshot
 from tests.test_command_http_api import NOW
 from tests.test_git_setup import reason
@@ -30,7 +30,6 @@ from tests.test_git_setup import reason
 FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n"}
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 TREE = "1" * 40
-DOOR = pytest.mark.usefixtures("confirm_door")
 
 
 def text(p, *args):
@@ -206,7 +205,6 @@ ORDER = [
 
 
 @needs_git
-@DOOR
 def test_first_commit_publishes_the_bytes_then_the_op_then_the_copy_then_the_lock(
         tmp_path, monkeypatch):
     p = project(tmp_path, FILES)
@@ -231,7 +229,6 @@ def test_first_commit_publishes_the_bytes_then_the_op_then_the_copy_then_the_loc
 
 
 @needs_git
-@DOOR
 def test_the_receipt_is_written_before_the_op_is_retired_and_the_bytes_stand_until_then(
         tmp_path, monkeypatch):
     p = project(tmp_path, FILES)
@@ -310,7 +307,6 @@ def test_a_refusal_that_cannot_prove_the_install_bytes_removes_nothing_and_says_
 
 
 @needs_git
-@DOOR
 def test_other_terms_over_an_operation_whose_ref_moved_are_refused_and_nothing_is_undone(tmp_path):
     p = project(tmp_path, FILES)
     digest = seal(p)["paths_digest"]

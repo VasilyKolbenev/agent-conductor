@@ -19,8 +19,7 @@ from conductor.command import git_setup_first_records as records
 from conductor.command.git_setup_first_index import verify
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
 from conductor.ownership import data_root
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crash_after, terms_of)
+from tests.git_first_bench import confirm, crash_after, terms_of
 from tests.git_first_readers import READERS
 from tests.git_first_signing import (  # noqa: F401
     command_lines, owner_environment, owner_makes_the_commit, run_owner, signing_key,
@@ -136,7 +135,6 @@ def world(p):
 @pytest.mark.parametrize("which", READERS)
 @pytest.mark.parametrize("mode, fmt", GRID)
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 def test_a_really_signed_first_commit_is_recognised_and_its_index_installed(
         tmp_path, signing_key, mode, fmt, which):
     p, digest, detail = project_waiting(tmp_path, signing_key, mode, fmt, which)
@@ -162,7 +160,6 @@ def test_a_really_signed_first_commit_is_recognised_and_its_index_installed(
 
 
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 def test_an_unsigned_commit_that_matches_in_everything_else_is_head_exists_not_a_signed_commit(
         tmp_path, signing_key):
     p, digest, detail = project_waiting(tmp_path, signing_key)
@@ -201,7 +198,6 @@ def commit_by_hand(p, detail, *, tree=None, parents=(), message=None, author=Non
 
 
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 @pytest.mark.parametrize("difference", ["tree", "parent", "message_byte", "author_name",
                                         "author_email"])
 def test_a_signed_commit_that_differs_in_tree_parent_message_or_author_is_head_exists(
@@ -225,7 +221,6 @@ def test_a_signed_commit_that_differs_in_tree_parent_message_or_author_is_head_e
 
 
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 def test_a_header_that_is_no_armour_does_not_pass_as_a_signature_even_with_everything_else_right(
         tmp_path, signing_key):
     p, digest, detail = project_waiting(tmp_path, signing_key)
@@ -240,7 +235,6 @@ def test_a_header_that_is_no_armour_does_not_pass_as_a_signature_even_with_every
 
 
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 @pytest.mark.parametrize("crash, status", [("_do_take_lock", 201), ("_do_install_index", 201),
                                            ("_do_finish", 200)])
 def test_the_recognised_commit_enters_the_same_install_driver_and_resumes_from_its_faults(
@@ -260,7 +254,6 @@ def test_the_recognised_commit_enters_the_same_install_driver_and_resumes_from_i
 
 
 @needs_git
-@pytest.mark.usefixtures("confirm_door")
 def test_the_receipt_states_the_level_present_and_no_git_call_of_the_product_verifies(
         tmp_path, signing_key):
     p, digest, detail = project_waiting(tmp_path, signing_key)

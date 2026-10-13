@@ -22,8 +22,7 @@ from conductor.command.http_transport import CommandSession
 from conductor.command.project_claim import ProjectIdentity
 from conductor.command.run_store import RunStore, StoreError
 from conductor.ownership import data_root
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, op_file, project, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, project, terms_of
 from tests.git_repo_helpers import needs_git, snapshot
 from tests.test_command_adapters import FakeAdapter
 from tests.test_command_http_api import NOW, PORT, TOKEN, ids
@@ -36,7 +35,7 @@ from tests.test_git_setup_first_recovery import (
     FILES, failing_unlink_once, git_path, is_copy, own_copies, stage_of, writes)
 from tests.test_project_git_state import read
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 for_both_modes = pytest.mark.parametrize("mode", ["snapshot", "empty"])
 
 

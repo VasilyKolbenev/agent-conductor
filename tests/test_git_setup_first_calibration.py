@@ -21,8 +21,7 @@ from conductor.command.git_setup_first_index import binding_of, mark, verify
 from conductor.command.git_setup_first_lock import lock_state, release_own_lock
 from conductor.command.git_setup_first_resume import Lock
 from conductor.command.git_setup_facts import plain_git_dir
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, op_file, project, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, project, terms_of
 from tests.git_index_bytes import plain
 from tests.git_repo_helpers import needs_git
 from tests.test_git_index_marker_compat import FILES as BYTES
@@ -32,7 +31,7 @@ from tests.test_git_setup_first_commit import (
 from tests.test_git_setup_first_lock import made
 from tests.test_git_setup_first_recovery import FILES, git_path, owners_bytes_for_the_tree
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 
 
 def test_calibration_a_lock_judged_by_existence_would_delete_the_empty_lock_the_witness_plants(

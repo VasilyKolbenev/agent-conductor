@@ -18,8 +18,7 @@ from conductor.command import git_setup_first_records as records
 from conductor.command import git_setup_first_signing as signing
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
 from conductor.ownership import data_root
-from tests.git_first_bench import (  # noqa: F401
-    confirm, confirm_door, crashed, op_file, project, terms_of)
+from tests.git_first_bench import confirm, crashed, op_file, project, terms_of
 from tests.git_first_signing import (  # noqa: F401
     FORMATS, owner_makes_the_commit, signing_key, signing_project, waits)
 from tests.git_repo_helpers import needs_git, snapshot
@@ -30,7 +29,7 @@ from tests.test_git_setup_first_leftovers import a_restarted_server, setup_dir, 
 from tests.test_git_setup_first_recovery import FILES, expected_status, git_path, own_copies, writes
 from tests.test_project_git_state import read
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 for_both_modes = pytest.mark.parametrize("mode", ["snapshot", "empty"])
 for_both_formats = pytest.mark.parametrize("fmt", FORMATS)
 

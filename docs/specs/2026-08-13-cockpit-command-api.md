@@ -1301,9 +1301,7 @@ that writes the index writes it without the marker, an ordinary `status` include
 the line can appear once, several times or never. The marker proves the ownership of the
 lock and of the stored install bytes only: an installed index that the owner's Git
 rewrote with an equivalent tree is left as it is and the operation finishes, another
-tree is `index_exists`, and a receipt is never undone by a later rewrite. A build whose
-compatibility gate on the lowest supported Git is still open refuses this body as
-`contract_invalid`, as before.
+tree is `index_exists`, and a receipt is never undone by a later rewrite.
 
 When Git is set to sign (`signing: true` in the preview) the product never signs, never makes
 the commit and never moves a ref. It writes the objects and the marked index bytes, STORES the

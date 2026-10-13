@@ -1,9 +1,9 @@
 """The confirmed first commit through the route: the happy path and what it may write (plan Task 7).
 
-Every test runs with the route's confirm door held open (`confirm_door`): the door opens for real
-only after the compatibility gate on the lowest supported Git is closed (Task 8.7). Each one takes
-the preview the desk would show, confirms exactly that, and looks at the repository with the
-reader's own Git. Recovery at every boundary is Task 8's; here the driver runs once, start to end.
+Each test takes the preview the desk would show, confirms exactly that, and looks at the
+repository with the reader's own Git. The route's confirm door is open for real since Task 8.7
+(`tests/test_git_setup_first_live.py` walks it on a real socket). Recovery at every boundary is
+Task 8's; here the driver runs once, start to end.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from conductor.command.http_transport import CommandSession
 from conductor.command.project_claim import ProjectIdentity
 from conductor.command.run_store import RunStore, StoreError
 from conductor.ownership import data_root
-from tests.git_first_bench import confirm, confirm_door, op_file, project, seal  # noqa: F401
+from tests.git_first_bench import confirm, op_file, project, seal
 from tests.git_first_readers import READERS
 from tests.git_first_scratch import NOTICE, notice_lines
 from tests.git_repo_helpers import git, needs_git, real_reader, repository, snapshot
@@ -33,7 +33,7 @@ from tests.test_command_project_doors import request
 from tests.test_git_setup import PATH, reason
 from tests.test_git_setup_modes import legacy_digest
 
-pytestmark = [needs_git, pytest.mark.usefixtures("confirm_door")]
+pytestmark = needs_git
 FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n"}
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 NO_SUCH = "sha256:" + "0" * 64

@@ -13,7 +13,7 @@ import functools
 
 import pytest
 
-from conductor.command import git_setup, git_setup_first
+from conductor.command import git_setup_first
 from conductor.command.run_store import StoreError
 from conductor.ownership import data_root
 from tests.git_first_readers import product_reader, reader_binary
@@ -84,11 +84,15 @@ def seal(folder, mode="snapshot"):
 
 
 @pytest.fixture
-def confirm_door(monkeypatch):
-    """The tests of the driver prove it with the route's confirm door open; the real door opens
-    only after the compatibility gate on the lowest supported Git is closed (plan Task 8.7).
-    Nothing outside a test ever sets this."""
-    monkeypatch.setattr(git_setup, "_CONFIRM_OPEN", True)
+def confirm_door():
+    """States that the route's confirm door is open. It patches nothing.
+
+    The door is open in the code (plan Task 8.7), so no test needs this fixture any more. It
+    remains only for lane D2, whose `tests/test_desk_wizard_git_contract.py` imports it and marks
+    its module with it, so that the tests of both lanes work once both are merged. Delete it
+    when D2 drops that import; `test_a_test_that_still_uses_the_confirm_door_fixture_...` in
+    `tests/test_git_setup_first_live.py` goes with it.
+    """
 
 
 def confirm(folder, mode="snapshot", digest=None, actor="Owner"):
