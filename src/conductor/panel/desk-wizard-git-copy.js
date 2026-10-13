@@ -206,15 +206,15 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.next.git_identity_missing": ["Set user.name and user.email in git in a "
     + "terminal, then prepare a new preview.", "Задайте user.name и user.email в git в "
     + "терминале и подготовьте новый предпросмотр."],
-  "wizard.first.next.head_exists": ["Nothing was changed. The branch already holds a commit the "
-    + "product did not make, and the product never moves or removes a branch.",
-    "Ничего не изменено. В ветке уже есть коммит, который сделал не продукт, а продукт никогда "
-    + "не переносит и не убирает ветку."],
-  "wizard.first.next.head_exists_signing": ["The branch already holds a commit that is not the "
-    + "one the two commands make, an unsigned commit included. Nothing was changed and the wait "
-    + "stays. The product never moves or removes a branch: make sure the branch holds the commit "
-    + "made by the two commands, then check again.", "В ветке уже есть коммит, который сделан не "
-    + "этими двумя командами, в том числе неподписанный. Ничего не изменено, ожидание остаётся. "
+  "wizard.first.next.head_exists": ["Nothing was changed. The branch already holds a commit "
+    + "this operation cannot accept, and the product never moves or removes a branch.",
+    "Ничего не изменено. В ветке уже есть коммит, который эта операция принять не может, а "
+    + "продукт никогда не переносит и не убирает ветку."],
+  "wizard.first.next.head_exists_signing": ["The branch already holds a commit this operation "
+    + "cannot accept, an unsigned commit included. Nothing was changed and the wait stays. The "
+    + "product never moves or removes a branch: make sure the branch holds the commit made by "
+    + "the two commands, then check again.", "В ветке уже есть коммит, который эта операция "
+    + "принять не может, в том числе неподписанный. Ничего не изменено, ожидание остаётся. "
     + "Продукт никогда не переносит и не убирает ветку: проверьте, что в ветке коммит, сделанный "
     + "двумя командами, и проверьте снова."],
   "wizard.first.next.index_exists": ["Your staged work was left untouched. Commit it or "

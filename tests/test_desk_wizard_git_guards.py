@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from conductor.command.git_setup_first import TITLES
 from tests.desk_wizard_node import PANEL, run_js
 from tests.test_graph_source import _code
@@ -95,6 +97,40 @@ def coaching_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
     return [f"{key} tells the person to type a name" for key, (said_en, said_ru) in
             catalogue.items() if key.startswith("wizard.first.next.")
             and (en.search(said_en) or ru.search(said_ru))]
+
+
+PLAIN_LINE = "wizard.first.next.head_exists"
+WAIT_LINE = "wizard.first.next.head_exists_signing"
+#: What a person is told about the commit that stops the first commit: that this operation cannot
+#: accept it, never that the product did not make it (the review ruling of 13.10, section 3).
+HEAD_FITS = {"en": "a commit this operation cannot accept",
+             "ru": "коммит, который эта операция принять не может"}
+#: What each of the two lines told the person before, and still tells.
+HEAD_KEPT = {"en": ("Nothing was changed", "never moves or removes a branch"),
+             "ru": ("Ничего не изменено", "никогда не переносит и не убирает ветку")}
+HEAD_BLAME = {"en": re.compile(r"did not make|didn't make|not the product", re.IGNORECASE),
+              "ru": re.compile(r"сделал не продукт|не продукт", re.IGNORECASE)}
+LANGUAGE_COLUMN = {"en": 0, "ru": 1}
+
+
+def head_exists_faults(catalogue: dict[str, tuple[str, str]], lang: str) -> list[str]:
+    """The two `head_exists` next-step lines in one language: neutral about who made the commit.
+
+    The branch holds a commit this operation cannot accept. What matters is whether it fits this
+    operation, not whether the product made it, so each line says that it does not fit, does not
+    say who made it, and keeps what it told the person: nothing was changed, and the product
+    never moves or removes a branch. A missing line fails every check.
+    """
+    faults = []
+    for key in (PLAIN_LINE, WAIT_LINE):
+        said = catalogue.get(key, ("", ""))[LANGUAGE_COLUMN[lang]]
+        if HEAD_BLAME[lang].search(said):
+            faults.append(f"{key} ({lang}) says who made the commit")
+        if HEAD_FITS[lang] not in said:
+            faults.append(f"{key} ({lang}) does not say this operation cannot accept the commit")
+        faults += [f"{key} ({lang}) no longer says {kept!r}" for kept in HEAD_KEPT[lang]
+                   if kept.lower() not in said.lower()]
+    return faults
 
 
 FALLBACK = "wizard.first.manual.other"
@@ -286,6 +322,74 @@ def test_the_plain_head_exists_line_names_no_commands_and_the_signature_wait_lin
     assert not any(commands.search(said) for said in plain), "a plain confirm has no commands"
     assert all(commands.search(said) for said in wait), "a wait for a signature has two"
     assert plain != wait
+
+
+@pytest.mark.parametrize("lang", ("en", "ru"))
+def test_the_head_exists_lines_call_the_commit_one_this_operation_cannot_accept(lang):
+    assert head_exists_faults(_catalogue(), lang) == []
+
+
+#: The two lines as they were shipped: the plain one said the product did not make the commit, and
+#: the wait one said it was not the one the two commands make.
+OLD_LINES = {
+    PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit the product did not make, and "
+        "the product never moves or removes a branch.",
+        "Ничего не изменено. В ветке уже есть коммит, который сделал не продукт, а продукт "
+        "никогда не переносит и не убирает ветку."),
+    WAIT_LINE: (
+        "The branch already holds a commit that is not the one the two commands make, an "
+        "unsigned commit included. Nothing was changed and the wait stays. The product never "
+        "moves or removes a branch: make sure the branch holds the commit made by the two "
+        "commands, then check again.",
+        "В ветке уже есть коммит, который сделан не этими двумя командами, в том числе "
+        "неподписанный. Ничего не изменено, ожидание остаётся. Продукт никогда не переносит и "
+        "не убирает ветку: проверьте, что в ветке коммит, сделанный двумя командами, и "
+        "проверьте снова.")}
+NEUTRAL_LINES = {
+    PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit this operation cannot accept, "
+        "and the product never moves or removes a branch.",
+        "Ничего не изменено. В ветке уже есть коммит, который эта операция принять не может, а "
+        "продукт никогда не переносит и не убирает ветку."),
+    WAIT_LINE: (
+        "The branch already holds a commit this operation cannot accept, an unsigned commit "
+        "included. Nothing was changed and the wait stays. The product never moves or removes a "
+        "branch: make sure the branch holds the commit made by the two commands, then check "
+        "again.",
+        "В ветке уже есть коммит, который эта операция принять не может, в том числе "
+        "неподписанный. Ничего не изменено, ожидание остаётся. Продукт никогда не переносит и "
+        "не убирает ветку: проверьте, что в ветке коммит, сделанный двумя командами, и "
+        "проверьте снова.")}
+
+
+def _swapped(lang: str) -> dict[str, tuple[str, str]]:
+    """The neutral lines with the old words in one language and the neutral ones in the other."""
+    column = LANGUAGE_COLUMN[lang]
+    return {key: tuple(OLD_LINES[key][i] if i == column else NEUTRAL_LINES[key][i]
+                       for i in (0, 1)) for key in NEUTRAL_LINES}
+
+
+def test_the_head_exists_guard_fails_the_old_words_in_each_language_on_its_own():
+    assert head_exists_faults(NEUTRAL_LINES, "en") == []
+    assert head_exists_faults(NEUTRAL_LINES, "ru") == []
+    for lang, other in (("en", "ru"), ("ru", "en")):
+        assert head_exists_faults(_swapped(lang), other) == [], f"the {other} words are neutral"
+        assert head_exists_faults(_swapped(lang), lang) == [
+            f"{PLAIN_LINE} ({lang}) says who made the commit",
+            f"{PLAIN_LINE} ({lang}) does not say this operation cannot accept the commit",
+            f"{WAIT_LINE} ({lang}) does not say this operation cannot accept the commit"]
+
+
+def test_the_head_exists_guard_names_a_dropped_promise_and_a_missing_line():
+    dropped = {**NEUTRAL_LINES, PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit this operation cannot accept.",
+        NEUTRAL_LINES[PLAIN_LINE][1])}
+    assert head_exists_faults(dropped, "en") == [
+        f"{PLAIN_LINE} (en) no longer says 'never moves or removes a branch'"]
+    assert head_exists_faults(dropped, "ru") == []
+    for lang in ("en", "ru"):
+        assert len(head_exists_faults({}, lang)) == 6, "a missing line fails the fit and both kept"
 
 
 def test_no_module_of_the_block_can_put_a_text_on_the_page_as_markup_or_draws_a_progress_bar():
