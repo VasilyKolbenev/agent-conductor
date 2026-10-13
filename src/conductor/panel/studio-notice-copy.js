@@ -107,7 +107,7 @@ export const NOTICE_COPY = Object.freeze({
   "git_setup.reason.unsafe_git_route": ["The Git metadata route is not safe to write.", "Путь служебных файлов Git небезопасен для записи."],
   "git_setup.reason.git_exclude_failed": ["The local exclusion block could not be written.", "Не удалось записать локальный блок исключений."],
   "git_setup.reason.git_identity_missing": ["Set Git user.name and user.email in your terminal.", "Задайте user.name и user.email Git в терминале."],
-  "git_setup.reason.head_exists": ["The repository already has a first commit.", "Первый коммит уже существует."],
+  "git_setup.reason.head_exists": ["The branch already holds a commit this operation cannot accept.", "Ветка уже содержит коммит, который эта операция не может принять."],
   "git_setup.reason.index_exists": ["Git already has an index; keep the owner's staged work.", "Индекс Git уже существует; подготовленные владельцем изменения сохранены."],
   "git_setup.reason.index_locked": ["Another Git operation holds the index lock.", "Другой процесс Git удерживает замок индекса."],
   "git_setup.reason.too_many_files": ["The snapshot contains more than 5000 paths.", "В снимке больше 5000 путей."],

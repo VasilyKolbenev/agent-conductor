@@ -140,7 +140,7 @@ export const DESK_COPY = Object.freeze({
   "desk.pult.actor_save": ["Save", "Сохранить"],
   "desk.pult.actor_cancel": ["Cancel", "Отмена"],
   "desk.pult.actor_hint": [
-    "Use letters and digits, then dots, hyphens or underscores; up to 128 characters.",
+    "Use Latin letters and digits, then dots, hyphens or underscores; up to 128 characters.",
     "Латинские буквы и цифры, затем точки, дефисы или подчёркивания; до 128 знаков."],
   // -- the console: the project queue (spec 4.4.8) ---------------------------------------
   "desk.pult.queue": ["Project queue", "Очередь проекта"],
