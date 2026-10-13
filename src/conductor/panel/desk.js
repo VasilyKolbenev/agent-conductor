@@ -395,8 +395,8 @@ async function readChoice(taskId, runId = null, fresh = () => true) {
   return landed.phase === "ready";
 }
 
-//: The name of a person, in the grammar every id of the routes has: it is what the routes will
-//: take as an actor, so the desk refuses here what they would refuse there.
+//: The name of a person, in the desk's shared compatibility range (ADR-4d, canon row L42): the
+//: id grammar, so one value passes the decision receipt and the routes. The routes take more.
 const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 //: Put the keyboard where a press that replaced its own control means it to be.
