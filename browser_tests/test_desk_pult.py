@@ -43,7 +43,7 @@ RUNS = [{"run_id": "run-fix-new", "task_id": "task-fix"}]
 ACTOR = {
     "en": {"none": "You: name not given · set", "named": "You: vasya · change",
            "label": "Your name (it signs what is recorded in your name)",
-           "hint": "Use letters and digits, then dots, hyphens or underscores; "
+           "hint": "Use Latin letters and digits, then dots, hyphens or underscores; "
                    "up to 128 characters.", "save": "Save", "cancel": "Cancel"},
     "ru": {"none": "Вы: имя не указано · указать", "named": "Вы: vasya · изменить",
            "label": "Ваше имя (оно подписывает записи от вашего имени)",
