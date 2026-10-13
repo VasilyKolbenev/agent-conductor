@@ -18,9 +18,38 @@ export const WIZARD_GIT_COPY = Object.freeze({
     + "file, so the product's own folders stay out of your commits.", "Оно также запишет блок в "
     + "локальный файл исключений репозитория, чтобы служебные папки продукта не попали в ваши "
     + "коммиты."],
-  "wizard.first.connect.starter": ["This starter needs a repository with a first commit: "
-    + "connect git, then make an empty first commit.", "Этому стартеру нужен репозиторий с "
-    + "первым коммитом: подключите git, затем сделайте пустой первый коммит."],
+  // -- the starter's two-step repository ----------------------------------------------
+  "wizard.first.chain.title": ["Create the repository: 2 steps",
+    "Создать репозиторий: 2 шага"],
+  "wizard.first.chain.intro": ["One press runs both steps in order and shows the result of "
+    + "each. The second step starts only when the first is done and the project has been read "
+    + "again.", "Одно нажатие выполняет оба шага по порядку и показывает результат каждого. "
+    + "Второй шаг начнётся, только когда первый выполнен и проект прочитан заново."],
+  "wizard.first.chain.step_init": ["Step 1: connect git", "Шаг 1: подключить git"],
+  "wizard.first.chain.step_commit": ["Step 2: an empty first commit",
+    "Шаг 2: пустой первый коммит"],
+  "wizard.first.chain.message": ["The commit message is fixed by the product:",
+    "Сообщение коммита задано продуктом:"],
+  "wizard.first.chain.by_hand": ["The project is now a repository with no commit. You can make "
+    + "the first commit yourself with the First commit button.", "Проект теперь репозиторий "
+    + "без коммитов. Первый коммит можно сделать самому кнопкой «Первый коммит»."],
+  "wizard.first.chain.status.todo": ["waiting", "ждёт"],
+  "wizard.first.chain.status.working": ["working", "идёт работа"],
+  "wizard.first.chain.status.done": ["done", "выполнен"],
+  "wizard.first.chain.status.refused": ["refused", "отказ"],
+  "wizard.first.chain.status.lost": ["outcome unknown", "исход неизвестен"],
+  "wizard.first.chain.status.unsent": ["nothing was sent", "ничего не отправлено"],
+  "wizard.first.chain.status.skipped": ["not started", "не начат"],
+  "wizard.first.chain.skipped.first_refused": ["The first step was refused, so this step was "
+    + "not started.", "Первый шаг отклонён, поэтому этот шаг не начат."],
+  "wizard.first.chain.skipped.first_lost": ["The answer to the first step did not arrive, so "
+    + "this step was not started.", "Ответ на первый шаг не пришёл, поэтому этот шаг не начат."],
+  "wizard.first.chain.skipped.first_unsent": ["Nothing was sent for the first step, so this "
+    + "step was not started.", "Для первого шага ничего не отправлено, поэтому этот шаг не "
+    + "начат."],
+  "wizard.first.chain.skipped.read": ["The project does not read as ready for a first commit, "
+    + "so this step was not started. What it shows is written above.", "Проект сейчас не готов "
+    + "к первому коммиту, поэтому этот шаг не начат. Что он показывает, написано выше."],
   "wizard.first.exclude.effect": ["The product's block in the local exclude file is not written "
     + "yet. Writing it adds a few lines to .git/info/exclude and touches nothing else.",
     "Блок продукта в локальном файле исключений ещё не записан. Запись добавит несколько строк "
@@ -71,7 +100,12 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.manual.irregular_file": ["not a regular file", "не обычный файл"],
   "wizard.first.manual.unportable_name": ["a name that does not travel between systems",
     "имя, которое нельзя переносить между системами"],
-  "wizard.first.manual.other": ["reason: {code}", "причина: {code}"],
+  "wizard.first.manual.unreadable": ["a folder on its path cannot be read",
+    "папка на пути к нему не читается"],
+  "wizard.first.manual.not_directory": ["a part of its path is not a folder",
+    "часть пути к нему — не папка"],
+  "wizard.first.manual.other": ["left out of the commit, for a reason this screen does not "
+    + "explain: {code}", "не попадёт в коммит, причину этот экран не объясняет: {code}"],
   // -- why a control waits -------------------------------------------------------------
   "wizard.first.why.door_missing": ["This build of the desk has no door to the git setup step "
     + "yet.", "В этой сборке у экрана ещё нет двери к шагу подключения git."],
@@ -104,11 +138,18 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.busy.continue": ["Continuing the first commit: working. A large project takes a "
     + "while. Do not close this window.", "Продолжаем первый коммит: идёт работа. Большой "
     + "проект занимает время. Не закрывайте окно."],
+  "wizard.first.busy.chain_read": ["The first step is done. Reading the project before the "
+    + "second step: working. Do not close this window.", "Первый шаг выполнен. Читаем проект "
+    + "перед вторым шагом: идёт работа. Не закрывайте окно."],
   "wizard.first.close_anyway": ["Close anyway", "Закрыть всё равно"],
   "wizard.first.close_busy": ["A request is still working. Closing the window does not stop it, "
     + "but you will not see its answer: open the wizard again to read the project.",
     "Запрос ещё выполняется. Закрытие окна его не остановит, но ответа вы не увидите: откройте "
     + "мастер снова, чтобы прочитать проект."],
+  "wizard.first.close_chain": ["Closing now ends this press: the second step will not be "
+    + "started. A request already sent is not stopped. Open the wizard again to read the project.",
+    "Закрытие сейчас закончит это нажатие: второй шаг не начнётся. Уже отправленный запрос не "
+    + "остановится. Откройте мастер снова, чтобы прочитать проект."],
   // -- an answer that did not come -----------------------------------------------------
   "wizard.first.lost.head": ["The outcome of this step is unknown: its answer did not arrive. "
     + "Nothing is sent again by itself.", "Исход этого шага неизвестен: ответ не пришёл. Само "
@@ -165,15 +206,15 @@ export const WIZARD_GIT_COPY = Object.freeze({
   "wizard.first.next.git_identity_missing": ["Set user.name and user.email in git in a "
     + "terminal, then prepare a new preview.", "Задайте user.name и user.email в git в "
     + "терминале и подготовьте новый предпросмотр."],
-  "wizard.first.next.head_exists": ["Nothing was changed. The branch already holds a commit the "
-    + "product did not make, and the product never moves or removes a branch.",
-    "Ничего не изменено. В ветке уже есть коммит, который сделал не продукт, а продукт никогда "
-    + "не переносит и не убирает ветку."],
-  "wizard.first.next.head_exists_signing": ["The branch already holds a commit that is not the "
-    + "one the two commands make, an unsigned commit included. Nothing was changed and the wait "
-    + "stays. The product never moves or removes a branch: make sure the branch holds the commit "
-    + "made by the two commands, then check again.", "В ветке уже есть коммит, который сделан не "
-    + "этими двумя командами, в том числе неподписанный. Ничего не изменено, ожидание остаётся. "
+  "wizard.first.next.head_exists": ["Nothing was changed. The branch already holds a commit "
+    + "this operation cannot accept, and the product never moves or removes a branch.",
+    "Ничего не изменено. В ветке уже есть коммит, который эта операция принять не может, а "
+    + "продукт никогда не переносит и не убирает ветку."],
+  "wizard.first.next.head_exists_signing": ["The branch already holds a commit this operation "
+    + "cannot accept, an unsigned commit included. Nothing was changed and the wait stays. The "
+    + "product never moves or removes a branch: make sure the branch holds the commit made by "
+    + "the two commands, then check again.", "В ветке уже есть коммит, который эта операция "
+    + "принять не может, в том числе неподписанный. Ничего не изменено, ожидание остаётся. "
     + "Продукт никогда не переносит и не убирает ветку: проверьте, что в ветке коммит, сделанный "
     + "двумя командами, и проверьте снова."],
   "wizard.first.next.index_exists": ["Your staged work was left untouched. Commit it or "

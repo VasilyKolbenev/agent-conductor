@@ -22,9 +22,9 @@ import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
 import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
 import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
-  canAdvance, closeBusy, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, firstFacts,
-  gitReading, instructionFields, materialsEstimate, nextStep, preselection, rosterStatus,
-  stepStates, taskFields} from "./desk-wizard-model.js";
+  canAdvance, closeBusy, closeBusyWord, closeNeedsWarning, cycleCards, cycleFacts,
+  documentPicker, firstFacts, gitReading, instructionFields, materialsEstimate, nextStep,
+  preselection, rosterStatus, stepStates, taskFields} from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -98,11 +98,11 @@ function foot(ctx) {
 
 //: The warning shown while the owner has asked to close with materials that are not saved, or
 //: with a request of the git block still working (closing does not stop it, and its answer is
-//: not seen).
+//: not seen; a starter's chain that is closed before its second request goes does not send it).
 function closing(ctx) {
   if (ctx.wizard.closing !== "confirm") return [];
   const busy = closeBusy(ctx.wizard), kept = ctx.wizard.materials.items.length > 0;
-  const lines = [...(busy ? [element("p", {text: ctx.t("wizard.first.close_busy")})] : []),
+  const lines = [...(busy ? [element("p", {text: ctx.t(closeBusyWord(ctx.wizard))})] : []),
     ...(kept ? [element("p", {text: ctx.t("wizard.close.warning")})] : [])];
   return [element("div", {className: "desk-wizard__dialog", role: "alertdialog",
     "aria-modal": "true", "data-close-dialog": ""}, [...lines,

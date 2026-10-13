@@ -10,6 +10,8 @@ The answers a test wants to control are knobs of the world, never timers:
 
 * `hold` names asks that get no answer until the test releases them (`world.release(name)`), so
   the wait while a request works can be looked at and a second press tried against it;
+* `hold_read` does the same for the next git read (`release_read` answers it): the wait between
+  two writes of one press;
 * `lose` names asks whose write LANDS but whose answer never arrives (an unknown outcome), and
   `drop` those whose write never landed either;
 * `signing` makes Git sign: a confirm stores the wait and answers `signing_required`, and
@@ -31,7 +33,7 @@ WORLD_JS = """
   const world = {git: structuredClone(data.reads[data.start].git), door: data.door,
     signing: data.signing, owner_commit: false, crash_after_ref: false, receipt: null,
     hold: new Set(data.hold), lose: new Map(), drop: new Map(), force: new Map(), posts: [],
-    reads: 0, receipt_ref: null, preview_patch: null};
+    reads: 0, receipt_ref: null, preview_patch: null, hold_read: false};
   const accepted = (payload) => ({status: "accepted", code: null, payload});
   const refuse = (code, detail) => ({status: "refused", code,
     payload: {error: {code, message: "x", detail}}});
@@ -127,9 +129,17 @@ WORLD_JS = """
     world.hold.delete(name);
     return window.host.dispatch({type: "answered", ask, result: route(ask)});
   };
+  world.release_read = () => {
+    const ask = [...window.host.log].reverse().find((one) => one.name === "git");
+    world.hold_read = false;
+    world.reads += 1;
+    return window.host.dispatch({type: "answered", ask,
+      result: accepted({git: structuredClone(world.git)})});
+  };
   window.host.world = world;
   window.host.fake = (ask) => {
     if (ask.name === "git") {
+      if (world.hold_read) return undefined;
       world.reads += 1;
       return accepted({git: structuredClone(world.git)});
     }
@@ -199,6 +209,18 @@ class GitWorld:
     def release(self, name: str) -> None:
         """Answer the held ask `name` now, from the world as it stands."""
         self.page.evaluate("(name) => window.host.world.release(name)", name)
+
+    def hold_read(self) -> None:
+        """The next git read gets no answer until `release_read`: the wait between two requests.
+
+        The bench host falls back to its table of canned answers for an ask the world leaves
+        unanswered, so the canned git read is taken out: the world answers every git read itself."""
+        self.page.evaluate("() => { delete window.host.auto.git; "
+                           "window.host.world.hold_read = true; }")
+
+    def release_read(self) -> None:
+        """Answer the held git read now, from the world as it stands."""
+        self.page.evaluate("() => window.host.world.release_read()")
 
     def posts(self) -> list[dict[str, Any]]:
         """Every write the route received, in order: `{name, body}`."""

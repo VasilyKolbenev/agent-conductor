@@ -43,11 +43,15 @@ export const REFUSAL_ACTIONS = Object.freeze({
   git_failed: "none", git_timed_out: "retry", signing_required: "wait",
   signing_ref_unsupported: "new_preview"});
 //: The words of a preview's `warnings`, and of a `manual` row's reason, that the desk has its own
-//: sentence for. Any other word is said by its code.
+//: sentence for. Any other warning is said by its code; any other reason, by a general sentence
+//: that says the file is left out and carries the code.
 export const WARNING_WORDS = Object.freeze(["signing_required", "suspicious_name",
   "nested_repository"]);
+//: The eight values `manual[].reason` takes in the current preview (`git_setup_snapshot._manual`):
+//: its own three and the codes of `portal_violation` and `first_directory_violation`. The twelve of
+//: `RouteViolationCode` are that set united with codes this path never gives.
 export const MANUAL_REASONS = Object.freeze(["symlink", "junction", "reparse_point", "hard_link",
-  "irregular_file", "unportable_name"]);
+  "irregular_file", "unportable_name", "unreadable", "not_directory"]);
 export const MODES = Object.freeze(["snapshot", "empty"]);
 //: The presses a `sending` record can name: the four bodies and the continue of the confirm.
 export const KINDS = Object.freeze(["init", "exclude", "preview", "confirm", "continue"]);
@@ -85,14 +89,19 @@ function frozen(value) {
   return Object.freeze(value);
 }
 
+//: The message the product gives an empty first commit (lane L's contract, section 3: fixed, not a
+//: setting). The page may show it beside the starter's second step; a test holds it to the
+//: product's own constant.
+export const EMPTY_COMMIT_MESSAGE = "Начало проекта (Conduct)";
+
 //: The slice the wizard keeps for this block: the switch (copied once from the literal above), the
 //: door (whether the desk's transport has the target the setup route is reached by: only an
 //: explicit `false` closes it, so a host that does not say is not blamed), the panel and the mode
-//: the person chose, the validated preview, the press counter, the request in flight and the last
-//: answer's words.
+//: the person chose, the validated preview, the press counter, the request in flight, the last
+//: answer's words and the starter's chain of two steps (null until it is pressed).
 export function initialGit(open, door = true) {
   return {open: open === true, door: door !== false, panel: null, mode: null, preview: null,
-    list: false, seq: 0, sending: null, result: null};
+    list: false, seq: 0, sending: null, result: null, chain: null};
 }
 
 // -- the shapes of the answers --------------------------------------------------------------

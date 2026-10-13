@@ -89,7 +89,7 @@ def test_a_press_while_a_request_is_in_flight_changes_nothing_and_asks_nothing()
       const busy = previewed();
       const sending = drive(busy, {type: "git-confirm"});
       const rows = ["git-start", "git-mode", "git-list", "git-preview", "git-init", "git-exclude",
-        "git-confirm", "git-continue"].map((type) => {
+        "git-confirm", "git-continue", "git-chain"].map((type) => {
         const after = drive(sending, {type, mode: "empty"});
         return [type, after === sending, fresh(after).length];
       });
@@ -99,7 +99,7 @@ def test_a_press_while_a_request_is_in_flight_changes_nothing_and_asks_nothing()
     assert out["sendingKind"] == "confirm"
     assert out["rows"] == [[name, True, 1] for name in (
         "git-start", "git-mode", "git-list", "git-preview", "git-init", "git-exclude",
-        "git-confirm", "git-continue")], "the one ask in flight is the only thing wanted"
+        "git-confirm", "git-continue", "git-chain")], "the one ask in flight is all that is wanted"
     assert out["onlyOneAsk"] == ["write:git:confirm:2"]
 
 
@@ -532,7 +532,7 @@ def test_the_exclusion_step_is_offered_only_when_the_read_says_deferred():
 def test_in_view_no_setup_event_asks_anything_and_the_block_says_why():
     out = js("""
       const events = ["git-start", "git-preview", "git-init", "git-exclude", "git-confirm",
-        "git-continue"];
+        "git-continue", "git-chain"];
       d.reads.deferred = {...copy(d.reads.repo), exclude: "deferred"};
       const rows = {};
       for (const name of ["unborn", "not_git", "not_active", "deferred", "pending_unfinished"]) {

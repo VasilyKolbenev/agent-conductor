@@ -28,8 +28,8 @@
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
 //   roles {owner, instructions}, history {runs, revisions},
-//   git {open, door, panel, mode, preview, list, seq, sending, result}: the git block of step 2
-//          (`desk-wizard-git-run.js` says what each field is),
+//   git {open, door, panel, mode, preview, list, seq, sending, result, chain}: the git block of
+//          step 2 (`desk-wizard-git-run.js` says what each field is),
 //   run {phase, pressed, lang, settled, done, attempts, seq, prep, ...}: the chain of step 5
 //   (`desk-wizard-prep.js` says what each field is).
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
@@ -55,8 +55,8 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
 import {FIRST_COMMIT_CONFIRM_OPEN, initialGit, pendingOf} from "./desk-wizard-git.js";
-import {FIRST_WORDS, GIT_HANDLERS, closeBusy, firstFacts, gitWanted, landGit, pressBlock}
-  from "./desk-wizard-git-run.js";
+import {FIRST_WORDS, GIT_HANDLERS, chainNext, closeBusy, closeBusyWord, firstFacts, gitWanted,
+  landGit, pressBlock} from "./desk-wizard-git-run.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -72,7 +72,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
   launchFacts, resumeView, wizardExit, wizardHash,
-  FIRST_WORDS, closeBusy, firstFacts, pressBlock};
+  FIRST_WORDS, closeBusy, closeBusyWord, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
@@ -559,6 +559,8 @@ const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])),
   ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])),
   ...Object.fromEntries(GIT_ASKS.map((name) => [name, landGit])), document: answerDocument,
+  //: The git read lets a starter's chain go on from its first link to its second.
+  git: (state, ask, result) => chainNext(answerRead("git")(state, ask, result)),
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
