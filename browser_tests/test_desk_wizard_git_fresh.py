@@ -19,6 +19,11 @@ only what the git read says.
    whether the transport has a door for the route (one line in `desk-wizard-host.js`); with none,
    every press of the block is drawn disabled beside its reason and nothing is posted. No stand-in
    host can show that line, so the page is served the transport WITHOUT the target.
+4. A starter's folder that is not a repository. One press of «Создать репозиторий: 2 шага» posts
+   `init`, then reads the project, then posts the empty first commit: the folder ends with one root
+   commit of the empty tree and the product's own message, and exactly two requests went out. The
+   folder's author comes in through the Git reader's environment (`IDENTITY`): there is no
+   repository yet to hold a configuration.
 
 What the test serves differently from the product, and why. The switch of the confirm
 (`FIRST_COMMIT_CONFIRM_OPEN`) is one literal that the tech lead flips when lane L opens the route;
@@ -33,6 +38,7 @@ Requirements, stated because a browser module may not skip: the current Git and 
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import threading
@@ -62,6 +68,14 @@ FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n", "owner.txt": b"mine\n"}
 MODES = ("snapshot", "empty")
 JS = "text/javascript; charset=utf-8"
 SWITCH = "export const FIRST_COMMIT_CONFIRM_OPEN = false;"
+#: The author the product commits as in a folder that has no repository yet: its Git cannot see the
+#: account's settings, so the name goes in through the environment (a repository's own settings are
+#: made by the test, after its `init`).
+IDENTITY = (("user.name", "First Author"), ("user.email", "first@example.invalid"),
+            ("core.autocrlf", "false"))
+#: The tree of no file at all, and the message the product gives an empty first commit.
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+EMPTY_MESSAGE = "Начало проекта (Conduct)"
 #: Lane D1's two lines in `desk-transport.js`: the text without the target, and with it.
 TARGET_LINES = (('  git: () => "/command/project/git",\n',
                  '  git: () => "/command/project/git",\n'
@@ -121,6 +135,10 @@ class Real:
         shown = git("ls-tree", "-r", "--name-only", "HEAD", cwd=self.root)
         return [line for line in shown.stdout.decode().splitlines() if line]
 
+    def head(self, *spec: str) -> str:
+        """What `git <spec>` prints for the repository's HEAD, as text."""
+        return git(*spec, cwd=self.root).stdout.decode("utf-8").strip()
+
 
 @pytest.fixture
 def throwaway_key(tmp_path: Path) -> Path:
@@ -137,10 +155,14 @@ def throwaway_key(tmp_path: Path) -> Path:
     return key
 
 
-@pytest.fixture
-def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, throwaway_key: Path) -> Iterator[Real]:
+@contextlib.contextmanager
+def serving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+            identity: tuple[tuple[str, str], ...] = ()) -> Iterator[Real]:
     """A real one-project server whose route has its confirm door held open and whose Git is the
-    product's own reader (no account settings, no hooks), over a repository this test makes."""
+    product's own reader (no account settings, no hooks), over a folder with no repository yet.
+
+    `identity` is Git configuration the reader is given through its environment, for a folder
+    whose repository the PRODUCT will make: it has no configuration of its own to set first."""
     if GIT is None:
         pytest.fail("git is required by test_desk_wizard_git_fresh.py")
     monkeypatch.setattr(git_setup, "_CONFIRM_OPEN", True, raising=False)
@@ -156,26 +178,41 @@ def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, throwaway_key: Path) -
         cwd.mkdir(parents=True)
         hooks = cwd.parent / "hooks-empty"
         hooks.mkdir()
-        env = {"GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "core.hooksPath",
+        env = {"GIT_CONFIG_COUNT": str(2 + len(identity)), "GIT_CONFIG_KEY_0": "core.hooksPath",
                "GIT_CONFIG_VALUE_0": str(hooks), "GIT_CONFIG_KEY_1": "init.defaultBranch",
                "GIT_CONFIG_VALUE_1": "trunk"}
+        for number, (name, value) in enumerate(identity, start=2):
+            env[f"GIT_CONFIG_KEY_{number}"], env[f"GIT_CONFIG_VALUE_{number}"] = name, value
         spy = Spy(product_reader(root, GIT, cwd, env=env, index_root=root))
         httpd.command_api._project_git = spy
         host, port = httpd.server_address[:2]
-        project = Real(root, f"http://{host}:{port}", spy)
-        assert project.post({"step": "init", "actor": "Owner"})[0] == 201
-        for name, value in (("user.name", "First Author"), ("user.email", "first@example.invalid"),
-                            ("core.autocrlf", "false")):
-            git("config", name, value, cwd=root)
-        for relative, data in FILES.items():
-            (root / relative).parent.mkdir(parents=True, exist_ok=True)
-            (root / relative).write_bytes(data)
-        yield project
+        yield Real(root, f"http://{host}:{port}", spy)
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
         httpd.server_close()
         assert not thread.is_alive(), "the project server did not stop"
+
+
+@pytest.fixture
+def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, throwaway_key: Path) -> Iterator[Real]:
+    """A real project server over a repository this test makes (through the route's own `init`),
+    with files in its folder and an author in its own configuration."""
+    with serving(tmp_path, monkeypatch) as project:
+        assert project.post({"step": "init", "actor": "Owner"})[0] == 201
+        for name, value in IDENTITY:
+            git("config", name, value, cwd=project.root)
+        for relative, data in FILES.items():
+            (project.root / relative).parent.mkdir(parents=True, exist_ok=True)
+            (project.root / relative).write_bytes(data)
+        yield project
+
+
+@pytest.fixture
+def bare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Real]:
+    """A real project server over a folder that is NOT a repository: the product makes it one."""
+    with serving(tmp_path, monkeypatch, IDENTITY) as project:
+        yield project
 
 
 def signing(project: Real, key: Path) -> None:
@@ -235,19 +272,36 @@ def served(body: bytes) -> Callable[[Route, Request], None]:
     return lambda route, _request: route.fulfill(status=200, content_type=JS, body=body)
 
 
-def wizard_at_materials(page: Page, project: Real) -> None:
-    """The person's own path: the desk, their name, the new task, the first step, 'Далее'."""
+def owner_is_named(page: Page, project: Real) -> None:
+    """The person's own first act on the desk: it opens, and their name is saved in the pult."""
     page.goto(f"{project.base}/panel/desk.html#lang=en", wait_until="load")
     page.locator('[data-focus-key="pult:actor-change"]').click()
     page.locator('[data-focus-key="pult:actor-name"]').fill("Owner")
     page.locator('[data-focus-key="pult:actor-save"]').click()
-    new = page.locator("#deskNewTask")
-    expect(new).to_be_enabled()
-    new.click()
+    expect(page.locator("#deskNewTask")).to_be_enabled()
+
+
+def wizard_at_materials(page: Page, project: Real) -> None:
+    """The person's own path: the desk, their name, the new task, the first step, 'Далее'."""
+    owner_is_named(page, project)
+    page.locator("#deskNewTask").click()
     wizard = page.locator("#deskWizard [data-wizard]")
     expect(wizard).to_have_attribute("data-wizard-current", "task")
     page.locator('[data-focus="wizard:title"]').fill("Finish the first commit")
     page.locator('[data-focus="wizard:brief"]').fill("Open the project.")
+    page.locator('[data-focus="wizard:next"]').click()
+    expect(wizard).to_have_attribute("data-wizard-current", "materials")
+
+
+def starter_at_materials(page: Page, project: Real) -> None:
+    """«С нуля»: the desk, the name, then the address the hub mounts a new project's desk at
+    (`new=task&starter=desk-starter-docs`), the idea in place of a brief, and 'Далее'."""
+    owner_is_named(page, project)
+    page.evaluate("() => { location.hash = '#lang=en&new=task&starter=desk-starter-docs'; }")
+    wizard = page.locator("#deskWizard [data-wizard]")
+    expect(wizard).to_have_attribute("data-wizard-current", "task")
+    page.locator('[data-focus="wizard:title"]').fill("A small tool")
+    page.locator('[data-focus="wizard:idea"]').fill("Notes that stay on my machine.")
     page.locator('[data-focus="wizard:next"]').click()
     expect(wizard).to_have_attribute("data-wizard-current", "materials")
 
@@ -363,6 +417,46 @@ def test_a_fresh_page_finishes_a_crash_after_the_branch_moved(chromium, real, mo
         assert facts["first_commit_pending"] is None and facts["state"] == "repo"
         assert real.tree() == (sorted(FILES) if mode == "snapshot" else [])
         assert re.search(r"[0-9a-f]{7}", page.locator("[data-git-result]").inner_text())
+        assert faults == []
+    finally:
+        page.context.close()
+
+
+def test_a_starter_page_over_a_folder_without_git_reads_it_as_not_git(chromium, bare):
+    """The fixture of the next test, proven alone: the starter's wizard on a folder that is not a
+    repository reads `not_git`, offers the exit that makes one, and sends nothing on its own."""
+    page, faults, asked = fresh_page(chromium)
+    try:
+        starter_at_materials(page, bare)
+        expect(page.locator('[data-git-state="not_git"]')).to_have_count(1)
+        expect(page.locator('[data-git-exit="connect_git"]')).to_have_count(1)
+        assert posts(asked) == [], "a page that loads and reads sends nothing"
+        assert bare.read()["state"] == "not_git"
+        assert faults == []
+    finally:
+        page.context.close()
+
+
+def test_a_starter_page_makes_the_repository_and_its_empty_first_commit_with_one_press(
+        chromium, bare):
+    page, faults, asked = fresh_page(chromium)
+    try:
+        starter_at_materials(page, bare)
+        expect(page.locator('[data-git-state="not_git"]')).to_have_count(1)
+        page.locator('[data-focus="wizard:git:chain"]').click()
+        done = page.locator('[data-git-chain-row="commit"]')
+        # The first commit is a real request: the route runs its Git processes one after another
+        # (objects, tree, commit, lock, branch, index), and a machine under load takes a while.
+        expect(done).to_have_attribute("data-git-chain-status", "done", timeout=60000)
+        assert posts(asked) == [SETUP, SETUP], "init, then the empty first commit: two requests"
+        facts = bare.read()
+        assert facts["state"] == "repo" and facts["first_commit_pending"] is None
+        assert bare.head("rev-list", "--count", "HEAD") == "1", "one commit, the root"
+        assert bare.head("rev-parse", "HEAD^{tree}") == EMPTY_TREE, "no file is in it"
+        assert bare.head("log", "-1", "--format=%s") == EMPTY_MESSAGE
+        assert bare.tree() == []
+        expect(page.locator('[data-git-state="repo"]')).to_have_count(1)
+        assert page.locator("[data-git-pending]").count() == 0
         assert faults == []
     finally:
         page.context.close()
