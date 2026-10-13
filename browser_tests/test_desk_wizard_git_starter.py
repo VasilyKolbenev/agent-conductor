@@ -47,6 +47,15 @@ def state_of(bench):
     return bench.page.locator("[data-git-state]").get_attribute("data-git-state")
 
 
+def assert_close_line(bench, shown, other):
+    """The close dialog is open, shows the line `shown` and not the line `other`."""
+    dialog = bench.page.locator("[data-close-dialog]")
+    expect(dialog).to_have_count(1)
+    assert bench.say(shown) in dialog.inner_text()
+    assert bench.say(other) not in dialog.inner_text()
+    assert bench.page.evaluate("() => window.host.closed") == 0, "asking closes nothing"
+
+
 @pytest.mark.parametrize("lang", LANGS)
 def test_the_starter_shows_both_steps_with_their_effects_and_one_button_and_sends_nothing(
         bench, lang):
@@ -117,15 +126,43 @@ def test_the_second_request_waits_for_the_read_after_the_first_and_the_wait_is_i
     bench.dispatch(type="actor-edit", value="Mallory")
     assert bench.wizard()["launch"]["actor"] == "Anna", "the name is fixed in the wait"
     bench.control("wizard:close").click()
-    dialog = bench.page.locator("[data-close-dialog]")
-    expect(dialog).to_have_count(1)
-    assert bench.say("wizard.first.close_busy") in dialog.inner_text()
+    assert_close_line(bench, "wizard.first.close_chain", "wizard.first.close_busy")
     bench.control("wizard:close:keep").click()
     world.release_read()
     expect(row(bench, "commit")).to_have_attribute("data-git-chain-status", "done")
     assert writes(world) == ["git_init", "git_confirm"]
     assert bench.page.locator("[data-git-first]").get_attribute("data-git-phase") == "idle"
     assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_closing_while_the_first_step_works_says_the_second_step_will_not_be_started(bench, lang):
+    world = chain_at(bench, lang, hold=["git_init"])
+    open_door(bench)
+    bench.control("wizard:git:chain").click()
+    expect(row(bench, "init")).to_have_attribute("data-git-chain-status", "working")
+    assert writes(world) == [], "the held first request has not reached the route"
+    bench.control("wizard:close").click()
+    assert_close_line(bench, "wizard.first.close_chain", "wizard.first.close_busy")
+    bench.control("wizard:close:keep").click()
+    world.release("git_init")
+    expect(row(bench, "commit")).to_have_attribute("data-git-chain-status", "done")
+    assert writes(world) == ["git_init", "git_confirm"]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_closing_while_the_second_step_works_keeps_the_line_for_a_request_that_is_not_stopped(
+        bench, lang):
+    world = chain_at(bench, lang, hold=["git_confirm"])
+    open_door(bench)
+    bench.control("wizard:git:chain").click()
+    expect(row(bench, "commit")).to_have_attribute("data-git-chain-status", "working")
+    bench.control("wizard:close").click()
+    assert_close_line(bench, "wizard.first.close_busy", "wizard.first.close_chain")
+    bench.control("wizard:close:keep").click()
+    world.release("git_confirm")
+    expect(row(bench, "commit")).to_have_attribute("data-git-chain-status", "done")
+    assert writes(world) == ["git_init", "git_confirm"]
 
 
 @pytest.mark.parametrize("lang", LANGS)

@@ -146,6 +146,10 @@ export const WIZARD_GIT_COPY = Object.freeze({
     + "but you will not see its answer: open the wizard again to read the project.",
     "Запрос ещё выполняется. Закрытие окна его не остановит, но ответа вы не увидите: откройте "
     + "мастер снова, чтобы прочитать проект."],
+  "wizard.first.close_chain": ["Closing now ends this press: the second step will not be "
+    + "started. A request already sent is not stopped. Open the wizard again to read the project.",
+    "Закрытие сейчас закончит это нажатие: второй шаг не начнётся. Уже отправленный запрос не "
+    + "остановится. Откройте мастер снова, чтобы прочитать проект."],
   // -- an answer that did not come -----------------------------------------------------
   "wizard.first.lost.head": ["The outcome of this step is unknown: its answer did not arrive. "
     + "Nothing is sent again by itself.", "Исход этого шага неизвестен: ответ не пришёл. Само "

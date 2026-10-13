@@ -61,9 +61,11 @@ def target_faults(sources: dict[str, str]) -> list[str]:
 
 
 #: The words that speak of a request whose outcome the desk may not know: the wait, the lost answer,
-#: the press that was turned away, and the chain's status and skipped-step words.
+#: the press that was turned away, the chain's status and skipped-step words, and the lines of the
+#: dialog that asks before a window with a request in flight is closed.
 UNKNOWN_OUTCOME_WORDS = ("wizard.first.busy.", "wizard.first.lost.", "wizard.first.unsent.",
-                         "wizard.first.chain.status.", "wizard.first.chain.skipped.")
+                         "wizard.first.chain.status.", "wizard.first.chain.skipped.",
+                         "wizard.first.close_")
 
 
 def word_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
@@ -233,13 +235,18 @@ def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcom
                "wizard.first.next.git_failed": ("It failed 3 times", "Сбой"),
                "wizard.first.chain.status.lost": ("The step failed", "Шаг не выполнен"),
                "wizard.first.chain.skipped.read": ("Skipped after 3 tries", "Пропущен"),
-               "wizard.first.chain.title": ("Create the repository: 2 steps", "Создать: 2 шага")}
+               "wizard.first.chain.title": ("Create the repository: 2 steps", "Создать: 2 шага"),
+               "wizard.first.close_chain": ("The second step is cancelled", "Шаг отменён"),
+               "wizard.first.close_busy": ("Stopped, 2 of 2 done", "Остановлено"),
+               "wizard.first.close_anyway": ("Close anyway", "Закрыть всё равно")}
     assert word_faults(planted) == [
         "wizard.first.busy.confirm carries a figure",
         "wizard.first.lost.head says cancelled or failed",
         "wizard.first.unsent.route_not_found says cancelled or failed",
         "wizard.first.chain.status.lost says cancelled or failed",
-        "wizard.first.chain.skipped.read carries a figure"]
+        "wizard.first.chain.skipped.read carries a figure",
+        "wizard.first.close_chain says cancelled or failed",
+        "wizard.first.close_busy carries a figure"]
 
 
 def test_no_next_step_line_coaches_a_person_to_type_another_persons_name():

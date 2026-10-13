@@ -61,6 +61,7 @@ def test_a_request_that_works_is_a_wait_without_a_percentage_and_a_second_press_
     dialog = bench.page.locator("[data-close-dialog]")
     expect(dialog).to_have_count(1)
     assert bench.say("wizard.first.close_busy") in dialog.inner_text()
+    assert bench.say("wizard.first.close_chain") not in dialog.inner_text(), "not a chain press"
     assert bench.page.evaluate("() => window.host.closed") == 0, "asking closes nothing"
     bench.control("wizard:close:keep").click()
     world.release("git_confirm")

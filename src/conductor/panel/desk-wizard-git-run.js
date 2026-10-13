@@ -295,6 +295,16 @@ export function closeBusy(state) {
   return working(state.git);
 }
 
+//: The chain's stages in which closing ends the press: the second request is only ever made from
+//: an answer the open window receives, so it is never sent. In `commit` it has already gone.
+const CHAIN_ENDS_ON_CLOSE = Object.freeze(["init", "read"]);
+
+/** The key of the line the close dialog shows for a request that works (see `closeBusy`). */
+export function closeBusyWord(state) {
+  return CHAIN_ENDS_ON_CLOSE.includes(state.git.chain?.stage) ? "wizard.first.close_chain"
+    : "wizard.first.close_busy";
+}
+
 // -- the answers ----------------------------------------------------------------------------
 
 //: The git read is the only thing the desk asks again by itself: drop it and its ask id.

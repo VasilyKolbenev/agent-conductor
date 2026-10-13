@@ -11,7 +11,8 @@ from typing import Any
 
 from tests.desk_wizard_node import PRELUDE, fixture, run_js
 
-MODULES = {"wiz": "desk-wizard-model.js", "g": "desk-wizard-git.js"}
+MODULES = {"wiz": "desk-wizard-model.js", "g": "desk-wizard-git.js",
+           "copy": "desk-wizard-git-copy.js"}
 EVENTS = ("git-start", "git-mode", "git-list", "git-preview", "git-init", "git-exclude",
           "git-confirm", "git-continue", "git-chain")
 DATA: dict[str, Any] = {
@@ -235,6 +236,37 @@ def test_closing_asks_first_in_the_wait_between_the_links_and_the_name_is_fixed_
     """)
     assert out == {"stage": "read", "sending": None, "closing": "confirm", "warns": True,
                    "fixed": True, "actor": "Anna"}
+
+
+def test_the_close_line_is_the_chains_while_the_second_request_has_not_gone_and_plain_after():
+    out = js("""
+      const answer = (made, payload) => step(made.state, {type: "answered", ask: made.asks[0],
+        result: ok(payload)});
+      const receipt = JSON.parse(JSON.stringify(d.receipt));
+      Object.assign(receipt.setup, {mode: "empty", paths_digest: null, file_count: 0});
+      const idle = onRead("not_git", true, {starterId: "desk-starter-docs"});
+      const pressed = step(idle, {type: "git-chain"});
+      const init = answer(pressed, d.init);
+      const read = answer(init, d.unborn);
+      const done = answer(read, receipt);
+      const plain = step(onRead("not_git"), {type: "git-init"});
+      const row = (made) => [made.state.git.chain?.stage ?? null, wiz.closeBusy(made.state),
+        wiz.closeBusyWord(made.state)];
+      show({idle: [wiz.closeBusy(idle)], pressed: row(pressed), init: row(init),
+        read: row(read), done: row(done), plain: row(plain),
+        keys: [pressed, init, read, plain].map((made) => wiz.closeBusyWord(made.state)),
+        copy: Object.keys(copy.WIZARD_GIT_COPY).filter(
+          (key) => key.startsWith("wizard.first.close_"))});
+    """)
+    chain, plain = "wizard.first.close_chain", "wizard.first.close_busy"
+    assert out["idle"] == [False]
+    assert out["pressed"] == ["init", True, chain], "the first request is working"
+    assert out["init"] == ["read", True, chain], "the wait for the read that lets the second go"
+    assert out["read"] == ["commit", True, plain], "the second request has gone: it is not stopped"
+    assert out["done"][:2] == ["over", False], "an answered chain has nothing to ask about"
+    assert out["plain"] == [None, True, plain], "a press that is not the chain keeps the old line"
+    assert set(out["keys"]) <= set(out["copy"]), "every line the dialog can ask for has words"
+    assert {chain, plain} <= set(out["copy"])
 
 
 def test_the_models_exports_carry_the_block_vocabulary_and_its_facts():

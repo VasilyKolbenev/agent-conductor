@@ -55,8 +55,8 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
 import {FIRST_COMMIT_CONFIRM_OPEN, initialGit, pendingOf} from "./desk-wizard-git.js";
-import {FIRST_WORDS, GIT_HANDLERS, chainNext, closeBusy, firstFacts, gitWanted, landGit,
-  pressBlock} from "./desk-wizard-git-run.js";
+import {FIRST_WORDS, GIT_HANDLERS, chainNext, closeBusy, closeBusyWord, firstFacts, gitWanted,
+  landGit, pressBlock} from "./desk-wizard-git-run.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -72,7 +72,7 @@ export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, br
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
   launchFacts, resumeView, wizardExit, wizardHash,
-  FIRST_WORDS, closeBusy, firstFacts, pressBlock};
+  FIRST_WORDS, closeBusy, closeBusyWord, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
