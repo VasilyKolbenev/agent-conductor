@@ -1,11 +1,11 @@
-"""The environment names an operator may not reference; no process, no filesystem.
+"""The environment names an operator may not reference: a roster, and nothing that acts on it.
 
-Split out of ``process.py`` unchanged. ``process`` re-exports both names, so every
-existing import (``process.INJECTING_ENV``, ``process.injecting_env_reason``) still holds.
+Split out of ``process.py`` unchanged. ``process`` re-exports ``INJECTING_ENV`` and keeps
+``injecting_env_reason``, which asks the running platform and so imports ``os``: this is a value
+module of the package and imports values only (``tests/test_command_adapters.py``).
 """
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from types import MappingProxyType
 
@@ -48,23 +48,3 @@ _INJECTING_ENV_GROUPS: tuple[tuple[tuple[str, ...], str], ...] = (
 )
 INJECTING_ENV: Mapping[str, str] = MappingProxyType({
     name: reason for names, reason in _INJECTING_ENV_GROUPS for name in names})
-
-
-def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
-    """Say why an operator may not reference ``name``, or ``None`` if they may.
-
-    Args:
-        name: An environment variable name, in the spelling the operator wrote.
-        windows: Whether to match without regard to case. ``None`` asks the
-            running platform, which is the only honest default: Windows
-            environment names are case-insensitive, so ``Ld_Preload`` there IS
-            ``LD_PRELOAD`` and a case-sensitive rule would be bypassed by
-            shift-key alone. On POSIX the two spellings are different variables
-            and folding them would refuse a name that can inject nothing.
-
-    Returns:
-        The reason this name is refused, or ``None`` when it may be referenced.
-    """
-    if windows is None:
-        windows = os.name == "nt"
-    return INJECTING_ENV.get(name.upper() if windows else name)

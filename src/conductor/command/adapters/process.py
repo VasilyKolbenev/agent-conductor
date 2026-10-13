@@ -62,7 +62,7 @@ from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
-from .process_env_rules import INJECTING_ENV, injecting_env_reason
+from .process_env_rules import INJECTING_ENV
 from .process_profile import ProfileJournal
 from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
 from .base import (
@@ -111,6 +111,26 @@ STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 _READ_CHUNK = 64 * 1024
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
+
+
+def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
+    """Say why an operator may not reference ``name``, or ``None`` if they may.
+
+    Args:
+        name: An environment variable name, in the spelling the operator wrote.
+        windows: Whether to match without regard to case. ``None`` asks the
+            running platform, which is the only honest default: Windows
+            environment names are case-insensitive, so ``Ld_Preload`` there IS
+            ``LD_PRELOAD`` and a case-sensitive rule would be bypassed by
+            shift-key alone. On POSIX the two spellings are different variables
+            and folding them would refuse a name that can inject nothing.
+
+    Returns:
+        The reason this name is refused, or ``None`` when it may be referenced.
+    """
+    if windows is None:
+        windows = os.name == "nt"
+    return INJECTING_ENV.get(name.upper() if windows else name)
 
 
 class ProcessRunnerError(RuntimeError):
