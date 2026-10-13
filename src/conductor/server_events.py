@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 
 SSE_WAIT = 1.0        # seconds an SSE loop waits before re-checking shutdown
 #: Quiet waits between two heartbeat comments: one per 15 s, the figure the hub's own stream
-#: uses. A client that left is told from one that is only quiet by a write that fails. The first
-#: write after the departure is accepted and brings the reset back, the second one fails, so an
-#: idle stream frees its mailbox and thread within 2 * SSE_PING_EVERY waits and one more.
+#: uses. A heartbeat gives an idle stream a write that can fail, and a failing write is how a
+#: client that left is told from one that is only quiet. How many writes that takes depends on
+#: the peer's TCP stack; no release time is promised here.
 SSE_PING_EVERY = 15
 #: A comment: an EventSource ignores it, and it carries no `data`, no `id` and no event.
 SSE_PING = b": ping\n\n"
