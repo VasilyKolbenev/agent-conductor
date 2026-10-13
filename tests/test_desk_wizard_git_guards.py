@@ -118,15 +118,39 @@ def test_the_switch_is_one_boolean_literal_with_one_declaration_and_at_most_one_
     assert switch_faults(_sources()) == []
 
 
+DECLARATION = re.compile(rf"^export const {SWITCH} = (?:true|false);$", re.MULTILINE)
+
+
+def redeclared(source: str, line: str) -> str:
+    """`source` with the switch's one declaration replaced by `line`, whichever boolean it holds.
+
+    The module must hold exactly one declaration to replace: a substitution that found nothing
+    would hand the guard an unchanged module, and a negative built on it would fail for the
+    wrong reason (or pass, the day the shipped literal is the one the substitution names).
+    """
+    swapped, count = DECLARATION.subn(lambda _found: line, source)
+    assert count == 1, f"the module declares the switch {count} times, not once"
+    return swapped
+
+
+def test_the_switch_guard_accepts_the_one_literal_whichever_boolean_it_holds():
+    real = _sources()
+    for value in ("true", "false"):
+        held = redeclared(real[SWITCH_MODULE], f"export const {SWITCH} = {value};")
+        assert switch_faults({**real, SWITCH_MODULE: held}) == [], value
+
+
 def test_the_switch_guard_names_a_second_reader_a_missing_literal_and_a_non_boolean():
     real = _sources()
     second = {**real, "desk-wizard-git-run.js": real["desk-wizard-git-run.js"] + f"\n{SWITCH}"}
     assert switch_faults(second) == ["desk-wizard-git-run.js names the switch"]
     wide = {**real, MODEL: real[MODEL] + f"\nconst a = {SWITCH}; const b = {SWITCH}; {SWITCH};"}
     assert any("the model reads the switch" in fault for fault in switch_faults(wide))
-    text = real[SWITCH_MODULE].replace(f"{SWITCH} = false;", f"{SWITCH} = 0;")
-    assert any("not declared" in fault for fault in switch_faults({**real, SWITCH_MODULE: text}))
-    both = real[SWITCH_MODULE] + f"\nexport const {SWITCH} = true;"
+    own = real[SWITCH_MODULE]
+    for line in (f"export const {SWITCH} = 0;", ""):
+        faults = switch_faults({**real, SWITCH_MODULE: redeclared(own, line)})
+        assert any("not declared" in fault for fault in faults), repr(line)
+    both = own + f"\nexport const {SWITCH} = true;"
     assert switch_faults({**real, SWITCH_MODULE: both})
 
 
