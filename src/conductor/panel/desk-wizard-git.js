@@ -12,11 +12,11 @@
 // stays a string to be drawn as text: nothing here parses it, and none of it but `signing.*`,
 // held to its own safe set, ever reaches a command.
 
-//: THE switch of the first commit's confirmation. While it is false, the desk sends no confirm and
-//: no continue (the route answers `422 contract_invalid` to that body until lane L opens it), and
-//: the controls that would send it are drawn disabled with their reason. It has one reader,
-//: `initialGit`, and the guard that holds it to lane L's own switch. The flip is one literal.
-export const FIRST_COMMIT_CONFIRM_OPEN = false;
+//: THE switch of the first commit's confirmation. It is open since lane L opened the route
+//: (8.7), in the same candidate: the desk sends the confirm and the continue. Were it false, the
+//: desk would send neither and draw the controls that would send them disabled with their
+//: reason. It has one reader, `initialGit`, and the guard that holds it to lane L's route.
+export const FIRST_COMMIT_CONFIRM_OPEN = true;
 
 //: The twenty closed reasons of `409 git_setup_refused` (`error.detail.reason`), the order of the
 //: route's own list, each with a notice in the catalogue (`git_setup.reason.<reason>`).

@@ -25,14 +25,13 @@ only what the git read says.
    folder's author comes in through the Git reader's environment (`IDENTITY`): there is no
    repository yet to hold a configuration.
 
-What the test serves differently from the product, and why. The switch of the confirm
-(`FIRST_COMMIT_CONFIRM_OPEN`) is one literal that the tech lead flips when lane L opens the route;
-the route's own switch is held open by the fixture, and the page gets the module with its literal
-set. The write door's target `gitSetup` is lane D1's two lines in `desk-transport.js`; until they
-are in the product the page gets the transport with exactly those two lines (scenarios 1 and 2),
-and the third scenario is served the transport without them, taken out once the product has them.
-Each change is asserted to have happened once, so no edit stays here silently: the day the product
-has the lines, scenarios 1 and 2 are served the product's own bytes.
+What the test serves differently from the product, and why. Since the route and the desk's
+confirm switch opened together (review ruling 13.10), the ordinary scenarios are served the
+product's own bytes: no request of their page is intercepted (no route is installed), nothing of
+the server route is patched, and the product's own files are asserted to carry the open switch
+and the target `gitSetup`. Only the door-less scenario differs
+on purpose: it is served the product's transport with lane D1's two `gitSetup` lines taken out,
+each asserted to have been taken out once.
 
 Requirements, stated because a browser module may not skip: the current Git and `ssh-keygen`.
 """
@@ -54,7 +53,6 @@ import pytest
 from playwright.sync_api import Browser, Page, Request, Route, expect
 
 from conductor import ownership_transition, server
-from conductor.command import git_setup
 from conductor.ownership import data_root
 from tests.git_first_bench import Spy, crash_after
 from tests.git_first_readers import product_reader
@@ -67,7 +65,9 @@ PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 FILES = {"a.txt": b"one\n", "docs/b.md": b"two\n", "owner.txt": b"mine\n"}
 MODES = ("snapshot", "empty")
 JS = "text/javascript; charset=utf-8"
-SWITCH = "export const FIRST_COMMIT_CONFIRM_OPEN = false;"
+#: The confirm switch as the product ships it since the route opened: the page is never served
+#: another value of it.
+OPEN_SWITCH = "export const FIRST_COMMIT_CONFIRM_OPEN = true;"
 #: The author the product commits as in a folder that has no repository yet: its Git cannot see the
 #: account's settings, so the name goes in through the environment (a repository's own settings are
 #: made by the test, after its `init`).
@@ -165,7 +165,6 @@ def serving(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     whose repository the PRODUCT will make: it has no configuration of its own to set first."""
     if GIT is None:
         pytest.fail("git is required by test_desk_wizard_git_fresh.py")
-    monkeypatch.setattr(git_setup, "_CONFIRM_OPEN", True, raising=False)
     root = tmp_path / "project"
     root.mkdir()
     write_project(root, lanes={"claude": good_lane()})
@@ -233,19 +232,22 @@ def with_target(transport: str, present: bool) -> bytes:
 
 
 def modules(door: bool = True) -> dict[str, bytes]:
-    """The modules the page is served with an edit, while the product differs from what it needs.
-
-    With `door` the transport has the setup target and the confirm's switch is open. Without it
-    the transport has no setup target and the switch is the product's own."""
-    served: dict[str, bytes] = {}
+    """The modules the page is served with an edit: none with `door`, where the product itself
+    has the setup target and the open switch (asserted, so a closed product cannot be opened
+    here); without it, only the product's transport with the setup target taken out."""
     transport = (PANEL / "desk-transport.js").read_text(encoding="utf-8")
-    if ("gitSetup" in transport) is not door:
-        served["desk-transport.js"] = with_target(transport, door)
     switch = (PANEL / "desk-wizard-git.js").read_text(encoding="utf-8")
-    if door and SWITCH in switch:
-        served["desk-wizard-git.js"] = switch.replace(SWITCH, SWITCH.replace("false", "true")
-                                                      ).encode("utf-8")
-    return served
+    assert "gitSetup" in transport, "the product's transport lost lane D1's setup target"
+    assert switch.count(OPEN_SWITCH) == 1, "the product's confirm switch is not open"
+    return {} if door else {"desk-transport.js": with_target(transport, False)}
+
+
+def test_only_the_doorless_page_is_served_an_edited_module_and_only_its_transport():
+    """No route is installed for an ordinary scenario, so no module of the page is replaced to
+    open anything; the door-less scenario replaces the transport alone."""
+    assert modules(door=True) == {}
+    edited = modules(door=False)
+    assert set(edited) == {"desk-transport.js"} and b"gitSetup" not in edited["desk-transport.js"]
 
 
 def fresh_page(chromium: Browser, door: bool = True
