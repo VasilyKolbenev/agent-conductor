@@ -17,8 +17,11 @@ commit yet, builds them the same way. They are verified, marked with this operat
 terms (`git_setup_first_index`), and then read back by the product's own Git: `diff-index` must
 exit 0 over them, and the file must be untouched afterwards. Every index command carries
 `INDEX_PIN`, so a setting of the owner's repository cannot put an extension, a version or a split
-index into bytes the format check would take for the product's own. The commit is made last, and
-not at all when signing is required.
+index into bytes the format check would take for the product's own. The two commands that read
+the tree itself, `read-tree` and the pinned `diff-index`, also carry `REAL_OBJECTS`: a replacement
+ref of the repository must not change which tree the bytes are built from or compared with, so
+both judge the tree the operation's terms hold (review ruling). The commit is made last, and not
+at all when signing is required.
 """
 from __future__ import annotations
 
@@ -31,6 +34,7 @@ from pathlib import Path
 from .accept_plumbing import call, oid
 from .accept_snapshot import _read
 from .git_index import OwnedIndex, temporary_index
+from .git_setup_facts import REAL_OBJECTS
 from .git_setup_first_index import INDEX_PIN, IndexFormatRefused, mark, terms_hash, verify
 from .git_setup_first_records import INDEX_LIMIT
 from .git_setup_records import SetupRefused
@@ -137,7 +141,7 @@ def _install_bytes(root: Path, git: GitRead, rows: list[dict], tree: str, fmt: s
                    nonce: str, terms: str) -> bytes:
     """A3 to A5: the base bytes by `read-tree` and a refresh, the marker, then the pinned read."""
     with temporary_index(root, f"first-{nonce}-b", fmt) as second:
-        call(root, git, *INDEX_PIN, "read-tree", tree, index_file=second)
+        call(root, git, *REAL_OBJECTS, *INDEX_PIN, "read-tree", tree, index_file=second)
         if rows:
             git_refresh(root, git, second)
         with _format_refusals():
@@ -156,8 +160,8 @@ def _read_by_the_pinned_git(root: Path, git: GitRead, index: OwnedIndex, install
     afterwards refuses. What Git prints about the marker is read by nobody.
     """
     _overwrite(index, install)
-    call(root, git, "--no-optional-locks", *INDEX_PIN, "diff-index", "--cached", "--quiet", tree,
-         index_file=index)
+    call(root, git, "--no-optional-locks", *REAL_OBJECTS, *INDEX_PIN, "diff-index", "--cached",
+         "--quiet", tree, index_file=index)
     if _read(index.root, index.path, INDEX_LIMIT) != install:
         raise GitReadFailed("git_failed")
 

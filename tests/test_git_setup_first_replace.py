@@ -8,12 +8,19 @@ with. Every test plants a real replacement with the Git that made the repository
 judgement that the replacement would have changed. Nothing here makes the product look at more
 of the repository than before.
 
+The two reads of the preparation (phase A) are among them: the `read-tree` that builds the bytes
+to install, and the pinned `diff-index` that reads those bytes back, both for the tree the
+operation's terms hold. A replacement of that tree must neither change the entries the bytes
+carry nor let bytes of another tree pass the read; the tests at the end plant a tree that differs
+from the stored one in a mode only, which the refresh of a repository with `core.filemode` off
+does not see.
+
 A repository can also switch replacement refs on for itself, and on Git 2.31 (the lowest the
 product accepts) `core.useReplaceRefs=true` in its configuration outweighs
 `--no-replace-objects`. The reads therefore also carry `-c core.useReplaceRefs=false`, which
-outweighs the repository's own setting, and the four tests that replace an object the proof reads
-(the commit, a blob, the tree of a wait, the tree of the index) run with that setting unset and
-set to `true`.
+outweighs the repository's own setting, and the tests that replace an object the proof reads
+(the commit, a blob, the tree of a wait, the tree of the index, the tree of the preparation) run
+with that setting unset and set to `true`.
 
 One more way to judge the bytes of another object than the one that is recorded: `cat-file commit
 <oid>` follows a tag object to the commit it points at. A branch that names a tag of the intended
@@ -28,7 +35,11 @@ import shutil
 import pytest
 
 from conductor.command import git_setup_first_records as records
+from conductor.command.git_index import temporary_index
+from conductor.command.git_setup_first_index import INDEX_PIN, mark
+from conductor.command.git_setup_first_prepare import _read_by_the_pinned_git, prepare
 from conductor.command.git_setup_first_records import AWAITING_SIGNATURE
+from conductor.command.project_git import GitReadFailed
 from tests.git_first_bench import confirm, crashed, project, seal, terms_of
 from tests.git_first_readers import READERS
 from tests.git_first_signing import (  # noqa: F401
@@ -38,6 +49,7 @@ from tests.test_git_setup import reason
 from tests.test_git_setup_first_commit import (
     FILES as TWO_FILES, damage_after_prepare, no_receipt, own_leftovers, remove_object, text,
     trunk_exists)
+from tests.test_git_setup_first_prepare import MESSAGE
 from tests.test_git_setup_first_recognition import an_empty_tree
 from tests.test_git_setup_first_recovery import FILES, git_path
 
@@ -216,3 +228,123 @@ def test_a_replacement_ref_does_not_let_an_index_of_another_tree_pass_as_install
     assert reason(confirm(p, "snapshot", digest=digest)) == "index_exists"
     assert (index.read_bytes(), index.stat().st_ino, index.stat().st_mtime_ns) == before
     assert no_receipt(p) and not git_path(p, "index.lock").exists()
+
+
+def a_prepared_project(tmp_path, which):
+    """Three files, `core.filemode` off, the preview and one preparation of exactly that preview.
+
+    With `core.filemode` off the refresh of the preparation does not see a mode that differs from
+    the file, so a tree that differs in a mode only is the one a replacement can put there without
+    the refresh or the entry count stopping it."""
+    p = project(tmp_path, FILES, which=which)
+    p.git("config", "core.filemode", "false", cwd=p.root)
+    shown = seal(p)
+    return p, shown, prepared(p, shown)
+
+
+def prepared(p, shown):
+    return prepare(p.root, p.spy, shown, MESSAGE, "snapshot", shown["paths_digest"])
+
+
+def a_tree_with_a_mode_flipped(p, tmp_path, tree: str) -> str:
+    """The tree of `tree` with `a.txt` executable: the same names, the same blobs, one mode."""
+    scratch = tmp_path / "flipped-index"
+    env = {"GIT_INDEX_FILE": str(scratch)}
+    p.git("read-tree", tree, cwd=p.root, env=env)
+    p.git("update-index", "--chmod=+x", "a.txt", cwd=p.root, env=env)
+    return p.git("write-tree", cwd=p.root, env=env).stdout.decode().strip()
+
+
+def plant_the_flipped_tree(p, tmp_path, tree: str, use_refs: str | None) -> str:
+    """Make `refs/replace/<tree>` name the tree with a flipped mode; the tree it returns is real."""
+    other = a_tree_with_a_mode_flipped(p, tmp_path, tree)
+    replace(p, tree, other, use_refs)
+    assert mode_of_a_txt(p, tree) == "100755"                       # Git reads the replacement
+    assert mode_of_a_txt(p, tree, *THE_OBJECT_ITSELF) == "100644"   # the stored tree is unchanged
+    return other
+
+
+def mode_of_a_txt(p, tree: str, *flags) -> str:
+    listing = p.git(*flags, "ls-tree", tree, "a.txt", cwd=p.root).stdout.decode("utf-8")
+    return listing.split()[0]
+
+
+def entries_of(p, tmp_path, data: bytes) -> list[str]:
+    """`ls-files --stage` over a copy of index bytes: the entries themselves, no tree is read."""
+    copy = tmp_path / "copy-of-the-bytes"
+    copy.write_bytes(data)
+    listing = p.git("ls-files", "--stage", cwd=p.root, env={"GIT_INDEX_FILE": str(copy)})
+    return listing.stdout.decode("utf-8").splitlines()
+
+
+def real_tree_holds(p, tmp_path, data: bytes, tree: str) -> bool:
+    """Whether `diff-index --cached` over a copy of the bytes finds no difference to the stored
+    tree, read without replacements (exit 0)."""
+    copy = tmp_path / "copy-of-the-bytes"
+    copy.write_bytes(data)
+    done = p.git(*THE_OBJECT_ITSELF, "diff-index", "--cached", "--quiet", tree, cwd=p.root,
+                 env={"GIT_INDEX_FILE": str(copy)}, check=False)
+    return done.returncode == 0
+
+
+def the_shown_entries(shown) -> list[str]:
+    return [f"{row['git_mode']} {row['git_oid']} 0\t{row['path']}" for row in shown["files"]]
+
+
+def foreign_install(p, tmp_path, made, other: str) -> bytes:
+    """Marked bytes, in the form the preparation installs, that hold the tree `other`."""
+    scratch = tmp_path / "foreign-index"
+    p.git(*INDEX_PIN, "read-tree", other, cwd=p.root, env={"GIT_INDEX_FILE": str(scratch)})
+    return mark(scratch.read_bytes(), "sha1", nonce=made.nonce, terms="a" * 64)
+
+
+def pinned_read(p, made, install: bytes) -> None:
+    """The last check of the preparation (A5) over `install`, for the tree the terms hold."""
+    with temporary_index(p.root, f"first-{made.nonce}-b", "sha1") as owned:
+        _read_by_the_pinned_git(p.root, p.spy, owned, install, made.tree)
+
+
+@for_every_reader
+def test_without_a_replacement_the_prepared_bytes_hold_the_shown_entries_and_the_stored_tree(
+        tmp_path, which):
+    p, shown, first = a_prepared_project(tmp_path, which)
+    second = prepared(p, shown)
+    for made in (first, second):
+        assert made.tree == first.tree
+        assert entries_of(p, tmp_path, made.install) == the_shown_entries(shown)
+        assert real_tree_holds(p, tmp_path, made.install, made.tree)
+
+
+@for_every_reader
+@with_the_repository_setting
+def test_a_replacement_ref_does_not_change_the_entries_the_prepared_bytes_are_built_from(
+        tmp_path, which, use_refs):
+    p, shown, first = a_prepared_project(tmp_path, which)
+    plant_the_flipped_tree(p, tmp_path, first.tree, use_refs)
+    again = prepared(p, shown)
+    assert again.tree == first.tree
+    assert entries_of(p, tmp_path, again.install) == the_shown_entries(shown)
+    assert real_tree_holds(p, tmp_path, again.install, again.tree)
+
+
+@for_every_reader
+def test_without_a_replacement_the_pinned_read_passes_the_prepared_bytes_and_not_a_foreign_one(
+        tmp_path, which):
+    p, shown, made = a_prepared_project(tmp_path, which)
+    other = a_tree_with_a_mode_flipped(p, tmp_path, made.tree)
+    pinned_read(p, made, made.install)
+    with pytest.raises(GitReadFailed) as caught:
+        pinned_read(p, made, foreign_install(p, tmp_path, made, other))
+    assert caught.value.code == "git_failed"
+
+
+@for_every_reader
+@with_the_repository_setting
+def test_a_replacement_ref_does_not_let_a_foreign_index_pass_the_pinned_read(
+        tmp_path, which, use_refs):
+    p, shown, made = a_prepared_project(tmp_path, which)
+    other = plant_the_flipped_tree(p, tmp_path, made.tree, use_refs)
+    with pytest.raises(GitReadFailed) as caught:
+        pinned_read(p, made, foreign_install(p, tmp_path, made, other))
+    assert caught.value.code == "git_failed"
+    pinned_read(p, made, made.install)                              # the stored tree's own bytes
