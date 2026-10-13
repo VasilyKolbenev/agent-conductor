@@ -1,8 +1,12 @@
 """The push step of an accepted result (spec 9.7): its door, its bodies and what it asks first."""
+import hashlib
+import json
+import os
 from pathlib import Path
 
 import pytest
 
+from conductor import tool_env, tool_pins
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.api_refusals import (
     ACCEPT_REASONS, PR_MISMATCH_REASONS, ApiRefusal, _reviewed_fact)
@@ -10,9 +14,15 @@ from conductor.command.command_routes import Route, match_route
 from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
 from conductor.command.http_transport import CommandSession
 from conductor.command.project_claim import ProjectIdentity
+from conductor.ownership import data_root
+from tests import _fakegh
+from tests.accept_remote import (
+    BRANCH, OWNER, REF, SSH_URL, TIMED_OUT, URL, accepted, confirm, digest_of, remote_oid,
+    seed_remote_ref, terms, with_gh)
+from tests.git_repo_helpers import git, needs_git
 from tests.test_accept_context import RUN, prepared
 from tests.test_command_adapters import FakeAdapter
-from tests.test_command_http_api import NOW, PORT, TOKEN, api as http_api, ids, post
+from tests.test_command_http_api import NOW, PORT, TOKEN, api as http_api, get_headers, ids, post
 
 PATH = f"/command/runs/{RUN}/accept/push"
 ACCEPTANCE = "acc-" + "a" * 32
@@ -128,3 +138,170 @@ def test_the_command_api_holds_a_gh_reader_beside_the_git_reader(tmp_path):
     assert build(project_gh=reader)._project_gh is reader
     with pytest.raises(TypeError, match="gh reader"):
         build(project_gh="gh")
+
+
+# -- the push itself: a real repository, a real bare remote, a scripted gh (spec 9.7, R7) ----------
+
+def accepted_with_gh(tmp_path, script=None):
+    api, root, record, remote, bare = accepted(tmp_path)
+    return api, root, record, remote, bare, with_gh(tmp_path, api, root, script)
+
+
+def reason_of(answer):
+    assert answer.status == 409, answer.payload
+    return answer.payload["error"]["detail"]["reason"]
+
+
+def moved_commit(root, record, message="elsewhere"):
+    """A commit that is not the accepted one: the same tree, another message, no parent."""
+    tree = git("rev-parse", f"{record['commit']}^{{tree}}", cwd=root).stdout.decode().strip()
+    return git("commit-tree", tree, "-m", message, cwd=root).stdout.decode().strip()
+
+
+@needs_git
+def test_commit_route_never_pushes(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    assert remote.calls, "the commit itself ran through the wrapped reader"
+    assert "push" not in remote.verbs() and "ls-remote" not in remote.verbs()
+    assert git("for-each-ref", cwd=bare).stdout == b""
+    assert _fakegh.calls(gh.dir) == []
+    shown = api.handle("GET", f"/command/runs/{RUN}/accept", get_headers()).payload
+    assert shown["commit"] == record and shown["push"] is None
+
+
+@needs_git
+def test_the_terms_name_the_three_facts_and_the_exact_command_and_change_nothing(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    answer = terms(api, record)
+    assert answer.status == 200, answer.payload
+    shown = answer.payload["push_terms"]
+    assert set(shown) == {"commit", "remote", "push_url", "repo", "ref", "command", "push_digest"}
+    assert (shown["commit"], shown["remote"], shown["push_url"], shown["repo"], shown["ref"]) == (
+        record["commit"], "origin", URL, "o/r", REF)
+    assert shown["command"] == (
+        f"git push --porcelain --no-follow-tags --recurse-submodules=no "
+        f"--force-with-lease={REF}: {URL} {record['commit']}:{REF}")
+    core = {"acceptance_id": record["acceptance_id"], "commit": record["commit"],
+            "remote": "origin", "push_url": URL, "repo": "o/r", "ref": REF}
+    assert shown["push_digest"] == "sha256:" + hashlib.sha256(json.dumps(
+        core, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
+    assert terms(api, record).payload == answer.payload
+    assert "push" not in remote.verbs() and "ls-remote" not in remote.verbs()
+    assert [row["argv"][:2] for row in _fakegh.calls(gh.dir)] == [["repo", "view"]] * 2
+    assert git("for-each-ref", cwd=bare).stdout == b""
+
+
+@needs_git
+def test_gh_receives_no_token_env_and_pinned_path_only(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    assert terms(api, record).status == 200
+    row, = _fakegh.calls(gh.dir)
+    assert row["argv"] == ["repo", "view", "o/r", "--json",
+                           "nameWithOwner,defaultBranchRef,viewerPermission,isArchived"]
+    assert not set(row["env_names"]) & set(OWNER)
+    assert {"GH_PROMPT_DISABLED", "GH_NO_UPDATE_NOTIFIER", "NO_COLOR"} <= set(row["env_names"])
+    pins = tool_pins.ToolPins(gh=tool_pins.ToolPin("gh", str(gh.exe), "2.50.0"))
+    assert row["path"] == tool_env.tool_env(gh.source, pins, gh.hub)["PATH"]
+    assert Path(row["path"].split(os.pathsep)[0]) == gh.dir
+
+
+@needs_git
+def test_remote_url_with_credentials_is_refused_and_not_echoed(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    secret = "s3cret-pass"
+    git("remote", "set-url", "origin", f"https://owner:{secret}@github.com/o/r.git", cwd=root)
+    for answer in (terms(api, record), confirm(api, record, "sha256:" + "c" * 64)):
+        assert reason_of(answer) == "remote_url_has_credentials"
+        assert secret not in json.dumps(answer.payload) and "owner:" not in repr(answer.payload)
+    assert _fakegh.calls(gh.dir) == []
+    assert "push" not in remote.verbs() and "ls-remote" not in remote.verbs()
+    assert git("for-each-ref", cwd=bare).stdout == b""
+
+
+@needs_git
+def test_push_sends_the_recorded_oid_even_after_the_local_branch_moved(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    digest = digest_of(api, record)
+    other = moved_commit(root, record, "moved")
+    git("update-ref", f"refs/heads/{BRANCH}", other, cwd=root)
+    answer = confirm(api, record, digest)
+    assert answer.status == 201, answer.payload
+    assert remote_oid(bare) == record["commit"] != other
+    pushed, = remote.pushes()
+    assert pushed[-1] == f"{record['commit']}:{REF}" and other not in " ".join(pushed)
+    assert answer.payload["push"]["remote_oid"] == record["commit"]
+
+
+@needs_git
+def test_push_confirmation_is_refused_when_the_resolved_push_url_changed(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    digest = digest_of(api, record)
+    git("config", "remote.origin.pushurl", SSH_URL, cwd=root)       # the same repository, said
+    answer = confirm(api, record, digest)                           # another way
+    assert reason_of(answer) == "push_terms_changed"
+    shown = terms(api, record).payload["push_terms"]
+    assert shown["push_url"] == SSH_URL and shown["push_digest"] != digest
+    assert "push" not in remote.verbs() and "ls-remote" not in remote.verbs()
+    assert git("for-each-ref", cwd=bare).stdout == b""
+    git("config", "--unset", "remote.origin.pushurl", cwd=root)
+    assert confirm(api, record, digest).status == 201               # the terms came back
+
+
+@needs_git
+@pytest.mark.parametrize("held", ["fast_forward", "diverged"])
+def test_push_to_an_existing_remote_branch_changes_nothing_and_is_rejected(tmp_path, held):
+    """The lease, on a real bare repository, after the look that said the ref was absent.
+
+    The remote branch appears between the look and the push, which is the race the lease is for;
+    it holds either an ancestor of the commit (a fast-forward could have moved it) or a commit of
+    its own. The push itself must be refused by the remote, and the branch must not move.
+    """
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    digest = digest_of(api, record)
+    existing = record["base_commit"] if held == "fast_forward" else moved_commit(root, record)
+    seen = []
+
+    def race(run):
+        seed_remote_ref(root, bare, existing)
+        seen.append(run())
+        return seen[-1]
+
+    remote.on_push = race
+    answer = confirm(api, record, digest)
+    assert reason_of(answer) == "push_rejected"
+    assert seen[0].exit_code == 1 and b"[rejected] (stale info)" in seen[0].output
+    assert remote_oid(bare) == existing
+    assert not (data_root(root) / "accept" / RUN / "push.json").exists()
+
+
+@needs_git
+def test_push_argv_sends_no_tags_and_no_submodules(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    git("tag", "-a", "v1", "-m", "release", record["commit"], cwd=root)
+    git("config", "push.followTags", "true", cwd=root)
+    assert confirm(api, record, digest_of(api, record)).status == 201
+    pushed, = remote.pushes()
+    assert pushed[2:] == ["push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
+                          f"--force-with-lease={REF}:", URL, f"{record['commit']}:{REF}"]
+    assert not {"--tags", "--force", "-f", "-u", "--set-upstream", "--mirror", "--all",
+                "--prune", "--delete"} & set(pushed)
+    assert git("for-each-ref", "refs/tags", cwd=bare).stdout == b""
+    assert git("for-each-ref", "refs/remotes", cwd=root).stdout == b""
+    assert git("config", "--get-regexp", r"^branch\.", cwd=root, check=False).stdout == b""
+
+
+@needs_git
+def test_an_uncertain_push_is_reconciled_by_the_remote_oid_before_any_retry(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    digest = digest_of(api, record)
+
+    def landed_then_silence(run):
+        run()
+        return TIMED_OUT
+
+    remote.on_push = landed_then_silence
+    answer = confirm(api, record, digest)
+    assert answer.status == 201, answer.payload
+    assert answer.payload["push"]["remote_oid"] == record["commit"] == remote_oid(bare)
+    assert remote.verbs().count("push") == 1
+    assert confirm(api, record, digest).status == 200 and remote.verbs().count("push") == 1

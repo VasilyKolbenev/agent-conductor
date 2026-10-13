@@ -1417,6 +1417,35 @@ answers `tool_unavailable` with `{tool:"gh", reason}`. `accept_refused` gains th
 word of `remote_head_moved`, `other_head`, `other_base` and `cross_repository`; no other reason
 carries it.
 
+The push terms answer 200 `{"push_terms":{"commit","remote","push_url","repo","ref","command",
+"push_digest"}}`. `commit` and `ref` come from the commit record, never from the local branch;
+`push_url` is the one address `git remote get-url --push --all <remote>` resolves (it expands
+`pushurl` and `insteadOf`) and is exactly `https://github.com/O/R`, `git@github.com:O/R` or
+`ssh://git@github.com/O/R`, with an optional `.git`; `repo` is the `O/R` that `gh repo view`
+confirmed for it; `push_digest` is the sha256 of the canonical `{acceptance_id, commit, remote,
+push_url, repo, ref}`. More than one address is `push_url_ambiguous`, a login or password in the
+address `remote_url_has_credentials` (the address is never echoed), an address that is not one of
+those forms, a remote that is not there, or a repository gh names otherwise
+`push_destination_mismatch`, and an owner without ADMIN, MAINTAIN or WRITE on a repository that is
+not archived `push_not_permitted`. Failures of git and of gh are `git_failed` and `git_timed_out`,
+and gh not signed in is `gh_not_logged_in`.
+
+The confirmation recomputes the terms (another digest is `push_terms_changed`) and then looks at
+the ref on the remote BEFORE any push and AFTER every push; only the look decides. The same commit
+already there answers 201 `{"push": record}` without a push; another commit there is
+`push_rejected`; no ref lets the push go ahead: `git push --porcelain --no-follow-tags
+--recurse-submodules=no --force-with-lease=<ref>: <push_url> <commit>:<ref>`, by address, with no
+`-u`, no `--tags` and no bare `--force`. After it the ref is looked at again: the same commit
+answers 201 and writes `push.json` (with `remote_oid`), another commit is `push_rejected`, no ref
+is `push_rejected` when the push said it was rejected, `push_unconfirmed` when it said it was sent,
+`push_timed_out` when it timed out and `git_failed` for any other exit with no porcelain line for
+the ref, and a look that does not answer is `push_unconfirmed` (or `push_auth_failed` when git
+could not sign in). A press with `"check":true` stops after the first look and answers 200
+`{"push": null}` when the remote has no ref; it never pushes. An exact repeat of a press that
+recorded the push answers 200 with the standing record, another digest is `push_terms_changed`
+and another actor `acceptance_exists`. One press at a time acts on a run in a process, and the
+store's transaction is held only for the write of `push.json`, never across a network call.
+
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
 composes the items into the one document `artifact-materials` and appends it
