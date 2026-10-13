@@ -45,6 +45,7 @@ export const path = Object.freeze({
   seed: (id) => `/command/tasks/${encodeURIComponent(id)}/seed`,
   project: () => "/command/project",
   git: () => "/command/project/git",
+  gitSetup: () => "/command/project/git/setup",
   projectCycle: () => "/command/project/cycle",
   quotas: () => "/command/quotas",
   workflows: () => "/command/workflows",
@@ -89,7 +90,7 @@ const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
   "autoContinue", "seed", "flow", "queue", "queueOrder", "queueWithdraw",
-  "acceptPreview", "acceptCommit"]);
+  "acceptPreview", "acceptCommit", "gitSetup"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

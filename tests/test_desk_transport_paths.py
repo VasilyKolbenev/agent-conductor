@@ -43,6 +43,7 @@ def test_the_materials_and_document_paths_are_the_three_rows_of_route_canon_3():
 def test_every_added_wizard_target_uses_its_canonical_command_route():
     rows = [
         ("git", "", "/command/project/git", "GET", "project_git"),
+        ("gitSetup", "", "/command/project/git/setup", "POST", "git_setup"),
         ("projectCycle", "", "/command/project/cycle", "GET", "project_cycle"),
         ("quotas", "", "/command/quotas", "GET", "quotas"),
         ("preparation", "task-t1", "/command/tasks/task-t1/preparation", "GET",
@@ -115,6 +116,18 @@ def test_the_queue_paths_are_the_four_rows_of_route_canon_4_and_the_verbs_the_ca
     reached = match_route("POST", withdraw)
     assert (reached.name, reached.run_id) == ("queue_withdraw", RUN)
     for method, path in (("GET", order), ("GET", withdraw)):
+        with pytest.raises(ApiRefusal) as refused:
+            match_route(method, path)
+        assert refused.value.code == "method_not_allowed", (method, path)
+
+
+def test_the_git_setup_path_is_the_one_post_only_route_beside_the_git_read():
+    """One verb each: the read names the state of Git, the write is the wizard's step."""
+    read, setup = _paths([["git", ""], ["gitSetup", ""]])
+    assert (read, setup) == ("/command/project/git", "/command/project/git/setup")
+    assert match_route("GET", read).name == "project_git"
+    assert match_route("POST", setup).name == "git_setup"
+    for method, path in (("GET", setup), ("POST", read)):
         with pytest.raises(ApiRefusal) as refused:
             match_route(method, path)
         assert refused.value.code == "method_not_allowed", (method, path)
