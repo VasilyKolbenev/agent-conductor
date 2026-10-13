@@ -40,9 +40,12 @@ from tests.test_store import good_lane, write_project
 #: Long enough that a real answer always arrives, short enough that a hung read
 #: fails the test instead of the suite. Never raised to make a road pass.
 PATIENCE = 5.0
-#: The stream's wait, scaled down so that a heartbeat (the shipped count of waits) comes in a
-#: third of a second. Only the wait is scaled; the count between two comments is the shipped one.
+#: The stream's wait, scaled down, and a comment on EVERY quiet wait: a heartbeat then costs one
+#: wait however coarse the runner's timer is. With the shipped count of fifteen, three heartbeats
+#: were 45 short waits, and on a loaded macOS runner those took more than PATIENCE (CI
+#: 38381468164). The shipped count and period are pinned by the last test of this group.
 FAST_WAIT = 0.02
+FAST_PING_EVERY = 1
 GREETING = 'data: {"kind":"state"}'
 PING = ": ping"
 
@@ -506,6 +509,7 @@ def test_a_client_that_left_an_idle_stream_frees_its_mailbox_and_thread_by_itsel
     server is not stopped, which are the only two things that used to end this loop.
     """
     monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
     srv, address = live
     before = set(threading.enumerate())
     wire = _open_stream(address)
@@ -524,6 +528,7 @@ def test_a_quiet_live_client_hears_only_comments_and_keeps_its_stream_for_the_ne
         live, monkeypatch):
     """Quiet is not gone: the comments change no state, and a real signal still arrives."""
     monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
     srv, address = live
     wire = _open_stream(address)
     try:
@@ -544,6 +549,7 @@ def test_a_quiet_live_client_hears_only_comments_and_keeps_its_stream_for_the_ne
 def test_a_stop_while_the_stream_sends_heartbeats_ends_it_without_a_frame_of_its_own(
         tmp_path, monkeypatch):
     monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
     _root, srv, thread, address = _serving(tmp_path)
     stopped = False
     wire = _open_stream(address)
