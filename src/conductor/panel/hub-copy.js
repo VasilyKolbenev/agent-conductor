@@ -458,6 +458,43 @@ export const HUB_COPY = Object.freeze({
       + "--auth-home <the login folder> to read the exact reason.",
     "Перезагрузка пока не доказана. В терминале выполните conduct ownership recover-login "
       + "--auth-home <папка входа>, чтобы прочитать точную причину."],
+  // -- the tools the page asks a person to pin (spec 8.8) ---------------------------------------
+  "hub.act.pin": ["Pin", "Закрепить"],
+  "hub.tool.state.not_pinned": ["{tool} is not pinned.", "{tool} не закреплён."],
+  "hub.tool.state.changed": ["{tool} has changed since it was pinned.",
+    "{tool} изменился после закрепления."],
+  "hub.tool.state.too_old": ["The pinned {tool} is too old.",
+    "Закреплённый {tool} слишком старый."],
+  "hub.tool.state.unreadable": ["The version of the pinned {tool} cannot be read.",
+    "Версию закреплённого {tool} не удаётся прочитать."],
+  "hub.tool.pinned": ["The tool is pinned.", "Инструмент закреплён."],
+  "hub.tool.pin_changed": ["The tool now says another version than the one shown. The offer "
+    + "was read again: check it, then pin.", "Инструмент теперь называет другую версию, не ту, "
+    + "что была показана. Предложение прочитано заново: проверьте его и закрепите."],
+  "hub.tool.pin_too_old": ["This version is older than the product needs.",
+    "Эта версия старее, чем нужно продукту."],
+  // The words lane H wrote for a tool that is not pinned and for a pin FILE that cannot be used,
+  // as H wrote them (`H-to-D2-hub-handlers-live.md`, section 5): a pin file is never said as the
+  // version.
+  "hub.tool.restart_to_find": [
+    "Installed a tool just now? Restart the hub: it looks for tools once, when it starts.",
+    "Только что установили инструмент? Перезапустите hub: он ищет инструменты один раз, при "
+      + "запуске."],
+  "hub.tool.pin_problem.corrupt": [
+    "The pin file tools.json is damaged, so no tool can be pinned. Restore it from a copy "
+      + "or move it aside, then pin again.",
+    "Файл закреплений tools.json повреждён, поэтому инструмент закрепить нельзя. Верните "
+      + "его из копии или уберите в сторону и закрепите снова."],
+  "hub.tool.pin_problem.unreadable": [
+    "The pin file tools.json cannot be read (check its permissions and whether another "
+      + "program holds it). Fix access, then pin again.",
+    "Файл закреплений tools.json не читается (проверьте права доступа и не занят ли он "
+      + "другой программой). Исправьте доступ и закрепите снова."],
+  "hub.tool.pin_problem.unwritable": [
+    "The hub cannot write the pin file tools.json (permissions, a full disk or a lock). Fix "
+      + "that, then pin again.",
+    "hub не может записать файл закреплений tools.json (права, место на диске или "
+      + "блокировка). Исправьте это и закрепите снова."],
 });
 
 export const HUB_LOCALES = Object.freeze(["en", "ru"]);

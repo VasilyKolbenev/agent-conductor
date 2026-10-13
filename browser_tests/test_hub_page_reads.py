@@ -198,7 +198,8 @@ def test_the_banners_say_what_setup_says_and_a_login_that_is_not_closed_can_be_r
                                              "unlisted"]
     assert banners[0][1] == [say(page, "hub.banner.profile_absent"),
                              say(page, "hub.banner.profile_how")]
-    assert banners[1][1] == [say(page, "hub.banner.tools")]
+    assert banners[1][1][0] == say(page, "hub.banner.tools")
+    assert len(banners[1][1]) == 2, "beside its words, the tool that is not pinned and its offer"
     assert banners[2][1] == [say(page, "hub.banner.login", harness="claude-code"),
                              say(page, "hub.act.recover_login")]
     assert banners[4][1] == [say(page, "hub.banner.job"), say(page, "hub.banner.job_how")]

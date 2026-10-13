@@ -1,8 +1,10 @@
-"""The words lane H wrote for the page stand in `hub-copy.js` exactly as H wrote them.
+"""The thirteen words lane H wrote for the page stand in `hub-copy.js` exactly as H wrote them.
 
 `H-to-D2-hub-handlers-live.md` section 5 is H's table: the sentence a failed recovery is told in
-(`hub.reason.<recover|recover_login>.<reason>`) and the hint beside a failed profile copy
-(`hub.reason.recovery_required`). The wording is H's and the page only carries it: this table is a
+(`hub.reason.<recover|recover_login>.<reason>`), the hint beside a failed profile copy
+(`hub.reason.recovery_required`), the hint beside a tool that is not pinned
+(`hub.tool.restart_to_find`) and the three sentences of a pin FILE that cannot be used
+(`hub.tool.pin_problem.<reason>`). The wording is H's and the page only carries it: this table is a
 typed copy of H's, and the catalogue is held equal to it in both languages, so a rewording of either
 side reds here. The hub never prepares: the command a person types for a preparation is a word in
 four of these sentences (and in the clone banner), and no message besides carries
@@ -91,6 +93,30 @@ H_WORDS = {
         "Перезагрузка пока не доказана. В терминале выполните conduct ownership "
         "recover-login --auth-home <папка входа>, чтобы прочитать точную причину.",
     ),
+    "hub.tool.restart_to_find": (
+        "Installed a tool just now? Restart the hub: it looks for tools once, when it "
+        "starts.",
+        "Только что установили инструмент? Перезапустите hub: он ищет инструменты один раз, "
+        "при запуске.",
+    ),
+    "hub.tool.pin_problem.corrupt": (
+        "The pin file tools.json is damaged, so no tool can be pinned. Restore it from a "
+        "copy or move it aside, then pin again.",
+        "Файл закреплений tools.json повреждён, поэтому инструмент закрепить нельзя. "
+        "Верните его из копии или уберите в сторону и закрепите снова.",
+    ),
+    "hub.tool.pin_problem.unreadable": (
+        "The pin file tools.json cannot be read (check its permissions and whether another "
+        "program holds it). Fix access, then pin again.",
+        "Файл закреплений tools.json не читается (проверьте права доступа и не занят ли он "
+        "другой программой). Исправьте доступ и закрепите снова.",
+    ),
+    "hub.tool.pin_problem.unwritable": (
+        "The hub cannot write the pin file tools.json (permissions, a full disk or a lock). "
+        "Fix that, then pin again.",
+        "hub не может записать файл закреплений tools.json (права, место на диске или "
+        "блокировка). Исправьте это и закрепите снова.",
+    ),
 }
 
 
@@ -105,7 +131,7 @@ def test_a_word_lane_h_wrote_stands_in_the_catalogue_verbatim_in_both_languages(
 
 def test_the_prepare_command_is_a_word_in_four_sentences_of_h_and_in_the_clone_banner_only():
     rows = _catalogue()
-    assert len(H_WORDS) == 9 and set(H_WORDS) <= set(rows)
+    assert len(H_WORDS) == 13 and set(H_WORDS) <= set(rows)
     sayers = {key for key, pair in rows.items()
               if any("--prepare-restart" in text for text in pair)}
     assert sayers == {key for key in H_WORDS

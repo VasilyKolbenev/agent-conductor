@@ -97,7 +97,7 @@ SPEC_WORDS = {
     "hub.act.recheck": "Проверить снова", "hub.act.recover": "Восстановить",
     "hub.act.forget": "Убрать из списка", "hub.act.raise": "Поднять", "hub.act.lower": "Опустить",
     "hub.act.clear_flag": "Снять флаг", "hub.act.recover_login": "Восстановить вход",
-    "hub.act.apply_profile": "Применить профиль",
+    "hub.act.pin": "Закрепить", "hub.act.apply_profile": "Применить профиль",
     "hub.act.apply_profile_restart": "Применить профиль и перезапустить",
     "hub.confirm.switch": "Сейчас в работе {name}: он остановится на контрольной точке — "
                           "текущий шаг закончится сам.",
@@ -325,7 +325,8 @@ def test_a_code_is_said_by_its_clause_and_a_code_the_page_has_no_word_for_is_sai
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The modules that say a message. The catalogue's own table is not one of them (it would name every
 #: key); its functions, after the table, are.
-SAYERS = ("hub.js", "hub-add.js", "hub-github.js", "hub-rail.js", "hub-stub.js", "hub-ops.js")
+SAYERS = ("hub.js", "hub-add.js", "hub-github.js", "hub-rail.js", "hub-stub.js", "hub-ops.js",
+          "hub-tools.js")
 LITERAL = re.compile(r'"((?:hub|desk_status)\.[a-z0-9_.]+)"')
 FAMILY = re.compile(r"`((?:hub|desk_status)\.[a-z0-9_.]+\.)\$\{")
 

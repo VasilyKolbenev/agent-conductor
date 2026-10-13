@@ -30,6 +30,7 @@ import {createFrameHost, frameAddress} from "./hub-frame.js";
 import {FOLLOWED, createFollower} from "./hub-ops.js";
 import {confirmWords, mountRail, node, noticedMap, projectLine, unlistedNotes} from "./hub-rail.js";
 import {mountCenter, mountSide} from "./hub-stub.js";
+import {pinNotice, toolBlocks, toolRows} from "./hub-tools.js";
 
 const byId = (id) => document.getElementById(id);
 const THEMES = Object.freeze([null, "dark", "light"]);
@@ -77,8 +78,6 @@ const IDS = Object.freeze({pick: /^pick-[0-9a-f]{32}$/, tool: /^(?:gh|git)$/,
 //: makes the page read that operation, if it follows it (it is not a read of the table).
 const FRAMES = Object.freeze({projects: "projects", project: "projects", limits: "limits",
   setup: "setup", operation: null});
-//: The states of a tool (`git`, `gh`) that ask a person to look.
-const UNSETTLED = Object.freeze(["not_pinned", "changed", "too_old", "unreadable"]);
 
 //: What the page holds. The lists are what the hub last said, and stay as they were when a read fails.
 const state = {locale: "en", theme: null, projects: [], activeId: null, queue: [], computedAt: null,
@@ -373,6 +372,19 @@ async function perform(action, project) {
   await refreshAll();
 }
 
+//: «Закрепить» (spec 8.8): the candidate the hub itself gave an id to is pinned by that id, and the
+//: answer is said as what it is (a pin FILE that cannot be used is never said as the tool's
+//: version). The setup is read again either way, so the offer on the screen is the hub's.
+async function pinTool(tool, candidateId) {
+  if (state.busy) return;
+  Object.assign(state, {busy: true, notice: null});
+  await ensureSession();
+  const answer = await write("toolPin", {tool}, {candidate_id: candidateId});
+  Object.assign(state, {busy: false, notice: pinNotice(answer)});
+  render();
+  await refresh("setup");
+}
+
 function act(action, project) {
   if (state.busy) return;
   if (action.confirm) {
@@ -519,7 +531,6 @@ function loginBanner(one) {
 function setupBanners() {
   const setup = state.setup, {locale} = state;
   if (!isObject(setup)) return [];
-  const tools = isObject(setup.tools) ? Object.values(setup.tools) : [];
   const small = (key) => node("small", {text: hubText(locale, key)});
   const list = [];
   if (setup.profile === "absent") {
@@ -528,8 +539,10 @@ function setupBanners() {
   } else if (setup.profile === "invalid") {
     list.push(banner("profile", hubText(locale, "hub.banner.profile_invalid")));
   }
-  if (tools.some((one) => isObject(one) && UNSETTLED.includes(one.state))) {
-    list.push(banner("tools", hubText(locale, "hub.banner.tools")));
+  const unsettled = toolRows(setup, locale);
+  if (unsettled.length > 0) {
+    list.push(banner("tools", hubText(locale, "hub.banner.tools"),
+      toolBlocks(unsettled, locale, pinTool)));
   }
   list.push(...(isList(setup.logins) ? setup.logins : []).filter((one) => isObject(one)
     && one.state === "unclosed").map(loginBanner));
