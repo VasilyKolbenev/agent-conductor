@@ -57,6 +57,7 @@ from ..containment import (
     render_cwd_violation,
 )
 from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
+from ..work_layout import WORK_DIR
 from . import _procgroup
 from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
@@ -64,7 +65,13 @@ from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
 from .process_env_rules import INJECTING_ENV
 from .process_profile import ProfileJournal
-from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
+from .environment_values import (
+    ENV_NAME as _ENV_NAME,
+    EnvironmentValues,
+    git_ceiling_environment,
+    literal_environment,
+    select_environment,
+)
 from .base import (
     AdapterContractError,
     AdapterManifest,
@@ -545,7 +552,8 @@ class ProcessRunner:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
             raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
-        env = self._child_env(spec)
+        env = git_ceiling_environment(      # ADR-7e: extra protection, never the boundary
+            self._child_env(spec), self._root, self._root / WORK_DIR, cwd, windows=os.name == "nt")
         sensitive_values = self.allowed_environment_values(
             spec.env_allow, overrides=spec.env) + spec.sensitive_extra
         # No payload means DEVNULL, byte for byte the spawn every provider got
