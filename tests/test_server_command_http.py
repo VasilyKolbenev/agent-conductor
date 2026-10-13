@@ -158,12 +158,19 @@ def test_the_frame_reader_returns_data_that_follows_heartbeats_on_a_real_socket(
         assert _read_frame(response, budget=3.0) == 'data: {"kind":"state"}\n\n'
 
 
-def test_a_read_on_a_real_socket_waits_no_longer_than_what_is_left_of_the_budget():
-    """A heartbeat arrived and nothing more: the next read must not get a full socket wait."""
+def test_a_later_read_on_a_real_socket_waits_only_what_is_left_of_the_deadline():
+    """Two lines of one heartbeat are read; the third read is given what is left, not the budget.
+
+    The clock is a script and nothing more is ever sent: the deadline is taken at 0.0 and the
+    reads are made at 0.1, 0.2 and 0.3 s, so the third has 0.35 - 0.3 = 0.05 s left. A reader
+    that gave every read the whole budget, or cut the wait once before its loop, leaves the
+    socket at 0.35 s here; one that left the socket's own wait alone leaves 4 s.
+    """
+    ticks = iter([0.0, 0.1, 0.2, 0.3])      # the deadline, then one tick before each read
     with _response_over(b": ping\n\n", socket_wait=4.0) as (response, held):
-        with pytest.raises(AssertionError, match="no SSE frame within 0.3 s"):
-            _read_frame(response, budget=0.3)
-        assert held.gettimeout() <= 0.3, "the read kept the socket's own, longer wait"
+        with pytest.raises(AssertionError, match="no SSE frame within 0.35 s"):
+            _read_frame(response, budget=0.35, clock=lambda: next(ticks))
+        assert held.gettimeout() == pytest.approx(0.05), held.gettimeout()
 
 
 def _request(subject, method, path, body=None, *, headers=None):

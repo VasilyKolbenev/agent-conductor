@@ -42,8 +42,15 @@ def stack(tmp_path):
 
 
 def _lists_of_codes() -> dict[str, frozenset[str]]:
-    """Every list of codes the hub keeps: the two closed lists of the spec, the transport names,
-    the state codes a project can carry, and the refusals the rows name."""
+    """The lists of codes this test reads: the two closed lists of the spec, the transport names,
+    the state codes a project can carry, and the refusals the rows name.
+
+    The hub keeps other lists that are not read here, among them the proposed codes of the
+    registry and of the state file, the refusals of the state file, the codes of the supervisor
+    and of adding a project, the reasons beside an operation's detail and the file reasons of
+    the tool pins (`service.PIN_FILE_REASONS`): what the test shows of its unknown code is that
+    it is in none of the lists read.
+    """
     return {
         "the route refusals": frozenset(refusals.HUB_ERROR_STATUS),
         "the operation codes": refusals.OPERATION_ERROR_CODES,
