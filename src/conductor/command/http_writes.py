@@ -69,18 +69,8 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "git_setup":
         from .git_setup import setup
         return setup(api, body)
-    if route.name == "accept_commit":
-        from .accept_commit import commit
-        return commit(api, route.run_id, body)
-    if route.name == "accept_preview":
-        from .accept_preview import preview
-        return preview(api, route.run_id, body)
-    if route.name == "accept_push":
-        from .accept_push import push
-        return push(api, route.run_id, body)
-    if route.name == "accept_pull_request":
-        from .accept_pull_request import pull_request
-        return pull_request(api, route.run_id, body)
+    if route.name.startswith("accept_"):
+        return _write_accept(api, route, body)
     if route.name.startswith("automation_"):
         from .policy_routes import route as policy_route
         return policy_route(api, route.name, route.run_id, body)
@@ -121,6 +111,23 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "materials":
         return write_materials(api, route.run_id, body)
     return _decide(api, route.run_id, body)
+
+
+def _write_accept(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    """One of the four writes on an accepted result, by name (spec 9.5, 9.7)."""
+    if route.name == "accept_commit":
+        from .accept_commit import commit
+        return commit(api, route.run_id, body)
+    if route.name == "accept_preview":
+        from .accept_preview import preview
+        return preview(api, route.run_id, body)
+    if route.name == "accept_push":
+        from .accept_push import push
+        return push(api, route.run_id, body)
+    if route.name == "accept_pull_request":
+        from .accept_pull_request import pull_request
+        return pull_request(api, route.run_id, body)
+    raise AssertionError(f"no write on an accepted result is named {route.name}")
 
 
 def _write_queue(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
