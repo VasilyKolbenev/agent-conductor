@@ -52,7 +52,7 @@ from pathlib import Path
 
 from .deep_contracts import DeepProtocol
 from .artifact_transport import ArtifactAwareTransport
-from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
+from .harness_workspace import INSTRUCTION_DIR, WORK_DIR, real_path
 from .headless_cli import (
     DISPATCH_CAPABILITY,
     HarnessProfile,
@@ -85,6 +85,8 @@ DSH_TELEMETRY_DISABLED_ENV = "DSH_TELEMETRY_DISABLED"
 TELEMETRY_DISABLED = "1"
 #: The code-owned launcher flags. No caller ever contributes a flag.
 HEADLESS_ARGV = ("--profile", "headless")
+#: What Node is told before the entry INSIDE the execution boundary, and only there.
+NODE_SYMLINK_FLAGS = ("--preserve-symlinks", "--preserve-symlinks-main")
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
 DSH_OUTPUT_LIMIT = 16 * 1024
@@ -170,6 +172,19 @@ class DshHarnessAdapter(ArtifactAwareTransport):
     def _argv_prefix(self) -> tuple[str, ...]:
         """An interpreter and the entrypoint it runs: dsh is a Node script."""
         return (self._pin.node_executable, self._pin.entrypoint)
+
+    def _boundary_prefix(self) -> tuple[str, ...]:
+        """Inside the boundary Node starts from the entry's REAL path, with symlinks kept.
+
+        Node resolves the main module's real path with an ``lstat`` of every folder from the
+        drive root, and the container may not look at ``C:\\``, ``C:\\Users`` or the folders above
+        the install: it fails with ``EPERM`` (measured, H probe of 14.10). The pinned entry is a
+        link into pnpm's tree, so the parent names the real file, taken here outside the
+        container, and both flags keep Node from looking further: with the linked entry the
+        dependencies are not found, and without the flags the ``lstat`` fails. Preflights and
+        every other road keep the pin as the operator wrote it.
+        """
+        return (self._pin.node_executable, *NODE_SYMLINK_FLAGS, real_path(self._pin.entrypoint))
 
     def _task_argv(self, task_text: str) -> tuple[str, ...]:
         """``--profile headless <task>``: the task is the first free token."""

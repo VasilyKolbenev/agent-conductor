@@ -67,10 +67,46 @@ class AttemptFolders:
     install: str
 
 
-def confined_spec(spec: CommandSpec, boundary: WindowsContainer, paths) -> CommandSpec:
-    """The attempt's spec with the boundary and the runtime variables, and nothing else changed."""
+#: The folder under which the owner's installs live, one folder per harness and one per version
+#: beneath it: ``harnesses/<name>/<version>`` (H contract, section 5).
+INSTALL_TREE = "harnesses"
+
+
+def install_folder(pinned_file: str) -> str:
+    """The version folder a pinned file is installed in: ``harnesses/<name>/<version>``.
+
+    That folder, and not the one the file sits in, is what the boundary must be able to read: for
+    a native binary it is the same folder, but one build keeps its file deep in a vendor tree
+    beside what it loads, and another keeps its dependencies in sibling folders of the one that
+    holds the entry (measured, H probe of 14.10). The nearest folder that is a version folder of
+    the install tree is taken, so the grant is the narrowest that follows the rule.
+
+    Args:
+        pinned_file: The absolute file the child starts from.
+
+    Raises:
+        ProcessRunnerError: The file is not installed under the tree. A guess would grant too
+            little or too much, and a launch that cannot name its install folder is refused.
+    """
+    for folder in Path(pinned_file).parents:
+        if folder.parent.parent.name.casefold() == INSTALL_TREE:
+            return str(folder)
+    raise ProcessRunnerError(
+        f"the pinned build is not installed under {INSTALL_TREE}/<name>/<version>")
+
+
+def confined_spec(
+        spec: CommandSpec, boundary: WindowsContainer, paths, *,
+        plain: tuple[str, ...], prefix: tuple[str, ...]) -> CommandSpec:
+    """The attempt's spec with the boundary, the runtime variables and the boundary argv prefix.
+
+    ``prefix`` replaces ``plain``, what the operator's pin contributed to the front of the argv;
+    the task tokens behind it are untouched.
+    """
     runtime = str(paths["runtime"])
-    return replace(spec, boundary=boundary, env={**spec.env, **dict.fromkeys(RUNTIME_ENV, runtime)})
+    return replace(
+        spec, boundary=boundary, argv=(*prefix, *spec.argv[len(plain):]),
+        env={**spec.env, **dict.fromkeys(RUNTIME_ENV, runtime)})
 
 
 class AttemptLaunch:
@@ -282,23 +318,24 @@ class AttemptLaunch:
         folders are not proven released, so the error propagates and the attempt is ``unknown``,
         never ``succeeded``. Every refusal of entering or leaving becomes the one fixed error.
         """
-        folders = AttemptFolders(
-            work=cwd, home=home.relative_to(self._workspace.root).as_posix(),
-            install=self._install_folder())
+        plain = self._argv_prefix()
         try:
+            folders = AttemptFolders(
+                work=cwd, home=home.relative_to(self._workspace.root).as_posix(),
+                install=install_folder(plain[-1]))
             with self._runner.container_profile(**entry_call(mode, folders)) as (boundary, paths):
-                return self._runner.run(confined_spec(spec, boundary, paths))
+                return self._runner.run(confined_spec(
+                    spec, boundary, paths, plain=plain, prefix=self._boundary_prefix()))
         except LAUNCH_REFUSALS:
             raise ProcessRunnerError("the boundaried launch was refused") from None
 
-    def _install_folder(self) -> str:
-        """The folder that holds the pinned file the child starts from, as an absolute path.
+    def _boundary_prefix(self) -> tuple[str, ...]:
+        """What the pin contributes to the front of a boundaried argv.
 
-        The folder of the last element of the operator's pin: the executable of a native binary,
-        the entrypoint of an interpreter. What else the build loads beside it is measured by the
-        host's probe and is not guessed here.
+        The pin as the operator wrote it, unless the build cannot start from it inside the
+        container: a harness that needs more says so by overriding this.
         """
-        return str(Path(self._argv_prefix()[-1]).parent)
+        return self._argv_prefix()
 
     def _mint_home(self) -> Path:
         """A FRESH home per spawn, named by a freshly minted causal id.

@@ -48,6 +48,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import resolve_providers
 
 from tests import _fakegrok
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-21T12:00:00Z"
@@ -68,7 +69,7 @@ class _Ids:
 
 
 def _executable(tmp_path: Path) -> Path:
-    exe = _fakegrok.build_executable(tmp_path / "bin")
+    exe = _fakegrok.build_executable(pin_dir(tmp_path, "grok-build"))
     if exe is None:
         # Name the CAUSE. "This platform" blamed the platform for what is almost
         # always an environment fact -- no console-script launcher to copy -- and

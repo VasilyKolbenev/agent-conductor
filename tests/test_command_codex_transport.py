@@ -79,6 +79,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakecodex, _stdinseam
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-22T12:00:00Z"
@@ -98,7 +99,7 @@ class _Ids:
 
 
 def _executable(tmp_path: Path) -> Path:
-    exe = _fakecodex.build_executable(tmp_path / "bin")
+    exe = _fakecodex.build_executable(pin_dir(tmp_path, "codex"))
     if exe is None:
         pytest.skip(
             "no console-script launcher stub is available to copy in this "

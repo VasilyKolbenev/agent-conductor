@@ -28,6 +28,24 @@ from conductor.command.adapters.process_boundary import WindowsContainer
 #: A well-formed AppContainer SID, which is all ``WindowsContainer`` checks.
 SID = "S-1-15-2-1-2-3-4-5-6-7"
 
+#: What the product adds in front of a Node entry inside the boundary (H, DSH argv). The harness
+#: fake for DSH is a Python script, which refuses these, so the double drops them from the argv it
+#: really executes; the argv it RECORDS keeps them.
+NODE_FLAGS = ("--preserve-symlinks", "--preserve-symlinks-main")
+
+#: Where each harness's pinned file sits under the owner's install tree, as measured on 14.10
+#: (H contract, section 5): ``harnesses/<name>/<version>``, and for two of the five a deeper
+#: path to the file itself. The fixtures of the five transport suites install their fake there,
+#: so the install folder an adapter asks for is a fact of the layout and not of the fake.
+LAYOUT = {
+    "claude-code": ("2.1.239", ()),
+    "codex": ("0.112.0", ("node_modules", "@openai", "codex-win32-x64", "vendor",
+                          "x86_64-pc-windows-msvc", "codex")),
+    "grok-build": ("1.0.5", ()),
+    "kimi-code": ("0.38.0", ()),
+    "deepseek-harness": ("0.1.0-rc.7-pnpm", ("node_modules", "@deepseek-ai", "dsh", "lib")),
+}
+
 
 def takes_the_call(entry) -> bool:
     """Whether ``entry``, a runner's ``container_profile``, binds the call the adapters make.
@@ -40,6 +58,16 @@ def takes_the_call(entry) -> bool:
     except TypeError:
         return False
     return True
+
+
+def version_folder(base, provider_id: str) -> Path:
+    """The folder the boundary must be able to read for this harness: ``harnesses/<name>/<v>``."""
+    return Path(base) / "harnesses" / provider_id / LAYOUT[provider_id][0]
+
+
+def pin_dir(base, provider_id: str) -> Path:
+    """The folder the pinned file itself sits in, at the depth the real install puts it."""
+    return version_folder(base, provider_id).joinpath(*LAYOUT[provider_id][1])
 
 
 @dataclass
@@ -107,7 +135,8 @@ class BoundaryRunner(ProcessRunner):
         inside = self._open > 0
         self.runs.append(Run(spec.argv, spec.cwd, dict(spec.env), spec.boundary, inside))
         self.events.append("run-inside" if inside else "run-outside")
-        return super().run(replace(spec, boundary=None))
+        argv = tuple(token for token in spec.argv if token not in NODE_FLAGS)
+        return super().run(replace(spec, boundary=None, argv=argv))
 
 
 def recording(adapter, scratch, *, enter_error=None, exit_error=None) -> BoundaryRunner:

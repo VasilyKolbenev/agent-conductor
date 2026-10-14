@@ -62,6 +62,7 @@ from conductor.command.graph_template import load_template
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakeclaude, _stdinseam
+from tests._fakeboundary import pin_dir
 
 NOW = "2026-08-22T12:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -80,7 +81,7 @@ class _Ids:
 
 
 def _executable(tmp_path: Path) -> Path:
-    exe = _fakeclaude.build_executable(tmp_path / "bin")
+    exe = _fakeclaude.build_executable(pin_dir(tmp_path, "claude-code"))
     if exe is None:
         pytest.skip(
             "no console-script launcher stub is available to copy in this "

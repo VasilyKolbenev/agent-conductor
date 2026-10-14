@@ -22,17 +22,20 @@ The native witness, that an agent started this way cannot write the project root
 from __future__ import annotations
 
 import dataclasses
+import os
+import shutil
 from pathlib import Path
 
 import pytest
 
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.grok_build import GROK_PROTOCOL, GROK_PROVIDER_ID
+from conductor.command.adapters.dsh_harness import DshPin
 from conductor.command.adapters.harness_attempt import (
-    RUNTIME_ENV, AttemptFolders, AttemptLaunch)
+    RUNTIME_ENV, AttemptFolders, AttemptLaunch, install_folder)
 from conductor.command.adapters.harness_profile import boundary_detail
 from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR
-from conductor.command.adapters.process import ProcessRunner
+from conductor.command.adapters.process import ProcessRunner, ProcessRunnerError
 from conductor.command.adapters.process_boundary import WindowsContainer
 from conductor.command.adapters.process_profile import ProfileRefused
 from conductor.command.adapters.provider import ProviderConfig
@@ -47,7 +50,9 @@ from tests import test_command_codex_transport as codex_t
 from tests import test_command_dsh_harness as dsh_t
 from tests import test_command_grok_transport as grok_t
 from tests import test_command_kimi_transport as kimi_t
-from tests._fakeboundary import confined, recording_runners, takes_the_call
+from tests._fakeboundary import (
+    LAYOUT, NODE_FLAGS, confined, pin_dir, recording, recording_runners, takes_the_call,
+    version_folder)
 
 HARNESSES = [
     pytest.param((claude_t, _fakeclaude), id="claude-code"),
@@ -104,8 +109,9 @@ def test_each_adapter_asks_the_entry_for_the_attempts_own_folders(harness, tmp_p
     assert folders.work == "work/work-001"
     assert folders.home.startswith(adapter.profile.home_dir + "/")
     assert not Path(folders.home).is_absolute() and ".." not in Path(folders.home).parts
-    assert folders.install == str(Path(_pinned_file(adapter)).parent)
+    assert folders.install == str(version_folder(tmp_path, adapter.manifest.adapter_id))
     assert Path(folders.install).is_absolute()
+    assert Path(_pinned_file(adapter)).is_relative_to(folders.install)
     assert entry.paths["home"] == root / folders.home
 
 
@@ -481,3 +487,107 @@ def test_an_adapter_the_provider_door_confined_for_a_platform_without_a_boundary
     assert receipt.outcome == "failed"
     assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
     assert _fakegrok.spawns(log) == []
+
+
+# -- 7. the install folder is the version folder ---------------------------------
+
+
+@pytest.mark.parametrize("provider_id", sorted(LAYOUT))
+def test_the_install_folder_is_the_version_folder_at_whatever_depth_the_pinned_file_sits(
+        provider_id, tmp_path):
+    pinned = pin_dir(tmp_path, provider_id) / "pinned-file"
+
+    assert install_folder(str(pinned)) == str(version_folder(tmp_path, provider_id))
+
+
+def test_the_install_tree_is_found_by_name_whatever_case_the_disk_keeps(tmp_path):
+    pinned = tmp_path / "Harnesses" / "tool" / "1.2.3" / "deeper" / "tool.exe"
+
+    assert install_folder(str(pinned)) == str(tmp_path / "Harnesses" / "tool" / "1.2.3")
+
+
+@pytest.mark.parametrize("parts", [
+    pytest.param(("harnesses", "tool", "tool.exe"), id="no-version-folder"),
+    pytest.param(("harnesses", "tool.exe"), id="no-name-folder"),
+    pytest.param(("elsewhere", "tool", "1.2.3", "tool.exe"), id="no-install-tree"),
+])
+def test_a_pinned_file_outside_a_version_folder_of_the_install_tree_has_no_install_folder(
+        parts, tmp_path):
+    with pytest.raises(ProcessRunnerError, match="not installed under"):
+        install_folder(str(tmp_path.joinpath(*parts)))
+
+
+def test_a_confined_attempt_for_a_build_installed_outside_the_tree_starts_no_task(tmp_path):
+    adapter, root, log = grok_t.a_harness(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    moved = elsewhere / Path(adapter._pin.executable).name
+    shutil.copy2(adapter._pin.executable, moved)
+    adapter._pin = dataclasses.replace(adapter._pin, executable=str(moved))
+    runner = confined(adapter, tmp_path / "scratch")
+
+    with pytest.raises(adapter.error, match="could not start the pinned build"):
+        grok_t.run_once(adapter, grok_t.a_request())
+
+    assert runner.entries == [] and not any(run.inside for run in runner.runs)
+    assert len(_fakegrok.spawns(log)) == len(runner.runs), "a task child ran without the boundary"
+    assert _no_home_left(root, adapter)
+
+
+# -- 8. DSH starts inside the boundary on its real entry ---------------------------
+
+
+def _dsh_pinned_by_a_wandering_path(tmp_path):
+    """The DSH adapter whose pinned entry is not its own real path, as a pnpm link is not."""
+    adapter, root, log = dsh_t.a_harness(tmp_path)
+    entry = Path(adapter._pin.entrypoint)
+    wandering = str(entry.parent / ".." / entry.parent.name / entry.name)
+    adapter._pin = DshPin(
+        node_executable=adapter._pin.node_executable, entrypoint=wandering,
+        env_allow=adapter._pin.env_allow)
+    assert os.path.realpath(wandering) != wandering
+    return adapter, root, log
+
+
+def test_dsh_starts_its_task_inside_the_boundary_on_the_real_entry_with_symlinks_kept(tmp_path):
+    adapter, _root, _log = _dsh_pinned_by_a_wandering_path(tmp_path)
+    runner = confined(adapter, tmp_path / "scratch")
+
+    receipt = dsh_t.run_once(adapter, dsh_t.a_request())
+
+    node, pinned = adapter._pin.node_executable, adapter._pin.entrypoint
+    assert receipt.outcome == "succeeded", receipt.detail
+    task = runner.runs[-1]
+    assert task.inside
+    assert task.argv[:4] == (
+        node, "--preserve-symlinks", "--preserve-symlinks-main", os.path.realpath(pinned))
+    assert task.argv[4:6] == ("--profile", "headless")
+    for outside in runner.runs[:-1]:
+        assert outside.argv[:3] == (node, pinned, "--version") and not outside.inside
+
+
+def test_dsh_keeps_the_pin_as_the_operator_wrote_it_on_the_plain_road(tmp_path):
+    adapter, _root, _log = _dsh_pinned_by_a_wandering_path(tmp_path)
+    runner = recording(adapter, tmp_path / "scratch")
+
+    receipt = dsh_t.run_once(adapter, dsh_t.a_request())
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    node, pinned = adapter._pin.node_executable, adapter._pin.entrypoint
+    assert runner.runs[-1].argv[:2] == (node, pinned) and not runner.runs[-1].inside
+    assert not set(NODE_FLAGS) & {token for run in runner.runs for token in run.argv}
+
+
+@pytest.mark.parametrize("harness", [pytest.param(row.values[0], id=row.id)
+                                     for row in HARNESSES if row.id != "deepseek-harness"])
+def test_the_four_native_binaries_start_inside_the_boundary_on_the_pin_as_written(
+        harness, tmp_path):
+    module, _fake = harness
+    adapter, _root, _log = module.a_harness(tmp_path)
+    runner = confined(adapter, tmp_path / "scratch")
+
+    module.run_once(adapter, module.a_request())
+
+    prefix = adapter._argv_prefix()
+    assert runner.runs[-1].inside and runner.runs[-1].argv[:len(prefix)] == prefix
+    assert not set(NODE_FLAGS) & set(runner.runs[-1].argv)

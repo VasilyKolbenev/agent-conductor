@@ -40,6 +40,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakedsh
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-17T12:00:00Z"
@@ -81,7 +82,7 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     (instructions / "instr-001.md").write_text(
         INSTRUCTION_BODY, encoding="utf-8", newline="\n")
     log = tmp_path / "spawns.log"
-    node, entrypoint = _fakedsh.fake_pins()
+    node, entrypoint = _fakedsh.fake_pins(pin_dir(tmp_path, "deepseek-harness"))
     environ = {_fakedsh.SPAWN_LOG: str(log), **knobs}
     # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
     # in the REAL process environment and the runner is left to read that, so the
