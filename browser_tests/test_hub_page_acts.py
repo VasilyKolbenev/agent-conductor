@@ -201,7 +201,8 @@ def test_a_menu_opens_for_one_project_and_offers_the_actions_that_hold_for_it(hu
     press(page, f"menu:{BOT}")
     items = page.page.evaluate("""() => [...document.querySelectorAll(
       ".hub-project__items button")].map((b) => b.dataset.focus)""")
-    assert items == [f"act:{BOT}:view_open", f"act:{BOT}:forget"]
+    assert items == [f"act:{BOT}:view_open", f"act:{BOT}:apply_profile", f"act:{BOT}:forget"], (
+        "the shared profile is present in the fixture, so a copy can be made into the project")
     press(page, f"act:{BOT}:view_open")
     wait_posts(page, 1)
     assert page.hub.posts == [{"path": f"/hub/projects/{BOT}/view", "body": {}}]

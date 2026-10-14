@@ -43,7 +43,7 @@ FIXTURE_ROUTES = {"/hub/projects": "hub_projects.json", "/hub/limits": "hub_limi
                   "/hub/setup": "hub_setup.json", "/hub/session": "hub_session.json"}
 POST_ROUTE = re.compile(r"^/hub/(?:projects|dialogs/folder|dialogs/pick-[0-9a-f]{32}/cancel|"
                         r"operations/operation-[0-9a-f]{32}/cancel|"
-                        r"setup/projects-home|"
+                        r"setup/projects-home|tools/(?:gh|git)/pin|"
                         r"projects/[0-9a-f]{32}/(?:activate|view|stop|recover|forget|"
                         r"providers)|queue/order|logins/[0-9a-f]{64}/recover)$")
 KEEPALIVE_SECONDS = 0.2
@@ -307,7 +307,7 @@ def watch(page: Page) -> list[str]:
         #: The browser logs a refusal it was sent on purpose (a write the hub refuses, a read a
         #: test made fail); any other error is a problem.
         sent = "Failed to load resource" in message.text and any(
-            f"status of {code}" in message.text for code in (404, 409, 500))
+            f"status of {code}" in message.text for code in (404, 409, 422, 500))
         if message.type == "error" and not sent:
             problems.append(message.text)
 
@@ -350,8 +350,8 @@ def hub_page(chromium: Browser, hub: FakeHub, lang: str) -> Iterator[HubPage]:
         page.goto(f"{hub.url}/#lang={lang}", wait_until="load")
         opened = HubPage(page, hub, problems)
         yield opened
-        assert problems == []
-        assert hub.faults == []
+        assert problems == [], problems
+        assert hub.faults == [], hub.faults
         assert page.evaluate("window.__violations") == []
     finally:
         context.close()

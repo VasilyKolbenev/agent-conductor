@@ -163,6 +163,9 @@ export const HUB_COPY = Object.freeze({
   "hub.act.lower": ["Lower", "Опустить"],
   "hub.act.clear_flag": ["Clear the flag", "Снять флаг"],
   "hub.act.recover_login": ["Recover the login", "Восстановить вход"],
+  "hub.act.apply_profile": ["Apply the profile", "Применить профиль"],
+  "hub.act.apply_profile_restart": ["Apply the profile and restart",
+    "Применить профиль и перезапустить"],
   "hub.act.menu": ["⋯", "⋯"],
   "hub.confirm.switch": ["{name} is in progress now: it will stop at a checkpoint — its current step "
     + "will finish on its own.", "Сейчас в работе {name}: он остановится на контрольной точке — "
@@ -384,6 +387,122 @@ export const HUB_COPY = Object.freeze({
     "для восстановления нужен контекст входа харнесса"],
   "hub.code.subprocess_failed": ["a helper process ended without saying why",
     "вспомогательный процесс завершился без объяснения"],
+  // -- an operation the page follows after a press (spec 4.1.8, 4.6.4, 8.7) ---------------------
+  "hub.op.running": ["The hub is working on it…", "Hub работает над этим…"],
+  "hub.op.done.recover": ["The project is recovered.", "Проект восстановлен."],
+  "hub.op.done.recover_login": ["The login is recovered.", "Вход восстановлен."],
+  "hub.op.done.providers": ["The profile is applied.", "Профиль применён."],
+  "hub.op.failed": ["Did not finish: {reason}.", "Не завершилось: {reason}."],
+  // A read the hub refuses (it keeps 50 rows and forgets them on a restart, spec 4.6.4): how the
+  // operation ended is not known, and the page says so instead of "did not finish".
+  "hub.op.unreported": ["The hub no longer reports this operation. How it ended shows in the "
+    + "project's row, or for a login in its banner.", "Hub больше не сообщает об этой операции. "
+    + "Чем она закончилась, видно в строке проекта, а для входа — в его баннере."],
+  "hub.op.dismiss": ["Dismiss", "Скрыть"],
+  // The sentences lane H wrote for a failed recovery and a failed profile copy, as H wrote them
+  // (`H-to-D2-hub-handlers-live.md`, section 5): the whole message, in place of the bare words of
+  // the code. `tests/test_hub_copy_reasons.py` holds them equal to H's table.
+  "hub.reason.recovery_required": [
+    "This project was not closed properly. Recover it first (Recover, on its row: the "
+      + "answer says whether a restart or a preparation is needed), then apply the profile.",
+    "Проект закрыт не до конца. Сначала восстановите его (кнопка «Восстановить» в его "
+      + "строке: ответ скажет, нужна ли перезагрузка или подготовка), затем примените профиль."],
+  "hub.reason.recover.restart_needed": [
+    "The OS has not restarted since this project was left open. Do a full Restart, then "
+      + "press Recover again.",
+    "ОС не перезагружалась с тех пор, как проект остался открытым. Сделайте полную "
+      + "перезагрузку и нажмите «Восстановить» ещё раз."],
+  "hub.reason.recover.prepare_needed": [
+    "This project's record is from before the boot counter, so it cannot prove a restart "
+      + "yet. In a terminal run conduct ownership recover --prepare-restart --dir <the project "
+      + "folder>, do a full Restart, then press Recover again. The hub does not run the "
+      + "preparation.",
+    "Запись проекта сделана до появления счётчика загрузки и пока не может доказать "
+      + "перезагрузку. В терминале выполните conduct ownership recover --prepare-restart --dir "
+      + "<папка проекта>, сделайте полную перезагрузку и нажмите «Восстановить» ещё раз. "
+      + "Подготовку hub не выполняет."],
+  "hub.reason.recover.other_environment": [
+    "The boot environment is no longer the one this record was made in, so another Restart "
+      + "will not help. In a terminal run conduct ownership recover --prepare-restart --dir "
+      + "<the project folder> to prepare in the current environment, do a full Restart, then "
+      + "press Recover again. The hub does not run the preparation.",
+    "Среда загрузки уже не та, в которой сделана запись, поэтому ещё одна перезагрузка не "
+      + "поможет. В терминале выполните conduct ownership recover --prepare-restart --dir "
+      + "<папка проекта>, чтобы подготовить запись в текущей среде, сделайте полную "
+      + "перезагрузку и нажмите «Восстановить» ещё раз. Подготовку hub не выполняет."],
+  "hub.reason.recover.not_proven": [
+    "No restart is proven yet. In a terminal run conduct ownership recover --dir <the "
+      + "project folder> to read the exact reason.",
+    "Перезагрузка пока не доказана. В терминале выполните conduct ownership recover --dir "
+      + "<папка проекта>, чтобы прочитать точную причину."],
+  "hub.reason.recover_login.restart_needed": [
+    "The OS has not restarted since this login was left open. Do a full Restart, then press "
+      + "Recover the login again.",
+    "ОС не перезагружалась с тех пор, как вход остался открытым. Сделайте полную "
+      + "перезагрузку и нажмите «Восстановить вход» ещё раз."],
+  "hub.reason.recover_login.prepare_needed": [
+    "This login's record is from before the boot counter, so it cannot prove a restart yet. "
+      + "In a terminal run conduct ownership recover-login --prepare-restart --auth-home <the "
+      + "login folder>, do a full Restart, then press Recover the login again. The hub does not "
+      + "run the preparation.",
+    "Запись входа сделана до появления счётчика загрузки и пока не может доказать "
+      + "перезагрузку. В терминале выполните conduct ownership recover-login --prepare-restart "
+      + "--auth-home <папка входа>, сделайте полную перезагрузку и нажмите «Восстановить вход» "
+      + "ещё раз. Подготовку hub не выполняет."],
+  "hub.reason.recover_login.other_environment": [
+    "The boot environment is no longer the one this record was made in, so another Restart "
+      + "will not help. In a terminal run conduct ownership recover-login --prepare-restart "
+      + "--auth-home <the login folder> to prepare in the current environment, do a full "
+      + "Restart, then press Recover the login again. The hub does not run the preparation.",
+    "Среда загрузки уже не та, в которой сделана запись, поэтому ещё одна перезагрузка не "
+      + "поможет. В терминале выполните conduct ownership recover-login --prepare-restart "
+      + "--auth-home <папка входа>, чтобы подготовить запись в текущей среде, сделайте полную "
+      + "перезагрузку и нажмите «Восстановить вход» ещё раз. Подготовку hub не выполняет."],
+  "hub.reason.recover_login.not_proven": [
+    "No restart is proven yet. In a terminal run conduct ownership recover-login "
+      + "--auth-home <the login folder> to read the exact reason.",
+    "Перезагрузка пока не доказана. В терминале выполните conduct ownership recover-login "
+      + "--auth-home <папка входа>, чтобы прочитать точную причину."],
+  // -- the tools the page asks a person to pin (spec 8.8) ---------------------------------------
+  "hub.act.pin": ["Pin", "Закрепить"],
+  "hub.tool.state.not_pinned": ["{tool} is not pinned.", "{tool} не закреплён."],
+  "hub.tool.state.changed": ["{tool} has changed since it was pinned.",
+    "{tool} изменился после закрепления."],
+  "hub.tool.state.too_old": ["The pinned {tool} is too old.",
+    "Закреплённый {tool} слишком старый."],
+  "hub.tool.state.unreadable": ["The version of the pinned {tool} cannot be read.",
+    "Версию закреплённого {tool} не удаётся прочитать."],
+  "hub.tool.pinned": ["The tool is pinned.", "Инструмент закреплён."],
+  // The hub looks for tools once, when it starts, and a refusal refreshes no offer: the offer that
+  // stays on the screen is the old one, so the only road is a restart of the hub.
+  "hub.tool.pin_changed": ["The tool now says another version than the one shown. The hub looks "
+    + "for tools once, when it starts: restart the hub to read it again.",
+    "Инструмент теперь называет другую версию, не ту, что была показана. Hub ищет инструменты "
+    + "один раз, при запуске: перезапустите hub, чтобы прочитать его заново."],
+  "hub.tool.pin_too_old": ["This version is older than the product needs.",
+    "Эта версия старее, чем нужно продукту."],
+  // The words lane H wrote for a tool that is not pinned and for a pin FILE that cannot be used,
+  // as H wrote them (`H-to-D2-hub-handlers-live.md`, section 5): a pin file is never said as the
+  // version.
+  "hub.tool.restart_to_find": [
+    "Installed a tool just now? Restart the hub: it looks for tools once, when it starts.",
+    "Только что установили инструмент? Перезапустите hub: он ищет инструменты один раз, при "
+      + "запуске."],
+  "hub.tool.pin_problem.corrupt": [
+    "The pin file tools.json is damaged, so no tool can be pinned. Restore it from a copy "
+      + "or move it aside, then pin again.",
+    "Файл закреплений tools.json повреждён, поэтому инструмент закрепить нельзя. Верните "
+      + "его из копии или уберите в сторону и закрепите снова."],
+  "hub.tool.pin_problem.unreadable": [
+    "The pin file tools.json cannot be read (check its permissions and whether another "
+      + "program holds it). Fix access, then pin again.",
+    "Файл закреплений tools.json не читается (проверьте права доступа и не занят ли он "
+      + "другой программой). Исправьте доступ и закрепите снова."],
+  "hub.tool.pin_problem.unwritable": [
+    "The hub cannot write the pin file tools.json (permissions, a full disk or a lock). Fix "
+      + "that, then pin again.",
+    "hub не может записать файл закреплений tools.json (права, место на диске или "
+      + "блокировка). Исправьте это и закрепите снова."],
 });
 
 export const HUB_LOCALES = Object.freeze(["en", "ru"]);

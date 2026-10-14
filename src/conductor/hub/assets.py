@@ -25,9 +25,11 @@ HUB_ASSETS = MappingProxyType({
     "/hub/hub-onboarding.js": (_JS, "hub-onboarding.js"),
     "/hub/hub-github.js": (_JS, "hub-github.js"),
     "/hub/hub-copy.js": (_JS, "hub-copy.js"),
+    "/hub/hub-ops.js": (_JS, "hub-ops.js"),
     "/hub/hub-frame.js": (_JS, "hub-frame.js"),
     "/hub/hub-rail.js": (_JS, "hub-rail.js"),
     "/hub/hub-stub.js": (_JS, "hub-stub.js"),
+    "/hub/hub-tools.js": (_JS, "hub-tools.js"),
     # The four modules the desk and the hub share: they import only each other.
     "/hub/desk-hash.js": (_JS, "desk-hash.js"),
     "/hub/desk-status.js": (_JS, "desk-status.js"),

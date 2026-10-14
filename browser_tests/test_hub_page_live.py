@@ -74,6 +74,14 @@ def test_a_stuck_project_offers_recover_and_the_real_hub_takes_the_press_as_an_o
     press(one, f"act:{B}:recover")
     expect(one.page.locator("#hubStatus")).to_have_text(say(one, "hub.notice.accepted"))
     assert one.writes() == [f"/hub/projects/{B}/recover"], "one post, and the hub took it"
+    expect(one.page.locator('#hubBanners [data-banner="operation"]')).to_have_count(1)
+    for _ in range(160):
+        read = {path for method, path in one.asked
+                if method == "GET" and path.startswith("/hub/operations/")}
+        if read:
+            break
+        one.page.wait_for_timeout(50)
+    assert len(read) == 1, "the page read the one operation the hub began, by its id"
 
 
 def test_a_project_forgotten_while_it_owes_its_closing_is_named_by_the_page_from_the_hubs_list(
