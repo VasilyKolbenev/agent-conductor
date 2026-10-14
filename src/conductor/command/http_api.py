@@ -174,11 +174,14 @@ class CommandApi:
             tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None,
             identity: ProjectIdentity = UNCLAIMED,
-            project_git: GitRead | None = None) -> None:
+            project_git: GitRead | None = None,
+            project_gh: Callable[..., object] | None = None) -> None:
         _admit_parts(store, registry, templates, tasks, identity, session, budget,
                      (clock, ids, publish_run, project))
         if project_git is not None and not callable(project_git):
             raise TypeError("CommandApi project_git must be a git reader")
+        if project_gh is not None and not callable(project_gh):
+            raise TypeError("CommandApi project_gh must be a gh reader")
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
@@ -192,6 +195,9 @@ class CommandApi:
         self._identity = identity
         # The reader of the project's git (spec 9.3), or None for a server that has none.
         self._project_git = project_git
+        # The reader of the pinned gh (spec 9.3) that the push and the pull request use, or
+        # None for a server that has none (a project opened for viewing builds none).
+        self._project_gh = project_gh
         self._store = store
         self._templates, self._tasks, self._cycle, self._flag = _project_stores(
             store, templates, tasks)

@@ -249,7 +249,16 @@ ACCEPT_REASONS = (
     "document_name_collision", "accept_terms_changed", "case_collision",
     "not_a_git_repository", "unborn_head", "project_not_repo_root", "tracks_product_dir",
     "unsafe_directory", "object_format_changed", "git_failed", "git_timed_out",
-    "acceptance_exists", "signing_required", "blob_mismatch")
+    "acceptance_exists", "signing_required", "blob_mismatch",
+    # The push and the pull request of an accepted result (spec 9.7).
+    "push_requires_commit", "push_not_permitted", "push_rejected", "push_terms_changed",
+    "push_url_ambiguous", "push_destination_mismatch", "remote_url_has_credentials",
+    "push_auth_failed", "push_timed_out", "push_unconfirmed", "pr_requires_push",
+    "gh_not_logged_in", "pr_mismatch", "pr_create_failed")
+#: The word that says WHY a pull request does not match, beside `pr_mismatch` (spec 9.7). It is
+#: its own detail field, `mismatch`, because the closed refusal carries one `reason` and this is
+#: the second fact.
+PR_MISMATCH_REASONS = ("remote_head_moved", "other_head", "other_base", "cross_repository")
 
 GIT_SETUP_REASONS = (
     "already_git", "not_a_git_repository", "project_not_repo_root", "tracks_product_dir",
@@ -271,6 +280,7 @@ TOOLS = ("git", "gh")
 TOOL_REASONS = ("not_pinned", "version_changed", "missing")
 _OBJECT_ID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 _SIGNING_FIELDS = ("reason", "tree", "base_commit", "branch", "message_path")
+_MISMATCH_FIELDS = ("reason", "mismatch")
 
 
 def _signing_detail(detail: dict) -> bool:
@@ -382,6 +392,8 @@ _REVIEWED_FACTS = (
      lambda facts: f"the Git setup step was refused: {facts['reason']}"),
     ("accept_refused", _SIGNING_FIELDS,
      lambda facts: "the result cannot be accepted: signing_required"),
+    ("accept_refused", _MISMATCH_FIELDS,
+     lambda facts: f"the result cannot be accepted: pr_mismatch ({facts['mismatch']})"),
     ("git_setup_refused", _SETUP_SIGNING_FIELDS,
      lambda facts: f"the Git setup step was refused: {facts['reason']}"),
     # A run the continue-after flag cannot carry on, by its own id and nothing else: which run
@@ -409,6 +421,9 @@ def _reviewed_fact(code: str, message: str, detail: dict) -> bool:
             continue
         if code == "accept_refused" and fields == _SIGNING_FIELDS:
             safe = _signing_detail(detail)
+        elif code == "accept_refused" and fields == _MISMATCH_FIELDS:
+            safe = (detail["reason"] == "pr_mismatch"
+                    and detail["mismatch"] in PR_MISMATCH_REASONS)
         elif code == "git_setup_refused" and fields == _SETUP_SIGNING_FIELDS:
             safe = _setup_signing_detail(detail)
         else:
@@ -540,6 +555,18 @@ class ApiRefusal(Exception):
             raise ValueError("acceptance refusal reason must be one of the closed list") from None
         return cls(_REFUSAL_BUILD, "accept_refused",
                    f"the result cannot be accepted: {reason}", {"reason": reason})
+
+    @classmethod
+    def pr_mismatch(cls, mismatch: str) -> "ApiRefusal":
+        """Say a pull request would not be, or is not, the pushed commit's own (spec 9.7).
+
+        `mismatch` is one word of `PR_MISMATCH_REASONS`, written by this build.
+        """
+        if type(mismatch) is not str or mismatch not in PR_MISMATCH_REASONS:
+            raise ValueError("pull request mismatch must be one of the closed list") from None
+        return cls(_REFUSAL_BUILD, "accept_refused",
+                   f"the result cannot be accepted: pr_mismatch ({mismatch})",
+                   {"reason": "pr_mismatch", "mismatch": mismatch})
 
     @classmethod
     def signing_required(cls, *, tree: str, base_commit: str, branch: str,

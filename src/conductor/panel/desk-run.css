@@ -65,8 +65,10 @@
 .desk-accept h3{font:500 19px/1.3 var(--display)}
 .desk-accept__fact,.desk-accept__choice{overflow-wrap:anywhere}
 .desk-accept__field{display:grid;gap:5px;font-size:12px}
-.desk-accept__field input{min-width:0;padding:8px 10px;border:1px solid var(--line);
-  border-radius:7px;color:var(--ink);background:var(--ground);font:inherit}
+.desk-accept__field input,.desk-accept__field textarea{min-width:0;padding:8px 10px;
+  border:1px solid var(--line);border-radius:7px;color:var(--ink);background:var(--ground);
+  font:inherit}
+.desk-accept__field textarea{min-height:96px;resize:vertical}
 .desk-accept__choice{display:flex;gap:8px;align-items:flex-start}
 .desk-accept pre{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
   padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--ground)}

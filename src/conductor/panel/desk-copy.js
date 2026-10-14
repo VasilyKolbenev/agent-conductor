@@ -72,6 +72,123 @@ export const DESK_COPY = Object.freeze({
     "Исход предпросмотра неизвестен. Прочитайте факты принятия перед новой попыткой."],
   "desk.accept.unknown_commit": ["Commit outcome is unknown. Read the acceptance record; do not repeat automatically.",
     "Исход создания коммита неизвестен. Прочитайте запись принятия; автоматического повтора нет."],
+  // -- the two steps after the commit: the push to GitHub, then the pull request (spec 9.7) ------
+  "desk.accept.check": ["Check again", "Проверить снова"],
+  "desk.accept.command": ["Exact command", "Точная команда"],
+  "desk.accept.login": ["Sign in once in your terminal", "Войдите один раз в терминале"],
+  "desk.accept.push.heading": ["Send to GitHub", "Отправить на GitHub"],
+  "desk.accept.push.effect": [
+    "Sends the accepted commit to GitHub as a new branch. If that branch is already there, "
+      + "nothing changes.",
+    "Отправит принятый коммит на GitHub новой веткой. Если такая ветка там уже есть, "
+      + "ничего не изменится."],
+  "desk.accept.push.terms": ["Read push terms", "Показать условия отправки"],
+  "desk.accept.push.choose": ["Choose the GitHub remote to send to.",
+    "Выберите remote GitHub для отправки."],
+  "desk.accept.push.remote_action": ["Read terms for {remote}", "Показать условия для {remote}"],
+  "desk.accept.push.no_remote": [
+    "No remote of this project points to GitHub, so there is nothing to send to.",
+    "Ни один remote проекта не ведёт на GitHub, отправлять некуда."],
+  "desk.accept.push.remotes_failed": ["The remotes of the project could not be read. Try again.",
+    "Не удалось прочитать remote проекта. Попробуйте ещё раз."],
+  "desk.accept.push.unknown_terms": ["The terms could not be read for sure. Read them again.",
+    "Условия не удалось прочитать наверняка. Прочитайте их снова."],
+  "desk.accept.push.remote": ["Remote name", "Имя remote"],
+  "desk.accept.push.repo": ["GitHub repository", "Репозиторий GitHub"],
+  "desk.accept.push.url": ["Push address", "Адрес отправки"],
+  "desk.accept.push.ref": ["Branch on GitHub", "Ветка на GitHub"],
+  "desk.accept.push.oid": ["Commit to send", "Отправляемый коммит"],
+  "desk.accept.push.digest": ["Push digest", "Дайджест отправки"],
+  "desk.accept.push.confirm_text": [
+    "Confirm sending commit {commit} to {repo} as {ref}, push digest {digest}, as {actor}. "
+      + "If the branch is already there, nothing changes.",
+    "Подтвердите отправку коммита {commit} в {repo} веткой {ref}, дайджест отправки {digest}, "
+      + "от имени {actor}. Если такая ветка там уже есть, ничего не изменится."],
+  "desk.accept.push.action": ["Send the commit", "Отправить коммит"],
+  "desk.accept.push.back": ["Back to the terms", "Вернуться к условиям"],
+  "desk.accept.push.again": ["Send again", "Отправить снова"],
+  "desk.accept.push.unknown": [
+    "The outcome of the send is unknown. Check again; do not send it again until the check "
+      + "says the branch is not there.",
+    "Исход отправки неизвестен. Проверьте снова; не отправляйте повторно, пока проверка "
+      + "не покажет, что ветки там нет."],
+  "desk.accept.push.absent": ["The branch is not on GitHub. You can send it again.",
+    "Ветки на GitHub нет. Можно отправить снова."],
+  "desk.accept.push.sent": ["Sent to GitHub", "Отправлено на GitHub"],
+  "desk.accept.push.remote_oid": ["Commit on GitHub", "Коммит на GitHub"],
+  "desk.accept.pr.heading": ["Pull request on GitHub", "Pull Request на GitHub"],
+  "desk.accept.pr.effect": [
+    "Checks that the branch on GitHub still holds the sent commit, then opens one pull request "
+      + "for it. Merging stays with you.",
+    "Проверит, что ветка на GitHub всё ещё указывает на отправленный коммит, затем откроет "
+      + "для неё один Pull Request. Слияние остаётся за вами."],
+  "desk.accept.pr.base": ["Base branch", "Базовая ветка"],
+  "desk.accept.pr.title": ["Pull request title", "Заголовок Pull Request"],
+  "desk.accept.pr.body": ["Pull request description", "Описание Pull Request"],
+  "desk.accept.pr.draft": ["Open as a draft", "Открыть как черновик"],
+  "desk.accept.pr.default_title": ["Accepted result of run {run}",
+    "Принятый результат запуска {run}"],
+  "desk.accept.pr.default_body": [
+    "Run: {run}\nAccepted by: {actor}\nBranch: {branch}\nCommit: {commit}\nFiles: {count}",
+    "Запуск: {run}\nПринял: {actor}\nВетка: {branch}\nКоммит: {commit}\nФайлов: {count}"],
+  "desk.accept.pr.confirm_text": [
+    "Confirm opening a pull request in {repo} from {head} into {base}, as {actor}. A check runs "
+      + "first; if the branch moves between the check and the creation, the pull request may "
+      + "still be made and is then shown with what it points to.",
+    "Подтвердите открытие Pull Request в {repo} из {head} в {base} от имени {actor}. Сначала "
+      + "идёт проверка; если ветка сдвинется между проверкой и созданием, Pull Request всё "
+      + "равно может быть создан, и тогда он показан с тем, на что указывает."],
+  "desk.accept.pr.action": ["Create the pull request", "Создать Pull Request"],
+  "desk.accept.pr.back": ["Back to the fields", "Вернуться к полям"],
+  "desk.accept.pr.again": ["Create again", "Создать снова"],
+  "desk.accept.pr.unknown": [
+    "The outcome of the creation is unknown. Check again; do not create it again until the "
+      + "check says there is none.",
+    "Исход создания неизвестен. Проверьте снова; не создавайте повторно, пока проверка "
+      + "не покажет, что его нет."],
+  "desk.accept.pr.absent": [
+    "No pull request exists for this branch. You can create it again; the check runs first.",
+    "Pull Request для этой ветки нет. Можно создать снова; сначала идёт проверка."],
+  "desk.accept.pr.number": ["Number", "Номер"],
+  "desk.accept.pr.link": ["Link", "Ссылка"],
+  "desk.accept.pr.moved": [
+    "The pull request was created, but its branch now points to another commit {oid}.",
+    "Pull Request создан, но его ветка уже указывает на другой коммит {oid}."],
+  "desk.accept.pr.differs": [
+    "The pull request was created, but it does not match the sent commit, base or repository.",
+    "Pull Request создан, но не совпадает с отправленным коммитом, базой или репозиторием."],
+  // The refusal of a press that may create names that press: the server refuses before it calls
+  // gh, so "this press made none" is true, and it says nothing of an earlier press.
+  "desk.accept.pr.mismatch.remote_head_moved": [
+    "The branch on GitHub no longer holds the sent commit. This press made no pull request.",
+    "Ветка на GitHub больше не указывает на отправленный коммит. Это нажатие Pull Request "
+      + "не создало."],
+  "desk.accept.pr.mismatch.other_head": [
+    "The branch already has a pull request for another commit. This press made none.",
+    "У ветки уже есть Pull Request для другого коммита. Это нажатие нового не создало."],
+  "desk.accept.pr.mismatch.other_base": [
+    "The branch already has a pull request against another base. This press made none.",
+    "У ветки уже есть Pull Request в другую базовую ветку. Это нажатие нового не создало."],
+  "desk.accept.pr.mismatch.cross_repository": [
+    "The branch has a pull request from a fork. This press made none.",
+    "У ветки есть Pull Request из форка. Это нажатие нового не создало."],
+  // The refusal of a press that only looks says what is there. A look cannot say what an earlier
+  // press made: a creation whose answer was unknown may have made a pull request (spec 9.7).
+  "desk.accept.pr.checked.remote_head_moved": [
+    "The branch on GitHub no longer holds the sent commit, and no pull request is listed on it.",
+    "Ветка на GitHub больше не указывает на отправленный коммит, и Pull Request на ней "
+      + "не найден."],
+  "desk.accept.pr.checked.other_head": [
+    "The branch has a pull request for another commit.",
+    "У ветки есть Pull Request для другого коммита."],
+  "desk.accept.pr.checked.other_base": [
+    "The branch has a pull request against another base.",
+    "У ветки есть Pull Request в другую базовую ветку."],
+  "desk.accept.pr.checked.cross_repository": [
+    "The branch has a pull request from a fork.",
+    "У ветки есть Pull Request из форка."],
+  "desk.accept.pr.merge": ["Merging is always done by you, on GitHub.",
+    "Слияние всегда делает владелец, на GitHub."],
   "desk.decision.heading": ["Decision needed", "Нужно решение"],
   "desk.decision.answer_in_pult": ["Answer this gate in Your console panel.",
     "Ответьте на этот гейт в Вашем пульте."],
