@@ -500,6 +500,10 @@ def _add_ownership(sub):
     parser.add_argument("--prepare-restart", action="store_true",
                         help="the recover operations only: record the boot a later recovery "
                              "must be newer than; releases and cleans nothing")
+    parser.add_argument("--abandon-loans", action="store_true",
+                        help="recover-containers only: a loan whose folder is no longer the one "
+                             "it granted is given up instead of failing every recovery; the "
+                             "folders that can be returned are returned")
     _add_dir_and_func(parser, _cmd_ownership)
 
 

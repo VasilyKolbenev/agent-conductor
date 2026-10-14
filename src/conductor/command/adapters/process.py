@@ -46,7 +46,6 @@ from contextlib import contextmanager
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import MappingProxyType
 
 from ..contracts import (
     ActionRequest,
@@ -58,13 +57,22 @@ from ..containment import (
     render_cwd_violation,
 )
 from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
+from ..work_layout import WORK_DIR
 from . import _procgroup
 from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
+from .process_env_rules import INJECTING_ENV
+from .process_loans import holds_entry
 from .process_profile import ProfileJournal
-from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
+from .environment_values import (
+    ENV_NAME as _ENV_NAME,
+    EnvironmentValues,
+    git_ceiling_environment,
+    literal_environment,
+    select_environment,
+)
 from .base import (
     AdapterContractError,
     AdapterManifest,
@@ -111,46 +119,6 @@ STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 _READ_CHUNK = 64 * 1024
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
-
-#: Environment names an operator may NOT put in `env_allow`, grouped by the
-#: runtime that reads them, each group carrying the reason it is refused.
-#:
-#: The line is a relation, not a feeling about a name. `PATH` and its kin choose
-#: a SEPARATE program the child may decide to start, and the reviewed entrypoint
-#: still runs first and still decides. Every name below instead chooses code
-#: loaded INTO the reviewed process before its own first instruction, which
-#: hands back the authority an absolute pin was taken to hold. The roster is
-#: closed against the runtimes a vendor CLI here can BE, not against today's
-#: five providers, so adding a runtime obliges adding its row. The ruling, its
-#: evidence and its stated limits: `docs/adr/0007-env-allow-trust-boundary.md`.
-_INJECTING_ENV_GROUPS: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"),
-     "the ELF dynamic loader maps and runs what it names inside the process "
-     "before the program's own first instruction"),
-    (("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
-      "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH"),
-     "macOS dyld inserts and redirects libraries into the process before "
-     "main() runs"),
-    (("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"),
-     "CPython reads it before the pinned entrypoint script, so the first "
-     "import that script performs can be an attacker's module"),
-    (("NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"),
-     "node executes --require and --import modules, and resolves requires "
-     "through NODE_PATH, ahead of the pinned entrypoint"),
-    (("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH"),
-     "the JVM reads it before main: the option variables carry -javaagent, "
-     "whose premain runs first, and CLASSPATH decides which class a name is"),
-    (("DOTNET_STARTUP_HOOKS", "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER",
-      "CORECLR_PROFILER_PATH", "COR_ENABLE_PROFILING", "COR_PROFILER",
-      "COR_PROFILER_PATH"),
-     "the .NET host runs a startup hook, and loads a profiler library, before "
-     "the entrypoint's Main"),
-    (("RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB", "PERLLIB"),
-     "ruby and perl read them for -r and -I, requiring a library before the "
-     "script they were pointed at"),
-)
-INJECTING_ENV: Mapping[str, str] = MappingProxyType({
-    name: reason for names, reason in _INJECTING_ENV_GROUPS for name in names})
 
 
 def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
@@ -514,9 +482,26 @@ class ProcessRunner:
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
 
-    def container_profile(self, *, internet_client: bool = False, mode=None):
+    def container_profile(self, *, internet_client: bool = False, mode=None, folders=None):
+        """One AppContainer profile for one attempt: a context manager (`process_profile`).
+
+        `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
+        attempt stands on. The work folder and the home are routes walked from the project root
+        like a working folder (`ContainmentError` for a link or a way out), and nothing is made
+        or granted when one is refused.
+        """
         from . import _winlaunch
-        return ProfileJournal.for_project(self._root, _winlaunch).container(internet_client=internet_client, mode=mode, active_tokens=self.active_tokens)
+        loaned = None if folders is None else self._loaned(folders)
+        return ProfileJournal.for_project(self._root, _winlaunch).container(
+            internet_client=internet_client, mode=mode, active_tokens=self.active_tokens,
+            folders=loaned)
+
+    def _loaned(self, folders) -> dict[str, Path]:
+        found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
+        if folders.home is not None:
+            found["home"] = self._resolve_cwd(folders.home)
+        return found
+
     def recover_container_profiles(self) -> None:
         from . import _winlaunch
         ProfileJournal.for_project(self._root, _winlaunch).recover()
@@ -585,7 +570,10 @@ class ProcessRunner:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
             raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
-        env = self._child_env(spec)
+        if spec.boundary is not None and not holds_entry(spec.argv, spec.boundary.install):
+            raise CommandSpecError("the program is not in the install folder loaned to the attempt")
+        env = git_ceiling_environment(      # ADR-7e: extra protection, never the boundary
+            self._child_env(spec), self._root, self._root / WORK_DIR, cwd, windows=os.name == "nt")
         sensitive_values = self.allowed_environment_values(
             spec.env_allow, overrides=spec.env) + spec.sensitive_extra
         # No payload means DEVNULL, byte for byte the spawn every provider got

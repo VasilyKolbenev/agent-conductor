@@ -79,8 +79,14 @@ def recover_clones(prepare: bool) -> int:
                   1 if entries else 0)
 
 
-def recover_containers(directory: str, prepare: bool) -> int:
+def recover_containers(directory: str, prepare: bool, abandon: bool = False) -> int:
     """The container attempt loans of one activated project, under its owner.
+
+    Args:
+        directory: The project folder.
+        prepare: Write the restart preparations instead of recovering.
+        abandon: The owner gives up a loan whose folder is no longer the one it granted; the
+            folders that can be returned are returned either way.
 
     Returns:
         0 when the recovery ran or every record was prepared, else 1.
@@ -96,7 +102,12 @@ def recover_containers(directory: str, prepare: bool) -> int:
     try:
         with acquire_owner(root):
             journal = ProfileJournal.for_project(root, _winlaunch)
-            rows = journal.prepare_restarts() if prepare else journal.recover()
+            if prepare:
+                rows = journal.prepare_restarts()
+            elif abandon:
+                rows = journal.recover(abandon_loans=True)
+            else:
+                rows = journal.recover()
     except (OwnerRefused, ProfileRefused) as error:
         print(str(error), file=sys.stderr)
         return 1

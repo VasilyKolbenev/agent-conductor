@@ -28,6 +28,7 @@ _ACL_NAME = re.compile(r"acl-([0-9a-f]{32})\.json\Z")
 _ACL_PREP = re.compile(r"acl-[0-9a-f]{32}\.prepared-(?:0|[1-9][0-9]*)\.json\Z")
 _ACL_TEMP = re.compile(r"\.acl-[0-9a-f]{32}\.json\.[0-9a-f]{16}\.tmp\Z")
 _KEYS = ("parent", "work", "runtime", "login")
+_FOLDER_KEYS = ("parent", "runtime")  # an attempt on loaned folders (process_loans)
 _COMMAND = "ownership recover-containers"
 _RX = 0x1200A9
 _RWX = 0x1201BF  # read + create/write/traverse, no DELETE or DELETE_CHILD
@@ -127,7 +128,18 @@ class AttemptAclJournal:
         return {"parent": parent, "work": parent / "work", "runtime": parent / "runtime",
                 "login": parent / "login"}
 
-    def prepare(self, profile_path, sid, mode):
+    def _paths_of(self, record):
+        """The owned paths a record names: all four, or the two of an attempt on loaned folders."""
+        return {key: path for key, path in self._paths(record["attempt"]).items()
+                if key in record["paths"]}
+
+    def prepare(self, profile_path, sid, mode, *, folders=False):
+        """Make, hold, journal and grant the fresh folders of one attempt.
+
+        Args:
+            folders: True when the work folder, the home and the install folder are loans
+                (`process_loans`): only the parent and the runtime folder are made.
+        """
         profile = self.profiles._read(profile_path)
         if (profile["phase"] != "created" or profile["sid"] != sid
                 or mode not in {"dispatch", "review"}):
@@ -139,7 +151,8 @@ class AttemptAclJournal:
         except FileExistsError:
             pass
         _plain(self.base, True)
-        paths = self._paths(profile["attempt"])
+        paths = {key: path for key, path in self._paths(profile["attempt"]).items()
+                 if key in (_FOLDER_KEYS if folders else _KEYS)}
         for path in paths.values():
             path.mkdir()  # exclusive: no adoption of a foreign or stale name
             _plain(path, True)
@@ -199,7 +212,7 @@ class AttemptAclJournal:
                 or type(row["profile_sid"]) is not str
                 or not boot_prepared.schema_fits(row["schema"], row["boot"])
                 or type(row["paths"]) is not dict
-                or set(row["paths"]) != {"parent", "work", "runtime", "login"}):
+                or set(row["paths"]) not in (set(_KEYS), set(_FOLDER_KEYS))):
             raise ProfileRefused("profile_acl_invalid", "ACL record does not bind this owner")
         profile = self.profiles._read(self.directory / f"profile-{row['attempt']}.json")
         if (profile["sid"] != row["profile_sid"]
@@ -224,7 +237,7 @@ class AttemptAclJournal:
         return boot_prepared.facts("acl-attempt", record["attempt"], record)
 
     def _identities(self, record):
-        return {key: record["paths"][key]["identity"] for key in _KEYS}
+        return {key: facts["identity"] for key, facts in record["paths"].items()}
 
     def retire(self, record_path, *, proven=False, after_restart=False):
         """Restore the ACLs of one attempt and remove its directories.
@@ -257,13 +270,13 @@ class AttemptAclJournal:
         return found.chain
 
     def _retire_owned(self, record_path, record, chain):
-        paths = self._paths(record["attempt"])
+        paths = self._paths_of(record)
         holds = self._verified_holds(record, paths, chain)
         self._empty_owned(paths)
         self._restore_acls(record, paths, holds)
         # Holds pin the four names without FILE_SHARE_DELETE through leaf removal.
         for key in ("work", "runtime", "login"):
-            if os.path.lexists(paths[key]):
+            if key in paths and os.path.lexists(paths[key]):
                 holds[key].delete()
         if os.path.lexists(paths["parent"]):
             holds["parent"].delete()
@@ -298,8 +311,8 @@ class AttemptAclJournal:
                         raise ProfileRefused("profile_acl_invalid", "owned parent has an unexpected entry")
         # Empty own descendants while the pinned leaf still blocks replacement.
         for key in ("work", "runtime", "login"):
-            path = paths[key]
-            if os.path.lexists(path):
+            path = paths.get(key)
+            if path is not None and os.path.lexists(path):
                 for child in reversed(_walk_plain(path)):
                     if child == path:
                         continue
@@ -315,7 +328,7 @@ class AttemptAclJournal:
 
     def _restore_acls(self, record, paths, holds):
         # Parent inheritance is restored before each now-empty leaf's exact DACL.
-        for key in _KEYS:
+        for key in (key for key in _KEYS if key in paths):
             path = paths[key]
             if os.path.lexists(path):
                 facts, hold = record["paths"][key], holds[key]
@@ -350,7 +363,7 @@ class AttemptAclJournal:
         if record["phase"] == "retired":
             raise ProfileRefused("profile_acl_unproven",
                                  "this attempt is retired: nothing to prepare")
-        paths = self._paths(record["attempt"])
+        paths = self._paths_of(record)
         with ExitStack() as files:
             held = self._held_now(record, paths, files)
             facts, expected = self._facts(record), self._identities(record)

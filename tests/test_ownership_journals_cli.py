@@ -197,7 +197,7 @@ class Runner:
     """
 
     def __init__(self, root, monkeypatch):
-        self.root, self.calls, self.outcome = root, [], None
+        self.root, self.calls, self.outcome, self.abandoned = root, [], None, False
         monkeypatch.setitem(sys.modules, _NATIVE, types.ModuleType("fake_winlaunch"))
         monkeypatch.setattr(ProfileJournal, "for_project",
                             classmethod(lambda _cls, _root, _native: self))
@@ -209,7 +209,8 @@ class Runner:
             raise self.outcome
         return self.outcome
 
-    def recover(self):
+    def recover(self, abandon_loans=False):
+        self.abandoned = abandon_loans
         return self._ask("recover")
 
     def prepare_restarts(self):
@@ -229,9 +230,30 @@ def test_a_plain_recover_containers_runs_the_runners_recovery_under_an_owner_and
         project, monkeypatch, capsys):
     runner = Runner(project, monkeypatch)
     code, out, err = run(capsys, "ownership", "recover-containers", "--dir", str(project))
-    assert code == 0 and runner.calls == ["recover"]
+    assert code == 0 and runner.calls == ["recover"] and runner.abandoned is False
     assert json.loads(out) == {"state": "recovered", "project_root": str(project.resolve())}
     assert records.chain(project)["phase"] == "closed"
+
+
+def test_the_owner_asks_for_a_loan_to_be_given_up_with_one_explicit_flag(
+        project, monkeypatch, capsys):
+    runner = Runner(project, monkeypatch)
+    code, out, err = run(capsys, "ownership", "recover-containers", "--abandon-loans",
+                         "--dir", str(project))
+    assert code == 0 and runner.calls == ["recover"] and runner.abandoned is True
+    assert records.chain(project)["phase"] == "closed"
+
+
+@pytest.mark.parametrize("operation", ["status", "recover", "recover-login", "recover-clones"])
+def test_giving_a_loan_up_is_refused_on_every_other_operation(tmp_path, capsys, operation):
+    code, out, err = run(capsys, "ownership", operation, "--abandon-loans", "--dir", str(tmp_path))
+    assert code == 1 and out == "" and "--abandon-loans is only for recover-containers" in err
+
+
+def test_giving_a_loan_up_is_refused_beside_a_restart_preparation(tmp_path, capsys):
+    code, out, err = run(capsys, "ownership", "recover-containers", "--abandon-loans",
+                         "--prepare-restart", "--dir", str(tmp_path))
+    assert code == 1 and out == "" and "--abandon-loans is only for recover-containers" in err
 
 
 def test_a_refusal_of_the_journal_is_printed_as_it_is_and_the_owner_is_closed_again(

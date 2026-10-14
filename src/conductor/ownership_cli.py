@@ -57,7 +57,7 @@ def _journals(args):
     from . import ownership_journals_cli as journals
     if args.operation == "recover-clones":
         return journals.recover_clones(args.prepare_restart)
-    return journals.recover_containers(args.dir, args.prepare_restart)
+    return journals.recover_containers(args.dir, args.prepare_restart, args.abandon_loans)
 
 
 def ownership_command(args):
@@ -69,6 +69,8 @@ def ownership_command(args):
         if args.prepare_restart and args.operation not in _RECOVERIES:
             raise OwnerRefused("recovery_refused", "--prepare-restart is only for recover, "
                                "recover-login, recover-clones and recover-containers")
+        if args.abandon_loans and (args.operation != "recover-containers" or args.prepare_restart):
+            raise OwnerRefused("recovery_refused", "--abandon-loans is only for recover-containers")
         if args.operation == "recover-login" and args.auth_home is None:
             raise OwnerRefused("login_context_required", "recover-login requires --auth-home")
         if args.operation in {"recover-clones", "recover-containers"}:
