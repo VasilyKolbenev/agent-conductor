@@ -40,8 +40,8 @@ class LoanHold:
         pass
 
 
-def world(tmp_path):
-    store, _acl, profile_path, sid, state = fixture(tmp_path)
+def world(tmp_path, *, extra_sids=()):
+    store, _acl, profile_path, sid, state = fixture(tmp_path, extra_sids=extra_sids)
     root = tmp_path / "project"
     folders = {"work": root / "work" / "t1", "home": root / ".kit-home" / "a",
                "install": tmp_path / "harnesses" / "kit" / "1.0"}

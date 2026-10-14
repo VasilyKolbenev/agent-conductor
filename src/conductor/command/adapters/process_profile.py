@@ -27,8 +27,31 @@ _PHASES = frozenset({"planned", "created", "retired"})
 
 class ProfileRefused(RuntimeError):
     def __init__(self, code: str, detail: str):
-        self.code = code
+        self.code, self.detail = code, detail
         super().__init__(f"{code}: {detail}")
+
+
+def refusal_summary(failures: list) -> Exception:
+    """The error of a step that did several things: one failure as it is, several as one refusal.
+
+    The refusal carries the code of the first refusal among them, and names every failure.
+    """
+    if len(failures) == 1:
+        return failures[0]
+    parts = [f"[{e.code}] {e.detail}" if isinstance(e, ProfileRefused) else f"[{type(e).__name__}]"
+             for e in failures]
+    code = next((e.code for e in failures if isinstance(e, ProfileRefused)), "profile_acl_invalid")
+    return ProfileRefused(code, "; ".join(parts))
+
+
+def _attempt(failures: list, step, *args, **options) -> bool:
+    """Run one recovery step; its error is kept for the end. True when it ended clean."""
+    try:
+        step(*args, **options)
+    except (ProfileRefused, OSError) as error:
+        failures.append(error)
+        return False
+    return True
 
 
 def _plain(path: Path, directory: bool) -> None:
@@ -177,15 +200,26 @@ class ProfileJournal:
         value["phase"] = "retired"
         _replace(path, value)
 
-    def recover(self) -> None:
+    def recover(self, *, abandon_loans: bool = False) -> None:
+        """Return the loans, retire the attempts and delete the profiles a crash left.
+
+        The loans are recovered apart from the rest: a loan is returned without any restart proof,
+        so what stops it must not stop the fresh folders or the profiles, and what stops those must
+        not keep a loan out. The profiles wait for the same restart proof as the fresh folders. The
+        errors of what ran are raised together, at the end.
+
+        Args:
+            abandon_loans: The owner gives up a loan whose folder is no longer the one it granted
+                (`FolderLoans.restore`).
+        """
         self._directory()
         from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_PREP, _ACL_TEMP
         from .process_loans import FolderLoans, _LOAN_NAME, _LOAN_TEMP
+        failures: list = []
         if self.native is not None:
-            # Access goes back first: a loan is returned without any restart proof, while the fresh
-            # folders of the same attempt may still wait for one and stop this recovery.
-            FolderLoans(self, self.native).recover()
-            AttemptAclJournal(self, self.native).recover()
+            _attempt(failures, FolderLoans(self, self.native).recover, abandon=abandon_loans)
+            if not _attempt(failures, AttemptAclJournal(self, self.native).recover):
+                raise refusal_summary(failures)
         for path in sorted(self.directory.iterdir()):
             if self.native is not None and (_ACL_NAME.fullmatch(path.name)
                                             or _ACL_PREP.fullmatch(path.name)
@@ -199,7 +233,9 @@ class ProfileJournal:
                 continue
             if not _NAME.fullmatch(path.name):
                 raise ProfileRefused("profile_record_invalid", "unexpected profile journal entry")
-            self.retire(path)
+            _attempt(failures, self.retire, path)
+        if failures:
+            raise refusal_summary(failures)
 
     def prepare_restarts(self) -> list[dict]:
         """The explicit action for attempt loans from before the boot counter: prepare each one.

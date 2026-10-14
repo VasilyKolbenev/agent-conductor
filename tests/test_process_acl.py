@@ -12,10 +12,12 @@ from conductor.ownership_native import identity
 SID = "S-1-15-2-1-2-3-4-5-6-7"
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, *, extra_sids=()):
+    """A journal over fake natives. Every profile it plans has `SID`, unless `extra_sids` names
+    more: the first planned moniker has `SID`, the next ones those, in order."""
     data = tmp_path / "conductor.v3"
     data.mkdir()
-    acl_state, mappings = {}, {}
+    acl_state, mappings, given = {}, {}, {}
 
     class FakeHold:
         def __init__(self, path, *, directory, security):
@@ -33,14 +35,18 @@ def fixture(tmp_path):
             self.path.rmdir()
 
     def derive(name):
-        return SID
+        if not extra_sids:
+            return SID
+        if name not in given:
+            given[name] = (SID, *extra_sids)[len(given)]
+        return given[name]
 
     def create(name, display):
-        mappings[SID] = (name, display)
-        return SID
+        mappings[derive(name)] = (name, display)
+        return derive(name)
 
     def delete(name):
-        del mappings[SID]
+        del mappings[derive(name)]
 
     def snapshot(hold):
         hold.check()

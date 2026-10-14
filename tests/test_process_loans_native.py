@@ -188,3 +188,28 @@ def test_a_route_through_a_junction_is_refused_before_anything_is_journalled(sit
                 pytest.fail("the block must not be entered")
     journal = site.root / "conductor.v3" / "process-profiles"
     assert not journal.exists() or list(journal.glob("*")) == []
+
+
+@pytest.mark.parametrize("order", ["first-in-first-out", "first-in-last-out"])
+def test_two_attempts_on_one_install_folder_each_take_back_only_their_own_entries(site, order):
+    (site.root / "work" / "t2").mkdir()
+    (site.root / ".kit-home" / "b").mkdir()
+    second = AttemptFolders(work="work/t2", home=".kit-home/b", install=str(site.install))
+    runner = ProcessRunner(site.root)
+    with ownership.acquire_owner(site.root):
+        before = snapshot(site.install)
+        blocks = [runner.container_profile(mode="dispatch", folders=site.folders),
+                  runner.container_profile(mode="dispatch", folders=second)]
+        first, other = (block.__enter__()[0] for block in blocks)
+        together = snapshot(site.install)[0]
+        leaving, staying = (0, 1) if order == "first-in-first-out" else (1, 0)
+        blocks[leaving].__exit__(None, None, None)
+        middle = snapshot(site.install)[0]
+        blocks[staying].__exit__(None, None, None)
+        after = snapshot(site.install)
+    gone, kept = (first, other) if leaving == 0 else (other, first)
+    assert first.sid in together and other.sid in together
+    assert gone.sid not in middle and kept.sid in middle
+    assert same_acl(after, before)
+    assert entries_naming(site.install, first.sid) == []
+    assert entries_naming(site.install, other.sid) == []

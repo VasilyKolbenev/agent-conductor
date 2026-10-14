@@ -2,10 +2,17 @@
 
 `process_acl` makes, grants and deletes FRESH folders. A loan is the other case: the attempt's work
 folder, its per-spawn home and the pinned install folder already exist, are not this journal's to
-delete, and are returned as they were. Before anything changes a record names each folder, its
-identity and its DACL; the grant adds entries for the attempt's profile only (explicit rights, never
-Full Control, never WRITE_DAC or DELETE_CHILD, never a deny); the exit puts the DACL back, which
-also takes the profile's inherited entries away from everything the attempt touched beneath it.
+delete, and are given back. Before anything changes a record names each folder, its identity and
+its DACL; the grant adds entries for the attempt's profile only (explicit rights, never Full
+Control, never WRITE_DAC or DELETE_CHILD, never a deny); the exit takes those entries away again,
+which also takes the profile's inherited entries away from everything the attempt touched beneath
+the folder.
+
+A loan is returned by taking away ITS OWN entries from the DACL as it stands at the exit, never by
+writing back the DACL that was read at the start. The pinned install folder is shared by every
+attempt of a harness and by every project: a written-back DACL would give the entry of an attempt
+that still runs away at the first exit, and would keep the entry of a finished one at the last.
+The record keeps the prior DACL as evidence of what the folder was.
 
 The hold of a loaned folder asks for WRITE_DAC and NOT for DELETE. Measured 13.10.2026: with DELETE
 in the hold, setting a DACL on the folder does not propagate an inheritable entry to its existing
@@ -28,7 +35,7 @@ from ...ownership_records import ACTIVE, HOME, LEGACY
 from ..work_layout import WORK_DIR
 from .process_acl import _CHILD_RWX_DELETE, _RWX, _RX
 from .process_boundary import WindowsContainer
-from .process_profile import ProfileRefused, _bytes, _plain, _replace, _write_new
+from .process_profile import ProfileRefused, _bytes, _plain, _replace, refusal_summary
 
 _LOAN_NAME = re.compile(r"loan-([0-9a-f]{32})\.json\Z")
 _LOAN_TEMP = re.compile(r"\.loan-[0-9a-f]{32}\.json\.[0-9a-f]{16}\.tmp\Z")
@@ -43,6 +50,9 @@ _LIMIT = 16384
 _FIELDS = frozenset({"schema", "attempt", "owner_nonce", "root_identity", "data_identity",
                      "profile_sid", "mode", "phase", "loans"})
 _FACTS = frozenset({"path", "rights", "identity", "before", "protected", "owner_sid"})
+_PHASES = frozenset({"planned", "applied", "retired", "abandoned"})
+#: A record in one of these is finished: it is never acted on again.
+_DONE = ("retired", "abandoned")
 
 
 def _refused(detail: str) -> ProfileRefused:
@@ -55,9 +65,32 @@ def _entries(sid: str, rights: str) -> str:
     return f"(A;;0x{_RWX:x};;;{sid})(A;OICIIO;0x{_CHILD_RWX_DELETE:x};;;{sid})"
 
 
+def _fields(ace: str) -> list[str]:
+    """The six parts of one entry (type, flags, rights, two object ids, trustee)."""
+    return ace[1:-1].split(";")
+
+
+def _explicit(fields: list[str]) -> bool:
+    return "ID" not in re.findall(r"..", fields[1])
+
+
 def _explicit_deny(ace: str) -> bool:
-    fields = ace[1:-1].split(";")
-    return fields[0] in ("D", "OD") and "ID" not in re.findall(r"..", fields[1])
+    fields = _fields(ace)
+    return len(fields) == 6 and fields[0] in ("D", "OD") and _explicit(fields)
+
+
+def _entry_of(ace: str, sid: str) -> bool:
+    """An explicit entry of one profile: what a loan adds, never what a parent hands down."""
+    fields = _fields(ace)
+    return len(fields) == 6 and fields[5] == sid and _explicit(fields)
+
+
+def _split(text: str) -> tuple[str, list[str]]:
+    found = _DACL.fullmatch(text) if type(text) is str else None
+    if found is None:
+        raise _refused("the DACL text of a loaned folder is not understood")
+    head, body = found.groups()
+    return head, _ACE.findall(body)
 
 
 def loan_sddl(before: str, sid: str, rights: str) -> str:
@@ -74,15 +107,26 @@ def loan_sddl(before: str, sid: str, rights: str) -> str:
             descriptor with a group or an audit part, a conditional entry, unbalanced brackets) or
             an unknown right. Nothing is guessed.
     """
-    found = _DACL.fullmatch(before) if type(before) is str else None
-    if found is None or rights not in ("modify", "rx"):
+    if rights not in ("modify", "rx"):
         raise _refused("the DACL text of a loaned folder is not understood")
-    head, body = found.groups()
-    aces = _ACE.findall(body)
+    head, aces = _split(before)
     split = 0
     while split < len(aces) and _explicit_deny(aces[split]):
         split += 1
     return head + "".join(aces[:split]) + _entries(sid, rights) + "".join(aces[split:])
+
+
+def loan_returned_sddl(current: str, sid: str) -> str:
+    """`current` without the explicit entries of one profile: what the return of a loan writes.
+
+    Whatever else the DACL holds stays, including an entry another attempt or the owner added
+    since the grant.
+
+    Raises:
+        ProfileRefused: `profile_acl_invalid` for text this does not understand.
+    """
+    head, aces = _split(current)
+    return head + "".join(ace for ace in aces if not _entry_of(ace, sid))
 
 
 def _inside(path: Path, parent: Path) -> bool:
@@ -178,6 +222,24 @@ class FolderLoans:
             raise _refused("ACL target is not a created owned profile")
         real = self.targets(folders)
         self.paths = real
+        stack, holds, rows = self._observe(real, mode)
+        self.holds = stack, holds
+        record = {"schema": 1, "attempt": profile["attempt"],
+                  "owner_nonce": self.profiles.owner_nonce,
+                  "root_identity": self.profiles.root_identity,
+                  "data_identity": self.profiles.data_identity, "profile_sid": sid, "mode": mode,
+                  "phase": "planned", "loans": rows}
+        path = self.directory / f"loan-{profile['attempt']}.json"
+        _replace(path, record)  # every prior DACL durable before the first change, all or nothing
+        self.record = path
+        for key, hold in holds.items():
+            self._change(hold, lambda now, rights=rows[key]["rights"]: loan_sddl(now, sid, rights))
+        record["phase"] = "applied"
+        _replace(self.record, record)
+        return self.record
+
+    def _observe(self, real, mode):
+        """Hold every folder and note what it was; nothing is changed."""
         stack, holds, rows = ExitStack(), {}, {}
         try:
             for key, path in real.items():
@@ -191,24 +253,21 @@ class FolderLoans:
         except BaseException:
             stack.close()
             raise
-        self.holds = stack, holds
-        record = {"schema": 1, "attempt": profile["attempt"],
-                  "owner_nonce": self.profiles.owner_nonce,
-                  "root_identity": self.profiles.root_identity,
-                  "data_identity": self.profiles.data_identity, "profile_sid": sid, "mode": mode,
-                  "phase": "planned", "loans": rows}
-        self.record = self.directory / f"loan-{profile['attempt']}.json"
-        _write_new(self.record, record)  # every prior DACL durable before the first change
-        for key, hold in holds.items():
-            proposed = loan_sddl(rows[key]["before"], sid, rows[key]["rights"])
-            self.native.acl_set(hold, proposed, protected=rows[key]["protected"])
-            readback, protected, owner_sid = self.native.acl_snapshot(hold)
-            if (protected != rows[key]["protected"] or owner_sid != rows[key]["owner_sid"]
-                    or not self.native.acl_equal(readback, proposed)):
-                raise _refused("native ACL readback differs from the loan")
-        record["phase"] = "applied"
-        _replace(self.record, record)
-        return self.record
+        return stack, holds, rows
+
+    def _change(self, hold, build) -> None:
+        """Set the DACL `build` makes from the one the folder has NOW, and read it back.
+
+        Read just before the write, so an entry another attempt or the owner added since the record
+        was made stays. Protection and owner are kept as found.
+        """
+        current, protected, owner_sid = self.native.acl_snapshot(hold)
+        proposed = build(current)
+        self.native.acl_set(hold, proposed, protected=protected)
+        readback, now_protected, now_owner = self.native.acl_snapshot(hold)
+        if (now_protected != protected or now_owner != owner_sid
+                or not self.native.acl_equal(readback, proposed)):
+            raise _refused("native ACL readback differs from the change")
 
     @staticmethod
     def _rights(key: str, mode: str) -> str:
@@ -240,7 +299,7 @@ class FolderLoans:
                 or row["owner_nonce"] != self.profiles.owner_nonce
                 or row["root_identity"] != self.profiles.root_identity
                 or row["data_identity"] != self.profiles.data_identity
-                or row["phase"] not in {"planned", "applied", "retired"}
+                or row["phase"] not in _PHASES
                 or row["mode"] not in {"dispatch", "review"}
                 or type(row["loans"]) is not dict or not {"work", "install"} <= set(row["loans"])
                 or not set(row["loans"]) <= set(_KEYS)):
@@ -259,70 +318,86 @@ class FolderLoans:
                 raise _refused(f"loan facts for {key} are malformed")
         return row
 
-    def _reopen(self, record) -> tuple[ExitStack, dict]:
-        """Hold each loaned folder that still exists, proven to be the one that was granted."""
-        stack, holds = ExitStack(), {}
+    def _reopen(self, record):
+        """Hold each loaned folder that still exists and is the one that was granted.
+
+        Returns the stack of holds, the holds by key, the keys of folders that exist but are another
+        folder than the record names (left untouched), and the errors of folders that could not be
+        opened. None of them keeps the others from being held.
+        """
+        stack, holds, strays, failures = ExitStack(), {}, [], []
         try:
             for key, facts in record["loans"].items():
                 if not os.path.lexists(facts["path"]):
                     continue  # gone with its entries: nothing at this name can hold a grant
-                hold = self.hold_factory(Path(facts["path"]), directory=True, grants=True)
+                try:
+                    hold = self.hold_factory(Path(facts["path"]), directory=True, grants=True)
+                except OSError as error:
+                    failures.append(error)
+                    continue
                 stack.callback(hold.close)
-                if list(hold.identity) != facts["identity"]:
-                    raise _refused("a loaned folder is not the one the record names")
-                holds[key] = hold
-            return stack, holds
+                if list(hold.identity) == facts["identity"]:
+                    holds[key] = hold
+                else:
+                    strays.append(key)
+            return stack, holds, strays, failures
         except BaseException:
             stack.close()
             raise
 
-    def _give_back(self, hold, facts) -> None:
-        self.native.acl_set(hold, facts["before"], protected=facts["protected"])
-        restored, protected, owner_sid = self.native.acl_snapshot(hold)
-        if (protected != facts["protected"] or owner_sid != facts["owner_sid"]
-                or not self.native.acl_equal(restored, facts["before"])):
-            raise _refused("native ACL restore readback differs")
+    def _give_back(self, holds, record) -> list:
+        """Take the profile's entries off every held folder; the errors of those that failed."""
+        sid, failures = record["profile_sid"], []
+        for key in record["loans"]:
+            if key in holds:
+                try:
+                    self._change(holds[key], lambda now: loan_returned_sddl(now, sid))
+                except (ProfileRefused, OSError) as error:
+                    failures.append(error)
+        return failures
 
-    def restore(self, record_path: Path | None = None) -> None:
-        """Put every loaned folder's DACL back and retire the record.
+    def restore(self, record_path: Path | None = None, *, abandon: bool = False) -> None:
+        """Take the profile's entries off every loaned folder and retire the record.
 
-        Every folder is tried; the first refusal is raised after the others were returned, and the
-        record then stays `applied` for the recovery. A folder that no longer exists has nothing to
-        return; one that exists but is another folder than the record names is left untouched.
+        Every folder is tried. One that no longer exists has nothing to return. One that exists but
+        is another folder than the record names is left untouched and the record stays `applied`,
+        named again by every recovery, until the owner gives it up: with `abandon` the record ends
+        `abandoned` instead. A folder that could not be returned is never given up.
 
         Raises:
             ProfileRefused: `profile_acl_invalid` for a folder that is not the one granted, or
-                whose restored DACL reads back different.
+                whose changed DACL reads back different. An error of the OS passes as it is.
         """
         record_path = record_path or self.record
         if record_path is None:
             return
         record = self._read(record_path)
-        if record["phase"] == "retired":
+        if record["phase"] in _DONE:
             return
-        holds = self.holds[1] if self.holds is not None and record_path == self.record else None
-        stack = None
-        if holds is None:
-            stack, holds = self._reopen(record)
+        live = self.holds[1] if self.holds is not None and record_path == self.record else None
+        stack, strays, failures = None, [], []
+        holds = live
+        if live is None:
+            stack, holds, strays, failures = self._reopen(record)
         try:
-            failures = []
-            for key, facts in record["loans"].items():
-                if key in holds:
-                    try:
-                        self._give_back(holds[key], facts)
-                    except (ProfileRefused, OSError) as error:
-                        failures.append(error)
-            if failures:
-                raise failures[0]
+            failures += self._give_back(holds, record)
         finally:
             if stack is not None:
                 stack.close()
             self.close()
-        record["phase"] = "retired"
+        if strays and not abandon:
+            failures += [_refused(f"the {key} folder is not the one the record names")
+                         for key in strays]
+        if failures:
+            raise refusal_summary(failures)
+        record["phase"] = "abandoned" if strays else "retired"
         _replace(record_path, record)
 
-    def recover(self) -> None:
-        """Return every loan a crash left: scratch of an interrupted replace is removed first."""
+    def recover(self, *, abandon: bool = False) -> None:
+        """Return every loan a crash left: scratch of an interrupted replace is removed first.
+
+        Every record is tried, and the errors are raised together at the end.
+        """
         if not self.directory.exists():
             return
         for path in sorted(self.directory.iterdir()):
@@ -332,8 +407,8 @@ class FolderLoans:
         failures = []
         for path in sorted(p for p in self.directory.iterdir() if _LOAN_NAME.fullmatch(p.name)):
             try:
-                self.restore(path)
+                self.restore(path, abandon=abandon)
             except (ProfileRefused, OSError) as error:
                 failures.append(error)
         if failures:
-            raise failures[0]
+            raise refusal_summary(failures)

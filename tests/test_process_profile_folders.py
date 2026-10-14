@@ -104,3 +104,38 @@ def test_a_loan_goes_back_at_a_recovery_that_the_fresh_folders_still_wait_on(blo
         w.store.recover()  # no restart is proven: the fresh folders and the profile stay
     assert all(w.state[str(path)] == (PRIOR, False, OWNER) for path in w.folders.values())
     assert w.store.inspect(SID) is not None, "the profile waits for the proof as before"
+
+
+def left_with_a_replaced_work_folder(w):
+    """An attempt that ended with a child alive, whose work folder is another folder by now."""
+    with pytest.raises(ProfileRefused, match="profile_acl_unproven"):
+        with w.store.container(mode="dispatch", active_tokens=lambda: ("t",),
+                               folders=folders(w)):
+            pass
+    work = w.folders["work"]
+    work.rename(work.with_name("t1-moved"))
+    work.mkdir()
+    w.state[str(work)] = (OWNER + "x", True, OWNER)
+
+
+def test_a_loan_that_cannot_go_back_does_not_keep_the_acl_and_profile_recoveries_from_running(
+        block, monkeypatch):
+    w = block
+    left_with_a_replaced_work_folder(w)
+    measure(monkeypatch, later_boot(NOW))
+    with pytest.raises(ProfileRefused) as raised:
+        w.store.recover()
+    assert all(w.state[str(w.folders[key])] == (PRIOR, False, OWNER) for key in ("home", "install"))
+    assert list((w.store.directory.parent / "container-attempts").glob("*")) == []
+    assert w.store.inspect(SID) is None, "the profile was retired in the same recovery"
+    assert "work folder is not the one the record names" in str(raised.value)
+
+
+def test_the_owner_gives_the_astray_loan_up_and_the_whole_recovery_then_ends_clean(
+        block, monkeypatch):
+    w = block
+    left_with_a_replaced_work_folder(w)
+    measure(monkeypatch, later_boot(NOW))
+    w.store.recover(abandon_loans=True)
+    assert w.store.inspect(SID) is None
+    w.store.recover()
