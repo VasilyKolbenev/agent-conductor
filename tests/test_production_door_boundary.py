@@ -36,7 +36,7 @@ from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakegrok
 from tests import test_command_grok_transport as grok_t
-from tests._fakeboundary import recording_runners, takes_the_call
+from tests._fakeboundary import pin_dir, recording_runners, takes_the_call
 from tests.test_store import good_lane, write_project
 
 SRC = Path(provider_factory.__file__).resolve().parents[1]
@@ -46,14 +46,20 @@ EDIT = "guard.py:# a real change\n"
 
 
 def _five_pins(tmp_path: Path) -> list[ProviderConfig]:
-    """One pinned config per catalogued harness; the files exist, nothing runs them."""
+    """One pinned config per catalogued harness, installed at its layout; nothing runs the files.
+
+    The install folder is a fact of the pin's path, and a build outside the install tree is not
+    provided the boundary, so each file stands where the owner's install tree keeps it.
+    """
     pins = []
     for provider_id, entry in PROVIDER_CATALOG.items():
-        executable = tmp_path / f"{provider_id}.exe"
+        folder = pin_dir(tmp_path, provider_id)
+        folder.mkdir(parents=True)
+        executable = folder / f"{provider_id}.exe"
         executable.write_text("", encoding="utf-8")
         entrypoint = ""
         if provider_id == "deepseek-harness":
-            entrypoint = str(tmp_path / "dsh.js")
+            entrypoint = str(folder / "dsh.js")
             Path(entrypoint).write_text("", encoding="utf-8")
         pins.append(ProviderConfig(
             provider_id=provider_id, executable=str(executable), protocol=entry.protocol,

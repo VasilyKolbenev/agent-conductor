@@ -53,13 +53,14 @@ from conductor.command.runtime_values import AuthorizationError
 from tests import _fakeclaude
 from tests import test_command_claude_review as review_t
 from tests import test_command_claude_transport as claude_t
-from tests._fakeboundary import confined, recording
+from tests._fakeboundary import confined, installed_outside_the_tree, recording
 from tests.test_command_run_store import CONFIG
 from tests.test_command_sandbox_route import RUN_ID, _As, _run_following, a_plan, sandbox
 
-#: The three ways a harness the step is bound to can lack the boundary, each a different fact.
-LINUX, NEVER, SUBSCRIPTION = (
-    "a platform without a boundary", "a harness never confined", "the subscription login road")
+#: The ways a harness the step is bound to can lack the boundary, each a different fact.
+LINUX, NEVER, SUBSCRIPTION, OUTSIDE = (
+    "a platform without a boundary", "a harness never confined", "the subscription login road",
+    "a build installed outside the install tree")
 
 
 def _harness(tmp_path, way):
@@ -69,6 +70,8 @@ def _harness(tmp_path, way):
     road = {"auth": "subscription", "auth_home": str(login)} if way == SUBSCRIPTION else {}
     adapter, _root, log = claude_t.a_harness(tmp_path, **road)
     scratch = tmp_path / "scratch"
+    if way == OUTSIDE:
+        installed_outside_the_tree(adapter, tmp_path)
     if way == NEVER:
         return adapter, recording(adapter, scratch), log
     return adapter, confined(adapter, scratch, platform="linux" if way == LINUX else "win32"), log
@@ -90,7 +93,7 @@ def _plan_and_run(tmp_path, writes_the_word=True):
 
 
 @pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
-@pytest.mark.parametrize("way", [LINUX, NEVER, SUBSCRIPTION])
+@pytest.mark.parametrize("way", [LINUX, NEVER, SUBSCRIPTION, OUTSIDE])
 def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(
         way, writes_the_word, tmp_path):
     adapter, runner, log = _harness(tmp_path, way)
@@ -112,7 +115,7 @@ def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(
     assert _fakeclaude.spawns(log) == [], "a child was started for a step with no boundary"
 
 
-@pytest.mark.parametrize("way", [LINUX, SUBSCRIPTION])
+@pytest.mark.parametrize("way", [LINUX, SUBSCRIPTION, OUTSIDE])
 def test_a_confined_adapter_asked_anyway_for_a_step_without_the_boundary_starts_no_child(
         way, tmp_path):
     """Defence in depth: a caller that skipped the doors still cannot start the child."""

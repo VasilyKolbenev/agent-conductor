@@ -424,13 +424,7 @@ class HeadlessCliTransport(
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
         argv, payload = self._task_command(task_text)
-        # Sized before the claim (review rulings K, R1): past the channel the spawn fails after it,
-        # leaving an unknown and a standing marker instead of this plain refusal. The argv channel
-        # (Kimi, Grok, DSH) is the WHOLE command line -- pins, flags, quoting, NUL -- as Windows
-        # counts it, on every platform: a POSIX argument may be far longer, so one rule is one fact.
-        if (payload is not None and (len(payload) > STDIN_LIMIT or b"\x00" in payload)
-                or payload is None
-                and command_line_units((*self._argv_prefix(), *argv)) > COMMAND_LINE_LIMIT):
+        if not self._task_fits_its_channel(argv, payload):
             return self._receipt(request, "failed", None,
                 "the materialized task exceeds the bounded task channel, so no task was spawned")
         self._workspace.claim(request.run_id, request.action_id)
@@ -451,6 +445,20 @@ class HeadlessCliTransport(
             # sentence; the outcome is the answer, and this is not a success.
             return self._residue_receipt(request, outcome)
         return self._observed(request, outcome)
+
+    def _task_fits_its_channel(self, argv: ArgvSource, payload: bytes | None) -> bool:
+        """Whether the materialized task fits the channel that carries it, asked before the claim.
+
+        Sized before the claim (review rulings K, R1): past the channel the spawn fails after it,
+        leaving an unknown and a standing marker instead of a plain refusal. The argv channel
+        (Kimi, Grok, DSH) is the WHOLE command line -- pins, flags, quoting, NUL -- as Windows
+        counts it, on every platform: a POSIX argument may be far longer, so one rule is one fact.
+        The pins and flags counted are those of the spawn that will really run, which inside the
+        boundary can be longer than the operator's pin (``_launch_prefix``).
+        """
+        if payload is not None:
+            return len(payload) <= STDIN_LIMIT and b"\x00" not in payload
+        return command_line_units((*self._launch_prefix("dispatch"), *argv)) <= COMMAND_LINE_LIMIT
 
     def _preflight_residue(
             self, request: ActionRequest) -> ActionResultReceipt | None:

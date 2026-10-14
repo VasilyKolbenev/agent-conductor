@@ -247,6 +247,60 @@ def test_a_non_bmp_task_the_old_count_admitted_is_refused_before_its_claim(tmp_p
     assert not (root / MARKER_DIR / "run-1" / "act-1.marker").exists()
 
 
+def _confined_dsh(tmp_path, name, instruction):
+    """A DSH harness confined for Windows over a recording entry; ``name`` keeps one path length."""
+    from conductor.command.adapters.dsh_harness import INSTRUCTION_DIR
+    from tests import test_command_dsh_harness as dsh_t
+    from tests._fakeboundary import confined
+    (tmp_path / name).mkdir()
+    adapter, root, log = dsh_t.a_harness(tmp_path / name)
+    path = root / INSTRUCTION_DIR / "instr-001.md"
+    path.write_text(instruction, encoding="utf-8", newline="\n")
+    return adapter, root, log, confined(adapter, tmp_path / name / "scratch")
+
+
+def _confined_dsh_edge(tmp_path):
+    """An instruction whose BOUNDARIED command line is exactly the bound, and that command line.
+
+    One short pass measures the argv the confined spawn really ran, the two Node flags and the
+    real path of the entry included; each further character of the instruction is one unit.
+    """
+    from conductor.command.adapters._procgroup import COMMAND_LINE_LIMIT, command_line_units
+    from tests import test_command_dsh_harness as dsh_t
+    adapter, _root, _log, runner = _confined_dsh(tmp_path, "cal", "Z")
+    assert dsh_t.run_once(adapter, dsh_t.a_request()).outcome == "succeeded"
+    assert runner.runs[-1].inside, "the calibration task did not start inside the entry"
+    argv = runner.runs[-1].argv
+    return "Z" * (1 + COMMAND_LINE_LIMIT - command_line_units(argv)), argv
+
+
+@pytest.mark.parametrize("over", [0, 1])
+def test_a_confined_dsh_task_is_sized_by_the_argv_its_boundaried_spawn_runs(tmp_path, over):
+    """The boundaried DSH argv is longer than the pins (Node flags, the entry's real path): a task
+    one unit past the bound of THAT argv is refused before its claim, with nothing started; at the
+    bound it is claimed and starts inside the entry. Sized by the plain pins, both would pass."""
+    from conductor.command.adapters._procgroup import COMMAND_LINE_LIMIT, command_line_units
+    from conductor.command.adapters.dsh_harness import MARKER_DIR as DSH_MARKER_DIR
+    from tests import _fakedsh
+    from tests import test_command_dsh_harness as dsh_t
+    edge, calibrated = _confined_dsh_edge(tmp_path)
+    adapter, root, log, runner = _confined_dsh(tmp_path, "run", edge + "Z" * over)
+    tail = calibrated[len(adapter._boundary_prefix()):]
+    plain_units = command_line_units((*adapter._argv_prefix(), *tail)) + over
+    assert plain_units < COMMAND_LINE_LIMIT, "the plain count must admit it, or this proves nothing"
+    receipt = dsh_t.run_once(adapter, dsh_t.a_request())
+    marker = root / DSH_MARKER_DIR / "run-1" / "act-1.marker"
+    if over:
+        assert (receipt.outcome, receipt.detail) == ("failed", REFUSED)
+        assert _fakedsh.task_spawns(log) == [] and not marker.exists(), "claimed past the bound"
+        assert runner.entries == [] and not any(run.inside for run in runner.runs)
+    else:
+        assert receipt.detail != REFUSED and marker.is_file(), "claimed and started at the bound"
+        assert receipt.outcome in ("succeeded", "failed"), (receipt.outcome, receipt.detail)
+        assert len(runner.entries) == 1 and runner.runs[-1].inside
+        assert command_line_units(runner.runs[-1].argv) == COMMAND_LINE_LIMIT
+
+
 def test_an_argv_providers_facts_freeze_its_command_line_bound_so_a_new_bound_needs_a_new_grant(
         tmp_path, monkeypatch):
     """Codex R2: the channel, its bound, unit and scope are in the facts the grant digest binds."""

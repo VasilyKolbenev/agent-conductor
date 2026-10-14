@@ -23,13 +23,12 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import shutil
 from pathlib import Path
 
 import pytest
 
 from conductor.command.adapters import AdapterRegistry
-from conductor.command.adapters.grok_build import GROK_PROTOCOL, GROK_PROVIDER_ID
+from conductor.command.adapters.grok_build import GROK_PROTOCOL, GROK_PROVIDER_ID, MARKER_DIR
 from conductor.command.adapters.dsh_harness import DshPin
 from conductor.command.adapters.harness_attempt import (
     RUNTIME_ENV, AttemptFolders, AttemptLaunch, install_folder)
@@ -51,8 +50,8 @@ from tests import test_command_dsh_harness as dsh_t
 from tests import test_command_grok_transport as grok_t
 from tests import test_command_kimi_transport as kimi_t
 from tests._fakeboundary import (
-    LAYOUT, NODE_FLAGS, confined, pin_dir, recording, recording_runners, takes_the_call,
-    version_folder)
+    LAYOUT, NODE_FLAGS, confined, installed_outside_the_tree, pin_dir, recording,
+    recording_runners, takes_the_call, version_folder)
 
 HARNESSES = [
     pytest.param((claude_t, _fakeclaude), id="claude-code"),
@@ -517,21 +516,45 @@ def test_a_pinned_file_outside_a_version_folder_of_the_install_tree_has_no_insta
         install_folder(str(tmp_path.joinpath(*parts)))
 
 
-def test_a_confined_attempt_for_a_build_installed_outside_the_tree_starts_no_task(tmp_path):
+def test_a_build_installed_outside_the_tree_is_not_provided_the_boundary_in_either_mode(tmp_path):
+    """The install folder is a fact of the pin's path, so it is part of the fact the doors read."""
+    adapter, _root, _log = grok_t.a_harness(tmp_path)
+    installed_outside_the_tree(adapter, tmp_path)
+    confined(adapter, tmp_path / "scratch")
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [False, False]
+    assert [AdapterRegistry([adapter]).execution_boundary(GROK_PROVIDER_ID, mode)
+            for mode in ATTEMPT_MODES] == [False, False]
+
+
+def test_a_confined_attempt_for_a_build_installed_outside_the_tree_is_refused_before_its_claim(
+        tmp_path):
+    """Not a launch error after the claim: a `failed` receipt, nothing claimed, nothing started."""
     adapter, root, log = grok_t.a_harness(tmp_path)
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    moved = elsewhere / Path(adapter._pin.executable).name
-    shutil.copy2(adapter._pin.executable, moved)
-    adapter._pin = dataclasses.replace(adapter._pin, executable=str(moved))
+    installed_outside_the_tree(adapter, tmp_path)
     runner = confined(adapter, tmp_path / "scratch")
 
-    with pytest.raises(adapter.error, match="could not start the pinned build"):
-        grok_t.run_once(adapter, grok_t.a_request())
+    receipt = grok_t.run_once(adapter, grok_t.a_request())
 
-    assert runner.entries == [] and not any(run.inside for run in runner.runs)
-    assert len(_fakegrok.spawns(log)) == len(runner.runs), "a task child ran without the boundary"
+    assert receipt.outcome == "failed"
+    assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
+    assert _fakegrok.spawns(log) == [], "a child was started for a build the boundary cannot cover"
+    assert (runner.entries, runner.runs) == ([], [])
+    assert not (root / MARKER_DIR / "run-1" / "act-1.marker").exists(), "the action was claimed"
     assert _no_home_left(root, adapter)
+
+
+def test_a_road_that_skips_the_question_cannot_start_a_build_installed_outside_the_tree(tmp_path):
+    adapter, root, log = grok_t.a_harness(tmp_path)
+    installed_outside_the_tree(adapter, tmp_path)
+    runner = confined(adapter, tmp_path / "scratch")
+
+    with pytest.raises(BoundaryUnavailable) as raised:
+        adapter._attempt(("--version",), "work/work-001", timeout=30, mode="dispatch")
+
+    assert (raised.value.platform, raised.value.mode) == ("win32", "dispatch")
+    assert (runner.entries, runner.runs) == ([], [])
+    assert _fakegrok.spawns(log) == [] and _no_home_left(root, adapter)
 
 
 # -- 8. DSH starts inside the boundary on its real entry ---------------------------

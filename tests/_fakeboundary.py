@@ -18,6 +18,7 @@ native one (``tests/test_process_acl_native.py``), not this file's.
 from __future__ import annotations
 
 import inspect
+import shutil
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -68,6 +69,19 @@ def version_folder(base, provider_id: str) -> Path:
 def pin_dir(base, provider_id: str) -> Path:
     """The folder the pinned file itself sits in, at the depth the real install puts it."""
     return version_folder(base, provider_id).joinpath(*LAYOUT[provider_id][1])
+
+
+def installed_outside_the_tree(adapter, base) -> None:
+    """Re-pin a native-binary adapter to a copy of its executable outside ``harnesses/<n>/<v>``.
+
+    The pin is still an absolute file that runs, so every other fact of the launch holds; only the
+    install folder cannot be named from it.
+    """
+    elsewhere = Path(base) / "elsewhere"
+    elsewhere.mkdir()
+    moved = elsewhere / Path(adapter._pin.executable).name
+    shutil.copy2(adapter._pin.executable, moved)
+    adapter._pin = replace(adapter._pin, executable=str(moved))
 
 
 @dataclass

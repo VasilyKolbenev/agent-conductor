@@ -72,8 +72,8 @@ class AttemptFolders:
 INSTALL_TREE = "harnesses"
 
 
-def install_folder(pinned_file: str) -> str:
-    """The version folder a pinned file is installed in: ``harnesses/<name>/<version>``.
+def find_install_folder(pinned_file: str) -> str | None:
+    """The version folder a pinned file is installed in: ``harnesses/<name>/<version>``, or None.
 
     That folder, and not the one the file sits in, is what the boundary must be able to read: for
     a native binary it is the same folder, but one build keeps its file deep in a vendor tree
@@ -81,18 +81,29 @@ def install_folder(pinned_file: str) -> str:
     holds the entry (measured, H probe of 14.10). The nearest folder that is a version folder of
     the install tree is taken, so the grant is the narrowest that follows the rule.
 
+    A pure fact of the pin's path, so the doors read it before any claim: a file installed
+    outside the tree has no install folder, and a guess would grant too little or too much.
+
     Args:
         pinned_file: The absolute file the child starts from.
-
-    Raises:
-        ProcessRunnerError: The file is not installed under the tree. A guess would grant too
-            little or too much, and a launch that cannot name its install folder is refused.
     """
     for folder in Path(pinned_file).parents:
         if folder.parent.parent.name.casefold() == INSTALL_TREE:
             return str(folder)
-    raise ProcessRunnerError(
-        f"the pinned build is not installed under {INSTALL_TREE}/<name>/<version>")
+    return None
+
+
+def install_folder(pinned_file: str) -> str:
+    """``find_install_folder``, for the call that cannot go on without one.
+
+    Raises:
+        ProcessRunnerError: The file is not installed under the tree.
+    """
+    found = find_install_folder(pinned_file)
+    if found is None:
+        raise ProcessRunnerError(
+            f"the pinned build is not installed under {INSTALL_TREE}/<name>/<version>")
+    return found
 
 
 def confined_spec(
@@ -132,17 +143,40 @@ class AttemptLaunch:
         """Whether a task attempt of this mode would be launched inside the boundary.
 
         False for a transport never confined, false on the subscription road, whose leased login
-        directory the boundary does not grant (H contract, section 5), and false when the runner
-        this transport holds has no entry that takes the call it would make (``boundary_entry``):
-        such an attempt is refused, never run without the boundary and never sent to an entry
-        that would raise after the attempt was claimed.
+        directory the boundary does not grant (H contract, section 5), false when the runner this
+        transport holds has no entry that takes the call it would make (``boundary_entry``), and
+        false when the pinned build's install folder cannot be named from its path
+        (``find_install_folder``): such an attempt is refused, never run without the boundary and
+        never sent on to fail after the attempt was claimed. Each of these is a fact the
+        transport holds before any claim, so the doors and the transport answer alike.
 
         Raises:
             ValueError: ``mode`` is not an attempt mode, confined or not, on any platform.
         """
         provided = boundary_provided(self._boundary_platform, mode)
-        return (self._confine and provided and not self._signed_in_road()
-                and entry_takes_the_call(self._runner, mode))
+        return self._confine and provided and self._road_covers(mode)
+
+    def _road_covers(self, mode: str) -> bool:
+        """Whether the road this transport holds can carry a confined attempt of this mode.
+
+        Apart from the platform: not the subscription login, a runner whose entry takes the call,
+        and a pinned build whose install folder the boundary can be asked to grant.
+        """
+        return (not self._signed_in_road() and entry_takes_the_call(self._runner, mode)
+                and find_install_folder(self._argv_prefix()[-1]) is not None)
+
+    def _confined_attempt(self, mode: str | None) -> bool:
+        """Whether an attempt of this mode is a TASK attempt that must start inside the boundary."""
+        return mode is not None and self._confine
+
+    def _launch_prefix(self, mode: str | None) -> tuple[str, ...]:
+        """What the pin contributes to the argv a spawn of this mode will really run.
+
+        The boundaried prefix for a confined task attempt, which can be longer than the pin
+        (``_boundary_prefix``), and the pin as written for every other spawn. A size check made
+        before the claim measures THIS, never the pin alone.
+        """
+        return self._boundary_prefix() if self._confined_attempt(mode) else self._argv_prefix()
 
     def _boundary_refusal(self, request, mode: str):
         """A failed receipt when a confined transport cannot cover this task, else None.
@@ -160,10 +194,10 @@ class AttemptLaunch:
         The same question as ``_boundary_refusal``, asked once more at the spawn itself: a road
         that forgot to ask first still cannot start a child outside the boundary.
         """
-        if mode is None or not self._confine:
+        if not self._confined_attempt(mode):
             return
         require_boundary(self._boundary_platform, mode)
-        if self._signed_in_road() or not entry_takes_the_call(self._runner, mode):
+        if not self._road_covers(mode):
             raise BoundaryUnavailable(self._boundary_platform, mode)
 
     def _attempt(
@@ -292,7 +326,7 @@ class AttemptLaunch:
                 stdin_bytes=stdin_bytes, stdin_completion_id=stdin_completion_id,
                 separate_stderr=separate_stderr, model=model, output_limit=output_limit,
                 unset_env=unset_env)
-            if mode is not None and self._confine:
+            if self._confined_attempt(mode):
                 return self._run_confined(spec, home, cwd, mode)
             if server_read is not None:
                 owned = self._runner.start(spec)
