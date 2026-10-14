@@ -68,7 +68,8 @@ const press = async (r, key) => { keyed(r.host.detail, key).listeners.click(); a
 const keysOf = (node, out = []) => { if (node.tag === 'button') out.push(node['data-focus-key']);
   for (const child of node.children || []) keysOf(child, out); return out; };
 const live = (node) => { const out = [];
-  const walk = (one) => { if (one.tag === 'button' && !one.disabled) out.push(one['data-focus-key']);
+  const walk = (one) => {
+    if (one.tag === 'button' && !one.disabled) out.push(one['data-focus-key']);
     for (const child of one.children || []) walk(child); };
   walk(node); return out; };
 const kinds = (r) => r.sent.map(({body}) => body.preview ? 'terms' : body.check ? 'check' : 'send');
@@ -209,8 +210,9 @@ def test_several_github_remotes_are_chosen_by_the_owner_and_only_that_one_is_ask
       console.log(JSON.stringify({choice, sent: r.sent, reads: r.reads.length,
         terms: hasText(r.host.detail, 'u/r')}));
     """)
-    assert out["choice"] == {"buttons": ["accept:push:remote:origin", "accept:push:remote:upstream"],
-                             "sent": 0, "says": True}
+    assert out["choice"] == {
+        "buttons": ["accept:push:remote:origin", "accept:push:remote:upstream"],
+        "sent": 0, "says": True}
     assert out["sent"] == [{"target": "acceptPush", "run": "run-one", "body": {
         "acceptance_id": "acc-" + "a" * 32, "remote": "upstream", "preview": True}}]
     assert out["reads"] == 2 and out["terms"]
@@ -398,7 +400,8 @@ def test_a_link_that_is_not_a_pull_request_of_github_is_text_and_never_a_link():
       const r = rig({facts: {push: PUSHED, pull_request: odd}});
       await opened(r);
       const links = [];
-      const walk = (n) => { if (n.tag === 'a') links.push(n.href); (n.children || []).forEach(walk); };
+      const walk = (n) => { if (n.tag === 'a') links.push(n.href);
+        (n.children || []).forEach(walk); };
       walk(r.host.detail);
       console.log(JSON.stringify({links, text: hasText(r.host.detail, 'javascript:alert(1)')}));
     """)
@@ -407,7 +410,8 @@ def test_a_link_that_is_not_a_pull_request_of_github_is_text_and_never_a_link():
 
 def test_the_compact_card_tells_the_standing_records_and_leaves_the_steps_to_the_details():
     out = _js("""
-      const draw = (r) => { r.host.render(desk('task-one', 'run-one'), false); return r.host.pult; };
+      const draw = (r) => { r.host.render(desk('task-one', 'run-one'), false);
+        return r.host.pult; };
       const none = rig();
       none.host.render(desk('task-one', 'run-one'), false); await tick();
       const afterCommit = live(draw(none));
@@ -419,7 +423,8 @@ def test_the_compact_card_tells_the_standing_records_and_leaves_the_steps_to_the
       done.host.render(desk('task-one', 'run-one'), false); await tick();
       const finished = draw(done);
       console.log(JSON.stringify({afterCommit, sent, pr: hasText(finished, '#7'),
-        buttons: live(finished), writes: none.sent.length + pushed.sent.length + done.sent.length}));
+        buttons: live(finished),
+        writes: none.sent.length + pushed.sent.length + done.sent.length}));
     """)
     assert out == {"afterCommit": ["accept:pult:desk.accept.open"],
                    "sent": {"text": True, "buttons": ["accept:pult:desk.accept.open"]},

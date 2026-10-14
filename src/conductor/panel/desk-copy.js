@@ -72,7 +72,7 @@ export const DESK_COPY = Object.freeze({
     "Исход предпросмотра неизвестен. Прочитайте факты принятия перед новой попыткой."],
   "desk.accept.unknown_commit": ["Commit outcome is unknown. Read the acceptance record; do not repeat automatically.",
     "Исход создания коммита неизвестен. Прочитайте запись принятия; автоматического повтора нет."],
-  // -- the two steps after the commit: the push to GitHub, then the pull request (spec 9.7) --------
+  // -- the two steps after the commit: the push to GitHub, then the pull request (spec 9.7) ------
   "desk.accept.check": ["Check again", "Проверить снова"],
   "desk.accept.command": ["Exact command", "Точная команда"],
   "desk.accept.login": ["Sign in once in your terminal", "Войдите один раз в терминале"],
