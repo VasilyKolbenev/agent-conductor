@@ -85,9 +85,15 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     branch = title = ""; documents = null; availableDocs = []; optionsRevision += 1;
     push = newPush(); pr = newPr(); headBranch = "main";
   }
+  // "Again" after a look that found nothing repeats terms that were shown and signed for. When
+  // those terms no longer stand the step goes back to the stage where they are reviewed.
+  const reviewAgain = (state, stage) => state.phase === "absent"
+    ? {...state, phase: stage, confirming: false, error: null} : {...state, confirming: false};
   // Nothing confirmed stands once the facts are read again or the person who signs is another.
   function unconfirm() {
-    confirming = false; push = {...push, confirming: false}; pr = {...pr, confirming: false};
+    confirming = false;
+    push = reviewAgain(push, push.terms ? "terms" : "idle");
+    pr = reviewAgain(pr, "idle");
   }
   function notice(code, reason) {
     if (reason && Object.hasOwn(MESSAGES, `accept.reason.${reason}`)) {
@@ -286,7 +292,9 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     return check ? {...body, check: true} : body;
   }
   // A step is pressed from the stage that offers the press: the first send only after its review,
-  // "send again" only after a look found nothing there, and the check only after an unknown answer.
+  // "send again" only after a look found nothing there (and only for the terms and the signer of
+  // that press: an edit or another signer takes the step back to its review), and the check only
+  // after an unknown answer.
   function mayPress(step, check) {
     const state = step === "push" ? push : pr;
     if (check) return state.phase === "unknown";
@@ -342,9 +350,12 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     else if (step === "push") setStep(step, {phase: "idle", error: said, terms: null});
     else setStep(step, {phase: "idle", error: said, login: reason === "gh_not_logged_in"});
   }
+  // An edit starts the review again, also after a look found nothing: "Create again" must not
+  // send fields that were never reviewed and confirmed.
   function editPr(name, value) {
     if (pr.phase !== "idle" && pr.phase !== "absent") return;
-    pr = {...pr, fields: {...fieldsOf(), [name]: value}, confirming: false}; onChange();
+    pr = {...pr, fields: {...fieldsOf(), [name]: value}, confirming: false, phase: "idle"};
+    onChange();
   }
   function button(label, action, disabled = false, where = "detail") {
     const node = element("button", {type: "button", text: text(locale, label),

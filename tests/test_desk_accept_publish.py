@@ -61,10 +61,14 @@ const rig = (over = {}) => {
     locale: () => over.locale ?? 'en', onChange: () => {}, onForeign: () => { foreign = true; }});
   return {host, sent, reads, left, served, isForeign: () => foreign};
 };
-const shown = (r, mode = 'active') => r.host.render({...desk('task-one', 'run-one'), mode}, true);
+let signer = 'Owner';
+const shown = (r, mode = 'active') => r.host.render(
+  {...desk('task-one', 'run-one'), mode, actor: signer}, true);
 const opened = async (r) => { shown(r); await tick(); shown(r); };
 const press = async (r, key) => { keyed(r.host.detail, key).listeners.click(); await tick();
   shown(r); };
+// A press the card may not offer: a missing button is a thing to assert, not a crash.
+const pressIf = async (r, key) => { if (keyed(r.host.detail, key)) await press(r, key); };
 const keysOf = (node, out = []) => { if (node.tag === 'button') out.push(node['data-focus-key']);
   for (const child of node.children || []) keysOf(child, out); return out; };
 const live = (node) => { const out = [];
@@ -331,6 +335,92 @@ def test_an_unknown_pull_request_answer_leaves_only_check_again_and_the_check_ne
     assert out["absent"] == {"buttons": [PR_PREFIX + "pr.again"], "says": True, "locked": False}
     first, checked, again = out["bodies"]
     assert checked == {**first, "check": True} and again == first and out["number"]
+
+
+@pytest.mark.parametrize("field", ["base", "title", "body", "draft"])
+def test_an_edit_while_the_pull_request_is_absent_sends_nothing_and_asks_for_the_review_again(
+        field):
+    out = _js("""
+      const r = rig({facts: {push: PUSHED}, pull: [unknown, ok('pull_request', null),
+        ok('pull_request', PULL)]});
+      await opened(r);
+      for (const key of ['review', 'pr.action', 'check']) {
+        await press(r, 'accept:pr:desk.accept.' + key);
+      }
+      const absent = live(r.host.detail);
+      const values = {base: 'trunk', title: 'New title', body: 'New body', draft: true};
+      if (d === 'draft') { const box = keyed(r.host.detail, 'desk.accept.pr.draft');
+        box.checked = true; box.listeners.change(); }
+      else { const node = keyed(r.host.detail, 'desk.accept.pr.' + d);
+        node.value = values[d]; node.listeners.input(); }
+      shown(r);
+      const edited = {buttons: live(r.host.detail), sent: r.sent.length,
+        says: hasText(r.host.detail, said('en', 'desk.accept.pr.absent'))};
+      await pressIf(r, 'accept:pr:desk.accept.review');
+      const confirm = {text: hasText(r.host.detail, said('en', 'desk.accept.pr.confirm_text', {
+        repo: 'o/r', head: 'conduct/run-one', base: d === 'base' ? 'trunk' : 'main',
+        actor: 'Owner'})), buttons: live(r.host.detail), sent: r.sent.length};
+      await pressIf(r, 'accept:pr:desk.accept.pr.action');
+      console.log(JSON.stringify({absent, edited, confirm, kinds: kinds(r),
+        bodies: r.sent.map(({body}) => body), value: values[d]}));
+    """, field)
+    assert out["absent"] == [PR_PREFIX + "pr.again"]
+    assert out["edited"] == {"buttons": [PR_PREFIX + "review"], "sent": 2, "says": False}
+    assert out["confirm"] == {"text": True, "sent": 2,
+                              "buttons": [PR_PREFIX + "pr.action", PR_PREFIX + "pr.back"]}
+    assert out["kinds"] == ["send", "check", "send"]
+    first, _checked, edited = out["bodies"]
+    assert edited == {**first, field: out["value"]}
+
+
+def test_a_changed_actor_returns_an_absent_push_to_review_and_the_press_names_the_new_one():
+    out = _js("""
+      const r = rig({push: [ok('push_terms', TERMS), refused('push_timed_out'),
+        ok('push', PUSHED)]});
+      await opened(r);
+      for (const key of d) await press(r, key);
+      const absent = {buttons: live(r.host.detail), terms: hasText(r.host.detail, TERMS.command)};
+      signer = 'Other'; shown(r);
+      const moved = {buttons: live(r.host.detail), terms: hasText(r.host.detail, TERMS.command),
+        sent: r.sent.length};
+      await pressIf(r, 'accept:push:desk.accept.review');
+      const confirm = {text: hasText(r.host.detail, said('en', 'desk.accept.push.confirm_text', {
+        commit: OID.slice(0, 7), repo: 'o/r', ref: REF, digest: TERMS.push_digest,
+        actor: 'Other'})), buttons: live(r.host.detail), sent: r.sent.length};
+      await pressIf(r, 'accept:push:desk.accept.push.action');
+      console.log(JSON.stringify({absent, moved, confirm, last: r.sent.at(-1).body}));
+    """, list(PUSH_CLICK))
+    assert out["absent"] == {"buttons": [PREFIX + "push.again"], "terms": True}
+    assert out["moved"] == {"buttons": [PREFIX + "review"], "terms": True, "sent": 2}
+    assert out["confirm"] == {"text": True, "sent": 2,
+                              "buttons": [PREFIX + "push.action", PREFIX + "push.back"]}
+    assert out["last"]["actor"] == "Other" and "check" not in out["last"]
+
+
+def test_a_changed_actor_returns_an_absent_pull_request_to_review_and_names_the_new_one():
+    out = _js("""
+      const r = rig({facts: {push: PUSHED}, pull: [unknown, ok('pull_request', null),
+        ok('pull_request', PULL)]});
+      await opened(r);
+      for (const key of ['review', 'pr.action', 'check']) {
+        await press(r, 'accept:pr:desk.accept.' + key);
+      }
+      const absent = live(r.host.detail);
+      signer = 'Other'; shown(r);
+      const moved = {buttons: live(r.host.detail), sent: r.sent.length,
+        says: hasText(r.host.detail, said('en', 'desk.accept.pr.absent'))};
+      await pressIf(r, 'accept:pr:desk.accept.review');
+      const confirm = {text: hasText(r.host.detail, said('en', 'desk.accept.pr.confirm_text', {
+        repo: 'o/r', head: 'conduct/run-one', base: 'main', actor: 'Other'})),
+        buttons: live(r.host.detail), sent: r.sent.length};
+      await pressIf(r, 'accept:pr:desk.accept.pr.action');
+      console.log(JSON.stringify({absent, moved, confirm, last: r.sent.at(-1).body}));
+    """)
+    assert out["absent"] == [PR_PREFIX + "pr.again"]
+    assert out["moved"] == {"buttons": [PR_PREFIX + "review"], "sent": 2, "says": False}
+    assert out["confirm"] == {"text": True, "sent": 2,
+                              "buttons": [PR_PREFIX + "pr.action", PR_PREFIX + "pr.back"]}
+    assert out["last"]["actor"] == "Other" and "check" not in out["last"]
 
 
 AFTER_PR_REFUSAL = {
