@@ -1465,12 +1465,14 @@ answers `pr_create_failed`, after which a new press starts from the check. Every
 this route other than not signed in is `pr_create_failed`; a remote that does not answer before
 the check is `pr_create_failed` too (`push_auth_failed` when git could not sign in). A press
 with `"check":true` stops after the check and answers 200 `{"pull_request": null}` when the
-branch has none. It differs in one case: when the remote head is not that commit it still reads
-the list, because it follows a creation whose answer may have been unknown. A pull request found
-there is recorded and answers 200 with its `mismatch` (the commit the branch holds now, the base
-and the fork flag; `null` if the remote has no such ref and the pull request is the head's own),
-and none found is `pr_mismatch` with `remote_head_moved`. A press without the flag refuses on a
-moved head before it reads the list. The standing record answers 200 to a press that names its
+branch has none. Every press differs in one case: when the remote head is not that commit it
+still reads the list before it refuses, because it may follow a creation whose answer was
+unknown, and a desk that reloaded, or left the run, has forgotten that the answer was unknown
+while the server has not. A pull request found there is recorded and answers 200 with its
+`mismatch` (the commit the branch holds now, the base and the fork flag; `null` if the remote has
+no such ref and the pull request is the head's own), and none found is `pr_mismatch` with
+`remote_head_moved`. A list that gh cannot give is `pr_create_failed` there too. `gh pr create`
+is never called on a moved head. The standing record answers 200 to a press that names its
 base, and `pr_mismatch` with `other_base` to any other. `pr.json` gains the field `mismatch`.
 
 Three more routes serve the materials of a run and the documents of the project.

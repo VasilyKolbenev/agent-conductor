@@ -142,16 +142,18 @@ def test_the_pull_request_of_the_same_head_base_and_repository_is_the_one_that_i
 
 @needs_git
 @pytest.mark.parametrize("move", ["other_commit", "deleted"])
-def test_a_moved_remote_head_refuses_before_gh_pr_create_is_called(tmp_path, move):
+def test_a_moved_remote_head_with_no_pull_request_listed_refuses_after_a_read_and_no_create(
+        tmp_path, move):
     api, root, push, remote, bare, gh = pushed(tmp_path)
     if move == "other_commit":
         git("push", "-q", "-f", str(bare), f"{moved_commit(root, push)}:{REF}", cwd=root)
     else:
         git("push", "-q", str(bare), f":{REF}", cwd=root)
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list()]})
     answer = press(api, push)
     assert reason_of(answer) == "pr_mismatch"
     assert answer.payload["error"]["detail"]["mismatch"] == "remote_head_moved"
-    assert keys(gh) == [] and made(gh, CREATED) == []
+    assert keys(gh) == [LISTED] and made(gh, CREATED) == []
     assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
 
 
@@ -282,10 +284,12 @@ def move_branch(root, bare, to=None):
 
 
 @needs_git
-def test_an_unknown_create_a_failed_list_and_a_moved_branch_are_reconciled_by_the_check(
-        tmp_path):
+@pytest.mark.parametrize("changes", [{"check": True}, {}], ids=["a_check_press", "a_plain_press"])
+def test_an_unknown_create_a_failed_list_and_a_moved_branch_are_reconciled_by_any_press(
+        tmp_path, changes):
     """The creation was unknown and the list after it failed, so nothing was recorded; then the
-    branch moved. The check must still read the list: the pull request may exist."""
+    branch moved. Any press must still read the list: the pull request may exist. A plain press
+    is the one that follows a reload, which forgets the card that knew the answer was unknown."""
     api, root, push, remote, bare, gh = pushed(tmp_path)
     other = moved_commit(root, push)
     landed = _fakegh.pr_row(12, other, head=BRANCH, base="main")
@@ -295,7 +299,7 @@ def test_an_unknown_create_a_failed_list_and_a_moved_branch_are_reconciled_by_th
     assert reason_of(press(api, push)) == "pr_create_failed"
     assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
     move_branch(root, bare, other)
-    answer = press(api, push, check=True)
+    answer = press(api, push, **changes)
     assert answer.status == 200, answer.payload
     record = answer.payload["pull_request"]
     assert (record["number"], record["head_oid"], record["base"]) == (12, push["commit"], "main")
@@ -352,12 +356,13 @@ def test_a_check_for_a_moved_branch_reads_the_list_and_says_the_branch_moved_whe
 
 
 @needs_git
-def test_a_check_for_a_moved_branch_whose_list_gh_cannot_give_creates_and_records_nothing(
-        tmp_path):
+@pytest.mark.parametrize("changes", [{"check": True}, {}], ids=["a_check_press", "a_plain_press"])
+def test_a_press_for_a_moved_branch_whose_list_gh_cannot_give_creates_and_records_nothing(
+        tmp_path, changes):
     api, root, push, remote, bare, gh = pushed(tmp_path)
     move_branch(root, bare, moved_commit(root, push))
     _fakegh.script(gh.dir, {LISTED: [_fakegh.said("not json")]})
-    assert reason_of(press(api, push, check=True)) == "pr_create_failed"
+    assert reason_of(press(api, push, **changes)) == "pr_create_failed"
     assert made(gh, CREATED) == []
     assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
 

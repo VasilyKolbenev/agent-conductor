@@ -10,10 +10,10 @@ What a press does, in order, and why it can be pressed again:
    that commit (else `pr_mismatch`, `remote_head_moved`), and the pull requests already on the
    branch are read. One that is the head's own is recorded and nothing is created; one that is
    not (another commit, another base, a fork) is `pr_mismatch` and nothing is created. A press
-   that only checks (`"check": true`) stops here. One difference: if the remote head has moved it
-   still reads the list, since it may follow a creation whose answer was unknown, and a pull
-   request found there is recorded as in 3. A press that may create refuses on a moved head
-   without reading the list;
+   that only checks (`"check": true`) stops here. One difference, for every press: if the
+   remote head has moved it still reads the list, since it may follow a creation whose answer
+   was unknown, and a pull request found there is recorded as in 3; only a press that finds
+   none refuses `remote_head_moved`. Nothing is created on a moved head;
 2. the creation, with the body on standard input;
 3. the same check again, the remote head and the list. The branch may have moved between the
    check and the creation: the check narrows that window and cannot close it, and this module
@@ -185,16 +185,17 @@ def _existing(gh, push, head, base):
 
 
 def _moved(api, run_id, request, push, where, seen):
-    """The remote head is not the pushed commit: `pr_mismatch` (`remote_head_moved`), no creation.
+    """The remote head is not the pushed commit: no creation, and the list is read first.
 
-    A press that only checks is the one exception. It follows a creation whose answer may have
-    been unknown, and that creation may have made a pull request nobody read back; refusing here
-    would leave it unrecorded for good, and no text may then say that none was made. So the list
-    is read first, and a pull request found there is recorded as what it is (its `mismatch`),
-    the way a pull request created for a branch that moved is. None found is the same refusal.
+    Any press may follow a creation whose answer was unknown, and that creation may have made a
+    pull request nobody read back. The card that knew the answer was unknown is gone after a
+    reload or a change of run, the server is not, so refusing here without a look would leave
+    that pull request unrecorded for good. So the list is read (it changes nothing outside) and
+    a pull request found there is recorded as what it is (its `mismatch`), the way a pull
+    request created for a branch that moved is. None found is `pr_mismatch`, `remote_head_moved`.
     """
     gh, head = where
-    listed = _list(gh, push["remote_repo"], head) if request.check else []
+    listed = _list(gh, push["remote_repo"], head)
     if not listed:
         raise github.PublishRefused("pr_mismatch", "remote_head_moved")
     row = next((row for row in listed if row.is_own(push["commit"], request.base)), listed[0])
