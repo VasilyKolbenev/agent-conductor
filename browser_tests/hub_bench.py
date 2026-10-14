@@ -350,8 +350,8 @@ def hub_page(chromium: Browser, hub: FakeHub, lang: str) -> Iterator[HubPage]:
         page.goto(f"{hub.url}/#lang={lang}", wait_until="load")
         opened = HubPage(page, hub, problems)
         yield opened
-        assert problems == []
-        assert hub.faults == []
+        assert problems == [], problems
+        assert hub.faults == [], hub.faults
         assert page.evaluate("window.__violations") == []
     finally:
         context.close()
