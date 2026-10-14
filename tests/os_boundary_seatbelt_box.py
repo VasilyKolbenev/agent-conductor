@@ -30,6 +30,7 @@ from tests.os_boundary_layout import (
 _ENV = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
 _STEP_TIMEOUT = 90.0
 _WAIT = 60.0
+_SETTLE = 5.0  # as ``os_boundary_windows.SETTLE_SECONDS``
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,21 @@ class PosixWatch:
     def is_gone(self) -> bool:
         now = self._state(self.pid)
         return not now or now.startswith("Z") or now != self._birth
+
+    def wait_gone(self, seconds: float = _SETTLE) -> bool:
+        """Wait for the process to end; False if it is still running after ``seconds``.
+
+        The runner's group stop returns once the signal is delivered, and each process of a killed
+        tree is reaped on its own, so a single ``is_gone`` taken the moment ``run`` or ``stop``
+        returns can precede the exit (the Windows case is measured in the 05.10.2026 job-timeout
+        report).
+        """
+        deadline = time.monotonic() + seconds
+        while not self.is_gone():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        return True
 
 
 class SeatbeltRunner:
