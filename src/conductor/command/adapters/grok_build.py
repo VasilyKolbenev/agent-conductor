@@ -192,6 +192,18 @@ OUTPUT_FORMAT_ARGV = ("--output-format", "plain")
 #: ``-p`` and ``--single`` are one flag; the long spelling is used so a reader of
 #: the argv cannot mistake it for anything else.
 PROMPT_FLAG = "--single"
+#: What a DISPATCH may do that headless mode forbids by default (spec 10.2, review ruling of
+#: 28.09.2026). A headless run without auto-approval denies the Edit and Write tools -- measured
+#: live, a dispatch ended "no changed file" -- and the pinned headless guide documents ``--allow``
+#: as repeatable. The tool names are case-sensitive at PINNED_COMMIT
+#: (``xai-grok-workspace/src/permission/rules.rs``), and Bash is a separate rule that stays
+#: gated. These two pairs stand in the dispatch argv ONLY: the version print, the account
+#: exchange and any review argv keep the argv they had, and no wider grant (Bash, yolo, a
+#: permission mode) is ever added.
+ALLOW_FLAG = "--allow"
+DISPATCH_ALLOWED_TOOLS = ("Edit", "Write")
+DISPATCH_PERMISSION_ARGV = tuple(
+    token for tool in DISPATCH_ALLOWED_TOOLS for token in (ALLOW_FLAG, tool))
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
 GROK_OUTPUT_LIMIT = 16 * 1024
@@ -313,8 +325,9 @@ class GrokBuildAdapter(ArtifactAwareTransport):
         return (self._pin.executable,)
 
     def _task_argv(self, task_text: str) -> tuple[str, ...]:
-        """``--no-auto-update --output-format plain --single <task>``."""
-        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, PROMPT_FLAG, task_text)
+        """``--no-auto-update --output-format plain --allow Edit --allow Write --single <task>``."""
+        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, *DISPATCH_PERMISSION_ARGV,
+                PROMPT_FLAG, task_text)
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow

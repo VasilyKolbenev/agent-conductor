@@ -262,9 +262,10 @@ def test_the_real_runtime_path_still_sends_the_exact_argv_and_environment(tmp_pa
     assert len(spawns) == 2, f"EXPECTED_PREFLIGHT_AND_PROMPT={len(spawns)}"
     preflight, prompt = spawns
     assert preflight["argv"] == ["--version"]
-    assert prompt["argv"][:4] == [
-        "--no-auto-update", "--output-format", "plain", "--single"]
-    assert len(prompt["argv"]) == 5
+    assert prompt["argv"][:8] == [
+        "--no-auto-update", "--output-format", "plain",
+        "--allow", "Edit", "--allow", "Write", "--single"]
+    assert len(prompt["argv"]) == 9
 
     expected_switches = {name: "0" for name, _value in GROK_FORCED_ENV}
     homes = []

@@ -173,12 +173,14 @@ def _recorded(tmp_path: Path):
 
 
 def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path):
-    """``<pin> --no-auto-update --output-format plain --single <task>``.
+    """``<pin> --no-auto-update --output-format plain --allow Edit --allow Write --single <task>``.
 
     Read off the spec the adapter built, because that is the only place the whole
     command exists. ``--no-auto-update`` stands FIRST and is not optional here: a
     background update check during a dispatch would change the very build the
-    preflight just proved.
+    preflight just proved. The two ``--allow`` pairs stand before the prompt, which
+    stays LAST (spec 10.2); the whole permission witness is in
+    ``tests/test_grok_dispatch_permissions.py``.
     """
     adapter, runner, exe = _recorded(tmp_path)
 
@@ -188,10 +190,10 @@ def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path)
     argvs = [tuple(spec.argv) for spec in runner.specs]  # type: ignore[attr-defined]
     assert argvs[0] == (str(exe), "--version"), f"PREFLIGHT_ARGV={argvs[0]}"
     prompt = argvs[1]
-    assert prompt[:5] == (
+    assert prompt[:9] == (
         str(exe), "--no-auto-update", "--output-format", "plain",
-        "--single"), f"PROMPT_ARGV={prompt}"
-    assert len(prompt) == 6, f"UNEXPECTED_ARGV={prompt}"
+        "--allow", "Edit", "--allow", "Write", "--single"), f"PROMPT_ARGV={prompt}"
+    assert len(prompt) == 10, f"UNEXPECTED_ARGV={prompt}"
     for argv in argvs:
         assert argv[0] == str(exe), f"SOMETHING_STANDS_IN_FRONT_OF_THE_PIN={argv}"
 
@@ -206,9 +208,10 @@ def test_one_pinned_binary_and_code_owned_flags_really_run_a_child(tmp_path):
     prompts = _fakegrok.prompt_spawns(log)
     assert len(prompts) == 1
     argv = prompts[0]["argv"]
-    assert argv[:4] == [
-        "--no-auto-update", "--output-format", "plain", "--single"]
-    assert len(argv) == 5, f"UNEXPECTED_ARGV={argv}"
+    assert argv[:8] == [
+        "--no-auto-update", "--output-format", "plain",
+        "--allow", "Edit", "--allow", "Write", "--single"]
+    assert len(argv) == 9, f"UNEXPECTED_ARGV={argv}"
     for row in _fakegrok.spawns(log):
         rendered = " ".join(row["argv"]).lower()
         for banned in ("npx", "npm", ".cmd", "-c ", "&&", "|"):
@@ -221,7 +224,7 @@ def test_the_prompt_carries_the_materialized_instruction_and_not_its_reference(
 
     run_once(adapter, a_request())
 
-    prompt = _fakegrok.prompt_spawns(log)[0]["argv"][4]
+    prompt = _fakegrok.prompt_spawns(log)[0]["argv"][-1]
     assert INSTRUCTION_BODY in prompt, "PROMPT_LACKS_THE_INSTRUCTION_TEXT=True"
     assert "instr-001" in prompt
 
