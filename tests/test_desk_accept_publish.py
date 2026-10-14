@@ -59,7 +59,7 @@ const rig = (over = {}) => {
       return next === undefined ? {status: 'unknown'} : next; }};
   const host = acceptHost.createAcceptHost({door, binding: () => chosen,
     locale: () => over.locale ?? 'en', onChange: () => {}, onForeign: () => { foreign = true; }});
-  return {host, sent, reads, left, served, isForeign: () => foreign};
+  return {host, door, sent, reads, left, served, isForeign: () => foreign};
 };
 let signer = 'Owner';
 const shown = (r, mode = 'active') => r.host.render(

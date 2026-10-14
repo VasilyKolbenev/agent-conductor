@@ -43,10 +43,13 @@ const WORKING = Object.freeze(["previewing", "sending", "checking"]);
 const LOGIN = "gh auth login --hostname github.com --web";
 const PULL_URL = new RegExp("^https://github\\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/"
   + "[A-Za-z0-9._-]{1,100}/pull/[0-9]+$");
+// `signer` is who confirmed the press that acted, and for the pull request `fields` freezes what
+// that person saw: a repeat after a look that found nothing may use neither another name nor
+// another text.
 const newPush = () => ({phase: "idle", confirming: false, error: null, login: false,
-  remotes: [], terms: null});
+  remotes: [], terms: null, signer: null});
 const newPr = () => ({phase: "idle", confirming: false, error: null, login: false,
-  fields: null});
+  fields: null, signer: null});
 const shellWord = (value) => /^[A-Za-z0-9._/:@=+-]+$/.test(value) ? value
   : `'${value.replaceAll("'", "'\\''")}'`;
 const str = (value) => String(value ?? "");
@@ -316,11 +319,14 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     setStep(step, {confirming: true}); onChange();
   }
   function back(step) { setStep(step, {confirming: false}); onChange(); }
+  // The press that acts keeps who signed it and, for the pull request, the fields it sent.
+  const confirmed = (step) => step === "pr" ? {signer: actor, fields: fieldsOf()}
+    : {signer: actor};
   async function send(step, check) {
     const ticket = epoch, runId = selected, body = stepBody(step, actor, check);
     if (!body || !writable(ticket) || !mayPress(step, check)) return;
     setStep(step, {phase: check ? "checking" : "sending", confirming: false, error: null,
-      login: false});
+      login: false, ...(check ? {} : confirmed(step))});
     onChange();
     let answer;
     try { answer = await door.submit(TARGET[step], runId, body); }
@@ -341,10 +347,18 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
       && record.head_oid === facts.push.commit && Number.isInteger(record.number)
       && record.number > 0 && typeof record.url === "string";
   }
+  // A look found the step absent. "Again" is offered only to the person who signed the press it
+  // repeats; another person at the desk now goes back to the review, which names them.
+  function settleAbsent(step, said) {
+    const state = step === "push" ? push : pr;
+    if (state.signer === actor) { setStep(step, {phase: "absent", error: said}); return; }
+    setStep(step, {phase: step === "push" && state.terms ? "terms" : "idle", confirming: false,
+      error: said ?? text(locale, `desk.accept.${step}.absent`)});
+  }
   function settle(step, answer, check) {
     const key = RECORD[step];
     const record = answer.status === "accepted" ? answer.payload?.[key] : undefined;
-    if (record === null && check) { setStep(step, {phase: "absent", error: null}); return; }
+    if (record === null && check) { settleAbsent(step, null); return; }
     if (record !== undefined && recordFits(step, record)) {
       facts = {...facts, [key]: record};
       setStep(step, {phase: "idle", error: null, login: false}); return;
@@ -353,7 +367,8 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     const reason = answer.payload?.error?.detail?.reason;
     const kind = refusal ? outcome(step, reason) : "unknown";
     const said = refusal ? refusalText(answer, check) : null;
-    if (kind !== "refused") setStep(step, {phase: kind, error: said});
+    if (kind === "absent") settleAbsent(step, said);
+    else if (kind !== "refused") setStep(step, {phase: kind, error: said});
     else if (step === "push") setStep(step, {phase: "idle", error: said, terms: null});
     else setStep(step, {phase: "idle", error: said, login: reason === "gh_not_logged_in"});
   }
