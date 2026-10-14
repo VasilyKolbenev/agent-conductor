@@ -321,19 +321,30 @@ def test_a_lost_answer_is_read_again_and_is_never_a_verdict():
         {"kind": "recover", "phase": "done", "key": "hub.op.done.recover"}]
 
 
-def test_a_read_the_hub_refuses_ends_the_row_with_the_clause_of_its_code():
+def test_a_read_the_hub_refuses_ends_the_follow_as_not_reported_and_never_as_failed():
+    # The hub keeps 50 rows and forgets them on a restart (spec 4.6.4): its answer is then
+    # `operation_not_found` and the outcome shows in the project's row. How it ended is not known.
     out = follow("""
-      queue.push({status: "refused", code: "operation_not_found", payload: null});
-      flow.follow("recover", ID, "web-app");
+      const codes = ["operation_not_found", "refused", "host_denied"];
+      codes.forEach((code) => queue.push({status: "refused", code, payload: null}));
+      codes.forEach((_code, at) => flow.follow("recover", "operation-" + String(at + 1).repeat(32),
+        "web-app"));
       await flush();
+      const word = (locale) => { try { return say(locale, "hub.op.unreported"); } catch (_e) {
+        return null; } };
       show({rows: rows(), ru: rows("ru"), settled, timers: live().length,
-        clause: say("en", "hub.op.failed", {reason: clause("en", "operation_not_found")}),
-        clauseRu: say("ru", "hub.op.failed", {reason: clause("ru", "operation_not_found")})});
+        calls: calls.length, said: word("en"), saidRu: word("ru"),
+        failed: codes.map((code) => say("en", "hub.op.failed", {reason: clause("en", code)}))});
     """)
-    assert [(row[3], row[4]) for row in out["rows"]] == [("failed", out["clause"])]
-    assert [row[4] for row in out["ru"]] == [out["clauseRu"]]
-    assert out["settled"] == [{"kind": "recover", "phase": "failed", "key": None}]
-    assert out["timers"] == 0, "an ended row is not read again"
+    assert [row[3] for row in out["rows"]] == ["unreported"] * 3, "the verdict is not failed"
+    assert out["settled"] == [{"kind": "recover", "phase": "unreported", "key": None}] * 3
+    assert out["timers"] == 0 and out["calls"] == 3, "an ended row is not read again"
+    assert out["said"] and out["saidRu"], "the page has its own words for it, in both languages"
+    assert [row[4] for row in out["rows"]] == [out["said"]] * 3
+    assert [row[4] for row in out["ru"]] == [out["saidRu"]] * 3
+    for text in (out["said"].lower(), out["saidRu"].lower()):
+        assert "did not finish" not in text and "не завершилось" not in text
+    assert all(failed not in out["said"] for failed in out["failed"])
 
 
 def test_a_succeeded_operation_leaves_no_row_and_a_failed_one_stays_until_it_is_dismissed():

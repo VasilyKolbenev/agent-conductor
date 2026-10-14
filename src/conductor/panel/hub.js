@@ -570,14 +570,15 @@ function unlistedBanners() {
 }
 
 //: One banner for each operation the page follows: a running one says so, a failed one says the
-//: sentence of its row and can be dismissed (a succeeded one is gone, and the status line says it).
+//: sentence of its row and an unreported one (the hub forgot it) says so; both can be dismissed (a
+//: succeeded one is gone, and the status line says it).
 function operationBanners() {
   return operations.rows(state.locale).map((one) => {
     const dismiss = node("button", {type: "button", "data-focus": `op:${one.id}:dismiss`,
       text: hubText(state.locale, "hub.op.dismiss")});
     dismiss.addEventListener("click", () => operations.dismiss(one.id));
     const made = banner("operation", one.subject === "" ? one.text : `${one.subject} · ${one.text}`,
-      one.phase === "failed" ? [dismiss] : []);
+      one.phase === "running" ? [] : [dismiss]);
     made.dataset.phase = one.phase;
     return made;
   });

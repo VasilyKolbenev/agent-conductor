@@ -393,6 +393,11 @@ export const HUB_COPY = Object.freeze({
   "hub.op.done.recover_login": ["The login is recovered.", "Вход восстановлен."],
   "hub.op.done.providers": ["The profile is applied.", "Профиль применён."],
   "hub.op.failed": ["Did not finish: {reason}.", "Не завершилось: {reason}."],
+  // A read the hub refuses (it keeps 50 rows and forgets them on a restart, spec 4.6.4): how the
+  // operation ended is not known, and the page says so instead of "did not finish".
+  "hub.op.unreported": ["The hub no longer reports this operation. How it ended shows in the "
+    + "project's row, or for a login in its banner.", "Hub больше не сообщает об этой операции. "
+    + "Чем она закончилась, видно в строке проекта, а для входа — в его баннере."],
   "hub.op.dismiss": ["Dismiss", "Скрыть"],
   // The sentences lane H wrote for a failed recovery and a failed profile copy, as H wrote them
   // (`H-to-D2-hub-handlers-live.md`, section 5): the whole message, in place of the bare words of

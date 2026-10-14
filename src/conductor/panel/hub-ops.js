@@ -82,7 +82,9 @@ function arm(follower, id, entry) {
 }
 
 //: What an answer to a read of the row makes of it. A lost answer is read again and is never a
-//: verdict; a read the hub refuses, or a row the page cannot read, ends the row as failed.
+//: verdict. A read the hub refuses (it forgot the operation: a restart, or 50 later rows) ends the
+//: row as `unreported`: how the operation ended is not known, so it is never said as failed. A row
+//: the page cannot read ends it as failed.
 function land(follower, id, entry, answer) {
   const {ctx, entries} = follower;
   if (entries.get(id) !== entry) return;
@@ -91,7 +93,7 @@ function land(follower, id, entry, answer) {
     return;
   }
   const known = phaseOf(answer.status === "accepted" ? answer.payload : null);
-  const phase = known ?? "failed";
+  const phase = known ?? (answer.status === "refused" ? "unreported" : "failed");
   Object.assign(entry, {phase, row: known === null ? null : answer.payload, code: answer.code});
   if (phase === "running") arm(follower, id, entry);
   if (phase === "done") entries.delete(id);
@@ -120,15 +122,19 @@ async function poll(follower, id) {
   }
 }
 
-const textOf = (entry, locale) => (entry.phase === "running" ? say(locale, "hub.op.running")
-  : entry.row === null ? refusedNote(entry.code, locale) : operationNote(entry.row, locale)).text;
+function textOf(entry, locale) {
+  if (entry.phase === "running") return say(locale, "hub.op.running").text;
+  if (entry.phase === "unreported") return say(locale, "hub.op.unreported").text;
+  return (entry.row === null ? refusedNote(entry.code, locale)
+    : operationNote(entry.row, locale)).text;
+}
 
 /**
  * The follower of the operations a press began. `ctx` is `{read, schedule, cancel, changed,
  * settled}`: `read("operation", {operation})` is the page's door for the row, `schedule(call, ms)`
  * and `cancel(handle)` its timer, `changed()` asks the page to draw, and `settled({kind, phase,
- * key})` tells it a row ended (`done`: the key of the sentence; `failed`: null, and the row stays
- * until it is dismissed).
+ * key})` tells it a row ended (`done`: the key of the sentence; `failed` or `unreported`: null, and
+ * the row stays until it is dismissed).
  */
 export function createFollower(ctx) {
   const follower = {ctx, entries: new Map()};
