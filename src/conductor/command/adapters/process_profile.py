@@ -180,12 +180,18 @@ class ProfileJournal:
     def recover(self) -> None:
         self._directory()
         from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_PREP, _ACL_TEMP
+        from .process_loans import FolderLoans, _LOAN_NAME, _LOAN_TEMP
         if self.native is not None:
+            # Access goes back first: a loan is returned without any restart proof, while the fresh
+            # folders of the same attempt may still wait for one and stop this recovery.
+            FolderLoans(self, self.native).recover()
             AttemptAclJournal(self, self.native).recover()
         for path in sorted(self.directory.iterdir()):
             if self.native is not None and (_ACL_NAME.fullmatch(path.name)
                                             or _ACL_PREP.fullmatch(path.name)
-                                            or _ACL_TEMP.fullmatch(path.name)):
+                                            or _ACL_TEMP.fullmatch(path.name)
+                                            or _LOAN_NAME.fullmatch(path.name)
+                                            or _LOAN_TEMP.fullmatch(path.name)):
                 continue
             if _TEMP.fullmatch(path.name):
                 _plain(path, False)
@@ -206,10 +212,30 @@ class ProfileJournal:
             return []
         return AttemptAclJournal(self, self.native).prepare_restarts()
 
+    def _loans(self, mode, folders):
+        """The loans of a block that names folders, checked before any profile exists."""
+        if folders is None:
+            return None
+        if mode is None or self.native is None:
+            raise ProfileRefused("profile_acl_invalid", "loaned folders need an attempt mode")
+        from .process_loans import FolderLoans
+        loans = FolderLoans(self, self.native)
+        loans.targets(folders)
+        return loans
+
     @contextmanager
-    def container(self, *, internet_client: bool = False, mode=None, active_tokens=None):
+    def container(self, *, internet_client: bool = False, mode=None, active_tokens=None,
+                  folders=None):
+        """One AppContainer profile for one attempt, and what the attempt may stand on.
+
+        Args:
+            folders: None, or a mapping of `work`, `install` and optionally `home` to existing
+                folders (`process_loans`), which are loaned instead of the fresh work and login
+                folders. The block then yields `parent`, `runtime` and these, in their real places.
+        """
         if mode not in (None, "dispatch", "review"):
             raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
+        loans = self._loans(mode, folders)
         path, sid = self.create_profile()
         acl = None
         try:
@@ -220,7 +246,10 @@ class ProfileJournal:
                     raise ProfileRefused("profile_acl_invalid", "trusted ACL callbacks are absent")
                 from .process_acl import AttemptAclJournal
                 acl = AttemptAclJournal(self, self.native)
-                _, paths = acl.prepare(path, sid, mode)
+                _, paths = acl.prepare(path, sid, mode, folders=loans is not None)
+                if loans is not None:
+                    loans.grant(path, sid, mode, folders)
+                    paths = {**paths, **loans.paths}
                 yield WindowsContainer(sid, internet_client=internet_client), paths
         finally:
             try:
@@ -228,11 +257,15 @@ class ProfileJournal:
                     raise ProfileRefused("profile_acl_unproven", "native children still hold attempt loan")
                 if self.owner_root is not None:
                     ownership.require_owner(self.owner_root).check()
+                if loans is not None:
+                    loans.restore()
                 if acl is not None:
                     record = acl._record_path(self._read(path)["attempt"])
                     if record.exists():
                         acl.retire(record, proven=True)
                 self.retire(path)
             finally:
+                if loans is not None:
+                    loans.close()
                 if acl is not None:
                     acl.close()
