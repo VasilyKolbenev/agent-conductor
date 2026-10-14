@@ -35,7 +35,8 @@ def native_registry(root, tmp_path, **knobs):
     seq = count()
     ids = lambda kind: f"{kind}-{next(seq)}"
     resolution = resolve_providers([config], root=root, clock=lambda: NOW, ids=ids,
-                                   environ=environment)
+                                   environ=environment,
+                                   confine_platform=None)  # the pre-R5 launch: a plain child
     return resolution.registry, ids, log
 
 

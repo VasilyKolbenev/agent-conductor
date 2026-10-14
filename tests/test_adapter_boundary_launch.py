@@ -11,7 +11,10 @@ harness fakes, which are real executables that log every spawn they receive:
 - when the boundary is not provided it refuses BEFORE anything is created, so the harness fake
   logs no spawn at all, not even a version print;
 - when the entry itself refuses, on the way in or on the way out, the attempt does not fall back
-  to a plain launch, and a refusal on the way out never becomes a success.
+  to a plain launch, and a refusal on the way out never becomes a success;
+- the fact that the boundary is provided follows the entry of the runner this build ships: a
+  runner whose entry cannot take the call the adapters make is refused before a spawn, not
+  called (``TypeError``, an attempt recorded ``unknown``).
 
 The native witness, that an agent started this way cannot write the project root or the owner's
 ``.git``, is the host's and needs the host's folders call; it is not claimed here.
@@ -23,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.grok_build import GROK_PROTOCOL, GROK_PROVIDER_ID
 from conductor.command.adapters.harness_attempt import (
     RUNTIME_ENV, AttemptFolders, AttemptLaunch)
@@ -32,7 +36,8 @@ from conductor.command.adapters.process import ProcessRunner
 from conductor.command.adapters.process_boundary import WindowsContainer
 from conductor.command.adapters.process_profile import ProfileRefused
 from conductor.command.adapters.provider import ProviderConfig
-from conductor.command.execution_boundary import BoundaryUnavailable
+from conductor.command.boundary_entry import entry_call, entry_takes_the_call
+from conductor.command.execution_boundary import ATTEMPT_MODES, BoundaryUnavailable
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 from conductor.ownership_errors import OwnerRefused
 
@@ -42,7 +47,7 @@ from tests import test_command_codex_transport as codex_t
 from tests import test_command_dsh_harness as dsh_t
 from tests import test_command_grok_transport as grok_t
 from tests import test_command_kimi_transport as kimi_t
-from tests._fakeboundary import confined
+from tests._fakeboundary import confined, recording_runners, takes_the_call
 
 HARNESSES = [
     pytest.param((claude_t, _fakeclaude), id="claude-code"),
@@ -283,6 +288,112 @@ def test_a_refusal_on_the_way_out_is_an_error_and_never_a_success(harness, tmp_p
     assert _no_home_left(root, adapter)
 
 
+class _EntryWithoutFolders(ProcessRunner):
+    """The runner's entry as it stood before it could take the attempt's own folders."""
+
+    def container_profile(self, *, internet_client=False, mode=None):
+        raise AssertionError("the entry was called by an attempt that cannot name its folders")
+
+
+def _on_runner(adapter, runner_class):
+    """The adapter, spawning through a ``runner_class`` that shares its root and environment."""
+    old = adapter._runner
+    adapter._runner = runner_class(
+        old._root, environ=old._environ, spawns_allowed=old._spawns_allowed)
+
+
+def test_a_confined_adapter_is_provided_over_the_shipped_runner_only_if_its_entry_takes_the_call(
+        tmp_path):
+    """The fact is tied to the runner this build ships, not to what the adapters assume of it.
+
+    Before the runner's entry takes the attempt's own folders the fact is no; once it does, the
+    same assertion holds with yes. Either way a build never says yes to a call it cannot make.
+    """
+    adapter, _root, _log = grok_t.a_harness(tmp_path)
+    adapter.confine("win32")
+    takes = takes_the_call(ProcessRunner.container_profile)
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [takes, takes]
+    assert [AdapterRegistry([adapter]).execution_boundary(GROK_PROVIDER_ID, mode)
+            for mode in ATTEMPT_MODES] == [takes, takes]
+
+
+def test_an_attempt_over_a_runner_whose_entry_cannot_take_the_folders_is_refused_before_a_spawn(
+        tmp_path):
+    adapter, root, log = grok_t.a_harness(tmp_path)
+    _on_runner(adapter, _EntryWithoutFolders)
+    adapter.confine("win32")
+
+    receipt = grok_t.run_once(adapter, grok_t.a_request())
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [False, False]
+    assert receipt.outcome == "failed"
+    assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
+    assert _fakegrok.spawns(log) == [], "a child was started although the entry cannot be asked"
+    assert _no_home_left(root, adapter)
+
+
+def test_a_road_that_skips_the_question_still_cannot_call_an_entry_without_the_folders(tmp_path):
+    adapter, root, log = grok_t.a_harness(tmp_path)
+    _on_runner(adapter, _EntryWithoutFolders)
+    adapter.confine("win32")
+
+    with pytest.raises(BoundaryUnavailable) as raised:
+        adapter._attempt(("--version",), "work/work-001", timeout=30, mode="dispatch")
+
+    assert (raised.value.platform, raised.value.mode) == ("win32", "dispatch")
+    assert _fakegrok.spawns(log) == [] and _no_home_left(root, adapter)
+
+
+class _CountingEntry:
+    """A runner whose entry takes the call and counts every time it is really called."""
+
+    calls = 0
+
+    def container_profile(self, *, internet_client=False, mode=None, folders=None):
+        type(self).calls += 1
+        raise AssertionError("the check called the entry")
+
+
+@pytest.mark.parametrize("mode", ATTEMPT_MODES)
+def test_the_entry_check_binds_the_call_and_never_makes_it(mode):
+    assert entry_takes_the_call(_CountingEntry(), mode) is True
+    assert entry_takes_the_call(_EntryWithoutFolders("."), mode) is False
+    assert entry_takes_the_call(object(), mode) is False
+    assert _CountingEntry.calls == 0
+
+
+def test_the_call_the_adapters_make_is_the_call_the_fact_is_judged_by(tmp_path):
+    adapter, _root, _log = grok_t.a_harness(tmp_path)
+    runner = confined(adapter, tmp_path / "scratch")
+
+    grok_t.run_once(adapter, grok_t.a_request())
+
+    (entry,) = runner.entries
+    assert entry_call(entry.mode, entry.folders) == {
+        "mode": entry.mode, "internet_client": entry.internet_client, "folders": entry.folders}
+    assert takes_the_call(type(runner).container_profile)
+
+
+def test_a_confined_adapter_over_the_shipped_runner_starts_no_task_child(tmp_path):
+    """No double: whatever the shipped runner answers, nothing falls back to the plain launch.
+
+    A runner whose entry cannot take the call is refused before the version print; one that can,
+    off Windows or without a live owner, refuses at the entry, after the version print. Either
+    way the harness fake never receives a task.
+    """
+    adapter, root, log = grok_t.a_harness(tmp_path)
+    adapter.confine("win32")
+
+    try:
+        grok_t.run_once(adapter, grok_t.a_request())
+    except adapter.error:
+        pass  # the entry was reached and refused: no live owner on this host
+
+    assert _fakegrok.prompt_spawns(log) == [], "a task child ran on the shipped runner"
+    assert _no_home_left(root, adapter)
+
+
 # -- 5. what confine promises ---------------------------------------------------
 
 
@@ -318,8 +429,13 @@ def test_a_confined_transport_reports_what_the_predicate_says_for_its_platform(
 # -- 6. the provider door is the one place an adapter is confined -------------
 
 
-def _grok_through_the_provider_door(tmp_path, platform):
-    """The Grok adapter as `resolve_providers` builds it, with the platform named or not."""
+def _grok_through_the_provider_door(tmp_path, platform, monkeypatch):
+    """The Grok adapter as `resolve_providers` builds it, with the platform named or not.
+
+    The door builds a recording boundary entry in place of the shipped runner, whose entry
+    answers for itself (see ``recording_runners``).
+    """
+    recording_runners(monkeypatch, tmp_path / "scratch")
     exe = grok_t._executable(tmp_path)
     root = tmp_path / "root"
     (root / INSTRUCTION_DIR).mkdir(parents=True)
@@ -336,8 +452,9 @@ def _grok_through_the_provider_door(tmp_path, platform):
     return resolution.registry, resolution.registry.resolve(GROK_PROVIDER_ID), log
 
 
-def test_the_provider_door_builds_an_unconfined_adapter_when_no_platform_is_named(tmp_path):
-    registry, adapter, log = _grok_through_the_provider_door(tmp_path, None)
+def test_the_provider_door_builds_an_unconfined_adapter_only_when_the_caller_names_none(
+        tmp_path, monkeypatch):
+    registry, adapter, log = _grok_through_the_provider_door(tmp_path, None, monkeypatch)
 
     receipt = grok_t.run_once(adapter, grok_t.a_request())
 
@@ -348,16 +465,16 @@ def test_the_provider_door_builds_an_unconfined_adapter_when_no_platform_is_name
 
 @pytest.mark.parametrize("platform,provided", [("win32", True), ("linux", False)])
 def test_the_provider_door_confines_the_adapter_for_the_platform_it_is_given(
-        platform, provided, tmp_path):
-    registry, adapter, _log = _grok_through_the_provider_door(tmp_path, platform)
+        platform, provided, tmp_path, monkeypatch):
+    registry, adapter, _log = _grok_through_the_provider_door(tmp_path, platform, monkeypatch)
 
     assert [registry.execution_boundary(GROK_PROVIDER_ID, mode)
             for mode in ("dispatch", "review")] == [provided, provided]
 
 
 def test_an_adapter_the_provider_door_confined_for_a_platform_without_a_boundary_does_not_run(
-        tmp_path):
-    _registry, adapter, log = _grok_through_the_provider_door(tmp_path, "linux")
+        tmp_path, monkeypatch):
+    _registry, adapter, log = _grok_through_the_provider_door(tmp_path, "linux", monkeypatch)
 
     receipt = grok_t.run_once(adapter, grok_t.a_request())
 

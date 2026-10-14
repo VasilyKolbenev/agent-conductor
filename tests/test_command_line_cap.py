@@ -13,6 +13,7 @@ LIMIT = 100
 CAPPED = (
     "src/conductor/command/adapters/agent_instructions.py",
     "src/conductor/command/adapters/harness_attempt.py",
+    "src/conductor/command/boundary_entry.py",
     "src/conductor/command/flag_control_id.py",
     "src/conductor/command/flow_routes.py",
     "src/conductor/command/flow_rules.py",
@@ -49,6 +50,7 @@ CAPPED = (
     "src/conductor/command/seed_stage.py",
     "src/conductor/command/task_preparation.py",
     "src/conductor/command/workflow_flow.py",
+    "tests/_boundary_assumed.py",
     "tests/_fakeboundary.py",
     "tests/git_first_bench.py",
     "tests/git_first_readers.py",
@@ -60,6 +62,7 @@ CAPPED = (
     "tests/test_adapter_boundary_roads.py",
     "tests/test_command_line_cap.py",
     "tests/test_execution_boundary_refusal.py",
+    "tests/test_production_door_boundary.py",
     "tests/flow_driver_bench.py",
     "tests/test_command_flow_driver.py",
     "tests/test_command_flow_fixtures.py",

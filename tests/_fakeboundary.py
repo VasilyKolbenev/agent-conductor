@@ -17,6 +17,7 @@ native one (``tests/test_process_acl_native.py``), not this file's.
 """
 from __future__ import annotations
 
+import inspect
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -26,6 +27,19 @@ from conductor.command.adapters.process_boundary import WindowsContainer
 
 #: A well-formed AppContainer SID, which is all ``WindowsContainer`` checks.
 SID = "S-1-15-2-1-2-3-4-5-6-7"
+
+
+def takes_the_call(entry) -> bool:
+    """Whether ``entry``, a runner's ``container_profile``, binds the call the adapters make.
+
+    Read off the signature by the one rule Python itself uses to bind a call, and spelled out
+    here rather than taken from the product: the tests compare the product's answer with it.
+    """
+    try:
+        inspect.signature(entry).bind(None, mode="dispatch", internet_client=True, folders=None)
+    except TypeError:
+        return False
+    return True
 
 
 @dataclass
@@ -115,3 +129,24 @@ def confined(adapter, scratch, *, platform: str = "win32", enter_error=None, exi
     runner = recording(adapter, scratch, enter_error=enter_error, exit_error=exit_error)
     adapter.confine(platform)
     return runner
+
+
+def recording_runners(monkeypatch, scratch) -> list[BoundaryRunner]:
+    """Make the provider door build a recording boundary entry in place of the shipped runner.
+
+    The shipped runner's entry cannot take the attempt's own folders until the runner's change
+    merges, and an adapter over it answers that it has no boundary (the fact follows the entry).
+    What the door does with a platform is asked of a runner whose entry can be called. Returns
+    the list the door's runners are appended to.
+    """
+    from conductor.command import providers as provider_factory
+
+    made: list[BoundaryRunner] = []
+
+    def runner(base, environ=None, spawns_allowed=True):
+        made.append(BoundaryRunner(
+            base, scratch=scratch, environ=environ, spawns_allowed=spawns_allowed))
+        return made[-1]
+
+    monkeypatch.setattr(provider_factory, "ProcessRunner", runner)
+    return made

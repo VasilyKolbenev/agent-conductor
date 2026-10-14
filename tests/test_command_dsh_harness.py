@@ -93,10 +93,12 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     if ambient is not None:
         for _name, _value in environ.items():
             ambient.setenv(_name, _value)
+    # `confine_platform=None`: the launch that existed before R5. The harness fake is a plain
+    # child; the boundary witnesses confine it themselves (tests/_fakeboundary.py).
     resolution = resolve_providers(
         [_config(node, entrypoint, tuple(sorted(environ)))], root=root,
         clock=lambda: NOW, ids=_Ids(),
-        environ=None if ambient is not None else environ)
+        environ=None if ambient is not None else environ, confine_platform=None)
     return resolution.registry.resolve(PROVIDER_ID), root, log
 
 

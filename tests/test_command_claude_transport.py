@@ -112,8 +112,11 @@ def a_harness(tmp_path: Path, *, instruction: str = INSTRUCTION_BODY,
         provider_id=CLAUDE_PROVIDER_ID, executable=str(exe),
         protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)),
         auth=auth, auth_home=auth_home)
+    # `confine_platform=None`: the launch that existed before R5. The harness fake is a plain
+    # child; the boundary witnesses confine it themselves (tests/_fakeboundary.py).
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ,
+        confine_platform=None)
     return resolution.registry.resolve(CLAUDE_PROVIDER_ID), root, log
 
 

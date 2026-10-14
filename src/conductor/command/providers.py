@@ -21,6 +21,7 @@ knows it, nothing was looked at for it, and nothing can be dispatched through it
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -365,6 +366,27 @@ def _build_adapter(
     return entry.adapter_class(deep_config, runner, clock=clock, ids=ids)
 
 
+def host_platform() -> str:
+    """The platform this process runs on: the one a provider door confines for by default."""
+    return sys.platform
+
+
+class _HostPlatform:
+    """The default of ``confine_platform``: confine for ``host_platform()``, read when asked."""
+
+    def __repr__(self) -> str:
+        return "HOST_PLATFORM"
+
+
+#: What ``resolve_providers`` confines for when its caller names no platform. The production
+#: server is that caller (``server.build`` names none), so this default IS production: where the
+#: boundary is provided a task attempt starts inside it, and everywhere else it is refused
+#: before a spawn. ``confine_platform=None`` builds the launch that existed before R5, with no
+#: boundary at all; it is for the harness fakes of the test suite and for nothing else, and
+#: ``tests/test_production_door_boundary.py`` holds that no code under ``src`` spells it.
+HOST_PLATFORM = _HostPlatform()
+
+
 def _confined(adapter: object, platform: str | None) -> object:
     """The adapter, confined to the execution boundary when a platform is named (R5)."""
     if platform is not None:
@@ -377,15 +399,17 @@ def resolve_providers(
         clock: Callable[[], str], ids: Callable[[str], str],
         environ: dict[str, str] | None = None,
         catalog: object = PROVIDER_CATALOG,
-        spawns_allowed: bool = True, confine_platform: str | None = None) -> ProviderResolution:
+        spawns_allowed: bool = True,
+        confine_platform: str | None | _HostPlatform = HOST_PLATFORM) -> ProviderResolution:
     """Resolve each operator config to a descriptor and register it through the door.
 
     An adapter -- and with it the owned process runner it would spawn through --
     is built only for a provider that resolved AVAILABLE, so an absent or
     version-mismatched provider reaches no runner at all. `spawns_allowed=False` is
     a process opened for viewing (spec 4.3.1): the one runner every adapter shares
-    then refuses each `run` and `start` before a child exists. `confine_platform`, a
-    `sys.platform` value, confines each adapter built here to the execution boundary (R5).
+    then refuses each `run` and `start` before a child exists. Every adapter built here is
+    confined to the execution boundary (R5) for `confine_platform`, the host's by default;
+    see `HOST_PLATFORM`.
 
     Every CATALOGUED provider is registered, configured or not. One the operator
     never named resolves ``unconfigured``: nothing on the machine was looked at
@@ -395,6 +419,7 @@ def resolve_providers(
     and it is a different answer from "the pinned file is missing".
     """
     reviewed = _reviewed_configs(configs)
+    platform = host_platform() if confine_platform is HOST_PLATFORM else confine_platform
     providers = ProviderRegistry()
     runner: ProcessRunner | None = None
     quota_plans: list[ProviderQuotaPlan] = []
@@ -418,7 +443,7 @@ def resolve_providers(
                 runner = ProcessRunner(Path(root), environ=environ,
                                        spawns_allowed=spawns_allowed)
             adapter = _build_adapter(entry, config, runner, root=root, clock=clock,
-                                     ids=ids, confine_platform=confine_platform)
+                                     ids=ids, confine_platform=platform)
             quota_plan = quota_plan_for(provider_id, adapter)
             if quota_plan is not None:
                 quota_plans.append(quota_plan)

@@ -36,8 +36,11 @@ ALLOWED_SDK_IMPORTS = frozenset({
 #: `execution_boundary` (the pure fact "the boundary is provided") and `ownership_errors` (a
 #: refusal vocabulary) are leaves: standard library only, no file, no process. The attempt
 #: launch reads the first to refuse before a spawn and names the second to catch a refused entry.
+#: ``boundary_entry`` is the third leaf: it binds the call a confined attempt makes to the signature
+#: of the runner's entry (``inspect``, never a call), so the doors say no to a runner that has none.
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({
-    (2, "contracts"), (2, "dispatch"), (2, "execution_boundary"), (3, "ownership_errors")})
+    (2, "boundary_entry"), (2, "contracts"), (2, "dispatch"), (2, "execution_boundary"),
+    (3, "ownership_errors")})
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
 # package; it necessarily imports subprocess and calls Popen, so this value-core
 # import guard exempts it. Its safety is proven behaviourally by

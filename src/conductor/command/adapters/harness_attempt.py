@@ -16,8 +16,11 @@ A transport is CONFINED by ``confine``, once, by the door that builds it, and th
 back. From then on a task attempt starts only inside ``ProcessRunner.container_profile``, and
 there is no second road: when the boundary is not provided the attempt is refused before the
 home is minted, a login is borrowed or anything is created, and it never falls back to the plain
-launch. A transport never confined launches as it always did; the doors tell a plan that demands
-the boundary from such a harness that it has none (``AdapterRegistry.execution_boundary``).
+launch. The provider door confines every adapter it builds, for the host platform unless it is
+told another (``providers.resolve_providers``), so a production harness is never started outside
+the boundary. A transport built without that door, or by a door told ``confine_platform=None``,
+launches as it did before R5: that is the harness fakes' launch, and the doors tell any plan
+that this harness has no boundary (``AdapterRegistry.execution_boundary``).
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ...ownership_errors import OwnerRefused
+from ..boundary_entry import entry_call, entry_takes_the_call
 from ..execution_boundary import BoundaryUnavailable, boundary_provided, require_boundary
 from . import login_home
 from .harness_profile import boundary_detail
@@ -91,15 +95,18 @@ class AttemptLaunch:
     def boundary_provided(self, mode: str) -> bool:
         """Whether a task attempt of this mode would be launched inside the boundary.
 
-        False for a transport never confined, and false on the subscription road, whose leased
-        login directory the boundary does not grant (H contract, section 5): such an attempt is
-        refused, never run without the boundary.
+        False for a transport never confined, false on the subscription road, whose leased login
+        directory the boundary does not grant (H contract, section 5), and false when the runner
+        this transport holds has no entry that takes the call it would make (``boundary_entry``):
+        such an attempt is refused, never run without the boundary and never sent to an entry
+        that would raise after the attempt was claimed.
 
         Raises:
             ValueError: ``mode`` is not an attempt mode, confined or not, on any platform.
         """
         provided = boundary_provided(self._boundary_platform, mode)
-        return self._confine and provided and not self._signed_in_road()
+        return (self._confine and provided and not self._signed_in_road()
+                and entry_takes_the_call(self._runner, mode))
 
     def _boundary_refusal(self, request, mode: str):
         """A failed receipt when a confined transport cannot cover this task, else None.
@@ -120,7 +127,7 @@ class AttemptLaunch:
         if mode is None or not self._confine:
             return
         require_boundary(self._boundary_platform, mode)
-        if self._signed_in_road():
+        if self._signed_in_road() or not entry_takes_the_call(self._runner, mode):
             raise BoundaryUnavailable(self._boundary_platform, mode)
 
     def _attempt(
@@ -279,8 +286,7 @@ class AttemptLaunch:
             work=cwd, home=home.relative_to(self._workspace.root).as_posix(),
             install=self._install_folder())
         try:
-            with self._runner.container_profile(
-                    mode=mode, internet_client=True, folders=folders) as (boundary, paths):
+            with self._runner.container_profile(**entry_call(mode, folders)) as (boundary, paths):
                 return self._runner.run(confined_spec(spec, boundary, paths))
         except LAUNCH_REFUSALS:
             raise ProcessRunnerError("the boundaried launch was refused") from None

@@ -76,7 +76,8 @@ def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = "",
         protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)),
         auth=auth, auth_home=auth_home)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ,
+        confine_platform=None)  # the pre-R5 launch: a plain child (tests/_fakeboundary.py)
     return resolution.registry.resolve(CLAUDE_PROVIDER_ID), root, log
 
 
@@ -232,7 +233,8 @@ def a_codex_harness(tmp_path: Path, *, auth: str = "api_key",
         protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)),
         auth=auth, auth_home=auth_home)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ,
+        confine_platform=None)  # the pre-R5 launch: a plain child (tests/_fakeboundary.py)
     return resolution.registry.resolve(CODEX_PROVIDER_ID), root, log
 
 
