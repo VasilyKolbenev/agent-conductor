@@ -676,9 +676,10 @@ class AdapterRegistry:
         """Whether this adapter launches an attempt of this mode inside the execution boundary (R5).
 
         Read off the registered adapter at the moment of asking, because whether a harness is
-        confined is a fact about the instance a door built. An adapter that exposes no such seam
-        starts no vendor agent (a fake, a demo), has nothing to confine and is answered True;
-        one that exposes it must say yes, and anything but True is no.
+        confined is a fact about the instance a door built. The answer fails closed: an adapter
+        that exposes no such seam has not said yes, so it is no (the owned process adapter runs an
+        arbitrary child and has none), and so is anything but True from a seam. A fake or a demo
+        that starts no vendor agent says so by exposing the seam and answering True.
 
         Raises:
             AdapterContractError: The adapter is not registered.
@@ -687,7 +688,7 @@ class AdapterRegistry:
         adapter = self.resolve(adapter_id)
         boundary_provided("", mode)  # a wrong mode is an error for every adapter, seam or not
         seam = getattr(adapter, "boundary_provided", None)
-        return True if seam is None else seam(mode) is True
+        return seam is not None and seam(mode) is True
 
     def verification_started(self, adapter_id: str, request: ActionRequest) -> bool | None:
         """Read a checker's durable claim; absent knowledge is not a negative fact."""

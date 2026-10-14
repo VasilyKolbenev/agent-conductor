@@ -47,6 +47,12 @@ from tests.test_command_claude_review import (
 from tests.test_harness_login_leaks import a_signed_in_home
 from tests.test_harness_subscription_login import a_harness
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 #: The vendor writes into its own home on every spawn, so the deletes are
 #: counted rather than named: the version probe's, the login status probe's,
 #: and third the TASK's. Failing the first two stops the dispatch before any

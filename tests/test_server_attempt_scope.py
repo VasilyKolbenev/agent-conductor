@@ -19,6 +19,12 @@ from tests.test_command_runtime_authorize import a_budget
 from tests.test_server_command_http import _request
 from tests.test_store import good_lane, write_project
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 
 class ObservedGate:
     def __init__(self, native):

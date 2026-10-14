@@ -17,11 +17,16 @@ from conductor.command.runtime import AttemptState, Budget, ControlRuntime
 from conductor.command import verify_holds
 
 from tests import _fakeclaude, _fakecodex
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from tests._fakeboundary import confined
 from tests.test_command_claude_review import (
     CONFIG, INPUT_REF, RUN_ID, SEED_CONTENT, _confirmation, _Ids, _proposal)
 from tests.test_command_claude_transport import NOW, a_harness
 from tests.test_independent_checker_transport import setup as checker_setup
+
+#: The doer of the checker tests is a plain transport that the plan door must let through; the
+#: checker is confined by the test itself and answers for itself.
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 
 def _review(tmp_path, platform):

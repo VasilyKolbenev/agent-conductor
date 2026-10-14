@@ -20,6 +20,7 @@ from conductor.command.adapters.base import (
 )
 from conductor.command.contracts import ActionRequest, ActionResultReceipt
 
+from tests._boundary_assumed import StartsNoAgent
 
 NOW = "2026-08-11T10:00:00Z"
 DIGEST = "sha256:" + "a" * 64
@@ -100,7 +101,7 @@ def an_action(**changes):
     return ActionRequest(**values)
 
 
-class FakeAdapter:
+class FakeAdapter(StartsNoAgent):
     def __init__(self, adapter_id="claude-code", capabilities=("observe", "dispatch")):
         self.manifest = AdapterManifest(
             adapter_id=adapter_id,

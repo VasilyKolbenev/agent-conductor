@@ -24,6 +24,12 @@ from tests.test_policy_native_feedback import native_registry, run_state, termin
 from tests.test_policy_runtime import NOW, Activation, propose
 from tests.test_project_ownership import activated
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 TEST_FILE = 19538  # MEASURED live (live-v5-8): the test file the old road could not hand a checker
 
 

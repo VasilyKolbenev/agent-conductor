@@ -1,12 +1,19 @@
 """R5: a step whose harness has no execution boundary is refused before anything can spawn.
 
-A `sandbox` resource named ``execution-boundary`` is the demand an agent step makes of the
-machine that runs it (spec 10.6). Unlike ``project-root`` it is not judged by a list: whether it
-is provided depends on the platform and on the harness the step is bound to, so each door asks
-the adapter registry, and no answer is "not provided". The refusal is the one the doors already
-had, with the new word in it: ``service_refused`` carrying ``{run_id, node_id, sandbox}`` at the
-plan door, a refused preview, and an authorization refused with the step named. No new code
-enters the refusal vocabulary.
+Every dispatch and review step demands the boundary of the machine that runs it (spec 10.6), and
+it demands it WHETHER OR NOT THE PLAN SAYS SO: the TL merge gate requires the boundary for all
+five harnesses, not as an opt-in by a plan word, and a plan written before R5 (the frozen desk
+templates) names only ``project-root``. A plan may still write the word ``execution-boundary``
+as a `sandbox` resource; it then asks for nothing more than every such step already does.
+Unlike ``project-root`` it is not judged by a list: whether it is provided depends on the
+platform and on the harness the step is bound to, so each door asks the adapter registry, and no
+answer is "not provided". The registry fails closed: an adapter that exposes no boundary seam is
+not provided, so a step bound to it is refused like any other that lacks the boundary (the owned
+process adapter is such an adapter, and it runs an arbitrary child). A fake or a demo that starts
+no vendor agent says so by exposing the seam and answering yes. The refusal is the one the doors
+already had, with the new word in it: ``service_refused`` carrying ``{run_id, node_id, sandbox}``
+at the plan door, a refused preview, and an authorization refused with the step named. No new
+code enters the refusal vocabulary.
 
 The fake that records spawns is ``tests/_fakeboundary.py`` over the harness fake that logs every
 child it receives, so "nothing is spawned" is read from the child itself, not from the adapter.
@@ -24,10 +31,15 @@ from conductor.command import containment, policy_runtime
 from conductor.command import runtime as runtime_module
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.base import AdapterContractError
+from conductor.command.adapters.process import ProcessAdapter, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.authorize_holds import _hold_node_sandbox_is_provided, _hold_plan_admits
-from conductor.command.containment import SANDBOX_ROUTES, unprovidable_sandboxes
+from conductor.command.containment import (
+    SANDBOX_ROUTES,
+    node_unprovidable_sandboxes,
+    unprovidable_sandboxes,
+)
 from conductor.command.contract_values import ContractError
 from conductor.command.contracts import RunEnvelope
 from conductor.command.execution_boundary import ATTEMPT_MODES, BOUNDARY_ROUTE
@@ -62,19 +74,28 @@ def _harness(tmp_path, way):
     return adapter, confined(adapter, scratch, platform="linux" if way == LINUX else "win32"), log
 
 
-def _plan_and_run(tmp_path):
-    plan = a_plan(resources=(sandbox("project-root"), sandbox(BOUNDARY_ROUTE)))
+#: A plan that writes the boundary word, and one that names only the route every plan names. The
+#: gate says the second is refused exactly like the first.
+PLAN_WORDINGS = [pytest.param(True, id="plan-writes-the-word"),
+                 pytest.param(False, id="plan-names-only-project-root")]
+
+
+def _plan_and_run(tmp_path, writes_the_word=True):
+    rows = (sandbox("project-root"), sandbox(BOUNDARY_ROUTE) if writes_the_word else None)
+    plan = a_plan(resources=tuple(row for row in rows if row is not None))
     return plan, _run_following(tmp_path / "run", plan).read(RUN_ID)
 
 
 # -- 1. the named witness ------------------------------------------------------
 
 
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
 @pytest.mark.parametrize("way", [LINUX, NEVER, SUBSCRIPTION])
-def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(way, tmp_path):
+def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(
+        way, writes_the_word, tmp_path):
     adapter, runner, log = _harness(tmp_path, way)
     registry = AdapterRegistry([adapter])
-    plan, recovered = _plan_and_run(tmp_path)
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word)
 
     with pytest.raises(ApiRefusal) as plan_door:
         _sandboxes_are_provided(
@@ -105,10 +126,11 @@ def test_a_confined_adapter_asked_anyway_for_a_step_without_the_boundary_starts_
 
 
 def test_a_transport_never_confined_launches_as_before_r5_and_no_door_passes_it(tmp_path):
-    """The state production is in until the switch: nothing confines, so every door refuses.
+    """The unconfined launch is the harness fakes' own, and no door lets a plan reach it.
 
-    The launch of a never-confined transport is the one that existed before R5. It is pinned here
-    so that making confinement the default is a decision with a failing test, not a drift.
+    The provider door builds it only when its caller names ``None`` (the production server never
+    does). A transport built that way launches as it did before R5, and the registry says it has
+    no boundary, so every door refuses a dispatch or review step bound to it.
     """
     adapter, runner, log = _harness(tmp_path, NEVER)
     registry = AdapterRegistry([adapter])
@@ -122,11 +144,13 @@ def test_a_transport_never_confined_launches_as_before_r5_and_no_door_passes_it(
     assert runner.entries == [], "a never-confined transport entered the boundary"
 
 
-def test_the_same_step_on_a_harness_that_has_the_boundary_passes_every_door(tmp_path):
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
+def test_the_same_step_on_a_harness_that_has_the_boundary_passes_every_door(
+        writes_the_word, tmp_path):
     adapter, _root, _log = claude_t.a_harness(tmp_path)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     registry = AdapterRegistry([adapter])
-    plan, recovered = _plan_and_run(tmp_path)
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word)
 
     assert _sandboxes_are_provided(
         RUN_ID, plan.nodes, execution_boundary=registry.execution_boundary,
@@ -134,6 +158,41 @@ def test_the_same_step_on_a_harness_that_has_the_boundary_passes_every_door(tmp_
     assert _hold_capabilities(recovered, plan, registry) is None
     assert _hold_plan_admits(_As("check"), recovered, registry=registry) is None
     assert (runner.runs, runner.entries) == ([], []), "judging a plan starts nothing"
+
+
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
+def test_a_step_bound_to_an_adapter_that_declares_it_starts_no_agent_passes_every_door(
+        writes_the_word, tmp_path):
+    """A fake or a demo has nothing to confine, and says so by exposing the seam and saying yes."""
+    adapter, _root, _log = claude_t.a_harness(tmp_path)
+    registry = AdapterRegistry([_declared(adapter)])
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word)
+
+    assert _sandboxes_are_provided(
+        RUN_ID, plan.nodes, execution_boundary=registry.execution_boundary,
+        config=CONFIG) is None
+    assert _hold_capabilities(recovered, plan, registry) is None
+    assert _hold_plan_admits(_As("check"), recovered, registry=registry) is None
+
+
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
+def test_a_step_bound_to_an_adapter_that_exposes_no_boundary_seam_is_refused_at_every_door(
+        writes_the_word, tmp_path):
+    """Silence is not a yes: an adapter that never answers the question is refused, not passed."""
+    adapter, _root, log = claude_t.a_harness(tmp_path)
+    registry = AdapterRegistry([_seamless(adapter)])
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word)
+
+    with pytest.raises(ApiRefusal) as plan_door:
+        _sandboxes_are_provided(
+            RUN_ID, plan.nodes, execution_boundary=registry.execution_boundary, config=CONFIG)
+    with pytest.raises(ContractError, match="cannot provide a required sandbox"):
+        _hold_capabilities(recovered, plan, registry)
+    with pytest.raises(AuthorizationError, match=f"demands sandbox route.*{BOUNDARY_ROUTE}"):
+        _hold_plan_admits(_As("check"), recovered, registry=registry)
+
+    assert plan_door.value.detail["sandbox"] == BOUNDARY_ROUTE
+    assert _fakeclaude.spawns(log) == []
 
 
 def test_a_door_that_is_given_no_fact_refuses_the_boundary_word(tmp_path):
@@ -147,9 +206,9 @@ def test_a_door_that_is_given_no_fact_refuses_the_boundary_word(tmp_path):
     assert plan_door.value.detail["sandbox"] == BOUNDARY_ROUTE
 
 
-def test_a_plan_that_does_not_demand_the_boundary_is_not_asked_about_it(tmp_path):
-    plan = a_plan(resources=(sandbox("project-root"),))
-    recovered = _run_following(tmp_path / "run", plan).read(RUN_ID)
+def test_a_door_that_is_given_no_fact_cannot_judge_a_demand_the_plan_did_not_write(tmp_path):
+    """The plan door's caller outside this lane hands no fact yet; the doors that spend do."""
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word=False)
 
     assert _sandboxes_are_provided(RUN_ID, plan.nodes) is None
     assert _hold_node_sandbox_is_provided(_As("check"), recovered) is None
@@ -174,6 +233,49 @@ def test_the_fact_is_asked_only_when_a_step_demands_the_boundary():
     unprovidable_sandboxes((sandbox("project-root"),), boundary=lambda: asked.append("asked"))
 
     assert asked == []
+
+
+def _node(capability, resources=()):
+    return SimpleNamespace(capability=capability, resources=tuple(resources))
+
+
+@pytest.mark.parametrize("capability", ["dispatch", "review"])
+def test_every_step_that_starts_an_agent_demands_the_boundary_without_writing_the_word(
+        capability):
+    node = _node(capability, (sandbox("project-root"),))
+
+    assert node_unprovidable_sandboxes(node, boundary=lambda: False) == (BOUNDARY_ROUTE,)
+    assert node_unprovidable_sandboxes(node, boundary=lambda: True) == ()
+    assert node_unprovidable_sandboxes(_node(capability), boundary=lambda: False) == (
+        BOUNDARY_ROUTE,)
+
+
+@pytest.mark.parametrize("capability", ["observe", "message", "pause", None])
+def test_a_step_that_starts_no_agent_demands_nothing_it_did_not_write(capability):
+    asked = []
+    node = _node(capability, (sandbox("project-root"),))
+
+    assert node_unprovidable_sandboxes(node, boundary=lambda: asked.append("asked")) == ()
+    assert asked == [], "the fact was asked for a step that starts no agent"
+    written = _node(capability, (sandbox(BOUNDARY_ROUTE),))
+    assert node_unprovidable_sandboxes(written, boundary=lambda: False) == (BOUNDARY_ROUTE,)
+
+
+def test_the_boundary_is_named_once_and_after_the_routes_the_plan_wrote():
+    other = sandbox("docker")
+
+    assert node_unprovidable_sandboxes(
+        _node("dispatch", (other,)), boundary=lambda: False) == ("docker", BOUNDARY_ROUTE)
+    assert node_unprovidable_sandboxes(
+        _node("dispatch", (other, sandbox(BOUNDARY_ROUTE))),
+        boundary=lambda: False) == ("docker", BOUNDARY_ROUTE)
+
+
+def test_with_no_fact_a_step_is_judged_by_the_rows_it_wrote_and_by_nothing_it_implies():
+    for rows in ((), (sandbox("project-root"),), (sandbox("docker"),),
+                 (sandbox(BOUNDARY_ROUTE),)):
+        node = _node("dispatch", rows)
+        assert node_unprovidable_sandboxes(node, boundary=None) == unprovidable_sandboxes(rows)
 
 
 def test_a_step_is_judged_by_its_doers_mode_and_by_the_read_mode_of_its_checker():
@@ -234,39 +336,83 @@ def test_the_capabilities_that_start_an_agent_are_exactly_the_modes_the_boundary
 # -- 3. the registry's fact ----------------------------------------------------
 
 
-class _Seamless:
-    """An adapter that starts no vendor agent: it exposes no boundary seam at all."""
+def _wrapped(base, *, has_seam=False, answer=None):
+    """A copy of ``base`` with its identity and argument schemas, choosing its boundary seam.
 
-    def __init__(self, base):
-        self.manifest = base.manifest
-        for name in ("observe", "prepare", "execute", "verify"):
-            setattr(self, name, getattr(base, name))
+    Without ``has_seam`` it exposes no seam at all: it never answers the question. With it, the
+    seam answers ``answer`` for every mode.
+    """
+    members = {"argument_schemas": type(base).argument_schemas}
+    if has_seam:
+        members["boundary_provided"] = lambda self, mode: answer
+    copy = type("Wrapped", (), members)()
+    copy.manifest = base.manifest
+    for name in ("observe", "prepare", "execute", "verify"):
+        setattr(copy, name, getattr(base, name))
+    return copy
 
 
-def test_the_registry_asks_the_adapter_that_launches_agents_and_passes_one_that_does_not(tmp_path):
+def _seamless(base):
+    """An adapter that exposes no boundary seam, as the owned process adapter exposes none."""
+    return _wrapped(base)
+
+
+def _declared(base):
+    """A fake or a demo that starts no vendor agent: it says so, for every mode, with a yes."""
+    return _wrapped(base, has_seam=True, answer=True)
+
+
+def test_the_registry_asks_the_adapter_and_fails_closed_for_one_that_never_answers(tmp_path):
     adapter, _root, _log = claude_t.a_harness(tmp_path)
     registry = AdapterRegistry([adapter])
-    other = AdapterRegistry([_Seamless(adapter)])
+    silent, declared = AdapterRegistry([_seamless(adapter)]), AdapterRegistry([_declared(adapter)])
 
     assert [registry.execution_boundary("claude-code", mode) for mode in ATTEMPT_MODES] == [
         False, False], "an adapter never confined has no boundary"
     confined(adapter, tmp_path / "scratch", platform="win32")
     assert [registry.execution_boundary("claude-code", mode) for mode in ATTEMPT_MODES] == [
         True, True]
-    assert other.execution_boundary("claude-code", "dispatch") is True
+    assert [silent.execution_boundary("claude-code", mode) for mode in ATTEMPT_MODES] == [
+        False, False], "an adapter with no seam was passed"
+    assert [declared.execution_boundary("claude-code", mode) for mode in ATTEMPT_MODES] == [
+        True, True]
     with pytest.raises(AdapterContractError):
         registry.execution_boundary("no-such-adapter", "dispatch")
     with pytest.raises(ValueError, match="attempt mode"):
         registry.execution_boundary("claude-code", "plan")
     with pytest.raises(ValueError, match="attempt mode"):
-        other.execution_boundary("claude-code", "plan")
+        silent.execution_boundary("claude-code", "plan")
+
+
+@pytest.mark.parametrize("answer", ["yes", 1, None, "True"])
+def test_a_seam_that_answers_anything_but_true_is_not_a_yes(answer, tmp_path):
+    adapter, _root, _log = claude_t.a_harness(tmp_path)
+    registry = AdapterRegistry([_wrapped(adapter, has_seam=True, answer=answer)])
+
+    assert registry.execution_boundary("claude-code", "dispatch") is False
+
+
+def test_the_owned_process_adapter_runs_an_arbitrary_child_and_is_not_provided_the_boundary(
+        tmp_path):
+    """The one adapter in this build that starts an unvetted child has no seam: it is refused."""
+    adapter = ProcessAdapter(
+        "owned-process", ProcessRunner(tmp_path), clock=lambda: "2026-10-14T12:00:00Z",
+        ids=lambda kind: f"{kind}-1")
+    registry = AdapterRegistry([adapter])
+
+    assert not hasattr(adapter, "boundary_provided")
+    assert [registry.execution_boundary("owned-process", mode) for mode in ATTEMPT_MODES] == [
+        False, False]
 
 
 # -- 4. the roads that authorize an attempt ask the registry -------------------
 
 
-def _authorize_the_demanding_step(tmp_path, adapter, root):
-    """Authorize the one review step of a run whose plan demands the boundary, via the runtime."""
+def _authorize_the_demanding_step(tmp_path, adapter, root, writes_the_word=True):
+    """Authorize the one review step of a run, via the runtime.
+
+    Every review step demands the boundary; ``writes_the_word`` says whether its plan also names it.
+    """
     store = RunStore(root)
     store.create_run(RunEnvelope(
         run_id=review_t.RUN_ID, cycle_id="review-cycle", created_at=review_t.NOW,
@@ -277,7 +423,7 @@ def _authorize_the_demanding_step(tmp_path, adapter, root):
     step = GraphNode(
         node_id="review-step", kind="task", title="Review it", instance_id=review_t.INSTANCE_ID,
         capability="review", arguments=review_t.ARGUMENTS,
-        resources=(sandbox(BOUNDARY_ROUTE),))
+        resources=(sandbox(BOUNDARY_ROUTE),) if writes_the_word else ())
     store.append(GraphDefinition(
         graph_id="graph-review", run_id=review_t.RUN_ID, created_at=review_t.NOW,
         nodes=(step,), edges=()))
@@ -289,26 +435,30 @@ def _authorize_the_demanding_step(tmp_path, adapter, root):
     return runtime.authorize(review_t._confirmation(proposal), budget=budget)
 
 
-def test_the_runtime_authorizes_a_step_demanding_the_boundary_only_on_a_confined_harness(tmp_path):
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
+def test_the_runtime_authorizes_a_step_demanding_the_boundary_only_on_a_confined_harness(
+        writes_the_word, tmp_path):
     adapter, root, log = claude_t.a_harness(tmp_path / "confined")
     runner = confined(adapter, tmp_path / "confined-scratch", platform="win32")
 
-    authorization = _authorize_the_demanding_step(tmp_path, adapter, root)
+    authorization = _authorize_the_demanding_step(tmp_path, adapter, root, writes_the_word)
 
     assert authorization.record_created is True
     assert (runner.runs, runner.entries) == ([], []), "authorizing started a child"
     assert _fakeclaude.spawns(log) == []
 
 
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
 @pytest.mark.parametrize("way", [LINUX, NEVER])
-def test_the_runtime_refuses_a_step_demanding_the_boundary_before_any_attempt(way, tmp_path):
+def test_the_runtime_refuses_a_step_demanding_the_boundary_before_any_attempt(
+        way, writes_the_word, tmp_path):
     adapter, root, log = claude_t.a_harness(tmp_path / "bare")
     scratch = tmp_path / "bare-scratch"
     runner = (recording(adapter, scratch) if way == NEVER
               else confined(adapter, scratch, platform="linux"))
 
     with pytest.raises(AuthorizationError, match=f"demands sandbox route.*{BOUNDARY_ROUTE}"):
-        _authorize_the_demanding_step(tmp_path, adapter, root)
+        _authorize_the_demanding_step(tmp_path, adapter, root, writes_the_word)
 
     assert (runner.runs, runner.entries) == ([], [])
     assert _fakeclaude.spawns(log) == []

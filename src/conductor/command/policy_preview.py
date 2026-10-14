@@ -89,7 +89,7 @@ def build_preview(recovered, body, *, budget, provider_digest, registry, clock, 
 
 def _hold_capabilities(recovered, definition, registry):
     from .contracts import frozen_config_bindings
-    from .containment import node_boundary, unprovidable_sandboxes
+    from .containment import node_boundary, node_unprovidable_sandboxes
     bindings = frozen_config_bindings(recovered.config)
     for node in executable_nodes(definition):
         adapter = bindings.get(node.instance_id)
@@ -99,7 +99,7 @@ def _hold_capabilities(recovered, definition, registry):
         fact = node_boundary(
             lambda adapter_id, mode: registry.execution_boundary(adapter_id, mode),
             recovered.config, node)
-        if unprovidable_sandboxes(node.resources, boundary=fact):
+        if node_unprovidable_sandboxes(node, boundary=fact):
             raise ContractError("automation cannot provide a required sandbox")
         if node.verifier_instance_id is not None:
             checker = bindings.get(node.verifier_instance_id)

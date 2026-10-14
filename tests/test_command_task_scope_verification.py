@@ -38,6 +38,12 @@ from tests.test_command_codex_transport import a_harness as codex_harness
 from tests.test_command_runtime_authorize import a_budget, a_confirmation
 from tests.test_command_task_scope_authority import DISPATCH, OLD, place
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 RUN, DOER, CHECKER = "run-verify-001", "claude-dev", "codex-review"
 MINE = "the task's own result, written where it may be"
 ELSEWHERE = "written through .. into a directory this action was never given"

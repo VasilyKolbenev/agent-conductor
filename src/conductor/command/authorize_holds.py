@@ -16,7 +16,7 @@ here is what makes it true early.
 """
 from __future__ import annotations
 
-from .containment import node_boundary, unprovidable_sandboxes
+from .containment import node_boundary, node_unprovidable_sandboxes
 from .contracts import ActionProposal, ActionRequest, ContractError, frozen_config_bindings
 from .graph_causality import _standing_graph, standing_terminal
 from .graph_schedule import attempt_in_flight, authorized_attempts, schedule
@@ -172,8 +172,9 @@ def _hold_node_sandbox_is_provided(
 
     The execution boundary (R5) is the one sandbox word judged by a fact, not by
     a list: `execution_boundary` is the registry's answer for an adapter and a
-    mode. A caller that hands none has no answer, and then a step that demands
-    the boundary is refused.
+    mode, and every dispatch and review step demands it, written by the plan or
+    not. A caller that hands none has no answer, and then a step that WRITES the
+    word is refused; the two roads that authorize an attempt always hand it.
     """
     definition = _standing_graph(recovered)
     if definition is None or proposal.node_id is None:
@@ -182,7 +183,7 @@ def _hold_node_sandbox_is_provided(
                  if row.node_id == proposal.node_id), None)
     if node is None:
         return
-    missing = unprovidable_sandboxes(node.resources, boundary=(
+    missing = node_unprovidable_sandboxes(node, boundary=(
         None if execution_boundary is None
         else node_boundary(execution_boundary, recovered.config, node)))
     if missing:
@@ -222,8 +223,12 @@ def _hold_plan_admits(
 
     Ended first, then eligible: a run that has recorded its ending has no
     runnable steps to speak of, so asking which step is eligible would answer a
-    question about a run that is over. One call site keeps the order a fact of
-    this module rather than of whoever wired it in.
+    question about a run that is over. Then the named checker, then the sandbox:
+    a checker the configuration never declared is a fault of the plan itself, and
+    the boundary fact below is asked of every participant, so asked first it would
+    name the boundary for a plan whose real fault is that missing declaration. One
+    call site keeps the order a fact of this module rather than of whoever wired
+    it in.
 
     `registry` is the adapter registry whose two facts the plan is judged by,
     `execution_boundary` and `verifies_independently`. A caller that hands none
@@ -231,10 +236,10 @@ def _hold_plan_admits(
     """
     _hold_run_not_terminal(recovered)
     _hold_node_is_eligible(proposal, recovered)
-    _hold_node_sandbox_is_provided(
-        proposal, recovered, getattr(registry, "execution_boundary", None))
     _hold_verifier_is_servable(
         proposal, recovered, getattr(registry, "verifies_independently", None))
+    _hold_node_sandbox_is_provided(
+        proposal, recovered, getattr(registry, "execution_boundary", None))
 
 
 def _hold_verifier_is_servable(proposal, recovered, verifies_independently) -> None:

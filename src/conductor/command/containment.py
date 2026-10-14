@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, Protocol
 
 from .execution_boundary import BOUNDARY_ROUTE
@@ -441,7 +441,9 @@ def unprovidable_sandboxes(
     depends on the platform and on the harness the step is bound to, so the door
     that asks hands over that fact as `boundary`. A door that does not has no
     answer, and no answer is "not provided": a plan is never run on a boundary
-    nobody vouched for.
+    nobody vouched for. This function reads the rows it is handed; the doors judge
+    a whole step through `node_unprovidable_sandboxes`, which adds the row every
+    agent step implies.
 
     Args:
         resources: One step's `GraphResource` rows.
@@ -466,10 +468,41 @@ def unprovidable_sandboxes(
     return tuple(found)
 
 
+#: The row every step that starts an agent makes, whether or not its plan wrote it.
+_BOUNDARY_DEMAND = SimpleNamespace(kind=SANDBOX_KIND, name=BOUNDARY_ROUTE)
+
+
+def node_unprovidable_sandboxes(
+        node: object, *, boundary: Callable[[], bool] | None) -> tuple[str, ...]:
+    """The sandbox routes one STEP demands that this build cannot provide, written or implied.
+
+    The rows the step declared (`unprovidable_sandboxes`), plus the execution boundary (R5) when
+    the step starts an agent: every dispatch and review step demands it, and a plan that does not
+    write the word is judged exactly like one that does. The merge gate requires the boundary of
+    all five harnesses, not as an opt-in by a plan word, and the frozen desk plans were written
+    before the word existed. A step that starts no agent (`BOUNDARY_MODES`) implies nothing.
+
+    A door that hands no fact (`boundary` is None) cannot judge a demand the plan did not write:
+    it judges the declared rows alone, so the one caller outside this module that has not yet
+    been given the registry keeps its answer. Every door that spends an attempt hands the fact.
+
+    Args:
+        node: The step (a `GraphNode`): its resources and its capability.
+        boundary: `node_boundary(...)` for this step, or None when the caller cannot say.
+
+    Returns:
+        Each demanded route this build does not provide, first mention only.
+    """
+    rows = tuple(getattr(node, "resources", ()))
+    if boundary is not None and getattr(node, "capability", None) in BOUNDARY_MODES:
+        rows += (_BOUNDARY_DEMAND,)
+    return unprovidable_sandboxes(rows, boundary=boundary)
+
+
 def node_boundary(
         execution_boundary: Callable[[str, str], bool], config: Mapping[str, Any],
         node: object) -> Callable[[], bool]:
-    """The fact a door hands `unprovidable_sandboxes` for one step: its harnesses give the boundary.
+    """The fact a door hands `node_unprovidable_sandboxes` for one step: its harnesses' boundary.
 
     The step's doer must be bound to a harness that launches an attempt of the step's mode inside
     the boundary, and so must the checker the plan names for it, which only ever reads. Anything

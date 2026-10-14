@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .api_contracts import ApiRefusal
-from .containment import node_boundary, unprovidable_sandboxes
+from .containment import node_boundary, node_unprovidable_sandboxes
 from .contracts import DecisionReceipt
 from .graph_causality import (
     _standing_graph,
@@ -166,8 +166,10 @@ def _sandboxes_are_provided(
 
     The execution boundary (R5) is the one route judged by a fact: the registry's
     `execution_boundary` for the adapter the run's `config` binds the step to.
-    A caller that hands neither has no answer, and a step demanding the boundary
-    is then refused here rather than opened on a harness nobody vouched for.
+    Every dispatch and review step demands it, written by the plan or not. A caller
+    that hands neither has no answer: a step that WRITES the word is then refused
+    here rather than opened on a harness nobody vouched for, and a step that does
+    not is left to the doors that spend an attempt, which always have the fact.
     """
     for node in nodes:
         fact = (None if execution_boundary is None or config is None
@@ -176,7 +178,7 @@ def _sandboxes_are_provided(
         # reviewed fact -- a safe id or a counting number -- and never a
         # list. The caller fixes that row and the next attempt names the
         # next, which is how every other refusal on this boundary behaves.
-        for route in unprovidable_sandboxes(node.resources, boundary=fact)[:1]:
+        for route in node_unprovidable_sandboxes(node, boundary=fact)[:1]:
             raise ApiRefusal.plan_sandbox_unprovidable(
                 run_id, node.node_id, route)
 

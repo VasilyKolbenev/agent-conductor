@@ -20,9 +20,13 @@ from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import ControlRuntime, Budget
 from conductor.command.service import CommandService
 from tests import _fakeexe, _fakecodex, _fakepolicy
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from tests.test_policy_driver import attach_driver, authorize
 from tests.test_policy_runtime import NOW, PD, ARGS, Activation, propose
 from tests.test_project_ownership import activated
+
+#: The grant authorized here is about the feedback road, over a plain-launch transport.
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 
 def native_registry(root, tmp_path, **knobs):

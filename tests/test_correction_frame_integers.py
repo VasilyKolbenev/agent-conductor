@@ -18,10 +18,14 @@ from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.providers import resolve_providers
 from conductor.command.service import CommandService
 from tests import _fakecodex, _fakeexe, _fakepin, _fakepolicy
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from tests.test_policy_driver import authorize
 from tests.test_policy_native_feedback import run_state
 from tests.test_policy_runtime import NOW, ARGS, Activation, propose
 from tests.test_project_ownership import activated
+
+#: The plan authorized here is about the correction frame, over a plain-launch transport.
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 PIN = "POLICY_PIN"
 DIGITS = str(_fakepin.LINE).encode("utf-8")
