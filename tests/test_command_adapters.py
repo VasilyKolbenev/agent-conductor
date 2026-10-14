@@ -53,9 +53,12 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
 # and hands back digests and bounded contents. It holds no execution door either.
 # ``process_profile`` and ``process_acl`` journal owned AppContainer profiles and
 # attempt ACLs before OS mutation. Native callbacks remain confined to the runner.
+# ``process_loans`` is the same journal for the folders that already exist (the work
+# folder, the home, the install folder): it holds them, reads their DACLs through the
+# injected natives and takes the profile's entries away again.
 SDK_WORKSPACE_DOOR = frozenset({
     "artifact_transport.py", "harness_workspace.py", "login_home.py",
-    "work_seed.py", "process_profile.py", "process_acl.py"})
+    "work_seed.py", "process_profile.py", "process_acl.py", "process_loans.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
