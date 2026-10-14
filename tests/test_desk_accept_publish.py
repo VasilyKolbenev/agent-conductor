@@ -359,6 +359,33 @@ def test_each_refusal_of_the_pull_request_is_said_and_leaves_exactly_the_right_n
             "login": reason == "gh_not_logged_in"}, reason
 
 
+#: Spec 9.7: the check before the creation narrows the window and cannot close it, and the desk
+#: does not present it as closed. What the owner reads must not promise "none on a moved branch".
+PROMISES = {"en": ("none is", "only for the same commit", "none was created"),
+            "ru": ("не создаётся ни одного", "только для того же коммита", "не создан")}
+MAY_BE_MADE = {"en": "may still be made", "ru": "всё равно может быть создан"}
+
+
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_the_pull_request_card_never_promises_that_a_moved_branch_makes_no_pull_request(locale):
+    out = _js("""
+      const r = rig({locale: d, facts: {push: PUSHED}});
+      await opened(r);
+      const effect = said(d, 'desk.accept.pr.effect');
+      const effectShown = hasText(r.host.detail, effect);
+      await press(r, 'accept:pr:desk.accept.review');
+      const confirm = said(d, 'desk.accept.pr.confirm_text',
+        {repo: 'o/r', head: 'conduct/run-one', base: 'main', actor: 'Owner'});
+      console.log(JSON.stringify({effect, effectShown, confirm,
+        confirmShown: hasText(r.host.detail, confirm)}));
+    """, locale)
+    assert out["effectShown"] and out["confirmShown"], "the card draws exactly these two texts"
+    for shown in (out["effect"], out["confirm"]):
+        for promise in PROMISES[locale]:
+            assert promise not in shown.lower(), (promise, shown)
+    assert MAY_BE_MADE[locale] in out["confirm"]
+
+
 @pytest.mark.parametrize("locale", ["en", "ru"])
 def test_a_mismatch_is_said_by_its_own_word_in_the_owners_language_and_creates_nothing(locale):
     out = _js("""

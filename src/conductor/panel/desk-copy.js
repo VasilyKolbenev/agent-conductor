@@ -118,10 +118,10 @@ export const DESK_COPY = Object.freeze({
   "desk.accept.push.remote_oid": ["Commit on GitHub", "Коммит на GitHub"],
   "desk.accept.pr.heading": ["Pull request on GitHub", "Pull Request на GitHub"],
   "desk.accept.pr.effect": [
-    "Opens one pull request for the sent branch, only for the same commit, base and "
-      + "repository. Merging stays with you.",
-    "Откроет один Pull Request для отправленной ветки, только для того же коммита, базы и "
-      + "репозитория. Слияние остаётся за вами."],
+    "Checks that the branch on GitHub still holds the sent commit, then opens one pull request "
+      + "for it. Merging stays with you.",
+    "Проверит, что ветка на GitHub всё ещё указывает на отправленный коммит, затем откроет "
+      + "для неё один Pull Request. Слияние остаётся за вами."],
   "desk.accept.pr.base": ["Base branch", "Базовая ветка"],
   "desk.accept.pr.title": ["Pull request title", "Заголовок Pull Request"],
   "desk.accept.pr.body": ["Pull request description", "Описание Pull Request"],
@@ -132,10 +132,12 @@ export const DESK_COPY = Object.freeze({
     "Run: {run}\nAccepted by: {actor}\nBranch: {branch}\nCommit: {commit}\nFiles: {count}",
     "Запуск: {run}\nПринял: {actor}\nВетка: {branch}\nКоммит: {commit}\nФайлов: {count}"],
   "desk.accept.pr.confirm_text": [
-    "Confirm opening a pull request in {repo} from {head} into {base}, as {actor}. One is "
-      + "created; if the branch has moved, none is.",
-    "Подтвердите открытие Pull Request в {repo} из {head} в {base} от имени {actor}. "
-      + "Создаётся один; если ветка сдвинулась, не создаётся ни одного."],
+    "Confirm opening a pull request in {repo} from {head} into {base}, as {actor}. A check runs "
+      + "first; if the branch moves between the check and the creation, the pull request may "
+      + "still be made and is then shown with what it points to.",
+    "Подтвердите открытие Pull Request в {repo} из {head} в {base} от имени {actor}. Сначала "
+      + "идёт проверка; если ветка сдвинется между проверкой и созданием, Pull Request всё "
+      + "равно может быть создан, и тогда он показан с тем, на что указывает."],
   "desk.accept.pr.action": ["Create the pull request", "Создать Pull Request"],
   "desk.accept.pr.back": ["Back to the fields", "Вернуться к полям"],
   "desk.accept.pr.again": ["Create again", "Создать снова"],
