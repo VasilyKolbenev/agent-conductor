@@ -27,6 +27,12 @@ const MISMATCH = Object.freeze({
   other_head: "desk.accept.pr.mismatch.other_head",
   other_base: "desk.accept.pr.mismatch.other_base",
   cross_repository: "desk.accept.pr.mismatch.cross_repository"});
+// The same four words for a press that only looked: it says what is there, not what was made.
+const CHECKED = Object.freeze({
+  remote_head_moved: "desk.accept.pr.checked.remote_head_moved",
+  other_head: "desk.accept.pr.checked.other_head",
+  other_base: "desk.accept.pr.checked.other_base",
+  cross_repository: "desk.accept.pr.checked.cross_repository"});
 // After these refusals of the push it is not known whether the branch is there; after these the
 // look found it absent, so sending again is safe. Every other refusal is final: the terms are
 // read again. A pull request is unknown only when its creation could not be confirmed.
@@ -206,10 +212,11 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   };
   // A press on either step is a write for the run held, by a named person, on facts that are read.
   const writable = (ticket) => phase === "ready" && Boolean(actor) && current(ticket, true);
-  function refusalText(answer) {
+  function refusalText(answer, check = false) {
     const detail = answer.payload?.error?.detail;
-    if (detail?.reason === "pr_mismatch" && Object.hasOwn(MISMATCH, detail.mismatch)) {
-      return text(locale, MISMATCH[detail.mismatch]);
+    const words = check ? CHECKED : MISMATCH;
+    if (detail?.reason === "pr_mismatch" && Object.hasOwn(words, detail.mismatch)) {
+      return text(locale, words[detail.mismatch]);
     }
     return notice(answer.code, detail?.reason);
   }
@@ -345,7 +352,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     const refusal = answer.status === "refused";
     const reason = answer.payload?.error?.detail?.reason;
     const kind = refusal ? outcome(step, reason) : "unknown";
-    const said = refusal ? refusalText(answer) : null;
+    const said = refusal ? refusalText(answer, check) : null;
     if (kind !== "refused") setStep(step, {phase: kind, error: said});
     else if (step === "push") setStep(step, {phase: "idle", error: said, terms: null});
     else setStep(step, {phase: "idle", error: said, login: reason === "gh_not_logged_in"});

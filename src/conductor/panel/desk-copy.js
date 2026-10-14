@@ -157,18 +157,36 @@ export const DESK_COPY = Object.freeze({
   "desk.accept.pr.differs": [
     "The pull request was created, but it does not match the sent commit, base or repository.",
     "Pull Request создан, но не совпадает с отправленным коммитом, базой или репозиторием."],
+  // The refusal of a press that may create names that press: the server refuses before it calls
+  // gh, so "this press made none" is true, and it says nothing of an earlier press.
   "desk.accept.pr.mismatch.remote_head_moved": [
-    "The branch on GitHub no longer holds the sent commit. No pull request was created.",
-    "Ветка на GitHub больше не указывает на отправленный коммит. Pull Request не создан."],
+    "The branch on GitHub no longer holds the sent commit. This press made no pull request.",
+    "Ветка на GitHub больше не указывает на отправленный коммит. Это нажатие Pull Request "
+      + "не создало."],
   "desk.accept.pr.mismatch.other_head": [
-    "The branch already has a pull request for another commit. None was created.",
-    "У ветки уже есть Pull Request для другого коммита. Новый не создан."],
+    "The branch already has a pull request for another commit. This press made none.",
+    "У ветки уже есть Pull Request для другого коммита. Это нажатие нового не создало."],
   "desk.accept.pr.mismatch.other_base": [
-    "The branch already has a pull request against another base. None was created.",
-    "У ветки уже есть Pull Request в другую базовую ветку. Новый не создан."],
+    "The branch already has a pull request against another base. This press made none.",
+    "У ветки уже есть Pull Request в другую базовую ветку. Это нажатие нового не создало."],
   "desk.accept.pr.mismatch.cross_repository": [
-    "The branch has a pull request from a fork. None was created.",
-    "У ветки есть Pull Request из форка. Новый не создан."],
+    "The branch has a pull request from a fork. This press made none.",
+    "У ветки есть Pull Request из форка. Это нажатие нового не создало."],
+  // The refusal of a press that only looks says what is there. A look cannot say what an earlier
+  // press made: a creation whose answer was unknown may have made a pull request (spec 9.7).
+  "desk.accept.pr.checked.remote_head_moved": [
+    "The branch on GitHub no longer holds the sent commit, and no pull request is listed on it.",
+    "Ветка на GitHub больше не указывает на отправленный коммит, и Pull Request на ней "
+      + "не найден."],
+  "desk.accept.pr.checked.other_head": [
+    "The branch has a pull request for another commit.",
+    "У ветки есть Pull Request для другого коммита."],
+  "desk.accept.pr.checked.other_base": [
+    "The branch has a pull request against another base.",
+    "У ветки есть Pull Request в другую базовую ветку."],
+  "desk.accept.pr.checked.cross_repository": [
+    "The branch has a pull request from a fork.",
+    "У ветки есть Pull Request из форка."],
   "desk.accept.pr.merge": ["Merging is always done by you, on GitHub.",
     "Слияние всегда делает владелец, на GitHub."],
   "desk.decision.heading": ["Decision needed", "Нужно решение"],

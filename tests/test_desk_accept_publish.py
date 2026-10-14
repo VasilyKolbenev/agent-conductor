@@ -76,6 +76,8 @@ const live = (node) => { const out = [];
     if (one.tag === 'button' && !one.disabled) out.push(one['data-focus-key']);
     for (const child of one.children || []) walk(child); };
   walk(node); return out; };
+const statuses = (node, out = []) => { if (node.role === 'status') out.push(node.textContent);
+  for (const child of node.children || []) statuses(child, out); return out; };
 const kinds = (r) => r.sent.map(({body}) => body.preview ? 'terms' : body.check ? 'check' : 'send');
 const said = (locale, key, params) => i18n.localize({locale}, key, params);
 """
@@ -476,6 +478,14 @@ def test_the_pull_request_card_never_promises_that_a_moved_branch_makes_no_pull_
     assert MAY_BE_MADE[locale] in out["confirm"]
 
 
+#: A refusal of a press that may create names that press: "this press made none" is true, since
+#: the server refuses before it calls gh, and it says nothing about an earlier press.
+THIS_PRESS = {"en": "This press made", "ru": "Это нажатие"}
+#: What a refusal that answers a press that only looks must not say: what was or was not made.
+NOT_ABOUT_MAKING = {"en": ("created", "made", "none was"), "ru": ("создан", "создал", "нажатие")}
+WORDS = ("remote_head_moved", "other_head", "other_base", "cross_repository")
+
+
 @pytest.mark.parametrize("locale", ["en", "ru"])
 def test_a_mismatch_is_said_by_its_own_word_in_the_owners_language_and_creates_nothing(locale):
     out = _js("""
@@ -488,14 +498,58 @@ def test_a_mismatch_is_said_by_its_own_word_in_the_owners_language_and_creates_n
         await press(r, 'accept:pr:desk.accept.pr.action');
         result[word] = {says: hasText(r.host.detail,
           said(d, 'desk.accept.pr.mismatch.' + word)), buttons: live(r.host.detail),
-          generic: hasText(r.host.detail, said(d, 'accept.reason.pr_mismatch'))};
+          generic: hasText(r.host.detail, said(d, 'accept.reason.pr_mismatch')),
+          text: said(d, 'desk.accept.pr.mismatch.' + word)};
       }
       console.log(JSON.stringify(result));
     """, locale)
+    texts = {word: row.pop("text") for word, row in out.items()}
     review = ["accept:pr:desk.accept.review"]
-    assert out == {word: {"says": True, "buttons": review, "generic": False}
-                   for word in ("remote_head_moved", "other_head", "other_base",
-                                "cross_repository")}
+    assert out == {word: {"says": True, "buttons": review, "generic": False} for word in WORDS}
+    for word, text in texts.items():
+        assert THIS_PRESS[locale] in text, (word, text)
+
+
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_a_mismatch_that_answers_a_check_says_what_is_there_and_not_what_was_made(locale):
+    out = _js("""
+      const sayOr = (key) => { try { return said(d, key); } catch (_failure) { return null; } };
+      const result = {};
+      for (const word of ['remote_head_moved', 'other_head', 'other_base', 'cross_repository']) {
+        const r = rig({locale: d, facts: {push: PUSHED},
+          pull: [unknown, refused('pr_mismatch', {mismatch: word})]});
+        await opened(r);
+        for (const key of ['review', 'pr.action', 'check']) {
+          await press(r, 'accept:pr:desk.accept.' + key);
+        }
+        result[word] = {texts: statuses(r.host.detail), kinds: kinds(r),
+          expected: sayOr('desk.accept.pr.checked.' + word), buttons: live(r.host.detail)};
+      }
+      console.log(JSON.stringify(result));
+    """, locale)
+    for word, row in out.items():
+        assert row["kinds"] == ["send", "check"], word
+        assert row["expected"] is not None, f"no copy for a check that met {word}"
+        assert row["texts"] == [row["expected"]], word
+        assert row["buttons"] == ["accept:pr:desk.accept.review"], word
+        for claim in NOT_ABOUT_MAKING[locale]:
+            assert claim not in row["expected"].lower(), (word, claim, row["expected"])
+
+
+def test_a_check_that_finds_the_pull_request_of_a_moved_branch_shows_it_with_what_it_points_to():
+    out = _js("""
+      const moved = {...PULL, mismatch: {head_oid: 'f'.repeat(40), base: 'main',
+        cross_repository: false}};
+      const r = rig({facts: {push: PUSHED}, pull: [unknown, ok('pull_request', moved)]});
+      await opened(r);
+      for (const key of ['review', 'pr.action', 'check']) {
+        await press(r, 'accept:pr:desk.accept.' + key);
+      }
+      console.log(JSON.stringify({kinds: kinds(r),
+        says: hasText(r.host.detail, said('en', 'desk.accept.pr.moved', {oid: 'f'.repeat(40)})),
+        number: hasText(r.host.detail, '#7'), buttons: live(r.host.detail)}));
+    """)
+    assert out == {"kinds": ["send", "check"], "says": True, "number": True, "buttons": []}
 
 
 def test_a_pull_request_made_for_a_moved_branch_is_shown_with_what_it_points_to_and_its_link():
