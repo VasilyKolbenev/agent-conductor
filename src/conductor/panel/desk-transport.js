@@ -61,6 +61,9 @@ export const path = Object.freeze({
   accept: (id) => `/command/runs/${encodeURIComponent(id)}/accept`,
   acceptPreview: (id) => `/command/runs/${encodeURIComponent(id)}/accept/preview`,
   acceptCommit: (id) => `/command/runs/${encodeURIComponent(id)}/accept/commit`,
+  // The two published steps of an accepted result (spec 9.7): the push, then the pull request.
+  acceptPush: (id) => `/command/runs/${encodeURIComponent(id)}/accept/push`,
+  acceptPullRequest: (id) => `/command/runs/${encodeURIComponent(id)}/accept/pull-request`,
   controls: (id) => `/command/runs/${encodeURIComponent(id)}/controls`,
   decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
   proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
@@ -90,6 +93,7 @@ const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
   "autoContinue", "seed", "flow", "queue", "queueOrder", "queueWithdraw",
+  "acceptPush", "acceptPullRequest",
   "acceptPreview", "acceptCommit", "gitSetup"]);
 
 // -- the doors that hold no state ----------------------------------------------
