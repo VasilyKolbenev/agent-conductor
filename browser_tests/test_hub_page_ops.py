@@ -51,14 +51,6 @@ def stream_open(page: HubPage) -> None:
     raise AssertionError("the stream was not opened")
 
 
-def wait_reads(page: HubPage, path: str, count: int) -> None:
-    for _ in range(80):
-        if page.hub.requests(path) >= count:
-            return
-        page.page.wait_for_timeout(50)
-    raise AssertionError(f"{path} was asked {page.hub.requests(path)} times, not {count}")
-
-
 def stuck(page: HubPage) -> None:
     """The third project is one whose stop was not confirmed: its main action is «Recover»."""
     rows = fixture("hub_projects.json")
@@ -253,13 +245,14 @@ def test_two_different_operations_are_two_rows_and_a_dismissed_one_leaves_the_ot
 def test_a_read_the_hub_refuses_ends_the_follow_as_not_reported_and_never_as_failed(hub_page):
     """After a hub restart, or once 50 later rows pushed it out, the hub answers 404
     `operation_not_found` for an operation that may well have succeeded (spec 4.6.4): the page does
-    not say "did not finish", it says the hub no longer reports it, and reads the project again."""
+    not say "did not finish", it says the hub no longer reports it, and the banner can be dismissed.
+    (That the page reads the hub again when a row ends is held once, for every ending, by
+    `test_a_running_operation_is_one_row_until_a_frame_says_it_ended`.)"""
     page = hub_page
     stuck(page)
     take_recover(page)
     page.hub.answer(f"/hub/operations/{OP}", {"error": {"code": "operation_not_found",
                     "message": "", "detail": None}}, status=404)
-    projects = page.hub.requests("/hub/projects")
     press(page, f"act:{BOT}:recover")
     banner = page.page.locator(OPERATION)
     expect(banner).to_have_count(1)
@@ -268,7 +261,6 @@ def test_a_read_the_hub_refuses_ends_the_follow_as_not_reported_and_never_as_fai
     text = banner.text_content().lower()
     assert "did not finish" not in text and "не завершилось" not in text
     assert clause(page, "operation_not_found") not in banner.text_content()
-    wait_reads(page, "/hub/projects", projects + 2)
     press(page, f"op:{OP}:dismiss")
     expect(banner).to_have_count(0)
 
