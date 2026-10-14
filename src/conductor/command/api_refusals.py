@@ -257,7 +257,7 @@ ACCEPT_REASONS = (
     "gh_not_logged_in", "pr_mismatch", "pr_create_failed")
 #: The word that says WHY a pull request does not match, beside `pr_mismatch` (spec 9.7). It is
 #: its own detail field, `mismatch`, because the closed refusal carries one `reason` and this is
-#: the second fact; the pending ruling on that shape is recorded in the lane report.
+#: the second fact.
 PR_MISMATCH_REASONS = ("remote_head_moved", "other_head", "other_base", "cross_repository")
 
 GIT_SETUP_REASONS = (
