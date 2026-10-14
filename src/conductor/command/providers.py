@@ -337,14 +337,14 @@ def _catalogued(catalog: object, provider_id: str) -> ProviderCatalogEntry:
 def _build_adapter(
         entry: ProviderCatalogEntry, config: ProviderConfig, runner: ProcessRunner, *,
         root: str | os.PathLike[str], clock: Callable[[], str],
-        ids: Callable[[str], str]) -> object:
+        ids: Callable[[str], str], confine_platform: str | None = None) -> object:
     if entry.protocol in _ENTRYPOINT_PROTOCOLS:
         pin = DshPin(
             node_executable=config.executable, entrypoint=config.entrypoint,
             env_allow=config.env_allow)
-        return entry.adapter_class(
+        return _confined(entry.adapter_class(
             pin, runner, root=root, clock=clock, ids=ids,
-            adapter_id=entry.provider_id)
+            adapter_id=entry.provider_id), confine_platform)
     if entry.protocol in _SINGLE_EXECUTABLE_PROTOCOLS:
         # No adapter is ever built for a config carrying an entrypoint here:
         # `_resolve_availability` refuses it, and only an AVAILABLE provider
@@ -352,17 +352,24 @@ def _build_adapter(
         # that will hold the pin, so a second single-binary provider refuses as
         # ITSELF -- hardcoding one provider's factory here gave every future one
         # Kimi Code's error.
-        return entry.adapter_class(
+        return _confined(entry.adapter_class(
             ExecutablePin(
                 executable=config.executable, env_allow=config.env_allow,
                 error=entry.adapter_class.error, auth=config.auth,
                 auth_home=config.auth_home),
             runner, root=root, clock=clock, ids=ids,
-            adapter_id=entry.provider_id)
+            adapter_id=entry.provider_id), confine_platform)
     deep_config = DeepAdapterConfig(
         executable=config.executable, protocol=config.protocol,
         env_allow=config.env_allow, real_mode="unavailable")
     return entry.adapter_class(deep_config, runner, clock=clock, ids=ids)
+
+
+def _confined(adapter: object, platform: str | None) -> object:
+    """The adapter, confined to the execution boundary when a platform is named (R5)."""
+    if platform is not None:
+        adapter.confine(platform)  # type: ignore[attr-defined]
+    return adapter
 
 
 def resolve_providers(
@@ -370,14 +377,15 @@ def resolve_providers(
         clock: Callable[[], str], ids: Callable[[str], str],
         environ: dict[str, str] | None = None,
         catalog: object = PROVIDER_CATALOG,
-        spawns_allowed: bool = True) -> ProviderResolution:
+        spawns_allowed: bool = True, confine_platform: str | None = None) -> ProviderResolution:
     """Resolve each operator config to a descriptor and register it through the door.
 
     An adapter -- and with it the owned process runner it would spawn through --
     is built only for a provider that resolved AVAILABLE, so an absent or
     version-mismatched provider reaches no runner at all. `spawns_allowed=False` is
     a process opened for viewing (spec 4.3.1): the one runner every adapter shares
-    then refuses each `run` and `start` before a child exists.
+    then refuses each `run` and `start` before a child exists. `confine_platform`, a
+    `sys.platform` value, confines each adapter built here to the execution boundary (R5).
 
     Every CATALOGUED provider is registered, configured or not. One the operator
     never named resolves ``unconfigured``: nothing on the machine was looked at
@@ -409,8 +417,8 @@ def resolve_providers(
             if runner is None:
                 runner = ProcessRunner(Path(root), environ=environ,
                                        spawns_allowed=spawns_allowed)
-            adapter = _build_adapter(
-                entry, config, runner, root=root, clock=clock, ids=ids)
+            adapter = _build_adapter(entry, config, runner, root=root, clock=clock,
+                                     ids=ids, confine_platform=confine_platform)
             quota_plan = quota_plan_for(provider_id, adapter)
             if quota_plan is not None:
                 quota_plans.append(quota_plan)

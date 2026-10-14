@@ -26,6 +26,7 @@ from ..contracts import (
     canonical_json,
 )
 from ..dispatch import validate_dispatch_arguments
+from ..execution_boundary import boundary_provided
 from .attempt_scope import AttemptScopeError, registered_attempt_scope
 
 
@@ -670,6 +671,23 @@ class AdapterRegistry:
         return (manifest.supports(capability)
                 and all(name in self._independent_seams[manifest.adapter_id]
                         for name in _INDEPENDENT_SEAMS))
+
+    def execution_boundary(self, adapter_id: str, mode: str) -> bool:
+        """Whether this adapter launches an attempt of this mode inside the execution boundary (R5).
+
+        Read off the registered adapter at the moment of asking, because whether a harness is
+        confined is a fact about the instance a door built. An adapter that exposes no such seam
+        starts no vendor agent (a fake, a demo), has nothing to confine and is answered True;
+        one that exposes it must say yes, and anything but True is no.
+
+        Raises:
+            AdapterContractError: The adapter is not registered.
+            ValueError: ``mode`` is not an attempt mode.
+        """
+        adapter = self.resolve(adapter_id)
+        boundary_provided("", mode)  # a wrong mode is an error for every adapter, seam or not
+        seam = getattr(adapter, "boundary_provided", None)
+        return True if seam is None else seam(mode) is True
 
     def verification_started(self, adapter_id: str, request: ActionRequest) -> bool | None:
         """Read a checker's durable claim; absent knowledge is not a negative fact."""

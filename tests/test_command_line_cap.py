@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
     "src/conductor/command/adapters/agent_instructions.py",
+    "src/conductor/command/adapters/harness_attempt.py",
     "src/conductor/command/flag_control_id.py",
     "src/conductor/command/flow_routes.py",
     "src/conductor/command/flow_rules.py",
@@ -48,12 +49,15 @@ CAPPED = (
     "src/conductor/command/seed_stage.py",
     "src/conductor/command/task_preparation.py",
     "src/conductor/command/workflow_flow.py",
+    "tests/_fakeboundary.py",
     "tests/git_first_bench.py",
     "tests/git_first_readers.py",
     "tests/git_first_scratch.py",
     "tests/git_index_bytes.py",
     "tests/git_repo_helpers.py",
     "tests/queue_fixtures.py",
+    "tests/test_adapter_boundary_launch.py",
+    "tests/test_adapter_boundary_roads.py",
     "tests/test_command_line_cap.py",
     "tests/flow_driver_bench.py",
     "tests/test_command_flow_driver.py",

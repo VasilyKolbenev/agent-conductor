@@ -33,7 +33,11 @@ ALLOWED_SDK_IMPORTS = frozenset({
     "__future__", "collections.abc", "dataclasses", "enum", "hashlib", "json",
     "math", "pathlib", "re", "types", "typing",
 })
-ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({(2, "contracts"), (2, "dispatch")})
+#: `execution_boundary` (the pure fact "the boundary is provided") and `ownership_errors` (a
+#: refusal vocabulary) are leaves: standard library only, no file, no process. The attempt
+#: launch reads the first to refuse before a spawn and names the second to catch a refused entry.
+ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({
+    (2, "contracts"), (2, "dispatch"), (2, "execution_boundary"), (3, "ownership_errors")})
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
 # package; it necessarily imports subprocess and calls Popen, so this value-core
 # import guard exempts it. Its safety is proven behaviourally by
@@ -60,16 +64,17 @@ SDK_WORKSPACE_DOOR = frozenset({
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
     "which", "exists", "is_file", "run", "Popen", "system", "import_module"})
-# The deep adapters and the shared headless transport hold NO execution door:
+# The deep adapters and the shared headless attempt hold NO execution door:
 # they import no subprocess module and spawn nothing. They call `.run()` on the
 # runner configuration handed them, so they are exempted from that ONE name and
 # stay held to the import allowlist and to every other banned name -- a far
-# narrower exemption than the runner's. `dsh_harness.py` is deliberately NOT
-# here any more: a provider module carries vendor facts and an argv shape, and
-# the day one of them calls `.run()` itself is the day it grew a second spawn
-# road beside the shared one.
+# narrower exemption than the runner's. `harness_attempt.py` is where
+# `headless_cli.py` kept that call until the attempt was split off it. `dsh_harness.py`
+# is deliberately NOT here any more: a provider module carries vendor facts and an
+# argv shape, and the day one of them calls `.run()` itself is the day it grew a
+# second spawn road beside the shared one.
 SDK_INJECTED_RUNNER_CALLERS = frozenset({
-    "deep_adapters.py", "headless_cli.py"})
+    "deep_adapters.py", "harness_attempt.py"})
 
 
 def an_action(**changes):
@@ -352,10 +357,11 @@ def test_registry_public_surface_names_the_two_explicit_effect_wrappers():
     # `controls` and `argument_schema`: it answers a question ABOUT a
     # registration and reaches no adapter method, so it starts nothing.
     # `attempt_scope` likewise returns a copied registration value, not a lock acquisition.
+    # `execution_boundary` reads one boolean off the registered adapter (R5) and starts nothing.
     assert public == [
-        "argument_schema", "attempt_scope", "controls", "execute", "isolation_guards",
-        "manifests", "observe", "prepare", "publish", "register", "release",
-        "resolve", "validate_arguments", "verification_started",
+        "argument_schema", "attempt_scope", "controls", "execute", "execution_boundary",
+        "isolation_guards", "manifests", "observe", "prepare", "publish", "register",
+        "release", "resolve", "validate_arguments", "verification_started",
         "verifies_independently", "verify"]
 
 

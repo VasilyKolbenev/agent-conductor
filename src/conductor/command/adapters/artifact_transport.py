@@ -337,6 +337,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             return self._receipt(
                 request, "unknown", None,
                 "a marker from an earlier attempt already claims this review")
+        refused = self._boundary_refusal(request, "review")
+        if refused is not None:
+            return refused
         self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
         if self._workspace.sweep_homes():
             return self._receipt(
@@ -380,7 +383,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         outcome = self._attempt(
             self._review_argv, work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=payload,
-            separate_stderr=True, model=model)
+            separate_stderr=True, model=model, mode="review")
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))
@@ -765,6 +768,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
                 verifier_instance_id=verifier.instance_id)
             if standing is not None:
                 return self._verification(request, "verified", (standing.evidence_id,), "verified")
+            self._hold_checker_boundary()
             with self._workspace.owned():
                 try:
                     return self._check_owned(request, verifier, material)

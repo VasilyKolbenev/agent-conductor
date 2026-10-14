@@ -41,8 +41,8 @@ from conductor.command.adapters.grok_build import (
     grok_pin,
 )
 from conductor.command.adapters.kimi_code import KimiCodeError
-from conductor.command.adapters.headless_cli import ExecutablePin, ProcessOutcome
-from conductor.command.adapters.process import ProcessRunner
+from conductor.command.adapters.headless_cli import ExecutablePin
+from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.contracts import ActionRequest
 from conductor.command.providers import resolve_providers

@@ -26,6 +26,7 @@ REASONS = frozenset({
     "material_unavailable", "login_residue", "rejected_findings_refused",
     "snapshot_damaged", "object_format_changed", "base_missing", "reserved_path",
     "irregular_result", "result_too_large", "unportable_name", "case_collision",
+    "boundary_unavailable",
 })
 #: The whole serialized frame -- JSON, hex and service fields included -- the same number as
 #: process.STDIN_LIMIT, which carries it (pinned equal by a test). Codex ruling K, 23.09.2026:

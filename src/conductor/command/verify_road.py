@@ -27,6 +27,7 @@ CHECK_REASONS = MappingProxyType({
     ("error", "homes_refused"): words.CHECKER_HOMES_REFUSED,
     ("error", "login_residue"): words.CHECKER_LOGIN_RESIDUE,
     ("error", "preflight_refused"): words.CHECKER_PREFLIGHT_REFUSED,
+    ("error", "boundary_unavailable"): words.CHECKER_BOUNDARY_UNAVAILABLE,
     ("error", "marker_standing"): words.CHECKER_MARKER_STANDING,
     ("error", "no_verdict"): words.CHECKER_NO_VERDICT,
     ("error", "material_unavailable"): words.CHECKER_MATERIAL_UNAVAILABLE,

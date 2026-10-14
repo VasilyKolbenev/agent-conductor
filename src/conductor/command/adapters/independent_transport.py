@@ -17,6 +17,11 @@ class IndependentCheckTransport:
         state = "mismatch" if reason in mismatch else "error"
         return self._verification(request, state, (), reason)
 
+    def _hold_checker_boundary(self) -> None:
+        """A confined checker whose read-only attempt has no boundary spawns nothing (R5)."""
+        if self._confine and not self.boundary_provided("review"):
+            raise CheckFrameError("boundary_unavailable")
+
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
         # No inherited count is read here any more. A doer that could not take
         # its own home back is refused at PUBLICATION now, from a fact recorded
@@ -50,7 +55,7 @@ class IndependentCheckTransport:
         outcome = self._attempt(
             self._verdict_argv, work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=frame.payload,
-            separate_stderr=True, model=verifier.model,
+            separate_stderr=True, model=verifier.model, mode="review",
             output_limit=(None if request.capability == REVIEW_CAPABILITY
                           else OUTPUT_LIMIT_BYTES[args.output_limit_profile]))
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
