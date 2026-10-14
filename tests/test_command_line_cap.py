@@ -59,6 +59,7 @@ CAPPED = (
     "tests/test_adapter_boundary_launch.py",
     "tests/test_adapter_boundary_roads.py",
     "tests/test_command_line_cap.py",
+    "tests/test_execution_boundary_refusal.py",
     "tests/flow_driver_bench.py",
     "tests/test_command_flow_driver.py",
     "tests/test_command_flow_fixtures.py",

@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .api_contracts import ApiRefusal
-from .containment import unprovidable_sandboxes
+from .containment import node_boundary, unprovidable_sandboxes
 from .contracts import DecisionReceipt
 from .graph_causality import (
     _standing_graph,
@@ -148,7 +148,8 @@ def _hold_plan_pre_answers_no_gate(run_id: str, recovered, nodes) -> None:
 
 
 def _sandboxes_are_provided(
-        run_id: str, nodes: Iterable[GraphNode]) -> None:
+        run_id: str, nodes: Iterable[GraphNode], *, execution_boundary=None,
+        config=None) -> None:
     """No run is opened on a plan demanding a route this build cannot give.
 
     The FIRST of two pre-spawn doors, and the earliest one there is: nothing
@@ -162,13 +163,20 @@ def _sandboxes_are_provided(
     it simply authorizes nothing. Refusing in the contract would make such a
     run unreadable, which turns a plan this build cannot honour into a
     journal nobody can read.
+
+    The execution boundary (R5) is the one route judged by a fact: the registry's
+    `execution_boundary` for the adapter the run's `config` binds the step to.
+    A caller that hands neither has no answer, and a step demanding the boundary
+    is then refused here rather than opened on a harness nobody vouched for.
     """
     for node in nodes:
+        fact = (None if execution_boundary is None or config is None
+                else node_boundary(execution_boundary, config, node))
         # The FIRST unprovidable route, because a refusal detail is one
         # reviewed fact -- a safe id or a counting number -- and never a
         # list. The caller fixes that row and the next attempt names the
         # next, which is how every other refusal on this boundary behaves.
-        for route in unprovidable_sandboxes(node.resources)[:1]:
+        for route in unprovidable_sandboxes(node.resources, boundary=fact)[:1]:
             raise ApiRefusal.plan_sandbox_unprovidable(
                 run_id, node.node_id, route)
 

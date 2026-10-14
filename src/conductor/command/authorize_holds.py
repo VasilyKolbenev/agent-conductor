@@ -16,7 +16,7 @@ here is what makes it true early.
 """
 from __future__ import annotations
 
-from .containment import unprovidable_sandboxes
+from .containment import node_boundary, unprovidable_sandboxes
 from .contracts import ActionProposal, ActionRequest, ContractError, frozen_config_bindings
 from .graph_causality import _standing_graph, standing_terminal
 from .graph_schedule import attempt_in_flight, authorized_attempts, schedule
@@ -149,7 +149,7 @@ def _awaiting(computed, proposal: ActionProposal, values: tuple) -> str:
 
 
 def _hold_node_sandbox_is_provided(
-        proposal: ActionProposal, recovered: RecoveredRun) -> None:
+        proposal: ActionProposal, recovered: RecoveredRun, execution_boundary=None) -> None:
     """A step may not be attempted on a route this build cannot give it.
 
     A `sandbox` resource is a DEMAND the plan makes of whatever machine runs the
@@ -169,6 +169,11 @@ def _hold_node_sandbox_is_provided(
     Only `sandbox` rows are judged. The other five kinds are recorded and
     consumed by nothing, so a name outside any list is admitted and inert --
     refusing one would be inventing a promise this build does not keep.
+
+    The execution boundary (R5) is the one sandbox word judged by a fact, not by
+    a list: `execution_boundary` is the registry's answer for an adapter and a
+    mode. A caller that hands none has no answer, and then a step that demands
+    the boundary is refused.
     """
     definition = _standing_graph(recovered)
     if definition is None or proposal.node_id is None:
@@ -177,7 +182,9 @@ def _hold_node_sandbox_is_provided(
                  if row.node_id == proposal.node_id), None)
     if node is None:
         return
-    missing = unprovidable_sandboxes(node.resources)
+    missing = unprovidable_sandboxes(node.resources, boundary=(
+        None if execution_boundary is None
+        else node_boundary(execution_boundary, recovered.config, node)))
     if missing:
         raise AuthorizationError(
             f"plan: step {proposal.node_id!r} demands sandbox route(s) "
@@ -210,19 +217,24 @@ def _hold_work_scope(proposal: ActionProposal, recovered: RecoveredRun) -> None:
 
 
 def _hold_plan_admits(
-        proposal: ActionProposal, recovered: RecoveredRun, *,
-        verifies_independently=None) -> None:
+        proposal: ActionProposal, recovered: RecoveredRun, *, registry=None) -> None:
     """Everything the PLAN says about this authorization, asked in one place.
 
     Ended first, then eligible: a run that has recorded its ending has no
     runnable steps to speak of, so asking which step is eligible would answer a
     question about a run that is over. One call site keeps the order a fact of
     this module rather than of whoever wired it in.
+
+    `registry` is the adapter registry whose two facts the plan is judged by,
+    `execution_boundary` and `verifies_independently`. A caller that hands none
+    has no answer to either, which each hold reads as "cannot say".
     """
     _hold_run_not_terminal(recovered)
     _hold_node_is_eligible(proposal, recovered)
-    _hold_node_sandbox_is_provided(proposal, recovered)
-    _hold_verifier_is_servable(proposal, recovered, verifies_independently)
+    _hold_node_sandbox_is_provided(
+        proposal, recovered, getattr(registry, "execution_boundary", None))
+    _hold_verifier_is_servable(
+        proposal, recovered, getattr(registry, "verifies_independently", None))
 
 
 def _hold_verifier_is_servable(proposal, recovered, verifies_independently) -> None:

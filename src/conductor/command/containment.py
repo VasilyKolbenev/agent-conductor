@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import os
 import stat
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Protocol
+from types import MappingProxyType
+from typing import Any, Protocol
+
+from .execution_boundary import BOUNDARY_ROUTE
 
 JUNCTION_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
 STORE_OWNED_FILES = frozenset({"run.json", "config.json", "records.jsonl"})
@@ -416,7 +419,15 @@ SANDBOX_ROUTES = frozenset({"project-root"})
 SANDBOX_KIND = "sandbox"
 
 
-def unprovidable_sandboxes(resources: Iterable[object]) -> tuple[str, ...]:
+#: The attempt mode the execution boundary judges each capability a step can run under. A dispatch
+#: writes its work folder, a review only reads it, and so does every independent check. The two
+#: words are `execution_boundary.ATTEMPT_MODES`; any other capability starts no agent in a boundary.
+BOUNDARY_MODES = MappingProxyType({"dispatch": "dispatch", "review": "review"})
+
+
+def unprovidable_sandboxes(
+        resources: Iterable[object], *,
+        boundary: Callable[[], bool] | None = None) -> tuple[str, ...]:
     """The sandbox routes one step demands that this build cannot provide.
 
     A pure reading over a step's declared attachments, in the order the step
@@ -425,8 +436,17 @@ def unprovidable_sandboxes(resources: Iterable[object]) -> tuple[str, ...]:
     because the node contract already refused those at the door and a second
     opinion here could only disagree with it.
 
+    One word is judged by a FACT instead of by the static set: the execution
+    boundary (R5, `execution_boundary.BOUNDARY_ROUTE`). Whether it is provided
+    depends on the platform and on the harness the step is bound to, so the door
+    that asks hands over that fact as `boundary`. A door that does not has no
+    answer, and no answer is "not provided": a plan is never run on a boundary
+    nobody vouched for.
+
     Args:
         resources: One step's `GraphResource` rows.
+        boundary: Whether the step's harness provides the execution boundary, or
+            None when the caller cannot say.
 
     Returns:
         Each demanded route this build does not provide, first mention only.
@@ -437,6 +457,45 @@ def unprovidable_sandboxes(resources: Iterable[object]) -> tuple[str, ...]:
         name = getattr(row, "name", None)
         if kind != SANDBOX_KIND or type(name) is not str:
             continue
-        if name not in SANDBOX_ROUTES and name not in found:
+        if name == BOUNDARY_ROUTE:
+            provided = boundary is not None and boundary() is True
+        else:
+            provided = name in SANDBOX_ROUTES
+        if not provided and name not in found:
             found.append(name)
     return tuple(found)
+
+
+def node_boundary(
+        execution_boundary: Callable[[str, str], bool], config: Mapping[str, Any],
+        node: object) -> Callable[[], bool]:
+    """The fact a door hands `unprovidable_sandboxes` for one step: its harnesses give the boundary.
+
+    The step's doer must be bound to a harness that launches an attempt of the step's mode inside
+    the boundary, and so must the checker the plan names for it, which only ever reads. Anything
+    the door cannot establish is "not provided": an instance the frozen configuration does not
+    bind, a capability that starts no agent, an adapter the registry does not know, or a raise.
+
+    Args:
+        execution_boundary: The registry's `execution_boundary(adapter_id, mode)`.
+        config: The run's frozen configuration snapshot, which binds instances to adapters.
+        node: The step (a `GraphNode`): its instance, capability and optional checker.
+
+    Returns:
+        A zero-argument callable, asked only if the step demands the boundary.
+    """
+    def provided() -> bool:
+        from .contracts import frozen_config_bindings
+        mode = BOUNDARY_MODES.get(getattr(node, "capability", None))
+        if mode is None:
+            return False
+        participants = [(node.instance_id, mode)]
+        if node.verifier_instance_id is not None:
+            participants.append((node.verifier_instance_id, "review"))
+        try:
+            bindings = frozen_config_bindings(config)
+            return all(execution_boundary(bindings[instance], attempt) is True
+                       for instance, attempt in participants)
+        except Exception:  # noqa: BLE001 -- what a door cannot establish is not provided
+            return False
+    return provided

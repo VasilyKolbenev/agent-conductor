@@ -55,8 +55,7 @@ def _authorize_locked(runtime, run_id, proposal_id, authorization_id, admit):
     _hold_work_scope(proposal, recovered)
     _hold_attempt_identity(proposal, recovered)
     runtime._hold_budget(proposal, recovered, runtime._policy.budget)
-    _hold_plan_admits(proposal, recovered,
-                      verifies_independently=runtime._registry.verifies_independently)
+    _hold_plan_admits(proposal, recovered, registry=runtime._registry)
     request = mint_request(proposal, grant, action_id=runtime._ids("action"), at=runtime._clock())
     from .policy_history import validate_policy_request
     validate_policy_request(recovered, request)
