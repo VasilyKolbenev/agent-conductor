@@ -19,7 +19,11 @@ in the hold, setting a DACL on the folder does not propagate an inheritable entr
 children, nor take it away again, and reports success; without DELETE it does both.
 
 The leased login home is not a loan (it waits for a ruling), and nothing here widens an ACL beyond
-the three kinds of folder `AttemptFolders` names.
+the three kinds of folder `AttemptFolders` names. That is a law of this runner and not a manner of
+its callers: an install folder is the version folder of a pinned harness and never a login folder
+or a folder that holds one, a home is a minted folder of a catalogued harness home root, a work
+folder is one item of the work tree, and a spawn on a loan starts a program that stands in the
+loaned install folder (`holds_entry`).
 """
 from __future__ import annotations
 
@@ -32,7 +36,7 @@ from pathlib import Path
 
 from ...ownership_native import NativeHold
 from ...ownership_records import ACTIVE, HOME, LEGACY
-from ..work_layout import WORK_DIR
+from ..work_layout import TASKS_DIR, work_parts
 from .process_acl import _CHILD_RWX_DELETE, _RWX, _RX
 from .process_boundary import WindowsContainer
 from .process_profile import ProfileRefused, _bytes, _plain, _replace, refusal_summary
@@ -46,6 +50,9 @@ _ACE = re.compile(r"\([^()]*\)")
 #: the project, the product's own data.
 _REPOSITORY = ".git"
 _PRODUCT_TOP = (ACTIVE, LEGACY, HOME)
+#: A pinned harness stands in `<anything>/harnesses/<name>/<version>`: the shape of an install
+#: folder (the version folder), whichever cache the pins live in.
+PIN_ROOT = "harnesses"
 _LIMIT = 16384
 _FIELDS = frozenset({"schema", "attempt", "owner_nonce", "root_identity", "data_identity",
                      "profile_sid", "mode", "phase", "loans"})
@@ -153,8 +160,32 @@ def _system_places(environ) -> list[Path]:
     return [Path(os.path.realpath(environ[name])) for name in names if environ.get(name)]
 
 
+def configured_login_homes(data_root: Path) -> tuple[Path, ...]:
+    """The `auth_home` of every provider the project holds, in their real places.
+
+    The project's own `providers.json` is where its attempts find their logins: the operator's
+    shared profile reaches a project only as an explicit copy of its rows.
+
+    Raises:
+        ProfileRefused: `profile_acl_invalid` when the file cannot be read, so a loan is not made
+            on a promise about logins that cannot be checked.
+    """
+    from .. import operator_config  # deferred: it reaches the provider door and the run store
+    path = operator_config.provider_config_path(data_root)
+    try:
+        rows = operator_config.load_provider_configs(path)
+    except operator_config.OperatorConfigError as error:
+        raise _refused("the login folders of the project cannot be established") from error
+    return tuple(Path(os.path.realpath(row.auth_home)) for row in rows if row.auth_home)
+
+
 def _refuse_install(install: Path, root: Path, environ) -> None:
-    """The pinned install folder: never the project, the user's profile, or a system program."""
+    """The install folder: the version folder of one pinned harness, and nothing wider.
+
+    Never the project, the user's profile or a system program; and of what is left, only
+    `<pin root>/<name>/<version>`, so the folder above a pin (the profile's application data, a
+    vendor's own dot folder) cannot be named by a wiring that took the wrong ancestor.
+    """
     if _inside(root, install) or _inside(install, root):
         raise _refused("the install folder overlaps the project")
     profile = environ.get("USERPROFILE")
@@ -163,36 +194,84 @@ def _refuse_install(install: Path, root: Path, environ) -> None:
     for place in _system_places(environ):
         if _inside(install, place) or _inside(place, install):
             raise _refused("the install folder is a system program folder or contains one")
+    if install.parent.parent.name.casefold() != PIN_ROOT:
+        raise _refused(f"the install folder is not the version folder of a pinned harness "
+                       f"({PIN_ROOT}/<name>/<version>)")
+
+
+def catalogued_home_roots() -> frozenset[str]:
+    """The folder each catalogued harness keeps its per-spawn homes in, case folded."""
+    from .. import product_names  # deferred: it imports every adapter module
+    return frozenset(home.casefold() for home, _marker in product_names._HARNESS_NAMES)
+
+
+def _work_item(route: tuple[str, ...]) -> bool:
+    """Whether `route` is exactly what `work_parts` gives one work item: `work/<id>`, or
+    `work/_tasks/<scope>/<id>`. The container name is not an item of the tree."""
+    if len(route) == 2:
+        return route == work_parts(route[1]) and route[1].casefold() != TASKS_DIR.casefold()
+    return len(route) == 4 and route == work_parts(route[3], route[2])
+
+
+def _minted_home(route: tuple[str, ...]) -> bool:
+    """`<home root>/<minted name>`: exactly two levels, the first a catalogued harness home root."""
+    return len(route) == 2 and route[0].casefold() in catalogued_home_roots()
 
 
 def _refuse_attempt_folder(name: str, path: Path, root: Path) -> None:
-    """The work folder and the home: beneath the project, away from its repository and its data."""
+    """The work folder and the home: beneath the project, in the shape the product gives them."""
     if root not in path.parents:
         raise _refused(f"the {name} folder is not beneath the project")
     route = path.relative_to(root).parts
     if (any(part.casefold() == _REPOSITORY for part in route)
             or route[0].casefold() in _PRODUCT_TOP):
         raise _refused(f"the {name} folder lies in the owner's repository or the product's data")
-    if name == "work" and (len(route) < 2 or route[0] != WORK_DIR):
-        raise _refused("the work folder is not a folder of the work tree")
+    if name == "work" and not _work_item(route):
+        raise _refused("the work folder is not one item of the work tree")
+    if name == "home" and not _minted_home(route):
+        raise _refused("the home is not a minted folder of a catalogued harness home root")
+
+
+def holds_entry(argv, install: str | None, environ=None) -> bool:
+    """Whether the program `argv` starts stands in the install folder loaned to its attempt.
+
+    The program is `argv[0]`. A runtime that lives in a system program folder (the `node` a script
+    runs on) is not the program: the first absolute path after it is. Without an install folder
+    nothing is bound.
+    """
+    if install is None:
+        return True
+    system = _system_places(os.environ if environ is None else environ)
+    entry = Path(os.path.realpath(argv[0]))
+    if any(_inside(entry, place) for place in system):
+        entry = next((Path(os.path.realpath(a)) for a in argv[1:] if os.path.isabs(a)), None)
+    return entry is not None and _inside(entry, Path(os.path.realpath(install)))
 
 
 class FolderLoans:
     """The loans of one attempt, journalled in `loan-<attempt>.json` beside its profile record."""
 
-    def __init__(self, profiles, native, *, hold_factory=NativeHold, environ=None):
+    def __init__(self, profiles, native, *, hold_factory=NativeHold, environ=None,
+                 login_homes=None):
         self.profiles, self.native = profiles, native
         self.directory = profiles.directory
         self.hold_factory = hold_factory
         self.environ = os.environ if environ is None else environ
+        self.login_homes = login_homes  # a callable of no argument; None: the project's providers
         self.record, self.holds, self.paths = None, None, {}
+
+    def _logins(self) -> tuple[Path, ...]:
+        if self.login_homes is None:
+            return configured_login_homes(self.directory.parent)
+        return tuple(Path(os.path.realpath(path)) for path in self.login_homes())
 
     def targets(self, folders) -> dict[str, Path]:
         """The folders of a loan, checked and in their real places; nothing is held or changed.
 
         Raises:
             ProfileRefused: `profile_acl_invalid` for a missing or foreign key, a folder that is not
-                a plain directory, one that overlaps another, or one the rules above forbid.
+                a plain directory, one that overlaps another or a login folder, or one the rules
+                above forbid.
         """
         if self.profiles.owner_root is None:
             raise _refused("trusted ACL callbacks are absent")
@@ -208,6 +287,9 @@ class FolderLoans:
         home, work = real.get("home"), real["work"]
         if home is not None and (_inside(home, work) or _inside(work, home)):
             raise _refused("the home and the work folder overlap")
+        for login in self._logins():
+            if any(_inside(path, login) or _inside(login, path) for path in real.values()):
+                raise _refused("a loaned folder is a login folder, lies in one or holds one")
         return real
 
     def grant(self, profile_path, sid, mode, folders) -> Path:

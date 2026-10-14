@@ -24,6 +24,8 @@ OWNER = "S-1-5-21-1"
 PRIOR = ("O:S-1-5-21-1D:AI(D;;0x2;;;S-1-5-21-9)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;SY)"
          "(A;OICIID;0x1200a9;;;BU)")
 WRITE_DAC, WRITE_OWNER, DELETE_CHILD = 0x40000, 0x80000, 0x40
+#: The folder a catalogued harness keeps its per-spawn homes in; a loan names no other home root.
+HOME = ".claude-home"
 
 
 class LoanHold:
@@ -43,7 +45,7 @@ class LoanHold:
 def world(tmp_path, *, extra_sids=()):
     store, _acl, profile_path, sid, state = fixture(tmp_path, extra_sids=extra_sids)
     root = tmp_path / "project"
-    folders = {"work": root / "work" / "t1", "home": root / ".kit-home" / "a",
+    folders = {"work": root / "work" / "t1", "home": root / HOME / "a",
                "install": tmp_path / "harnesses" / "kit" / "1.0"}
     for path in folders.values():
         path.mkdir(parents=True)
@@ -216,25 +218,31 @@ def test_a_loaned_folder_that_is_gone_has_nothing_to_return_and_the_record_retir
     assert json.loads(record_files(w)[0].read_text(encoding="utf-8"))["phase"] == "retired"
 
 
-def _refused(w, folders, match="profile_acl_invalid"):
-    with pytest.raises(ProfileRefused, match=match):
+def _refused(w, folders, reason=""):
+    """The grant is refused as `profile_acl_invalid`, for a reason that contains `reason`, and
+    nothing is recorded or changed."""
+    with pytest.raises(ProfileRefused, match="profile_acl_invalid: .*" + reason):
         w.loans.grant(w.profile_path, w.sid, "dispatch", folders)
     assert record_files(w) == []
     assert all(str(path) not in w.state for path in folders.values())
 
 
-@pytest.mark.parametrize("where", ["root", "above-root", "profile", "above-profile", "system",
-                                   "inside-system", "program-files", "inside-program-files"])
+@pytest.mark.parametrize("where, reason", [
+    ("root", "overlaps the project"), ("above-root", "overlaps the project"),
+    ("profile", "user profile"), ("above-profile", "user profile"),
+    ("system", "system program"), ("inside-system", "system program"),
+    ("program-files", "system program"), ("inside-program-files", "system program")])
 def test_an_install_folder_that_would_widen_the_owners_or_the_systems_reach_is_refused(
-        tmp_path, where):
+        tmp_path, where, reason):
     w = world(tmp_path)
-    profile, winnt, files = (tmp_path / n for n in ("profile", "winnt", "pf"))
+    profile, winnt, files = (tmp_path / n for n in ("accounts/bob", "winnt", "pf"))
+    w.environ["USERPROFILE"] = str(profile)  # beside the project, so no other rule is the reason
     for path in (profile / "deep", winnt / "system32", files / "node"):
         path.mkdir(parents=True)
     bad = {"root": w.root, "above-root": w.root.parent, "profile": profile,
            "above-profile": profile.parent, "system": winnt, "inside-system": winnt / "system32",
            "program-files": files, "inside-program-files": files / "node"}[where]
-    _refused(w, {**w.folders, "install": bad})
+    _refused(w, {**w.folders, "install": bad}, reason)
 
 
 def test_an_install_folder_must_be_an_existing_absolute_plain_directory(tmp_path):
@@ -262,8 +270,8 @@ def test_a_home_inside_the_owners_git_the_data_root_or_the_work_folder_is_refuse
 
 
 def test_the_folders_value_is_checked_where_it_is_made():
-    ok = AttemptFolders(work="work/t1", home=".kit-home/a", install=str(Path("/abs").resolve()))
-    assert ok.home == ".kit-home/a"
+    ok = AttemptFolders(work="work/t1", home=f"{HOME}/a", install=str(Path("/abs").resolve()))
+    assert ok.home == f"{HOME}/a"
     for bad in ({"work": ""}, {"work": "/abs"}, {"work": "work/../x"}, {"work": "C:/x"},
                 {"home": ""}, {"home": "../h"}, {"install": "relative/kit"}, {"install": ""},
                 {"work": 5}, {"install": None}):

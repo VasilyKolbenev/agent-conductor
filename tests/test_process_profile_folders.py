@@ -45,6 +45,7 @@ def test_the_block_yields_loaned_and_fresh_folders_and_returns_every_one_at_exit
         assert paths["parent"].is_dir() and paths["runtime"].parent == paths["parent"]
         assert all(w.state[str(w.folders[key])][0] != PRIOR for key in w.folders)
         assert container.sid == SID
+        assert container.install == str(paths["install"]), "the spawn is bound to this folder"
     assert not paths["parent"].exists()
     assert all(w.state[str(path)] == (PRIOR, False, OWNER) for path in w.folders.values())
     assert all(path.is_dir() for path in w.folders.values())

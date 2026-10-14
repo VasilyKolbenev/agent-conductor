@@ -15,6 +15,7 @@ import pytest
 from conductor import ownership, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ContainmentError, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
+from tests.test_process_loans import HOME
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans")
 
@@ -36,15 +37,15 @@ class Site:
         (self.root / "work" / "t1" / "sub").mkdir(parents=True)
         (self.root / "work" / "t1" / "seed.txt").write_text("seed", encoding="utf-8")
         (self.root / "work" / "t1" / "sub" / "f.txt").write_text("f", encoding="utf-8")
-        (self.root / ".kit-home" / "a").mkdir(parents=True)
+        (self.root / HOME / "a").mkdir(parents=True)
         self.install = (base / "harnesses" / "kit" / "1.0").resolve()
         self.install.mkdir(parents=True)
         (self.install / "tool.txt").write_text("tool", encoding="utf-8")
-        self.folders = AttemptFolders(work="work/t1", home=".kit-home/a", install=str(self.install))
+        self.folders = AttemptFolders(work="work/t1", home=f"{HOME}/a", install=str(self.install))
         ownership_transition.activate(self.root, legacy_writers_stopped=True)
 
     def locations(self):
-        return {"work": self.root / "work" / "t1", "home": self.root / ".kit-home" / "a",
+        return {"work": self.root / "work" / "t1", "home": self.root / HOME / "a",
                 "install": self.install}
 
 
@@ -102,13 +103,16 @@ def run_child(site, mode):
     from tests.os_boundary_box import base_environment
     runner = ProcessRunner(site.root)
     seen = {}
+    # The program the loan is for stands in the install folder: here the script PowerShell runs.
+    entry = site.install / "entry.ps1"
+    entry.write_text(child_script(site, writes_work=mode == "dispatch"), encoding="utf-8")
     with ownership.acquire_owner(site.root):
         before = {k: snapshot(p) for k, p in site.locations().items()}
         with runner.container_profile(mode=mode, folders=site.folders) as (boundary, paths):
             seen["paths"], seen["sid"] = dict(paths), boundary.sid
             spec = CommandSpec(
-                (str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-Command",
-                 child_script(site, writes_work=mode == "dispatch")), "work/t1",
+                (str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+                 "Bypass", "-File", str(entry)), "work/t1",
                 env=base_environment(paths["runtime"]), boundary=boundary, timeout_seconds=30)
             seen["outcome"] = runner.run(spec)
             seen["during"] = {k: snapshot(p) for k, p in site.locations().items()}
@@ -193,8 +197,8 @@ def test_a_route_through_a_junction_is_refused_before_anything_is_journalled(sit
 @pytest.mark.parametrize("order", ["first-in-first-out", "first-in-last-out"])
 def test_two_attempts_on_one_install_folder_each_take_back_only_their_own_entries(site, order):
     (site.root / "work" / "t2").mkdir()
-    (site.root / ".kit-home" / "b").mkdir()
-    second = AttemptFolders(work="work/t2", home=".kit-home/b", install=str(site.install))
+    (site.root / HOME / "b").mkdir()
+    second = AttemptFolders(work="work/t2", home=f"{HOME}/b", install=str(site.install))
     runner = ProcessRunner(site.root)
     with ownership.acquire_owner(site.root):
         before = snapshot(site.install)

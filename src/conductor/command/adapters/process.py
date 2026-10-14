@@ -64,6 +64,7 @@ from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
 from .process_env_rules import INJECTING_ENV
+from .process_loans import holds_entry
 from .process_profile import ProfileJournal
 from .environment_values import (
     ENV_NAME as _ENV_NAME,
@@ -569,6 +570,8 @@ class ProcessRunner:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
             raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
+        if spec.boundary is not None and not holds_entry(spec.argv, spec.boundary.install):
+            raise CommandSpecError("the program is not in the install folder loaned to the attempt")
         env = git_ceiling_environment(      # ADR-7e: extra protection, never the boundary
             self._child_env(spec), self._root, self._root / WORK_DIR, cwd, windows=os.name == "nt")
         sensitive_values = self.allowed_environment_values(

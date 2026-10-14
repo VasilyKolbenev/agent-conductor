@@ -286,7 +286,8 @@ class ProfileJournal:
                 if loans is not None:
                     loans.grant(path, sid, mode, folders)
                     paths = {**paths, **loans.paths}
-                yield WindowsContainer(sid, internet_client=internet_client), paths
+                install = None if loans is None else str(paths["install"])
+                yield WindowsContainer(sid, internet_client=internet_client, install=install), paths
         finally:
             try:
                 if active_tokens is not None and active_tokens():

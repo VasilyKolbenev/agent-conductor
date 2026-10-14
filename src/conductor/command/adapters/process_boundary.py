@@ -12,6 +12,9 @@ import re
 class WindowsContainer:
     sid: str
     internet_client: bool = False
+    #: The install folder loaned to this attempt (`process_loans`), absolute; None for an attempt
+    #: that loans none. A spawn on a container that names one starts a program standing in it.
+    install: str | None = None
 
     def __post_init__(self):
         if (type(self.sid) is not str
@@ -20,6 +23,9 @@ class WindowsContainer:
             raise ValueError("a full AppContainer profile SID is required")
         if type(self.internet_client) is not bool:
             raise ValueError("internet_client must be a boolean")
+        if self.install is not None and (type(self.install) is not str or not self.install
+                                         or not Path(self.install).is_absolute()):
+            raise ValueError("install must be an absolute folder, or None")
 
 
 _DRIVE = re.compile(r"[A-Za-z]:")

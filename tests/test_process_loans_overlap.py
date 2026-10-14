@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from conductor.command.adapters.process_loans import FolderLoans
-from tests.test_process_loans import LoanHold, OWNER, PRIOR, masks, prior_acl, world
+from tests.test_process_loans import HOME, LoanHold, OWNER, PRIOR, masks, prior_acl, world
 
 SID2 = "S-1-15-2-1-2-3-4-5-6-8"
 RX = 0x1200A9
@@ -22,7 +22,7 @@ FOREIGN = "(A;OICI;0x1200a9;;;S-1-5-21-77)"
 def second_attempt(w):
     """A second profile of the same owner, with a loan of its own on the SAME install folder."""
     profile_path, sid = w.store.create_profile()
-    folders = {"work": w.root / "work" / "t2", "home": w.root / ".kit-home" / "b",
+    folders = {"work": w.root / "work" / "t2", "home": w.root / HOME / "b",
                "install": w.folders["install"]}
     for key in ("work", "home"):
         folders[key].mkdir(parents=True)
