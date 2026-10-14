@@ -154,6 +154,22 @@ def test_a_press_is_told_by_what_the_hub_answered_and_a_file_problem_is_never_th
                             for code in ("candidate_not_found", "contract_invalid", "csrf_denied")]
 
 
+def test_a_pin_refused_for_a_changed_tool_says_to_restart_the_hub_and_sends_no_second_press():
+    # The hub looks for candidates once in its life and a refusal refreshes none (lane H's
+    # handoff, section 4): the offer that follows is the same, so no word may promise another.
+    out = js("""
+      show({keys: ["git_changed", "gh_changed"].map((code) => tools.pinNotice(refused(code)).key),
+        said: ["en", "ru"].map((locale) => say(locale, "hub.tool.pin_changed"))});
+    """)
+    assert out["keys"] == ["hub.tool.pin_changed"] * 2
+    english, russian = (text.lower() for text in out["said"])
+    assert "restart the hub" in english and "перезапустите hub" in russian
+    for promise in ("pin", "check"):
+        assert promise not in english, promise
+    for promise in ("закреп", "проверьте"):
+        assert promise not in russian, promise
+
+
 def test_the_pin_file_reasons_are_the_three_the_hub_puts_on_a_refusal():
     held = set(service.PIN_FILE_REASONS.values())
     page = js("show(tools.PIN_FILE_REASONS);")

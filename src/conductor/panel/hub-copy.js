@@ -468,9 +468,12 @@ export const HUB_COPY = Object.freeze({
   "hub.tool.state.unreadable": ["The version of the pinned {tool} cannot be read.",
     "Версию закреплённого {tool} не удаётся прочитать."],
   "hub.tool.pinned": ["The tool is pinned.", "Инструмент закреплён."],
-  "hub.tool.pin_changed": ["The tool now says another version than the one shown. The offer "
-    + "was read again: check it, then pin.", "Инструмент теперь называет другую версию, не ту, "
-    + "что была показана. Предложение прочитано заново: проверьте его и закрепите."],
+  // The hub looks for tools once, when it starts, and a refusal refreshes no offer: the offer that
+  // stays on the screen is the old one, so the only road is a restart of the hub.
+  "hub.tool.pin_changed": ["The tool now says another version than the one shown. The hub looks "
+    + "for tools once, when it starts: restart the hub to read it again.",
+    "Инструмент теперь называет другую версию, не ту, что была показана. Hub ищет инструменты "
+    + "один раз, при запуске: перезапустите hub, чтобы прочитать его заново."],
   "hub.tool.pin_too_old": ["This version is older than the product needs.",
     "Эта версия старее, чем нужно продукту."],
   // The words lane H wrote for a tool that is not pinned and for a pin FILE that cannot be used,

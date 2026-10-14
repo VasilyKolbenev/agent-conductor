@@ -106,6 +106,40 @@ def test_a_refusal_of_a_pin_is_said_in_its_own_words_and_the_setup_is_read_again
             "#hubStatus").text_content(), "a pin file is never said as the tool's version"
 
 
+@pytest.mark.parametrize("code", ["git_changed", "gh_changed"])
+def test_after_a_pin_refused_for_a_changed_tool_the_same_offer_stands_and_a_restart_is_asked(
+        hub_page, code):
+    """The hub looks once and a refusal refreshes no candidate: the setup read that follows offers
+    the same version, a second press gets the same refusal, and the words never promise a new offer.
+    """
+    page = hub_page
+    ready(page)
+    tool = code.split("_")[0]
+    route = f"/hub/tools/{tool}/pin"
+    if tool == "gh":
+        setup = fixture("hub_setup.json")
+        setup["tools"]["gh"].update(state="not_pinned", display=None, version=None,
+                                    candidates=setup["tools"]["git"]["candidates"])
+        page.hub.answer("/hub/setup", setup)
+        page.page.reload()
+        ready(page)
+    offered = page.page.evaluate(FACTS)
+    page.hub.refuse(route, 409, code)
+    status = page.page.locator("#hubStatus")
+    for press_number in (1, 2):
+        reads = page.hub.requests("/hub/setup")
+        page.page.locator(f'[data-focus="pin:{tool}:0"]').click()
+        expect(status).to_have_text(say(page, "hub.tool.pin_changed"))
+        wait_reads(page, "/hub/setup", reads + 1)
+        assert len(page.hub.posts) == press_number
+        assert page.page.evaluate(FACTS) == offered, "the hub offers the same candidate again"
+    assert {post["path"] for post in page.hub.posts} == {route}
+    said = status.text_content().lower()
+    assert "restart the hub" in said or "перезапустите hub" in said
+    for promise in ("pin", "check", "закреп", "проверьте"):
+        assert promise not in said, promise
+
+
 @pytest.mark.parametrize("status,code", [
     (404, "candidate_not_found"), (409, "tool_version_unreadable"), (422, "contract_invalid")])
 def test_any_other_refusal_of_a_pin_is_said_in_the_clause_of_its_code(hub_page, status, code):
