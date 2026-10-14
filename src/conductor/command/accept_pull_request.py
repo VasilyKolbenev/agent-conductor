@@ -10,7 +10,10 @@ What a press does, in order, and why it can be pressed again:
    that commit (else `pr_mismatch`, `remote_head_moved`), and the pull requests already on the
    branch are read. One that is the head's own is recorded and nothing is created; one that is
    not (another commit, another base, a fork) is `pr_mismatch` and nothing is created. A press
-   that only checks (`"check": true`) stops here;
+   that only checks (`"check": true`) stops here. One difference: if the remote head has moved it
+   still reads the list, since it may follow a creation whose answer was unknown, and a pull
+   request found there is recorded as in 3. A press that may create refuses on a moved head
+   without reading the list;
 2. the creation, with the body on standard input;
 3. the same check again, the remote head and the list. The branch may have moved between the
    check and the creation: the check narrows that window and cannot close it, and this module
@@ -152,7 +155,10 @@ def _repeat(record, request):
 def _publish(api, run_id, request, push, readers):
     git, gh = readers
     head = push["ref"].removeprefix("refs/heads/")
-    own = _check(git, gh, api._store.project_root, push, head, request.base)
+    seen = _remote_head(git, api._store.project_root, push)
+    if seen != push["commit"]:
+        return 200, {"pull_request": _moved(api, run_id, request, push, (gh, head), seen)}
+    own = _existing(gh, push, head, request.base)
     if own is not None:
         return 200, {"pull_request": _record(api, run_id, request, push, own)}
     if request.check:
@@ -160,20 +166,39 @@ def _publish(api, run_id, request, push, readers):
     return 201, {"pull_request": _create(api, run_id, request, push, head, (git, gh))}
 
 
-def _check(git, gh, root, push, head, base):
-    """The check before any creation: the head's own pull request, or None, or a refusal."""
+def _remote_head(git, root, push):
+    """The commit the branch holds on the remote now (None: no such ref), else a refusal."""
     try:
-        seen = github.ls_remote(git, root, push["push_url"], push["ref"])
+        return github.ls_remote(git, root, push["push_url"], push["ref"])
     except github.RemoteUnanswered as error:
         raise github.PublishRefused(
             "push_auth_failed" if error.auth else "pr_create_failed") from None
-    if seen != push["commit"]:
-        raise github.PublishRefused("pr_mismatch", "remote_head_moved")
+
+
+def _existing(gh, push, head, base):
+    """The head's own pull request on the branch, or None, or `pr_mismatch` for another one."""
     listed = _list(gh, push["remote_repo"], head)
     own = next((row for row in listed if row.is_own(push["commit"], base)), None)
     if own is None and listed:
         raise github.PublishRefused("pr_mismatch", listed[0].mismatch(push["commit"]))
     return own
+
+
+def _moved(api, run_id, request, push, where, seen):
+    """The remote head is not the pushed commit: `pr_mismatch` (`remote_head_moved`), no creation.
+
+    A press that only checks is the one exception. It follows a creation whose answer may have
+    been unknown, and that creation may have made a pull request nobody read back; refusing here
+    would leave it unrecorded for good, and no text may then say that none was made. So the list
+    is read first, and a pull request found there is recorded as what it is (its `mismatch`),
+    the way a pull request created for a branch that moved is. None found is the same refusal.
+    """
+    gh, head = where
+    listed = _list(gh, push["remote_repo"], head) if request.check else []
+    if not listed:
+        raise github.PublishRefused("pr_mismatch", "remote_head_moved")
+    row = next((row for row in listed if row.is_own(push["commit"], request.base)), listed[0])
+    return _record(api, run_id, request, push, row, seen)
 
 
 def _list(gh, repo, head):

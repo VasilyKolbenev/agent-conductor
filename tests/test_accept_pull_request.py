@@ -276,6 +276,92 @@ def test_a_press_that_only_checks_records_the_pull_request_that_exists_and_never
     assert made(gh, CREATED) == []
 
 
+def move_branch(root, bare, to=None):
+    """Move the pushed branch on the remote behind a press: to commit `to`, or away if None."""
+    git("push", "-q", "-f", str(bare), f"{to}:{REF}" if to else f":{REF}", cwd=root)
+
+
+@needs_git
+def test_an_unknown_create_a_failed_list_and_a_moved_branch_are_reconciled_by_the_check(
+        tmp_path):
+    """The creation was unknown and the list after it failed, so nothing was recorded; then the
+    branch moved. The check must still read the list: the pull request may exist."""
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    other = moved_commit(root, push)
+    landed = _fakegh.pr_row(12, other, head=BRANCH, base="main")
+    _fakegh.script(gh.dir, {
+        LISTED: [_fakegh.pr_list(), _fakegh.said("", exit=1), _fakegh.pr_list(landed)],
+        CREATED: [_fakegh.said("", exit=1)]})
+    assert reason_of(press(api, push)) == "pr_create_failed"
+    assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
+    move_branch(root, bare, other)
+    answer = press(api, push, check=True)
+    assert answer.status == 200, answer.payload
+    record = answer.payload["pull_request"]
+    assert (record["number"], record["head_oid"], record["base"]) == (12, push["commit"], "main")
+    assert record["mismatch"] == {"head_oid": other, "base": "main", "cross_repository": False}
+    assert keys(gh) == [LISTED, CREATED, LISTED, LISTED] and len(made(gh, CREATED)) == 1
+    shown = api.handle("GET", f"/command/runs/{RUN}/accept", get_headers()).payload
+    assert shown["pull_request"] == record
+    again = press(api, push)
+    assert (again.status, again.payload) == (200, {"pull_request": record})
+    assert len(made(gh, CREATED)) == 1 and len(made(gh, LISTED)) == 3
+
+
+@needs_git
+@pytest.mark.parametrize("found", [dict(), dict(base="dev"), dict(cross=True)])
+def test_a_check_for_a_moved_branch_records_what_the_branch_has_as_what_it_is(tmp_path, found):
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    other = moved_commit(root, push)
+    move_branch(root, bare, other)
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list(
+        _fakegh.pr_row(5, other, head=BRANCH, **found))]})
+    answer = press(api, push, check=True)
+    assert answer.status == 200, answer.payload
+    record = answer.payload["pull_request"]
+    assert (record["number"], record["base"], record["head_oid"]) == (5, "main", push["commit"])
+    assert record["mismatch"] == {"head_oid": other, "base": found.get("base", "main"),
+                                  "cross_repository": found.get("cross", False)}
+    assert keys(gh) == [LISTED] and made(gh, CREATED) == []
+
+
+@needs_git
+def test_a_check_for_a_deleted_branch_records_the_head_own_pull_request_among_the_others(tmp_path):
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    move_branch(root, bare)
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list(
+        row_of(push, 3, base="dev", state="CLOSED"), row_of(push, 5, state="MERGED"))]})
+    answer = press(api, push, check=True)
+    assert answer.status == 200, answer.payload
+    assert answer.payload["pull_request"]["number"] == 5
+    assert answer.payload["pull_request"]["mismatch"] is None
+    assert keys(gh) == [LISTED] and made(gh, CREATED) == []
+
+
+@needs_git
+def test_a_check_for_a_moved_branch_reads_the_list_and_says_the_branch_moved_when_none_is_there(
+        tmp_path):
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    move_branch(root, bare, moved_commit(root, push))
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list()]})
+    answer = press(api, push, check=True)
+    assert reason_of(answer) == "pr_mismatch"
+    assert answer.payload["error"]["detail"]["mismatch"] == "remote_head_moved"
+    assert keys(gh) == [LISTED] and made(gh, CREATED) == []
+    assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
+
+
+@needs_git
+def test_a_check_for_a_moved_branch_whose_list_gh_cannot_give_creates_and_records_nothing(
+        tmp_path):
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    move_branch(root, bare, moved_commit(root, push))
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.said("not json")]})
+    assert reason_of(press(api, push, check=True)) == "pr_create_failed"
+    assert made(gh, CREATED) == []
+    assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
+
+
 @needs_git
 def test_a_remote_that_does_not_answer_before_the_check_creates_nothing(tmp_path):
     api, root, push, remote, bare, gh = pushed(tmp_path)
