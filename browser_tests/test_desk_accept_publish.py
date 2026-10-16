@@ -26,7 +26,9 @@ from playwright.sync_api import Browser, expect
 from browser_tests.test_desk_accept import (  # noqa: F401  (accept_server is a fixture)
     COMMIT, PREVIEW, REVIEW, _Desk, _desk, accept_server)
 from tests import _fakegh
-from tests.accept_remote import BRANCH, TIMED_OUT, URL, Remote, remote_oid, with_gh
+from tests.accept_remote import (
+    BRANCH, GUARD, TIMED_OUT, URL, Remote, config_text, guard_of, refs_text, remote_oid,
+    with_gh, words_of)
 from tests.git_repo_helpers import git, needs_git
 from tests.test_accept_context import RUN
 
@@ -47,6 +49,7 @@ SENT = {"en": "Sent to GitHub", "ru": "Отправлено на GitHub"}
 UNKNOWN_PUSH = {"en": "The outcome of the send is unknown.", "ru": "Исход отправки неизвестен."}
 UNKNOWN_PULL = {"en": "The outcome of the creation is unknown.",
                 "ru": "Исход создания неизвестен."}
+TERMINAL = {"en": "Send from your terminal", "ru": "Отправить из терминала"}
 
 
 @dataclass
@@ -132,12 +135,17 @@ def test_the_accepted_result_is_sent_to_github_and_opened_as_a_pull_request_one_
                                 _fakegh.pr_list(_fakegh.pr_row(7, oid, base=base, head=BRANCH))],
                     "pr create": [_fakegh.created(7)]})
         assert rig.remote.pushes() == [] and rig.gh_calls("pr create") == []
-        _read_terms(desk)
+        refs, config = refs_text(rig.root), config_text(rig.root)
+        terms = _read_terms(desk)
         assert rig.remote.pushes() == []
         _send(desk)
         expect(desk.card).to_contain_text(SENT[language])
         expect(desk.card.locator(PULL["review"])).to_be_enabled()
         assert remote_oid(rig.bare) == oid and len(rig.remote.pushes()) == 1
+        pushed, = rig.remote.pushes()
+        assert terms["command"] == " ".join(["git", *words_of(pushed)])
+        assert guard_of(pushed) == GUARD
+        assert refs_text(rig.root) == refs and config_text(rig.root) == config
         assert rig.gh_calls("pr create") == []
         command = desk.card.locator("pre").inner_text()
         body = desk.card.locator(BODY).input_value()
@@ -207,4 +215,25 @@ def test_a_pull_request_whose_answer_is_not_known_is_checked_and_created_only_on
         expect(desk.card.locator("a")).to_have_attribute("href", PULL_URL + "8")
         assert len(rig.gh_calls("pr create")) == 1 and len(rig.gh_calls("pr list")) == 3
         assert desk.count("POST", PULL_PATH) == 2
+        assert desk.errors == []
+
+
+@needs_git
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_remote_that_is_not_github_gets_the_terminal_command_and_no_step(
+        chromium: Browser, accept_server, language: str):
+    """The project's only remote is GitLab's: the card shows `git push <remote> <branch>` as text
+    to run in a terminal and offers no press, and neither the push route nor gh is asked."""
+    url, root, _httpd = accept_server
+    git("remote", "add", "gitlab", "https://gitlab.example/o/r.git", cwd=root)
+    with _desk(chromium, url, language) as desk:
+        desk.card.locator(PREVIEW).click()
+        expect(desk.card).to_contain_text("new.txt")
+        desk.card.locator(REVIEW).click()
+        desk.card.locator(COMMIT).click()
+        expect(desk.card.locator("pre")).to_have_text(f"git push gitlab {BRANCH}")
+        expect(desk.card).to_contain_text(TERMINAL[language])
+        expect(desk.card.locator(ANY_PUSH_BUTTON)).to_have_count(0)
+        expect(desk.card.locator(ANY_PULL_BUTTON)).to_have_count(0)
+        assert desk.count("POST", PUSH_PATH) == 0 and desk.count("POST", PULL_PATH) == 0
         assert desk.errors == []

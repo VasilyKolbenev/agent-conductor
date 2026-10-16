@@ -99,6 +99,13 @@ export const DESK_COPY = Object.freeze({
   "desk.accept.push.ref": ["Branch on GitHub", "Ветка на GitHub"],
   "desk.accept.push.oid": ["Commit to send", "Отправляемый коммит"],
   "desk.accept.push.digest": ["Push digest", "Дайджест отправки"],
+  "desk.accept.push.guard": [
+    "The first two words, -c remote.…, give Git a second remote name for this one command only. "
+      + "They change no configuration and keep newer Git from writing a remote-tracking branch "
+      + "for this push.",
+    "Первые два слова, -c remote.…, дают Git второе имя remote только для этой команды. "
+      + "Настройки они не меняют, а новый Git не запишет для этой отправки remote-tracking "
+      + "ветку."],
   "desk.accept.push.confirm_text": [
     "Confirm sending commit {commit} to {repo} as {ref}, push digest {digest}, as {actor}. "
       + "If the branch is already there, nothing changes.",
@@ -116,6 +123,17 @@ export const DESK_COPY = Object.freeze({
     "Ветки на GitHub нет. Можно отправить снова."],
   "desk.accept.push.sent": ["Sent to GitHub", "Отправлено на GitHub"],
   "desk.accept.push.remote_oid": ["Commit on GitHub", "Коммит на GitHub"],
+  // A remote that is not GitHub gets no step, only the command for the owner's terminal (9.7).
+  "desk.accept.terminal.heading": ["Send from your terminal", "Отправить из терминала"],
+  "desk.accept.terminal.effect": [
+    "The desk sends only to GitHub; for any other remote it runs nothing and records nothing. "
+      + "To send the accepted branch there, run this command yourself in a terminal, in the "
+      + "project folder. Like any push by remote name, it also writes the remote-tracking "
+      + "branch of that remote in the project's repository.",
+    "Стол отправляет только на GitHub; для любого другого remote он ничего не запускает и "
+      + "ничего не записывает. Чтобы отправить принятую ветку туда, выполните эту команду сами "
+      + "в терминале, в папке проекта. Как любой push по имени remote, она записывает в "
+      + "репозитории проекта и remote-tracking ветку этого remote."],
   "desk.accept.pr.heading": ["Pull request on GitHub", "Pull Request на GitHub"],
   "desk.accept.pr.effect": [
     "Checks that the branch on GitHub still holds the sent commit, then opens one pull request "
