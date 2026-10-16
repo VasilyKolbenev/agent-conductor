@@ -192,6 +192,35 @@ def test_each_refusal_of_the_confirmation_is_said_and_leaves_exactly_the_right_n
                                "says": True, "sent": 2}, reason
 
 
+#: The two things that move the terms of a push: where it goes, and the command that sends it.
+MOVED_TERMS = {"en": ("destination", "command"), "ru": ("назначение", "команда")}
+
+
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_changed_push_terms_are_said_to_cover_a_new_command_and_not_only_a_new_destination(locale):
+    """A guard name taken or freed since the terms were shown changes the command and leaves the
+    address and the repository as they were: the refusal may not say the destination moved."""
+    out = _js("""
+      const renewed = {...TERMS, push_digest: 'sha256:' + '9'.repeat(64),
+        command: TERMS.command.replace('conduct-no-tracking', 'conduct-no-tracking-2')};
+      const r = rig({locale: d, push: [ok('push_terms', TERMS), refused('push_terms_changed'),
+        ok('push_terms', renewed)]});
+      await opened(r);
+      for (const key of ['accept:push:desk.accept.push.terms',
+        'accept:push:desk.accept.review', 'accept:push:desk.accept.push.action']) {
+        await press(r, key);
+      }
+      const text = said(d, 'accept.reason.push_terms_changed');
+      const refusal = {says: hasText(r.host.detail, text), buttons: live(r.host.detail)};
+      await press(r, 'accept:push:desk.accept.push.terms');
+      console.log(JSON.stringify({text, refusal, other: hasText(r.host.detail, renewed.command),
+        url: hasText(r.host.detail, TERMS.push_url)}));
+    """, locale)
+    assert all(word in out["text"].lower() for word in MOVED_TERMS[locale]), out["text"]
+    assert out["refusal"] == {"says": True, "buttons": [PREFIX + "push.terms"]}
+    assert (out["other"], out["url"]) == (True, True)
+
+
 def test_a_refusal_that_is_not_an_acceptance_refusal_is_said_by_its_code():
     out = _js("""
       const wire = {status: 'refused', code: 'tool_unavailable', payload: {error: {
