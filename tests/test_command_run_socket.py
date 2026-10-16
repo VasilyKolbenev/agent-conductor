@@ -35,6 +35,11 @@ from tests.test_command_run_routes import (
     urllib,
     write_project,
 )
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: The socket tests open runs over a harness fake served as a plain child; this module is not about
+#: the boundary, so the doors are told it provides one (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 #
 # Every test above calls `CommandApi` directly, which proves the route

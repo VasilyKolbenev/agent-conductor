@@ -54,7 +54,12 @@ from conductor.command.contracts import RunEnvelope
 from conductor.command.graph_template import GraphTemplate, load_template
 from conductor.command.run_store import snapshot_digest
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from tests.test_store import good_lane, write_project
+
+#: The smokes drive a harness fake through `server.build` as a plain child; this module is not
+#: about the boundary, so the doors are told it provides one (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 RUN_ID = "run-loopback-001"
 NOW = "2026-08-21T09:00:00Z"
