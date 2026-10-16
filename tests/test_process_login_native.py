@@ -192,12 +192,12 @@ def mutexes_are_free(site: LoginSite) -> bool:
     return True
 
 
-def run_child(site: LoginSite, mode: str) -> dict:
+def run_child(site: LoginSite, mode: str, script: str | None = None) -> dict:
     from tests import os_boundary_windows as ac
     from tests.os_boundary_box import base_environment
     runner, seen = ProcessRunner(site.root), {}
     entry = site.install / "entry.ps1"
-    entry.write_text(child_script(site), encoding="utf-8")
+    entry.write_text(child_script(site) if script is None else script, encoding="utf-8")
     with ownership.acquire_owner(site.root):
         seen["before"] = {k: snapshot_of(p) for k, p in everywhere(site).items()}
         seen["identity"] = os.stat(site.login / "auth.json").st_ino
