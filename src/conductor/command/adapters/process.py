@@ -64,6 +64,8 @@ from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
 from .process_env_rules import INJECTING_ENV
+from .process_errors import (  # LaunchRefused is raised by `_procgroup` and reached from here
+    CommandSpecError, ContainmentError, LaunchRefused, OwnershipError, ProcessRunnerError)
 from .process_loans import holds_entry
 from .process_profile import ProfileJournal
 from .environment_values import (
@@ -141,22 +143,6 @@ def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | Non
     if windows is None:
         windows = os.name == "nt"
     return INJECTING_ENV.get(name.upper() if windows else name)
-
-
-class ProcessRunnerError(RuntimeError):
-    """The runner cannot safely honour the request as stated."""
-
-
-class CommandSpecError(ProcessRunnerError):
-    """A command is not structured argv, or its environment names are malformed."""
-
-
-class ContainmentError(ProcessRunnerError):
-    """The requested cwd is not strictly, locally beneath the project root."""
-
-
-class OwnershipError(ProcessRunnerError):
-    """A stop names no child this runner started and still holds."""
 
 
 def _argv(value):
@@ -591,24 +577,9 @@ class ProcessRunner:
         with self.project_write_guard(self._root):
             scope = self.ownership_scopes.find(self._root)
             loan = None if scope is None else scope.claim()
-        try:
-            proc = self._launch(spec, cwd, env, payload, loan)
-        except BaseException:
-            if loan is not None:
-                loan.retire(False)
-            raise
-        try:
-            if spec.boundary is not None:
-                from . import _winlaunch
-                _winlaunch.require_policy(proc, spec.boundary.sid)
-            group = _procgroup.make_group(proc)
-        except BaseException:
-            try:
-                self._cleanup_failed_spawn(proc, None)
-            finally:
-                if loan is not None:
-                    loan.retire(False)
-            raise
+        proc = _procgroup.start(lambda: self._launch(spec, cwd, env, payload, loan),
+                                confined=spec.boundary is not None, loan=loan)
+        group = _procgroup.adopt(proc, self._policy_check(spec), loan)
         try:
             token = secrets.token_hex(16)
             owned = _Owned(
@@ -625,6 +596,14 @@ class ProcessRunner:
         with self._lock:
             self._owned[token] = owned
         return owned
+
+    @staticmethod
+    def _policy_check(spec):
+        """The check that the container policy is on a suspended child; None for a plain spawn."""
+        if spec.boundary is None:
+            return None
+        from . import _winlaunch
+        return lambda child: _winlaunch.require_policy(child, spec.boundary.sid)
 
     @staticmethod
     def _launch(spec, cwd, env, payload, loan):

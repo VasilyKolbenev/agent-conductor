@@ -5,7 +5,8 @@ import time
 
 import pytest
 
-from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
+from conductor.command.adapters.process import (
+    CommandSpec, CommandSpecError, LaunchRefused, ProcessRunner)
 from conductor.command.adapters.process_boundary import WindowsContainer
 from conductor.command.adapters.process_projection import _payload_from_spec
 from conductor.command.adapters.base import AdapterContractError
@@ -77,8 +78,9 @@ def test_unapplied_policy_is_refused_before_resume_and_retires_loan_unproven(nat
         children.append(proc)
         return proc
     monkeypatch.setattr(ProcessRunner, "_launch", staticmethod(unconfined))
-    with pytest.raises(OSError, match="policy was not applied"):
+    with pytest.raises(LaunchRefused, match="policy was not shown") as caught:
         runner.run(spec("[IO.File]::WriteAllText('escaped.txt','bad')"))
+    assert caught.value.code == "policy_not_applied"
     assert not (work / "escaped.txt").exists()
     assert len(children) == 1 and children[0].poll() is not None
     assert children[0].stdout.closed
