@@ -197,6 +197,19 @@ class ProjectOwner:
         except OwnerRefused as error:
             raise OwnershipError(str(error)) from error
 
+    def leased_login(self):
+        """The login folder the calling thread holds under the shared login lease, or None.
+
+        The boundary grants the leased login home and no other folder, so the fact is read from
+        the lease itself (`ownership_login.LeasedLogin`: the folder and its identity) and not from
+        a value a caller names. The lease is thread-bound.
+
+        Raises:
+            OwnerRefused: the owner is not live, or the lease is uncertain.
+        """
+        self.check()
+        return self._logins.held()
+
     def _claim_process(self):
         from .command.adapters.process_ownership_values import ProcessLease
         from .ownership_native import close_inherited

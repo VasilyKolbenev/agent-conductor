@@ -486,9 +486,9 @@ class ProcessRunner:
         """One AppContainer profile for one attempt: a context manager (`process_profile`).
 
         `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
-        attempt stands on. The work folder and the home are routes walked from the project root
-        like a working folder (`ContainmentError` for a link or a way out), and nothing is made
-        or granted when one is refused.
+        attempt stands on, or the login home its lease names. The work folder and the home are
+        routes walked from the project root like a working folder (`ContainmentError` for a link
+        or a way out), and nothing is made or granted when one is refused.
         """
         from . import _winlaunch
         loaned = None if folders is None else self._loaned(folders)
@@ -500,6 +500,8 @@ class ProcessRunner:
         found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
         if folders.home is not None:
             found["home"] = self._resolve_cwd(folders.home)
+        if getattr(folders, "login", None) is not None:
+            found["login"] = Path(folders.login)
         return found
 
     def recover_container_profiles(self) -> None:
