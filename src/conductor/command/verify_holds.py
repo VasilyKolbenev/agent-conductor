@@ -83,6 +83,10 @@ CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safel
 CHECKER_LOGIN_RESIDUE = (
     "the checker left state this build does not declare in its login directory")
 CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass preflight"
+#: The checker is confined and the execution boundary is not provided for its read-only attempt on
+#: this build, so it spawned nothing (R5). No platform, path or vendor detail rides this sentence.
+CHECKER_BOUNDARY_UNAVAILABLE = (
+    "the execution boundary is not provided for the checker's attempt on this build")
 CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"

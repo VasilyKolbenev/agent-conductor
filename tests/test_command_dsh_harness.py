@@ -40,6 +40,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
 
 from tests import _fakedsh
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-17T12:00:00Z"
@@ -81,7 +82,7 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     (instructions / "instr-001.md").write_text(
         INSTRUCTION_BODY, encoding="utf-8", newline="\n")
     log = tmp_path / "spawns.log"
-    node, entrypoint = _fakedsh.fake_pins()
+    node, entrypoint = _fakedsh.fake_pins(pin_dir(tmp_path, "deepseek-harness"))
     environ = {_fakedsh.SPAWN_LOG: str(log), **knobs}
     # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
     # in the REAL process environment and the runner is left to read that, so the
@@ -93,10 +94,12 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     if ambient is not None:
         for _name, _value in environ.items():
             ambient.setenv(_name, _value)
+    # `confine_platform=None`: the launch that existed before R5. The harness fake is a plain
+    # child; the boundary witnesses confine it themselves (tests/_fakeboundary.py).
     resolution = resolve_providers(
         [_config(node, entrypoint, tuple(sorted(environ)))], root=root,
         clock=lambda: NOW, ids=_Ids(),
-        environ=None if ambient is not None else environ)
+        environ=None if ambient is not None else environ, confine_platform=None)
     return resolution.registry.resolve(PROVIDER_ID), root, log
 
 

@@ -22,6 +22,14 @@ Two things differ from the Kimi fake, and both are facts about Grok Build:
 - there are FOUR documented switches rather than one, so every spawn records all
   four values and a test can hold that this build turns each of them off.
 
+A third difference is the permission gate, measured live on 28.09.2026 (live-grok-2,
+"no changed file"): a headless run without auto-approval DENIES the Edit and Write tools, so a
+task cannot change a file unless its argv carries ``--allow Edit --allow Write``. The tool
+names are case-sensitive and ``--allow`` repeats (the pinned headless-mode guide, spec 10.2).
+The knobs that write a file as a tool call (``FAKEGROK_WRITE_FILE``, ``FAKEGROK_ESCAPE_FILE``)
+therefore write only when the argv allows ``Write``, as the real binary does; the home seam is
+the vendor's own state and is not a tool call.
+
 Every spawn appends one JSON line to the spawn log, so a test can COUNT spawns
 and read back the exact argv, cwd and Grok environment the adapter handed over.
 That log is the evidence behind the version-mismatch gate: a mismatch must leave
@@ -136,11 +144,17 @@ def _write_pair(base: Path, spec: str) -> None:
     target.write_text(text, encoding="utf-8", newline="\n")
 
 
-def _run_prompt() -> int:
+def allowed_tools(argv: list[str]) -> set[str]:
+    """The tool names the argv allows: each value that follows one ``--allow``."""
+    return {argv[at + 1] for at, token in enumerate(argv[:-1]) if token == "--allow"}
+
+
+def _run_prompt(argv: list[str]) -> int:
     env = os.environ
-    if env.get(WRITE_FILE):
+    may_write = "Write" in allowed_tools(argv)
+    if env.get(WRITE_FILE) and may_write:
         _write_pair(Path.cwd(), env[WRITE_FILE])
-    if env.get(ESCAPE_FILE):
+    if env.get(ESCAPE_FILE) and may_write:
         _write_pair(Path.cwd().parent, env[ESCAPE_FILE])
     if env.get(HOME_FILE) and env.get(GROK_HOME_NAME):
         _write_pair(Path(env[GROK_HOME_NAME]), env[HOME_FILE])
@@ -168,7 +182,7 @@ def main() -> int:
             os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
         return 0
-    return _run_prompt()
+    return _run_prompt(argv)
 
 
 if __name__ == "__main__":

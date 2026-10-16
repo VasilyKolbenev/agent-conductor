@@ -63,6 +63,17 @@ def uncontained_detail(tool: str) -> str:
             "contained, so nothing was minted, claimed or spawned")
 
 
+def boundary_detail(tool: str) -> str:
+    """A task attempt refused because the execution boundary is not provided for it (R5).
+
+    It carries no platform, no path and no vendor detail: which platform, mode or login road
+    lacked the boundary is a fact of the machine and of the plan, and the door that refuses a
+    plan names the step. A receipt only says that nothing was started.
+    """
+    return (f"the execution boundary is not provided for this {tool} attempt on this build, "
+            "so no task was spawned")
+
+
 def residue_detail(tool: str) -> str:
     """The home root holds state this build did not mint and may not delete.
 

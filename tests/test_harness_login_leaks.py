@@ -33,6 +33,12 @@ from tests import _fakeclaude
 from tests.test_command_claude_transport import NOW, _Ids, a_request, run_once
 from tests.test_harness_subscription_login import a_harness, a_login_home
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 REFRESHED = "sk-ant-oat01-SYNTHETIC-REFRESHED-VALUE-NOT-A-REAL-CREDENTIAL"
 #: Words only the CHILD's own review output carries. The fixture's seed document
 #: is an artifact in the same run, so a needle both could hold would call a

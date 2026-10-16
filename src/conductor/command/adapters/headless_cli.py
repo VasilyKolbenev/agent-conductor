@@ -44,7 +44,9 @@ two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
 
 MODEL ROUTING lives next door in ``headless_routing``, mixed in below. This
 module carries the routed value from ``PreparedAction`` to the argv builder and
-learns nothing about it on the way.
+learns nothing about it on the way. The ATTEMPT -- one spawn in a fresh home, and
+the road out of it -- lives in ``harness_attempt``, split off when this module
+reached its line cap.
 
 This module is PROVIDER-NEUTRAL and names no product. It compares no provider
 id, so the identity gate has nothing to permit here; each concrete adapter is a
@@ -63,8 +65,6 @@ append a durable EvidenceRef; what changes a terminal state is that EVIDENCE,
 never the exit code.
 """
 from __future__ import annotations
-
-from .headless_spec import attempt_spec
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -102,10 +102,10 @@ from .harness_workspace import (
     HarnessWorkspace,
     WorkspaceNotContained,
 )
-from . import login_home
 from ._procgroup import COMMAND_LINE_LIMIT, command_line_units
+from .harness_attempt import AttemptLaunch
 from .headless_login import LoginRoad
-from .login_lifetime import LoginLeaseRefused, owned_login_attempt
+from .login_lifetime import LoginLeaseRefused
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .task_binding import (
@@ -117,17 +117,11 @@ from .headless_values import (
     _version_token,
     attempt_relation,
 )
-from .process import (
-    STDIN_LIMIT,
-    CommandSpec,
-    ProcessOutcome,
-    ProcessRunner,
-    ProcessRunnerError,
-)
+from .process import STDIN_LIMIT, ProcessRunner
 
 
 class HeadlessCliTransport(
-        ReceiptWriting, ModelRouting, LoginRoad, InstructionBinding):
+        ReceiptWriting, ModelRouting, LoginRoad, AttemptLaunch, InstructionBinding):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -409,7 +403,7 @@ class HeadlessCliTransport(
         else left it or the version probe did.
         """
         self._begin_road()
-        claimed = self._already_claimed(request)
+        claimed = self._already_claimed(request) or self._boundary_refusal(request, "dispatch")
         if claimed is not None:
             return claimed
         self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
@@ -430,13 +424,7 @@ class HeadlessCliTransport(
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
         argv, payload = self._task_command(task_text)
-        # Sized before the claim (review rulings K, R1): past the channel the spawn fails after it,
-        # leaving an unknown and a standing marker instead of this plain refusal. The argv channel
-        # (Kimi, Grok, DSH) is the WHOLE command line -- pins, flags, quoting, NUL -- as Windows
-        # counts it, on every platform: a POSIX argument may be far longer, so one rule is one fact.
-        if (payload is not None and (len(payload) > STDIN_LIMIT or b"\x00" in payload)
-                or payload is None
-                and command_line_units((*self._argv_prefix(), *argv)) > COMMAND_LINE_LIMIT):
+        if not self._task_fits_its_channel(argv, payload):
             return self._receipt(request, "failed", None,
                 "the materialized task exceeds the bounded task channel, so no task was spawned")
         self._workspace.claim(request.run_id, request.action_id)
@@ -444,7 +432,7 @@ class HeadlessCliTransport(
             argv, work.relative_to(self._workspace.root).as_posix(),
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile],
-            separate_stderr=self.dispatch_separate_stderr)
+            separate_stderr=self.dispatch_separate_stderr, mode="dispatch")
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))
@@ -457,6 +445,20 @@ class HeadlessCliTransport(
             # sentence; the outcome is the answer, and this is not a success.
             return self._residue_receipt(request, outcome)
         return self._observed(request, outcome)
+
+    def _task_fits_its_channel(self, argv: ArgvSource, payload: bytes | None) -> bool:
+        """Whether the materialized task fits the channel that carries it, asked before the claim.
+
+        Sized before the claim (review rulings K, R1): past the channel the spawn fails after it,
+        leaving an unknown and a standing marker instead of a plain refusal. The argv channel
+        (Kimi, Grok, DSH) is the WHOLE command line -- pins, flags, quoting, NUL -- as Windows
+        counts it, on every platform: a POSIX argument may be far longer, so one rule is one fact.
+        The pins and flags counted are those of the spawn that will really run, which inside the
+        boundary can be longer than the operator's pin (``_launch_prefix``).
+        """
+        if payload is not None:
+            return len(payload) <= STDIN_LIMIT and b"\x00" not in payload
+        return command_line_units((*self._launch_prefix("dispatch"), *argv)) <= COMMAND_LINE_LIMIT
 
     def _preflight_residue(
             self, request: ActionRequest) -> ActionResultReceipt | None:
@@ -548,136 +550,10 @@ class HeadlessCliTransport(
                 f"so no task was spawned")
         return self._login_preflight(request)
 
-    @owned_login_attempt
-    def _attempt(
-            self, argv: ArgvSource, cwd: str, *,
-            timeout: int | float,
-            stdin_bytes: bytes | None = None,
-            stdin_completion_id: int | None = None,
-            separate_stderr: bool = False,
-            model: str | None = None,
-            output_limit: int | None = None, server_read=None,
-            unset_env: tuple[str, ...] = ()) -> ProcessOutcome:
-        """One spawn inside one FRESH home, and the home goes when the spawn does.
-
-        This is the whole of the retention promise: a real harness may write
-        prompt, session, tool output and model text under its home, and nothing
-        here ever reads a byte of it, so the honest lifetime of that state is
-        exactly the lifetime of the spawn. The discard runs on every road out,
-        including a raise. A home this door may NOT delete -- one holding a name
-        whose kind it cannot establish -- is left standing rather than guessed
-        at, and the next dispatch's sweep refuses over it rather than deleting
-        through it.
-
-        The ONE reading of that home a provider gets stands between the spawn
-        and the discard, because after the discard there is nothing to read.
-        """
-        home = self._mint_home()
-        # ONE source for "is there a login directory in play", so the before and
-        # after measurements and the cleanup can never disagree about it.
-        auth_home = self._signed_in_road()
-        before = login_home.measure(auth_home, self.profile.login_scratch)
-        self._login_echo = False
-        self._remember_login_values()
-        try:
-            outcome = self._spawn(
-                argv, home, cwd, timeout=timeout, stdin_bytes=stdin_bytes,
-                stdin_completion_id=stdin_completion_id,
-                separate_stderr=separate_stderr, model=model,
-                output_limit=output_limit, unset_env=unset_env,
-                **({} if server_read is None else {"server_read": server_read}))
-            self._read_attempt_result(home, outcome)
-            return outcome
-        finally:
-            if auth_home:
-                self._take_back_login(auth_home, before)
-            self._discard(home)
-
-    def _read_attempt_result(self, home, outcome):
-        """Measure the completed spawn while its temporary home still exists."""
-        self._read_attempt_home(home)
-        # A vendor can refresh credentials while running. Scan the resulting
-        # values as well as those the runner already checked before spawning.
-        self._login_echo = self._echoed_login(outcome.output)
-        self._remember_login_values()
-
     def _release_attempt(self, relation: tuple[str, str, str, str]) -> None:
         """Drop what ONE finished attempt left on this transport."""
         self._attempts.pop(relation, None)
         self._login_history.pop(relation, None)
-
-    def _discard(self, home: Path) -> None:
-        """Discard one attempt home, or COUNT the failure; never raise, never hide.
-
-        This runs in a ``finally``, so raising here would replace whatever the
-        spawn did with a cleanup error. Swallowing the refusal is worse: the home
-        survives, the next dispatch runs anyway, and the retention promise is
-        silently broken. The refusal is counted instead, so every receipt this
-        dispatch goes on to build states it alongside its own outcome, and the
-        standing home stops the next dispatch at the sweep.
-        """
-        try:
-            self._workspace.discard_home(home)
-        except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- no path onward
-            self._retained += 1
-
-    @staticmethod
-    def _tokens(
-            argv: ArgvSource, home: Path, model: str | None) -> tuple[str, ...]:
-        """The child's own tokens: a ready argv, or the one its builder makes.
-
-        The ONE place a stdin-channel builder is ever called, and it is called
-        with the minted home, the routed model, and nothing else. There is no
-        ``task_text`` in this frame to pass even by mistake.
-
-        A READY tuple never sees the model, and that is the honest shape rather
-        than an omission: the version preflight hands one, and a preflight that
-        carried `--model` would be asking a build to load a model in order to
-        print its own version.
-        """
-        return argv if type(argv) is tuple else argv(home, model)
-
-    def _spawn(
-            self, argv: ArgvSource, home: Path, cwd: str, *,
-            timeout: int | float,
-            stdin_bytes: bytes | None = None,
-            stdin_completion_id: int | None = None,
-            separate_stderr: bool = False,
-            model: str | None = None,
-            output_limit: int | None = None, server_read=None,
-            unset_env: tuple[str, ...] = ()) -> ProcessOutcome:
-        """The ONE place a child is started; argv, env and bounds are code-owned.
-
-        ``cwd`` is a route RELATIVE to the project root, so the runner's own
-        containment walk -- which refuses a symlink, a junction, a ``..`` segment
-        or anything not strictly beneath the root -- is what decides where the
-        child may stand. No transport here ever hands it an absolute path.
-        """
-        profile = self.profile
-        failed = False
-        try:
-            # Building the spec is part of the spawn: a pin that cannot become a
-            # valid argv must refuse with the SAME fixed sentence as a spawn that
-            # cannot start, so no runner message and no path leaks through here.
-            spec = attempt_spec(self, argv, home, cwd, timeout=timeout,
-                stdin_bytes=stdin_bytes, stdin_completion_id=stdin_completion_id,
-                separate_stderr=separate_stderr, model=model, output_limit=output_limit,
-                unset_env=unset_env)
-            if server_read is not None:
-                owned = self._runner.start(spec)
-                try:
-                    server_read(owned.pid)
-                finally:
-                    outcome = self._runner.stop(owned.token)
-                return outcome
-            return self._runner.run(spec)
-        except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
-            failed = True
-        if failed:
-            raise self.error(
-                f"the {self.profile.tool_noun} harness could not start the "
-                "pinned build") from None
-        raise self.error("unreachable")
 
     def _env_allow(self) -> tuple[str, ...]:
         """The operator's environment allowlist, from this provider's own pin."""
@@ -774,17 +650,3 @@ class HeadlessCliTransport(
             f"{len(changed)} file(s) changed inside the action's authorized work "
             f"subtree, but this build writes no durable evidence record for them, "
             f"so no verified success may be claimed on their account")
-
-    # -- the owned subtrees -----------------------------------------------------
-
-    def _mint_home(self) -> Path:
-        """A FRESH home per spawn, named by a freshly minted causal id.
-
-        The id KIND comes from the provider. The extraction briefly made it the
-        neutral ``harness-home`` for everyone, which silently renamed dsh's
-        on-disk attempt directories -- a change of an observable, in a commit
-        whose whole claim was that no observable changed. It is also worth more
-        than tidiness: an operator reading the home root sees which provider left
-        an attempt behind, and one shared kind would have told them nothing.
-        """
-        return self._workspace.mint_home(self._ids(self.profile.home_id_kind))

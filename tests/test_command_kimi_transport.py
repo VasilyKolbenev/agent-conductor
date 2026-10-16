@@ -57,6 +57,7 @@ from conductor.command.contracts import ActionRequest
 from conductor.command.providers import resolve_providers
 
 from tests import _fakekimi
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-21T12:00:00Z"
@@ -77,7 +78,7 @@ class _Ids:
 
 
 def _executable(tmp_path: Path) -> Path:
-    exe = _fakekimi.build_executable(tmp_path / "bin")
+    exe = _fakekimi.build_executable(pin_dir(tmp_path, "kimi-code"))
     if exe is None:
         # Name the CAUSE. "This platform" blamed the platform for what is almost
         # always an environment fact -- no console-script launcher to copy -- and
@@ -114,9 +115,11 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     if ambient is not None:
         for _name, _value in environ.items():
             ambient.setenv(_name, _value)
+    # `confine_platform=None`: the launch that existed before R5. The harness fake is a plain
+    # child; the boundary witnesses confine it themselves (tests/_fakeboundary.py).
     resolution = resolve_providers(
         [config], root=root, clock=lambda: NOW, ids=_Ids(),
-        environ=None if ambient is not None else environ)
+        environ=None if ambient is not None else environ, confine_platform=None)
     return resolution.registry.resolve(KIMI_PROVIDER_ID), root, log
 
 

@@ -119,7 +119,8 @@ def _real_harness(tmp_path: Path, names: tuple[str, ...] = ()):
         [ProviderConfig(
             provider_id=CODEX_PROVIDER_ID, executable=executable,
             protocol=CODEX_PROTOCOL, env_allow=names)],
-        root=root, clock=lambda: NOW, ids=_Ids())
+        root=root, clock=lambda: NOW, ids=_Ids(),
+        confine_platform=None)  # a real install, driven plain: opt-in, not the production door
     contract = next(
         row for row in resolution.contracts if row.provider_id == CODEX_PROVIDER_ID)
     assert contract.available is True, "the pin is on disk, so this must be available"

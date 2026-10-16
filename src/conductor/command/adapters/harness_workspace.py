@@ -144,6 +144,16 @@ def _refuse(violation: RouteViolation) -> WorkspaceNotContained:
     return WorkspaceNotContained(render_route_violation(violation))
 
 
+def real_path(path: str | os.PathLike[str]) -> str:
+    """The file a pinned path really names, links and junctions followed, as an absolute string.
+
+    Taken by the parent, outside any container, for a child that cannot walk the folders above
+    its install itself (an interpreter started under the execution boundary). It reads the
+    filesystem and changes nothing, which is why it is here and not in a value module.
+    """
+    return os.path.realpath(path)
+
+
 #: Every mark a route component may never carry, decided ONCE for every system
 #: this build runs on rather than read from the one it happens to be running on.
 #:

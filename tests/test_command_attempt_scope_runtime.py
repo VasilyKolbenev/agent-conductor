@@ -24,6 +24,12 @@ from tests.test_command_runtime_authorize import (
     a_budget, a_confirmation, a_store, a_proposal, counting_ids)
 from tests.test_command_runtime_execute import ScriptedAdapter
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 
 WAIT = 30.0
 PROBE = 0.15
