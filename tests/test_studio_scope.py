@@ -327,6 +327,9 @@ def test_the_deadline_globals_are_reached_by_the_boot_and_transport_modules_alon
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
         elif name == "desk-flow-host.js":
             assert reached == ["AbortController"]
+        elif name == "desk-motion.js":
+            # The plaque's one clock (the motion guard holds it to a single function).
+            assert reached == ["setTimeout"]
         else:
             assert reached == [], (name, reached)
 

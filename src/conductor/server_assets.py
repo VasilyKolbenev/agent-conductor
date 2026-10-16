@@ -98,6 +98,10 @@ DESK_ASSETS = {
     "/panel/desk-feed.js": ("text/javascript; charset=utf-8", "desk-feed.js"),
     "/panel/desk-summary.js": ("text/javascript; charset=utf-8", "desk-summary.js"),
     "/panel/desk-pult.js": ("text/javascript; charset=utf-8", "desk-pult.js"),
+    # The transitions: when the desk may play one, and the layer that plays it (spec 5.5).
+    "/panel/desk-motion-model.js": (
+        "text/javascript; charset=utf-8", "desk-motion-model.js"),
+    "/panel/desk-motion.js": ("text/javascript; charset=utf-8", "desk-motion.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
     "/panel/desk-wizard-materials.js": (
