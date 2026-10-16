@@ -1,7 +1,9 @@
 """The approved Bridge uses the real frozen run and keeps one inspector."""
 from playwright.sync_api import Browser, expect
 
-from browser_tests.test_studio_layout import _model_form, configured_project, project  # noqa: F401
+from browser_tests.test_studio_layout import (  # noqa: F401
+    _model_form, boundary_assumed, configured_project, project,
+)
 from browser_tests.test_studio_lifecycle import _Project, _open, _settle
 from browser_tests.test_studio_tasks import _open_run
 from conductor.command.run_store import RunStore

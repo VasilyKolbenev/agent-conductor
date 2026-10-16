@@ -52,6 +52,7 @@ from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
 from conductor.command.operator_config import ProviderConfig
 from conductor.command.run_store import RunStore
 from tests import _fakeclaude
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from browser_tests.task_picker import create_task
 
 #: An ordinary laptop, a common desktop, and a window narrower than either.
@@ -392,11 +393,12 @@ def test_the_run_forms_typed_facts_survive_a_frame(
 
 
 @pytest.fixture
-def configured_project(monkeypatch, tmp_path, request) -> _Project:
+def configured_project(monkeypatch, tmp_path, request, boundary_assumed) -> _Project:
     """One available deterministic provider, configured through the real door.
 
     It is never executed here: the subject is a participant selection, not a
-    real vendor installation or a smoke run.
+    real vendor installation or a smoke run. The fake is a plain child, so the doors are told
+    it provides the execution boundary (tests/_boundary_assumed.py): this is not a boundary test.
     """
     executable = _fakeclaude.build_executable(tmp_path)
     assert executable is not None, "the native fake executable is required"

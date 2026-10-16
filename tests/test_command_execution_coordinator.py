@@ -50,6 +50,7 @@ from tests.test_command_http_api import (
     proposal_body,
 )
 from tests.test_command_run_store import CONFIG, a_run
+from tests._boundary_assumed import StartsNoAgent
 
 
 NOW = "2026-08-17T12:00:00Z"
@@ -60,8 +61,12 @@ BUDGET = Budget(
     max_actions=8, max_action_seconds=3600, max_confirmation_age_seconds=3600)
 
 
-class DeterministicProvider:
+class DeterministicProvider(StartsNoAgent):
     """A fake provider whose effect is a counter and a barrier, never a process.
+
+    It starts no vendor agent and says so (``StartsNoAgent``): the doors demand the execution
+    boundary of every dispatch and review step (R5), and the registry fails closed for an adapter
+    that never answers.
 
     It satisfies the provider door's whole contract -- the catalogued adapter
     class, the exact per-capability argument schemas, and the four lifecycle

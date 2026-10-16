@@ -8,7 +8,9 @@ Both languages are measured, because the Russian words are longer and must not p
 import pytest
 from playwright.sync_api import Browser, expect
 
-from browser_tests.test_studio_layout import _model_form, configured_project, project  # noqa: F401
+from browser_tests.test_studio_layout import (  # noqa: F401
+    _model_form, boundary_assumed, configured_project, project,
+)
 from browser_tests.test_studio_lifecycle import _Project, _open
 from browser_tests.test_studio_tasks import _open_run
 from browser_tests.test_studio_participants import _detail
