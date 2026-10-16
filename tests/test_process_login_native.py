@@ -174,6 +174,22 @@ def everywhere(site: LoginSite) -> dict:
     return {**site.locations(), **site.untouched()}
 
 
+def mutexes_are_free(site: LoginSite) -> bool:
+    """None of the loaned folders has its DACL mutex held: the runner holds it per change only."""
+    from conductor.command.adapters import _winlaunch
+    from conductor.ownership_native import NativeHold
+    for path in site.locations().values():
+        hold = NativeHold(path, directory=True)
+        try:
+            with _winlaunch.acl_exclusive(hold, wait=0.5):
+                pass
+        except TimeoutError:
+            return False
+        finally:
+            hold.close()
+    return True
+
+
 def run_child(site: LoginSite, mode: str) -> dict:
     from tests import os_boundary_windows as ac
     from tests.os_boundary_box import base_environment
@@ -186,6 +202,7 @@ def run_child(site: LoginSite, mode: str) -> dict:
         with ProcessRunner.login_write_guard(site.root, str(site.login)):
             with runner.container_profile(mode=mode, folders=site.folders) as (boundary, paths):
                 seen["paths"], seen["sid"] = dict(paths), boundary.sid
+                seen["mutexes_free"] = mutexes_are_free(site)
                 spec = CommandSpec(
                     (str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
                      "Bypass", "-File", str(entry)), "work/t1",
@@ -261,6 +278,11 @@ def test_the_two_hook_objects_survive_every_attempt_to_write_delete_move_or_fill
              "hooks_delete", "hooks_move")
     assert {k: facts(seen)[k] for k in names} == dict.fromkeys(names, "denied")
     assert protected_state(site.login) == INTACT
+
+
+def test_no_mutex_of_a_loaned_folder_is_held_while_the_agent_works(dispatch):
+    _, seen = dispatch
+    assert seen["mutexes_free"], "the grant kept a folder's ACL mutex for the attempt's life"
 
 
 def test_a_child_writes_nowhere_outside_the_folders_granted_to_it(dispatch):

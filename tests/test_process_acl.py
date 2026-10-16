@@ -1,4 +1,5 @@
 """Owned attempt ACL journal with injected native callbacks; no OS ACL mutation."""
+from contextlib import contextmanager
 from types import SimpleNamespace
 import os
 
@@ -10,6 +11,13 @@ from conductor.ownership_native import identity
 
 
 SID = "S-1-15-2-1-2-3-4-5-6-7"
+
+
+@contextmanager
+def free_mutex(hold):
+    """The folder's cross-process mutex: nothing else runs in these tests, so it is free."""
+    hold.check()
+    yield False
 
 
 def fixture(tmp_path, *, extra_sids=()):
@@ -57,7 +65,7 @@ def fixture(tmp_path, *, extra_sids=()):
         acl_state[str(hold.path)] = (sddl, protected, "S-1-5-21-1")
 
     native = SimpleNamespace(acl_snapshot=snapshot, acl_set=set_acl,
-                             acl_equal=lambda a, b: a == b)
+                             acl_equal=lambda a, b: a == b, acl_exclusive=free_mutex)
     store = ProfileJournal(data, owner_nonce="a" * 32, root_identity=[1, 2],
                            data_identity=[3, 4], derive=derive, create=create,
                            inspect=mappings.get, delete=delete)

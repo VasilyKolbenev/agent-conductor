@@ -264,6 +264,32 @@ def _refuse_attempt_folder(name: str, path: Path, root: Path) -> None:
         raise _refused("the home is not a minted folder of a catalogued harness home root")
 
 
+def change_dacl(native, hold, build) -> None:
+    """Set the DACL `build` makes from the one the folder has NOW, and read it back, under the
+    folder's cross-process mutex.
+
+    The OS has no compare-and-swap on a DACL, and a pinned install folder is shared by every
+    project server, so the read, the write and the read back of ONE change are taken as a whole
+    under the mutex the folder's identity names (`native.acl_exclusive`), at the grant and at the
+    return alike. The mutex is held for this change only, never while an agent works. The DACL is
+    read inside it, so an entry another attempt or the owner added before then stays, and nothing
+    is assumed of what an owner that died holding the mutex had done. Protection and owner are
+    kept as found.
+
+    Raises:
+        ProfileRefused: `profile_acl_invalid` when the DACL reads back different from the change.
+        TimeoutError: another process kept the folder's mutex too long; nothing was changed.
+    """
+    with native.acl_exclusive(hold):
+        current, protected, owner_sid = native.acl_snapshot(hold)
+        proposed = build(current)
+        native.acl_set(hold, proposed, protected=protected)
+        readback, now_protected, now_owner = native.acl_snapshot(hold)
+        if (now_protected != protected or now_owner != owner_sid
+                or not native.acl_equal(readback, proposed)):
+            raise _refused("native ACL readback differs from the change")
+
+
 def holds_entry(argv, install: str | None, environ=None) -> bool:
     """Whether the program `argv` starts stands in the install folder loaned to its attempt.
 
@@ -466,18 +492,7 @@ class FolderLoans:
         return stack, holds, rows
 
     def _change(self, hold, build) -> None:
-        """Set the DACL `build` makes from the one the folder has NOW, and read it back.
-
-        Read just before the write, so an entry another attempt or the owner added since the record
-        was made stays. Protection and owner are kept as found.
-        """
-        current, protected, owner_sid = self.native.acl_snapshot(hold)
-        proposed = build(current)
-        self.native.acl_set(hold, proposed, protected=protected)
-        readback, now_protected, now_owner = self.native.acl_snapshot(hold)
-        if (now_protected != protected or now_owner != owner_sid
-                or not self.native.acl_equal(readback, proposed)):
-            raise _refused("native ACL readback differs from the change")
+        change_dacl(self.native, hold, build)
 
     @staticmethod
     def _rights(key: str, mode: str) -> str:
