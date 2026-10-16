@@ -11,6 +11,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/accept_gh.py",
+    "src/conductor/command/accept_github.py",
+    "src/conductor/command/accept_pull_request.py",
+    "src/conductor/command/accept_push.py",
     "src/conductor/command/adapters/agent_instructions.py",
     "src/conductor/command/adapters/harness_attempt.py",
     "src/conductor/command/boundary_entry.py",
@@ -141,6 +145,15 @@ CAPPED = (
     "tests/test_seed_routes.py",
     "tests/test_slot_busy_refusal.py",
     "tests/test_task_preparation.py",
+    "tests/_fakegh.py",
+    "tests/accept_remote.py",
+    "tests/gh_script.py",
+    "tests/test_accept_gh.py",
+    "tests/test_accept_github.py",
+    "tests/test_accept_push.py",
+    "tests/test_accept_push_reconcile.py",
+    "tests/test_accept_pull_request.py",
+    "tests/test_fakegh.py",
 )
 
 

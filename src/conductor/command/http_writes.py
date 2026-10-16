@@ -599,4 +599,5 @@ def _judge_plan(
     _verifiers_are_servable(
         snapshot, run_id, nodes, api._bound_adapter,
         api._registry.verifies_independently, reachable=api._reachable())
-    _sandboxes_are_provided(run_id, nodes)
+    _sandboxes_are_provided(
+        run_id, nodes, execution_boundary=api._registry.execution_boundary, config=snapshot)
