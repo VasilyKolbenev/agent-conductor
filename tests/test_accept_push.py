@@ -17,8 +17,9 @@ from conductor.command.project_claim import ProjectIdentity
 from conductor.ownership import data_root
 from tests import _fakegh
 from tests.accept_remote import (
-    BRANCH, OWNER, REF, SSH_URL, TIMED_OUT, URL, accepted, confirm, digest_of, remote_oid,
-    seed_remote_ref, terms, with_gh)
+    BRANCH, GUARD, OWNER, REF, SSH_URL, TIMED_OUT, URL, accepted, announce_git, config_text,
+    confirm, digest_of, guard_pair, refs_text, remote_oid, seed_remote_ref, terms, with_gh,
+    words_of)
 from tests.git_repo_helpers import git, needs_git
 from tests.test_accept_context import RUN, prepared
 from tests.test_command_adapters import FakeAdapter
@@ -179,10 +180,11 @@ def test_the_terms_name_the_three_facts_and_the_exact_command_and_change_nothing
     assert (shown["commit"], shown["remote"], shown["push_url"], shown["repo"], shown["ref"]) == (
         record["commit"], "origin", URL, "o/r", REF)
     assert shown["command"] == (
-        f"git push --porcelain --no-follow-tags --recurse-submodules=no "
-        f"--force-with-lease={REF}: {URL} {record['commit']}:{REF}")
+        f"git -c remote.{GUARD}.url={URL} push --porcelain --no-follow-tags "
+        f"--recurse-submodules=no --force-with-lease={REF}: {URL} {record['commit']}:{REF}")
     core = {"acceptance_id": record["acceptance_id"], "commit": record["commit"],
-            "remote": "origin", "push_url": URL, "repo": "o/r", "ref": REF}
+            "remote": "origin", "push_url": URL, "repo": "o/r", "ref": REF,
+            "command": shown["command"]}
     assert shown["push_digest"] == "sha256:" + hashlib.sha256(json.dumps(
         core, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
     assert terms(api, record).payload == answer.payload
@@ -275,14 +277,25 @@ def test_push_to_an_existing_remote_branch_changes_nothing_and_is_rejected(tmp_p
 
 
 @needs_git
-def test_push_argv_sends_no_tags_and_no_submodules(tmp_path):
+def test_push_argv_sends_no_tags_and_no_submodules(tmp_path, capsys):
+    """The words of the push, and what the push leaves in the project: no tracking ref.
+
+    From git 2.56 a push by address writes `refs/remotes/<remote>/...` for the one configured
+    remote with that address unless the command line gives it a second one. This host's git is
+    older and writes none either way, so the version is printed: only a run on 2.56 or later
+    shows that the guard holds.
+    """
+    announce_git(capsys)
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     git("tag", "-a", "v1", "-m", "release", record["commit"], cwd=root)
     git("config", "push.followTags", "true", cwd=root)
+    refs, config = refs_text(root), config_text(root)
     assert confirm(api, record, digest_of(api, record)).status == 201
     pushed, = remote.pushes()
-    assert pushed[2:] == ["push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
-                          f"--force-with-lease={REF}:", URL, f"{record['commit']}:{REF}"]
+    assert words_of(pushed) == [*guard_pair(), "push", "--porcelain", "--no-follow-tags",
+                                "--recurse-submodules=no", f"--force-with-lease={REF}:", URL,
+                                f"{record['commit']}:{REF}"]
+    assert refs_text(root) == refs and config_text(root) == config
     assert not {"--tags", "--force", "-f", "-u", "--set-upstream", "--mirror", "--all",
                 "--prune", "--delete"} & set(pushed)
     assert git("for-each-ref", "refs/tags", cwd=bare).stdout == b""

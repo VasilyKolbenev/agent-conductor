@@ -32,6 +32,74 @@ REF = f"refs/heads/{BRANCH}"
 OWNER = {"GH_TOKEN": "fake-token-one", "GITHUB_TOKEN": "fake-token-two",
          "GH_HOST": "host.example", "GIT_ASKPASS": "fake-askpass"}
 TIMED_OUT = GitAnswer(exit_code=None, output=b"", timed_out=True)
+#: The name the push asks for first as its one command-line remote (spec 9.7).
+GUARD = "conduct-no-tracking"
+
+
+def guard_pair(name=GUARD, url=URL):
+    """The two words before the verb that give a push by address its command-line remote."""
+    return ["-c", f"remote.{name}.url={url}"]
+
+
+def words_of(call):
+    """What a recorded call gave git after `-C <root>`: the words the terms must show."""
+    assert call[:1] == ["-C"], call
+    return call[2:]
+
+
+def guard_of(call):
+    """The name of the command-line remote a recorded push was given, or None."""
+    words = words_of(call)
+    pairs = words[:words.index("push")]
+    assert pairs[:1] in ([], ["-c"]) and len(pairs) in (0, 2), pairs
+    return pairs[1].split(".")[1] if pairs else None
+
+
+def config_text(root):
+    """Every setting git resolves for the project, one text, to see that a push added none."""
+    return git("config", "--list", "--show-origin", cwd=root).stdout
+
+
+def refs_text(root):
+    """Every ref of the project, one text, to see that a push added none and removed none."""
+    return git("for-each-ref", "--format=%(refname) %(objectname)", cwd=root).stdout
+
+
+def remotes_with_push_address(root, pairs, url):
+    """The configured remotes whose push address is `url`, read the way Git 2.56 reads them.
+
+    A remote's push address is its `pushurl` list when it has one, else its `url` list. `pairs`
+    are the `-c` pairs the push is given, so a remote that only the command line defines is
+    counted too. This is the condition of the tracking rule, not its effect: the effect is that
+    of the git 2.56 job, and this host's git is older.
+    """
+    listed = git(*pairs, "config", "--get-regexp", r"^remote\..*\.(url|pushurl)$",
+                 cwd=root).stdout.decode()
+    urls, pushurls = {}, {}
+    for row in listed.splitlines():
+        key, _, value = row.partition(" ")
+        name, _, kind = key[len("remote."):].rpartition(".")
+        (pushurls if kind == "pushurl" else urls).setdefault(name, []).append(value)
+    return sorted(name for name, found in urls.items() if url in (pushurls.get(name) or found))
+
+
+def announce_git(capsys):
+    """Print the version of the git under test where the run's output shows it, even with -q.
+
+    The property these tests guard exists only from git 2.56: a green run on an older git does
+    not show it, so the output must say which git it was.
+    """
+    version = git("--version", cwd=Path.cwd()).stdout.decode().strip()
+    with capsys.disabled():
+        print(f"\n[git under test] {version}")
+
+
+def verb_of(args):
+    """The git verb of one call: what follows `-C <root>` and any `-c <key=value>` pairs."""
+    at = 2 if args[:1] == ["-C"] else 0
+    while args[at] == "-c":
+        at += 2
+    return args[at]
 
 
 class Remote:
@@ -43,7 +111,7 @@ class Remote:
 
     def __call__(self, args, separate_stderr=False, **keywords):
         args = list(args)
-        verb = args[2] if args[:1] == ["-C"] else args[0]
+        verb = verb_of(args)
         self.calls.append(args)
         if verb not in ("push", "ls-remote"):
             return self.reader(args, separate_stderr, **keywords)
@@ -59,10 +127,10 @@ class Remote:
         return run() if hook is None else hook(run)
 
     def verbs(self):
-        return [call[2] for call in self.calls if call[:1] == ["-C"]]
+        return [verb_of(call) for call in self.calls if call[:1] == ["-C"]]
 
     def pushes(self):
-        return [call for call in self.calls if call[:1] == ["-C"] and call[2] == "push"]
+        return [call for call in self.calls if call[:1] == ["-C"] and verb_of(call) == "push"]
 
 
 def accepted(tmp_path):
