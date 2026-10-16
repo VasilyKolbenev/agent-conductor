@@ -115,6 +115,15 @@ def origin_named_like_the_guard(root):
     return GUARD
 
 
+def left_as_they_were(root, refs, config):
+    """What a push by address leaves in the project: every ref and every setting as they were,
+    and no remote-tracking ref, which Git 2.56 writes for the one remote with the pushed address.
+    The effect shows only on a git of 2.56 or later; this host's git writes none either way."""
+    assert refs_text(root) == refs
+    assert config_text(root) == config
+    assert git("for-each-ref", "refs/remotes", cwd=root).stdout == b""
+
+
 @needs_git
 @pytest.mark.parametrize("collide, still_there", [
     (collided_with_pushurl, ["origin"]), (origin_named_like_the_guard, [GUARD])])
@@ -124,17 +133,17 @@ def test_a_remote_called_like_the_guard_does_not_defeat_it(tmp_path, collide, st
     were."""
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     selected = collide(root)
-    before = config_text(root)
+    refs, config = refs_text(root), config_text(root)
     digest = terms(api, record, selected).payload["push_terms"]["push_digest"]
     answer = confirm(api, record, digest, remote=selected)
     assert answer.status == 201, answer.payload
+    left_as_they_were(root, refs, config)
     pushed, = remote.pushes()
     name = guard_of(pushed)
     assert name == "conduct-no-tracking-2"
     assert remotes_with_push_address(root, guard_pair(GUARD), URL) == still_there
     assert remotes_with_push_address(root, words_of(pushed)[:2], URL) == sorted(
         [*still_there, name])
-    assert config_text(root) == before
 
 
 @needs_git
@@ -142,8 +151,10 @@ def test_the_guard_is_added_beside_a_project_whose_own_remote_has_a_pushurl(tmp_
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     git("remote", "set-url", "origin", OTHER, cwd=root)
     git("config", "remote.origin.pushurl", URL, cwd=root)
+    refs, config = refs_text(root), config_text(root)
     digest = digest_of(api, record)
     assert confirm(api, record, digest).status == 201
+    left_as_they_were(root, refs, config)
     pushed, = remote.pushes()
     assert guard_of(pushed) == GUARD
     assert remotes_with_push_address(root, words_of(pushed)[:2], URL) == [GUARD, "origin"]
