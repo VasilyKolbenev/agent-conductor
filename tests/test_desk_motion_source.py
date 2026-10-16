@@ -18,7 +18,9 @@ SCRIPTS, as text:
   repeated animation, and no timing that ends after 1.2 s.
 
 What the text cannot say, a browser says (`browser_tests/test_desk_motion.py`): that nothing plays
-under the reduced-motion preference and that the timings reach the page as written.
+under the reduced-motion preference and that the timings reach the page as written. Nothing in
+this file reads a CSS property whose name a script builds at run time (`style[name]`, a computed
+key): the check reads the spellings that stand in the source.
 
 Every check below is a function over text, and the table at the end feeds each one the defect it
 claims to refuse, so a check that stopped biting reds here and not in a review.
@@ -77,9 +79,28 @@ FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
 CHECK = re.compile(r"\bif\s*\(\s*!\s*" + GATE + r"\s*\(\s*\)\s*\)\s*return\b")
 NEGATED_QUERY = re.compile(
     r"\breturn\s*!\s*(?:window\s*\.\s*)?matchMedia\s*\(\s*REDUCE\s*\)\s*\.\s*matches\b")
-SCRIPT_MOTION = re.compile(
-    r"\.style\s*\.\s*(?:animation|transition)\w*|setProperty\s*\(\s*[\"'](?:animation|transition)"
-    r"|\banimation(?:Name|Duration|Iteration\w*)?\s*[:=]")
+#: A CSS motion property by any spelling a script can give it: `transition`, `transitionDuration`,
+#: `transition-delay`, `animationName`, `webkitTransition`, `-webkit-animation`. What follows the
+#: word is a camelCase or a hyphenated part, so `transition_id` and `transitions` are not it.
+MOTION_PROPERTY = (r"(?:(?:-(?:webkit|moz|ms|o)-)?(?:transition|animation)"
+                   r"|(?:webkit|Webkit|moz|Moz|ms|O)(?:Transition|Animation))"
+                   r"(?:[A-Z]\w*|-[a-z][\w-]*)?")
+QUOTE = "[\"'`]"
+#: The ways to hand a node a CSS transition or animation without `animate`, read over the code with
+#: its strings in, because a style written as text is a string: `node.style.transition = ..`, a
+#: write through an alias of the style, a bracket on the style, `setProperty`, and the property as
+#: a key, in an object (`{transition: ..}`, `{"animation-name": ..}`) or in a text of CSS
+#: (`cssText`, `setAttribute("style", ..)`, `insertRule`).
+SCRIPT_MOTION = re.compile("|".join((
+    r"\.style\s*\??\.\s*" + MOTION_PROPERTY,
+    r"\.\s*" + MOTION_PROPERTY + r"\s*(?:\+|\|\||&&|\?\?)?=(?!=)",
+    r"\[\s*" + QUOTE + MOTION_PROPERTY + QUOTE + r"\s*\]",
+    r"\bsetProperty\s*\(\s*" + QUOTE + MOTION_PROPERTY,
+    r"(?<![\w$.-])" + QUOTE + "?" + MOTION_PROPERTY + QUOTE + r"?\s*:",
+)))
+#: The property as a shorthand key, `{transition}`. A sentence ("motion, transition, and sound")
+#: reads the same in a string, so it counts only when it stands outside every literal.
+SHORTHAND_KEY = re.compile(r"[{,]\s*(?:transition|animation)\s*(?=[,}])")
 LOOPING = re.compile(r"\bInfinity\b|\biterations\b|\bdirection\s*:")
 #: The other ways to start a Web Animation than `animate`: an animation built by hand. `animate`
 #: is the one door, so a second would be a way round its gate.
@@ -217,13 +238,20 @@ def timer_faults(files: dict[str, str]) -> list[str]:
     return faults
 
 
+def sets_motion(code: str) -> bool:
+    """Whether a script hands a node a CSS transition or animation, by any spelling of it."""
+    if SCRIPT_MOTION.search(code):
+        return True
+    return bool(SHORTHAND_KEY.search(code) and SHORTHAND_KEY.search(blank(code)))
+
+
 def motion_faults(files: dict[str, str]) -> list[str]:
     """The sentences of the spec as faults, over a set of scripts."""
     faults = use_faults(files) + timer_faults(files)
     if MOTION in files:
         faults += animate_faults(files[MOTION]) + gate_faults(files[MOTION])
     for name, code in files.items():
-        if SCRIPT_MOTION.search(code):
+        if sets_motion(code):
             faults.append(f"{name} sets an animation or a transition from a script")
         if BY_HAND.search(code):
             faults.append(f"{name} builds an animation by hand, round the gate of `animate`")
@@ -333,6 +361,35 @@ def _beside(name: str, source: str) -> dict[str, str]:
     return {**REAL, name: source}
 
 
+#: Each way a script can hand a node a CSS transition or animation without `animate`, as the one
+#: line of script that does it. The check is a family of shapes, and every shape has its row.
+SCRIPT_MOTION_LINES = {
+    "a transition set by Object.assign on a style":
+        'Object.assign(n.style, {transition: "opacity 1s"});',
+    "a transition longhand as an object key":
+        'Object.assign(n.style, {transitionDuration: "1s"});',
+    "a quoted transition key": 'Object.assign(n.style, {"transition-delay": "1s"});',
+    "a vendor-prefixed transition as an object key":
+        'Object.assign(n.style, {WebkitTransition: "a"});',
+    "a vendor-prefixed transition on the style": 'n.style.webkitTransition = "a";',
+    "a transition as a shorthand key":
+        'const transition = "a"; Object.assign(n.style, {transition});',
+    "an animation set by Object.assign on a style":
+        'Object.assign(n.style, {animationName: "spin"});',
+    "a transition in cssText": 'n.style.cssText = "opacity: 0; transition: opacity 1s";',
+    "an animation in cssText": 'n.style.cssText = "animation: spin 1s";',
+    "a transition through setAttribute on the style": 'n.setAttribute("style", "transition: a");',
+    "a transition in a rule inserted into a sheet":
+        'sheet.insertRule(".a { transition: all 1s }");',
+    "a transition through a bracket on the style": 'n.style["transition"] = "a";',
+    "an animation through a bracket on the style": 'n.style["animation-name"] = "spin";',
+    "a transition through setProperty": 'n.style.setProperty("transition", "a");',
+    "a transition written through an alias of the style": 'const s = n.style; s.transition = "a";',
+    "a transition added through an alias of the style":
+        'const s = n.style; s.transition += ", opacity 1s";',
+    "a transition property read off a style": "copy.style.cssText = n.style.transition;",
+}
+
 DEFECTS = {
     "an animate with no check": (
         _on(GOOD.replace("  if (!motionAllowed()) return Promise.resolve(false);\n", "")),
@@ -390,6 +447,8 @@ DEFECTS = {
     "a transition set from a script": (
         _beside("desk-feed.js", REAL["desk-feed.js"] + "\nrow.style.transition = 'a';\n"),
         "animation or a transition"),
+    **{name: (_on(GOOD + f"function paint(n) {{ {line} }}\n"), "animation or a transition")
+       for name, line in SCRIPT_MOTION_LINES.items()},
     "a movement that never ends": (
         _on(GOOD.replace("{duration: 400}", "{duration: 400, iterations: Infinity}")),
         "repeats or loops"),
@@ -458,6 +517,13 @@ MUTATIONS = {
     "a computed style read": (
         lambda text: text + "\nconst here = getComputedStyle(document.body);\n",
         "getComputedStyle"),
+    "its layer styled with a transition": (
+        lambda text: text.replace('{position: "fixed", inset: "0",',
+                                  '{transition: "opacity 1s", position: "fixed", inset: "0",'),
+        "animation or a transition"),
+    "a mark given a transition in cssText": (
+        lambda text: text + '\nfunction ease(n) { n.style.cssText = "transition: opacity 1s"; }\n',
+        "animation or a transition"),
 }
 
 
@@ -469,6 +535,27 @@ def test_the_guard_refuses_the_real_motion_module_with_each_defect_planted_in_it
     faults = motion_faults(_on(planted))
     assert any(word in fault for fault in faults), faults
     assert motion_faults(_on(real)) == []
+
+
+#: Lines that share a word with a CSS motion property and set none: another trade's `transition`
+#: (a workflow step's id, a section), the frame loop, an event name, a label, a local variable.
+OTHER_USES = (
+    "step.transition_id = next;",
+    "const record = {transition_id: next, transitions: []};",
+    'import {transitionSection} from "./studio-transitions.js";',
+    "const frame = requestAnimationFrame(tick);",
+    "cancelAnimationFrame(frame);",
+    'node.addEventListener("transitionend", done);',
+    "const animation = frames.length;",
+    'const label = ["Transitions", "Переходы"];',
+    'const note = "Turns off motion, transition, animation, and sound.";',
+    "if (event.animationName === name) done();",
+)
+
+
+def test_the_motion_guard_passes_lines_that_only_share_a_word_with_a_motion_property():
+    refused = [line for line in OTHER_USES if motion_faults(_on(GOOD + line + "\n"))]
+    assert refused == []
 
 
 def test_the_table_holds_exactly_the_movements_the_module_plays():
