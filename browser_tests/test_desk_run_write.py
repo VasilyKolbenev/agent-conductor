@@ -10,13 +10,39 @@ from playwright.sync_api import Browser, Locator, Page, expect
 
 from browser_tests.desk_hold import Hold, land_read, read_again
 from conductor import server
+from conductor.command.adapters import ProviderConfig
+from conductor.command.providers import resolve_providers
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
-from tests.test_command_execution_coordinator import ids, provider_registry
+from tests._boundary_assumed import StartsNoAgent
+from tests.test_command_execution_coordinator import (
+    NOW, PROTOCOL, PROVIDER_ID, DeterministicProvider, catalog, ids)
 from tests.test_command_run_store import a_run
 from tests.test_store import good_lane, write_project
 from tests.alpha3_graph_artifacts import dalio_definition
+
+
+class _StartsNoAgentProvider(StartsNoAgent, DeterministicProvider):
+    """The shared fake provider, declared to start no vendor agent.
+
+    Every dispatch and review step demands the execution boundary (R5) and the registry fails
+    closed for an adapter that never answers; this one spawns nothing, so it says so.
+    """
+
+
+def provider_registry(tmp_path, mint):
+    """One AVAILABLE fake provider, the declared one, through the real factory door."""
+    executable = tmp_path / "fake-provider.exe"
+    executable.write_text("", encoding="utf-8")
+    declared = {PROVIDER_ID: replace(catalog()[PROVIDER_ID],
+                                     adapter_class=_StartsNoAgentProvider)}
+    resolution = resolve_providers(
+        [ProviderConfig(provider_id=PROVIDER_ID, executable=str(executable),
+                        protocol=PROTOCOL, env_allow=())],
+        root=tmp_path, clock=lambda: NOW, ids=mint, catalog=declared)
+    assert resolution.contracts[0].available is True
+    return resolution.registry
 
 
 @pytest.fixture
