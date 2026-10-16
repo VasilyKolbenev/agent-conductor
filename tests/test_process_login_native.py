@@ -19,9 +19,11 @@ from conductor import ownership, ownership_login, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
 from conductor.command.adapters.process_profile import ProfileRefused
+from tests.login_gate import login_loan_open_module  # noqa: F401 -- a fixture
 from tests.test_process_loans_native import entries_naming, same_acl, snapshot
 
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans")
+pytestmark = [pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans"),
+              pytest.mark.usefixtures("login_loan_open_module")]
 
 #: ``MoveFileExW(a, b, MOVEFILE_REPLACE_EXISTING)`` through a P/Invoke method the script emits
 #: itself: ``Add-Type`` is a cmdlet, and a probe runs without the cmdlet modules.
@@ -214,13 +216,13 @@ def run_child(site: LoginSite, mode: str) -> dict:
 
 
 @pytest.fixture(scope="module")
-def dispatch(tmp_path_factory):
+def dispatch(tmp_path_factory, login_loan_open_module):
     site = LoginSite(tmp_path_factory.mktemp("login-dispatch"))
     return site, run_child(site, "dispatch")
 
 
 @pytest.fixture(scope="module")
-def review(tmp_path_factory):
+def review(tmp_path_factory, login_loan_open_module):
     site = LoginSite(tmp_path_factory.mktemp("login-review"))
     return site, run_child(site, "review")
 

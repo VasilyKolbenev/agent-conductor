@@ -26,6 +26,11 @@ what a credential refresh needs: the folder itself can be read, written into and
 deleted, a nested directory the same, a nested regular file read, written and deleted and nothing
 else. The grant counts against the lease, so the lease cannot end before the rights are back.
 
+That grant is CLOSED as shipped (`process_boundary.LOGIN_LOAN_OPEN`, `login_loan_provided`): the
+rights of a refresh let the attempt create files in the home and overwrite every file beneath it,
+and the vendor's executable configuration lives there. A login home is refused, before anything
+exists, until a review ruling says which objects of it the attempt may write.
+
 Nothing here widens an ACL beyond the four kinds of folder `AttemptFolders` names. That is a law of
 this runner and not a manner of its callers: an install folder is the version folder of a pinned
 harness and never a login folder or a folder that holds one, a home is a minted folder of a
@@ -48,7 +53,7 @@ from ...ownership_native import NativeHold, identity
 from ...ownership_records import ACTIVE, HOME, LEGACY
 from ..work_layout import TASKS_DIR, work_parts
 from .process_acl import _CHILD_RWX_DELETE, _RWX, _RX
-from .process_boundary import LOGIN_SHAPE, WindowsContainer, login_home_named
+from .process_boundary import LOGIN_SHAPE, WindowsContainer, login_home_named, login_loan_provided
 from .process_profile import ProfileRefused, _bytes, _plain, _replace, refusal_summary
 
 _LOAN_NAME = re.compile(r"loan-([0-9a-f]{32})\.json\Z")
@@ -368,6 +373,9 @@ class FolderLoans:
                 or not {"work", "install"} <= set(folders)):
             raise _refused("a loan names a work folder, an install folder and at most a home "
                            "or a login home")
+        if "login" in folders and not login_loan_provided():
+            raise _refused("the login home is not loaned: the attempt could write the vendor's "
+                           "executable configuration in it (a review ruling is open)")
         root = Path(os.path.realpath(self.profiles.owner_root))
         real = {key: _plain_directory(Path(path)) for key, path in folders.items()}
         for name in ("work", "home"):

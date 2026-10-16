@@ -23,9 +23,12 @@ from conductor.command.adapters.process_loans import FolderLoans
 from conductor.command.adapters.process_profile import ProfileRefused
 from conductor.ownership_login import LeasedLogin
 from conductor.ownership_native import identity
+from tests.login_gate import login_loan_open  # noqa: F401 -- a fixture
 from tests.test_process_loans import (
     DELETE_CHILD, LoanHold, OWNER, PRIOR, WRITE_DAC, WRITE_OWNER, masks, prior_acl, record_files,
     world)
+
+pytestmark = pytest.mark.usefixtures("login_loan_open")
 
 DELETE, EXECUTE = 0x10000, 0x20
 FOLDER, FILES = 0x1201BF, 0x13019F

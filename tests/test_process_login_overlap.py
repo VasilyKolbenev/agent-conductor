@@ -17,8 +17,11 @@ import pytest
 
 from conductor.command.adapters.process_loans import FolderLoans
 from conductor.command.adapters.process_profile import ProfileRefused
+from tests.login_gate import login_loan_open  # noqa: F401 -- a fixture
 from tests.test_process_loans import OWNER, PRIOR, masks, record_files, world
 from tests.test_process_login_grant import AnyHold, leased_fact
+
+pytestmark = pytest.mark.usefixtures("login_loan_open")
 
 SID2 = "S-1-15-2-1-2-3-4-5-6-8"
 FOLDER, FILES = 0x1201BF, 0x13019F

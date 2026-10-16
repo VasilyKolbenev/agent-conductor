@@ -17,10 +17,12 @@ import pytest
 from conductor import ownership, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
+from tests.login_gate import login_loan_open_module  # noqa: F401 -- a fixture
 from tests.test_process_loans_native import entries_naming, same_acl, snapshot
 from tests.test_process_login_native import CREDENTIAL, _q, _tries
 
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans")
+pytestmark = [pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans"),
+              pytest.mark.usefixtures("login_loan_open_module")]
 
 NAMES = ("claude-code", "codex")
 WAIT = 90
@@ -157,7 +159,7 @@ def play(duo, leaving):
 
 
 @pytest.fixture(scope="module", params=NAMES, ids=["first-leaves-first", "second-leaves-first"])
-def overlap(request, tmp_path_factory):
+def overlap(request, tmp_path_factory, login_loan_open_module):
     duo = Duo(tmp_path_factory.mktemp("login-duo"))
     results, seen = play(duo, request.param)
     errors = {name: row["error"] for name, row in results.items() if "error" in row}

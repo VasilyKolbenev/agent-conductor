@@ -14,8 +14,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.login_gate import login_loan_open  # noqa: F401 -- a fixture
 from tests.test_process_loans import OWNER, PRIOR, record_files
 from tests.test_process_login_grant import login_world
+
+pytestmark = pytest.mark.usefixtures("login_loan_open")
 
 
 def mutexed_world(tmp_path):

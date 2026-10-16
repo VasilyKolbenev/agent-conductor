@@ -19,8 +19,11 @@ from conductor import ownership, ownership_transition
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders, login_home_named
 from conductor.command.adapters.process_loans import FolderLoans
+from tests.login_gate import login_loan_open  # noqa: F401 -- a fixture
 from tests.test_process_login_grant import AnyHold
 from tests.test_process_loans import HOME, _refused, world
+
+pytestmark = pytest.mark.usefixtures("login_loan_open")
 
 ABSOLUTE = str(Path("/abs").resolve())
 SHAPE = "DecemberCommand/logins/<name>"

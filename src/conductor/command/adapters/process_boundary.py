@@ -33,6 +33,23 @@ _DRIVE = re.compile(r"[A-Za-z]:")
 #: folded. The boundary grants a login home of this shape and no other folder.
 LOGIN_PARENTS = ("decembercommand", "logins")
 LOGIN_SHAPE = "DecemberCommand/logins/<name>"
+#: Whether the runner loans a leased login home to a confined attempt at all. It does not, as
+#: shipped. The rights of a credential refresh let the attempt create files in that home and
+#: overwrite every file beneath it, and the vendor's executable configuration (hooks, tool servers,
+#: user instructions, a notify command) lives there and is run again with the person's rights by
+#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. A review ruling
+#: on which objects of the home the attempt may write opens this, and nothing else does.
+LOGIN_LOAN_OPEN = False
+
+
+def login_loan_provided() -> bool:
+    """Whether the runner loans a leased login home today: the fact a door asks before a claim.
+
+    Only the boolean True counts as open. The runner refuses a login home with this answer `False`
+    (`ProfileRefused`, before any profile, journal record or change exists), so a door that
+    reads it and a spawn that is judged by it can never disagree.
+    """
+    return LOGIN_LOAN_OPEN is True
 
 
 def login_home_named(path: object) -> bool:
@@ -71,7 +88,8 @@ class AttemptFolders:
     executable and what it loads. `login` is the ABSOLUTE login home the attempt holds under the
     shared login lease (the subscription road), and None on the API-key road. Nothing here grants
     anything: the runner checks each folder, takes the login home only if the attempt's own lease
-    names it, and its journal grants and returns it (`process_loans`).
+    names it, and its journal grants and returns it (`process_loans`). A `login` is refused while
+    `login_loan_provided()` is False, and it is, as shipped.
     """
 
     work: str

@@ -12,7 +12,10 @@ import pytest
 from conductor import ownership_login
 from conductor.command.adapters.process import OwnershipError
 from conductor.command.adapters.process_loans import FolderLoans
+from tests.login_gate import login_loan_open  # noqa: F401 -- a fixture
 from tests.test_process_login_refusals import LeasedWorld, lease_of, owned
+
+pytestmark = pytest.mark.usefixtures("login_loan_open")
 
 
 @pytest.fixture
