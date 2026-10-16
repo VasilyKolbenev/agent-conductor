@@ -8,10 +8,11 @@ has a `pushurl` of its own, leaves the project's own remote the only match. One 
 words after `git` for the terms and for the run, so the command the card shows is the command that
 runs, and when the name or any fact changes the digest changes and the terms are read again.
 
-This host's git is older than 2.56 and writes the tracking ref either way: the effect is witnessed
-by the git 2.56 job (see `test_push_argv_sends_no_tags_and_no_submodules`, which prints the git
-version); the tests here hold the condition (how many remotes have the pushed address) and the
-command.
+This host's git (2.52) writes no tracking ref either way. So the collision cases and the pushurl
+case here assert the effect (refs and settings as they were, and `refs/remotes` empty), which only
+the git 2.56 job can show red; the tests of the condition (how many remotes have the pushed
+address) and of the command hold on any git. The 2.56 job prints its git version in
+`test_push_argv_sends_no_tags_and_no_submodules`.
 """
 import hashlib
 import json
