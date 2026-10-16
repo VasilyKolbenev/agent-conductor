@@ -247,6 +247,19 @@ def timing_faults(table: dict[str, dict[str, int]], cap: int) -> list[str]:
     return faults
 
 
+def table_faults(names: set[str], code: str) -> list[str]:
+    """The movements of the table against the movements the module names (`TIMINGS.<name>`).
+
+    A row nothing plays spends nothing, like a registry row that is not spent; a movement the
+    module plays that the table lacks has no cap held on it.
+    """
+    played = set(re.findall(r"\bTIMINGS\.(\w+)", code))
+    return ([f"movement {name} is in the table and nothing plays it"
+             for name in sorted(names - played)]
+            + [f"movement {name} is played and the table holds no timing for it"
+               for name in sorted(played - names)])
+
+
 def test_the_motion_module_is_there_and_plays_everything_through_one_gated_function():
     files = sources()
     assert MOTION in files and MODEL in files, "the transitions module is not packaged"
@@ -456,6 +469,25 @@ def test_the_guard_refuses_the_real_motion_module_with_each_defect_planted_in_it
     faults = motion_faults(_on(planted))
     assert any(word in fault for fault in faults), faults
     assert motion_faults(_on(real)) == []
+
+
+def test_the_table_holds_exactly_the_movements_the_module_plays():
+    if shutil.which("node") is None:
+        pytest.fail("Node is required to read the timing table of the motion model")
+    shown = run_js("console.log(JSON.stringify(Object.keys(m.TIMINGS)));", {"m": MODEL})
+    assert table_faults(set(shown), sources()[MOTION]) == []
+
+
+TABLE_DEFECTS = {
+    "a movement nothing plays": ({"a", "b"}, "play(x, f, TIMINGS.a);", "nothing plays it"),
+    "a movement the table lacks": ({"a"}, "play(x, f, TIMINGS.a); play(y, f, TIMINGS.z);",
+                                   "holds no timing"),
+}
+
+
+@pytest.mark.parametrize("names,code,word", list(TABLE_DEFECTS.values()), ids=list(TABLE_DEFECTS))
+def test_the_table_check_refuses_each_defect_and_names_it(names, code, word):
+    assert any(word in fault for fault in table_faults(names, code))
 
 
 def test_the_real_timing_table_with_one_movement_made_longer_is_refused():

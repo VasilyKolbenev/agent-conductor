@@ -21,7 +21,6 @@ const timing = (duration, delay = 0) => Object.freeze({duration, delay});
 //: one finite and inside the cap.
 export const TIMINGS = Object.freeze({
   comet: timing(700),
-  landing: timing(500, 600),
   ring: timing(600),
   ring_late: timing(600, 220),
   wave: timing(700),
