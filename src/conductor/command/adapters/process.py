@@ -119,6 +119,8 @@ STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 _READ_CHUNK = 64 * 1024
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
+#: What a runner for a project opened for viewing says to every spawn and every container entry.
+_VIEWING = "this runner may not spawn a child (project open for viewing)"
 
 
 def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
@@ -488,8 +490,12 @@ class ProcessRunner:
         `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
         attempt stands on, or the login home its lease names. The work folder and the home are
         routes walked from the project root like a working folder (`ContainmentError` for a link
-        or a way out), and nothing is made or granted when one is refused.
+        or a way out), and nothing is made or granted when one is refused. A runner for a project
+        opened for viewing refuses first (`CommandSpecError`), before the native helper is even
+        imported, so no profile, journal record or grant exists for a project that never spawns.
         """
+        if not self._spawns_allowed:
+            raise CommandSpecError(_VIEWING)
         from . import _winlaunch
         loaned = None if folders is None else self._loaned(folders)
         return ProfileJournal.for_project(self._root, _winlaunch).container(
@@ -570,7 +576,7 @@ class ProcessRunner:
 
     def _spawn(self, spec: CommandSpec) -> _Owned:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
-            raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
+            raise CommandSpecError(_VIEWING)
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         if spec.boundary is not None and not holds_entry(spec.argv, spec.boundary.install):
             raise CommandSpecError("the program is not in the install folder loaned to the attempt")
