@@ -64,6 +64,8 @@ from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
 from .process_env_rules import INJECTING_ENV
+from .process_errors import (  # LaunchRefused is raised by `_procgroup` and reached from here
+    CommandSpecError, ContainmentError, LaunchRefused, OwnershipError, ProcessRunnerError)
 from .process_loans import holds_entry
 from .process_profile import ProfileJournal
 from .environment_values import (
@@ -119,6 +121,8 @@ STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 _READ_CHUNK = 64 * 1024
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
+#: What a runner for a project opened for viewing says to every spawn and every container entry.
+_VIEWING = "this runner may not spawn a child (project open for viewing)"
 
 
 def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
@@ -139,22 +143,6 @@ def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | Non
     if windows is None:
         windows = os.name == "nt"
     return INJECTING_ENV.get(name.upper() if windows else name)
-
-
-class ProcessRunnerError(RuntimeError):
-    """The runner cannot safely honour the request as stated."""
-
-
-class CommandSpecError(ProcessRunnerError):
-    """A command is not structured argv, or its environment names are malformed."""
-
-
-class ContainmentError(ProcessRunnerError):
-    """The requested cwd is not strictly, locally beneath the project root."""
-
-
-class OwnershipError(ProcessRunnerError):
-    """A stop names no child this runner started and still holds."""
 
 
 def _argv(value):
@@ -486,10 +474,14 @@ class ProcessRunner:
         """One AppContainer profile for one attempt: a context manager (`process_profile`).
 
         `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
-        attempt stands on. The work folder and the home are routes walked from the project root
-        like a working folder (`ContainmentError` for a link or a way out), and nothing is made
-        or granted when one is refused.
+        attempt stands on, or the login home its lease names. The work folder and the home are
+        routes walked from the project root like a working folder (`ContainmentError` for a link
+        or a way out), and nothing is made or granted when one is refused. A runner for a project
+        opened for viewing refuses first (`CommandSpecError`), before the native helper is even
+        imported, so no profile, journal record or grant exists for a project that never spawns.
         """
+        if not self._spawns_allowed:
+            raise CommandSpecError(_VIEWING)
         from . import _winlaunch
         loaned = None if folders is None else self._loaned(folders)
         return ProfileJournal.for_project(self._root, _winlaunch).container(
@@ -500,6 +492,8 @@ class ProcessRunner:
         found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
         if folders.home is not None:
             found["home"] = self._resolve_cwd(folders.home)
+        if getattr(folders, "login", None) is not None:
+            found["login"] = Path(folders.login)
         return found
 
     def recover_container_profiles(self) -> None:
@@ -568,7 +562,7 @@ class ProcessRunner:
 
     def _spawn(self, spec: CommandSpec) -> _Owned:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
-            raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
+            raise CommandSpecError(_VIEWING)
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
         if spec.boundary is not None and not holds_entry(spec.argv, spec.boundary.install):
             raise CommandSpecError("the program is not in the install folder loaned to the attempt")
@@ -583,24 +577,9 @@ class ProcessRunner:
         with self.project_write_guard(self._root):
             scope = self.ownership_scopes.find(self._root)
             loan = None if scope is None else scope.claim()
-        try:
-            proc = self._launch(spec, cwd, env, payload, loan)
-        except BaseException:
-            if loan is not None:
-                loan.retire(False)
-            raise
-        try:
-            if spec.boundary is not None:
-                from . import _winlaunch
-                _winlaunch.require_policy(proc, spec.boundary.sid)
-            group = _procgroup.make_group(proc)
-        except BaseException:
-            try:
-                self._cleanup_failed_spawn(proc, None)
-            finally:
-                if loan is not None:
-                    loan.retire(False)
-            raise
+        proc = _procgroup.start(lambda: self._launch(spec, cwd, env, payload, loan),
+                                confined=spec.boundary is not None, loan=loan)
+        group = _procgroup.adopt(proc, self._policy_check(spec), loan)
         try:
             token = secrets.token_hex(16)
             owned = _Owned(
@@ -617,6 +596,14 @@ class ProcessRunner:
         with self._lock:
             self._owned[token] = owned
         return owned
+
+    @staticmethod
+    def _policy_check(spec):
+        """The check that the container policy is on a suspended child; None for a plain spawn."""
+        if spec.boundary is None:
+            return None
+        from . import _winlaunch
+        return lambda child: _winlaunch.require_policy(child, spec.boundary.sid)
 
     @staticmethod
     def _launch(spec, cwd, env, payload, loan):

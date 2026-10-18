@@ -7,8 +7,10 @@ Job helper resumes the child. No ordinary Popen fallback exists here.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import os
 import subprocess
+from contextlib import contextmanager
 from ctypes import wintypes as w
 
 if os.name != "nt":
@@ -68,6 +70,8 @@ _declare(_kernel, "WaitForSingleObject", w.DWORD, w.HANDLE, w.DWORD)
 _declare(_kernel, "GetExitCodeProcess", w.BOOL, w.HANDLE, ctypes.POINTER(w.DWORD))
 _declare(_kernel, "TerminateProcess", w.BOOL, w.HANDLE, w.UINT)
 _declare(_kernel, "LocalFree", ctypes.c_void_p, ctypes.c_void_p)
+_declare(_kernel, "CreateMutexW", w.HANDLE, ctypes.c_void_p, w.BOOL, w.LPCWSTR)
+_declare(_kernel, "ReleaseMutex", w.BOOL, w.HANDLE)
 _declare(_adv, "ConvertStringSidToSidW", w.BOOL, w.LPCWSTR, ctypes.POINTER(ctypes.c_void_p))
 _declare(_adv, "ConvertSidToStringSidW", w.BOOL, ctypes.c_void_p, ctypes.POINTER(w.LPWSTR))
 _declare(_adv, "OpenProcessToken", w.BOOL, w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE))
@@ -241,6 +245,66 @@ def acl_equal(observed_sddl, expected_sddl):
         finally:
             _kernel.LocalFree(descriptor)
     return dacl_bytes(observed_sddl) == dacl_bytes(expected_sddl)
+
+
+#: How long one process waits for another's change of the same folder's DACL. The OS rewrites
+#: every file below a folder when it hands an entry down (measured 11-80 s on a large tree), so it
+#: is long.
+ACL_WAIT_SECONDS = 600.0
+_WAIT_ABANDONED, _WAIT_TIMEOUT = 0x80, 0x102
+
+
+def acl_mutex_name(folder_identity) -> str:
+    """The name of the mutex that serialises changes of one folder's DACL: its identity, hashed.
+
+    The identity is the volume and the file id the OS gives the folder, so every path that reaches
+    the folder (another spelling, a long-path prefix) names the same mutex, and no path text is in
+    the name.
+    """
+    volume, file_id = folder_identity
+    digest = hashlib.sha256(f"{volume}:{file_id}".encode("ascii")).hexdigest()[:32]
+    return "Global\\conduct-acl-" + digest
+
+
+@contextmanager
+def acl_exclusive(hold, *, wait: float = ACL_WAIT_SECONDS):
+    """Hold the cross-process mutex of one folder's DACL for ONE read-modify-write.
+
+    Every process that changes the DACL of this folder, at the grant and at the return, takes the
+    same mutex (named by the folder's identity), so two of them cannot read the DACL, each add its
+    entry and each write, and lose one write. It is held for the change only, never while an agent
+    works. An owner that died holding it (`WAIT_ABANDONED`) hands it over: the folder is checked to
+    be the one that was held, and the caller reads the DACL afresh inside, so nothing is assumed of
+    what the dead owner did. Its own journal record stays, and its recovery returns what it granted.
+
+    Args:
+        hold: The verified hold of the folder (its `identity` keys the mutex).
+        wait: Seconds to wait for another process's change to end.
+
+    Yields:
+        True when the previous owner died holding the mutex, else False.
+
+    Raises:
+        TimeoutError: another process kept the mutex for `wait` seconds; nothing was changed.
+        OSError: the mutex could not be created or waited for, or the folder is not the one held.
+    """
+    hold.check()
+    mutex = _kernel.CreateMutexW(None, False, acl_mutex_name(hold.identity))
+    if not mutex:
+        raise _error("CreateMutexW")
+    try:
+        waited = _kernel.WaitForSingleObject(mutex, int(wait * 1000))
+        if waited == _WAIT_TIMEOUT:
+            raise TimeoutError("another process is changing the ACL of this folder")
+        if waited not in (0, _WAIT_ABANDONED):
+            raise _error("WaitForSingleObject")
+        try:
+            hold.check()
+            yield waited == _WAIT_ABANDONED
+        finally:
+            _kernel.ReleaseMutex(mutex)
+    finally:
+        _kernel.CloseHandle(mutex)
 
 
 def _error(name):

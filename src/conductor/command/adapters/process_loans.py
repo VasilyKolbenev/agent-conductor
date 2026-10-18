@@ -1,12 +1,12 @@
 """Durable ACL loans on EXISTING product-owned folders of one AppContainer attempt.
 
 `process_acl` makes, grants and deletes FRESH folders. A loan is the other case: the attempt's work
-folder, its per-spawn home and the pinned install folder already exist, are not this journal's to
-delete, and are given back. Before anything changes a record names each folder, its identity and
-its DACL; the grant adds entries for the attempt's profile only (explicit rights, never Full
-Control, never WRITE_DAC or DELETE_CHILD, never a deny); the exit takes those entries away again,
-which also takes the profile's inherited entries away from everything the attempt touched beneath
-the folder.
+folder, its per-spawn home (or the login home its lease names) and the pinned install folder
+already exist, are not this journal's to delete, and are given back. Before anything changes a
+record names each folder, its identity and its DACL; the grant adds entries for the attempt's
+profile only (explicit rights, never Full Control, never WRITE_DAC or DELETE_CHILD, never a deny);
+the exit takes those entries away again, which also takes the profile's inherited entries away
+from everything the attempt touched beneath the folder.
 
 A loan is returned by taking away ITS OWN entries from the DACL as it stands at the exit, never by
 writing back the DACL that was read at the start. The pinned install folder is shared by every
@@ -18,11 +18,24 @@ The hold of a loaned folder asks for WRITE_DAC and NOT for DELETE. Measured 13.1
 in the hold, setting a DACL on the folder does not propagate an inheritable entry to its existing
 children, nor take it away again, and reports success; without DELETE it does both.
 
-The leased login home is not a loan (it waits for a ruling), and nothing here widens an ACL beyond
-the three kinds of folder `AttemptFolders` names. That is a law of this runner and not a manner of
-its callers: an install folder is the version folder of a pinned harness and never a login folder
-or a folder that holds one, a home is a minted folder of a catalogued harness home root, a work
-folder is one item of the work tree, and a spawn on a loan starts a program that stands in the
+The leased login home is the one loan that is not a product folder of the attempt: it is the
+operator's dedicated login directory, rewritten in place when a credential is refreshed. It is
+granted only to the attempt that holds the shared login lease on exactly that folder (proved by the
+identity the lease recorded, not by the spelling of a path), for the attempt's life, and only with
+what a credential refresh needs: the folder itself can be read, written into and traversed but not
+deleted, a nested directory the same, a nested regular file read, written and deleted and nothing
+else. The grant counts against the lease, so the lease cannot end before the rights are back.
+
+That grant is CLOSED as shipped (`process_boundary.LOGIN_LOAN_OPEN`, `login_loan_provided`): the
+rights of a refresh let the attempt create files in the home and overwrite every file beneath it,
+and the vendor's executable configuration lives there. A login home is refused, before anything
+exists, until a review ruling says which objects of it the attempt may write.
+
+Nothing here widens an ACL beyond the four kinds of folder `AttemptFolders` names. That is a law of
+this runner and not a manner of its callers: an install folder is the version folder of a pinned
+harness and never a login folder or a folder that holds one, a home is a minted folder of a
+catalogued harness home root, a work folder is one item of the work tree, the login home is the
+folder the attempt's own lease names, and a spawn on a loan starts a program that stands in the
 loaned install folder (`holds_entry`).
 """
 from __future__ import annotations
@@ -34,16 +47,27 @@ import stat
 from contextlib import ExitStack
 from pathlib import Path
 
-from ...ownership_native import NativeHold
+from ... import ownership
+from ...ownership_errors import OwnerRefused
+from ...ownership_native import NativeHold, identity
 from ...ownership_records import ACTIVE, HOME, LEGACY
 from ..work_layout import TASKS_DIR, work_parts
 from .process_acl import _CHILD_RWX_DELETE, _RWX, _RX
-from .process_boundary import WindowsContainer
+from .process_boundary import LOGIN_SHAPE, WindowsContainer, login_home_named, login_loan_provided
 from .process_profile import ProfileRefused, _bytes, _plain, _replace, refusal_summary
 
 _LOAN_NAME = re.compile(r"loan-([0-9a-f]{32})\.json\Z")
 _LOAN_TEMP = re.compile(r"\.loan-[0-9a-f]{32}\.json\.[0-9a-f]{16}\.tmp\Z")
-_KEYS = ("work", "home", "install")
+_KEYS = ("work", "home", "install", "login")
+#: What a nested regular file of the login home is given: read, write, append, extended attributes,
+#: attributes, READ_CONTROL, SYNCHRONIZE and DELETE (`_CHILD_RWX_DELETE` without FILE_EXECUTE). That
+#: is what a credential refresh does to a file: write it in place, rename another over it, delete
+#: it and move another into its place. Nothing here runs a file, changes an ACL or an owner.
+_REFRESH = _CHILD_RWX_DELETE & ~0x20
+#: Grok keeps a directory `hooks` and a file `hooks-paths` in its home and loads what they name.
+#: The login loan hands rights down to nested objects, so it is made only while each of these that
+#: exists has its inheritance cut: nothing is handed down to it, and nothing can replace it.
+HOOK_NAMES = frozenset({"hooks", "hooks-paths"})
 _DACL = re.compile(r"(O:[^()]*?D:[A-Z]*)((?:\([^()]*\))*)")
 _ACE = re.compile(r"\([^()]*\)")
 #: Where no folder of an attempt may lie: the owner's repository (at any depth) and, at the top of
@@ -69,6 +93,9 @@ def _refused(detail: str) -> ProfileRefused:
 def _entries(sid: str, rights: str) -> str:
     if rights == "rx":
         return f"(A;OICI;0x{_RX:x};;;{sid})"
+    if rights == "login":
+        return (f"(A;;0x{_RWX:x};;;{sid})(A;CIIO;0x{_RWX:x};;;{sid})"
+                f"(A;OIIO;0x{_REFRESH:x};;;{sid})")
     return f"(A;;0x{_RWX:x};;;{sid})(A;OICIIO;0x{_CHILD_RWX_DELETE:x};;;{sid})"
 
 
@@ -107,14 +134,16 @@ def loan_sddl(before: str, sid: str, rights: str) -> str:
         before: The DACL text the native read gave (`O:...D:flags(ace)...`).
         sid: The attempt's AppContainer profile SID.
         rights: `modify` (read, write, create, traverse on the folder, and those plus DELETE on what
-            is inside it) or `rx` (read and execute, inheritable).
+            is inside it), `rx` (read and execute, inheritable) or `login` (the folder and a nested
+            directory read, written into and traversed but never deleted; a nested regular file
+            read, written and deleted, never run).
 
     Raises:
         ProfileRefused: `profile_acl_invalid` for text this does not understand (a security
             descriptor with a group or an audit part, a conditional entry, unbalanced brackets) or
             an unknown right. Nothing is guessed.
     """
-    if rights not in ("modify", "rx"):
+    if rights not in ("modify", "rx", "login"):
         raise _refused("the DACL text of a loaned folder is not understood")
     head, aces = _split(before)
     split = 0
@@ -153,6 +182,14 @@ def _plain_directory(path: Path) -> Path:
             or getattr(found, "st_reparse_tag", 0)):
         raise _refused("a loaned folder is not a plain directory")
     return Path(os.path.realpath(path))
+
+
+def _identity_of(path: Path) -> tuple[int, int]:
+    """The native identity of an existing folder: the volume and the file id, not its spelling."""
+    try:
+        return tuple(identity(path))
+    except OSError as error:
+        raise _refused("a loaned folder cannot be identified") from error
 
 
 def _system_places(environ) -> list[Path]:
@@ -232,6 +269,32 @@ def _refuse_attempt_folder(name: str, path: Path, root: Path) -> None:
         raise _refused("the home is not a minted folder of a catalogued harness home root")
 
 
+def change_dacl(native, hold, build) -> None:
+    """Set the DACL `build` makes from the one the folder has NOW, and read it back, under the
+    folder's cross-process mutex.
+
+    The OS has no compare-and-swap on a DACL, and a pinned install folder is shared by every
+    project server, so the read, the write and the read back of ONE change are taken as a whole
+    under the mutex the folder's identity names (`native.acl_exclusive`), at the grant and at the
+    return alike. The mutex is held for this change only, never while an agent works. The DACL is
+    read inside it, so an entry another attempt or the owner added before then stays, and nothing
+    is assumed of what an owner that died holding the mutex had done. Protection and owner are
+    kept as found.
+
+    Raises:
+        ProfileRefused: `profile_acl_invalid` when the DACL reads back different from the change.
+        TimeoutError: another process kept the folder's mutex too long; nothing was changed.
+    """
+    with native.acl_exclusive(hold):
+        current, protected, owner_sid = native.acl_snapshot(hold)
+        proposed = build(current)
+        native.acl_set(hold, proposed, protected=protected)
+        readback, now_protected, now_owner = native.acl_snapshot(hold)
+        if (now_protected != protected or now_owner != owner_sid
+                or not native.acl_equal(readback, proposed)):
+            raise _refused("native ACL readback differs from the change")
+
+
 def holds_entry(argv, install: str | None, environ=None) -> bool:
     """Whether the program `argv` starts stands in the install folder loaned to its attempt.
 
@@ -252,32 +315,67 @@ class FolderLoans:
     """The loans of one attempt, journalled in `loan-<attempt>.json` beside its profile record."""
 
     def __init__(self, profiles, native, *, hold_factory=NativeHold, environ=None,
-                 login_homes=None):
+                 login_homes=None, leased_login=None):
         self.profiles, self.native = profiles, native
         self.directory = profiles.directory
         self.hold_factory = hold_factory
         self.environ = os.environ if environ is None else environ
         self.login_homes = login_homes  # a callable of no argument; None: the project's providers
+        self.leased_login = leased_login  # a callable of no argument; None: the project's owner
         self.record, self.holds, self.paths = None, None, {}
+        self.lease_retire = None  # retires the loan against the login lease the grant counts as
 
     def _logins(self) -> tuple[Path, ...]:
         if self.login_homes is None:
             return configured_login_homes(self.directory.parent)
         return tuple(Path(os.path.realpath(path)) for path in self.login_homes())
 
+    def _leased(self):
+        """The login folder the calling thread's standing lease holds (`LeasedLogin`), or None."""
+        try:
+            if self.leased_login is not None:
+                return self.leased_login()
+            return ownership.require_owner(self.profiles.owner_root).leased_login()
+        except OwnerRefused as error:
+            raise _refused("the login lease of the attempt is not standing") from error
+
+    def _refuse_login(self, real: dict[str, Path]) -> None:
+        """The login home is the folder the attempt's own lease holds, proved by its identity, in
+        the place the product keeps a login home, and it is no part of the attempt's other folders
+        nor of the project. No lease, no loan."""
+        login = real["login"]
+        if "home" in real:
+            raise _refused("a loan names a home or a login home, never both")
+        leased = self._leased()
+        if leased is None:
+            raise _refused("the attempt holds no login lease")
+        if _identity_of(login) != tuple(leased.identity):
+            raise _refused("the login home is a folder the attempt's lease does not name")
+        if not login_home_named(str(login)):
+            raise _refused(f"the login home does not stand in {LOGIN_SHAPE}")
+        root = Path(os.path.realpath(self.profiles.owner_root))
+        for key, other in (("work", real["work"]), ("install", real["install"]), ("project", root)):
+            if _inside(other, login) or _inside(login, other):
+                raise _refused(f"the login home overlaps the {key} folder")
+        self._refuse_hooks(login)
+
     def targets(self, folders) -> dict[str, Path]:
         """The folders of a loan, checked and in their real places; nothing is held or changed.
 
         Raises:
             ProfileRefused: `profile_acl_invalid` for a missing or foreign key, a folder that is not
-                a plain directory, one that overlaps another or a login folder, or one the rules
-                above forbid.
+                a plain directory, one that overlaps another or a login folder, a login home the
+                attempt's lease does not name, or one the rules above forbid.
         """
         if self.profiles.owner_root is None:
             raise _refused("trusted ACL callbacks are absent")
         if (type(folders) is not dict or not set(folders) <= set(_KEYS)
                 or not {"work", "install"} <= set(folders)):
-            raise _refused("a loan names a work folder, an install folder and at most a home")
+            raise _refused("a loan names a work folder, an install folder and at most a home "
+                           "or a login home")
+        if "login" in folders and not login_loan_provided():
+            raise _refused("the login home is not loaned: the attempt could write the vendor's "
+                           "executable configuration in it (a review ruling is open)")
         root = Path(os.path.realpath(self.profiles.owner_root))
         real = {key: _plain_directory(Path(path)) for key, path in folders.items()}
         for name in ("work", "home"):
@@ -287,8 +385,11 @@ class FolderLoans:
         home, work = real.get("home"), real["work"]
         if home is not None and (_inside(home, work) or _inside(work, home)):
             raise _refused("the home and the work folder overlap")
+        if "login" in real:
+            self._refuse_login(real)
+        product = [path for key, path in real.items() if key != "login"]
         for login in self._logins():
-            if any(_inside(path, login) or _inside(login, path) for path in real.values()):
+            if any(_inside(path, login) or _inside(login, path) for path in product):
                 raise _refused("a loaned folder is a login folder, lies in one or holds one")
         return real
 
@@ -304,8 +405,10 @@ class FolderLoans:
             raise _refused("ACL target is not a created owned profile")
         real = self.targets(folders)
         self.paths = real
-        stack, holds, rows = self._observe(real, mode)
+        leased = self._login_lease(real)
+        stack, holds, rows = self._observe(real, mode, leased)
         self.holds = stack, holds
+        self.lease_retire = self._hold_lease(leased)
         record = {"schema": 1, "attempt": profile["attempt"],
                   "owner_nonce": self.profiles.owner_nonce,
                   "root_identity": self.profiles.root_identity,
@@ -316,11 +419,68 @@ class FolderLoans:
         self.record = path
         for key, hold in holds.items():
             self._change(hold, lambda now, rights=rows[key]["rights"]: loan_sddl(now, sid, rights))
+        if "login" in real:
+            self._refuse_hooks(real["login"])  # and again, now that the rights are handed down
         record["phase"] = "applied"
         _replace(self.record, record)
         return self.record
 
-    def _observe(self, real, mode):
+    def _login_lease(self, real):
+        """The lease the login home rests on (None when the loan has no login home)."""
+        if "login" not in real:
+            return None
+        leased = self._leased()
+        if leased is None:
+            raise _refused("the attempt holds no login lease")
+        return leased
+
+    @staticmethod
+    def _hold_lease(leased):
+        """Count the grant against the lease it rests on; the callable that retires the count.
+
+        While the count stands the lease cannot be released as clean, so the rights are back
+        (`restore`) before the lease ends, whatever order the caller's blocks end in."""
+        if leased is None or leased.hold is None:
+            return None
+        try:
+            return leased.hold()
+        except OwnerRefused as error:
+            raise _refused("the login lease of the attempt is not standing") from error
+
+    def _release_lease(self, proven: bool) -> None:
+        retire, self.lease_retire = self.lease_retire, None
+        if retire is not None:
+            retire(proven)
+
+    def _refuse_hooks(self, login: Path) -> None:
+        """Each hook object of the login home that exists has its inheritance cut.
+
+        The login loan hands the refresh rights down to nested objects by inheritance, so a hook
+        object that inherits would be handed a way to be written into or replaced. Nothing is
+        changed here. An object that is absent is the vendor's own rule (its checks before and
+        after each spawn), not the loan's.
+        """
+        try:
+            found = [login / name for name in os.listdir(login) if name.casefold() in HOOK_NAMES]
+            for path in found:
+                self._require_protected(path)
+        except OSError as error:
+            raise _refused("a hook object of the login home cannot be read") from error
+
+    def _require_protected(self, path: Path) -> None:
+        shape = os.lstat(path)
+        if (stat.S_ISLNK(shape.st_mode) or getattr(shape, "st_reparse_tag", 0)
+                or not (stat.S_ISDIR(shape.st_mode) or stat.S_ISREG(shape.st_mode))):
+            raise _refused(f"the login home holds {path.name!r}, which is not a plain object")
+        hold = self.hold_factory(path, directory=stat.S_ISDIR(shape.st_mode), grants=False)
+        try:
+            protected = self.native.acl_snapshot(hold)[1]
+        finally:
+            hold.close()
+        if not protected:
+            raise _refused(f"the login home holds {path.name!r}, which inherits its rights")
+
+    def _observe(self, real, mode, leased=None):
         """Hold every folder and note what it was; nothing is changed."""
         stack, holds, rows = ExitStack(), {}, {}
         try:
@@ -328,6 +488,8 @@ class FolderLoans:
                 hold = self.hold_factory(path, directory=True, grants=True)
                 stack.callback(hold.close)
                 holds[key] = hold
+                if key == "login" and tuple(hold.identity) != tuple(leased.identity):
+                    raise _refused("the login home is a folder the attempt's lease does not name")
                 before, protected, owner_sid = self.native.acl_snapshot(hold)
                 rows[key] = {"path": str(path), "rights": self._rights(key, mode),
                              "identity": list(hold.identity), "before": before,
@@ -338,23 +500,15 @@ class FolderLoans:
         return stack, holds, rows
 
     def _change(self, hold, build) -> None:
-        """Set the DACL `build` makes from the one the folder has NOW, and read it back.
-
-        Read just before the write, so an entry another attempt or the owner added since the record
-        was made stays. Protection and owner are kept as found.
-        """
-        current, protected, owner_sid = self.native.acl_snapshot(hold)
-        proposed = build(current)
-        self.native.acl_set(hold, proposed, protected=protected)
-        readback, now_protected, now_owner = self.native.acl_snapshot(hold)
-        if (now_protected != protected or now_owner != owner_sid
-                or not self.native.acl_equal(readback, proposed)):
-            raise _refused("native ACL readback differs from the change")
+        change_dacl(self.native, hold, build)
 
     @staticmethod
     def _rights(key: str, mode: str) -> str:
         """Install is read-and-execute; work is modify in a dispatch and read-only in a review;
-        a home is the vendor's own state and is written in both."""
+        a home is the vendor's own state and is written in both; the login home is refreshed in
+        both, with the narrower rights of a credential refresh (`login`)."""
+        if key == "login":
+            return "login"
         return "rx" if key == "install" or (key == "work" and mode == "review") else "modify"
 
     def close(self) -> None:
@@ -392,7 +546,8 @@ class FolderLoans:
             raise _refused("loan SID is malformed") from error
         for key, facts in row["loans"].items():
             if (type(facts) is not dict or set(facts) != _FACTS
-                    or type(facts["path"]) is not str or facts["rights"] not in ("modify", "rx")
+                    or type(facts["path"]) is not str
+                    or facts["rights"] not in ("modify", "rx", "login")
                     or type(facts["identity"]) is not list or len(facts["identity"]) != 2
                     or any(type(x) is not int or x < 0 for x in facts["identity"])
                     or type(facts["before"]) is not str or type(facts["protected"]) is not bool
@@ -446,13 +601,28 @@ class FolderLoans:
         named again by every recovery, until the owner gives it up: with `abandon` the record ends
         `abandoned` instead. A folder that could not be returned is never given up.
 
+        The grant counted against the login lease (if there was one) is retired when this attempt's
+        own loan ends: as proven when every entry is back, as unproven when it is not.
+
         Raises:
             ProfileRefused: `profile_acl_invalid` for a folder that is not the one granted, or
                 whose changed DACL reads back different. An error of the OS passes as it is.
         """
         record_path = record_path or self.record
         if record_path is None:
+            self._release_lease(True)  # no record, so nothing was changed
             return
+        own = record_path == self.record
+        try:
+            self._restore(record_path, abandon=abandon)
+        except BaseException:
+            if own:
+                self._release_lease(False)
+            raise
+        if own:
+            self._release_lease(True)
+
+    def _restore(self, record_path: Path, *, abandon: bool) -> None:
         record = self._read(record_path)
         if record["phase"] in _DONE:
             return

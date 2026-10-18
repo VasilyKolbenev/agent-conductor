@@ -265,9 +265,10 @@ class ProfileJournal:
         """One AppContainer profile for one attempt, and what the attempt may stand on.
 
         Args:
-            folders: None, or a mapping of `work`, `install` and optionally `home` to existing
-                folders (`process_loans`), which are loaned instead of the fresh work and login
-                folders. The block then yields `parent`, `runtime` and these, in their real places.
+            folders: None, or a mapping of `work`, `install` and optionally `home` (or `login`) to
+                existing folders (`process_loans`), which are loaned instead of the fresh work and
+                login folders. The block then yields `parent`, `runtime` and these, in their real
+                places.
         """
         if mode not in (None, "dispatch", "review"):
             raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
