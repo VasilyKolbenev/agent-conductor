@@ -162,6 +162,9 @@ ASSETS = {
     "/panel/desk-feed.js": "text/javascript; charset=utf-8",
     "/panel/desk-summary.js": "text/javascript; charset=utf-8",
     "/panel/desk-pult.js": "text/javascript; charset=utf-8",
+    # The transitions: when the desk may play one, and the layer that plays it.
+    "/panel/desk-motion-model.js": "text/javascript; charset=utf-8",
+    "/panel/desk-motion.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",

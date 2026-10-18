@@ -84,7 +84,7 @@ PERMITTED_IMPORTS = {
                           "./desk-pult-flow.js", "./desk-wizard-host.js",
                           "./desk-stream.js", "./desk-flow-host.js", "./desk-people-host.js",
                           "./desk-run-host.js", "./desk-run-binding.js", "./desk-panels.js",
-                          "./desk-toggles.js"}),
+                          "./desk-toggles.js", "./desk-motion.js"}),
     "desk-run-host.js": frozenset({"./studio-runs.js", "./studio-people.js",
       "./command-view.js", "./studio-i18n.js", "./desk-run-write-host.js",
       "./desk-accept-host.js"}),
@@ -95,6 +95,12 @@ PERMITTED_IMPORTS = {
       "./studio-runwrite.js", "./studio-runread.js", "./command-projection.js"}),
     "desk-panels.js": frozenset(),
     "desk-toggles.js": frozenset(),
+    #: The transitions (spec 5.5). The model decides which moment a render shows: it reads the
+    #: status rules and the newest-run rule the rail reads, and nothing else. The module draws
+    #: it: the view's helper that builds elements and the model, and no door, store, copy
+    #: catalogue or other screen. The boot module or the scene hands it each render's view.
+    "desk-motion-model.js": frozenset({"./desk-status.js", "./studio-taskruns.js"}),
+    "desk-motion.js": frozenset({"./command-view.js", "./desk-motion-model.js"}),
     "desk-people-host.js": frozenset({"./command-view.js", "./studio-i18n.js",
       "./desk-time.js", "./studio-model.js", "./studio-runread.js",
       "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
@@ -115,9 +121,10 @@ PERMITTED_IMPORTS = {
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
-    #: no transport and no other screen.
+    #: no transport and no other screen. It may hand each render's view to the transitions
+    #: module (`./desk-motion.js`), which draws on a layer of its own and reads nothing.
     "desk-scene.js": frozenset({"./command-view.js", "./studio-i18n.js",
-                                "./studio-participants.js"}),
+                                "./studio-participants.js", "./desk-motion.js"}),
     #: The rail, drawn: `mountRail` only. It reads the word of each row from the status
     #: rules and the newest-run rule, builds elements through the view's helper and says
     #: the words through the catalogue, and may import no store, no transport and no other
