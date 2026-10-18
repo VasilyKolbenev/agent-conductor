@@ -23,7 +23,7 @@ from tests.test_store import good_lane, write_project
 from tests.alpha3_graph_artifacts import dalio_definition
 
 
-class _StartsNoAgentProvider(StartsNoAgent, DeterministicProvider):
+class _StartsNoAgentProvider(DeterministicProvider, StartsNoAgent):
     """The shared fake provider, declared to start no vendor agent.
 
     Every dispatch and review step demands the execution boundary (R5) and the registry fails
