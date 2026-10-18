@@ -1422,9 +1422,11 @@ The push terms answer 200 `{"push_terms":{"commit","remote","push_url","repo","r
 `push_url` is the one address `git remote get-url --push --all <remote>` resolves (it expands
 `pushurl` and `insteadOf`) and is exactly `https://github.com/O/R`, `git@github.com:O/R` or
 `ssh://git@github.com/O/R`, with an optional `.git`; `repo` is the `O/R` that `gh repo view`
-confirmed for it; `push_digest` is the sha256 of the canonical `{acceptance_id, commit, remote,
-push_url, repo, ref}`. More than one address is `push_url_ambiguous`, a login or password in the
-address `remote_url_has_credentials` (the address is never echoed), an address that is not one of
+confirmed for it; `command` is `git` and the words that a confirmation runs, the one list for the
+terms and for the run (see the guard below); `push_digest` is the sha256 of the canonical
+`{acceptance_id, commit, remote, push_url, repo, ref, command}`. More than one address is
+`push_url_ambiguous`, a login or password in the address `remote_url_has_credentials` (the
+address is never echoed), an address that is not one of
 those forms, a remote that is not there, or a repository gh names otherwise
 `push_destination_mismatch`, and an owner without ADMIN, MAINTAIN or WRITE on a repository that is
 not archived `push_not_permitted`. Failures of git and of gh are `git_failed` and `git_timed_out`,
@@ -1435,8 +1437,20 @@ the ref on the remote BEFORE any push and AFTER every push; only the look decide
 already there answers 201 `{"push": record}` without a push; another commit there is
 `push_rejected`; no ref lets the push go ahead: `git push --porcelain --no-follow-tags
 --recurse-submodules=no --force-with-lease=<ref>: <push_url> <commit>:<ref>`, by address, with no
-`-u`, no `--tags` and no bare `--force`. After it the ref is looked at again: the same commit
-answers 201 and writes `push.json` (with `remote_oid`), another commit is `push_rejected`, no ref
+`-u`, no `--tags` and no bare `--force`. The words begin with one pair before the verb, `-c
+remote.<guard>.url=<push_url>`: a remote that exists on that command line only, with the pushed
+address and no fetch refspec, and writes no configuration, so that Git 2.56 and later, which
+update the remote-tracking ref of the one configured remote whose push address is the address
+pushed to, find two and write no ref; no ref is deleted afterwards. `<guard>` is the first of
+`conduct-no-tracking`, `conduct-no-tracking-2`, and so on, that no setting of the project uses
+(any `remote.<name>.<key>` in any scope takes the name, whatever the key and the case): a remote
+of the same name, or one with a `pushurl` of its own, would leave the project's own remote the
+only match. The terms and the run build their words with the same function, so the command the
+card shows, which is also the one for the owner's terminal, is the command that runs; and because
+the digest covers it, a name that became taken or free since the terms were shown is
+`push_terms_changed`, and the terms read next show the other command. After the push the ref is
+looked at again: the same commit answers 201 and writes `push.json` (with `remote_oid`), another
+commit is `push_rejected`, no ref
 is `push_rejected` when the push said it was rejected, `push_unconfirmed` when it said it was sent,
 `push_timed_out` when it timed out and `git_failed` for any other exit with no porcelain line for
 the ref, and a look that does not answer is `push_unconfirmed` (or `push_auth_failed` when git

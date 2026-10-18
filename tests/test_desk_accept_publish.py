@@ -27,7 +27,8 @@ const COMMIT = {schema_version: 1, acceptance_id: ACC, run_id: 'run-one', task_i
   accept_manifest_digest: 'sha256:' + 'f'.repeat(64), file_count: 3, requested_by: 'Owner',
   recorded_at: '2026-10-14T10:00:00Z'};
 const TERMS = {commit: OID, remote: 'origin', push_url: 'https://github.com/o/r.git', repo: 'o/r',
-  ref: REF, command: 'git -C /p push --porcelain --no-follow-tags ' + OID + ':' + REF,
+  ref: REF, command: 'git -c remote.conduct-no-tracking.url=https://github.com/o/r.git push '
+    + '--porcelain --no-follow-tags ' + OID + ':' + REF,
   push_digest: 'sha256:' + 'e'.repeat(64)};
 const PUSHED = {schema_version: 1, acceptance_id: ACC, remote: 'origin', push_url: TERMS.push_url,
   remote_repo: 'o/r', ref: REF, commit: OID, push_digest: TERMS.push_digest, remote_oid: OID,
@@ -110,7 +111,10 @@ def test_the_push_step_reads_the_terms_then_sends_only_the_digest_and_actor_the_
       console.log(JSON.stringify({sent: r.sent, reads: r.reads, first, terms, reviewing, done}));
     """)
     assert out["first"] == [PREFIX + "push.terms"]
-    assert out["reads"] == ["/command/runs/run-one/accept", "/command/project/git"]
+    # The card reads the project's remotes once the commit record is known (the first Git read);
+    # the press that asks for the terms reads them again, so the terms are of the facts of now.
+    assert out["reads"] == ["/command/runs/run-one/accept", "/command/project/git",
+                            "/command/project/git"]
     assert out["terms"] == {
         "repo": True, "url": True, "ref": True, "command": True, "digest": True, "commit": True,
         "send": False, "buttons": [PREFIX + "review"]}
@@ -188,6 +192,35 @@ def test_each_refusal_of_the_confirmation_is_said_and_leaves_exactly_the_right_n
                                "says": True, "sent": 2}, reason
 
 
+#: The two things that move the terms of a push: where it goes, and the command that sends it.
+MOVED_TERMS = {"en": ("destination", "command"), "ru": ("назначение", "команда")}
+
+
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_changed_push_terms_are_said_to_cover_a_new_command_and_not_only_a_new_destination(locale):
+    """A guard name taken or freed since the terms were shown changes the command and leaves the
+    address and the repository as they were: the refusal may not say the destination moved."""
+    out = _js("""
+      const renewed = {...TERMS, push_digest: 'sha256:' + '9'.repeat(64),
+        command: TERMS.command.replace('conduct-no-tracking', 'conduct-no-tracking-2')};
+      const r = rig({locale: d, push: [ok('push_terms', TERMS), refused('push_terms_changed'),
+        ok('push_terms', renewed)]});
+      await opened(r);
+      for (const key of ['accept:push:desk.accept.push.terms',
+        'accept:push:desk.accept.review', 'accept:push:desk.accept.push.action']) {
+        await press(r, key);
+      }
+      const text = said(d, 'accept.reason.push_terms_changed');
+      const refusal = {says: hasText(r.host.detail, text), buttons: live(r.host.detail)};
+      await press(r, 'accept:push:desk.accept.push.terms');
+      console.log(JSON.stringify({text, refusal, other: hasText(r.host.detail, renewed.command),
+        url: hasText(r.host.detail, TERMS.push_url)}));
+    """, locale)
+    assert all(word in out["text"].lower() for word in MOVED_TERMS[locale]), out["text"]
+    assert out["refusal"] == {"says": True, "buttons": [PREFIX + "push.terms"]}
+    assert (out["other"], out["url"]) == (True, True)
+
+
 def test_a_refusal_that_is_not_an_acceptance_refusal_is_said_by_its_code():
     out = _js("""
       const wire = {status: 'refused', code: 'tool_unavailable', payload: {error: {
@@ -221,28 +254,19 @@ def test_several_github_remotes_are_chosen_by_the_owner_and_only_that_one_is_ask
         "sent": 0, "says": True}
     assert out["sent"] == [{"target": "acceptPush", "run": "run-one", "body": {
         "acceptance_id": "acc-" + "a" * 32, "remote": "upstream", "preview": True}}]
-    assert out["reads"] == 2 and out["terms"]
+    assert out["reads"] == 3 and out["terms"]     # accept, the card's remotes, the press's
 
 
-def test_a_project_with_no_github_remote_asks_nothing_and_a_failed_read_can_be_pressed_again():
+def test_a_failed_read_of_the_remotes_asks_nothing_and_can_be_pressed_again():
+    """A project with no GitHub remote has no push step to press (`test_desk_accept_terminal`)."""
     out = _js("""
-      const none = {git: {...GIT.git, remotes: [
-        {name: 'backup', github: null, url_has_credentials: false}]}};
-      const a = rig({git: none});
-      await opened(a);
-      await press(a, 'accept:push:desk.accept.push.terms');
-      const empty = {sent: a.sent.length, buttons: live(a.host.detail),
-        says: hasText(a.host.detail, said('en', 'desk.accept.push.no_remote'))};
       const b = rig({gitFails: true});
       await opened(b);
       await press(b, 'accept:push:desk.accept.push.terms');
-      const failed = {sent: b.sent.length, buttons: live(b.host.detail),
-        says: hasText(b.host.detail, said('en', 'desk.accept.push.remotes_failed'))};
-      console.log(JSON.stringify({empty, failed}));
+      console.log(JSON.stringify({sent: b.sent.length, buttons: live(b.host.detail),
+        says: hasText(b.host.detail, said('en', 'desk.accept.push.remotes_failed'))}));
     """)
-    again = [PREFIX + "push.terms"]
-    assert out == {"empty": {"sent": 0, "buttons": again, "says": True},
-                   "failed": {"sent": 0, "buttons": again, "says": True}}
+    assert out == {"sent": 0, "buttons": [PREFIX + "push.terms"], "says": True}
 
 
 def test_terms_that_do_not_name_the_accepted_commit_branch_and_remote_are_not_shown():
@@ -689,3 +713,19 @@ def test_the_steps_speak_russian_when_the_owner_does():
         english: hasText(r.host.detail, 'Send to GitHub')}));
     """)
     assert out == {"heading": True, "command": True, "english": False}
+
+
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_the_terms_explain_the_pair_the_command_begins_with_in_the_owners_language(locale):
+    out = _js("""
+      const r = rig({locale: d, push: [ok('push_terms', TERMS)]});
+      await opened(r);
+      const guard = said(d, 'desk.accept.push.guard');
+      const before = hasText(r.host.detail, guard);
+      await press(r, 'accept:push:desk.accept.push.terms');
+      console.log(JSON.stringify({guard, before, after: hasText(r.host.detail, guard),
+        command: hasText(r.host.detail, TERMS.command),
+        pair: TERMS.command.startsWith('git -c remote.')}));
+    """, locale)
+    assert (out["before"], out["after"], out["command"], out["pair"]) == (False, True, True, True)
+    assert "-c remote." in out["guard"]

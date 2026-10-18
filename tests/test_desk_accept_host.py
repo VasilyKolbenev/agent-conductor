@@ -163,7 +163,8 @@ def test_a_stale_read_of_the_same_run_keeps_entries_and_stage_and_refuses_presse
     """, modules=MODULES)
     assert out == {"kept": {"title": "Mine", "digest": True, "reviewOff": True},
                    "reviewed": False, "commitOff": True, "sentWhileStale": ["acceptPreview"],
-                   "sent": ["acceptPreview", "acceptCommit"], "reads": 1, "commitShown": True}
+                   "sent": ["acceptPreview", "acceptCommit"], "reads": 2,   # the record, then
+                   "commitShown": True}                                      # the remotes
 
 
 def test_a_preview_answer_that_lands_during_a_stale_read_is_kept_and_usable_once_it_lands():
@@ -311,7 +312,7 @@ def test_the_explicit_read_of_the_record_is_allowed_during_a_stale_read_and_its_
       console.log(JSON.stringify({{allowed, reads,
         landed: hasText(host.detail, 'd'.repeat(40))}}));
     """, modules=MODULES)
-    assert out == {"allowed": True, "reads": 2, "landed": True}
+    assert out == {"allowed": True, "reads": 3, "landed": True}   # facts, the record, remotes
 
 
 def test_the_answer_of_an_explicit_read_made_during_a_stale_read_is_dropped_for_another_run():

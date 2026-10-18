@@ -50,6 +50,16 @@ const newPush = () => ({phase: "idle", confirming: false, error: null, login: fa
   remotes: [], terms: null, signer: null});
 const newPr = () => ({phase: "idle", confirming: false, error: null, login: false,
   fields: null, signer: null});
+// The project's remotes as the two steps and the terminal command need them (spec 9.7): `idle`
+// until read, then `reading`, and `known` with its rows or `unknown` when the read gave no list.
+const newRemotes = () => ({phase: "idle", rows: []});
+// A remote name the terminal command may print: the grammar the server itself asks of a remote
+// name, so a name that git would read as an option is never put into a command.
+const SAFE_REMOTE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const remoteRows = (answer) => Array.isArray(answer?.git?.remotes)
+  ? answer.git.remotes.filter((row) => typeof row?.name === "string" && row.name)
+    .map((row) => ({name: row.name, github: typeof row.github === "string" && row.github !== ""}))
+  : null;
 const shellWord = (value) => /^[A-Za-z0-9._/:@=+-]+$/.test(value) ? value
   : `'${value.replaceAll("'", "'\\''")}'`;
 const str = (value) => String(value ?? "");
@@ -76,7 +86,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   let facts = null, preview = null, confirming = false, phase = "idle", error = null;
   let branch = "", title = "", documents = null, actor = null, optionsRevision = 0;
   let availableDocs = [], rereading = false;
-  let push = newPush(), pr = newPr(), headBranch = "main";
+  let push = newPush(), pr = newPr(), headBranch = "main", remotes = newRemotes();
   const pult = element("section", {className: "desk-accept"});
   const detail = element("section", {className: "desk-accept desk-accept--detail"});
   // While the selected run is read again the desk draws the earlier read as "stale": an answer
@@ -92,7 +102,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   function reset() {
     facts = preview = null; confirming = false; phase = "idle"; error = null;
     branch = title = ""; documents = null; availableDocs = []; optionsRevision += 1;
-    push = newPush(); pr = newPr(); headBranch = "main";
+    push = newPush(); pr = newPr(); headBranch = "main"; remotes = newRemotes();
   }
   // "Again" after a look that found nothing repeats terms that were shown and signed for. When
   // those terms no longer stand the step goes back to the stage where they are reviewed.
@@ -126,6 +136,27 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
       facts = null; phase = "failed"; error = notice(failure?.message);
     }
     onChange();
+    void readRemotes();
+  }
+  // What the steps after the commit are depends on the project's remotes (spec 9.7): a GitHub
+  // remote gets the push and the pull request, any other the command for the owner's terminal.
+  // They are read once the commit record is known. A commit already sent is GitHub's, and a read
+  // that gives no list leaves the push step, whose own press reads the remotes again. An answer
+  // that lands when the card may not take it is dropped, and the next render asks again.
+  async function readRemotes() {
+    const ticket = epoch;
+    if (remotes.phase !== "idle" || !facts?.commit || facts.push || !current(ticket)) return;
+    remotes = {phase: "reading", rows: []};
+    let next = {phase: "unknown", rows: []};
+    try {
+      const rows = remoteRows(await door.readJson(path.git()));
+      if (rows !== null) next = {phase: "known", rows};
+    } catch (failure) {
+      if (failure?.message === "project_mismatch" && current(ticket)) { onForeign(); return; }
+    }
+    if (ticket !== epoch) return;
+    if (!current(ticket)) { remotes = newRemotes(); return; }
+    remotes = next; onChange();
   }
   function sync(desk) {
     if (disposed) return;
@@ -208,6 +239,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
         : notice(answer.code, answer.payload?.error?.detail?.reason);
     }
     onChange();
+    void readRemotes();
   }
   // -- the push and the pull request after the commit (spec 9.7) -----------------------------
   const setStep = (step, patch) => {
@@ -513,7 +545,19 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
       target.append(line(text(locale, "desk.accept.pr.number"), `#${facts.pull_request.number}`));
     } else target.append(button("desk.accept.open", openDetails, false, "pult"));
   }
+  // Which steps the card shows after the commit (spec 9.7): none while the remotes are read; the
+  // push and the pull request where a GitHub remote stands or the remotes are not known; the
+  // terminal command alone where no remote is GitHub's.
+  const hosting = () => facts.push || remotes.phase === "unknown" ? "github"
+    : remotes.phase !== "known" ? "waiting"
+      : remotes.rows.some((row) => row.github) ? "github" : "terminal";
   function drawSteps(target, desk) {
+    const mode = hosting();
+    if (mode === "waiting") { waiting(target); return; }
+    if (mode === "github") drawGithubSteps(target, desk);
+    if (!facts.push) drawTerminal(target, mode === "terminal");
+  }
+  function drawGithubSteps(target, desk) {
     const blocked = desk.mode !== "active" || !actor || phase !== "ready"
       || !current(epoch, true);
     if (desk.mode === "view") target.append(element("p", {
@@ -521,6 +565,22 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     else if (!actor) target.append(element("p", {text: text(locale, "desk.accept.actor")}));
     drawPush(target, blocked);
     if (facts.push) drawPr(target, blocked);
+  }
+  // The command for each remote that is not GitHub's: text to run in a terminal, never a press.
+  function drawTerminal(target, alone) {
+    const rows = remotes.rows.filter((row) => !row.github && SAFE_REMOTE.test(row.name));
+    if (!alone && rows.length === 0) return;
+    target.append(element("h4", {text: text(locale, "desk.accept.terminal.heading")}));
+    if (rows.length === 0) {
+      target.append(element("p", {text: text(locale, "desk.accept.push.no_remote")}));
+      return;
+    }
+    target.append(element("p", {text: text(locale, "desk.accept.terminal.effect")}));
+    for (const row of rows) {
+      const command = ["git", "push", row.name, str(facts.commit.branch)];
+      target.append(line(text(locale, "desk.accept.push.remote"), row.name),
+        element("pre", {text: command.map(shellWord).join(" ")}));
+    }
   }
   function waiting(target) {
     target.append(element("p", {text: text(locale, "desk.accept.working")}));
@@ -547,7 +607,8 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
       line(text(locale, "desk.accept.push.oid"), terms.commit),
       line(text(locale, "desk.accept.push.digest"), terms.push_digest),
       element("h4", {text: text(locale, "desk.accept.command")}),
-      element("pre", {text: terms.command}));
+      element("pre", {text: terms.command}),
+      element("p", {text: text(locale, "desk.accept.push.guard")}));
   }
   function remoteButton(name, blocked) {
     const node = element("button", {type: "button", "data-focus-key": `accept:push:remote:${name}`,
@@ -642,6 +703,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   }
   function render(desk, open) {
     sync(desk);
+    void readRemotes();
     draw(pult, desk, false);
     if (open) draw(detail, desk, true);
   }

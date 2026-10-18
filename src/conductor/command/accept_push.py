@@ -33,6 +33,7 @@ from .accept_store import _bytes
 from .adapters.process import ProcessRunner
 from .authorization_terms import human_identity
 from .contract_values import ContractError, _digest, _id
+from .project_git import GitReadFailed
 from .project_routes import _hold_git_allowed
 
 _ACCEPTANCE = re.compile(r"acc-[0-9a-f]{32}\Z")
@@ -102,15 +103,15 @@ def _answer(api, run_id, request):
     git, gh = github.readers(api)
     root = api._store.project_root
     if request.preview:
-        return 200, {"push_terms": _current_terms(git, gh, root, commit, request.remote)}
+        return 200, {"push_terms": _current_terms(git, gh, root, commit, request.remote)[0]}
     with github.publish_lock(root, run_id):
         record = read_accept(api, run_id)[1]["push"]
         if record is not None:
             return 200, {"push": _repeat(record, request)}
-        terms = _current_terms(git, gh, root, commit, request.remote)
+        terms, words = _current_terms(git, gh, root, commit, request.remote)
         if terms["push_digest"] != request.push_digest:
             raise github.PublishRefused("push_terms_changed")
-        return _send(api, run_id, request, commit, terms, git)
+        return _send(api, run_id, request, commit, terms, words, git)
 
 
 def _repeat(record, request):
@@ -123,29 +124,92 @@ def _repeat(record, request):
 
 
 def _current_terms(git, gh, root, commit, remote):
+    """-> the terms the card shows, and the words after `git -C <root>` that a press runs.
+
+    The two come from ONE list of words: the command shown is `git` and those words, and the
+    digest covers that command, so a press whose facts or whose command-line remote name changed
+    since the terms were shown has another digest and is refused as `push_terms_changed`; a
+    command the owner did not see is never the one that runs.
+    """
     found = github.read_facts(git, gh, root, remote)
     if not found.can_push:
         raise github.PublishRefused("push_not_permitted")
     ref = "refs/heads/" + commit["branch"]
+    words = push_words(found.push_url, commit["commit"], ref, guard_name(git, root))
+    command = " ".join(github.shell_word(word) for word in ["git", *words])
     core = {"acceptance_id": commit["acceptance_id"], "commit": commit["commit"],
-            "remote": remote, "push_url": found.push_url, "repo": found.repo, "ref": ref}
+            "remote": remote, "push_url": found.push_url, "repo": found.repo, "ref": ref,
+            "command": command}
     canonical = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     digest = "sha256:" + hashlib.sha256(canonical.encode("ascii")).hexdigest()
     return {"commit": commit["commit"], "remote": remote, "push_url": found.push_url,
-            "repo": found.repo, "ref": ref, "push_digest": digest,
-            "command": " ".join(github.shell_word(word) for word in
-                                ["git", *push_arguments(found.push_url, commit["commit"], ref)])}
+            "repo": found.repo, "ref": ref, "push_digest": digest, "command": command}, words
 
 
-def push_arguments(url, oid, ref):
-    """The arguments of the push, after `git` and the path of the repository (spec 9.7).
+def push_words(url, oid, ref, guard):
+    """The words after `git` of the push (spec 9.7): the one list the terms show and the run runs.
 
-    No `-u`, no `--tags`, no bare `--force`: the lease (`<ref>:` with an empty expectation) says
-    the ref must not exist, and the remote itself judges it. The push goes by address, so it
-    writes no remote-tracking ref.
+    The words are the command-line remote of `tracking_guard`, then the push itself: no `-u`, no
+    `--tags`, no bare `--force`; the lease (`<ref>:` with an empty expectation) says the ref must
+    not exist, and the remote itself judges it. The push goes by address, so it writes no
+    remote-tracking ref, and the guard keeps that so on Git 2.56 and later.
     """
-    return ["push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
-            f"--force-with-lease={ref}:", url, f"{oid}:{ref}"]
+    return [*tracking_guard(guard, url), "push", "--porcelain", "--no-follow-tags",
+            "--recurse-submodules=no", f"--force-with-lease={ref}:", url, f"{oid}:{ref}"]
+
+
+#: The name asked for first as the one remote that exists on the command line of a push (spec
+#: 9.7), and the stem of the names tried after it when a configured remote already uses one.
+GUARD_STEM = "conduct-no-tracking"
+GUARD_TRIES = 32
+
+
+def tracking_guard(name, url):
+    """The two words, before the verb, that keep a push by address from writing a tracking ref.
+
+    From Git 2.56 a push to an address updates the remote-tracking ref of the one configured
+    remote whose push address is that address (`repo_remote_for_push_tracking` of remote.c,
+    called by `transport_push`); with two or more there is no one remote, and a remote with no
+    fetch refspec maps no ref. This adds a remote named `name` that carries the pushed address
+    and no fetch refspec, on the command line only: nothing is written to the configuration and
+    no ref is deleted afterwards. It works only when no configured remote uses `name` (see
+    `guard_name`): a remote of that name keeps its own fetch refspec, and one with a `pushurl`
+    of its own would not carry the pushed address as a push address.
+    """
+    return ["-c", f"remote.{name}.url={url}"]
+
+
+def guard_name(git, root):
+    """The first of `conduct-no-tracking`, `conduct-no-tracking-2`, ... that no remote uses.
+
+    "Uses" is read from the settings git resolves now, for the project, in every scope and
+    include: any `remote.<name>.<key>` takes the name, whatever the key and the case. The same
+    settings give the same name, so the terms and the press agree while nothing changed.
+
+    Raises:
+        GitReadFailed: git could not give the settings.
+        PublishRefused: `git_failed`, when every name tried is taken.
+    """
+    taken = {name.casefold() for name in _remote_names(git, root)}
+    for turn in range(1, GUARD_TRIES + 1):
+        name = GUARD_STEM if turn == 1 else f"{GUARD_STEM}-{turn}"
+        if name not in taken:
+            return name
+    raise github.PublishRefused("git_failed")
+
+
+def _remote_names(git, root):
+    """The names of the remotes that any setting of the project mentions."""
+    answer = git(["-C", str(root), "config", "-z", "--name-only", "--get-regexp", r"^remote\."],
+                 True, timeout=github.GIT_TIMEOUT_SECONDS)
+    if answer.timed_out or answer.exit_code is None:
+        raise GitReadFailed("git_timed_out")
+    if answer.exit_code == 1:                      # git's word for "no setting matches"
+        return set()
+    if answer.exit_code != 0 or answer.truncated:
+        raise GitReadFailed("git_failed", answer.exit_code)
+    keys = answer.output.decode("utf-8", errors="replace").split("\0")
+    return {name for key in keys if (name := key[len("remote."):].rpartition(".")[0])}
 
 
 def _look(git, root, terms):
@@ -157,7 +221,7 @@ def _look(git, root, terms):
             "push_auth_failed" if error.auth else "push_unconfirmed") from None
 
 
-def _send(api, run_id, request, commit, terms, git):
+def _send(api, run_id, request, commit, terms, words, git):
     root = api._store.project_root
     seen = _look(git, root, terms)
     if seen == commit["commit"]:
@@ -166,9 +230,7 @@ def _send(api, run_id, request, commit, terms, git):
         raise github.PublishRefused("push_rejected")
     if request.check:
         return 200, {"push": None}
-    attempt = git(["-C", str(root), *push_arguments(terms["push_url"], commit["commit"],
-                                                    terms["ref"])],
-                  False, timeout=github.PUSH_TIMEOUT_SECONDS)
+    attempt = git(["-C", str(root), *words], False, timeout=github.PUSH_TIMEOUT_SECONDS)
     kind = _kind(attempt, terms["ref"])
     if kind == "auth":
         raise github.PublishRefused("push_auth_failed")

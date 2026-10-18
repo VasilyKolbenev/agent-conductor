@@ -157,7 +157,7 @@ export const NOTICE_COPY = Object.freeze({
   "accept.reason.push_requires_commit": ["Accept the result into a branch first; then it can be sent.", "Сначала примите результат в ветку; затем его можно отправить."],
   "accept.reason.push_not_permitted": ["Your GitHub account cannot push to this repository.", "Ваша учётная запись GitHub не может отправлять в этот репозиторий."],
   "accept.reason.push_rejected": ["GitHub did not take the branch: it is already there or is protected. Nothing was changed.", "GitHub не принял ветку: она там уже есть или защищена. Ничего не изменено."],
-  "accept.reason.push_terms_changed": ["The destination changed since you looked; read the new terms.", "Назначение изменилось с момента показа; прочитайте новые условия."],
+  "accept.reason.push_terms_changed": ["The push terms (destination or command) changed since you looked; read the new terms.", "Условия отправки (назначение или команда) изменились с момента показа; прочитайте новые условия."],
   "accept.reason.push_url_ambiguous": ["This remote has more than one push address; keep one.", "У этого remote больше одного адреса отправки; оставьте один."],
   "accept.reason.push_destination_mismatch": ["The push address is not the GitHub repository that gh confirmed.", "Адрес отправки не совпадает с репозиторием GitHub, который подтвердил gh."],
   "accept.reason.remote_url_has_credentials": ["The remote address holds a login or password; remove it from your Git settings.", "В адресе remote есть логин или пароль; уберите их из настроек Git."],

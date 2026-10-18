@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Browser, Locator, Page, expect
+from playwright.sync_api import Browser, Error as PlaywrightError, Locator, Page, expect
 
 from browser_tests import desk_hold
 from browser_tests.desk_hold import Hold, close_context
@@ -23,6 +23,45 @@ from tests.test_accept_commit import prepared
 from tests.test_accept_context import RUN, TASK
 from tests import test_accept_context as accept_fixture
 from tests.test_store import write_project
+
+
+#: The one request a window keeps open for as long as it lives.
+STREAM = "/events"
+
+
+def in_flight(page: Page) -> set:
+    """The requests the window has sent and not yet seen end, the stream apart.
+
+    After the commit the card reads the project's remotes (spec 9.7), so a test that ends on the
+    commit ends beside a read that runs Git. The server is shut down at the end of the test, and
+    a request thread still inside Git holds a process loan then: `server_close` is refused
+    `owner_busy`. A window is therefore closed once this set is empty (`let_requests_end`).
+    """
+    pending: set = set()
+
+    def sent(request) -> None:
+        if urlsplit(request.url).path != STREAM:
+            pending.add(request)
+
+    def ended(request) -> None:
+        pending.discard(request)
+
+    page.on("request", sent)
+    page.on("requestfinished", ended)
+    page.on("requestfailed", ended)
+    return pending
+
+
+def let_requests_end(page: Page, pending: set) -> None:
+    """Wait, pumping the page, until everything the window asked has been answered or has failed.
+
+    A window that cannot be waited on (it is already gone) is closed as it was before; the failure
+    that put it there is the one the test reports.
+    """
+    try:
+        desk_hold.until(page, "every request the window sent is answered", lambda: not pending)
+    except (AssertionError, PlaywrightError):
+        return
 
 
 @pytest.fixture
@@ -67,9 +106,11 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
     url, root, _httpd = accept_server
     head = git("rev-parse", "HEAD", cwd=root).stdout
     context = chromium.new_context(viewport={"width": 1280, "height": 1000})
+    pending, page = set(), None
     try:
         page = context.new_page()
         page.set_default_timeout(10000)
+        pending = in_flight(page)
         requests, errors, run_answers = [], [], []
         page.on("request", lambda request: requests.append(
             (request.method, urlsplit(request.url).path)))
@@ -113,6 +154,8 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
         expect(record.filter(has_text="Created commit")).to_contain_text(branch)
         assert errors == []
     finally:
+        if page is not None:
+            let_requests_end(page, pending)
         close_context(context)
 
 
@@ -144,6 +187,7 @@ class _Desk:
     page: Page
     requests: list[tuple[str, str]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    pending: set = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.run_read = Hold(self.page, f"**/command/runs/{RUN}")
@@ -185,6 +229,7 @@ def _desk(chromium: Browser, url: str, language: str = "en") -> Iterator[_Desk]:
         page = context.new_page()
         page.set_default_timeout(10000)
         desk = _Desk(page)
+        desk.pending = in_flight(page)
         page.on("request", lambda request: desk.requests.append(
             (request.method, urlsplit(request.url).path)))
         page.on("pageerror", lambda error: desk.errors.append(str(error)))
@@ -201,6 +246,7 @@ def _desk(chromium: Browser, url: str, language: str = "en") -> Iterator[_Desk]:
         if desk is not None:
             for held in (desk.run_read, desk.controls_read, desk.preview_post):
                 held.abort()
+            let_requests_end(desk.page, desk.pending)
         close_context(context)
 
 
