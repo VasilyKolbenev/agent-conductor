@@ -237,4 +237,3 @@ def window(browser: Browser, served: Served, **options: Any) -> Iterator[Desk]:
         yield desk
     finally:
         close_context(desk.page.context)
-
