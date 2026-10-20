@@ -20,6 +20,21 @@
 // first reading of a life of the stream is a baseline), and this module has no memory of its own
 // about what it played. A moment waits until the scene has settled (its run read has landed and
 // the page has drawn two frames), so the marks find the anchors where they will stay.
+//
+// Nothing is drawn where the person cannot see it, and nothing seen then is played later. While the
+// tab is hidden (`document.hidden`) a render makes no wait at all -- a hidden page is given no
+// frames, so a wait made then would stand until the tab returned -- and clears the layer and what
+// waited. While the new-task wizard stands over the desk (its shell, `#deskWizard`, is shown) every
+// render, once it has finished drawing, does the same. A tab that leaves or comes back to the
+// screen clears the layer too. The detector keeps reading all the while, so the next change after
+// the return or the wizard's close is compared with what stood then.
+//
+// A page can also be given no frames while its tab is NOT hidden: the desk in the hub's frame,
+// scrolled out of sight, has `document.hidden` false and gets no `visibilitychange`. So at most ONE
+// wait for frames stands at a time. The renders that come while it stands only replace the view it
+// will plan over (the last one that has settled); when its frames come it plans once over that
+// view, if no later render, hide or wizard has voided it, and a render that settled during the wait
+// gets two frames of its own first. What is held is one view, however many renders there were.
 import {element} from "./command-view.js";
 import {TIMINGS, createDetector, isLive, planOf} from "./desk-motion-model.js";
 
@@ -28,6 +43,8 @@ const REDUCE = "(prefers-reduced-motion: reduce)";
 //: How long the plaque stays. It is words and not movement: the cap of 1.2 s is for movement.
 const PLAQUE_MS = 6000;
 const LAYER = "deskMotion";
+//: The shell of the new-task wizard, drawn over the whole desk while the wizard is open.
+const WIZARD = "deskWizard";
 const ION = "var(--ion)";
 const AMBER = "var(--amber)";
 const CENTRED = "translate(-50%, -50%)";
@@ -51,9 +68,16 @@ const RING = Object.freeze({width: 64, height: 64});
 const WAVE = Object.freeze({width: 72, height: 72});
 
 const detector = createDetector();
-//: Moments seen and not yet played, and the render the wait for the scene belongs to.
+//: Moments seen and not yet played, and the number of the latest render: a wait is void when
+//: another render, a hide or the wizard has moved it since the view the wait plans over was made.
 let pending = NONE;
 let latest = 0;
+//: Whether a wait for the scene's frames stands. At most one does, so a page that is given no
+//: frames (and is not hidden) is left one wait, however many renders it is handed.
+let waiting = false;
+//: The view the wait that stands will plan over: the last render that settled and had moments to
+//: play, with its number in `latest`. One at a time; nothing once planned or voided.
+let held = null;
 
 //: Whether the person allows movement: the negation of the one media query.
 function motionAllowed() {
@@ -229,8 +253,25 @@ function show(plan) {
   for (const taskId of plan.entered) halo(taskId);
 }
 
-//: The scene reads a run again: what it draws is about to be replaced.
-const unsettled = (view) => view.run.phase === "loading" || view.run.phase === "stale";
+//: The scene reads a run again (what it draws is about to be replaced), or the lists a moment is
+//: checked against are out.
+const unsettled = (view) => view.run.phase === "loading" || view.run.phase === "stale"
+  || view.tasks.phase !== "ready" || view.runs.phase !== "ready";
+
+//: Whether the wizard's shell stands over the desk. Read off the page at the moment of asking;
+//: nothing is kept.
+function covered() {
+  const shell = document.getElementById(WIZARD);
+  return shell !== null && !shell.hidden;
+}
+
+//: Take everything off the glass and forget what waits: the marks and the plaque leave the layer,
+//: a wait for the scene is made void, and no moment seen so far is played later.
+function hush() {
+  latest += 1;
+  pending = NONE;
+  document.getElementById(LAYER)?.replaceChildren();
+}
 
 //: Two animation frames: what the page was asked to draw has been drawn, and the deck's own
 //: layout (it measures after it is mounted) has been applied.
@@ -239,20 +280,52 @@ function drawn() {
     window.requestAnimationFrame(done)));
 }
 
-//: Hand the module the view of a render. It watches for a moment and, when one is due and the
-//: scene has settled, plays it after the render has finished drawing; a later render before
-//: that makes the wait void and starts it again. It never holds a render up.
-export function watchMotion(view) {
-  layer();
-  latest += 1;
-  const mine = latest;
-  const found = detector.observe(view);
-  pending = isLive(view) ? [...pending, ...found] : NONE;
-  if (pending.length === 0 || unsettled(view)) return;
+//: The one place a wait for frames is made, and only while none stands. When its frames come it
+//: plans over the last view that settled: not at all when a render that did not settle, a hide or
+//: the wizard has come since (the render counter has moved), and not yet when a render that settled
+//: came during the wait, which has had fewer than two frames: that one is waited for again.
+function settle() {
+  waiting = true;
+  const asked = held;
   drawn().then(() => {
-    if (mine !== latest) return;
-    const plan = planOf(pending, view.taskId);
+    waiting = false;
+    const {view, at} = held;
+    if (at !== latest) {
+      held = null;
+      return;
+    }
+    if (held !== asked) {
+      settle();
+      return;
+    }
+    held = null;
+    const plan = planOf(pending, view);
     pending = NONE;
     show(plan);
   });
 }
+
+//: Hand the module the view of a render. It watches for a moment and, when one is due and the
+//: scene has settled, plays it after the render has finished drawing, over the last view that
+//: settled while it waited; a render that has not settled voids the wait. It never holds a render
+//: up.
+export function watchMotion(view) {
+  layer();
+  latest += 1;
+  const found = detector.observe(view);
+  if (document.hidden) {
+    hush();
+    return;
+  }
+  pending = isLive(view) ? [...pending, ...found] : NONE;
+  // The wizard is drawn after the scene in the same render: whether it covers the desk is asked
+  // once the render has finished.
+  Promise.resolve().then(() => { if (covered()) hush(); });
+  if (pending.length === 0 || unsettled(view)) return;
+  held = Object.freeze({view, at: latest});
+  if (!waiting) settle();
+}
+
+//: A tab that leaves the screen, or comes back to it, starts from what stands: nothing waiting is
+//: played on return, and the next change is compared with the reading the detector last took.
+document.addEventListener("visibilitychange", hush);

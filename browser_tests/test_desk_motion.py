@@ -18,6 +18,18 @@ The desk is the packaged one and nothing under `/panel/` is substituted: the fir
 page ran the bytes of the package, and each case after it is therefore a case of the product. The
 chain that hands each render to the motion module (`desk.js`, `desk-scene.js`, `desk-motion.js`)
 is read by `tests/test_desk_motion_wiring.py` as text; here it is read as behaviour.
+
+The last cases are about what the person cannot see, or cannot take as a moment: a run of the task
+older than its newest on the scene, the new-task wizard standing over the desk, a tab that is hidden
+and comes back, and two changes of one task that were not shown before the next. The wizard is
+opened by a press and needs no emulation; the hidden tab is emulated as the bench describes it
+(`desk_motion_bench.HIDE` and `STARVE`): the document says `hidden`, `visibilitychange` is sent, and
+the page is given no frame until it is shown again. While the frames are held nothing here waits for
+a frame (`QUIET`, `refreshed()` and `wait_for_function` are not called).
+
+The last two cases are the frames that do not come on a tab that is NOT hidden (the desk in the
+hub's iframe, scrolled out of the host's view): the document does not say `hidden` and no event
+comes. There the module keeps one wait of frames and one view, and plays one plan when they return.
 """
 from __future__ import annotations
 
@@ -26,9 +38,10 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, expect
 
-from browser_tests.desk_hold import Hold, land_read, read_again
+from browser_tests.desk_hold import Hold, land_read, read_again, until
 from browser_tests.desk_motion_bench import (
-    NEW_TASK, PANEL, QUIET, RUN, TASK, TITLE, WORDS, Desk, Served, Staged, serve, window)
+    NEW_TASK, PANEL, QUIET, RUN, TASK, TITLE, WIZARD_FIRST_FRAME, WORDS, Desk, Served, Staged,
+    add_run, serve, window)
 
 FX_MAX_MS = 1200
 #: The files of the chain that carries a render from the scene to the layer, as served.
@@ -463,4 +476,246 @@ def test_the_motion_layer_lets_a_press_through_where_it_draws_each_mark(
         assert {"comet", "ring"} <= {mark["fx"] for mark in marks}, marks
         assert all(mark["drawn"] and mark["events"] == "none" and mark["hit"] is False
                    for mark in marks), marks
+        assert desk.problems == []
+
+
+# -- what the person cannot see, or cannot take as a moment -------------------------------------
+
+#: The newest run of the task in the case of an older run on the scene, and when it was made (later
+#: than the seed's runs, so it is the one the rail reads).
+NEWER, NEWER_AT = "run-again", "2026-08-19T08:00:01Z"
+#: What a finished task plays, call by call: two rings and eight sparks. No wave of «к вам» (a ring
+#: that starts at 260 ms) and no comet is among them.
+FINISHED_CALLS = sorted([("ring", 0), ("ring", 220)] + [("spark", 120)] * 8)
+NOTHING = {"calls": [], "added": []}
+
+
+def calls_of(desk: Desk) -> list[tuple[str, int]]:
+    """Every call of `animate` the page made, as (what it was called on, its delay), sorted."""
+    return sorted((call["fx"], call["delay"]) for call in desk.fx()["calls"])
+
+
+def test_a_moment_of_a_newer_run_marks_no_older_run_the_scene_draws(
+        chromium: Browser, served: Served):
+    """The address asks the scene for an OLDER run of the task while the task's newest run asks
+    for a decision. The moment belongs to the newest run: the plaque, which names the task, says
+    it, and no mark stands on the participants and the gate of the run the scene draws. On the
+    newest run, drawn, the next moment of the same task does mark the scene (so the quiet above
+    is a decision and not a scene that could not be marked)."""
+    add_run(served.root, NEWER, TASK, NEWER_AT)
+    with window(chromium, served, motion=True, run=RUN, staged=Staged(target=NEWER)) as desk:
+        subject = desk.page.locator("#deskScene .desk-scene__subject")
+        expect(subject).to_contain_text(RUN)
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['waiting_you']}")
+        desk.refreshed()
+        assert drawn(desk) & SCENE_MARKS == set(), "a mark stood on the scene of an older run"
+        assert desk.fx()["calls"] == []
+        expect(subject).to_contain_text(RUN)
+        desk.page.evaluate(f"() => {{ location.hash = '#lang=en&task={TASK}&run={NEWER}'; }}")
+        expect(subject).to_contain_text(NEWER)
+        expect(desk.page.locator("#deskScene")).to_have_attribute("data-state", "ready")
+        desk.page.evaluate(QUIET)
+        assert desk.fx()["calls"] == [], "the scene moved to the newest run and something played"
+        desk.change("outcome_succeeded")
+        shown_and_gone(desk, "outcome_succeeded")
+        assert calls_of(desk) == FINISHED_CALLS
+        assert desk.problems == []
+
+
+def test_the_wizard_takes_the_movement_off_the_glass_and_nothing_under_it_plays_after(
+        chromium: Browser, served: Served):
+    """The wizard's shell is drawn over the whole desk, above the layer. While it is open the layer
+    holds nothing, the plaque and the marks that were up included (judged at the first frame drawn
+    with the shell on the screen), and a change under it plays nothing. When it closes nothing that
+    was seen under it is played; the next change is."""
+    with window(chromium, served, motion=True) as desk:
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_be_visible()
+        desk.page.evaluate(WIZARD_FIRST_FRAME)
+        asked = desk.listen()
+        desk.page.locator("#deskNewTask").click()
+        expect(desk.page.locator("#deskWizard [data-wizard]")).to_be_visible()
+        desk.page.wait_for_function("() => window.__wizardFrame !== null")
+        assert desk.page.evaluate("() => window.__wizardFrame") == [], (
+            "the layer held a mark or a plaque when the wizard was first drawn over the desk")
+        kept = desk.fx()
+        desk.change("outcome_succeeded")
+        desk.refreshed()
+        assert desk.fx() == kept, "a change under the wizard played"
+        assert desk.page.locator("#deskMotion [data-fx]").count() == 0
+        desk.page.locator('[data-focus="wizard:close"]').click()
+        expect(desk.page.locator("#deskWizard")).to_be_hidden()
+        desk.refreshed()
+        assert desk.fx() == kept, "what was seen under the wizard was played after it closed"
+        expect(desk.plaque()).to_have_count(0)
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['waiting_you']}")
+        assert len(desk.fx()["calls"]) > len(kept["calls"]), "the next change did not play"
+        assert [one for one in asked if one[0] != "GET"] == []
+        assert desk.problems == []
+
+
+def test_a_tab_back_on_the_screen_shows_what_stands_and_the_next_change_plays(
+        chromium: Browser, served: Served):
+    """A plaque is on the glass when the tab leaves the screen: it leaves with it. A change while
+    the tab is hidden is drawn nowhere, and when the tab comes back (the event, then the frames)
+    nothing of it is played and the rail says what stands. The next change plays: the return took
+    no baseline from the detector. No refresh is asked for between the return and that change,
+    which would take a new baseline and hide a detector that forgot its own."""
+    with window(chromium, served, motion=True) as desk:
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_be_visible()
+        assert desk.hide() == 0, "the plaque or a mark stayed on the glass of a hidden tab"
+        kept = desk.fx()
+        desk.change_unseen("outcome_succeeded")
+        desk.show()
+        desk.page.evaluate(QUIET)
+        assert desk.fx() == kept, "what changed behind the hidden tab was played on return"
+        expect(desk.plaque()).to_have_count(0)
+        desk.say("outcome_succeeded")
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['waiting_you']}")
+        assert len(desk.fx()["calls"]) > len(kept["calls"]), "the next change did not play"
+        assert desk.problems == []
+
+
+def test_a_task_that_asked_and_then_finished_behind_a_hidden_tab_plays_nothing_on_return(
+        chromium: Browser, served: Served):
+    """The task asks for a decision and then finishes while the tab is hidden: when it comes back
+    nothing plays (no comet and no wave «to you», no sparks, no plaque), and the rail says it
+    finished. The frames come back BEFORE the event, which is the order that could play what the
+    hidden tab saw: the result does not depend on which of the two the browser does first."""
+    with window(chromium, served, motion=True) as desk:
+        assert desk.fx() == NOTHING
+        desk.hide()
+        desk.change_unseen("waiting_you")
+        desk.change_unseen("outcome_succeeded")
+        desk.show(frames_first=True)
+        desk.page.evaluate(QUIET)
+        assert desk.fx() == NOTHING, "something played on return for what happened while hidden"
+        expect(desk.plaque()).to_have_count(0)
+        desk.say("outcome_succeeded")
+        desk.refreshed()
+        assert desk.fx() == NOTHING
+        desk.change("waiting_you")
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['waiting_you']}")
+        assert "comet" in desk.fx()["added"], "the next change did not play"
+        assert desk.problems == []
+
+
+def test_two_changes_of_one_task_before_a_frame_play_the_one_that_stands(
+        chromium: Browser, served: Served):
+    """The tab is on the screen and the frames are late: the task asks for a decision and then
+    finishes before either is drawn. Of the two moments that wait together the one the task has left
+    is not played: the marks are those of a task that finished, and the plaque and the rail say the
+    same word."""
+    with window(chromium, served, motion=True) as desk:
+        desk.starve()
+        desk.change_unseen("waiting_you")
+        desk.change_unseen("outcome_succeeded")
+        desk.feed()
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['outcome_succeeded']}")
+        expect(desk.page.locator(LAYER)).to_have_count(0, timeout=5000)
+        assert calls_of(desk) == FINISHED_CALLS
+        assert "comet" not in desk.fx()["added"]
+        assert desk.problems == []
+
+
+def test_a_moment_waits_while_the_lists_are_read_again_and_plays_when_they_have_landed(
+        chromium: Browser, served: Served):
+    """The run panel reads both lists again, and while they are out the desk is drawn with lists
+    that are not read. A moment that waits for its frames is not planned over such a view (it
+    would find no task in it and play nothing, and be forgotten): it waits for the lists, and the
+    plaque says it when they have landed. The panel covers the scene, so the plaque is all there
+    is to see."""
+    with window(chromium, served, motion=True) as desk:
+        desk.page.locator("#deskRunToggle").click()
+        expect(desk.page.locator("#deskScene")).to_be_hidden()
+        runs = Hold(desk.page, "**/command/runs")
+        runs.rewrite = desk.staged.runs
+        desk.starve()
+        desk.change_unseen("waiting_you")
+        runs.hold()
+        desk.page.locator('#deskRun [data-focus-key="action:refreshRuns"]').click()
+        until(desk.page, "the lists are read again", runs.reached)
+        desk.feed()
+        expect(desk.plaque()).to_have_count(0)
+        runs.land()
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['waiting_you']}")
+        desk.refreshed()
+        assert desk.fx()["calls"] == []
+        assert desk.problems == []
+
+
+def test_a_hidden_tab_is_made_no_wait_for_frames_it_will_not_be_given(
+        chromium: Browser, served: Served):
+    """Chromium gives a hidden page no animation frame, so a wait for two frames made then would
+    stand until the tab comes back, and every render that made one would leave one more behind.
+    Over ten stream frames of a hidden tab, four of which bring a moment, the module asks for no
+    frame at all; and when the tab comes back nothing of them plays."""
+    with window(chromium, served, motion=True) as desk:
+        desk.hide()
+        for status in ("waiting_you", "outcome_succeeded", "waiting_you", "running",
+                       "outcome_succeeded"):
+            desk.change_unseen(status)
+            desk.refresh_unseen()
+        assert desk.asked_for_frames() == 0, "the module asked a hidden page for frames"
+        desk.show()
+        desk.page.evaluate(QUIET)
+        assert desk.fx() == NOTHING
+        expect(desk.plaque()).to_have_count(0)
+        assert desk.problems == []
+
+
+def test_frames_held_on_a_visible_tab_leave_one_wait_and_one_plan_over_the_latest_view(
+        chromium: Browser, served: Served):
+    """The desk in the hub's iframe, scrolled out of the host's view, is given no animation frame
+    while `document.hidden` stays false and no `visibilitychange` comes, so the hidden-tab rule does
+    not see it. Over twenty-four stream frames, four of which change the task (it asks, goes on,
+    asks again and finishes), the module has asked for exactly one wait of frames and holds no more
+    (the render after render that used to leave one each, and the view each held). When the frames
+    come back it plays ONE plan, and it is the plan of the view that stands: the task finished, so
+    two rings, eight sparks, and the plaque that says `Succeeded` (a plan over the first view would
+    play the comet of «к вам»)."""
+    with window(chromium, served, motion=True) as desk:
+        desk.starve()
+        for status in ("waiting_you", "running", "waiting_you", "outcome_succeeded"):
+            desk.change_unseen(status)
+            for _ in range(5):
+                desk.refresh_unseen()
+        assert desk.visible(), "the page says its tab is hidden: this is not the case under test"
+        assert desk.asked_for_frames() == 1, "more or fewer than one wait for frames stands"
+        assert desk.fx() == NOTHING
+        desk.feed()
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['outcome_succeeded']}")
+        expect(desk.page.locator(LAYER)).to_have_count(0, timeout=5000)
+        assert calls_of(desk) == FINISHED_CALLS, "more or less than the one plan of what stands"
+        assert "comet" not in desk.fx()["added"]
+        assert desk.problems == []
+
+
+def test_a_render_between_the_two_frames_of_the_wait_gets_two_frames_of_its_own(
+        chromium: Browser, served: Served):
+    """The frames come one at a time. The first frame of the wait has run when a render that has
+    settled arrives: no second wait is made for it (still one callback held), and when the wait's
+    second frame comes nothing is played yet, because the new render has had one frame, not two (the
+    deck measures after it mounts). The wait is made once more, and the plan, over that render's
+    view, is played when its two frames have come."""
+    with window(chromium, served, motion=True) as desk:
+        desk.starve()
+        desk.change_unseen("waiting_you")
+        assert desk.asked_for_frames() == 1
+        desk.step()
+        assert desk.asked_for_frames() == 2, "the second frame of the wait was not asked for"
+        desk.change_unseen("outcome_succeeded")
+        assert desk.asked_for_frames() == 2, "a render made a second wait while one stood"
+        desk.step()
+        assert desk.asked_for_frames() == 3, "the render that came between the frames got no wait"
+        assert desk.fx() == NOTHING, "the plan was made over a render that had one frame, not two"
+        expect(desk.plaque()).to_have_count(0)
+        desk.feed()
+        expect(desk.plaque()).to_have_text(f"{TITLE} · {WORDS['en']['outcome_succeeded']}")
+        expect(desk.page.locator(LAYER)).to_have_count(0, timeout=5000)
+        assert calls_of(desk) == FINISHED_CALLS
         assert desk.problems == []

@@ -10,6 +10,12 @@
 // other connection word ends the comparison, so the first reading after a load, a drop, a
 // reconnect or a page restored from the cache is a baseline and says nothing. That one rule
 // is what keeps a transition from being played again after a reconnect or a reload.
+//
+// A moment remembers the run it was watched on. What a settled render plays is decided over
+// that render's own view: a moment plays only while it still stands -- its task in the list, on
+// that run, at the key the moment brought it to -- so of two moments of one task that waited
+// together only the one the task still stands at is played. The scene plays a moment only on the
+// run it draws; the plaque, which names the task, does not need that.
 import {taskStatus} from "./desk-status.js";
 import {newestRun} from "./studio-taskruns.js";
 
@@ -40,8 +46,13 @@ const URGENCY = Object.freeze(["to_you", "finished", "accepted", "entered"]);
 const SCENE_KINDS = Object.freeze(["to_you", "finished", "accepted"]);
 //: At most this many new tasks enter at once; the rest are in the list all the same.
 const ENTRY_CAP = 3;
+//: The key each moment of the scene brings its task into. A moment still stands while the task
+//: is there, on the same run; one the task has since left is not played.
+const BRINGS = Object.freeze({to_you: "waiting_you", finished: "outcome_succeeded",
+  accepted: "running"});
 
-const moment = (kind, taskId) => Object.freeze({kind, taskId});
+//: A moment: its kind, its task, and the run it was watched on (the task's newest run then).
+const moment = (kind, row) => Object.freeze({kind, taskId: row.taskId, runId: row.runId});
 
 //: The newest run of the task: `null` when it has none, the hidden row when the list cannot say.
 function newestOf(view, task) {
@@ -57,17 +68,17 @@ function entryOf(view, run) {
   return view.queue.entries.find((one) => one.run_id === run.run_id) ?? null;
 }
 
-//: One task of a reading: its id, the key the rail would say for it, and whether that key can
-//: be vouched for. A task whose run could not be read, or whose automation could not, has a key
-//: that is a guess: it is not a row to compare, so a read that failed never looks like a task
-//: that started or finished.
+//: One task of a reading: its id, its newest run (null when it has none or it cannot be read),
+//: the key the rail would say for it, and whether that key can be vouched for. A task whose run
+//: could not be read, or whose automation could not, has a key that is a guess: it is not a row
+//: to compare, so a read that failed never looks like a task that started or finished.
 function rowOf(view, task) {
   const run = newestOf(view, task);
   const read = run !== null && !run.unreadable;
   const automation = read ? view.automation.get(task.task_id) ?? null : null;
   const {key} = taskStatus({task, run, automation, entry: entryOf(view, run)});
   const vouched = !task.unreadable && (run === null || (read && automation !== null));
-  return Object.freeze({taskId: task.task_id, key, vouched});
+  return Object.freeze({taskId: task.task_id, runId: read ? run.run_id : null, key, vouched});
 }
 
 //: The tasks of a view as a reading, or null while the lists are not both read (a render in
@@ -94,10 +105,10 @@ function kindOf(before, after) {
 //: not hold enters, and is compared as a task that was not started.
 function momentsOf(row, previous) {
   const known = previous.has(row.taskId);
-  const entered = known ? NONE : [moment("entered", row.taskId)];
+  const entered = known ? NONE : [moment("entered", row)];
   const before = known ? previous.get(row.taskId) : "not_started";
   const kind = row.vouched && before !== null ? kindOf(before, row.key) : null;
-  return kind === null ? entered : [...entered, moment(kind, row.taskId)];
+  return kind === null ? entered : [...entered, moment(kind, row)];
 }
 
 //: What the next reading is compared with: the keys of this one, and for a row that cannot be
@@ -124,15 +135,32 @@ export function createDetector() {
   return Object.freeze({observe});
 }
 
-//: What the moments of one render play: ONE plaque (the most urgent moment), the scene's moment
-//: for the task the scene draws, and the tasks that enter (the first three, in list order).
-export function planOf(moments, chosen) {
-  const first = (kinds, accepts) => kinds.map((kind) => moments.find((one) =>
+//: The run the scene draws, or null when it draws none.
+const drawnRun = (view) => view.run?.detail?.run?.run_id ?? null;
+
+//: Whether a moment still stands in a reading: its task is in the list, and a moment of the scene
+//: finds the task where it brought it, on the run it was watched on, in a row that is vouched for.
+function stands(one, rows) {
+  const row = rows.get(one.taskId);
+  if (row === undefined) return false;
+  return one.kind === "entered"
+    || (row.vouched && row.runId === one.runId && row.key === BRINGS[one.kind]);
+}
+
+//: What the moments of one settled render play, over that render's view: of the moments that
+//: still stand, ONE plaque (the most urgent), the scene's moment when its task AND its run are
+//: the ones the scene draws, and the tasks that enter (the first three, in list order).
+export function planOf(moments, view) {
+  const rows = new Map((readingOf(view) ?? NONE).map((row) => [row.taskId, row]));
+  const due = moments.filter((one) => stands(one, rows));
+  const first = (kinds, accepts) => kinds.map((kind) => due.find((one) =>
     one.kind === kind && accepts(one))).find((one) => one !== undefined) ?? null;
+  const run = drawnRun(view);
   return Object.freeze({
     plaque: first(URGENCY, () => true),
-    scene: chosen === null ? null : first(SCENE_KINDS, (one) => one.taskId === chosen),
-    entered: Object.freeze(moments.filter((one) => one.kind === "entered").slice(0, ENTRY_CAP)
+    scene: view.taskId === null || run === null ? null : first(SCENE_KINDS,
+      (one) => one.taskId === view.taskId && one.runId === run),
+    entered: Object.freeze(due.filter((one) => one.kind === "entered").slice(0, ENTRY_CAP)
       .map((one) => one.taskId)),
   });
 }

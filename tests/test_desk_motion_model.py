@@ -16,9 +16,15 @@ of four facts, each with a case of its own:
 - a desk that ended in the terminal state keeps nothing.
 
 Language and theme change a render and no reading, so they say nothing either.
+
+What a settled render plays (`planOf`) is decided over that render's own view, not over the view
+a moment was seen on: a moment carries the run it was watched on (the task's newest), and it plays
+only while it still stands there -- its task in the list, on that run, at the key it brought the
+task to. The scene's mark is for the run the scene draws; the plaque is not.
 """
 from __future__ import annotations
 
+import copy
 import shutil
 from typing import Any
 
@@ -214,28 +220,150 @@ def test_several_changes_at_once_are_said_in_the_order_of_the_list():
     assert walk(before, after)[1] == ["to_you:task-a", "finished:task-b", "accepted:task-c"]
 
 
+#: What a plan is made of. The plan is decided over the view of the render that plays it, so a case
+#: names the view (`at`: the run the scene draws is on it) and the moments the detector said.
+PLAN = PRELUDE + """
+const detector = motion.createDetector();
+let pending = [];
+for (const step of d.steps) pending = [...pending, ...detector.observe(asView(step))];
+console.log(JSON.stringify({pending, plan: motion.planOf(pending, asView(d.at))}));
+"""
+SAID = PRELUDE + """
+const detector = motion.createDetector();
+console.log(JSON.stringify(d.map((step) => detector.observe(asView(step))
+  .map((one) => `${one.kind}:${one.taskId}:${one.runId}`))));
+"""
+EMPTY_PLAN = {"plaque": None, "scene": None, "entered": []}
+
+
+def on_scene(one: dict[str, Any], run_id: str | None) -> dict[str, Any]:
+    """The view with the scene drawing run `run_id`, or no run at all (`None`)."""
+    drawn = {"phase": "empty", "detail": None} if run_id is None else {
+        "phase": "ready", "detail": {"run": {"run_id": run_id}}}
+    return {**copy.deepcopy(one), "run": drawn}
+
+
+def planned(steps: list[dict[str, Any]], at: dict[str, Any]) -> dict[str, Any]:
+    """The moments a fresh detector says to `steps`, and the plan made of them over the view `at`.
+    """
+    return run_js(PLAN, MODULES, {"steps": steps, "at": at})
+
+
+def test_a_moment_carries_the_newest_run_it_was_watched_on():
+    """A task that has an older run as well says its NEWEST one (the rail's own rule), whichever
+    run the list names first; a task with no run says none."""
+    older = {**RUN, "run_id": "run-0", "task_id": "task-a", "created_at": "2026-08-01T10:00:00Z",
+             "last_outcome": "succeeded"}
+    waiting = view(row("task-a", "waiting_you"))
+    waiting["runs"]["list"].insert(0, older)
+    said = run_js(SAID, MODULES, [view(row("task-a", "running")), waiting,
+                                  view(row("task-a", "waiting_you"), row("task-b", "not_started"))])
+    assert said == [[], ["to_you:task-a:run-task-a"], ["entered:task-b:null"]]
+
+
+def test_the_scene_plays_a_moment_only_on_the_run_it_draws():
+    """The plaque names the task and stays; the marks of the scene are for the run on the scene."""
+    steps = [view(row("task-a", "running"), chosen="task-a"),
+             view(row("task-a", "waiting_you"), chosen="task-a")]
+    same = planned(steps, on_scene(steps[-1], "run-task-a"))["plan"]
+    other = planned(steps, on_scene(steps[-1], "run-older"))["plan"]
+    none = planned(steps, on_scene(steps[-1], None))["plan"]
+    assert same["scene"]["kind"] == "to_you"
+    assert other["scene"] is None and other["plaque"]["kind"] == "to_you"
+    assert none["scene"] is None and none["plaque"]["kind"] == "to_you"
+
+
+def test_of_two_moments_of_one_task_only_the_one_that_still_stands_is_played():
+    """Asked for a decision and then finished before either was shown: the moments wait together,
+    and the one the task has left is not played, so the plaque and the scene say `finished`."""
+    steps = [view(row("task-a", "running"), chosen="task-a"),
+             view(row("task-a", "waiting_you"), chosen="task-a"),
+             view(row("task-a", "outcome_succeeded"), chosen="task-a")]
+    found = planned(steps, on_scene(steps[-1], "run-task-a"))
+    assert [one["kind"] for one in found["pending"]] == ["to_you", "finished"]
+    assert found["plan"]["plaque"]["kind"] == "finished"
+    assert found["plan"]["scene"]["kind"] == "finished"
+
+
+def test_a_moment_answered_before_it_is_shown_plays_nothing():
+    steps = [view(row("task-a", "running"), chosen="task-a"),
+             view(row("task-a", "waiting_you"), chosen="task-a"),
+             view(row("task-a", "running"), chosen="task-a")]
+    found = planned(steps, on_scene(steps[-1], "run-task-a"))
+    assert [one["kind"] for one in found["pending"]] == ["to_you"]
+    assert found["plan"] == EMPTY_PLAN
+
+
+def test_a_task_gone_from_the_list_neither_enters_nor_plays():
+    steps = [view(row("task-a", "paused")),
+             view(row("task-a", "paused"), row("task-b", "running"))]
+    gone = view(row("task-a", "paused"))
+    found = planned(steps, on_scene(gone, None))
+    assert [one["kind"] for one in found["pending"]] == ["entered", "accepted"]
+    assert found["plan"] == EMPTY_PLAN
+
+
+def test_a_row_that_cannot_be_vouched_for_when_the_plan_is_made_plays_no_moment():
+    """The moment was seen on a good reading; by the plan the automation of the task cannot be
+    read, so the key its row would say is a guess, and a guess is not a moment that stands."""
+    steps = [view(row("task-a", "running"), chosen="task-a"),
+             view(row("task-a", "waiting_you"), chosen="task-a")]
+    unread = on_scene(steps[-1], "run-task-a")
+    unread["automation"]["task-a"] = None
+    found = planned(steps, unread)
+    assert [one["kind"] for one in found["pending"]] == ["to_you"]
+    assert found["plan"] == EMPTY_PLAN
+
+
+#: Seven tasks in the keys the moments below bring them to: `a` running, `c` finished, `d`
+#: waiting for the person and the rest paused. Every moment was watched on its task's own run.
+PLAN_ROWS = (row("task-a", "running"), row("task-b", "paused"), row("task-c", "outcome_succeeded"),
+             row("task-d", "waiting_you"), row("task-e", "paused"), row("task-f", "paused"),
+             row("task-g", "paused"))
 MOMENTS = [
-    {"kind": "accepted", "taskId": "task-a"}, {"kind": "entered", "taskId": "task-b"},
-    {"kind": "finished", "taskId": "task-c"}, {"kind": "to_you", "taskId": "task-d"},
-    {"kind": "entered", "taskId": "task-e"}, {"kind": "entered", "taskId": "task-f"},
-    {"kind": "entered", "taskId": "task-g"}]
+    {"kind": "accepted", "taskId": "task-a", "runId": "run-task-a"},
+    {"kind": "entered", "taskId": "task-b", "runId": "run-task-b"},
+    {"kind": "finished", "taskId": "task-c", "runId": "run-task-c"},
+    {"kind": "to_you", "taskId": "task-d", "runId": "run-task-d"},
+    {"kind": "entered", "taskId": "task-e", "runId": "run-task-e"},
+    {"kind": "entered", "taskId": "task-f", "runId": "run-task-f"},
+    {"kind": "entered", "taskId": "task-g", "runId": "run-task-g"}]
 
 
-def plan(moments: list[dict], chosen: str | None) -> dict[str, Any]:
-    body = "console.log(JSON.stringify(motion.planOf(d.moments, d.chosen)));"
-    return run_js(body, MODULES, {"moments": moments, "chosen": chosen})
+def plan(moments: list[dict], chosen: str | None, drawn: str | None = None) -> dict[str, Any]:
+    """What `planOf` makes of these moments over the view of seven tasks standing as `PLAN_ROWS`
+    say, `chosen` the task the scene was asked for and `drawn` the run it draws."""
+    at = on_scene(view(*PLAN_ROWS, chosen=chosen), drawn)
+    body = PRELUDE + "console.log(JSON.stringify(motion.planOf(d.moments, asView(d.at))));"
+    return run_js(body, MODULES, {"moments": moments, "at": at})
 
 
 def test_one_plaque_says_the_most_urgent_moment_and_the_scene_plays_the_chosen_tasks_own():
-    found = plan(MOMENTS, "task-c")
-    assert found["plaque"] == {"kind": "to_you", "taskId": "task-d"}
-    assert found["scene"] == {"kind": "finished", "taskId": "task-c"}
+    found = plan(MOMENTS, "task-c", "run-task-c")
+    assert found["plaque"] == {"kind": "to_you", "taskId": "task-d", "runId": "run-task-d"}
+    assert found["scene"] == {"kind": "finished", "taskId": "task-c", "runId": "run-task-c"}
+
+
+@pytest.mark.parametrize("kind,task_id", [
+    ("accepted", "task-a"), ("finished", "task-c"), ("to_you", "task-d")])
+def test_a_moment_does_not_stand_on_another_run_of_its_task_at_the_same_key(kind, task_id):
+    """The key a moment brought its task to is not enough: the task stands at that key NOW, but on
+    another run than the one the moment was watched on (it started a new run since, which got there
+    too). The moment of the old run is not the moment of this one: no plaque, no mark. The same
+    moment on the run the task stands on does play (the control, in the same view)."""
+    own = f"run-{task_id}"
+    stands = plan([{"kind": kind, "taskId": task_id, "runId": own}], task_id, own)
+    other = plan([{"kind": kind, "taskId": task_id, "runId": f"{own}-before"}], task_id, own)
+    assert stands["plaque"]["kind"] == kind and stands["scene"]["kind"] == kind
+    assert other == EMPTY_PLAN
+    gone = plan([{"kind": kind, "taskId": task_id, "runId": None}], task_id, own)
+    assert gone == EMPTY_PLAN
 
 
 def test_the_scene_plays_nothing_for_a_task_that_is_not_the_one_it_draws():
-    assert plan(MOMENTS, "task-b")["scene"] is None
-    assert plan(MOMENTS, None)["scene"] is None
-    assert plan([], "task-a") == {"plaque": None, "scene": None, "entered": []}
+    assert plan(MOMENTS, "task-b", "run-task-b")["scene"] is None
+    assert plan(MOMENTS, None, "run-task-c")["scene"] is None
+    assert plan([], "task-a", "run-task-a") == EMPTY_PLAN
 
 
 def test_at_most_three_new_tasks_enter_at_once_in_the_order_of_the_list():
