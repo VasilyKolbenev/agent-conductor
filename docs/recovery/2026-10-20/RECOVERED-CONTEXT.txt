@@ -1,0 +1,98 @@
+Контекст для возобновления December Command — дополнение по 153 сообщениям коммитов
+Дата анализа: 20 октября 2026.
+База: outputs/recovery-2026-10-20/commit-history.json, сохраненная ветка feature/v1-desk-integration, HEAD 4d0e3af669e783f248cf4c4230e805e76c19836a.
+
+Ограничение доказательств
+Это чтение истории и сопоставление более поздних сообщений с ранними. Сообщение коммита доказывает наличие зафиксированного сообщения и позволяет найти реализацию, но не заменяет проверку исходников, результаты тестов или исходное решение владельца. Локальные v1-lanes, handoffs и отчеты в Git tree не обнаружены. Заявления «reviewed», «verified», числа тестов ниже являются историческими заявлениями авторов; тесты при этом анализе не запускались.
+По уточнению владельца, после 18 октября он сам ничего не делал, 19 октября утром ноутбук не включился; возможные оставшиеся изменения Claude Code пока неизвестны. Дата HEAD поэтому близка к остановке работы, но не доказывает отсутствие незакоммиченных или незапушенных материалов.
+
+1. Уточнения, которые предотвращают возврат к уже пройденным вопросам
+
+A. Открытие первого коммита уже прошло дальше раннего состояния «закрыто».
+7 октября сообщения говорили о закрытой _CONFIRM_OPEN и ожидании G-old/решения. fad3e4c0 удаляет backend-флаг; 17d3313f сообщает, что 8.7 принято решением ревью от 13 октября и интегрировано. 589ede81 включает FIRST_COMMIT_CONFIRM_OPEN в Desk вместе с backend. По истории в HEAD подтверждение/продолжение первого коммита и второй шаг стартера уже открыты. Нельзя снова объявлять это ожидающим открытия по более старым сообщениям.
+Важная оговорка: fad3e4c0 прямо пишет NOT RUN для проверок в той отдельной сессии из-за занятого тестового слота; последующий merge не превращает это исходное сообщение в первичный лог тестов.
+Источники:
+fad3e4c036aef1f03c182ebbdf7d42dbdc69001f — https://github.com/VasilyKolbenev/agent-conductor/commit/fad3e4c036aef1f03c182ebbdf7d42dbdc69001f
+17d3313fb32a11517bd09fbf14933092eca0f202 — https://github.com/VasilyKolbenev/agent-conductor/commit/17d3313fb32a11517bd09fbf14933092eca0f202
+589ede81ab6d20c9a2259ff23c8d046aafded575 — https://github.com/VasilyKolbenev/agent-conductor/commit/589ede81ab6d20c9a2259ff23c8d046aafded575
+
+B. Исключения Hub из закрытого списка отказов были включены в контракт.
+78bc5514 добавляет 13 существовавших отказов к 11 строкам, удаляет PENDING_RULING/JUDGED/unlisted и включает проверку всех POST через Stack. 426c4589 интегрирует это. Старые pending forget/project_busy и recover-login/operation_busy из main не следует оставлять как текущую незавершенную работу.
+Источник: 78bc5514e147ac773764ff12c1d49221884f7871 — https://github.com/VasilyKolbenev/agent-conductor/commit/78bc5514e147ac773764ff12c1d49221884f7871
+
+C. R5 не остался только opt-in или отключенной заготовкой.
+Ранний 543c40b1 говорит «not switched on». Далее 9162fdfa делает confinement по платформе хоста production default; 1ffb1aa6 требует границу для каждого dispatch/review, даже если старый frozen plan не содержит слово execution-boundary; 53d17af1 проводит execution_boundary fact в plan door. 1e7f481e интегрирует lane L.
+Исторический контракт H1 (55109997): boundary предоставлен Windows/AppContainer; Linux/macOS отвечают unavailable до появления своего запуска. Это полезная отправная точка для диагностики, но не следует автоматически приписывать все нынешние CI failures этой причине.
+Источники:
+55109997375d929ee38aa35763cae3099b38a107 — https://github.com/VasilyKolbenev/agent-conductor/commit/55109997375d929ee38aa35763cae3099b38a107
+9162fdfaca16f782be5e2724128a46ec6e09a8aa — https://github.com/VasilyKolbenev/agent-conductor/commit/9162fdfaca16f782be5e2724128a46ec6e09a8aa
+1ffb1aa672f6efbefc270caeaff33d28b9e9936e — https://github.com/VasilyKolbenev/agent-conductor/commit/1ffb1aa672f6efbefc270caeaff33d28b9e9936e
+53d17af1b94c65a0ecf2396ff3b4f7da2f969660 — https://github.com/VasilyKolbenev/agent-conductor/commit/53d17af1b94c65a0ecf2396ff3b4f7da2f969660
+1e7f481edefd1a2435ebaa13e3ec504f99da2032 — https://github.com/VasilyKolbenev/agent-conductor/commit/1e7f481edefd1a2435ebaa13e3ec504f99da2032
+
+2. Дополнительная карта сохраненной реализации
+
+Первый commit: lock принадлежит операции только по полной привязке op/nonce/terms/tree, перемещения не заменяют чужие файлы; восстановление на границах записи, подпись через действия владельца и распознавание соответствующего commit; exact repeat возвращает receipt. Добавлена защита от .git junction/commondir/reftable/objects-pack portals и replacement refs. Последний важный шаг F1: реальные объекты читаются с core.useReplaceRefs=false и --no-replace-objects, в том числе в подготовке дерева.
+Ссылки: 544ecf24, 9f860ef0, 06d64491, 7e5f689b, 3b7e4c72, 6f0a82b4, 842e354f, 5716790d, 8f3ee943.
+
+Desk Git wizard: один клик — один запрос; неизвестный исход не приводит к автоматической повторной записи, перечитывается состояние. Восстановление на свежей странице; состояние ожидания подписи; starter делает init → пустой первый commit одной последовательностью после точной квитанции и нового чтения. Потерянный ответ первой операции прекращает цепочку.
+Ссылки: 39e6100d, ee39537b, 3c77ad74, 3fa32aee, 75f03fbe, 589ede81.
+
+Hub UI slice 9: следование операции восстановления/копирования профиля; одна кнопка профиля с упоминанием restart только для работающего проекта; pin git/gh из кандидатов, найденных Hub. При pin_changed нужен restart Hub, поскольку кандидаты собираются один раз за его жизнь.
+Ссылки: 8c81e2de, ba8dad5b, 3915cdbe, a2e96db2, 6b1b3938.
+
+Grok: отдельное согласованное право dispatch --allow Edit --allow Write; review/account/version argv не расширяется, Bash остается ограничен. Не восстанавливать это через yolo/bypass. ADR-7e GIT_CEILING_DIRECTORIES=<root> добавляет защиту от поиска родительского .git для детей в work/, но сообщение прямо говорит, что это само по себе не sandbox.
+Источники: 18d97d46871a637c55d57c0b052c997e45396b7a — https://github.com/VasilyKolbenev/agent-conductor/commit/18d97d46871a637c55d57c0b052c997e45396b7a
+f1e1fbd4063ebbfd1c3b40e8a51bf92b03799cbc — https://github.com/VasilyKolbenev/agent-conductor/commit/f1e1fbd4063ebbfd1c3b40e8a51bf92b03799cbc
+
+cyclePin: 02a473c7 добавляет POST /command/project/cycle/pin на общую mutation door, body {workflow_id, actor}, null означает unpin, операция не привязана к run/stream. Это backend/transport-факт; завершенность всего UX закрепления процесса из одного сообщения не следует.
+Источник: 02a473c7418558fc1e76f948c9c0f5ee0d5eb324 — https://github.com/VasilyKolbenev/agent-conductor/commit/02a473c7418558fc1e76f948c9c0f5ee0d5eb324
+
+3. Конкретные вопросы на продолжение
+
+Подтвержденный текущим ранее прочитанным исходником блокер: H5 LOGIN_LOAN_OPEN=False. Механизм построен, но loan login-home закрыт до решения, какие объекты допускается писать. Иначе потом vendor configuration может исполняться вне boundary. Не включать флаг на основании наличия реализации.
+Источники: 214a58c3b1b8007b4a06709d5d2305d1d97b35f2 — https://github.com/VasilyKolbenev/agent-conductor/commit/214a58c3b1b8007b4a06709d5d2305d1d97b35f2
+0e060fabb38d764a1749e6f60fb9eb808a71f349 — https://github.com/VasilyKolbenev/agent-conductor/commit/0e060fabb38d764a1749e6f60fb9eb808a71f349
+
+Desk motion: dc3235b3 говорит, что production wiring передан D2→D1; ранее прочитанный desk.js в HEAD не импортирует desk-motion.js. Модули/тесты есть, включение в продукт остается отдельной проверяемой задачей.
+Источник: dc3235b3ba253147c3c3f1788ff83d46041475df — https://github.com/VasilyKolbenev/agent-conductor/commit/dc3235b3ba253147c3c3f1788ff83d46041475df
+
+Push/PR: история уточняет смысл ожидавших решений (a)(b)(c):
+- (c): check:true и ответы при неизвестном результате push;
+- (a)(b): pr.json.mismatch = null или {head_oid, base, cross_repository}, и поле detail.mismatch для pr_mismatch;
+- spec 9.7 point 1: чтение списка PR и фиксация обнаруженного PR при каждом нажатии до отказа remote_head_moved; gh pr create при moved head не вызывается.
+7e51ef79 прямо сохраняет ожидание решения. Среди последующих сохраненных сообщений явного принятия этих вариантов не найдено. Это статус по истории, не доказательство отсутствия отдельного локального решения.
+Источники:
+00f732b82e7ee44df2d0317b6da4b04cfa7dbedc — https://github.com/VasilyKolbenev/agent-conductor/commit/00f732b82e7ee44df2d0317b6da4b04cfa7dbedc
+c7a185c76c7bc27afd16a7448a6c5991a0ae8666 — https://github.com/VasilyKolbenev/agent-conductor/commit/c7a185c76c7bc27afd16a7448a6c5991a0ae8666
+ae6951ef069bf71f1642c78dea53f71d1734480d — https://github.com/VasilyKolbenev/agent-conductor/commit/ae6951ef069bf71f1642c78dea53f71d1734480d
+7e51ef796c682eb23c32878112995e768119bf02 — https://github.com/VasilyKolbenev/agent-conductor/commit/7e51ef796c682eb23c32878112995e768119bf02
+
+Windows 10055 / AFD: решение ревью разрешало ровно одну дополнительную трассировку AFD ETW на временном CI runner, с ограниченной выборкой событий и без публикации raw trace. cd215778 обозначает именно эту попытку 13 октября. Не считать общим разрешением бесконечно повторять эксперимент. Для понимания его результата нужны CI данные того запуска; сообщения не устанавливают окончательную причину 10055.
+Источники:
+6603531f6a0981fb9231cc6b2a79cd8a1327f33d — https://github.com/VasilyKolbenev/agent-conductor/commit/6603531f6a0981fb9231cc6b2a79cd8a1327f33d
+fd0c5c9bd4442fb243fdde75c6cb887847484c88 — https://github.com/VasilyKolbenev/agent-conductor/commit/fd0c5c9bd4442fb243fdde75c6cb887847484c88
+cd215778d07c5806399474c2141ef97312a2cee5 — https://github.com/VasilyKolbenev/agent-conductor/commit/cd215778d07c5806399474c2141ef97312a2cee5
+
+4. Новые указатели на отсутствующие оригиналы
+
+v1-lanes/reports/2026-10-13-D2-slice9.md
+v1-lanes/handoffs/D2-to-TL-slice9.md
+v1-lanes/reports/2026-10-14-D1-push-pr-backend.md
+v1-lanes/reports/2026-10-14-D1-push-pr-ui.md (в сообщении сокращено как «-ui.md»)
+v1-lanes/reports/2026-10-14-H-boundary-probe.md
+v1-lanes/handoffs/H-to-L-execution-boundary.md
+H-to-L-dsh-argv-in-the-boundary.md
+TL-to-L-grok-grant-scope.md (вариант A)
+TL-to-L-file-ownership.md
+TL-merge-gate-grok-grant
+handoffs/L-to-D1-plan-door-boundary.md
+handoffs/D1-to-L-line-cap-rows.md
+first-commit plan с Task 3a, 4a.6, 5–8, 8.7, 9a.1; review rulings OD-2, OD-3, OD-5, OD-10, OD-11, decision E.
+Решения ревью упомянуты 7, 9 и 13 октября; это названия/даты из сообщений, не восстановленные полные решения.
+
+5. Что пока нельзя восстановить одной историей
+
+Полные планы lane, точные тексты последнего review ruling, локальные результаты тестов вне CI, незакоммиченные материалы, возможные worktrees/stashes и журнал Claude Code. Названия «Part 0», «finish plan 13.10», «one review lens» полезны для поиска старой переписки/экспорта, но не дают права придумывать оставшиеся пункты.
+Дальнейшая работа должна начинаться с сохраненного HEAD, актуальных исходников и последнего CI; порядок H5/Desk wiring/Push-PR ruling требует проверки отсутствующих решений или нового явного решения владельца.
+
