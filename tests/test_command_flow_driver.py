@@ -7,14 +7,18 @@ the grant drafted by the server, the harnesses scripted doubles.
 """
 from __future__ import annotations
 
+from threading import Event
+
 import pytest
 
+from conductor.command import policy_driver
 from conductor.command.authorization_inputs import executable_nodes
 from conductor.command.graph_template_document import TemplateError
 from conductor.command.flow_rules import flow_rules
 from tests.flow_driver_bench import FlowCycle, template_of
 from tests.test_command_workflow_flow import CANONICAL, chain, looped_flows, review, step
 from tests.test_policy_feedback import PAYLOAD
+from tests.test_server_command_http import _request
 
 TESTER = looped_flows()["tester"]
 DOER = step("do", "agent", verifier_role_id="role-checker")
@@ -127,10 +131,80 @@ def test_rejected_review_completes_the_run(cycle, how):
         at_result_gate(run)
         status, body = run.decide("result", "reject-result", action="reject")
         assert status == 201, body
-    run.until("the end", lambda: run.plan_state() == "complete")
+    # A decision ends the plan in the journal at once and the driver frees the slot on its next
+    # tick; until then its last reason (`waiting`) reads as quiet. So the slot is waited for.
+    run.until("the end and the slot freed",
+              lambda: run.plan_state() == "complete" and run.holder() is None)
     assert run.holder() is None and run.automation()[0] == "complete"
     assert run.steps() == (["analyst"] if how.startswith("an agent") else ["analyst", "do"])
     assert run.outcomes("do") in ([], ["succeeded"])
+
+
+class HeldTick:
+    """Stands where the run's seed settler stands, counts the ticks that see a decision and holds
+    the first of them.
+
+    The tick waits here, before it reads the plan and outside every store lock, until `go` is
+    set. A tick that starts before the decision passes; the settler itself always answers.
+    `seen` counts every tick that found a decision in the journal, held or not (armed or not):
+    the driver is one thread, so each such tick whose settler answers yes then reads the plan.
+    """
+
+    def __init__(self, seeds, store):
+        self.seeds, self.store = seeds, store
+        self.armed, self.entered, self.go = Event(), Event(), Event()
+        self.seen = 0
+
+    def settle(self, run_id):
+        if any(row.kind == "decision" for row in self.store.read(run_id).records):
+            self.seen += 1
+            if self.armed.is_set():
+                self.entered.set()
+                assert self.go.wait(10), "the test never let the tick go"
+        return self.seeds.settle(run_id)
+
+
+def slot_of(run):
+    """The slot the queue door reports, as the desk reads it."""
+    status, payload, _ = _request(run.subject, "GET", "/command/queue")
+    assert status == 200, payload
+    return payload["slot"]
+
+
+def test_a_human_ending_wakes_the_driver_that_frees_the_slot_and_then_publishes_a_frame(
+        cycle, monkeypatch):
+    """Two facts in order (spec 4.4.4, 4.4.6): the decision door writes the ending and wakes the
+    driver; the tick it woke frees the slot and only then publishes one frame. Between them the
+    run is complete and still holds the slot, which the queue reads as busy with `plan_ended`.
+    The once-a-second tick is moved away and the test never wakes the driver, so the held tick
+    exists only if the decision woke it. The driver can wake itself too (`deactivate` and
+    `activate` set the flag), so the slot is freed by that tick only if no other tick saw the
+    decision before the frame: `held.seen == 1` once it is out, and the one frame comes from it."""
+    monkeypatch.setattr(policy_driver, "TICK_SECONDS", 60)
+    run = cycle(chain(review("analyst"), DOER, step("result", "human")))
+    run.start()
+    at_result_gate(run)
+    policy = run.subject.command_api._policy
+    held = policy.seeds = HeldTick(policy.seeds, run.store)
+    frames, publish = [], policy.notify
+    policy.notify = lambda run_id: (frames.append((run_id, run.holder())), publish(run_id))
+    held.armed.set()
+    try:
+        status, body = run.decide("result", "reject-result", action="reject")
+        assert status == 201, body
+        assert held.entered.wait(15), "the decision never woke the driver"
+        assert run.plan_state() == "complete" and run.terminal()
+        assert run.automation() == ("complete", "plan_ended")
+        assert run.holder() == "run" and frames == []
+        assert slot_of(run) == {"state": "busy", "run_id": "run", "reason_code": "plan_ended"}
+    finally:  # a failure above must not leave the driver's thread held past the teardown
+        held.armed.clear()
+        held.go.set()
+    run.until("the frame after the slot is freed", lambda: frames == [("run", None)])
+    assert held.seen == 1, (f"{held.seen} ticks saw the decision: the slot is freed by the tick "
+                            "the decision woke, and not by one the driver woke for itself")
+    assert run.holder() is None and run.automation()[0] == "complete"
+    assert slot_of(run) == {"state": "free", "run_id": None, "reason_code": None}
 
 
 def fork(order=("left", "right")):
