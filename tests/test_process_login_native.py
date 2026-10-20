@@ -19,6 +19,7 @@ from conductor import ownership, ownership_login, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
 from conductor.command.adapters.process_profile import ProfileRefused
+from tests._ps1 import describe, strict_text, write_ps1
 from tests.login_gate import login_loan_open_module  # noqa: F401 -- a fixture
 from tests.test_process_loans_native import entries_naming, same_acl, snapshot
 
@@ -196,8 +197,7 @@ def run_child(site: LoginSite, mode: str, script: str | None = None) -> dict:
     from tests import os_boundary_windows as ac
     from tests.os_boundary_box import base_environment
     runner, seen = ProcessRunner(site.root), {}
-    entry = site.install / "entry.ps1"
-    entry.write_text(child_script(site) if script is None else script, encoding="utf-8")
+    entry = write_ps1(site.install / "entry.ps1", child_script(site) if script is None else script)
     with ownership.acquire_owner(site.root):
         seen["before"] = {k: snapshot_of(p) for k, p in everywhere(site).items()}
         seen["identity"] = os.stat(site.login / "auth.json").st_ino
@@ -228,13 +228,14 @@ def review(tmp_path_factory, login_loan_open_module):
 
 
 def facts(seen) -> dict:
-    return dict(item.split("=") for item in seen["outcome"].output.decode().split(";") if item)
+    return dict(item.split("=") for item in strict_text(seen["outcome"].output).split(";") if item)
 
 
 def test_a_child_rewrites_a_login_file_in_place_keeping_the_file_and_leaving_no_second_one(
         dispatch):
     site, seen = dispatch
-    assert seen["outcome"].status == "completed" and seen["outcome"].exit_code == 0
+    outcome = seen["outcome"]
+    assert outcome.status == "completed" and outcome.exit_code == 0, describe(outcome)
     assert facts(seen)["inplace"] == "ok"
     assert (site.login / "auth.json").read_text(encoding="utf-8") == "token=refreshed"
     assert os.stat(site.login / "auth.json").st_ino == seen["identity"], "another file stands now"

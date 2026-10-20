@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from tests import os_boundary_windows as ac
+from tests._ps1 import write_ps1
 from tests.os_boundary_layout import Layout, Operation, Step, make_layout, render, snapshot
 
 _STEP_TIMEOUT = 90.0
@@ -185,7 +186,7 @@ class Box:
 
     def write_inner_script(self, text: str) -> None:
         script = WITHOUT_CMDLETS + render(text, self.tokens())
-        (self.layout.tmp / "inner.ps1").write_bytes(script.encode("utf-8"))
+        write_ps1(self.layout.tmp / "inner.ps1", script)
 
     def run_nested(self, *, confined: bool) -> StepResult:
         return self.run_script(_NESTED, confined=confined)

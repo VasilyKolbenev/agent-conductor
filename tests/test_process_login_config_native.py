@@ -20,6 +20,7 @@ from conductor.command.adapters.claude_code import CLAUDE_PROFILE
 from conductor.command.adapters.codex_cli import CODEX_PROFILE
 from conductor.command.adapters.grok_build import GROK_PROFILE
 from conductor.command.adapters.kimi_code import KIMI_PROFILE
+from tests._ps1 import describe
 from tests.login_gate import login_loan_open_module  # noqa: F401 -- a fixture
 from tests.test_process_loans_native import entries_naming
 from tests.test_process_login_native import LoginSite, _q, _tries, facts, run_child
@@ -78,7 +79,8 @@ def open_loan(tmp_path_factory, login_loan_open_module):
 def test_while_the_loan_is_open_a_child_creates_every_name_the_profiles_declare(open_loan):
     site, seen = open_loan
     assert FILES and DIRECTORIES, "the witness tried nothing"
-    assert seen["outcome"].status == "completed" and seen["outcome"].exit_code == 0
+    outcome = seen["outcome"]
+    assert outcome.status == "completed" and outcome.exit_code == 0, describe(outcome)
     for name in FILES:
         assert facts(seen)["make_" + name] == "ok", name
         assert (site.login / name).read_text(encoding="utf-8") == PLANT

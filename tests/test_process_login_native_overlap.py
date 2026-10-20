@@ -17,6 +17,7 @@ import pytest
 from conductor import ownership, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
+from tests._ps1 import describe, strict_text, write_ps1
 from tests.login_gate import login_loan_open_module  # noqa: F401 -- a fixture
 from tests.test_process_loans_native import entries_naming, same_acl, snapshot
 from tests.test_process_login_native import CREDENTIAL, _q, _tries
@@ -52,7 +53,7 @@ class Duo:
         ownership_transition.activate(self.root, legacy_writers_stopped=True)
         for name in NAMES:
             for tag in ("first", "again"):
-                (self.install[name] / f"{tag}.ps1").write_text(self.script(name, tag), "utf-8")
+                write_ps1(self.install[name] / f"{tag}.ps1", self.script(name, tag))
 
     def script(self, name, tag):
         from tests.os_boundary_box import WITHOUT_CMDLETS
@@ -95,8 +96,8 @@ def child(duo, runner, name, boundary, paths, tag):
          "-File", str(entry)), f"work/{duo.item[name]}",
         env=base_environment(paths["runtime"]), boundary=boundary, timeout_seconds=60)
     outcome = runner.run(spec)
-    assert outcome.status == "completed" and outcome.exit_code == 0, outcome
-    return dict(part.split("=") for part in outcome.output.decode().split(";") if part)
+    assert outcome.status == "completed" and outcome.exit_code == 0, describe(outcome)
+    return dict(part.split("=") for part in strict_text(outcome.output).split(";") if part)
 
 
 def attempt(duo, name, stays, gate, results):

@@ -15,6 +15,7 @@ import pytest
 from conductor import ownership, ownership_transition
 from conductor.command.adapters.process import CommandSpec, ContainmentError, ProcessRunner
 from conductor.command.adapters.process_boundary import AttemptFolders
+from tests._ps1 import child_text, describe, write_ps1
 from tests.test_process_loans import HOME
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="native AppContainer ACL loans")
@@ -104,8 +105,8 @@ def run_child(site, mode):
     runner = ProcessRunner(site.root)
     seen = {}
     # The program the loan is for stands in the install folder: here the script PowerShell runs.
-    entry = site.install / "entry.ps1"
-    entry.write_text(child_script(site, writes_work=mode == "dispatch"), encoding="utf-8")
+    entry = write_ps1(site.install / "entry.ps1",
+                      child_script(site, writes_work=mode == "dispatch"))
     with ownership.acquire_owner(site.root):
         before = {k: snapshot(p) for k, p in site.locations().items()}
         with runner.container_profile(mode=mode, folders=site.folders) as (boundary, paths):
@@ -128,9 +129,10 @@ def site(tmp_path):
 
 def test_a_dispatch_child_changes_the_loaned_work_and_home_and_nothing_else(site):
     seen = run_child(site, "dispatch")
-    assert seen["outcome"].status == "completed" and seen["outcome"].exit_code == 0
-    assert seen["outcome"].output == (b"work=written;home=written;tool=tool;install=denied;"
-                                      b"source=denied;git=denied")
+    outcome = seen["outcome"]
+    assert outcome.status == "completed" and outcome.exit_code == 0, describe(outcome)
+    assert outcome.output == (b"work=written;home=written;tool=tool;install=denied;"
+                              b"source=denied;git=denied"), child_text(outcome.output)
     work = site.locations()["work"]
     assert (work / "seed.txt").read_text() == "changed"
     assert (work / "sub" / "f.txt").read_text() == "changed"
@@ -143,8 +145,9 @@ def test_a_dispatch_child_changes_the_loaned_work_and_home_and_nothing_else(site
 
 def test_a_review_child_reads_the_loaned_work_and_cannot_change_it(site):
     seen = run_child(site, "review")
-    assert seen["outcome"].output == (b"work=denied;seed=seed;home=written;tool=tool;"
-                                      b"install=denied;source=denied;git=denied")
+    output = seen["outcome"].output
+    assert output == (b"work=denied;seed=seed;home=written;tool=tool;"
+                      b"install=denied;source=denied;git=denied"), child_text(output)
     assert (site.locations()["work"] / "seed.txt").read_text() == "seed"
 
 
