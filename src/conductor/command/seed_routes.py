@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from . import seed_stage
 from .api_contracts import ApiRefusal
 from .api_refusals import TOOL_REASONS
+from .graph_causality import standing_terminal
 from .project_git import GitReadFailed, has_git_entry, repository_admission
 from .seed_plan import SeedRefusal
 from .adapters.harness_workspace import WorkspaceBusy
@@ -235,14 +236,16 @@ def make_seeds(api: CommandApi) -> SeedSettler:
 
 
 class SeedSettler:
-    """What the driver asks before the first action of a run: is the seed of its task in place?
+    """What the driver asks on each tick of a run, before it reads the plan: is the seed in place?
 
-    `settle(run_id)` is True when nothing of the seed keeps the run from acting: the run has no
-    task, performs no dispatch (its review steps never read the work folder), or its task was
-    never seeded and nobody asked for a seed (it starts from its folder as before). Otherwise it
-    sees to it: a request a view server left is made into a seed from HEAD at this moment, a
-    staged seed is moved under the root's turn. It is False while it cannot, and says no more:
-    the reason is learned by asking the seed door again, which answers it in `detail.reason`.
+    `settle(run_id)` is True when nothing of the seed keeps the run from acting: the run has
+    recorded its ending (nothing more is written to it, so nothing is owed, and the driver must
+    be free to give up its slot whatever became of the folder), has no task, performs no dispatch
+    (its review steps never read the work folder), or its task was never seeded and nobody asked
+    for a seed (it starts from its folder as before). Otherwise it sees to it: a request a view
+    server left is made into a seed from HEAD at this moment, a staged seed is moved under the
+    root's turn. It is False while it cannot, and says no more: the reason is learned by asking
+    the seed door again, which answers it in `detail.reason`.
     """
 
     def __init__(self, api: CommandApi) -> None:
@@ -252,6 +255,8 @@ class SeedSettler:
         """See the class text. Runs only in an active project, where the driver lives."""
         api = self._api
         recovered = api._store.read(run_id)
+        if standing_terminal(recovered) is not None:
+            return True
         graph = next((row.value for row in recovered.records
                       if row.kind == "graph_definition"), None)
         binding = frozen_config_task(recovered.config)
