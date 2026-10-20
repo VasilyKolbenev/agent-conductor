@@ -124,6 +124,9 @@ DESK_BOOT_ASSETS = {
     "studio-canvas-edges.js": 200, "studio-layout.js": 200, "studio-orbit.js": 200,
     # The one live projection stream, which refreshes reads after a signal.
     "desk-stream.js": 200,
+    # The scene's transitions (spec 5.5): the module the scene hands every view to, and the
+    # model that decides which moment a view shows.
+    "desk-motion.js": 200, "desk-motion-model.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (

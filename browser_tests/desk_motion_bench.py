@@ -10,12 +10,13 @@ test needs that a person's eyes would otherwise supply:
   project. The run the scene draws is the real one, so the scene's participants and gates are the
   real ones;
 * an instrument in the page (`INSTRUMENT`) records every call of `Element.prototype.animate` with
-  the element it was called on, its timing and where the element stood, and every element that
-  the motion layer drew. It changes nothing the page does;
-* the page is served the product's `desk-scene.js` with the two lines that hand each render to
-  the motion module, until the product carries them itself (`wiring`). Those two lines are in a
-  file lane D1 writes (`handoffs/D2-to-D1-desk-motion-wiring.md`); the edit is asserted to have
-  happened once, and is not made at all the day the product has them.
+  the element it was called on, its timing and where the element stood, every element that the
+  motion layer drew, and how many times each path was fetched. It changes nothing the page does;
+* the page is served the product's modules as they are. Nothing under `/panel/` is routed,
+  rewritten or substituted here, so what runs is the packaged chain `desk.html`, `desk.js`,
+  `desk-scene.js`, `desk-motion.js`: the scene hands each render to the motion module itself, or
+  nothing moves. Every answer for a file of `/panel/` is kept (`Desk.panel`), so a test can
+  compare what the page was served with the file in the package.
 
 The windows are closed through `desk_hold.close_context`, because the staged reads are handlers
 that fetch. This is a helper and not a test module.
@@ -24,13 +25,13 @@ from __future__ import annotations
 
 import contextlib
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from playwright.sync_api import Browser, Page, Route, expect
+from playwright.sync_api import Browser, Page, Response, expect
 
 from browser_tests.desk_hold import Hold, close_context
 from browser_tests.desk_settled import SETTLED
@@ -39,7 +40,6 @@ from tests.desk_progress_seed import seed_project
 from tests.test_store import good_lane, write_project
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
-JS = "text/javascript; charset=utf-8"
 #: The task the scene draws, its newest run, and the title the plaque says.
 TASK, RUN, TITLE = "task-working", "run-working", "Fix lost text"
 #: What each status of that task needs from its run's row. The server's own row stands for
@@ -75,40 +75,26 @@ INSTRUMENT = """
       if (node.nodeType === 1 && node.dataset?.fx) seen.added.push(node.dataset.fx);
     }
   }).observe(document, {childList: true, subtree: true});
+  const asked = {};
+  window.__asked = asked;
+  const fetched = window.fetch;
+  window.fetch = function (input, init) {
+    const path = new URL(input instanceof Request ? input.url : String(input), location.href)
+      .pathname;
+    asked[path] = (asked[path] ?? 0) + 1;
+    return fetched.call(this, input, init);
+  };
 })();
 """
+#: The desk is quiet when the refreshes of its boot have ended. The stream's open and the first
+#: frame the server sends on it each make one full refresh, and the desk reads the limits
+#: (`/command/quotas`) once as each of them ends and the stream says `open`: the word `open` that
+#: the page shows after the first refresh is not yet the end of the second, which a read held a
+#: moment later would catch in flight.
+BOOTED = "() => (window.__asked['/command/quotas'] ?? 0) >= 2"
 #: Two animation frames: what a response started has been drawn by then.
 QUIET = """() => new Promise((done) => requestAnimationFrame(
   () => requestAnimationFrame(done)))"""
-SCENE_IMPORT = 'from "./studio-participants.js";\n'
-SCENE_HEAD = "export function mountScene(mount, view, handlers) {\n"
-WIRING_IMPORT = 'import {watchMotion} from "./desk-motion.js";\n'
-WIRING_CALL = "  watchMotion(view);\n"
-
-
-def wiring() -> dict[str, bytes]:
-    """The modules the page is served with an edit: the scene with the two lines that hand each
-    render to the motion module, or nothing once the product carries them (in the scene or in the
-    boot module). The edit is asserted to be exactly those two lines, each made once."""
-    assert all((PANEL / name).is_file() for name in ("desk-motion.js", "desk-motion-model.js")), (
-        "the transitions module is not packaged")
-    scene = (PANEL / "desk-scene.js").read_text(encoding="utf-8")
-    boot = (PANEL / "desk.js").read_text(encoding="utf-8")
-    if "desk-motion.js" in scene or "desk-motion.js" in boot:
-        return {}
-    assert scene.count(SCENE_IMPORT) == 1 and scene.count(SCENE_HEAD) == 1
-    edited = scene.replace(SCENE_IMPORT, SCENE_IMPORT + WIRING_IMPORT)
-    edited = edited.replace(SCENE_HEAD, SCENE_HEAD + WIRING_CALL)
-    return {"desk-scene.js": edited.encode("utf-8")}
-
-
-def answering(body: bytes) -> Callable[[Route], None]:
-    """A route handler that answers every request it is given with `body`, as a script.
-
-    The handler takes the route alone: the browser hands a handler the route and the request, and
-    passes both to one that can take both, so a body kept as a second parameter's default would
-    be replaced by the request."""
-    return lambda route: route.fulfill(status=200, content_type=JS, body=body)
 
 
 @dataclass
@@ -173,6 +159,20 @@ class Desk:
     served: Served
     staged: Staged
     problems: list[str] = field(default_factory=list)
+    #: The latest answer the page got for each file of `/panel/`, by file name.
+    panel: dict[str, Response] = field(default_factory=dict)
+
+    def take(self, response: Response) -> None:
+        path = urlsplit(response.url).path
+        if path.startswith("/panel/"):
+            self.panel[path.rsplit("/", 1)[1]] = response
+
+    def listen(self) -> list[tuple[str, str]]:
+        """From now on, every request the page makes as (method, path), in the order made."""
+        asked: list[tuple[str, str]] = []
+        self.page.on("request", lambda request: asked.append(
+            (request.method, urlsplit(request.url).path)))
+        return asked
 
     def say(self, status: str, language: str = "en") -> None:
         """Wait until the rail says the word of `status` for the task the scene draws."""
@@ -208,8 +208,9 @@ def serve(tmp_path: Path) -> Served:
 
 def open_desk(browser: Browser, served: Served, *, motion: bool, language: str = "en",
               task: str | None = TASK, staged: Staged | None = None) -> Desk:
-    """Boot the desk with the preference asked for, wired to the motion module, and wait for the
-    stream to be open: the reading the first change is compared with has been taken by then."""
+    """Boot the desk as the product serves it, with the preference asked for, and wait for the
+    stream to be open and for the refreshes of the boot to have ended (`BOOTED`): the reading the
+    first change is compared with has been taken by then, and no read of the boot is still out."""
     context = browser.new_context(viewport={"width": 1280, "height": 900},
                                   reduced_motion="no-preference" if motion else "reduce")
     page = context.new_page()
@@ -217,8 +218,7 @@ def open_desk(browser: Browser, served: Served, *, motion: bool, language: str =
     context.add_init_script(INSTRUMENT)
     Hold(page, "**/command/runs").rewrite = desk.staged.runs
     Hold(page, "**/command/tasks").rewrite = desk.staged.task_list
-    for name, body in wiring().items():
-        page.route(f"**/panel/{name}", answering(body))
+    page.on("response", desk.take)
     page.on("pageerror", lambda error: desk.problems.append(str(error)))
     page.on("console", lambda message: desk.problems.append(message.text)
             if message.type == "error" else None)
@@ -226,6 +226,8 @@ def open_desk(browser: Browser, served: Served, *, motion: bool, language: str =
               wait_until="load")
     page.wait_for_function(SETTLED)
     expect(page.locator("#deskShell")).to_have_attribute("data-connection", "open", timeout=15000)
+    page.wait_for_function(BOOTED)
+    page.evaluate(QUIET)
     return desk
 
 
