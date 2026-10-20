@@ -1,9 +1,9 @@
 """The pure fact "the execution boundary is provided" and its one typed refusal (R5).
 
 The fact is a table over (platform, attempt mode). It opens nothing, so these tests need no
-OS: each names the platform it asks about. Two of them tie the table to the code it speaks for,
-the ACL journal's mode vocabulary and the runner's launch, so a row cannot be added or kept
-without the mechanism behind it.
+OS: each names the platform it asks about. Three of them tie the table to the code it speaks for,
+the ACL journal's mode vocabulary, the runner's launch and the runner's container entry, so a row
+cannot be added or kept without the mechanism behind it.
 """
 import sys
 
@@ -92,3 +92,29 @@ def test_the_predicate_agrees_with_the_runner_on_the_platform_the_test_runs_on(t
         return
     with pytest.raises(CommandSpecError, match="unavailable on this platform"):
         ProcessRunner._launch(spec, tmp_path, {}, None, None)
+
+
+class _NativeHelperLookups:
+    """A finder that finds nothing and records every lookup of the native helper."""
+
+    NAME = "conductor.command.adapters._winlaunch"
+
+    def __init__(self):
+        self.seen = []
+
+    def find_spec(self, name, path=None, target=None):
+        if name == self.NAME:
+            self.seen.append(name)
+        return None
+
+
+def test_the_runner_entry_agrees_with_the_predicate_on_the_platform_the_test_runs_on(
+        tmp_path, monkeypatch):
+    if boundary_provided(sys.platform, "dispatch"):
+        pytest.skip("the entry reaches the journal here (test_container_view_mode)")
+    lookups = _NativeHelperLookups()
+    monkeypatch.setattr(sys, "meta_path", [lookups, *sys.meta_path])
+    with pytest.raises(CommandSpecError, match="unavailable on this platform"):
+        ProcessRunner(tmp_path).container_profile(mode="dispatch")
+    assert lookups.seen == [], "the native helper was looked up before the refusal"
+    assert list(tmp_path.iterdir()) == []

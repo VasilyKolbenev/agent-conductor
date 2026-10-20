@@ -123,6 +123,8 @@ _READ_CHUNK = 64 * 1024
 DISPATCH_CAPABILITY = "dispatch"
 #: What a runner for a project opened for viewing says to every spawn and every container entry.
 _VIEWING = "this runner may not spawn a child (project open for viewing)"
+#: What the runner says to a confined launch and to a container entry off Windows.
+_NO_WINDOWS_BOUNDARY = "Windows boundary is unavailable on this platform"
 
 
 def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
@@ -479,9 +481,13 @@ class ProcessRunner:
         or a way out), and nothing is made or granted when one is refused. A runner for a project
         opened for viewing refuses first (`CommandSpecError`), before the native helper is even
         imported, so no profile, journal record or grant exists for a project that never spawns.
+        Off Windows the runner refuses too (`CommandSpecError`), before the native helper is
+        imported, creating nothing.
         """
         if not self._spawns_allowed:
             raise CommandSpecError(_VIEWING)
+        if os.name != "nt":
+            raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
         from . import _winlaunch
         loaned = None if folders is None else self._loaned(folders)
         return ProfileJournal.for_project(self._root, _winlaunch).container(
@@ -611,7 +617,7 @@ class ProcessRunner:
             raise OwnershipError("invalid native ownership loan")
         if spec.boundary is not None:
             if os.name != "nt":
-                raise CommandSpecError("Windows boundary is unavailable on this platform")
+                raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
             from . import _winlaunch
             return _winlaunch.launch(spec, cwd, env, payload, loan)
         options = _procgroup.popen_kwargs()

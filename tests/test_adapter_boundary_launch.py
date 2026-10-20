@@ -393,7 +393,7 @@ def test_a_confined_adapter_over_the_shipped_runner_starts_no_task_child(tmp_pat
     try:
         grok_t.run_once(adapter, grok_t.a_request())
     except adapter.error:
-        pass  # the entry was reached and refused: no live owner on this host
+        pass  # the entry was reached and refused: off Windows, or no live owner on this host
 
     assert _fakegrok.prompt_spawns(log) == [], "a task child ran on the shipped runner"
     assert _no_home_left(root, adapter)
