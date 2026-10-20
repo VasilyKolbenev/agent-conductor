@@ -576,6 +576,31 @@ def test_a_check_that_finds_the_pull_request_of_a_moved_branch_shows_it_with_wha
     assert out == {"kinds": ["send", "check"], "says": True, "number": True, "buttons": []}
 
 
+@pytest.mark.parametrize("locale", ["en", "ru"])
+def test_a_pull_request_that_differs_in_base_or_repository_is_said_to_differ_and_not_to_move(
+        locale):
+    """The mismatch names the sent commit, so the branch did not move: the card says the pull
+    request does not match, never where the branch points now, and offers no press."""
+    out = _js("""
+      const forms = {other_base: {head_oid: OID, base: 'dev', cross_repository: false},
+        cross_repository: {head_oid: OID, base: 'main', cross_repository: true}};
+      const result = {};
+      for (const [form, mismatch] of Object.entries(forms)) {
+        const r = rig({locale: d, facts: {push: PUSHED, pull_request: {...PULL, mismatch}}});
+        await opened(r);
+        result[form] = {texts: statuses(r.host.detail), buttons: live(r.host.detail),
+          moved: hasText(r.host.detail, said(d, 'desk.accept.pr.moved', {oid: OID})),
+          number: hasText(r.host.detail, '#7'), sent: r.sent.length};
+      }
+      console.log(JSON.stringify({result, differs: said(d, 'desk.accept.pr.differs'),
+        movedText: said(d, 'desk.accept.pr.moved', {oid: OID})}));
+    """, locale)
+    assert out["differs"] and out["differs"] != out["movedText"]
+    for form, row in out["result"].items():
+        assert row == {"texts": [out["differs"]], "buttons": [], "moved": False,
+                       "number": True, "sent": 0}, form
+
+
 def test_a_pull_request_made_for_a_moved_branch_is_shown_with_what_it_points_to_and_its_link():
     out = _js("""
       const moved = {...PULL, mismatch: {head_oid: 'f'.repeat(40), base: 'main',

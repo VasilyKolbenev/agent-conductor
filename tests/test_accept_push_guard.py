@@ -207,6 +207,25 @@ def test_a_name_taken_after_the_terms_were_shown_refuses_the_press_and_renews_th
 
 
 @needs_git
+def test_a_press_that_only_checks_is_refused_as_changed_terms_before_any_look(tmp_path):
+    """A check carries the digest like any press: when the name was taken after the terms were
+    shown it is refused before the first `ls-remote`, and with the renewed digest it looks once."""
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    first = terms(api, record).payload["push_terms"]
+    git("remote", "add", GUARD, OTHER, cwd=root)
+    git("config", f"remote.{GUARD}.pushurl", OTHER_PUSH, cwd=root)
+    refused = confirm(api, record, first["push_digest"], check=True)
+    assert reason_of(refused) == "push_terms_changed"
+    assert remote.pushes() == [] and "ls-remote" not in remote.verbs()
+    assert refs_text(bare) == b""
+    renewed = terms(api, record).payload["push_terms"]
+    assert renewed["push_digest"] != first["push_digest"]
+    checked = confirm(api, record, renewed["push_digest"], check=True)
+    assert (checked.status, checked.payload) == (200, {"push": None})
+    assert remote.pushes() == [] and remote.verbs().count("ls-remote") == 1
+
+
+@needs_git
 def test_a_name_freed_after_the_terms_were_shown_also_renews_them(tmp_path):
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     git("remote", "add", GUARD, OTHER, cwd=root)

@@ -8,7 +8,8 @@ from conductor.command.accept_store import _bytes
 from conductor.command.project_git import GitAnswer
 from conductor.ownership import data_root
 from tests import _fakegh
-from tests.accept_remote import BRANCH, PULL_REQUEST as PATH, REF, TIMED_OUT, confirm, digest_of
+from tests.accept_remote import (
+    BRANCH, PULL_REQUEST as PATH, REF, TIMED_OUT, confirm, digest_of, remote_oid)
 from tests.git_repo_helpers import git, needs_git
 from tests.test_accept_context import RUN
 from tests.test_accept_push import (
@@ -340,6 +341,53 @@ def test_a_check_for_a_deleted_branch_records_the_head_own_pull_request_among_th
     assert answer.payload["pull_request"]["number"] == 5
     assert answer.payload["pull_request"]["mismatch"] is None
     assert keys(gh) == [LISTED] and made(gh, CREATED) == []
+
+
+@needs_git
+@pytest.mark.parametrize("changes", [{"check": True}, {}], ids=["a_check_press", "a_plain_press"])
+@pytest.mark.parametrize("found", [dict(base="dev"), dict(head_oid=OTHER)],
+                         ids=["another_base", "another_head"])
+def test_a_deleted_branch_with_only_another_pull_request_listed_records_that_one_as_it_is(
+        tmp_path, changes, found):
+    """The branch is gone and the only pull request of it is not the head's own (another base,
+    or another commit): it is recorded with the facts of its row, and no creation is made."""
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    head_oid, base = found.get("head_oid", push["commit"]), found.get("base", "main")
+    move_branch(root, bare)
+    assert remote_oid(bare) is None
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list(
+        _fakegh.pr_row(4, head_oid, head=BRANCH, base=base))]})
+    answer = press(api, push, **changes)
+    assert answer.status == 200, answer.payload
+    record = answer.payload["pull_request"]
+    assert (record["number"], record["base"], record["head_oid"]) == (4, "main", push["commit"])
+    assert record["mismatch"] == {"head_oid": head_oid, "base": base, "cross_repository": False}
+    assert keys(gh) == [LISTED] and made(gh, CREATED) == []
+    shown = api.handle("GET", f"/command/runs/{RUN}/accept", get_headers()).payload
+    assert shown["pull_request"] == record
+    assert press(api, push).payload == {"pull_request": record} and keys(gh) == [LISTED]
+
+
+@needs_git
+def test_a_create_whose_number_the_list_does_not_show_records_nothing_and_is_not_repeated(
+        tmp_path):
+    """gh printed pull request 7 and the list after it does not show it yet: nothing is recorded
+    (the answer is read back, never taken on trust), and the next press finds the pull request
+    in the list and records it, with no second creation."""
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list(), _fakegh.pr_list()],
+                            CREATED: [_fakegh.created(7)]})
+    assert reason_of(press(api, push)) == "pr_create_failed"
+    assert keys(gh) == [LISTED, CREATED, LISTED]
+    assert not (data_root(root) / "accept" / RUN / "pr.json").exists()
+    shown = api.handle("GET", f"/command/runs/{RUN}/accept", get_headers()).payload
+    assert shown["pull_request"] is None
+    _fakegh.script(gh.dir, {LISTED: [_fakegh.pr_list(row_of(push, 7))]})
+    second = press(api, push)
+    assert second.status == 200, second.payload
+    assert second.payload["pull_request"]["number"] == 7
+    assert second.payload["pull_request"]["mismatch"] is None
+    assert keys(gh) == [LISTED, CREATED, LISTED, LISTED] and len(made(gh, CREATED)) == 1
 
 
 @needs_git

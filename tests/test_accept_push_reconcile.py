@@ -111,11 +111,35 @@ def test_a_look_that_cannot_sign_in_says_so_and_no_push_follows(tmp_path):
 
 
 @needs_git
+@pytest.mark.parametrize("silence, reason", [
+    (TIMED_OUT, "push_unconfirmed"),
+    (GitAnswer(128, b"fatal: Authentication failed for 'x'\n"), "push_auth_failed")],
+    ids=["no_answer", "cannot_sign_in"])
+def test_a_press_that_only_checks_and_gets_no_answer_from_its_look_asks_no_push(
+        tmp_path, silence, reason):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    remote.on_look = lambda run: silence
+    answer = confirm(api, record, digest_of(api, record), check=True)
+    assert reason_of(answer) == reason
+    assert verbs(remote) == ["ls-remote"] and remote_oid(bare) is None and not stands(root)
+
+
+@needs_git
 def test_a_branch_already_there_with_another_commit_is_rejected_before_any_push(tmp_path):
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     existing = moved_commit(root, record)
     seed_remote_ref(root, bare, existing)
     assert reason_of(confirm(api, record, digest_of(api, record))) == "push_rejected"
+    assert verbs(remote) == ["ls-remote"] and remote_oid(bare) == existing and not stands(root)
+
+
+@needs_git
+def test_a_press_that_only_checks_finds_another_commit_there_and_rejects_with_no_push(tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    existing = moved_commit(root, record)
+    seed_remote_ref(root, bare, existing)
+    answer = confirm(api, record, digest_of(api, record), check=True)
+    assert reason_of(answer) == "push_rejected"
     assert verbs(remote) == ["ls-remote"] and remote_oid(bare) == existing and not stands(root)
 
 
