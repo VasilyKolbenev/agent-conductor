@@ -94,12 +94,66 @@ def test_an_exit_with_no_porcelain_line_for_the_ref_and_no_ref_is_a_git_failure_
 
 
 @needs_git
-def test_a_git_that_cannot_sign_in_is_push_auth_failed_and_no_look_follows_the_failed_push(
-        tmp_path):
+def test_a_git_that_cannot_sign_in_is_push_auth_failed_after_the_look_finds_no_ref(tmp_path):
     api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
     remote.on_push = lambda run: GitAnswer(128, AUTH_WORDS)
     assert reason_of(confirm(api, record, digest_of(api, record))) == "push_auth_failed"
-    assert verbs(remote) == ["ls-remote", "push"] and not stands(root)
+    assert verbs(remote) == ["ls-remote", "push", "ls-remote"] and not stands(root)
+    assert remote_oid(bare) is None
+
+
+@needs_git
+@pytest.mark.parametrize("silence, reason", [
+    (GitAnswer(128, b"fatal: Authentication failed for 'x'\n"), "push_auth_failed"),
+    (TIMED_OUT, "push_unconfirmed")], ids=["look_cannot_sign_in", "look_no_answer"])
+def test_a_push_that_could_not_sign_in_and_a_look_that_is_silent_write_nothing_and_push_once(
+        tmp_path, silence, reason):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    looks = []
+
+    def second_look_is_silent(run):
+        looks.append(1)
+        return silence if len(looks) == 2 else run()
+
+    remote.on_look = second_look_is_silent
+    remote.on_push = lambda run: GitAnswer(128, AUTH_WORDS)
+    assert reason_of(confirm(api, record, digest_of(api, record))) == reason
+    assert verbs(remote) == ["ls-remote", "push", "ls-remote"] and not stands(root)
+    assert remote_oid(bare) is None and remote.verbs().count("push") == 1
+
+
+@needs_git
+def test_a_push_that_landed_and_said_it_could_not_sign_in_is_recorded_by_the_look_after_it(
+        tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+
+    def landed_then_could_not_sign_in(run):
+        run()
+        return GitAnswer(128, AUTH_WORDS)
+
+    remote.on_push = landed_then_could_not_sign_in
+    answer = confirm(api, record, digest_of(api, record))
+    assert answer.status == 201, answer.payload
+    assert answer.payload["push"]["remote_oid"] == record["commit"]
+    assert remote_oid(bare) == record["commit"] and stands(root)
+    assert verbs(remote) == ["ls-remote", "push", "ls-remote"]
+    assert remote.verbs().count("push") == 1
+
+
+@needs_git
+def test_another_commit_the_look_finds_after_a_push_that_could_not_sign_in_is_rejected(
+        tmp_path):
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    other = moved_commit(root, record)
+
+    def another_landed_then_could_not_sign_in(run):
+        seed_remote_ref(root, bare, other)
+        return GitAnswer(128, AUTH_WORDS)
+
+    remote.on_push = another_landed_then_could_not_sign_in
+    assert reason_of(confirm(api, record, digest_of(api, record))) == "push_rejected"
+    assert verbs(remote) == ["ls-remote", "push", "ls-remote"] and not stands(root)
+    assert remote_oid(bare) == other and remote.verbs().count("push") == 1
 
 
 @needs_git

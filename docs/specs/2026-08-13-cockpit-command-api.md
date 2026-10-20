@@ -1452,9 +1452,10 @@ the digest covers it, a name that became taken or free since the terms were show
 looked at again: the same commit answers 201 and writes `push.json` (with `remote_oid`), another
 commit is `push_rejected`, no ref
 is `push_rejected` when the push said it was rejected, `push_unconfirmed` when it said it was sent,
-`push_timed_out` when it timed out and `git_failed` for any other exit with no porcelain line for
-the ref, and a look that does not answer is `push_unconfirmed` (or `push_auth_failed` when git
-could not sign in). A press with `"check":true` stops after the first look and answers 200
+`push_auth_failed` when git said it could not sign in, `push_timed_out` when it timed out and
+`git_failed` for any other exit with no porcelain line for the ref, and a look that does not
+answer is `push_unconfirmed` (or `push_auth_failed` when git could not sign in). A press with
+`"check":true` stops after the first look and answers 200
 `{"push": null}` when the remote has no ref; it never pushes. An exact repeat of a press that
 recorded the push answers 200 with the standing record, another digest is `push_terms_changed`
 and another actor `acceptance_exists`. One press at a time acts on a run in a process, and the

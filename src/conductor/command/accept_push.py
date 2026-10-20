@@ -232,13 +232,13 @@ def _send(api, run_id, request, commit, terms, words, git):
         return 200, {"push": None}
     attempt = git(["-C", str(root), *words], False, timeout=github.PUSH_TIMEOUT_SECONDS)
     kind = _kind(attempt, terms["ref"])
-    if kind == "auth":
-        raise github.PublishRefused("push_auth_failed")
     seen = _look(git, root, terms)
     if seen == commit["commit"]:
         return 201, {"push": _record(api, run_id, request, commit, terms, seen)}
     if seen is not None or kind == "rejected":
         raise github.PublishRefused("push_rejected")
+    if kind == "auth":
+        raise github.PublishRefused("push_auth_failed")
     raise github.PublishRefused("push_unconfirmed" if kind == "sent" else (
         "push_timed_out" if attempt.timed_out else "git_failed"))
 
