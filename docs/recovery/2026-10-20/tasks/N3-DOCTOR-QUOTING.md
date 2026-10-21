@@ -9,6 +9,8 @@
   policy_driver/queue/Desk — не тронуто.
 - `src/` и `tests/` не менялись. Все эксперименты — в копии вне репозитория
   `C:\Users\Пользователь\Documents\Codex\work\n3-op\tc` (см. раздел 9).
+- **Редакция 2 (21.10, после опровержения скептиком):** разделы 0–6 — история первой редакции;
+  действующее правило — 10.6, задание — раздел 7 с пометками **[R2]**.
 
 ## 0. Итог
 
@@ -258,28 +260,43 @@ not a directory», в PowerShell с пробелом то же, `@scout` в Powe
 
 ## 7. Задание для Sonnet: N3 — кавычение напечатанных команд `conduct doctor`
 
+**Редакция 2 (раздел 10).** Пункты с пометкой **[заменено]** — первая редакция: не выполнять, они
+оставлены для истории. Действует текст с пометкой **[R2]**; непомеченное — без изменений.
+
 ### 7.1 Контекст и рамки
 
 - Репозиторий `C:\Users\Пользователь\Documents\Codex\2026-10-20\new-chat\outputs\December-Command`,
-  ветка `recovery/2026-10-20`, HEAD `79cd652`. В каждой команде PowerShell сначала
+  ветка `recovery/2026-10-20`, **[заменено]** HEAD `79cd652`. В каждой команде PowerShell сначала
   `. "C:\Users\Пользователь\Documents\Codex\2026-10-20\new-chat\outputs\December-Command-Environment.ps1" -Quiet`.
+- **[R2]** HEAD `117b1da` (N2 закоммичен им; `src/` с `79cd652` не менялся). Прочитать и раздел 10.
 - Прочитать этот документ целиком, `src/conductor/doctor.py`, `tests/doctor_printed.py`,
   `tests/test_doctor_printed.py`, `tests/test_doctor.py` (стр. 160–180, 597–743),
   `tests/test_doctor_argv_doors.py` (стр. 1–110, 340–375), `tests/test_init_probing_ban.py` (стр. 28–62).
-- Проверенный черновик тестов и правки: `C:\Users\Пользователь\Documents\Codex\work\n3-op\tc`
-  (`src/conductor/doctor.py`, `tests/test_doctor_quoting.py`, `tests/doctor_printed.py`). Им можно
-  пользоваться, но docstring-и, комментарии и красный прогон — твоя работа.
-- Шаг 0: `git status --short`. Если N2 (`tests/test_doctor.py`, `tests/doctor_printed.py`,
-  `tests/test_doctor_printed.py`) ещё не закоммичен, твои правки в этих трёх файлах ложатся поверх
-  него: в отчёте перечисли свои ханки по каждому из них отдельно, чтобы их можно было отделить от N2.
+- **[заменено]** Проверенный черновик тестов и правки:
+  `C:\Users\Пользователь\Documents\Codex\work\n3-op\tc` (`src/conductor/doctor.py`,
+  `tests/test_doctor_quoting.py`, `tests/doctor_printed.py`). Им можно пользоваться, но
+  docstring-и, комментарии и красный прогон — твоя работа.
+- **[R2]** Черновик редакции 2: `C:\Users\Пользователь\Documents\Codex\work\n3-op2\tc` — правка
+  `src/conductor/doctor.py` (diff `n3-op2\proto2-doctor.diff`, без docstring-ов), тесты
+  `tests/test_doctor_quoting.py` (188 строк) и копии в `tests/test_doctor.py`,
+  `tests/test_doctor_argv_doors.py`, `tests/doctor_printed.py`, `tests/test_doctor_printed.py`.
+  Им можно пользоваться; docstring-и, комментарии, красный прогон и отчёт — твоя работа.
+- **[заменено]** Шаг 0: `git status --short`. Если N2 (`tests/test_doctor.py`,
+  `tests/doctor_printed.py`, `tests/test_doctor_printed.py`) ещё не закоммичен, твои правки в этих
+  трёх файлах ложатся поверх него: в отчёте перечисли свои ханки по каждому из них отдельно, чтобы
+  их можно было отделить от N2.
   Чужие файлы (`R1.*`, policy_driver/queue/Desk, `N2-REPORT.md`) не трогать.
+- **[R2]** Шаг 0: `git status --short`. N2 уже в `117b1da`: правки трёх его файлов ложатся поверх
+  коммита. Чужие незакоммиченные файлы (R1.2c/R1.3-E1/R1.5: `policy_driver.py`, `policy_view.py`,
+  `server_drain.py`, `up_serve.py`, drain-, browser- и policy-тесты, их отчёты) и `N2-REPORT.md` не
+  трогать.
 
 ### 7.2 Красные тесты сначала: новый модуль `tests/test_doctor_quoting.py`
 
 Docstring модуля: что он держит (кавычение напечатанной команды против cmd, Windows PowerShell 5.1 и
 POSIX sh), почему отдельно от `test_doctor.py` (лимит 800 строк), откуда фикстуры
 (`from tests.test_doctor import commands, lane, ran, report, role_map, write_project`, как в
-`test_doctor_claims.py`; цикла нет). Тесты:
+`test_doctor_claims.py`; цикла нет). **[R2]** Ещё zsh и argparse (`--dir` не флаг). Тесты:
 
 1. `test_spell_quotes_what_a_shell_would_change_and_doubles_a_closing_backslash` — параметры
    `(argv, line)`, ожидание `doctor.spell(argv) == line` (Python-литералы):
@@ -290,48 +307,90 @@ POSIX sh), почему отдельно от `test_doctor.py` (лимит 800 �
    - `("doctor", "--dir", "ascii\\unheld")` → `'conduct doctor --dir "ascii\\unheld"'` (D4)
    - `("prompt", "--role", "@scout")`, `("prompt", "--role", "a@b")`, `("prompt", "--role", "scout,07")`,
      `("doctor", "--dir", "~")` → тот же токен в двойных кавычках (D2, D5, D6)
-   - `("prompt", "--role", "a.b:c/d+e=f_g-h")` → голым (весь новый `_BARE_CHARS` без кавычек)
+   - **[заменено]** `("prompt", "--role", "a.b:c/d+e=f_g-h")` → голым (весь новый `_BARE_CHARS`
+     без кавычек)
+   - **[R2]** `("prompt", "--role", "a.b:c/d+e_g-h")` → голым (весь `_BARE_CHARS` редакции 2);
+     `("prompt", "--role", "=scout")`, `("prompt", "--role", "a=b")` → в двойных кавычках (zsh,
+     10.3); `("doctor", "--dir", "C:\\.")` → `'conduct doctor --dir "C:\\."'`;
+     `("doctor", "--dir", "./-proj")` → `"conduct doctor --dir ./-proj"` (голым)
 2. `test_a_crt_program_reads_the_printed_token_back_as_itself` — только Windows:
    `shell32.CommandLineToArgvW(doctor.spell(("--dir", token)))` == `["conduct", "--dir", token]`
    для `C:\Мой проект\`, `C:\`, `C:\a\\`, `\\srv\s p\`, `C:\a b`, `@scout`, `scout,07`
    (`restype = POINTER(c_wchar_p)`, `LocalFree` в `finally`). Это оракул правила CRT без процессов.
+   **[R2]** Ещё `C:\.`, `\.`, `\\srv\s p\.`, `=scout`.
 3. `test_a_root_typed_with_trailing_separators_is_printed_without_them[1|2]` — пустой каталог
    `tmp_path / "Мой проект"`, `report(capsys, str(root) + os.sep * n, 1)`, единственная команда из
    `commands(out)` оканчивается на `["--dir", str(root)]`, и `main(argv) == 0` (D1 через CLI).
 4. `test_an_empty_root_names_no_dir_rather_than_an_empty_one` — `monkeypatch.chdir(tmp_path)`, ни
    одна `check.command` из `doctor.inspect("")` не содержит `--dir` (D7).
+   **[R2] 4a.** `test_a_root_that_would_open_with_a_dash_is_printed_from_the_current_directory` —
+   параметры `"-proj"`, `"./-proj"`, `"." + os.sep + "-proj" + os.sep`, `"--"`;
+   `monkeypatch.chdir(tmp_path)`, каталог `name = typed.strip("./" + os.sep)`;
+   `main(["doctor", f"--dir={typed}"]) == 1` (форма `--dir=`: голое `--dir -proj` argparse не
+   примет и на входе); единственная команда из `commands(out)` оканчивается на
+   `["--dir", "./" + name]`, `ran(argv) == 0`, `conductor/` создан (возражение 1, инвариант N2).
+   **[R2] 4b.** `test_an_anchor_is_printed_with_a_closing_dot_rather_than_a_closing_separator` —
+   без запуска (`init` создал бы каркас в корне диска): для Windows `Path(tmp_path).anchor`, он же
+   с `/`, `"\\"`, `"/"`; для POSIX `"/"`, `"//"`; у каждой команды `doctor.inspect(typed)` значение
+   `--dir` оканчивается на `.` и `Path(value) == Path(typed)` (возражение 3). UNC в автотест не
+   брать: `inspect` идёт в сеть.
 5. Охранный (зелёный до и после): `test_an_authored_id_a_shell_can_carry_quoted_still_gets_its_prompt`
    для `@scout`, `a,b`, `scout,07`, `x.y`, `a:b`, `a=b`, `a+b` — печатается `prompt --role <id>`,
-   `ran(argv) == 0`. Держит, что `_AUTHORED_CHARS` не сузили вслед за `_BARE_CHARS`.
+   `ran(argv) == 0`. Держит, что `_AUTHORED_CHARS` не сузили вслед за `_BARE_CHARS`. **[R2]** Ещё
+   `=scout`.
 6. Настоящие оболочки, Windows (`skipif` не win32; ещё `skipif` при
    `shutil.which("powershell.exe") is None`): `test_printed_lines_reach_a_program_from_cmd_and_powershell_as_their_argv`.
    Заглушка — `tmp_path / "argv.py"`, печатает `"ARGV:" + json.dumps(sys.argv[1:])`; программа
    `conduct` подменяется на `"<sys.executable>" "<argv.py>"`, хвост строки после `conduct ` — дословно
-   из `doctor.spell`. Случаи: команды `doctor.inspect(str(tmp_path / "Мой проект") + "\\")`,
-   `("doctor", "--dir", Path(tmp_path).anchor)`, `("prompt", "--role", "@scout", "--dir", "C:\\p q")`,
-   `("prompt", "--role", "scout,07")`, `("doctor", "--dir", "x,07\\unheld")`,
+   из `doctor.spell`. **[заменено]** Случаи: команды
+   `doctor.inspect(str(tmp_path / "Мой проект") + "\\")`,
+   `("doctor", "--dir", Path(tmp_path).anchor)`,
+   `("prompt", "--role", "@scout", "--dir", "C:\\p q")`, `("prompt", "--role", "scout,07")`,
+   `("doctor", "--dir", "x,07\\unheld")`, `("doctor", "--dir", "C:\\Program Files (x86)\\p&q")`.
+   **[R2]** Случаи: `monkeypatch.chdir(tmp_path)`, каталоги `Мой проект` и `-proj`; команды
+   `doctor.inspect` для `str(tmp_path / "Мой проект") + "\\"`, `Path(tmp_path).anchor`, `"\\"`,
+   `"-proj"` (корни — только через `inspect`, чтобы проверялось правило 10.6, а не сырой токен) и
+   `("prompt", "--role", "@scout", "--dir", "C:\\p q")`, `("prompt", "--role", "scout,07")`,
+   `("prompt", "--role", "=scout")`, `("doctor", "--dir", "x,07\\unheld")`,
    `("doctor", "--dir", "C:\\Program Files (x86)\\p&q")`.
    cmd — по процессу на строку: `subprocess.run(f'cmd.exe /d /s /c ""{python}" "{stub}" {tail}"')`
    (`/s` снимает именно добавленные внешние кавычки). PowerShell — один процесс
    `powershell.exe -NoProfile -NonInteractive -EncodedCommand <driver>`, где driver читает строки
    `& "<python>" "<stub>" <tail>` из UTF-8 файла и выполняет каждую
    `try { Invoke-Expression $l } catch { 'ERR:' + $_ }`. Без `-File` и без `-ExecutionPolicy`.
-   Ожидание: cmd — ровно argv; PowerShell — ровно argv, кроме последнего токена без пробела,
-   оканчивающегося на `\`: у него один лишний `\` (документированное поведение 5.1; комментарий в
-   тесте). Собирать все расхождения в список и падать одним `assert not wrong, wrong`.
+   **[заменено]** Ожидание: cmd — ровно argv; PowerShell — ровно argv, кроме последнего токена без
+   пробела, оканчивающегося на `\`: у него один лишний `\` (документированное поведение 5.1;
+   комментарий в тесте). Собирать все расхождения в список и падать одним `assert not wrong, wrong`.
+   **[R2]** Ожидание: ровно argv и в cmd, и в PowerShell, без исключений — после правила 10.6 ни
+   один напечатанный корень-каталог не оканчивается на `\`. Расхождения — одним
+   `assert not wrong, wrong`.
 7. Настоящий sh, POSIX (`skipif` win32): `test_printed_lines_reach_a_program_from_posix_sh_as_their_argv`
    — `subprocess.run(["/bin/sh", "-c", f'"$0" "$1" {tail}', sys.executable, str(stub)])` для команд
    `doctor.inspect(str(tmp_path / "Мой проект") + "/")` и `("doctor", "--dir", "a\\b")`,
    `("doctor", "--dir", "rel\\dir\\")`, `("doctor", "--dir", "~")`, `("prompt", "--role", "@scout")`,
    `("prompt", "--role", "a,b")`; ожидание — ровно argv. Здесь он только skipped; механика проверена
    через Git sh (`n3-op\posix_sim.py`), на исходном коде `a\b`, `rel\dir\`, `~` красные.
+   **[R2]** `monkeypatch.chdir(tmp_path)`, каталог `-proj`; ещё команды `doctor.inspect` для `"/"`
+   и `"-proj"`, роли `=scout` и `=sh`. Оболочки: `["/bin/sh", "-c"]` и, если
+   `shutil.which("zsh")`, `[zsh, "-f", "-c"]` (`-f` — без rc-файлов; `$0` при `-c` в zsh тот же).
+   На macOS CI это единственное измерение zsh: при голом `=` строка `=sh` стала бы `/bin/sh`.
 
-Прогнать модуль на текущем продукте и сохранить вывод. Ожидаемо на Windows (ASCII basetemp):
-**14 failed, 14 passed, 1 skipped** — красные: 8 строк теста 1 (кроме `C:\a b` и голой строки), 2
-строки теста 2 (`C:\Мой проект\`, `\\srv\s p\`), тест 3 ×2, тест 4, тест 6. Если красных меньше —
+Прогнать модуль на текущем продукте и сохранить вывод. **[заменено]** Ожидаемо на Windows (ASCII
+basetemp): **14 failed, 14 passed, 1 skipped** — красные: 8 строк теста 1 (кроме `C:\a b` и голой
+строки), 2 строки теста 2 (`C:\Мой проект\`, `\\srv\s p\`), тест 3 ×2, тест 4, тест 6. Если
+красных меньше — остановиться и разобраться, а не подгонять.
+
+**[R2]** Ожидаемо (`n3-op2\red-orig.txt`): **21 failed, 21 passed, 1 skipped** — тест 1: 11 строк
+(все, кроме `C:\a b`, `./-proj` и голой); тест 2: `C:\Мой проект\`, `\\srv\s p\`; тест 3 ×2;
+тест 4; тест 4a: `-proj`, `.\-proj\`, `--` (`./-proj` исходный код печатает как набран); тест 4b;
+тест 6. Против правки редакции 1 (`n3-sk2\src`, `n3-op2\red-sk.txt`) тот же модуль даёт 8 failed:
+`=scout`, `a=b`, 4a ×4, 4b, 6 (PowerShell: `C:\` → `C:\\`, `\` → `\\`). Если красных меньше —
 остановиться и разобраться, а не подгонять.
 
 ### 7.3 Продукт: `src/conductor/doctor.py`
+
+**[заменено]** первая строка блока ниже (`=` в `_BARE_CHARS`) и строка про `inspect` под вторым
+блоком; **[R2]** их замена — сразу после этой пары блоков.
 
 ```python
 _BARE_CHARS = frozenset(string.ascii_letters + string.digits + "-_.:/+=")
@@ -345,9 +404,29 @@ _AUTHORED_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=")
     return '"' + token + "\\" * tail + '"'
 ```
 
-В `inspect`: `text_root = str(Path(root))`. Новых импортов нет (`os` запрещён
+**[заменено]** В `inspect`: `text_root = str(Path(root))`. Новых импортов нет (`os` запрещён
 `test_init_probing_ban.py`). `spell`, `_spellable`, `_dir_args`, `_FLAG_MARK`, `render`, `run` — без
 изменений. Docstring-и и комментарии (английский, как в модуле):
+
+**[R2]** Действующая правка (раздел 10.6, прототип `n3-op2\tc`):
+
+```python
+_BARE_CHARS = frozenset(string.ascii_letters + string.digits + "-_.:/+")
+_AUTHORED_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=")
+```
+
+```python
+    path = Path(root)
+    text_root = str(path)
+    if path.root and not path.name:          # an anchor: C:\  \  \\srv\share\  /
+        text_root += "."
+    if text_root.startswith(_FLAG_MARK):     # .\-proj normalised to -proj
+        text_root = "./" + text_root
+```
+
+`_spelled` — как в блоке выше (удвоение хвостовых `\` остаётся: точно для CRT и для sh). Новых
+импортов нет; `spell`, `_spellable`, `_dir_args`, `_FLAG_MARK`, `render`, `run` не меняются.
+Docstring-и и комментарии (английский, как в модуле) — пункты ниже плюс пункты **[R2]** после них:
 
 - комментарий `_BARE_CHARS`: пункт 1 раздела 5 с причиной для каждого убранного символа; убрать
   фразу «The backslash and the tilde are here for the one token that is a path»;
@@ -366,21 +445,45 @@ _AUTHORED_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=")
 - `inspect`: почему корень нормализуется здесь (хвостовой `\` в кавычках — единственное место, где
   CRT и PowerShell 5.1 расходятся; `""` → `.`; якорь сохраняется; не в `_dir_args` — его форму держит
   `test_doctor_argv_doors.py`).
+- **[R2]** комментарий `_BARE_CHARS`: ещё `=` — zsh (опция `EQUALS`, по умолчанию включена)
+  заменяет слово с некавыченным ведущим `=` путём к команде или падает «not found»; убран целиком,
+  без позиционного правила, как `@`; в фразе `_spellable` — «`,`, `@` или `=`».
+- **[R2]** `_spelled`, **[заменено]** скобка «после нормализации только у якоря: `C:\` → тот же
+  каталог, `\` → `\\` не каталог» — вместо неё: поэтому `inspect` не печатает корень-каталог с
+  разделителем на конце (якорь получает `.`), и закавыченный токен с хвостовым `\` остаётся только
+  у вырожденных `\\`, `\\srv\` (не каталоги) и у POSIX-имени, оканчивающегося на `\`, где удвоение
+  точно и для sh. Добавить в ограничения: `!` в интерактивных bash/zsh раскрывается историей и в
+  `"..."` (`"p!q"` → «event not found», строка не выполняется; найденное событие подставится
+  молча); zsh — по документации, локально не измерен; одинарные кавычки не выход (ломают cmd).
+- **[R2]** `inspect`: два правила после нормализации и почему здесь — якорь (`path.root and not
+  path.name`) получает `.`: `C:\.`, `\.`, `\\srv\share\.`, `/.` — тот же каталог без разделителя на
+  конце, иначе PowerShell 5.1 отдаёт удвоенный `\` голым (`\` → `\\`, не каталог); `path.root`
+  нужен, иначе `.` стал бы `..`. Корень, открывающийся `_FLAG_MARK` (`.\-proj` → `-proj`), получает
+  `./`: иначе `--dir -proj` — argparse exit 2; `./`, а не `os.sep`: `os` запрещён, `./` понимают
+  Windows и все три оболочки, токен голый, повторный `doctor` печатает то же. Detail-тексты
+  («under C:\.») берут этот же корень, заголовок — набранный.
 
 ### 7.4 Тестовые копии правила и чтение строки
 
-- `tests/test_doctor.py`: `BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.:/+=")`;
+- **[заменено]** `tests/test_doctor.py`:
+  `BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.:/+=")`;
   `"p,q"` перенести из `NEEDING_NONE` в `NEEDING_QUOTES` и поправить комментарий над ними («other
   six» → «other seven»; отметить, что на Windows каждый корень держит `\` и закавычен). Число строк не
   растёт (788 → 788).
-- `tests/test_doctor_argv_doors.py`: тот же `BARE_ENOUGH` (поведения не меняет, держит копии в ногу).
+- **[R2]** `tests/test_doctor.py`: в `BARE_ENOUGH` строка `"-_.:/+"`; `"p,q"` и `"p=q"` перенести
+  в `NEEDING_QUOTES` перед `"p q"` (строка 718 — 83 символа); `NEEDING_NONE = ["plain", "p-q",
+  "p_q", "p.q", "p+q"]`; комментарий: «other six» → «other eight», и что на Windows каждый корень
+  держит `\` и закавычен. 788 строк → 788.
+- **[заменено]** `tests/test_doctor_argv_doors.py`: тот же `BARE_ENOUGH` (поведения не меняет,
+  держит копии в ногу). **[R2]** То же, со строкой `"-_.:/+"`.
 - `tests/doctor_printed.py`: значение закавыченного токена — с хвостовыми `\`, уменьшенными вдвое
   (`_unquoted(inside)`: `tail = len(inside) - len(inside.rstrip("\\"))`, вернуть
   `inside[:len(inside) - tail // 2]`); в docstring `printed_argv` назвать правило CRT. Сверка
   `spell(argv) == line` остаётся и отвергает нечётный хвост.
 - `tests/test_doctor_printed.py`: в `test_a_printed_line_reads_back_as_the_argv_it_was_spelled_from`
   добавить строки `("doctor", "--dir", "C:\\Мой проект\\")`, `("doctor", "--dir", "C:\\")`,
-  `("prompt", "--role", "@scout")`.
+  `("prompt", "--role", "@scout")`. **[R2]** Ещё `("prompt", "--role", "=scout")`,
+  `("doctor", "--dir", "C:\\.")`.
 
 ### 7.5 Прогоны
 
@@ -396,8 +499,10 @@ Remove-Item -Recurse -Force C:\Users\Public\pt-n3a, C:\Users\Пользоват�
 ```
 
 **ASCII basetemp обязателен**: на кириллическом профиле закавычено всё, и сломанные копии
-`BARE_ENOUGH` там зелёные. У прототипа было 132 passed, 1 skipped (ASCII) и 277 passed, 1 skipped
-(кириллица, с `test_command_line_cap.py`); числа у тебя могут отличаться на число своих строк.
+`BARE_ENOUGH` там зелёные. **[заменено]** У прототипа было 132 passed, 1 skipped (ASCII) и 277
+passed, 1 skipped (кириллица, с `test_command_line_cap.py`); числа у тебя могут отличаться на число
+своих строк. **[R2]** У прототипа `n3-op2\tc`: 148 passed, 1 skipped (ASCII) и 293 passed,
+1 skipped (кириллица, с `test_command_line_cap.py`); числа могут отличаться на число своих строк.
 `test_file_endings.py` читает только `git ls-files`: для неотслеживаемых новых файлов окончания,
 хвостовые пробелы и длину строк проверить отдельно.
 Других потребителей `doctor` в `src/` и `tests/` нет (поиск `doctor.` и `"doctor"`), полный
@@ -417,8 +522,28 @@ core-suite не обязателен.
 | M8 удваивать все `\` в кавычках | 56 failed |
 | M9 `_unquoted` без деления хвоста | `test_doctor_printed.py` (2 новые строки) — 2 failed |
 
+**[заменено]** таблица выше и скрипт ниже. **[R2]** Мутанты прототипа `n3-op2\tc`
+(`n3-op2\mutate2.py` → `mutants2.txt`; те же три файла; все 13 красные):
+
+| Мутант | Красные (Windows, ASCII basetemp) |
+| --- | --- |
+| M1 убрать удвоение в `_spelled` | тест 1 (3 строки), тест 2 (4) — 7 failed |
+| M2 вернуть `\` в `_BARE_CHARS` | тест 1 (4), 6 тестов `test_doctor.py` — 10 failed |
+| M3 вернуть `,` | тест 1 (`scout,07`), тест 6 — 2 failed |
+| M4 вернуть `@` | тест 1 (`@scout`, `a@b`), тест 6 — 3 failed |
+| M5 вернуть `~` | тест 1 (`~`) — 1 failed (на POSIX CI ещё тест 7) |
+| M6 `text_root = str(root)` (без нормализации) | тест 3 ×2, тест 4, тест 4a (`.\-proj\`) — 4 |
+| M7 `_AUTHORED_CHARS = _BARE_CHARS` | тест 5 (`@scout`, `a,b`, `scout,07`, `a=b`, `=scout`) — 5 |
+| M8 удваивать все `\` в кавычках | 62 failed |
+| M9 `_unquoted` без деления хвоста | `test_doctor_printed.py` — 2 failed |
+| M10 вернуть `=` | тест 1 (`=scout`, `a=b`) — 2 failed (на macOS CI с zsh ещё тест 7) |
+| M11 без `.` у якоря | тест 4b, тест 6 (PowerShell: `C:\` → `C:\\`, `\` → `\\`) — 2 failed |
+| M12 без `./` перед `-` | тест 4a ×4 — 4 failed |
+| M13 `.` у якоря без условия `path.root` | тест 4 (`""` → `--dir ..`) — 1 failed |
+
 Скрипт-образец: `n3-op\mutate.py` (копирует `src`/`tests` во временный каталог, меняет одну
-строку, гоняет три файла с `--basetemp C:\Users\Public\pt-om`, убирает за собой).
+строку, гоняет три файла с `--basetemp C:\Users\Public\pt-om`, убирает за собой). **[R2]**
+`n3-op2\mutate2.py` — то же для M1–M13 (`--basetemp C:\Users\Public\pt-q5`).
 
 ### 7.7 Ручная проверка в настоящих оболочках
 
@@ -436,18 +561,42 @@ python "$w\e2e3.py" $src "$w\e2e-fix" | Out-File -Encoding utf8 "$w\e2e3-fix.txt
 Оба скрипта берут хелперы корпуса из `n3-op\tc\tests` и запускают `conduct` из `.venv` с
 `PYTHONPATH=<src>`; работают около минуты.
 
-Критерий: в `stand3` DIFF только у строк `x$y`, `` t`k `` (PS, sh) и `p%OS%q` (cmd), `+\` только у
-`C:\` в PS; в `e2e3` все вставленные строки выполняются (`cannot inspect` и `expected one argument`
-отсутствуют). Каталоги `s3fix`, `e2e-fix` после сверки удалить.
+Критерий: в `stand3` DIFF только у строк `x$y`, `` t`k `` (PS, sh) и `p%OS%q` (cmd), **[заменено]**
+`+\` только у `C:\` в PS **[R2]** `+\` нет совсем; в `e2e3` все вставленные строки выполняются
+(`cannot inspect` и `expected one argument` отсутствуют). Каталоги `s3fix`, `e2e-fix` после сверки
+удалить.
+
+**[R2]** Сверх этого — матрица скептика и e2e редакции 2 (около пяти минут; `sim2.py` берёт
+заглушку `n2-sk\bin\conduct.exe`). Если `python -m conductor` из рабочей копии не импортируется
+из-за чужих незакоммиченных правок, взять `git archive HEAD src` во внешний каталог и положить туда
+свой `doctor.py`.
+
+```powershell
+$w = "C:\Users\Пользователь\Documents\Codex\work\n3-op2"
+python -B "$w\sim2.py" $src "$w\s-fix" | Out-File -Encoding utf8 "$w\sim2-fix.txt"
+python -B "$w\e2e4.py" $src "$w\e-fix" | Out-File -Encoding utf8 "$w\e2e4-fix.txt"
+python -B "$w\fuzzq.py" $src "$w\fq-fix" | Out-File -Encoding utf8 "$w\fuzzq-fix.txt"
+```
+
+Критерий (как у прототипа, 10.7): `sim2` — ps-i, ps-f, cmd-i, cmd-b по 168 OK; sh, dash 144 OK и
+24 DIFF только у `unc *`/`dev *`; sh-conv ещё роль `//x`; «0 argv argparse refuses». `e2e4` — все
+формы с дефисом exit 0 в четырёх оболочках; якоря в PowerShell и cmd — отчёт, exit 1; `cannot
+inspect` только у UNC в sh/dash. `fuzzq` — cmd 0; PowerShell только токены с хвостовым `\` без
+пробела; sh/dash только внутренний `\\`. `stand3` на прототипе: PS 87/0/12, cmd 93/0/6, sh 87/0/12
+(`n3-op2\stand3-r2.txt`). Каталоги `s-fix`, `e-fix`, `fq-fix`, `s3fix`, `e2e-fix` удалить.
 
 ### 7.8 Критерии приёмки
 
 - Все тесты 7.5 зелёные в обоих basetemp; новый модуль красный на исходном коде ровно в
-  перечисленных местах (вывод сохранён в отчёте); все мутанты M1–M9 красные.
+  перечисленных местах (вывод сохранён в отчёте); все мутанты **[заменено]** M1–M9 **[R2]** M1–M13
+  красные.
 - `_AUTHORED_CHARS` по содержимому равен прежнему; ни один id, который сегодня получает `prompt`,
   не теряет его (тест 5).
 - Ни одна строка `next:` не печатает закавыченный токен с нечётным хвостом `\`; на стенде остаются
-  только ограничения из раздела 0.
+  только ограничения из **[заменено]** раздела 0 **[R2]** 10.6.
+- **[R2]** Ни одно значение `--dir` в `next:` не открывается `-` и у корня-каталога не
+  оканчивается разделителем; повторный `doctor` по напечатанной строке печатает ту же строку
+  (неподвижная точка: `C:\.`, `./-proj`).
 - `tests/test_doctor.py` ≤ 800 строк (ожидаемо 788), строки ≤ 100 символов во всех тронутых и новых
   файлах, один перевод строки в конце, без хвостовых пробелов.
 - Docstring `_spelled` называет каждое оставшееся ограничение с оболочкой.
@@ -462,15 +611,24 @@ python "$w\e2e3.py" $src "$w\e2e-fix" | Out-File -Encoding utf8 "$w\e2e3-fix.txt
 - Не удваивать внутренние `\` и не трогать `spell`, `render`, заголовок отчёта (там остаётся корень
   как набран).
 - Не добавлять Git sh/PowerShell 7 в автотесты и не ставить `-ExecutionPolicy`; не трогать
-  `tests/test_command_line_cap.py` (doctor-тестов в `CAPPED` нет, как решено в N2).
+  `tests/test_command_line_cap.py` **[заменено]** (doctor-тестов в `CAPPED` нет, как решено в N2).
+  **[R2]** N2 в итоге внёс `tests/doctor_printed.py` и `tests/test_doctor_printed.py` в `CAPPED`
+  (`117b1da`); в отчёте попросить оркестратора добавить туда `tests/test_doctor_quoting.py`.
 - Не раздувать `tests/test_doctor.py`; не править `N2-REPORT.md` и чужие R1.x-файлы.
 - Без коммитов, push, stash, checkout, reset, git config.
+- **[R2]** Не делать корень абсолютным (`absolute()`, `resolve()`), не переходить на форму
+  `--dir=<root>` (меняет `_dir_args`) и не брать разделитель из `os`; не добавлять позиционных
+  правил («кавычить только ведущий `=`/`@`») — символ выходит из `_BARE_CHARS` целиком.
+- **[R2]** Не кавычить `!` иначе и не «чинить» историю bash/zsh: только docstring.
 
 ### 7.10 Отчёт
 
 `docs/recovery/2026-10-20/tasks/N3-REPORT.md` по `TASK-REPORT-TEMPLATE.md`: ханки по файлам (с
 пометкой, какие ложатся поверх незакоммиченного N2), красный прогон до правки, зелёные после, мутанты,
 ручной стенд, «Не проверено» (PowerShell 7, Git sh в CI, POSIX-тест локально только skipped).
+**[R2]** N2 закоммичен (`117b1da`): ханки просто по файлам. В «Не проверено» ещё: zsh локально
+(только тест 7 на macOS CI, если там есть `zsh`), `!` в интерактивных bash/zsh (измерен
+`set -H` в Git bash), UNC кроме `\\localhost\C$`.
 
 ## 8. Не проверено
 
@@ -492,3 +650,147 @@ python "$w\e2e3.py" $src "$w\e2e-fix" | Out-File -Encoding utf8 "$w\e2e3-fix.txt
 `proto-doctor.diff`, копия с правкой `tc\`, рабочие каталоги `p1`–`p3`, `s3old`, `s3new`,
 `e2e-old`, `e2e-new`. Свои `pt-o*` в `C:\Users\Public` и `C:\Users\Пользователь` удалены; чужие
 `pt-f`, `pt-m3` не тронуты. Стенд `n2-sk` не изменялся.
+
+## 10. Пересмотр после опровержения скептиком
+
+- Автор: Opus 5.5, 21.10.2026. HEAD `117b1da` (в нём закоммичен N2; `src/` с `79cd652` не менялся).
+  Режим только чтения; в репозитории правлены только этот раздел, раздел 7 (пометки **[заменено]**
+  / **[R2]**) и строка-указатель в шапке. Разделы 0–6, 8, 9 — история первой редакции.
+- Диагностика скептика — `C:\Users\Пользователь\Documents\Codex\work\n3-sk2\`: `dash_e2e.py`,
+  `sim.py` → `sim1.txt`, `fuzz.py` → `fuzz.txt`, `bang2.sh`, `patch.py` (правило 7.3 первой
+  редакции в `n3-sk2\src`). Мой стенд — `...\work\n3-op2\` (10.8); скрипты скептика я только
+  запускал, с выводом в свои каталоги.
+
+### 10.1 Итог
+
+Все четыре возражения подтверждены: 1, 3, 4 — измерением, 2 — по коду и документации zsh. Правило
+первой редакции остаётся, к нему три правки и одна строка docstring:
+
+| # | Возражение | Подтверждено | Решение |
+| --- | --- | --- | --- |
+| 1 | `.\-proj` → `--dir -proj` | exit 2 в 4 оболочках (сегодня 0) | `./` перед корнем на `-` |
+| 2 | zsh `EQUALS`: голое `=scout` | по коду; zsh не измерен | `=` вне `_BARE_CHARS` |
+| 3 | `\`, `/` → `"\\"`; UNC + `\` | PS 5.1: «cannot inspect \\» | якорю — `.`: `C:\.`, `\.` |
+| 4 | `!` в `"..."` | bash 5.2, `set -H`: «event not found» | документировать |
+
+На полной матрице (10.7) прототип даёт 168/168 в cmd и PowerShell 5.1 (редакция 1: 154 и 14 `+\`),
+ни одного argv, который отвергает argparse (редакция 1: 10), и расходится в sh/dash только на UNC и
+`\\?\` — как редакция 1 и как сегодня (Git sh не обещан). Ограничение редакции 1 «PS 5.1 добавляет
+`\` к `C:\`» снято.
+
+### 10.2 Возражение 1: ведущий дефис после нормализации
+
+- `n3-sk2\dash_e2e.py`: исходный код печатает `.\-proj`, `./-proj`, `.\--` как набраны, повтор —
+  exit 0; редакция 1 — `--dir -proj`, `--dir --`, exit 2 «argument --dir: expected one argument».
+  Один `-` argparse принимает как значение (exit 0).
+- `n3-op2\e2e4.py` (настоящий CLI; строка вставлена в PowerShell 5.1, cmd, Git sh, dash):
+  редакция 1 — exit 2 во всех четырёх для `.\-proj`, `./-proj`, `-proj`, `.\-proj\`, `.\--`.
+  Сверх скептика: корень, набранный `--dir=-proj`, исходный код печатает `--dir -proj` — exit 2 уже
+  сегодня. Тот же инвариант N2, просто не покрытый корпусом.
+- Отвергнуто: абсолютный путь (`absolute()` читает cwd и меняет вид только одного класса корней);
+  форма `--dir=<root>` (меняет `_dir_args`, форму которого держит `test_doctor_argv_doors.py`);
+  нормализовать только хвост (свой разбор якорей и `..` вместо `Path`); оставить корень как набран
+  (при `--dir=-proj` дефис всё равно ведущий).
+- Выбрано: если нормализованный корень открывается `_FLAG_MARK`, печатать `./` + корень. `./`, а не
+  `.\`: `os` в `doctor.py` запрещён, `./` понимают Windows и все три оболочки, токен остаётся голым,
+  `Path("./-proj") == Path("-proj")`, повторный `doctor` печатает то же. `..\-x` не трогается.
+- Измерено: e2e4 — exit 0 во всех четырёх оболочках для всех пяти форм; `sim2` — 0 argv с
+  отказом argparse (исходный код — 2, редакция 1 — 10).
+
+### 10.3 Возражение 2: zsh и ведущий `=`
+
+- **Не измерено:** zsh на машине нет (Git `usr\bin` — bash 5.2.37 как `sh.exe` и dash; WSL без
+  дистрибутивов).
+- По документации zsh (zshexpn, «`=` expansion»; zshoptions, `EQUALS` включена по умолчанию):
+  слово, начинающееся с некавыченного `=`, заменяется полным путём команды; нет команды — ошибка
+  «not found», строка не выполняется; `=python` молча становится `/usr/bin/python`. В кавычках не
+  выполняется. По коду: `_spellable("=scout")` истинно, `=` в `_BARE_CHARS` — печатается голым;
+  относительный корень `=x` — так же.
+- Решение: `=` вне `_BARE_CHARS` целиком, как `@` в редакции 1 (`a=b` кавычится без нужды —
+  безвредно); `_AUTHORED_CHARS` сохраняет `=`. Измерено (`sim2`, cmd, PS -i/-f, sh, dash, sh-conv):
+  `"=scout"`, `"="`, `"=="`, `"=a=b"`, `"a=b"`, `"=python"`, корни `"=x"`, `"=python"` — OK; голый
+  `=` в остальных оболочках безвреден (`fuzz.txt` скептика: 0 из 15 624).
+- Тест 7 (7.2) запускает и zsh, если он есть: на macOS CI это единственное измерение.
+
+### 10.4 Возражение 3: якоря
+
+- Подтверждено (e2e4, редакция 1): `--dir \` и `--dir /` печатаются `"\\"`; PowerShell 5.1 отдаёт
+  программе `\\` — «cannot inspect \\: not a directory»; cmd, sh, dash — OK. Сегодня голый `\`
+  работает в PS и cmd (в sh — exit 2). `\\localhost\C$` → `str(Path)` = `\\localhost\C$\` →
+  `"...C$\\"` → PS отдаёт лишний `\` (тот же каталог). `sim2`, PS: 154 OK, 10 `+\` тот же путь,
+  4 `+\` другой путь (`\`, `/`).
+- Решение (предложение скептика): якорь (`path.root and not path.name`) печатается с `.`. Тогда ни
+  один корень-каталог на Windows не оканчивается на `\`, и PS 5.1 нечего удваивать. Удвоение в
+  `_spelled` остаётся: оно точно и для CRT, и для sh (`"a\\"` → `a\`), а хвостовой `\` возможен у
+  POSIX-имени `a\` и у вырожденных `\\`, `\\srv\` (не каталоги). Без `path.root` пустой корень стал
+  бы `..` (мутант M13). `C:` (относительно диска) не трогается; на POSIX `/` → `/.`.
+- Измерено: `sim2` — PS 168/168; e2e4 — `doctor --dir "C:\."`, `"\."`, `"\\localhost\C$\."` в PS и
+  cmd дают отчёт (exit 1); в sh/dash UNC → `\localhost\...`, как сегодня.
+- Цена: detail «under C:\.» вместо «under C:\»; заголовок отчёта — как набрано.
+
+### 10.5 Возражение 4: `!`
+
+- Измерено: Git bash 5.2.37, `set -o history -H` (так работает интерактивный bash):
+  `printf '[%s]\n' "/home/u/p!q"` — «!q: event not found», строка не выполнена; `"/u/p!"`,
+  `"/u/p! q"`, `"/u/p!=q"` не раскрываются. zsh — по документации так же. Если событие найдено,
+  подставится текст из истории: тихо другой путь (худший случай того же рода, что D3).
+- Роли и авторы `!` не содержат — касается только корня, который читатель набрал сам. Одинарные
+  кавычки ломают cmd (4.3). Решение: строка в ограничениях docstring `_spelled`.
+
+### 10.6 Итоговое правило (редакция 2)
+
+```text
+_BARE_CHARS     = A-Z a-z 0-9 и  - _ . : / +              (было ещё , @ ~ \ =)
+_AUTHORED_CHARS = A-Z a-z 0-9 и  - _ . , : / @ + =        (как сегодня, явным множеством)
+_spelled(t)     = t, если t непуст и все символы из _BARE_CHARS;
+                  иначе '"' + t + (хвостовые '\' t ещё раз) + '"'
+inspect(root)   : path = Path(root); text_root = str(path)
+                  якорь (path.root и не path.name):  text_root += "."
+                  text_root открывается "-":         text_root = "./" + text_root
+```
+
+Ограничения для docstring `_spelled`: D3 (`$`, обратная кавычка в PS и sh; `%VAR%`, `!VAR!` в
+cmd); `!` в интерактивных bash/zsh; UNC и `\\?\` в Git sh (`\\` → `\`); MSYS-конверсия ведущего
+`/` в Git Bash; zsh — по документации (локально не измерен).
+
+### 10.7 Проверка прототипа
+
+Прототип — `n3-op2\tc` (`proto2-doctor.diff`: doctor.py +10 −3 без docstring-ов). `sim2.py` —
+`sim.py` скептика, где `--dir` случая с ролью взят из `inspect` самого варианта, плюс формы с
+дефисом, `=` в ролях и корнях, кириллица и пробел с `\` и `/` в хвосте, якоря `C:\`, `C:/`, `\`,
+`/`, UNC с хвостом и без, `\\?\`, пустой корень: 168 случаев, 40 ролей. OK / `+\` / DIFF:
+
+| Исполнитель | Исходный код | Редакция 1 | Редакция 2 |
+| --- | --- | --- | --- |
+| ps-i, ps-f | 91 / 0 / 77 | 154 / 14 / 0 | 168 / 0 / 0 |
+| cmd-i, cmd-b | 146 / 0 / 22 | 168 / 0 / 0 | 168 / 0 / 0 |
+| sh, dash | 96 / 0 / 72 | 144 / 0 / 24 | 144 / 0 / 24 |
+| sh-conv | 93 / 0 / 75 | 143 / 0 / 25 | 143 / 0 / 25 |
+| argv, отвергаемые argparse | 2 | 10 | 0 |
+
+У исходного кода PS-расхождения — в основном `@scout` в каждом случае с ролью (D2). В редакции 2
+24 DIFF sh/dash — только 12 корней UNC/`\\?\`/`\\.\` × 2; sh-conv ещё роль `//x` (MSYS).
+
+- `stand3` первой редакции на прототипе: PS 87/0/12, cmd 93/0/6, sh 87/0/12 — только D3.
+- Фазз голых токенов (`fuzz.txt` скептика): 15 624 токена до 3 символов над
+  `aexdlkbmgtsuyn0179-_.:/+=` — 0 расхождений в ps-f, cmd, sh, dash; `_BARE_CHARS` редакции 2 —
+  подмножество.
+- Фазз кавычек (`fuzzq.py`): 1 379 закавыченных токенов до 3 символов над `a=@,~\ Я.-:` — cmd 0;
+  PS 111, и все — токены с хвостовым `\` без пробела (корнем-каталогом после 10.6 не бывают);
+  sh/dash 10, и все — с внутренним `\\` (UNC). Других классов нет.
+- Тесты (7.2): на исходном коде 21 failed, 21 passed, 1 skipped; на редакции 1 — 8 failed (`=scout`,
+  `a=b`, 4a ×4, 4b, тест 6), то есть каждое измеримое на Windows возражение ловится автотестом; на
+  прототипе зелёные — 148 passed, 1 skipped (ASCII) и 293 passed, 1 skipped (кириллица + cap).
+  Мутанты M1–M13 — все красные (7.6).
+
+### 10.8 Артефакты и не проверено
+
+`C:\Users\Пользователь\Documents\Codex\work\n3-op2\`: `rule.py` (правило на обоих видах путей без
+файловой системы), `sim2.py` → `sim2-{orig,sk,proto}.txt`, `e2e4.py` → `e2e4-*.txt`, `fuzzq.py` →
+`fuzzq-proto.txt`, `mutate2.py` → `mutants2.txt`, `red-orig.txt`, `red-sk.txt`, `stand3-r2.txt`,
+`proto2-doctor.diff`, `orig\` (`src` из `git archive HEAD`), `tc\` (черновик). Рабочие каталоги
+стендов и свои `pt-q1`–`pt-q5` удалены; чужой `pt-f` не тронут; `n3-sk2`, `n2-sk`, `n3-op` не
+изменялись.
+
+Не проверено: zsh (нет на машине); интерактивный `!` в zsh; PowerShell 7; Linux/macOS (тест 7
+только skipped); UNC, кроме `\\localhost\C$`; Windows CI.

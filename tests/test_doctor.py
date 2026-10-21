@@ -167,7 +167,7 @@ def ran(argv):
 #: `SHELL_SYNTAX` below is: a guard that asks the code under test which
 #: characters are safe agrees with it by construction, and would have gone on
 #: agreeing while the rule was "quote if it holds a space".
-BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.:/+")
 
 
 def needs_quoting(token):
@@ -714,10 +714,12 @@ def test_the_only_shell_syntax_a_printed_command_carries_is_the_readers_own_path
 #: forbids `< > : " / \ | ? *` and not one of these holds one. The first group
 #: needs the quotes and, apart from the last two rows, holds no space; the
 #: second group needs none. A rule that quoted on a space alone would agree
-#: with the last two rows of the first group and disagree with the other six.
-NEEDING_QUOTES = ["p&q", "p;q", "p$(id)", "p`q", "p!q", "p^q", "p q",
+#: with the last two rows of the first group and disagree with the other eight.
+#: On Windows every root holds a backslash and is quoted whatever its last
+#: name is, so the second group tells the rules apart on POSIX only.
+NEEDING_QUOTES = ["p&q", "p;q", "p$(id)", "p`q", "p!q", "p^q", "p,q", "p=q", "p q",
                   "Program Files (x86)"]
-NEEDING_NONE = ["plain", "p-q", "p_q", "p.q", "p+q", "p,q", "p=q"]
+NEEDING_NONE = ["plain", "p-q", "p_q", "p.q", "p+q"]
 
 
 @pytest.mark.parametrize("name", NEEDING_QUOTES + NEEDING_NONE)

@@ -47,12 +47,18 @@ def test_a_quoted_root_is_read_back_out_of_the_printed_line_as_the_path_it_is(tm
     ("doctor", "--dir", "C:\\Users\\Пользователь\\project\\a b"),
     ("prompt", "--role", "scout", "--dir", "C:\\Program Files (x86)\\p&q"),
     ("doctor", "--dir", ""),
+    ("doctor", "--dir", "C:\\Мой проект\\"),    # a closing backslash is written twice
+    ("doctor", "--dir", "C:\\"),
+    ("prompt", "--role", "@scout"),             # quoted: PowerShell would splat it
+    ("prompt", "--role", "=scout"),             # quoted: zsh would expand it
+    ("doctor", "--dir", "C:\\."),
 ])
 def test_a_printed_line_reads_back_as_the_argv_it_was_spelled_from(argv):
     # The reading `commands` does, held against the writer it answers to and
     # apart from any directory a runner happens to give: quotes come off a
-    # quoted token, and its spaces and backslashes stay, which is what rules
-    # out `shlex.split(posix=True)`, whose escape rule eats a Windows path.
+    # quoted token, and its spaces and backslashes stay (only a closing run is
+    # halved, the C runtime's rule), which is what rules out
+    # `shlex.split(posix=True)`, whose escape rule eats a Windows path.
     line = doctor.spell(argv)
     assert printed_argv(line) == list(argv)
     assert doctor.spell(tuple(printed_argv(line))) == line   # and back, the same line

@@ -112,18 +112,31 @@ COMMAND_PREFIX = f"{_COMMAND_INDENT}next: "
 #: report off the screen.
 SHOWN_LIMIT = 80
 
-#: Every character a token of a printed command may hold and still mean itself
-#: in the shell it is pasted into. An allowlist, and not a list of
-#: metacharacters to reject: a denylist is a claim about the grammar of POSIX
-#: sh, PowerShell and cmd at once, and the character left out of it is the one
-#: that runs. The backslash and the tilde are here for the one token that is a
-#: path the reader themselves passed rather than a value out of their map.
-_BARE_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+#: Every character a token of a printed command may hold, ANYWHERE in it, and
+#: still mean itself unquoted in cmd, Windows PowerShell 5.1, POSIX sh and zsh.
+#: An allowlist, and not a list of metacharacters to reject: a denylist is a
+#: claim about the grammar of all of them at once, and the character left out
+#: of it is the one that runs. What is left out of this one, and why: the
+#: backslash, an escape in sh (`C:\Users\x` arrives as `C:Usersx`); the comma,
+#: PowerShell's array operator (`scout,07` arrives as `scout,7`); `@`, which
+#: opens a splat in PowerShell (`@scout` is not passed at all); `~`, sh's home
+#: directory at the start of a word; `=`, which zsh (option `EQUALS`, on by
+#: default) replaces with a command's path at the start of a word, or fails on
+#: ("not found"). Each is left out whole, with no rule about where in the token
+#: it stands, so a token holding one is quoted wherever it is: `a=b` is quoted
+#: without need and without harm.
+_BARE_CHARS = frozenset(string.ascii_letters + string.digits + "-_.:/+")
 
-#: What a value out of the project's map may hold. The path characters are not
-#: in it: an id needs neither, and a backslash is an escape wherever a token
-#: goes unquoted.
-_AUTHORED_CHARS = _BARE_CHARS - set("~\\")
+#: What a value out of the project's map may hold: the letters, digits and
+#: `-_.,:/@+=` it has always held, listed in full because it is no longer a
+#: subset of `_BARE_CHARS`. `,`, `@` and `=` are legal in an id, and
+#: `_spelled` prints an id holding one in double quotes, where it means itself
+#: in every shell: refusing it would take a working `conduct prompt` away from
+#: a legal id for nothing. What an id must never hold is anything a shell still
+#: acts on INSIDE double quotes (`$`, a backtick, `"`, the typographic quotes
+#: PowerShell reads as `"`, `\`, `%`, `!`), and that is why none of them is
+#: listed. Do not narrow this to follow `_BARE_CHARS`.
+_AUTHORED_CHARS = frozenset(string.ascii_letters + string.digits + "-_.,:/@+=")
 
 #: What a token that opens with this means to `argparse`, whatever it holds
 #: after it: a flag. `conduct prompt --role --dir` is not a command with an
@@ -191,7 +204,8 @@ def _spellable(value: str) -> bool:
         theirs. `-x` is quieter and just as unrunnable — `argparse` reads it
         as a flag and exits 2 on the command this report printed. A finding
         about a value that is not spellable names a command a reader can run
-        instead.
+        instead. An id holding `,`, `@` or `=` IS spellable: it is no longer
+        printed bare, and `_spelled` puts it in double quotes.
     """
     return (bool(value) and not value.startswith(_FLAG_MARK)
             and not set(value) - _AUTHORED_CHARS)
@@ -472,8 +486,39 @@ def inspect(root: Path | str) -> list[Check]:
         there is genuinely nothing to inspect, and five unknowns saying so
         would be noise rather than honesty — the one finding states in its own
         words that nothing else could be checked, and no check comes back `OK`.
+
+    The root a command carries is not quite the root typed. It is normalised
+    here, once, before any check builds a command from it, and not in
+    `_dir_args`: that function's form is held by
+    `tests/test_doctor_argv_doors.py`, and a call inside it would be a door of
+    its own. `Path` drops a trailing separator, which is the point of it: a
+    quoted token ending in a backslash is the one place the C runtime and
+    Windows PowerShell 5.1 read a line differently (see `_spelled`), and a
+    root typed as `C:\\proj\\` would otherwise be printed with one. It also
+    turns `""` into `.`, which `_dir_args` leaves out, where PowerShell 5.1
+    would drop an empty argument and leave `--dir` with no value. Two roots
+    `Path` leaves alone are handled after it:
+
+    * An anchor (`C:\\`, `\\`, `\\\\srv\\share\\`, `/`) keeps its separator and
+      is printed with a closing dot instead: `C:\\.`, `\\.`, `/.`. It is the
+      same directory with no separator for PowerShell 5.1 to double (`\\`
+      would arrive as `\\\\`, which is not a directory). `path.root` is what
+      keeps `""` from becoming `..`.
+    * A root that now opens with a dash (`.\\-proj` is `-proj` to `Path`) is
+      printed `./-proj`, because `--dir -proj` is a usage error. `./` and not
+      the platform's separator: `os` is off this module's imports, and
+      Windows and all three shells read `./`. The token stays bare, and
+      `doctor` run on the printed line prints the same line again.
+
+    The details and the commands use this root; the header of the report
+    keeps the root as it was typed.
     """
-    text_root = str(root)
+    path = Path(root)
+    text_root = str(path)
+    if path.root and not path.name:      # an anchor: C:\  \  \\srv\share\  /
+        text_root += "."
+    if text_root.startswith(_FLAG_MARK):  # `.\-proj` was normalised to `-proj`
+        text_root = "./" + text_root
     try:
         loaded = store.load(root)
     except store.StoreError:
@@ -502,15 +547,32 @@ def _spelled(token: str) -> str:
     `_BARE_CHARS` is: the metacharacter left out of a denylist is the one that
     runs.
 
+    A quoted token carries its own trailing backslashes twice. That is the
+    closing-quote rule of the C runtime every Windows program reads its command
+    line with (`CommandLineToArgvW`): a backslash before a double quote
+    escapes the quote, except in an even run, where each pair is one backslash
+    and the quote closes. So `"C:\\x\\"` never closes, and `"C:\\x\\\\"` is
+    `C:\\x\\`. POSIX sh agrees (inside double quotes `\\\\` is one backslash),
+    and cmd hands the line to the program untouched. Windows PowerShell 5.1 is
+    the odd one out: it quotes an argument for the program again only when the
+    argument holds a space, and passes any other as written, so a quoted token
+    with no space that ends in a backslash reaches the program with one too
+    many. That is why `inspect` prints no directory root with a separator on
+    the end (an anchor gets a closing dot), and why a quoted token that still
+    ends in a backslash is only ever one that is not a directory — a
+    degenerate `\\\\` or `\\\\srv\\`, or a POSIX name that ends in one — where the
+    doubling is exact. A backslash inside a token is never doubled.
+
     Double quotes and not single: they are the one quoting form POSIX sh,
-    PowerShell and cmd all read. What they do NOT neutralise in a POSIX shell
-    is `$`, a backtick, a backslash and a double quote itself — so nothing
-    holding one may reach here from the project's map, and nothing does.
+    PowerShell and cmd all read, and cmd does not read single quotes as
+    quotes at all. What double quotes do NOT neutralise is listed at the end
+    of this docstring, and nothing holding one of those characters may reach
+    here from the project's map — and nothing does.
     Exactly two kinds of token arrive here already authored rather than
     written by this module: a role id out of `cycle.roles`, and a lane author,
     which is the stem of a filename `store` found on disk. `_spellable` is
     what covers both — a `Check.command` is built with one only after it
-    returned True — and it admits none of the four. `store.AUTHOR_RE` narrows
+    returned True — and it admits none of them. `store.AUTHOR_RE` narrows
     an author further, to letters, digits, `_` and `-`, and that is worth
     knowing when reading a `--author` token; it is not what this paragraph
     rests on, and it is not enough on its own, since it admits a leading dash.
@@ -530,14 +592,49 @@ def _spelled(token: str) -> str:
     themselves typed — and the root is the reason the rule is `_BARE_CHARS`
     and not "quote on a space": a reader's own directory may hold `&`.
     What quoting the root does is make it ONE token, which is all this
-    function claims: a root holding `$` or a backtick still expands inside
-    double quotes in a POSIX shell, and nothing here prevents that. That is
-    accepted rather than solved, because the root is the path the reader
-    passed on their own command line and not a value out of their map — the
-    reader is not the attacker. No value this module reads from a project can
-    reach that position.
+    function claims: what a shell still expands inside double quotes (below)
+    it still expands, and nothing here prevents that. That is accepted rather
+    than solved, because the root is the path the reader passed on their own
+    command line and not a value out of their map — the reader is not the
+    attacker. No value this module reads from a project can reach that
+    position.
+
+    What double quotes do not neutralise, by shell:
+
+    * Windows PowerShell 5.1: `$` (a variable), the backtick (its escape),
+      `"`, and the typographic quotes U+201C, U+201D and U+201E, which it
+      reads as `"`. `"C:\\x$y\\p"` arrives as `C:\\x\\p`.
+    * POSIX sh and bash, and zsh by its documentation (not measured here):
+      `$`, a backtick, `"`, and a backslash before any of those or before
+      another backslash; that last is why a UNC root `\\\\srv\\share` inside
+      quotes arrives in Git sh as `\\srv\\share`, and one typed with forward
+      slashes, `//srv/share`, too: the root is printed the way `Path` writes
+      it on Windows, with backslashes. In an INTERACTIVE bash or
+      zsh also `!`: history expansion reads it inside `"..."`, so `"p!q"` is
+      "event not found" and the line does not run, and where the event does
+      exist its text is substituted without a word.
+    * cmd: `%VAR%`, and `!VAR!` where delayed expansion is on.
+
+    No other form of quotes serves PowerShell and cmd both (single quotes keep
+    `$`, a backtick and `%` literal in PowerShell and are part of the name in
+    cmd; a backtick or `^` escape is a plain character in the other), and the
+    reader works in both, so this is stated and not fixed with a second
+    spelling. The worst case is a command that runs, not one that fails:
+    `conduct init ... --dir "C:\\x$y\\proj"` pasted into PowerShell scaffolds
+    `C:\\x\\proj`. Every other command fails loudly (`cannot inspect ...: not
+    a directory`).
+
+    Git sh on Windows is not a shell the docs promise (`docs/first-run-v1.md`
+    names PowerShell, and a terminal on macOS and Linux), but an ordinary
+    Windows path now reaches it intact, since a backslash is never bare. What
+    is left there is not about quotes: the UNC case above, and MSYS rewriting
+    an argument that opens with `/` into a Windows path before the program
+    sees it. PowerShell 7 is not measured.
     """
-    return token if token and not set(token) - _BARE_CHARS else f'"{token}"'
+    if token and not set(token) - _BARE_CHARS:
+        return token
+    closing = len(token) - len(token.rstrip("\\"))
+    return '"' + token + "\\" * closing + '"'
 
 
 def spell(argv: tuple[str, ...]) -> str:

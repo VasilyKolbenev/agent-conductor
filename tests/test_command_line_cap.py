@@ -158,6 +158,7 @@ CAPPED = (
     "tests/test_fakegh.py",
     "tests/doctor_printed.py",
     "tests/test_doctor_printed.py",
+    "tests/test_doctor_quoting.py",
     "tests/test_browser_gate_netfail.py",
     "tests/test_policy_driver_stalled.py",
     "tests/test_policy_view_ended.py",

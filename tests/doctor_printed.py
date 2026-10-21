@@ -20,11 +20,25 @@ from conductor import doctor
 _PRINTED_TOKEN = re.compile(r'"([^"]*)"|([^ "]+)')
 
 
+def _unquoted(inside):
+    """A quoted token's value: the backslashes before its closing quote, halved.
+
+    The C runtime's rule (`CommandLineToArgvW`): `2n` backslashes before the
+    closing quote are `n` backslashes and the quote closes, which is why
+    `doctor._spelled` writes a closing backslash twice. An odd run would have
+    escaped the quote; `spell` never writes one, and `printed_argv` refuses a
+    line that has one because `spell` would not give it back.
+    """
+    tail = len(inside) - len(inside.rstrip("\\"))
+    return inside[:len(inside) - tail // 2]
+
+
 def printed_argv(line):
     """The argv a printed command line spells, `conduct` itself left off.
 
-    A quoted token is one argument with the quotes taken off, spaces and
-    backslashes kept; a bare token ends at the next space.
+    A quoted token is one argument with the quotes taken off and its closing
+    backslashes halved (the C runtime's rule, `_unquoted`); spaces and inner
+    backslashes stay. A bare token ends at the next space.
 
     The reading is then held to the writer's contract: spelling the argv it
     found with `doctor.spell` must give `line` back, character for character.
@@ -36,7 +50,7 @@ def printed_argv(line):
         AssertionError: `line` is not the one `doctor.spell` writes for the
             argv read off it, naming both.
     """
-    tokens = [m.group(1) if m.group(1) is not None else m.group(2)
+    tokens = [_unquoted(m.group(1)) if m.group(1) is not None else m.group(2)
               for m in _PRINTED_TOKEN.finditer(line)]
     argv = tokens[1:]
     spelled = doctor.spell(tuple(argv))
