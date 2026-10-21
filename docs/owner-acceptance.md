@@ -1,5 +1,7 @@
 # Owner acceptance — can a person operate this without a developer?
 
+Russian version: [owner-acceptance.ru.md](owner-acceptance.ru.md).
+
 `docs/release-smoke.md` asks whether the artifact installs and answers. This asks a different
 question, and it is the one that decides an alpha: **can somebody who did not build this open it
 and get work done?**
@@ -80,9 +82,11 @@ stopped. In this newly created project none have been started. See
 `conduct up` occupies the window it runs in until you stop it with Ctrl+C (step 16), so give it
 a window of its own. Open a **second** Windows PowerShell window and leave it for the server;
 keep this first window for commands. The variables do not carry over, so in the second window
-set them again (with the folder names you chose in steps 1 and 2) and start the server:
+set them again (with the folder names you chose in steps 1 and 2), clear `PYTHONPATH` there too,
+exactly as step 1 does, and start the server:
 
 ```powershell
+$env:PYTHONPATH = ""
 $CONDUCT = Join-Path $env:LOCALAPPDATA "DecemberCommand\acceptance\venv\Scripts\conduct.exe"
 $PROJ = Join-Path $env:USERPROFILE "DecemberTrial"
 & $CONDUCT up --dir $PROJ --port 7801
@@ -227,13 +231,20 @@ command; never `Stop-Process`), and the same Agents screen must now show that pr
 
 Without a compatible reviewed installation and explicitly authorized credentials, continue
 the editing checks but record the real-execution steps as blocked, never passed. Two more facts
-of this build, as it behaves today and not as a final decision: a step that must run a task is
-refused before anything starts when its participant signs in by subscription (the execution
-boundary does not yet carry that road; reading the subscription's quotas still works), and on
-every platform but Windows (the boundary exists only there). The refusal reads *step '…' demands
-sandbox route 'execution-boundary' that this build does not provide*; record it as blocked, in
-those words. A task runs on Windows by the API-key road, with the pinned build installed under a
-folder shaped `...\harnesses\<name>\<version>\`; see the [first-run instructions](first-run-v1.md).
+of this build. The first is the owner's decision H5-V1 (21 October 2026,
+[OPEN-DECISIONS](recovery/2026-10-20/OPEN-DECISIONS.md)): in V1 real tasks run only on the API-key
+road, so a step that must run a task is refused before anything starts when its participant signs in
+by subscription; reading the subscription's quotas still works, and the scheme with a temporary copy
+of the credentials is left until after V1. The second is that the same refusal comes on every platform but
+Windows (the boundary exists only there). The plan's door words it *step '…' demands sandbox route
+'execution-boundary' that this build does not provide*; in the desk wizard the step reads *This step
+needs the isolation (execution boundary), and this computer cannot give it to the agent chosen, so
+nothing was started…* (message key `wizard.chain.boundary`), and the Agents screen says on a
+subscription row that it only reads quotas. Record it as blocked, in those words. A task runs on
+Windows by the API-key road, with the pinned build installed under a folder shaped
+`...\harnesses\<name>\<version>\`; see the [first-run instructions](first-run-v1.md). One caveat for
+a subscription connection: reading its quotas is not a task, but it does launch the vendor's CLI
+(its version check and the vendor's RPC), outside the boundary and with the real login directory.
 Each user supplies their own credentials; the product distributes neither the owner's key nor
 its value. Configure names in the wizard, keep values in the environment of the launched
 server, and never paste a real key into the document form, terminal command history or a

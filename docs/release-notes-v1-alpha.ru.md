@@ -114,7 +114,7 @@ CLI — `conduct`, парадная дверь — Workflow Studio на `http://
 ## Как установить и принять
 
 - Установка и первый запуск: [first-run-v1.md](first-run-v1.md) / [first-run-v1.en.md](first-run-v1.en.md).
-- Приёмка владельцем одной задачи, семнадцать шагов: [owner-acceptance.md](owner-acceptance.md).
+- Приёмка владельцем одной задачи, семнадцать шагов: [owner-acceptance.ru.md](owner-acceptance.ru.md).
 - Две задачи с одной командой, ничего не смешивается, десять шагов:
   [acceptance-two-tasks.ru.md](acceptance-two-tasks.ru.md) / [acceptance-two-tasks.md](acceptance-two-tasks.md).
 - Смок собранного артефакта, двенадцать шагов: [release-smoke.md](release-smoke.md); скриптовая дорога

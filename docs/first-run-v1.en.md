@@ -79,7 +79,9 @@ On Windows keep the project path short: at most 82 characters, like `%USERPROFIL
 `init`, activation, and `up` work at any length, but saving a workflow draft is refused with
 `windows_path_too_long` when the project path plus 49 plus the length of the workflow identifier
 (up to 128 characters) exceeds 259, the path budget this build keeps for a draft.
-`conduct projects add` is stricter: the project path must not exceed 100 characters.
+For a draft the project-root limit is 82 (root + 49 + identifier ≤ 259).
+`conduct projects add` has its own, separate refusal, `root_path_too_long`, with its own limit: the
+project path must not exceed 100 characters; it does not affect `init`, activation, or `up`.
 
 **Windows**
 
@@ -127,15 +129,22 @@ Run the interactive wizard, once for each needed connection:
 "$conduct" providers --dir "$project"
 ```
 
-| Tool | Version pinned by this candidate | Supply to the wizard |
-| --- | --- | --- |
-| Claude Code | 2.1.239 | Native executable, subscription login, dedicated `CLAUDE_CONFIG_DIR`. |
-| Codex | 0.112.0 | Native executable, subscription login, dedicated `CODEX_HOME`. |
-| Kimi Code | 0.38.0 | Native executable, subscription login, dedicated `KIMI_CODE_HOME` with managed OAuth login. |
-| Grok Build | 1.0.5 | Native executable, subscription login, dedicated `GROK_HOME` with native login. |
-| DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. |
+| Tool | Version pinned by this candidate | Supply to the wizard | For tasks in V1 |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.239 | Native executable, subscription login (quotas are read), dedicated `CLAUDE_CONFIG_DIR`. | An API key is needed: the name `ANTHROPIC_API_KEY` in `env_allow`. |
+| Codex | 0.112.0 | Native executable, subscription login (quotas are read), dedicated `CODEX_HOME`. | An API key is needed: the name `OPENAI_API_KEY` in `env_allow`. |
+| Kimi Code | 0.38.0 | Native executable, subscription login (quotas are read), dedicated `KIMI_CODE_HOME` with managed OAuth login. | An API key is needed: a variable name in `env_allow`. The product has not checked its API-key operation with the real vendor. |
+| Grok Build | 1.0.5 | Native executable, subscription login (quotas are read), dedicated `GROK_HOME` with native login. | An API key is needed: a variable name in `env_allow`. The product has not checked its API-key operation with the real vendor. |
+| DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. | The same API-key mode. |
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
+
+In the wizard the question about the login reads: `1` is the tool's own subscription login, `2` is a
+credential read from the environment. Under it the wizard prints (English only): "In this version
+only 2 runs tasks inside the execution boundary (on Windows); with 1 the quotas are read and every
+task is refused before it starts." For real tasks choose `2` and allow the variable name; choice
+`1` leaves only the quota readings. `env_allow` is the list of allowed environment variable
+names (never values).
 
 To reuse these connections in several projects, configure the shared profile once
 in a terminal with `conduct providers --profile` (repeat for each connection).
@@ -160,7 +169,7 @@ For the four subscription tools, use the native executable, not a `.cmd` or Powe
 The wizard checks paths; the native call checks the pinned version. A newer release is not automatically interchangeable.
 The DSH desktop application is not a substitute for the CLI entrypoint in this configuration.
 
-For a subscription, choose the dedicated profile in which you have completed the native login.
+For a subscription (in V1 it is needed only to read quotas), choose the dedicated profile in which you have completed the native login.
 The wizard prints the login instructions; it does not sign in for you. A working dedicated login does not need to be repeated.
 Extra hooks, plugins, MCP configuration, or nonstandard routing may make a profile unsuitable.
 While Studio uses it, do not use the same profile for a parallel personal session: per-step session cleanup cannot distinguish that other session's files.
@@ -168,22 +177,38 @@ While Studio uses it, do not use the same profile for a parallel personal sessio
 At the environment question, enter **variable names**, never secret values.
 A usual Windows base is `SYSTEMROOT WINDIR PATH TEMP TMP`; add only names your tool requires.
 Do not pass API-key variables to the subscription route: that changes which payment route is used.
+For tasks in V1 set up the connection on the API-key road (choice `2` above): the variable name in
+`env_allow`, the value in the server's environment.
 
 ### Where tasks run in this build
 
-A task runs inside an execution boundary. This is how the current build behaves; it is not a
-final decision.
+A task runs inside an execution boundary. For V1 this is the owner's decision H5-V1 (21 October
+2026, [OPEN-DECISIONS](recovery/2026-10-20/OPEN-DECISIONS.md)): real tasks run only with an API
+key; a subscription login inside the boundary is refused before anything starts; the scheme with a
+temporary copy of the credentials is left until after V1.
 
 - **Windows.** The boundary exists. A task runs on the API-key road: the wizard allows the variable
   *name* (for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`) and the value lives
   in the environment of the server you start. The pinned build must be installed in a folder shaped
   `...\harnesses\<name>\<version>\`; otherwise the boundary cannot be provided and the step is
   refused.
-- **Subscription.** A connection set up with a subscription login does not yet run tasks inside the
-  boundary: the step is refused before anything starts, with
-  `step '…' demands sandbox route 'execution-boundary' that this build does not provide`.
-  Reading the subscription's quotas still works. Whether a subscription login can be made safe
-  inside the boundary, and how, is not yet decided.
+- **Subscription.** A connection set up with a subscription login does not run tasks inside the
+  boundary in V1: the step is refused before anything starts. This is the owner's decision, not a
+  fault. In V1 the subscription serves to read quotas; for tasks set up a connection on the API-key
+  road. A caveat: reading quotas is not a task, but it does launch the vendor's CLI. The version
+  check and the quota request (the vendor's RPC) run **outside** the boundary, with the real login
+  directory (login-home) of your dedicated profile, so keep only standard configuration in it (see
+  above). The refusal reads like this:
+
+  | Where | What it says |
+  | --- | --- |
+  | Plan and API (the plan's door) | `step '…' demands sandbox route 'execution-boundary' that this build does not provide` |
+  | Desk wizard, the run step (`wizard.chain.boundary`) | "This step needs the isolation (execution boundary), and this computer cannot give it to the agent chosen, so nothing was started. In this version a task runs in the isolation only on Windows, only for an agent that signs in with an API key (not a subscription), and only from a build installed under `...\harnesses\<name>\<version>\`." |
+  | The attempt's receipt (appears only if the transport is called around the doors; on the usual path the plan's door refuses the step earlier) | `this <tool> connection signs in with a subscription, and in this version a task runs inside the execution boundary only with an API key, so no task was spawned`; the Runs screen reads it in the runtime's words: `a subscription login does not run tasks inside the execution boundary in this version`. The subscription is named as the reason only when it is the single missing reason; on macOS / Linux and for a build installed outside `harnesses\<name>\<version>` the receipt says the general thing: the boundary is not provided for this attempt. |
+  | Agents screen, a provider row: the text next to the `subscription` chip | "Configured to use the vendor's own login, kept in its own directory. In this version it only reads quotas: a task runs inside the execution boundary only with an API key." |
+  | `conduct providers` | two lines under the login question (see above) |
+
+  The scheme with a temporary copy of the credentials is left until after V1; it does not exist now.
 - **macOS and Linux.** The boundary is not provided on these systems. Installation, project
   creation, Studio, the workflow editor, decisions, and the Agents screen work, but every step that
   would run a task is refused before anything starts, with the same message, whatever the login.
@@ -265,7 +290,7 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
-| A step is refused: `demands sandbox route 'execution-boundary'` | This is the boundary refusing; nothing was started. On macOS / Linux and on a subscription login this build does not run tasks: see [Where tasks run in this build](#where-tasks-run-in-this-build). |
+| A step is refused: `demands sandbox route 'execution-boundary'`; in the desk wizard "This step needs the isolation (execution boundary)…" (`wizard.chain.boundary`); in a receipt `this <tool> connection signs in with a subscription…` | This is the boundary refusing; nothing was started. On macOS / Linux this build does not run tasks. A subscription login does not run tasks in V1 (the owner's decision H5-V1): set up the connection on the API-key road (choice `2` in `conduct providers`). Details: [Where tasks run in this build](#where-tasks-run-in-this-build). |
 | Saving a draft: `windows_path_too_long` | Shorten the workflow identifier or move the project to a shorter path (see step 2). |
 
 ### Recovery of an old Windows record

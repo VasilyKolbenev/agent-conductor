@@ -460,13 +460,20 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   at all, and their argument vocabularies are exercised only by the contract tests and the fake
   harness. `adapters/deep_commands.py` says so at the vocabularies themselves.
 - **A plan naming a sandbox route this build cannot provide no longer opens a run.** This is the
-  deliberate live-authority tightening. `project-root` is the
-  only route this build provides; a step attaching any other `sandbox` row is now refused twice —
-  when a run is opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that
-  this build does not provide*), and again when an attempt is authorized, for runs that were
-  opened before the rule existed. **What it costs:** a workflow drawn against an earlier build
-  that named such a route must be edited before a run will open against it — remove or change
-  that attachment in the inspector's **Route and policy attachments** and publish a new revision.
+  deliberate live-authority tightening. `project-root` is the only route this build provides
+  unconditionally; a step attaching any other `sandbox` row is now refused twice — when a run is
+  opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that this build does
+  not provide*), and again when an attempt is authorized, for runs that were opened before the rule
+  existed. One route is judged by fact and not by name: `execution-boundary`, which every step that
+  starts an agent implies, is provided only on Windows and only to a connection on the API-key road
+  (the owner's decision H5-V1 of 21 October 2026). Where it is not provided, the plan's door uses
+  the sentence above, and the desk wizard's run step reads *This step needs the isolation
+  (execution boundary), and this computer cannot give it to the agent chosen, so nothing was
+  started…* (message key `wizard.chain.boundary`). On a subscription connection the Agents screen
+  already says so beforehand: *a task runs inside the execution boundary only with an API key*.
+  **What it costs:** a workflow drawn against an earlier build that named such a route must be
+  edited before a run will open against it — remove or change that attachment in the inspector's
+  **Route and policy attachments** and publish a new revision.
   Nothing about the stored document changes: publishing one is still allowed, every shipped
   revision digest is untouched, and a journal already carrying such a route still replays — it
   simply authorizes nothing. **Why it is a gain and not a regression:** the earlier build accepted
@@ -632,7 +639,15 @@ Named so that passing it is not read as more than it is.
   a person sends. Stop one by hand once, on an activated project: start `conduct up` in its own
   visible PowerShell window (a server started with `-WindowStyle Hidden` has a console that
   Ctrl+C from your window never reaches), press Ctrl+C there after the URL is printed, and read
-  `conduct ownership status`, which must say `closed`.
+  `conduct ownership status`, which must say `closed`. **Not on `$PROJ`:** step 8 scaffolds it and
+  deliberately leaves it unactivated, so `conduct up` takes no owner there (the server takes one
+  only for an activated project) and `ownership status` reads the fresh legacy state, not
+  `closed`. Take a separate disposable project instead: a new folder scaffolded as in step 8
+  (`conduct init --template default-orbit --dir <new folder>`) and then activated with
+  `conduct ownership activate --legacy-writers-stopped --dir <new folder>` (the flag confirms
+  that legacy writers have stopped; a new scaffold has none), or the trial project of the
+  [first-run instructions](first-run-v1.md), which activates it in its step 2. Do not activate
+  `$PROJ` itself: step 8 deliberately does not migrate the release fixture.
 - **`conduct tools`.** `conduct tools pin git --path <absolute path>` writes the pin of the git a
   child may run into `~/.december-command/tools.json` (or under `CONDUCT_HOME`), which this
   procedure would leave on the machine it ran on; it is held by `tests/test_tool_pins.py`.
