@@ -101,6 +101,9 @@ December Command coordinates these applications; you keep their accounts and pay
 | DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
 These are the V1 integration targets, not a claim that all five have passed live acceptance.
+In this build a task runs only on Windows, inside the execution boundary, and by the API-key road:
+a subscription login is read for quotas but does not yet run tasks, and macOS and Linux refuse a
+task step before it starts ([details](docs/first-run-v1.en.md#where-tasks-run-in-this-build)).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.

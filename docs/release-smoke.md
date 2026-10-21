@@ -57,7 +57,8 @@ you are shipping.
 & $CONDUCT --help
 ```
 
-Expect exit 0, and this list of subcommands — no more, no fewer:
+Expect exit 0, and this set of subcommands — no more, no fewer. Compare the set, not the text:
+argparse wraps this usage line and prints the names in an order of its own:
 
 ```
 usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub,projects} ...
@@ -338,6 +339,11 @@ The message names its own answer: rerun with `--port`. The operating system's ha
 is whatever your platform says about a busy socket, and it is localized — read past it to the
 sentence Conduct adds. If that sentence is missing, this build is older than it claims to be.
 
+`Stop-Process -Force` ends this server, and that is harmless only because `$PROJ` is a scaffold
+that step 8 deliberately did not activate, so the server takes no owner (read from
+`server_policy.py`, not measured here). It is not a pattern for an activated project: see the
+known gap on stopping one by force.
+
 ## 11. `conduct preview` proposes one dispatch and inspects it without executing
 
 ```powershell
@@ -521,7 +527,25 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   in which a re-render landed between finding the cards and measuring them. **What it costs:**
   record the failed command, socket state and exact timeout before any repeat. A green repeat
   alone proves neither a host diagnosis nor that the original failure was harmless; final
-  normal and reverse gates must still pass.
+  normal and reverse gates must still pass. Later measurement (four events in eight Windows
+  orders) put it at about one refused loopback connect per 1,900 browser contexts, an estimated
+  0.5 per order, so a fully green pair of Windows orders is expected in only about 37 % of runs.
+  Since the gate counts these events passively (task R1.3-E1), every browser module leaves
+  `netfail/<module>.jsonl` in the gate's artifacts directory: keep those files with the failed
+  command.
+- **Stopping the server of an activated project by force leaves it `opened`.** Step 10 ends
+  `conduct up` with `Stop-Process -Force`, which is harmless there only because `$PROJ` is a
+  scaffold that step 8 does not activate. On an ACTIVATED project (the first-run guide,
+  `docs/owner-acceptance.md`) the same stop kills the whole process tree with no drain. Measured
+  at `04641ca`: `conduct ownership status` reads `opened` whether the server is alive or dead;
+  `conduct doctor` says nothing about ownership; the next `conduct up` refuses with
+  `recovery_required: previous owner did not close; recover explicitly after OS restart`;
+  `conduct ownership recover` refuses until the OS has restarted (a full Restart, not a
+  shutdown); and `--prepare-restart` answers that no preparation is needed. **What it costs:**
+  the project is unusable until a full OS restart, and nothing before that tells a live server
+  from a killed one. Start `conduct up` in its own visible window, not `-WindowStyle Hidden`
+  (a hidden server keeps a console that Ctrl+C from your window never reaches), and stop it with
+  Ctrl+C there.
 
 ## Additional release gates — not filled by the twelve checks above
 
@@ -605,7 +629,10 @@ Named so that passing it is not read as more than it is.
   `tests/test_init.py::test_init_non_tty_uses_the_default_template_and_never_reads_stdin`,
   and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
-  a person sends. Stop one by hand once.
+  a person sends. Stop one by hand once, on an activated project: start `conduct up` in its own
+  visible PowerShell window (a server started with `-WindowStyle Hidden` has a console that
+  Ctrl+C from your window never reaches), press Ctrl+C there after the URL is printed, and read
+  `conduct ownership status`, which must say `closed`.
 - **`conduct tools`.** `conduct tools pin git --path <absolute path>` writes the pin of the git a
   child may run into `~/.december-command/tools.json` (or under `CONDUCT_HOME`), which this
   procedure would leave on the machine it ran on; it is held by `tests/test_tool_pins.py`.
@@ -623,8 +650,12 @@ Named so that passing it is not read as more than it is.
   suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
   the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two
   `conduct up` lifetimes stopped by SIGINT, `closed`) on Linux and macOS. A configuration is not
-  evidence: no CI run exists on the current candidate. The installed road has been walked locally
-  on Windows and on Linux (WSL); macOS has not been walked at all yet.
+  evidence: only a CI run on the exact candidate SHA is, recorded with the candidate. The
+  installed road runs in CI on Linux and macOS only: `scripts/wheel_road.py` exits on a non-POSIX
+  host and the repository holds no Windows runner for it. On Windows the road is walked by hand
+  (a venv from the one candidate wheel, init, activation, two `conduct up` lifetimes each stopped
+  with Ctrl+C in the server's own console, `conduct ownership status` reading `closed` after
+  each), and its output is kept with the candidate.
 - **A skip that does not name what it could not get.** The mutation-harness suites carry exactly
   two skips and each names its primitive: `tests/test_mutate_harness.py:676` skips under
   `os.geteuid() == 0` saying "root ignores the read-only bit" — the test makes a file read-only

@@ -45,6 +45,8 @@ $conduct = Join-Path $install 'Scripts\conduct.exe'
 & $conduct --help
 ```
 
+If `py` is not installed, use the full path to a Python 3.11+ `python.exe` instead of `py -3`.
+
 </details>
 
 <details>
@@ -72,6 +74,12 @@ If they are missing, check the executable path and build before continuing.
 ## 2. Create a fresh trial project
 
 Use a new folder for your first run. Choose a different name if `DecemberTrial` already contains project data.
+
+On Windows keep the project path short: at most 82 characters, like `%USERPROFILE%\DecemberTrial`.
+`init`, activation, and `up` work at any length, but saving a workflow draft is refused with
+`windows_path_too_long` when the project path plus 49 plus the length of the workflow identifier
+(up to 128 characters) exceeds 259, the path budget this build keeps for a draft.
+`conduct projects add` is stricter: the project path must not exceed 100 characters.
 
 **Windows**
 
@@ -127,6 +135,8 @@ Run the interactive wizard, once for each needed connection:
 | Grok Build | 1.0.5 | Native executable, subscription login, dedicated `GROK_HOME` with native login. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. |
 
+A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
+
 To reuse these connections in several projects, configure the shared profile once
 in a terminal with `conduct providers --profile` (repeat for each connection).
 It lives at `~/.december-command/providers.json`, or under your `CONDUCT_HOME`.
@@ -158,6 +168,26 @@ While Studio uses it, do not use the same profile for a parallel personal sessio
 At the environment question, enter **variable names**, never secret values.
 A usual Windows base is `SYSTEMROOT WINDIR PATH TEMP TMP`; add only names your tool requires.
 Do not pass API-key variables to the subscription route: that changes which payment route is used.
+
+### Where tasks run in this build
+
+A task runs inside an execution boundary. This is how the current build behaves; it is not a
+final decision.
+
+- **Windows.** The boundary exists. A task runs on the API-key road: the wizard allows the variable
+  *name* (for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`) and the value lives
+  in the environment of the server you start. The pinned build must be installed in a folder shaped
+  `...\harnesses\<name>\<version>\`; otherwise the boundary cannot be provided and the step is
+  refused.
+- **Subscription.** A connection set up with a subscription login does not yet run tasks inside the
+  boundary: the step is refused before anything starts, with
+  `step '…' demands sandbox route 'execution-boundary' that this build does not provide`.
+  Reading the subscription's quotas still works. Whether a subscription login can be made safe
+  inside the boundary, and how, is not yet decided.
+- **macOS and Linux.** The boundary is not provided on these systems. Installation, project
+  creation, Studio, the workflow editor, decisions, and the Agents screen work, but every step that
+  would run a task is refused before anything starts, with the same message, whatever the login.
+  The macOS / Linux commands above set up and inspect a project; they do not yet execute work.
 
 ### DeepSeek: balance, key, and server restart
 
@@ -193,6 +223,12 @@ Open the printed local address. The server occupies this terminal until you pres
 Ownership is `opened` while it serves, then `closed` after a clean stop.
 The next `up` opens it again. Studio provides EN/RU and light/dark switches.
 
+Stop the server only with Ctrl+C in its own window, and only after the address has been printed.
+Do not start it hidden in the background (`-WindowStyle Hidden`): Ctrl+C from another window does
+not reach it. A forced end (for example `Stop-Process`) leaves ownership `opened`: the next `up`
+refuses with `recovery_required`, and `ownership status` cannot tell a live server from a killed
+one. Recovery on Windows is in the table below.
+
 **You should see:** Overview explaining the new project's state, and the Workflow, Runs, Decisions, and Agents screens.
 An empty new project is normal. A permanent spinner or blank page is not.
 
@@ -213,6 +249,8 @@ For what has actually passed live checks, consult the [candidate notes](release-
 
 Policy does not bypass human gates. Pause, revoke, and explicit resume are different actions.
 A rejected result can be corrected only within the plan and permission; an uncertain result is not silently retried as success.
+Steps 4–6 assume a task runs: on macOS / Linux and on a subscription login such a step is refused
+before it starts (see [Where tasks run in this build](#where-tasks-run-in-this-build)).
 For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or [two-task acceptance](acceptance-two-tasks.md).
 
 ## If something is blocked
@@ -221,12 +259,14 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | --- | --- |
 | No `ownership` command | Check the executable path and identified build. |
 | `owner_busy` | Stop the other server using this project cleanly. Reloading the browser does not release ownership. |
-| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. On Windows, a record from an older build needs a [prepared restart](#recovery-of-an-old-windows-record) first. |
+| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. On Windows, a record from an older build needs a [prepared restart](#recovery-of-an-old-windows-record) first. If a server of this build was ended by force (not with Ctrl+C), Windows needs a full Restart (**Restart**, not shut down), then the same command; `--prepare-restart` is not needed for such a record, and the command says so. |
 | `login_recovery_required` | The same road for the shared login lease: a [prepared restart](#recovery-of-an-old-windows-record) if it asks for one, then `conduct ownership recover-login --auth-home <login directory>`. This does not start model work. |
 | `not_authenticated` | Complete the native login in the configured dedicated profile, then retry the appropriate reading. |
 | DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
+| A step is refused: `demands sandbox route 'execution-boundary'` | This is the boundary refusing; nothing was started. On macOS / Linux and on a subscription login this build does not run tasks: see [Where tasks run in this build](#where-tasks-run-in-this-build). |
+| Saving a draft: `windows_path_too_long` | Shorten the workflow identifier or move the project to a shorter path (see step 2). |
 
 ### Recovery of an old Windows record
 
