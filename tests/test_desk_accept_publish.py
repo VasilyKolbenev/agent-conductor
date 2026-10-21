@@ -158,11 +158,12 @@ def test_an_unknown_push_answer_leaves_only_check_again_and_the_check_never_send
 
 
 #: What the card offers after each refusal of the confirmation: only "Check again" when the
-#: answer left it unknown, "Send again" when the look found no branch there, and a fresh read of
-#: the terms for every refusal that is final.
+#: answer left it unknown (`git_failed` too: it may come after the push), "Send again" when the
+#: server knows nothing landed (`git_timed_out` before any push, `push_timed_out` after a look that
+#: found no ref), and a fresh read of the terms for every refusal that is final.
 AFTER_PUSH_REFUSAL = {
     "push_unconfirmed": ["check"], "push_auth_failed": ["check"],
-    "push_timed_out": ["push.again"], "git_failed": ["push.again"],
+    "push_timed_out": ["push.again"], "git_failed": ["check"],
     "git_timed_out": ["push.again"],
     "push_rejected": ["push.terms"], "push_terms_changed": ["push.terms"],
     "push_not_permitted": ["push.terms"], "push_url_ambiguous": ["push.terms"],

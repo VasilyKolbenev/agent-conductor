@@ -165,6 +165,7 @@ CAPPED = (
     "tests/test_subscription_road_boundary.py",
     "tests/test_desk_accept_publish_signer.py",
     "tests/test_desk_accept_publish.py",
+    "tests/test_desk_accept_publish_unknown.py",
     "tests/node_run.py",
     "tests/test_node_run.py",
 )

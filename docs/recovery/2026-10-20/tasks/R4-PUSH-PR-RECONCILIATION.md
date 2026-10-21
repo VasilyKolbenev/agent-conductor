@@ -180,7 +180,7 @@ owner's terminal» (1449) это важно: см. В2.
 | G5 | UI: запись PR с mismatch при совпадающем `head_oid` (другая base или форк) → текст «differs», кнопок нет | `tests/test_desk_accept_publish.py` | — |
 | G6 | Сервер: ref удалён, в списке только чужой PR (другая base или другой head) → 200, mismatch из строки списка, `gh pr create` не вызывался | `tests/test_accept_pull_request.py` | — |
 | G7 | Сервер: `gh pr create` вернул номер, которого ещё нет в списке → `pr_create_failed`, записи нет; следующее нажатие находит PR и создаёт ровно один | `tests/test_accept_pull_request.py` | — |
-| G8 | UI: ответ 500 `store_error` на отправку → автоповтора нет, дальше идёт чтение условий (характеризация O2) | `tests/test_desk_accept_publish.py` | В4 / O2 |
+| G8 | UI: неоднозначный ответ (`store_error`, `git_failed`) после отправки или проверки → фаза unknown, только «Проверить снова», автоповтора нет (решение Codex 21.10, реализовано R4-O2) | `tests/test_desk_accept_publish_unknown.py` | В4 / O2 |
 | G9 | Push дошёл, но git сообщил об ошибке входа → 201 по look после push | входит в S-R4-1 | D1 |
 | — | Браузерного сценария с перемещённой головой и показом mismatch на настоящем столе нет; Node-тесты и серверные тесты его покрывают, приоритет низкий | `browser_tests/test_desk_accept_publish.py` | — |
 

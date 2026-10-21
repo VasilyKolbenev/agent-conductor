@@ -33,11 +33,16 @@ const CHECKED = Object.freeze({
   other_head: "desk.accept.pr.checked.other_head",
   other_base: "desk.accept.pr.checked.other_base",
   cross_repository: "desk.accept.pr.checked.cross_repository"});
-// After these refusals of the push it is not known whether the branch is there; after these the
-// look found it absent, so sending again is safe. Every other refusal is final: the terms are
-// read again. A pull request is unknown only when its creation could not be confirmed.
+// An answer after which it is not known whether the outside action happened leaves the step
+// unknown, with only "Check again": `store_error` (a 500 and a body that is not read) and
+// `git_failed`, which the server also says when the record could not be written after the push
+// or the pull request. After a send the push is absent when the look after it found no branch or
+// when the read before it ran out of time (`push_timed_out`, `git_timed_out`): sending again is
+// safe. A check never pushes, so it says "absent" only by its own `null`. Every other refusal is
+// final: the terms are read again. A pull request is unknown when its creation could not be
+// confirmed, and on the same two answers that leave either step unknown.
 const PUSH_UNKNOWN = Object.freeze(["push_unconfirmed", "push_auth_failed"]);
-const PUSH_ABSENT = Object.freeze(["push_timed_out", "git_failed", "git_timed_out"]);
+const PUSH_ABSENT = Object.freeze(["push_timed_out", "git_timed_out"]);
 const PR_UNKNOWN = Object.freeze(["pr_create_failed", "push_auth_failed"]);
 const WORKING = Object.freeze(["previewing", "sending", "checking"]);
 const LOGIN = "gh auth login --hostname github.com --web";
@@ -75,10 +80,12 @@ const sameTerms = (terms, commit, remote) => terms?.commit === commit.commit
   && terms.remote === remote && terms.ref === `refs/heads/${commit.branch}`
   && DIGEST.test(terms.push_digest)
   && ["repo", "push_url", "command"].every((name) => typeof terms[name] === "string");
-const outcome = (step, reason) => {
+const outcome = (step, code, reason, check) => {
+  if (code === "store_error" || reason === "git_failed") return "unknown";
   if (step === "pr") return PR_UNKNOWN.includes(reason) ? "unknown" : "refused";
   if (PUSH_UNKNOWN.includes(reason)) return "unknown";
-  return PUSH_ABSENT.includes(reason) ? "absent" : "refused";
+  if (!PUSH_ABSENT.includes(reason)) return "refused";
+  return check ? "unknown" : "absent";
 };
 
 export function createAcceptHost({door, binding, locale, onChange, onForeign, openDetails}) {
@@ -399,7 +406,7 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
     }
     const refusal = answer.status === "refused";
     const reason = answer.payload?.error?.detail?.reason;
-    const kind = refusal ? outcome(step, reason) : "unknown";
+    const kind = refusal ? outcome(step, answer.code, reason, check) : "unknown";
     const said = refusal ? refusalText(answer, check) : null;
     if (kind === "absent") settleAbsent(step, said);
     else if (kind !== "refused") setStep(step, {phase: kind, error: said});
