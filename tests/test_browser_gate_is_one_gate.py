@@ -58,12 +58,17 @@ def test_the_one_browser_fixture_is_session_scoped_beside_the_evidence_hook():
     # per-test reaper, the page-evidence channels, the machinery the release
     # gate arms, and the protocol wrapper that says which test a page belongs
     # to -- without it every failure record carried every earlier test's words.
-    # Nothing else may grow here.
+    # And, since R1.3-E1, the passive count of Windows' 10055 (`_totals` to
+    # `_note_netfail`, and the closing hook `pytest_sessionfinish`): it reads
+    # reports and events and writes `netfail/` records, launches nothing and
+    # changes no outcome. Nothing else may grow here.
     assert re.findall(r"^def (\w+)", source, re.MULTILINE) == [
-        "_reap_contexts", "_remember", "_instrumented", "chromium",
-        "_close_what_a_failed_setup_left", "_evidence_stem", "_live_pages",
-        "_write_failure_evidence", "pytest_runtest_makereport",
-        "pytest_runtest_protocol"]
+        "_reap_contexts", "_totals", "_module_label", "_netfail_write",
+        "_track_context", "_note_no_buffer_space", "_note_netfail", "_remember",
+        "_instrumented", "chromium", "_close_what_a_failed_setup_left",
+        "_evidence_stem", "_live_pages", "_write_failure_evidence",
+        "pytest_runtest_makereport", "pytest_runtest_protocol",
+        "pytest_sessionfinish"]
     for path in sorted(BROWSER_TESTS.glob("*.py")):
         if path != CONFTEST:
             assert "def chromium(" not in path.read_text(encoding="utf-8")
