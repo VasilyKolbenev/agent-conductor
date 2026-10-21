@@ -1406,7 +1406,9 @@ pull request takes the closed body `{"acceptance_id","base","title","body","draf
 the same optional `"check":true`. `acceptance_id` is `acc-` and 32 lowercase hex, `remote` and
 `actor` follow the ids and the identity of the commit route, `base` is a branch name, `title` is
 one line of at most 256 characters, `body` is text of at most 32 768 characters, and `draft` is a
-boolean. Any other key or value is `contract_invalid`. After the body, the push answers
+boolean. Any other key or value is `contract_invalid`. A press with `"check":true` carries the
+body of the press it looks for, `actor` included, whoever asks to look; a record that the look
+writes names that actor in `requested_by`. After the body, the push answers
 `accept_refused` `push_requires_commit` until a commit record stands, and the pull request answers
 `pr_requires_push` until a push record stands. Both then need the pinned gh: a server that has none
 answers `tool_unavailable` with `{tool:"gh", reason}`. `accept_refused` gains these closed reasons:

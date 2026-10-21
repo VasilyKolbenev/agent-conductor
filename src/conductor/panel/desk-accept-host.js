@@ -45,7 +45,7 @@ const PULL_URL = new RegExp("^https://github\\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}
   + "[A-Za-z0-9._-]{1,100}/pull/[0-9]+$");
 // `signer` is who confirmed the press that acted, and for the pull request `fields` freezes what
 // that person saw: a repeat after a look that found nothing may use neither another name nor
-// another text.
+// another text. A check looks for that press, so it carries that name too, whoever presses it.
 const newPush = () => ({phase: "idle", confirming: false, error: null, login: false,
   remotes: [], terms: null, signer: null});
 const newPr = () => ({phase: "idle", confirming: false, error: null, login: false,
@@ -355,7 +355,9 @@ export function createAcceptHost({door, binding, locale, onChange, onForeign, op
   const confirmed = (step) => step === "pr" ? {signer: actor, fields: fieldsOf()}
     : {signer: actor};
   async function send(step, check) {
-    const ticket = epoch, runId = selected, body = stepBody(step, actor, check);
+    // A check names the signer of the press it looks for, not whoever sits at the desk now.
+    const signer = check ? (step === "push" ? push : pr).signer : actor;
+    const ticket = epoch, runId = selected, body = stepBody(step, signer, check);
     if (!body || !writable(ticket) || !mayPress(step, check)) return;
     setStep(step, {phase: check ? "checking" : "sending", confirming: false, error: null,
       login: false, ...(check ? {} : confirmed(step))});

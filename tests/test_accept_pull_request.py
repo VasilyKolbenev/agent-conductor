@@ -468,3 +468,24 @@ def test_a_pr_record_with_a_malformed_mismatch_is_damaged_and_never_read_as_a_fa
         assert shown.payload["error"]["code"] == "run_corrupt", damaged
     path.write_bytes(_bytes({**record, "mismatch": None}))
     assert api.handle("GET", f"/command/runs/{RUN}/accept", get_headers()).status == 200
+
+
+@needs_git
+def test_a_check_after_an_unknown_creation_writes_the_signer_its_body_names(tmp_path):
+    """The name in a record that a check writes is the actor of that check (spec 9.7, R4-V1).
+
+    The push names Owner, and the person who confirmed the creation is Signer: the check, which
+    the desk sends with Signer's name whoever asks to look, writes Signer, not the name of the push.
+    """
+    api, root, push, remote, bare, gh = pushed(tmp_path)
+    _fakegh.script(gh.dir, {
+        LISTED: [_fakegh.pr_list(), _fakegh.pr_list(), _fakegh.pr_list(row_of(push, 11))],
+        CREATED: [_fakegh.said("", exit=1)]})
+    assert reason_of(press(api, push, actor="Signer")) == "pr_create_failed"
+    checked = press(api, push, actor="Signer", check=True)
+    assert checked.status == 200, checked.payload
+    assert push["requested_by"] == "Owner"
+    assert checked.payload["pull_request"]["requested_by"] == "Signer"
+    again = press(api, push, actor="Other")
+    assert (again.status, again.payload) == (200, checked.payload)
+    assert len(made(gh, CREATED)) == 1

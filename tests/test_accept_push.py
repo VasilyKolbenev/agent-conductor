@@ -318,3 +318,33 @@ def test_an_uncertain_push_is_reconciled_by_the_remote_oid_before_any_retry(tmp_
     assert answer.payload["push"]["remote_oid"] == record["commit"] == remote_oid(bare)
     assert remote.verbs().count("push") == 1
     assert confirm(api, record, digest).status == 200 and remote.verbs().count("push") == 1
+
+
+@needs_git
+def test_a_check_writes_the_signer_its_body_names_and_the_signers_repeat_gets_that_record(
+        tmp_path):
+    """The name in a record that a check writes is the actor of that check (spec 9.7, R4-V1).
+
+    The commit names Owner, and the person who confirmed the push is Signer: the check, which the
+    desk sends with Signer's name whoever asks to look, writes Signer, not the name of the commit.
+    Signer's repeat, with or without a check, gets that record; another person is refused.
+    """
+    api, root, record, remote, bare, gh = accepted_with_gh(tmp_path)
+    digest = digest_of(api, record)
+    looks = []
+
+    def second_look_is_silent(run):
+        looks.append(1)
+        return TIMED_OUT if len(looks) == 2 else run()
+
+    remote.on_look = second_look_is_silent
+    assert reason_of(confirm(api, record, digest, actor="Signer")) == "push_unconfirmed"
+    checked = confirm(api, record, digest, actor="Signer", check=True)
+    assert record["requested_by"] == "Owner"
+    assert checked.status == 201 and checked.payload["push"]["requested_by"] == "Signer"
+    for again in (confirm(api, record, digest, actor="Signer"),
+                  confirm(api, record, digest, actor="Signer", check=True)):
+        assert (again.status, again.payload) == (200, checked.payload)
+    other = confirm(api, record, digest, actor="Other", check=True)
+    assert reason_of(other) == "acceptance_exists"
+    assert remote.verbs().count("push") == 1
