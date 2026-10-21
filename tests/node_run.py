@@ -79,6 +79,25 @@ def _uptime() -> str:
         return "unknown"
 
 
+def _filetime_seconds(high: int, low: int) -> float:
+    """A `FILETIME` (two 32-bit halves, the high one first) counts 100 ns ticks: seconds."""
+    return ((high << 32) | low) / 1e7
+
+
+def _format_profile(code: int, times: list[tuple[int, int]], working_set: int, peak: int,
+                    handles: int, faults: int) -> str:
+    """The line for one process from what Windows answered, as plain numbers.
+
+    `times` is `GetProcessTimes`'s four `FILETIME`s as (high, low) pairs, in the order it fills
+    them: creation, exit, kernel, user. Sizes are bytes.
+    """
+    kernel, user = [_filetime_seconds(*pair) for pair in times[2:]]
+    state = "alive" if code == _STILL_ACTIVE else f"exited with {code}"
+    return (f"{state}; cpu user {user:.3f} s, kernel {kernel:.3f} s; working set "
+            f"{working_set / 2**20:.1f} MB (peak {peak / 2**20:.1f}); handles "
+            f"{handles}; page faults {faults}")
+
+
 def _windows_profile(pid: int) -> str:
     """The process as the OS counts it: alive or not, CPU, memory, handles, page faults."""
     import ctypes
@@ -114,11 +133,8 @@ def _windows_profile(pid: int) -> str:
         check(k32.K32GetProcessMemoryInfo(handle, ctypes.byref(memory), memory.cb))
     finally:
         k32.CloseHandle(handle)
-    kernel, user = [((t.dwHighDateTime << 32) | t.dwLowDateTime) / 1e7 for t in times[2:]]
-    state = "alive" if code.value == _STILL_ACTIVE else f"exited with {code.value}"
-    return (f"{state}; cpu user {user:.3f} s, kernel {kernel:.3f} s; working set "
-            f"{memory.ws / 2**20:.1f} MB (peak {memory.peak_ws / 2**20:.1f}); handles "
-            f"{count.value}; page faults {memory.faults}")
+    return _format_profile(code.value, [(t.dwHighDateTime, t.dwLowDateTime) for t in times],
+                           memory.ws, memory.peak_ws, count.value, memory.faults)
 
 
 def _profile(proc: subprocess.Popen) -> str:

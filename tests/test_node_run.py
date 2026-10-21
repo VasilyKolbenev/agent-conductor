@@ -6,6 +6,11 @@ a child, so its CPU, its pipes and its kill are not those of the process the tes
 shape of the process tables is checked on text, so both operating systems' parsers run
 everywhere. Timeouts are 1 s: long enough for Node to be up and waiting, short enough to
 repeat.
+
+What a machine gives is not a number to assert: CPU seconds a scheduler grants in 1 s, the memory
+and handles of a Node version, a `tasklist` a sandbox may refuse. The counters' conversion is
+checked on given values; a real process only for the shape of its profile line; a table only
+when the test itself finds that `tasklist` lists, else the note `unavailable (...)` is the answer.
 """
 from __future__ import annotations
 
@@ -59,6 +64,21 @@ def node() -> str:
 
 def argv_of(node: str) -> list[str]:
     return [node, "--input-type=module"]
+
+
+def tasklist_lists_processes() -> tuple[bool, str]:
+    """Does `tasklist` list processes where this runs, asked without `node_run`'s help?
+
+    The second value says what was seen, for a failure message.
+    """
+    try:
+        done = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                              encoding="oem", errors="replace", stdin=subprocess.DEVNULL,
+                              timeout=15, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    rows = [line for line in done.stdout.splitlines() if line.startswith('"')]
+    return bool(rows), f"rc {done.returncode}, {len(rows)} rows"
 
 
 def timed_out(node: str, source: str, timeout: float = 1.0) -> subprocess.TimeoutExpired:
@@ -188,19 +208,54 @@ def test_the_notes_carry_what_a_red_ci_log_needs(node):
         r"^after kill: (returncode -?\d+; pipes |unavailable \()",
         rf"^{image} --version after the kill: \S",
     ]
+    listed, tasklist = True, ""
     if WINDOWS:  # the one system whose answers have been read here
         wanted += [
             r"^at the deadline: alive; cpu user \d+\.\d{3} s, kernel \d+\.\d{3} s; working set "
             r"\d+\.\d MB \(peak \d+\.\d\); handles \d+; page faults \d+$",
-            r"^background suspects: .+$",
-            rf"^processes now: \d+; {image} alive: [1-9]\d* \[.+\]$",
             r"^after kill: returncode 1; pipes closed in \d+\.\d{3} s$",
             rf"^{image} --version after the kill: 'v\d+\.\d+\.\d+' rc 0 in \d+\.\d{{3}} s$",
         ]
+        # Whether the OS lists processes is asked here, apart from `node_run`: a sandbox may
+        # refuse `tasklist` (rc 1, nothing listed). Then the note says so and there is no table.
+        listed, tasklist = tasklist_lists_processes()
+        wanted += [
+            r"^background suspects: .+$",
+            rf"^processes now: \d+; {image} alive: [1-9]\d* \[.+\]$",
+        ] if listed else [r"^process table: unavailable \(\w+: "]
     text = notes_of(exc)
     missing = [pattern for pattern in wanted if not re.search(pattern, text, re.M | re.I)]
-    assert not missing, f"{missing}\n--- the notes ---\n{text}"
+    assert not missing, f"{missing}\ntasklist here: {tasklist}\n--- the notes ---\n{text}"
+    if not listed:
+        assert not re.search(r"^(processes now|background suspects):", text, re.M), (
+            f"tasklist here: {tasklist}\n--- the notes ---\n{text}")
     assert exc.stdout == "partial-out\n" and exc.stderr == "partial-err\n"
+
+
+@pytest.mark.parametrize("denied", ["lists_nothing", "not_found"])
+def test_a_tasklist_that_gives_nothing_is_one_unavailable_note_and_no_table(
+        monkeypatch, denied):
+    """What a sandbox does to `tasklist` (rc 1, nothing on stdout), or a system that has none:
+    one `unavailable` line, whatever system this runs on."""
+    monkeypatch.setattr(node_run, "sys", types.SimpleNamespace(platform="win32"))
+    asked: list[list[str]] = []
+
+    def tasklist(argv, **kwargs):
+        asked.append(argv)
+        if denied == "not_found":
+            raise FileNotFoundError(2, "No such file or directory", "tasklist")
+        return subprocess.CompletedProcess(argv, 1, "", "")
+
+    monkeypatch.setattr(subprocess, "run", tasklist)
+    notes: list[str] = []
+    node_run._fact(notes, "process table",
+                   lambda: node_run._table_notes(types.SimpleNamespace(pid=1), "node.exe"))
+    assert asked == [["tasklist", "/FO", "CSV", "/NH"]]
+    assert notes == [
+        "process table: unavailable (RuntimeError: tasklist listed nothing (rc 1))"
+        if denied == "lists_nothing" else
+        "process table: unavailable (FileNotFoundError: [Errno 2] No such file or directory: "
+        "'tasklist')"]
 
 
 @pytest.mark.parametrize("table", ["listed", "no_ps"])
@@ -247,13 +302,62 @@ def test_the_process_and_the_table_are_read_before_the_kill(node, monkeypatch):
     assert events == ["profile", "table", "kill"]
 
 
+def test_a_filetime_is_ticks_of_100_ns_and_its_high_half_comes_first():
+    seconds = node_run._filetime_seconds
+    assert seconds(0, 0) == 0.0
+    assert seconds(0, 10_000_000) == 1.0
+    assert seconds(0, 1) == pytest.approx(1e-7)
+    assert seconds(0, 0xFFFFFFFF) == pytest.approx(429.4967295)  # the low half is 32 bits wide
+    assert seconds(1, 0) == pytest.approx(429.4967296)  # and the high half sits above them
+    assert seconds(2, 5) == pytest.approx(858.9934597)
+    assert seconds(1, 2) != seconds(2, 1)
+
+
+@pytest.mark.parametrize(("code", "state"), [
+    pytest.param(259, "alive", id="still_active"),
+    pytest.param(0, "exited with 0", id="exit_0"),
+    pytest.param(1, "exited with 1", id="exit_1"),
+    pytest.param(0xC0000005, "exited with 3221225477", id="crash"),
+])
+def test_the_profile_line_is_made_of_given_numbers_user_before_kernel(code, state):
+    """`GetProcessTimes` fills creation, exit, kernel, user, in that order; the line says user
+    first. Nothing here depends on a process, a clock or a scheduler."""
+    times = [(0x01DC0000, 0x12345678),  # creation: a date, a huge number of ticks
+             (0x01DC0001, 0x0000ABCD),  # exit: another one
+             (0, 12_345_678),  # kernel: 1.2345678 s
+             (1, 3_000_000)]  # user: 2**32 + 3 000 000 ticks = 429.7967296 s
+    line = node_run._format_profile(code, times, 36 * 2**20, 40 * 2**20 + 2**19, 169, 9129)
+    assert line == (f"{state}; cpu user 429.797 s, kernel 1.235 s; working set 36.0 MB "
+                    "(peak 40.5); handles 169; page faults 9129")
+    assert PROFILE.search(line).groups() == ("429.797", "1.235", "36.0", "169")
+
+
+def test_the_profile_line_rounds_to_milliseconds_and_tenths_of_a_megabyte():
+    nothing = [(0, 0)] * 4
+    assert node_run._format_profile(259, nothing, 0, 0, 0, 0) == (
+        "alive; cpu user 0.000 s, kernel 0.000 s; working set 0.0 MB (peak 0.0); handles 0; "
+        "page faults 0")
+    times = [(0, 0), (0, 0), (0, 4_999), (0, 15_000_001)]  # 0.4999 ms and 1.5000001 s
+    line = node_run._format_profile(259, times, 1_000_000, 2_000_000, 7, 8)
+    assert line == ("alive; cpu user 1.500 s, kernel 0.000 s; working set 1.0 MB (peak 1.9); "
+                    "handles 7; page faults 8")  # 1e6 / 2**20 = 0.95, 2e6 / 2**20 = 1.91
+
+
 @pytest.mark.skipif(not WINDOWS, reason="the profile of the process is read from Windows")
-def test_the_cpu_at_the_deadline_tells_a_spinning_node_from_a_waiting_one(node):
-    spinning = PROFILE.search(notes_of(timed_out(node, "while (true) {}")))
-    waiting = PROFILE.search(notes_of(timed_out(node, HANG)))
-    assert float(spinning[1]) >= 0.5
-    assert float(waiting[1]) + float(waiting[2]) < 0.5
-    assert float(waiting[3]) >= 10 and int(waiting[4]) >= 30
+@pytest.mark.parametrize("script", [
+    pytest.param("while (true) {}", id="spinning"),
+    pytest.param(HANG, id="waiting"),
+])
+def test_the_profile_of_a_real_process_is_read_and_has_the_documented_shape(node, script):
+    """That it is read, in what form, and within the one bound the scheduler cannot break: a
+    process cannot have used more CPU than its life times the processors. How much CPU it was
+    given in 1 s, and how much memory and how many handles Node has on this version and machine,
+    are not ours to promise. What the numbers mean is checked on given values above."""
+    text = notes_of(timed_out(node, script))
+    found = re.search(rf"^at the deadline: alive; {PROFILE.pattern}$", text, re.M)
+    assert found, text
+    life = sum(map(float, re.search(r"spawn took (\S+) s; waited (\S+) s", text).groups()))
+    assert float(found[1]) + float(found[2]) <= (life + 1) * (os.cpu_count() or 1), text
 
 
 def test_a_pipe_another_process_holds_cannot_hold_back_the_failure(node, monkeypatch, tmp_path):
