@@ -168,6 +168,7 @@ CAPPED = (
     "tests/test_desk_accept_publish_unknown.py",
     "tests/node_run.py",
     "tests/test_node_run.py",
+    "tests/test_boot_kuser.py",
 )
 
 
