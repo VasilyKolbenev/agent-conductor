@@ -1,17 +1,33 @@
 # R5: предварительная developer rehearsal на ноутбуке владельца — runbook
 
 21.10.2026, Claude Code / Opus 5.5; сверено с кодом на `24f9be0` (`e904910`, `0a493ad` процитированных
-файлов не меняют). Кандидат: `2cb380de25c479ab144864da1c3222f517aaf6dd`, CI №45 (run `39626261430`,
-12/12 job), artifact `candidate-wheel` `12357435775`. Проход **предварительный** (решение владельца
+файлов не меняют). Передача Codex 21.10: выбранная сборка
+`0a493ad8a9962cc6e442b9d9e3c8ca104c5a1096`, CI №46 (run `39645262035`), artifact
+`candidate-wheel` `12367660793`. Wheel скачан; SHA256 совпал со значением build job,
+переданным обоим POSIX road, и с их успешными отчётами. Полный CI на момент передачи ещё идёт.
+Проход **предварительный** (решение владельца
 21.10, `CONTINUATION-PLAN.md`); финальная приёмка — повтор §2–§5 на финальном CI-wheel. Проверено 21.10:
 в чистой PowerShell 5.1 со старым wheel `4d0e3af` — venv, `pip --no-index`, путь `conductor`, пакет и
 `unittest`, git без identity, ввод без эха; на dev-`.venv` — мастер `providers` на активированном проекте
 (ответы подставлены скриптом). Настоящие CLI, ключи и `up` не запускались.
 
+Ревью Codex 21.10: правка шага 7 EN/RU (`48fdde3`) и практические инструкции этого runbook
+приняты, новых блокеров в проверенном объёме нет. Базовые правки R1.6 (`e904910`) и R4 O2/G8
+(`0a493ad`) подтверждены чтением diff и отдельными целевыми прогонами: 13 тестов Node
+(30 deselected) и 24 теста unknown/signer, всего **37 passed** на Windows/Python 3.12.14.
+Это не полный gate и не настоящий запуск провайдеров. Полный CI-снимок и происхождение wheel —
+в `outputs/R5-candidate-0a493ad/ci-snapshot.json` и `provenance.json`, рядом с рабочей копией.
+
 ## 0. Правила
 
 1. Два окна **обычной** Windows PowerShell (не `Open-December-Command.cmd`, не скрипт окружения):
    **А** — команды, **Б** — только сервер. Ключи вводит владелец, только в окне Б (§1.3).
+   Окна открывать из меню «Пуск», **не** из терминала внутри приложения Claude или Codex, и там же
+   ставить harness (§1.2). Причина измерена 21.10: дочерние процессы приложения Claude пишут в
+   `%LOCALAPPDATA%` через виртуализацию MSIX. `python -m venv` в `%LOCALAPPDATA%\DecemberCommand\rh-0a493ad`
+   из него лёг в `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\DecemberCommand\…`
+   (venv сам сообщил «Actual environment location may have moved»), и обычное окно его не видит.
+   `%TEMP%` и `%USERPROFILE%` (проект, `.december-command`) не перенаправляются.
 2. Сервер останавливать только Ctrl+C в окне Б после строки `serving … — Ctrl+C to stop`.
    `Stop-Process` запрещён: проект останется `opened` до полной перезагрузки ОС (T1).
 3. Push/PR и публикации Desk не использовать; в исходный пакет — только ручное копирование (§4.6).
@@ -25,7 +41,7 @@
 ```powershell
 $env:PYTHONPATH = ''
 $BASEPY = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
-$APP = Join-Path $env:LOCALAPPDATA 'DecemberCommand\rh-2cb380d'
+$APP = Join-Path $env:LOCALAPPDATA 'DecemberCommand\rh-0a493ad'
 $PY = Join-Path $APP 'Scripts\python.exe'
 $CONDUCT = Join-Path $APP 'Scripts\conduct.exe'
 $P = Join-Path $env:USERPROFILE 'DecemberRehearsal'
@@ -69,15 +85,17 @@ $env:OPENAI_API_KEY = (New-Object System.Net.NetworkCredential('', (Read-Host 'O
 `dalio-v5`: чистый проход 5 действий (4 шага планирования Claude + `do`), с коррекцией 6
 (`templates/README.md:94-115`). Лимит Policy — **6** на запуск (сервер допускает 8, `http_api.py:91-95`).
 Основной + контроль: ≤ **12 действий**, ≤ **16 платных вызовов** (≤ 12 Claude, ≤ 4 Codex). Денег продукт
-не ограничивает.
+не ограничивает. Бюджет подтверждён владельцем в чате 21.10.2026.
 
 ## 2. Wheel в чистый venv (окно А)
 
-Codex кладёт wheel из artifact `12357435775` в outputs (zip — `Expand-Archive` в новую пустую папку;
-digest zip — другая величина) и называет sha256 из output job `wheel`.
+Codex уже распаковал wheel из artifact `12367660793` в `outputs\R5-candidate-0a493ad`.
+Рядом лежат `SHA256SUMS.txt`, `provenance.json` и оба отчёта POSIX road. SHA256 ниже относится
+к файлу `.whl`, не к zip. Его совпадение с build output проверено по аргументу `--sha256`,
+который CI передал обоим road из `needs.wheel.outputs.sha256`.
 ```powershell
-$wheel = '<полный путь к agent_conductor-0.1.0-py3-none-any.whl>'
-$expected = '<sha256 файла .whl из output job wheel, run 39626261430>'
+$wheel = Join-Path $env:USERPROFILE 'Documents\Codex\2026-10-20\new-chat\outputs\R5-candidate-0a493ad\agent_conductor-0.1.0-py3-none-any.whl'
+$expected = '90c0da18af8e254d5b455faebcd27e26aebe75a01e1bec16ef306ed4891ec3f8'
 (Get-FileHash -Algorithm SHA256 -LiteralPath $wheel).Hash.ToLower() -eq $expected.ToLower()
 Test-Path -LiteralPath $APP
 & $BASEPY -m venv $APP
@@ -87,7 +105,7 @@ Test-Path -LiteralPath $APP
 & $CONDUCT --help
 ```
 Ожидается: `True`; `False`; `Successfully installed agent-conductor-0.1.0`; `Location:
-…\rh-2cb380d\Lib\site-packages` без `Editable project location`; `conductor\__init__.py` там же;
+…\rh-0a493ad\Lib\site-packages` без `Editable project location`; `conductor\__init__.py` там же;
 15 подкоманд, среди них `init`, `ownership`, `providers`, `up`.
 
 ## 3. Проект репетиции (окно А)
@@ -141,7 +159,7 @@ Push-Location -LiteralPath $P; & $PY -B -m unittest discover -s tests -v; Pop-Lo
 
 **3.4. Сервер (окно Б):** `$env:PYTHONPATH = ''`, три строки ключей §1.3, затем
 ```powershell
-$CONDUCT = Join-Path $env:LOCALAPPDATA 'DecemberCommand\rh-2cb380d\Scripts\conduct.exe'
+$CONDUCT = Join-Path $env:LOCALAPPDATA 'DecemberCommand\rh-0a493ad\Scripts\conduct.exe'
 $P = Join-Path $env:USERPROFILE 'DecemberRehearsal'
 & $CONDUCT up --dir $P --port 7801
 ```
@@ -236,7 +254,7 @@ NEGATIVE CONTROL R5-NC (помеченный контрольный прогон
 Ожидается: первая проверка `reject` с типизированными замечаниями, коррекция, вторая проверка —
 записать. Результат NC не копировать; `git diff --stat` как после 4.6. Если код исправлен сразу, NC не
 получен — отклонение; запасной путь — opt-in probe настоящего checker (`release-smoke.md`, разработчик,
-checkout `2cb380d`, 2 вызова Codex); NC в продукте он не заменяет.
+checkout `0a493ad`, 2 вызова Codex); NC в продукте он не заменяет.
 
 **4.9. Завершение.** Ctrl+C в окне Б; окно А: `ownership status` → `closed`; закрыть окно Б.
 
@@ -264,8 +282,8 @@ checkout `2cb380d`, 2 вызова Codex); NC в продукте он не за
 
 ## 6. Известные ограничения предварительного прохода
 
-- **O2/G8 не в этом wheel** (исправлено в `0a493ad`): карточка push/PR Desk после `store_error`/`git_failed`
-  предлагает повтор вместо проверки; push/PR в проходе не используются.
+- **O2/G8 входит в этот wheel** (`0a493ad`): неоднозначный ответ оставляет push/PR в `unknown`
+  с проверкой результата. Сам runbook push/PR не упражняет.
 - **R1.2c-В4**: законченный запуск без разрешения читается `unconfigured/authorization_required`, Studio рисует
   форму границ, «Разрешить» → 422 (`tasks/R1.2c-V4-TASK.md`); не нажимать, записать.
 - **R1.5, раннее окно**: Ctrl+C в ~1 мс до печати URL минует drain (`tasks/R1.5-REPORT.md`) — ждать `serving …`.
