@@ -10,8 +10,11 @@ store with a real open attempt, so its arithmetic is the store's and not a copy.
 """
 from __future__ import annotations
 
+import io
 import os
+import re
 import signal
+import sys
 import threading
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -19,9 +22,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from conductor import server_drain
+from conductor.__main__ import main
 from conductor.command.run_store import RunStore
 from tests.test_policy_driver import authorize
 from tests.test_policy_runtime import propose, setup
+from tests.test_store import good_lane, write_project
 
 NOON = datetime(2026, 9, 29, 12, 0, 0, tzinfo=timezone.utc)
 RUN_NOW = datetime(2026, 8, 11, 12, 0, 0, tzinfo=timezone.utc)   # the fixture's clock
@@ -405,6 +410,109 @@ def test_a_second_interrupt_during_the_drain_prints_the_deadline_and_changes_not
     assert signal.getsignal(signal.SIGINT) is before, "the handler is restored afterwards"
     err = capsys.readouterr().err
     assert "Ctrl+C does not interrupt" in err and "12:00:10" in err
+
+
+_URL_LINE = re.compile(r"http://127\.0\.0\.1:\d+/\n")
+
+
+class _ServingUntilShutdown:
+    """Blocks in `serve_forever` until `shutdown`, and, like `socketserver.BaseServer`,
+    cannot be shut down before its serve loop has run: a real one then waits forever."""
+
+    server_address = ("127.0.0.1", 7777)
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self._ran, self._over = threading.Event(), threading.Event()
+
+    def serve_forever(self) -> None:
+        self.calls.append("serve_forever")
+        self._ran.set()
+        self._over.wait(30)
+
+    def shutdown(self) -> None:
+        assert self._ran.wait(5), "shutdown before the serve loop ran: a real server hangs here"
+        self.calls.append("shutdown")
+        self._over.set()
+
+    def server_close(self) -> None:
+        self.calls.append("server_close")
+
+
+_HINT_LINE = re.compile(r"serving .*Ctrl\+C to stop\n")
+
+
+class _CtrlCWhenTheLineIsOut(io.StringIO):
+    """A stream that delivers Ctrl+C right after `line` has been written whole.
+
+    `at="flush"` is stdout, a pipe in a hub: a parent reads the URL when `print(...,
+    flush=True)` flushes it. `at="write"` is stderr, line-buffered: a reader sees the
+    hint line when the write of its newline returns.
+    """
+
+    def __init__(self, line: re.Pattern, *, at: str) -> None:
+        super().__init__()
+        self.line, self.at, self.fired = line, at, False
+
+    def write(self, text) -> int:
+        count = super().write(text)
+        if self.at == "write":
+            self._deliver()
+        return count
+
+    def flush(self) -> None:
+        super().flush()
+        if self.at == "flush":
+            self._deliver()
+
+    def _deliver(self) -> None:
+        if not self.fired and self.line.search(self.getvalue()):
+            self.fired = True
+            signal.raise_signal(signal.SIGINT)     # what a parent that just read it sends
+
+
+def _up_with_a_ctrl_c(tmp_path, monkeypatch, stdout, stderr):
+    """`conduct up` on a fake server, its two streams replaced; returns code and the fake.
+
+    The streams are swapped by `monkeypatch` alone, with no `capsys` beside it: under
+    `-s` a `capsys` that tears down first leaves its closed buffer in `sys.stdout`.
+    """
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler, (
+        "the witness needs Python's own Ctrl+C handler in place")
+    fake = _ServingUntilShutdown()
+    monkeypatch.setattr("conductor.server.build", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(server_drain, "enable_ctrl_c", lambda **kwargs: None)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    try:
+        code = main(["up", "--dir", str(root), "--port", "0"])
+    except KeyboardInterrupt:
+        pytest.fail("a Ctrl+C sent once the server was announced escaped the drain: the "
+                    "process would die of SIGINT (-2 / 0xC000013A) with its owner still "
+                    "opened")
+    return code, fake
+
+
+def test_a_ctrl_c_sent_the_moment_the_url_is_read_drains_and_never_escapes(
+        tmp_path, monkeypatch):
+    stdout, stderr = _CtrlCWhenTheLineIsOut(_URL_LINE, at="flush"), io.StringIO()
+    code, fake = _up_with_a_ctrl_c(tmp_path, monkeypatch, stdout, stderr)
+    assert stdout.fired, "the URL line never reached stdout"
+    assert code == 0, stderr.getvalue()
+    assert fake.calls == ["serve_forever", "shutdown", "server_close"]
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+
+
+def test_a_ctrl_c_sent_the_moment_the_hint_line_is_read_drains_and_never_escapes(
+        tmp_path, monkeypatch):
+    stdout, stderr = io.StringIO(), _CtrlCWhenTheLineIsOut(_HINT_LINE, at="write")
+    code, fake = _up_with_a_ctrl_c(tmp_path, monkeypatch, stdout, stderr)
+    assert _URL_LINE.search(stdout.getvalue()), "the hint line follows the URL line"
+    assert stderr.fired, "the `serving ... Ctrl+C to stop` line never reached stderr"
+    assert code == 0, stderr.getvalue()
+    assert fake.calls == ["serve_forever", "shutdown", "server_close"]
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
 
 
 def test_the_console_reset_asks_the_os_to_stop_ignoring_ctrl_c_and_only_on_windows():

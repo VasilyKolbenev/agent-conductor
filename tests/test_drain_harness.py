@@ -9,6 +9,7 @@ publishes its last state and leaves within one poll. Here the child is a real
 """
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,12 +30,17 @@ class Timeline:
 
 
 class StandInProcess:
-    """The one member of `subprocess.Popen` that the waits read."""
+    """The members of `subprocess.Popen` that the waits and `expect_exit` read."""
 
     def __init__(self, timeline: Timeline) -> None:
         self.timeline = timeline
 
     def poll(self) -> int | None:
+        return self.timeline.exit_code
+
+    def wait(self, timeout: float) -> int:
+        if self.timeline.exit_code is None:
+            raise subprocess.TimeoutExpired("child", timeout)
         return self.timeline.exit_code
 
 
@@ -120,3 +126,23 @@ def test_stays_true_does_not_hide_an_ownership_refusal_that_is_not_a_transition_
     predicate, _ = _unreadable_once(code="ownership_lost")
     with pytest.raises(OwnerRefused):
         stays_true(predicate, 0.5, AWAITED)
+
+
+def test_expect_exit_is_silent_when_the_child_exited_with_the_code_asked_for(tmp_path):
+    _child(tmp_path, Timeline(published=True, exit_code=0)).expect_exit(0)
+    _child(tmp_path, Timeline(published=True, exit_code=1)).expect_exit(1)
+
+
+def test_expect_exit_names_both_codes_and_shows_the_child_stderr_on_another_code(tmp_path):
+    with pytest.raises(AssertionError) as caught:
+        _child(tmp_path, Timeline(published=True, exit_code=3221225786)).expect_exit(0)
+    message = str(caught.value)
+    assert "exited with 3221225786, not 0" in message
+    assert "child stderr:\nboom" in message
+
+
+def test_expect_exit_shows_the_child_stderr_when_the_child_does_not_exit(tmp_path):
+    with pytest.raises(AssertionError) as caught:
+        _child(tmp_path, Timeline(published=True, exit_code=None)).expect_exit(0, timeout=0.01)
+    message = str(caught.value)
+    assert "still running" in message and "child stderr:\nboom" in message
