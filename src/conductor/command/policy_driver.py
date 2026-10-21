@@ -8,6 +8,7 @@ from .contract_values import ContractError
 from .graph_schedule import schedule
 from .policy_history import current_authorization, hold_selected_inputs
 from .policy_runtime import hold_live
+from .run_terminal import TERMINAL_STATES
 from .service import CommandService
 from .work_layout import work_route
 
@@ -244,7 +245,12 @@ class PolicyDriver:
                 slot.release()
 
     def _select_next(self, run_id, grant_id):
-        """The proposal to admit next, and whether the plan just ended (and the slot was freed)."""
+        """The proposal to admit next, and whether the plan just ended (and the slot was freed).
+
+        A plan ends on either of its two words, `complete` or `stalled`, and either frees the
+        slot: a run that has recorded its ending takes no pause, revoke or resume, so nobody else
+        could free it.
+        """
         with self.policy.store.transaction():
             if not self.is_active(run_id, grant_id):
                 return None, False
@@ -257,9 +263,10 @@ class PolicyDriver:
             with self._condition:
                 self._reason = reason
             if selected is None:
-                if reason == "complete":
+                ended = reason in TERMINAL_STATES
+                if ended:
                     self.deactivate(run_id)
-                return None, reason == "complete"
+                return None, ended
             proposal = self._proposal(recovered, grant, selected)
             hold_live(self.runtime, recovered, grant, proposal)
             return proposal, False

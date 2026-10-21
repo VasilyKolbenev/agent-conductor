@@ -3,6 +3,7 @@ from .authorization_terms import _time_parts
 from .contracts import ActionRequest, ActionResultReceipt
 from .graph_schedule import schedule
 from .policy_history import current_authorization, current_control, spent_budget
+from .run_terminal import TERMINAL_STATES
 
 #: What the driver may name when it stops on its own; `seed_blocked` is the seed of the run
 #: (spec 9.1.4) and, like the others, only a reason of `stalled`.
@@ -44,7 +45,10 @@ def _owner_present(policy):
 def _state(policy, run_id, grant, control, computed, pending, owner, now):
     if grant is None:
         return "unconfigured", "authorization_required"
-    if computed is not None and computed.run_state == "complete":
+    # A plan that has ended, on either of its two words, is judged before the controls, the clock
+    # and the driver: its run takes no pause, resume, revoke or new grant, and any of those words
+    # would offer one.
+    if computed is not None and computed.run_state in TERMINAL_STATES:
         return "complete", "plan_ended"
     if control is not None and control.action == "revoke":
         return "revoked", "revoked"
