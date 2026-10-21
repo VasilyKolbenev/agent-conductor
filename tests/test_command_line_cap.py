@@ -163,6 +163,9 @@ CAPPED = (
     "tests/test_policy_driver_stalled.py",
     "tests/test_policy_view_ended.py",
     "tests/test_subscription_road_boundary.py",
+    "tests/test_desk_accept_publish_signer.py",
+    "tests/node_run.py",
+    "tests/test_node_run.py",
 )
 
 

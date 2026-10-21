@@ -9,17 +9,21 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from tests.node_run import run_node
 
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 
 
 def run_js(body: str, modules: dict[str, str], data: Any = None) -> Any:
     """Evaluate `body` next to the named packaged modules and return its printed JSON.
+
+    The call goes through `tests/node_run.py`, which keeps `subprocess.run`'s verdict and its
+    30-second deadline and only adds to a failure what a reader of a red log needs.
 
     Args:
         body: JavaScript that prints one JSON value with `console.log`.
@@ -35,7 +39,6 @@ def run_js(body: str, modules: dict[str, str], data: Any = None) -> Any:
     imports = "\n".join(f"import * as {alias} from {json.dumps((PANEL / name).as_uri())};"
                         for alias, name in modules.items())
     source = f"{imports}\nconst d = {json.dumps(data)};\n{body}\n"
-    result = subprocess.run([node, "--input-type=module"], input=source, capture_output=True,
-                            text=True, encoding="utf-8", timeout=30, check=False)
+    result = run_node([node, "--input-type=module"], source, timeout=30)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
