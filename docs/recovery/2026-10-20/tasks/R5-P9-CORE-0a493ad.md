@@ -63,4 +63,71 @@ CI этого не ловит: профиль runner в ASCII. В прежнем
 
 ## Ревью Codex
 
-Статус: ожидает.
+21.10.2026: **правка `3f60f34` принята**, блокеров в проверенном объёме нет.
+Меняется только кодировка тестового hook; его содержимое, LF и контроль реального исполнения
+сохранены. Продуктовый `tool_env` не менялся. Исходные `facts.txt` и `pytest.out` согласуются
+с SHA, чистотой копии и результатом полного прогона, указанными выше.
+
+Независимая проверка на Windows/Python 3.12.14: `PYTHONUTF8=0`, `PYTHONIOENCODING` снят,
+перед прогоном подтверждены `utf8_mode=0`, `encoding=cp1251`; git из набора Codex в PATH:
+
+```text
+.venv\Scripts\python.exe -m pytest -q tests/test_tool_env.py
+  --basetemp C:\Users\Пользователь\Documents\Codex\work\hk-review-3f60 -p no:cacheprovider
+23 passed in 1.44s
+```
+
+Полный suite после правки не повторялся; исторические ручные эксперименты Opus не повторялись.
+Это одобрение узкой правки теста, не подтверждение зелёного CI.
+
+### Передача по завершившемуся CI №46
+
+Run `39645262035`, SHA `0a493ad8a9962cc6e442b9d9e3c8ca104c5a1096`: **10 job success,
+2 failure**. Красные — Windows core py3.12 и Windows browser gate. Остальные core,
+оба POSIX browser gate, сборка и обе POSIX wheel road зелёные.
+
+Core job `119379019975`: единственное падение в `tests/test_boot_kuser.py` —
+`test_a_read_that_runs_off_the_end_of_the_page_is_reported_as_partial_not_a_crash`,
+строка 205, `Failed: DID NOT RAISE BootRefused`. Итог:
+**1 failed, 17637 passed, 338 skipped, 2 warnings in 2137.28s**.
+Это не Node timeout CI №43 и не три локальных encoding-падения.
+
+Тест читает 64 байта от `0x7FFE0FF0`, предполагая недоступность соседней страницы,
+но не создаёт и не проверяет такую границу. Успех `read_page` допускается только при
+`done && got == size`; наиболее узкое объяснение — диапазон прочитался целиком.
+Карта памяти runner не записана, причина доступности соседней страницы не доказана.
+Обычный вызов читает `0x2C8` байт от начала KUSER и эту границу не пересекает.
+Локальный целевой прогон `tests/test_boot_kuser.py -p no:cacheprovider` под `-X utf8`:
+**23 passed, 1 skipped in 0.48s**; это не воспроизведение CI failure.
+
+Задание Opus: заменить предположение о соседней странице контролируемой нативной границей;
+отдельно детерминированно проверить `0 < got < size` со строгим `partial_read`.
+Сохранить реальные проверки KUSER и отказ при неполном чтении. Оснований менять продукт
+пока нет. Не добавлять retry, skip или увеличивать timeout. Достаточны целевые boot-тесты;
+новый полный локальный suite перед R5 не нужен.
+
+Windows browser job `119379019413`, artifact `12372154301`: оба порядка завершили
+114/114 модулей, оба красные. Все три failed node сопоставлены по имени, ресурсу и времени
+с `requestfailed` и Chromium `connect failed: 10055`:
+
+- `bg`, `test_desk_wizard_git.py`, параметр `[en]`: не загружен
+  `/panel/studio-tasks-model.js`; упал `bench.problems == []` (строка 318).
+- `bg`, `test_studio_read_liveness.py`, `[error-same]`: не загружен `/panel/studio.js`;
+  ожидание начальной загрузки истекло через 30000 ms.
+- `bgr`, `test_desk_view_mode.py`, `[ru]`: `Page.goto` не загрузил `/host.html`
+  с `ERR_NO_BUFFER_SPACE`, до проверки поведения флага.
+
+Это повтор симптома R1.3; первопричина не установлена. Других зарегистрированных
+`requestfailed` в этих артефактах нет. Ошибки не отменяются, gate остаётся красным.
+По решению владельца глубокое расследование не останавливает предварительный R5.
+
+Доказательства вне Git, рядом с рабочей копией:
+`outputs/R5-candidate-0a493ad/CI46/`: полный `core-windows-py312.log`,
+`browser-windows.log`, `jobs.json`, `browser-triage.json`, полный ZIP и извлечённые
+`windows/bg/gate.json`, `windows/bgr/gate.json`, обе папки `netfail`, stdout/stderr падений.
+SHA256 ZIP совпал с digest GitHub artifact:
+`da6c5a9cef5cd20b5c96e486100ac5c82a89903044e70020a3a185e638eac21a`.
+
+Следующий основной шаг — предварительная репетиция R5 на уже полученном wheel.
+Тестовую правку границы памяти проверить отдельно; после согласованных правок нужен один
+полный CI на новом SHA и его wheel для финальной приёмки. Провайдеры в этом ревью не запускались.
