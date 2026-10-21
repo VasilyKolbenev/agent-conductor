@@ -1336,7 +1336,10 @@ admission state, HEAD and object format, changed-path count excluding product
 files, instruction-file count, the last saved instruction choice, signing and
 the pinned Git version. A status timeout leaves `dirty_paths` unknown (`null`).
 Remotes expose only their names, a GitHub `owner/repo` when recognized, and a
-credential-presence flag; raw remote URLs are never returned. In view mode the
+credential-presence flag; raw remote URLs are never returned. An `owner/repo` is recognized for an
+`https`, `http` or `ssh` address on `github.com` and for `git@github.com:`, each with an optional
+`.git` and an optional trailing `/`; recognizing an address is not admitting it to a push, which
+takes only the exact spellings given with the push terms below. In view mode the
 route starts no Git process and reports only the local Git-entry state and the
 saved instruction choice. It does not write Git metadata. The response is the
 `{"git": ...}` shape in desk redesign specification section 6.2.1.
@@ -1423,7 +1426,10 @@ The push terms answer 200 `{"push_terms":{"commit","remote","push_url","repo","r
 "push_digest"}}`. `commit` and `ref` come from the commit record, never from the local branch;
 `push_url` is the one address `git remote get-url --push --all <remote>` resolves (it expands
 `pushurl` and `insteadOf`) and is exactly `https://github.com/O/R`, `git@github.com:O/R` or
-`ssh://git@github.com/O/R`, with an optional `.git`; `repo` is the `O/R` that `gh repo view`
+`ssh://git@github.com/O/R`, with an optional `.git` and, after it, an optional single trailing
+`/` (so `https://github.com/O/R/` and `git@github.com:O/R.git/` stand: each of the three forms has
+four spellings, and no other is admitted); the address is carried as the remote spells it, `/`
+included, in the terms, the command and the digest; `repo` is the `O/R` that `gh repo view`
 confirmed for it; `command` is `git` and the words that a confirmation runs, the one list for the
 terms and for the run (see the guard below); `push_digest` is the sha256 of the canonical
 `{acceptance_id, commit, remote, push_url, repo, ref, command}`. More than one address is
@@ -1448,9 +1454,16 @@ pushed to, find two and write no ref; no ref is deleted afterwards. `<guard>` is
 (any `remote.<name>.<key>` in any scope takes the name, whatever the key and the case): a remote
 of the same name, or one with a `pushurl` of its own, would leave the project's own remote the
 only match. The terms and the run build their words with the same function, so the command the
-card shows, which is also the one for the owner's terminal, is the command that runs; and because
-the digest covers it, a name that became taken or free since the terms were shown is
-`push_terms_changed`, and the terms read next show the other command. After the push the ref is
+card shows is the command that runs: the same `git` and the same words after it, which the owner
+may paste into a terminal in the project. That is the whole promise, and it is the argv only. The
+product puts the path of the pinned git, `-C <project>` and its own `-c` read flags before those
+words, and runs them in the environment of desk redesign section 8.9 (`tool_env`): hooks are
+silenced (`core.hooksPath` is an empty folder), and `GIT_TERMINAL_PROMPT=0` with
+`GCM_INTERACTIVE=never` forbid an interactive sign-in. The owner's terminal has its own
+environment, so the same words there may run the owner's hooks and may ask to sign in; an
+identical environment is not promised. And because the digest covers the words, a name that
+became taken or free since the terms were shown is `push_terms_changed`, and the terms read next
+show the other command. After the push the ref is
 looked at again: the same commit answers 201 and writes `push.json` (with `remote_oid`), another
 commit is `push_rejected`, no ref
 is `push_rejected` when the push said it was rejected, `push_unconfirmed` when it said it was sent,
@@ -2521,3 +2534,13 @@ hold recorded grant/control/expiry facts; fresh execution additionally holds
 live project ownership and provider configuration. A human Resume can rearm the
 same unexpired standing grant after restart; it does not reset spent budgets,
 reactivate an ambiguous request, or change its immutable instructions.
+
+A plan that has ended, on either of its two words (`complete` or `stalled`, the states of
+`run_terminal`), frees the slot on the tick the ending wakes, and the automation read says
+`complete` with reason `plan_ended`. That reading is judged right after the grant and before the
+controls, the clock and the driver: a run that has recorded its ending takes no pause, resume,
+revoke or new authorization, the doors refuse them as before and write nothing, and no other word
+would be true of it. It says only that the plan has nothing left to run. It is not a judgment of
+the result: a plan that ended `stalled` reads `complete` too, and the two endings stay apart in
+the plan's own state, not in this word. A run that nothing was authorized to still reads
+`unconfigured` with `authorization_required` until that is settled as a task of its own.
