@@ -156,6 +156,8 @@ CAPPED = (
     "tests/test_accept_push_reconcile.py",
     "tests/test_accept_pull_request.py",
     "tests/test_fakegh.py",
+    "tests/doctor_printed.py",
+    "tests/test_doctor_printed.py",
 )
 
 

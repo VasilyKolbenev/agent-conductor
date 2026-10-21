@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from conductor import doctor, harnesses, prompts, store, templates, validate
 from conductor.__main__ import main
+from tests.doctor_printed import printed_argv
 from tests.test_store import write_project
 
 # A map about a real project: node ids and labels no built-in template writes,
@@ -137,8 +138,12 @@ def outcomes(out):
 
 
 def commands(out):
-    """Every command line of a report, as the argv `main` would be given."""
-    return [line[len(doctor.COMMAND_PREFIX):].split(" ")[1:]
+    """Every command line of a report, as the argv `main` would be given.
+
+    Each line is read by `tests/doctor_printed.py`, which refuses one that
+    `doctor.spell` would not have written for the argv it reads out of it.
+    """
+    return [printed_argv(line[len(doctor.COMMAND_PREFIX):])
             for line in out.splitlines()
             if line.startswith(doctor.COMMAND_PREFIX)]
 
