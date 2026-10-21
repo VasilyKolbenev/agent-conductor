@@ -15,6 +15,12 @@ their contents or treat old pending comments as current without checking
 later commits and current code.
 
 The current delivery scope is V1, governed by `docs/v1-v2-scope.md`.
+Read its 2026-10-21 owner clarification before planning provider or acceptance work.
+The product orchestrates five complete harnesses through paid subscriptions, with role/task
+assignment, no-code loops and evidenced usage/reset windows. Ray Dalio's five-step cycle is
+the default; users can build custom cycles. API-only execution is not a substitute for this
+goal. The earlier recovery decisions H5-V1 and R5-keys were superseded; subscription execution
+is unfinished V1 work. Claude-to-Codex is the first proof, not the whole five-harness scope.
 Codex is the technical lead and independent reviewer. Claude Code handles
 senior investigation and scoped implementation as described in
 `docs/recovery/2026-10-20/CLAUDE-CODE-HANDOFF.md`.

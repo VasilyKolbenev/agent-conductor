@@ -5,6 +5,35 @@ prove one useful independently checked result, and pass final review and owner
 acceptance. This is the current delivery boundary, not another platform roadmap.
 Nothing here declares a release, a green remote run, or completed manual acceptance.
 
+## Owner clarification, 2026-10-21: the core product contract
+
+December Command orchestrates complete, existing vendor coding harnesses that the user
+accesses through paid subscriptions: Grok, Claude Code, Codex, Kimi and DeepSeek.
+The user assigns each harness roles and tasks, connects them into execution/review loops,
+and collects independently checked results. Each harness retains its own agent execution
+loop and tools; December Command supplies the workflow and coordination above that layer.
+
+The default workflow is Ray Dalio's five-step cycle: goals, identify problems, diagnose,
+design and do. Workflow Studio must also let users create and edit their own cycles
+without code; the default cycle is not the only supported topology.
+
+The product must show each configured harness's subscription usage, remaining allowance,
+and reset time for the windows the vendor actually reports, including daily, weekly and
+five-hour windows where applicable. Distinguish measured values, stale observations and
+unavailable data. Do not invent missing limits, equate local action counts with vendor
+usage, or promise access that a particular vendor/account has not demonstrated.
+
+Subscription access is part of V1's core acceptance, not a V2 improvement. API access may
+remain optional, but an API-only rehearsal does not establish this product outcome and
+API keys must not be required as a substitute for the owner's paid subscriptions.
+This supersedes the earlier recovery decision H5-V1 and API-based R5-keys plan.
+
+Claude Code 2.1.239 executing and Codex 0.112.0 checking is the first end-to-end proof,
+not a reduction of the five-harness product scope. Record each remaining harness's actual
+support and evidence separately. Native subscription execution inside the product's
+boundary is still unfinished; this requirement does not claim the current wheel supports it.
+Preserve the independent checker, explicit budgets, human gates and original-project safety.
+
 ## What remains non-negotiable in V1
 
 The product is a local-first control plane for heterogeneous coding harnesses.
