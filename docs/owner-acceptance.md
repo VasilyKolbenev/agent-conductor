@@ -193,6 +193,9 @@ you exactly what to do about it, and what it must name is a COMMAND:
 & $CONDUCT providers --dir $PROJ
 ```
 
+Run it with the server stopped: first Ctrl+C in the server's window, as in step 16. While
+`conduct up` holds the project the command refuses with `owner_busy` before its first question.
+
 It asks which harness you have, where it is on this disk, and which environment variables it
 may read. Whether it asks a fourth question — the entrypoint — depends on the harness, and it
 must not ask you to choose: `deepseek-harness` runs through an interpreter, so it asks for the
@@ -200,8 +203,8 @@ script that interpreter runs and will not take an empty answer; the others are a
 executable, so no entrypoint is asked for and the screen says why.
 
 Then it shows you what it will write, **including the availability that pin will resolve to**,
-and asks before writing it. If it says `availability available`, restarting `conduct up`
-(as in step 16: Ctrl+C in the server's window, then the step-3 command) must show that
+and asks before writing it. When you are done with this step, start the server again with the
+step-3 command whatever it said. If it said `availability available`, that server must show the
 provider as available. If it says anything else, it names the file that is missing.
 A wizard that reported only "wrote providers.json" is what this replaced.
 
