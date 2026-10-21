@@ -29,7 +29,8 @@ else. The grant counts against the lease, so the lease cannot end before the rig
 That grant is CLOSED as shipped (`process_boundary.LOGIN_LOAN_OPEN`, `login_loan_provided`): the
 rights of a refresh let the attempt create files in the home and overwrite every file beneath it,
 and the vendor's executable configuration lives there. A login home is refused, before anything
-exists, until a review ruling says which objects of it the attempt may write.
+exists. In V1 it stays closed (the owner's decision H5-V1 of 21.10.2026), and no transport names
+one: the subscription road is refused by the transport before any claim.
 
 Nothing here widens an ACL beyond the four kinds of folder `AttemptFolders` names. That is a law of
 this runner and not a manner of its callers: an install folder is the version folder of a pinned

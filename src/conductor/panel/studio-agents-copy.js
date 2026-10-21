@@ -194,8 +194,8 @@ export const AGENTS_COPY = Object.freeze({
     "Настроено чтение ключа из окружения."
   ],
   "agents.auth_subscription": [
-    "Configured to use the vendor's own login, kept in its own directory.",
-    "Настроена собственная авторизация провайдера в отдельном каталоге."
+    "Configured to use the vendor's own login, kept in its own directory. In this version it only reads quotas: a task runs inside the execution boundary only with an API key.",
+    "Настроена собственная авторизация провайдера в отдельном каталоге. В этой версии она служит только для чтения квот: задача исполняется в изоляции только с API-ключом."
   ],
   "agents.auth_unpinned": [
     "No provider configuration names it, so no login was pinned.",

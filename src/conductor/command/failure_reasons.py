@@ -26,6 +26,8 @@ REASONS = (
     ("was observed to exit non-zero", "the process exited non-zero"),
     ("was stopped by the runner", "it was stopped"),
     ("reports no subscription", "the pinned login is not an admitted subscription"),
+    ("runs inside the execution boundary only with an API key",
+     "a subscription login does not run tasks inside the execution boundary in this version"),
     ("version preflight, so no task was spawned", "the version preflight failed"),
     ("is not the reviewed", "the installed build is not the reviewed version"),
     ("exceeds the bounded task channel", "its task was larger than the bounded task channel"),

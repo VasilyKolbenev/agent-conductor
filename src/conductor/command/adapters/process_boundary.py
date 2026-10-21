@@ -37,17 +37,21 @@ LOGIN_SHAPE = "DecemberCommand/logins/<name>"
 #: shipped. The rights of a credential refresh let the attempt create files in that home and
 #: overwrite every file beneath it, and the vendor's executable configuration (hooks, tool servers,
 #: user instructions, a notify command) lives there and is run again with the person's rights by
-#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. A review ruling
-#: on which objects of the home the attempt may write opens this, and nothing else does.
+#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. In V1 it stays
+#: closed (the owner's decision H5-V1 of 21.10.2026). It is the runner's own gate and opens no
+#: road: whether a transport may start a task on the subscription road is answered by the
+#: transport (`AttemptLaunch._login_road_covered`, False in V1), and no transport names a login
+#: home, so only the loan's own tests reach this gate (`tests/login_gate.py`).
 LOGIN_LOAN_OPEN = False
 
 
 def login_loan_provided() -> bool:
-    """Whether the runner loans a leased login home today: the fact a door asks before a claim.
+    """Whether the runner loans a leased login home: the runner's own gate, and no door's.
 
     Only the boolean True counts as open. The runner refuses a login home with this answer `False`
-    (`ProfileRefused`, before any profile, journal record or change exists), so a door that
-    reads it and a spawn that is judged by it can never disagree.
+    (`ProfileRefused`, before any profile, journal record or change exists). No door asks it and
+    no transport names a login home (`harness_attempt.AttemptFolders` has no `login`), so it is
+    not a second answer about the subscription road: that answer is the transport's alone.
     """
     return LOGIN_LOAN_OPEN is True
 
@@ -86,10 +90,11 @@ class AttemptFolders:
     `work` and `home` are routes relative to the project root (`work/<id>`, the per-spawn home);
     `home` is None on the login road. `install` is the ABSOLUTE folder that holds the pinned
     executable and what it loads. `login` is the ABSOLUTE login home the attempt holds under the
-    shared login lease (the subscription road), and None on the API-key road. Nothing here grants
-    anything: the runner checks each folder, takes the login home only if the attempt's own lease
-    names it, and its journal grants and returns it (`process_loans`). A `login` is refused while
-    `login_loan_provided()` is False, and it is, as shipped.
+    shared login lease, and None otherwise; no transport names one (in V1 the subscription road
+    is refused before any claim, H5-V1). Nothing here grants anything: the runner checks each
+    folder, takes the login home only if the attempt's own lease names it, and its journal grants
+    and returns it (`process_loans`). A `login` is refused while `login_loan_provided()` is
+    False, and it is, as shipped.
     """
 
     work: str

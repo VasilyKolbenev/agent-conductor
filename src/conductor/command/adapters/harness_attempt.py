@@ -31,7 +31,7 @@ from ...ownership_errors import OwnerRefused
 from ..boundary_entry import entry_call, entry_takes_the_call
 from ..execution_boundary import BoundaryUnavailable, boundary_provided, require_boundary
 from . import login_home
-from .harness_profile import boundary_detail
+from .harness_profile import boundary_detail, subscription_boundary_detail
 from .harness_workspace import WorkspaceNotContained
 from .headless_spec import attempt_spec
 from .headless_values import ArgvSource
@@ -142,13 +142,13 @@ class AttemptLaunch:
     def boundary_provided(self, mode: str) -> bool:
         """Whether a task attempt of this mode would be launched inside the boundary.
 
-        False for a transport never confined, false on the subscription road, whose leased login
-        directory the boundary does not grant (H contract, section 5), false when the runner this
-        transport holds has no entry that takes the call it would make (``boundary_entry``), and
-        false when the pinned build's install folder cannot be named from its path
-        (``find_install_folder``): such an attempt is refused, never run without the boundary and
-        never sent on to fail after the attempt was claimed. Each of these is a fact the
-        transport holds before any claim, so the doors and the transport answer alike.
+        False for a transport never confined, false on the subscription road
+        (``_login_road_covered``), false when the runner this transport holds has no entry that
+        takes the call it would make (``boundary_entry``), and false when the pinned build's
+        install folder cannot be named from its path (``find_install_folder``): such an attempt
+        is refused, never run without the boundary and never sent on to fail after the attempt
+        was claimed. Each of these is a fact the transport holds before any claim, so the doors
+        and the transport answer alike.
 
         Raises:
             ValueError: ``mode`` is not an attempt mode, confined or not, on any platform.
@@ -159,10 +159,31 @@ class AttemptLaunch:
     def _road_covers(self, mode: str) -> bool:
         """Whether the road this transport holds can carry a confined attempt of this mode.
 
-        Apart from the platform: not the subscription login, a runner whose entry takes the call,
-        and a pinned build whose install folder the boundary can be asked to grant.
+        Apart from the platform: the login it holds (``_login_road_covered``) and the launch
+        (``_launch_covers``).
         """
-        return (not self._signed_in_road() and entry_takes_the_call(self._runner, mode)
+        return self._login_road_covered() and self._launch_covers(mode)
+
+    def _login_road_covered(self) -> bool:
+        """Whether the login this transport holds may start a task inside the boundary.
+
+        The API-key road may. The subscription road may not, in V1: the owner's decision H5-V1
+        of 21.10.2026 (``docs/recovery/2026-10-20/OPEN-DECISIONS.md``). Its child would need
+        rights on the operator's login home, where the vendor keeps executable configuration
+        that runs again outside the boundary, and no attempt is given any.
+
+        This is the ONE answer for that road: the doors (``boundary_provided``), the refusal
+        before the claim (``_boundary_refusal``), the spawn (``_hold_boundary``) and the checker
+        all reach it through ``_road_covers``. ``process_boundary.LOGIN_LOAN_OPEN`` is not part
+        of it: that is the runner's own gate on a login home, and no transport names one
+        (``AttemptFolders`` has no such field), so opening it opens nothing here.
+        """
+        return not self._signed_in_road()
+
+    def _launch_covers(self, mode: str) -> bool:
+        """A runner whose entry takes the call, and a pinned build whose install folder the
+        boundary can be asked to grant."""
+        return (entry_takes_the_call(self._runner, mode)
                 and find_install_folder(self._argv_prefix()[-1]) is not None)
 
     def _confined_attempt(self, mode: str | None) -> bool:
@@ -182,11 +203,17 @@ class AttemptLaunch:
         """A failed receipt when a confined transport cannot cover this task, else None.
 
         Asked at the top of every road that starts a task, BEFORE its version preflight, so a
-        refusal spawns nothing, borrows no login and creates no folder, home or marker.
+        refusal spawns nothing, borrows no login and creates no folder, home or marker. Where
+        the login is the one fact missing (the platform has the boundary and the launch is
+        covered), the receipt names it (H5-V1); otherwise it names no cause.
         """
         if not self._confine or self.boundary_provided(mode):
             return None
-        return self._receipt(request, "failed", None, boundary_detail(self.profile.tool_noun))
+        tool = self.profile.tool_noun
+        login_only = (not self._login_road_covered() and self._launch_covers(mode)
+                      and boundary_provided(self._boundary_platform, mode))
+        detail = subscription_boundary_detail(tool) if login_only else boundary_detail(tool)
+        return self._receipt(request, "failed", None, detail)
 
     def _hold_boundary(self, mode: str | None) -> None:
         """Refuse a confined task attempt the boundary cannot cover, before it creates anything.

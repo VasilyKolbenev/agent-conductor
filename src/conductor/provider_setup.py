@@ -357,6 +357,8 @@ def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
     _say(f"\nHow does {provider_id} sign in?")
     _say("  1  its own subscription login, kept in a directory you name")
     _say("  2  a credential this build reads from the environment")
+    _say("  In this version only 2 runs tasks inside the execution boundary (on Windows);")
+    _say("  with 1 the quotas are read and every task is refused before it starts.")
     while True:
         answer = ask("> ").strip()
         if answer == "2":

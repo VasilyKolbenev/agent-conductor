@@ -417,6 +417,15 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.chain.status.needed": ["needed", "нужно"],
   "wizard.chain.refused": ["The server refused this link: {code}.",
     "Сервер отказал на этом звене: {code}."],
+  "wizard.chain.boundary": ["This step needs the isolation (execution boundary), and this "
+    + "computer cannot give it to the agent chosen, so nothing was started. In this version a "
+    + "task runs in the isolation only on Windows, only for an agent that signs in with an API "
+    + "key (not a subscription), and only from a build installed under "
+    + "...\\harnesses\\<name>\\<version>\\.",
+    "Этому шагу нужна изоляция (execution boundary), а выбранному агенту этот компьютер её "
+    + "дать не может, поэтому ничего не запускалось. В этой версии задача исполняется в "
+    + "изоляции только на Windows, только у агента со входом по API-ключу (не по подписке) и "
+    + "только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\."],
   "wizard.chain.conflict_run": ["A run with this number is already open with another "
     + "arrangement of the roles: they were changed after an answer was lost.",
     "Запуск с этим номером уже открыт с другой расстановкой: роли меняли после потерянного "

@@ -330,3 +330,21 @@ def test_a_read_that_fails_after_a_reload_is_said_and_asked_again_only_by_the_ow
     bench.control("wizard:prepare:retry").click()
     expect(bench.page.locator('[data-resume="no_run"]')).to_be_visible()
     assert [call["name"] for call in server.world(bench)["calls"]] == ["prep_read", "prep_read"]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_step_the_boundary_cannot_carry_says_why_in_a_sentence_of_its_own(bench, lang):
+    """H5-V1: the run's plan door refuses a step whose agent has no execution boundary. The
+    link says what that means for this version (Windows, an API key, the install tree) instead
+    of a bare `service_refused`; nothing was written, and a retry asks the same door again."""
+    to_prepare(bench, lang, refuse={"prep_run": {"code": "service_refused", "count": 1,
+                                                 "detail": {"run_id": "task-bench-r1",
+                                                            "node_id": "build",
+                                                            "sandbox": "execution-boundary"}}})
+    press(bench)
+    expect(bench.page.locator('[data-prepare="refused"]')).to_be_visible()
+    assert dict(statuses(bench))["run"] == "refused"
+    refusal = bench.page.locator('[data-refusal-link="run"]')
+    assert refusal.inner_text() == bench.say("wizard.chain.boundary")
+    assert server.world(bench)["runs_written"] == 0
+    assert bench.problems == []

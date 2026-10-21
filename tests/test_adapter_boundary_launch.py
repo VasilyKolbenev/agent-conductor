@@ -32,7 +32,8 @@ from conductor.command.adapters.grok_build import GROK_PROTOCOL, GROK_PROVIDER_I
 from conductor.command.adapters.dsh_harness import DshPin
 from conductor.command.adapters.harness_attempt import (
     RUNTIME_ENV, AttemptFolders, AttemptLaunch, install_folder)
-from conductor.command.adapters.harness_profile import boundary_detail
+from conductor.command.adapters.harness_profile import (
+    boundary_detail, subscription_boundary_detail)
 from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR
 from conductor.command.adapters.process import ProcessRunner, ProcessRunnerError
 from conductor.command.adapters.process_boundary import WindowsContainer
@@ -230,7 +231,7 @@ def test_the_subscription_road_is_not_provided_and_is_refused_before_it_spawns(t
 
     assert adapter.boundary_provided("dispatch") is False
     assert receipt.outcome == "failed"
-    assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
+    assert receipt.detail == subscription_boundary_detail(adapter.profile.tool_noun)
     assert _fakeclaude.spawns(log) == [] and runner.runs == []
 
 

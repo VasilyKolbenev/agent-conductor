@@ -415,8 +415,9 @@ function landWrite(run, input, ask, result) {
   if (result.status === "unknown") return {...base, phase: "unknown"};
   const code = result.code ?? "refused";
   if (ask.name === "prep_flow" && code === "draft_conflict") return {...base, flowCheck: true};
+  // The word that says why, or the sandbox route a plan door could not provide.
   const detail = result.payload?.error?.detail ?? result.payload?.detail;
-  return refusedAt(base, jobName(ask), code, detail?.reason ?? null);
+  return refusedAt(base, jobName(ask), code, detail?.reason ?? detail?.sandbox ?? null);
 }
 
 /**

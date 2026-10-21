@@ -467,3 +467,25 @@ def test_the_links_are_said_done_running_todo_skipped_unknown_or_refused_as_they
     assert out["starter"][1] == "skipped" and out["starter"] == [
         "done", "skipped", "done", "done", "done", "done"]
     assert out["review"] == ["done"] * 6
+
+
+def test_a_plan_door_that_cannot_provide_the_boundary_stops_at_the_run_and_names_the_route():
+    """H5-V1: the run's plan door refuses a step whose agent has no execution boundary (a
+    subscription login, a platform without one, a build outside the install tree). The detail
+    carries no `reason`; the route it could not provide is what the chain keeps as the reason,
+    so the step can say the sentence of its own instead of a bare code."""
+    out = run_js(CHAIN + """
+      const wire = {error: {code: "service_refused",
+        message: "step 'build' demands sandbox route 'execution-boundary' that this build "
+          + "does not provide",
+        detail: {run_id: "task-t1-r1", node_id: "build", sandbox: "execution-boundary"}}};
+      const stopped = drive(press(ready()), {prep_run: () => refused("service_refused", wire)});
+      const plain = drive(press(ready()), {prep_run: () => refused("service_refused")});
+      show({phase: stopped.state.run.phase, refusal: stopped.state.run.refusal,
+        links: links(stopped.state), plain: plain.state.run.refusal});
+    """, DATA, modules=MODULES)
+    assert out["phase"] == "refused"
+    assert out["refusal"] == {"job": "run", "link": "run", "code": "service_refused",
+                              "reason": "execution-boundary"}
+    assert out["links"][:4] == ["done", "done", "done", "refused"]
+    assert out["plain"]["reason"] is None, "a refusal with no detail keeps saying its code"

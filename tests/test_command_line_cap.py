@@ -162,6 +162,7 @@ CAPPED = (
     "tests/test_browser_gate_netfail.py",
     "tests/test_policy_driver_stalled.py",
     "tests/test_policy_view_ended.py",
+    "tests/test_subscription_road_boundary.py",
 )
 
 

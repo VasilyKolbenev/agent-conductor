@@ -74,6 +74,19 @@ def boundary_detail(tool: str) -> str:
             "so no task was spawned")
 
 
+def subscription_boundary_detail(tool: str) -> str:
+    """A task attempt refused because this transport signs in by subscription (H5-V1).
+
+    Said only where the login is the one fact missing: the platform has the boundary and the
+    launch would be covered (``AttemptLaunch._boundary_refusal``). It names the login MODE, a
+    word the operator's own configuration and the Agents screen already show, and no directory,
+    account or vendor detail. In V1 a task runs inside the boundary only on the API-key road
+    (the owner's decision H5-V1 of 21.10.2026).
+    """
+    return (f"this {tool} connection signs in with a subscription, and in this version a task "
+            "runs inside the execution boundary only with an API key, so no task was spawned")
+
+
 def residue_detail(tool: str) -> str:
     """The home root holds state this build did not mint and may not delete.
 

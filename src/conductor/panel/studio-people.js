@@ -81,7 +81,9 @@ export const AUTH_STATES = Object.freeze(
 //: because that is all a config file can say.
 export const AUTH_MEANINGS = Object.freeze({
   api_key: "Configured to read a credential from the environment.",
-  subscription: "Configured to use the vendor's own login, kept in its own directory.",
+  subscription: "Configured to use the vendor's own login, kept in its own directory. In this "
+    + "version it only reads quotas: a task runs inside the execution boundary only with an "
+    + "API key.",
   unpinned: "No provider configuration names it, so no login was pinned.",
 });
 //: What each build state means, in the user's words.

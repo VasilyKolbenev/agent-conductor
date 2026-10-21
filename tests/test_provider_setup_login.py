@@ -45,8 +45,10 @@ def test_the_login_question_is_put_only_where_a_login_is_driven(
     said = capsys.readouterr().err
     if LOGIN_ASKED[provider_id]:
         assert f"How does {provider_id} sign in?" in said, said
+        assert "only 2 runs tasks inside the execution boundary" in said, said
     else:
         assert "sign in?" not in said, said
+        assert "execution boundary" not in said, said
         assert "drives no vendor login" in said, said
     assert written(project)["providers"][0].get("auth", "api_key") == "api_key"
 

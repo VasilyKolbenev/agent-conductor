@@ -13,6 +13,9 @@ import {prepareFacts} from "./desk-wizard-model.js";
 //: The refusals that have a sentence of their own; any other is said by its code.
 const SENTENCES = Object.freeze({record_conflict: "wizard.chain.conflict_run",
   draft_conflict: "wizard.flow.changed"});
+//: The route a plan door refuses that has a sentence of its own: the execution boundary, which
+//: in this version only a connection with an API key on Windows has (H5-V1).
+const ROUTES = Object.freeze({"execution-boundary": "wizard.chain.boundary"});
 
 function linkRow(ctx, row, at) {
   return element("li", {"data-link": row.link, "data-status": row.status}, [
@@ -22,8 +25,10 @@ function linkRow(ctx, row, at) {
 
 function refusalNote(ctx, refusal) {
   const code = refusal.reason === null ? refusal.code : `${refusal.code} · ${refusal.reason}`;
+  const route = refusal.code === "service_refused" && typeof refusal.reason === "string"
+    && Object.hasOwn(ROUTES, refusal.reason) ? ROUTES[refusal.reason] : null;
   const key = Object.hasOwn(SENTENCES, refusal.code) ? SENTENCES[refusal.code]
-    : "wizard.chain.refused";
+    : route ?? "wizard.chain.refused";
   return element("p", {"data-refusal-link": refusal.link, role: "alert",
     text: ctx.t(key, key === "wizard.chain.refused" ? {code} : {})});
 }

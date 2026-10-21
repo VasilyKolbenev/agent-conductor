@@ -64,6 +64,10 @@ def test_agents_and_quota_preserve_literal_names_money_and_unknown(locale, title
     assert "instance-id" in result["text"] and "Role Не переводить" in result["text"]
     assert result["unchanged"] and result["refresh"] == 1 and not result["html"]
     assert ("Платёжный аккаунт неизвестен" if locale == "ru" else "Billing account unknown") in result["text"]
+    # H5-V1: a subscription row says it only reads quotas and tasks need an API key.
+    reads = "только для чтения квот" if locale == "ru" else "it only reads quotas"
+    key = "только с API-ключом" if locale == "ru" else "only with an API key"
+    assert reads in result["text"] and key in result["text"]
 
 
 @pytest.mark.parametrize("locale,title", [("ru", "Записать решение"), ("en", "Record this decision")])
