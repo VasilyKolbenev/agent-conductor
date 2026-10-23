@@ -20,7 +20,14 @@ launch. The provider door confines every adapter it builds, for the host platfor
 told another (``providers.resolve_providers``), so a production harness is never started outside
 the boundary. A transport built without that door, or by a door told ``confine_platform=None``,
 launches as it did before R5: that is the harness fakes' launch, and the doors tell any plan
-that this harness has no boundary (``AdapterRegistry.execution_boundary``).
+that this harness has no boundary (``AdapterRegistry.execution_boundary``). Its subscription
+spawns, a task attempt included, stand on the real login directory, as they did before the relay.
+
+A confined task attempt of a harness that has a relay (``HarnessProfile.login_relay``) is the
+RELAYED attempt (``_relayed``): its home is a fresh relay home outside the project, and its
+order is the one of ``relay_attempt``: lease, copy, boundary entered, claim, run. The claim is
+therefore a CALLBACK of ``_attempt``, taken by the attempt itself at that moment; on every other
+road ``_attempt`` takes it first, which is the order that existed before the relay.
 """
 from __future__ import annotations
 
@@ -28,8 +35,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ...ownership_errors import OwnerRefused
-from ..boundary_entry import entry_call, entry_takes_the_call
-from ..execution_boundary import BoundaryUnavailable, boundary_provided, require_boundary
+from ..boundary_entry import entry_call, entry_lends_relay_homes, entry_takes_the_call
+from ..execution_boundary import (
+    ATTEMPT_MODES, BoundaryUnavailable, boundary_provided, require_boundary)
 from . import login_home
 from .harness_profile import boundary_detail, subscription_boundary_detail
 from .harness_workspace import WorkspaceNotContained
@@ -39,6 +47,7 @@ from .login_lifetime import owned_login_attempt
 from .process import CommandSpec, ProcessOutcome, ProcessRunnerError
 from .process_boundary import WindowsContainer
 from .process_profile import ProfileRefused
+from .relay_attempt import CLAIM_REFUSALS, CarriedError, LaunchLost, NotStarted
 
 #: The environment names a confined child cannot do without: the container cannot read the
 #: user's profile, so each points at the attempt's own fresh ``runtime`` folder (H contract, 6).
@@ -58,7 +67,9 @@ class AttemptFolders:
 
     Attributes:
         work: The route, relative to the project root, of the attempt's work folder.
-        home: The route, relative to the project root, of its per-spawn home, or None.
+        home: The route, relative to the project root, of its per-spawn home, or None. For a
+            RELAYED attempt (``AttemptLaunch._relayed``) it is instead the ABSOLUTE path of its
+            relay home, as text, and the runner judges it as one (``relay_home``).
         install: The ABSOLUTE folder that holds the pinned executable and what it loads.
     """
 
@@ -142,13 +153,13 @@ class AttemptLaunch:
     def boundary_provided(self, mode: str) -> bool:
         """Whether a task attempt of this mode would be launched inside the boundary.
 
-        False for a transport never confined, false on the subscription road
-        (``_login_road_covered``), false when the runner this transport holds has no entry that
-        takes the call it would make (``boundary_entry``), and false when the pinned build's
-        install folder cannot be named from its path (``find_install_folder``): such an attempt
-        is refused, never run without the boundary and never sent on to fail after the attempt
-        was claimed. Each of these is a fact the transport holds before any claim, so the doors
-        and the transport answer alike.
+        False for a transport never confined, false on the subscription road of a harness that
+        has no relay (``_login_road_covered``), false when the runner this transport holds has no
+        entry that takes the call it would make or, on a relay road, does not lend a relay home
+        (``boundary_entry``), and false when the pinned build's install folder cannot be named
+        from its path (``find_install_folder``): such an attempt is refused, never run without
+        the boundary and never sent on to fail after the attempt was claimed. Each of these is a
+        fact the transport holds before any claim, so the doors and the transport answer alike.
 
         Raises:
             ValueError: ``mode`` is not an attempt mode, confined or not, on any platform.
@@ -167,10 +178,13 @@ class AttemptLaunch:
     def _login_road_covered(self) -> bool:
         """Whether the login this transport holds may start a task inside the boundary.
 
-        The API-key road may. The subscription road may not, in V1: the owner's decision H5-V1
-        of 21.10.2026 (``docs/recovery/2026-10-20/OPEN-DECISIONS.md``). Its child would need
-        rights on the operator's login home, where the vendor keeps executable configuration
-        that runs again outside the boundary, and no attempt is given any.
+        The API-key road may. The subscription road may where the harness has a relay
+        (``HarnessProfile.login_relay``): its task runs on a relay home that holds a copy of the
+        access token and no refresh token, and the real login home is never loaned (the decision
+        of 23.10.2026, H5-SUB-R5). Where it has none the road may not: the owner's decision H5-V1
+        of 21.10.2026 (``docs/recovery/2026-10-20/OPEN-DECISIONS.md``) stands, because its child
+        would need rights on the operator's login home, where the vendor keeps executable
+        configuration that runs again outside the boundary, and no attempt is given any.
 
         This is the ONE answer for that road: the doors (``boundary_provided``), the refusal
         before the claim (``_boundary_refusal``), the spawn (``_hold_boundary``) and the checker
@@ -178,12 +192,26 @@ class AttemptLaunch:
         of it: that is the runner's own gate on a login home, and no transport names one
         (``AttemptFolders`` has no such field), so opening it opens nothing here.
         """
-        return not self._signed_in_road()
+        return not self._signed_in_road() or self.profile.login_relay is not None
+
+    def _relay_road(self) -> bool:
+        """Whether this transport signs in by subscription AND its harness has a relay."""
+        return bool(self._signed_in_road()) and self.profile.login_relay is not None
+
+    def _relayed(self, mode: str | None) -> bool:
+        """Whether an attempt of this mode is a TASK attempt that works on a relay home.
+
+        A confined transport, a task attempt (``dispatch`` or ``review``) and a relay road. A
+        transport never confined is not relayed whatever its login: that is the launch of the
+        harness fakes, which stands on the real login directory (the launch before R5).
+        """
+        return self._confine and mode in ATTEMPT_MODES and self._relay_road()
 
     def _launch_covers(self, mode: str) -> bool:
-        """A runner whose entry takes the call, and a pinned build whose install folder the
-        boundary can be asked to grant."""
+        """A runner whose entry takes the call (and, on a relay road, lends a relay home), and a
+        pinned build whose install folder the boundary can be asked to grant."""
         return (entry_takes_the_call(self._runner, mode)
+                and (not self._relay_road() or entry_lends_relay_homes(self._runner))
                 and find_install_folder(self._argv_prefix()[-1]) is not None)
 
     def _confined_attempt(self, mode: str | None) -> bool:
@@ -228,7 +256,7 @@ class AttemptLaunch:
             raise BoundaryUnavailable(self._boundary_platform, mode)
 
     def _attempt(
-            self, argv: ArgvSource, cwd: str, *, mode: str | None = None,
+            self, argv: ArgvSource, cwd: str, *, mode: str | None = None, claim=None,
             **options) -> ProcessOutcome:
         """One spawn inside one FRESH home, and the home goes when the spawn does.
 
@@ -237,9 +265,38 @@ class AttemptLaunch:
         is entered, a home is minted or any folder is touched. ``options`` are the spawn's own
         bounds (``timeout``, ``stdin_bytes``, ``model`` and the rest); ``_owned_attempt`` names
         them and is where the spawn happens.
+
+        ``claim`` is the ``Claim`` of the action, or None. An attempt that is not relayed takes it
+        first, before the boundary is judged, as every road did before the relay. A RELAYED
+        attempt hands it to ``_relay_attempt``, which takes it after the boundary was entered.
+        That method stands under the login lease, so what it refuses it returns as a value, and
+        this one, which stands outside the lease, raises it (``RelayNotStarted``, before any
+        claim) or turns a lost launch into the error the runtime records as ``unknown``
+        (``_relay_outcome``). So does a question put to the real login home of a relay road
+        (``_asks_the_real_login``): the version print and the login status are spawns under the
+        same lease.
+
+        Raises:
+            RelayNotStarted: A relayed attempt was refused before its claim.
         """
+        if not self._relayed(mode):
+            if claim is not None:
+                claim()
+            self._hold_boundary(mode)
+            return self._relay_outcome(self._owned_attempt(argv, cwd, mode=mode, **options))
         self._hold_boundary(mode)
-        return self._owned_attempt(argv, cwd, mode=mode, **options)
+        return self._relay_outcome(
+            self._relay_attempt(argv, cwd, mode=mode, claim=claim, **options))
+
+    def _asks_the_real_login(self, mode: str | None) -> bool:
+        """Whether this spawn is a question put to the real login home of a relay road.
+
+        A version print, a login status, a quota read: no task attempt, and so no mode. They stand
+        under the shared login lease, and an exception leaving it makes the lease uncertain until
+        the OS restarts, so what these refuse before a child exists is a value (``LaunchLost``,
+        ``CarriedError``) that ``_attempt`` raises again outside the lease.
+        """
+        return mode is None and self._relay_road()
 
     @owned_login_attempt
     def _owned_attempt(
@@ -265,8 +322,16 @@ class AttemptLaunch:
 
         The ONE reading of that home a provider gets stands between the spawn
         and the discard, because after the discard there is nothing to read.
+
+        A question put to the real login home of a relay road (``_asks_the_real_login``) that
+        cannot start returns a value, not an exception: this method stands under the login lease.
         """
-        home = self._mint_home()
+        try:
+            home = self._mint_home()
+        except (WorkspaceNotContained, OSError) as refused:
+            if not self._asks_the_real_login(mode):
+                raise
+            return CarriedError(refused)
         # ONE source for "is there a login directory in play", so the before and
         # after measurements and the cleanup can never disagree about it.
         auth_home = self._signed_in_road()
@@ -280,6 +345,8 @@ class AttemptLaunch:
                 separate_stderr=separate_stderr, model=model,
                 output_limit=output_limit, unset_env=unset_env, mode=mode,
                 **({} if server_read is None else {"server_read": server_read}))
+            if isinstance(outcome, LaunchLost):
+                return outcome
             self._read_attempt_result(home, outcome)
             return outcome
         finally:
@@ -335,7 +402,7 @@ class AttemptLaunch:
             model: str | None = None,
             output_limit: int | None = None, server_read=None,
             unset_env: tuple[str, ...] = (),
-            mode: str | None = None) -> ProcessOutcome:
+            mode: str | None = None) -> ProcessOutcome | LaunchLost:
         """The ONE place a child is started; argv, env and bounds are code-owned.
 
         ``cwd`` is a route RELATIVE to the project root, so the runner's own
@@ -352,7 +419,7 @@ class AttemptLaunch:
             spec = attempt_spec(self, argv, home, cwd, timeout=timeout,
                 stdin_bytes=stdin_bytes, stdin_completion_id=stdin_completion_id,
                 separate_stderr=separate_stderr, model=model, output_limit=output_limit,
-                unset_env=unset_env)
+                unset_env=unset_env, mode=mode)
             if self._confined_attempt(mode):
                 return self._run_confined(spec, home, cwd, mode)
             if server_read is not None:
@@ -365,6 +432,8 @@ class AttemptLaunch:
             return self._runner.run(spec)
         except ProcessRunnerError:  # noqa: BLE001 -- carry no child detail onward
             failed = True
+        if failed and self._asks_the_real_login(mode):
+            return LaunchLost()  # the same error, raised by `_attempt` once the lease has closed
         if failed:
             raise self.error(
                 f"the {profile.tool_noun} harness could not start the "
@@ -381,14 +450,70 @@ class AttemptLaunch:
         """
         plain = self._argv_prefix()
         try:
-            folders = AttemptFolders(
-                work=cwd, home=home.relative_to(self._workspace.root).as_posix(),
-                install=install_folder(plain[-1]))
+            folders = self._attempt_folders(cwd, home, mode)
             with self._runner.container_profile(**entry_call(mode, folders)) as (boundary, paths):
                 return self._runner.run(confined_spec(
                     spec, boundary, paths, plain=plain, prefix=self._boundary_prefix()))
         except LAUNCH_REFUSALS:
             raise ProcessRunnerError("the boundaried launch was refused") from None
+
+    def _attempt_folders(self, cwd: str, home: Path, mode: str) -> AttemptFolders:
+        """The folders a confined attempt asks the boundary entry for: the one place they are named.
+
+        The home of a RELAYED attempt is its relay home, written as the absolute path text the
+        runner judges as one; any other is a route beneath the project root.
+        """
+        return AttemptFolders(
+            work=cwd,
+            home=str(home) if self._relayed(mode) else home.relative_to(
+                self._workspace.root).as_posix(),
+            install=install_folder(self._argv_prefix()[-1]))
+
+    def _run_relayed(self, spec: CommandSpec, home: Path, cwd: str, mode: str, claim):
+        """Enter the boundary, claim, run, leave: what is refused BEFORE the child is a value.
+
+        Called under the login lease, so no expected failure may leave it as an exception. The
+        action is claimed only once the block is entered, so a boundary that refuses its entry
+        leaves no marker and nothing started (``NotStarted``). From the moment the run begins the
+        child may have worked: a refusal to run or to leave after that is ``LaunchLost``, which
+        the caller makes the error the runtime records as ``unknown``. A claim that cannot be taken
+        starts nothing either. What is neither of these (a bug, an interrupt) is not caught.
+
+        Returns:
+            The outcome, a ``NotStarted`` or a ``LaunchLost``.
+        """
+        ran = False
+        try:
+            folders = self._attempt_folders(cwd, home, mode)
+            with self._runner.container_profile(**entry_call(mode, folders)) as (boundary, paths):
+                ready = self._ready_to_run(spec, boundary, paths, claim)
+                if isinstance(ready, NotStarted):
+                    return ready
+                ran = True
+                return self._runner.run(ready)
+        except LAUNCH_REFUSALS:
+            return LaunchLost() if ran else NotStarted("enter")
+
+    def _ready_to_run(self, spec: CommandSpec, boundary: WindowsContainer, paths, claim):
+        """The spec the child runs with, once the action is claimed; or why nothing may start.
+
+        The entry of the boundary has given what the spec needs of it, so everything that can be
+        refused is refused now, in this order, and the claim is the last of it: the spec is built
+        (``NotStarted("spec")``), then the claim is taken. A claim that cannot be taken starts
+        nothing, and says whether its marker stands anyway (``NotStarted("claim_standing")``): a
+        write that failed half way leaves the action claimed, and a repeat of it is ``unknown``.
+        """
+        try:
+            final = confined_spec(spec, boundary, paths, plain=self._argv_prefix(),
+                                  prefix=self._boundary_prefix())
+        except ProcessRunnerError:
+            return NotStarted("spec")
+        if claim is not None:
+            try:
+                claim()
+            except CLAIM_REFUSALS:  # noqa: BLE001 -- no path onward
+                return NotStarted("claim_standing" if claim.stands() else "claim")
+        return final
 
     def _boundary_prefix(self) -> tuple[str, ...]:
         """What the pin contributes to the front of a boundaried argv.

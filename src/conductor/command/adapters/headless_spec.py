@@ -19,7 +19,9 @@ def _named(unset_env):
 
 def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
                  stdin_completion_id=None, separate_stderr=False, model=None,
-                 output_limit=None, unset_env=()):
+                 output_limit=None, unset_env=(), mode=None, extra=()):
+    # `mode` is the attempt's mode when it is a TASK attempt, and it decides what the home
+    # variable names (`_home_value`). `extra` are values of the relay copy the scan must hold.
     # `unset_env` removes a name from BOTH places a value could come from: a forced
     # switch, and an operator allowlist the runner copies from its own environment.
     # An override cannot delete a name, so the allowlist has to lose it as well.
@@ -36,7 +38,7 @@ def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
         # ordering means the promise holds even if it did not.
         env={**dict(CHILD_ENV),
              **{name: value for name, value in adapter.profile.forced_env if not dropped(name)},
-             adapter.profile.home_env: adapter._home_value(home)},
+             adapter.profile.home_env: adapter._home_value(home, mode)},
         output_limit=bounded_output(adapter.profile, output_limit),
         timeout_seconds=timeout,
         stdin_bytes=stdin_bytes, separate_stderr=separate_stderr,
@@ -45,4 +47,4 @@ def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
         # vendor login lives in a file, so the runner cannot derive it
         # from the environment the way it derives every other credential
         # this build hands a child.
-        sensitive_extra=adapter._login_secrets())
+        sensitive_extra=(*adapter._login_secrets(), *extra))

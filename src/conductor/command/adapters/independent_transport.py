@@ -8,6 +8,7 @@ from .harness_profile import REVIEW_CAPABILITY
 from .harness_workspace import work_route
 from .independent_check import CheckFrameError, build_frame, scan_frame, verdict
 from .feedback_protocol import parse_feedback, FEEDBACK_PROTOCOL, FeedbackProtocolError
+from .relay_attempt import RelayNotStarted
 from .result_manifest import MaterialManifestError, check_result_manifest, marked_policy
 
 
@@ -32,6 +33,12 @@ class IndependentCheckTransport:
         self._begin_road()
         if self._workspace.sweep_homes():
             return self._checker_answer(request, "homes_refused")
+        started = self._relay_start("review")
+        if started is not None:
+            # A leftover relay home is a home refused; a relay folder that cannot be proved is a
+            # login that is not ready, which a build that failed its preflight is not.
+            return self._checker_answer(
+                request, "homes_refused" if started == "homes" else "login_not_ready")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):
             return self._checker_answer(request, "marker_standing")
         before = self._workspace.digest_work_tree()
@@ -41,8 +48,10 @@ class IndependentCheckTransport:
                 else self._dispatch_args(request.arguments))
         frame = self._check_frame(request, args, material)
         scan_frame(frame, (*material.sensitive, *self._sensitive_values()))
-        if self._preflight(request) is not None or self._retained:
-            return self._checker_answer(request, "preflight_refused")
+        refused = self._preflight(request)
+        if refused is not None or self._retained:
+            return self._checker_answer(
+                request, "login_not_ready" if self._relay_refused(refused) else "preflight_refused")
         if self._login_residue:
             # A preflight that already left undeclared state in the login
             # directory is not a preflight this verification may build on: the
@@ -51,13 +60,19 @@ class IndependentCheckTransport:
         # The preflight has no authority to alter the tree it is about to judge.
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._checker_answer(request, "tree_changed")
-        self._workspace.claim_verification(request.run_id, request.action_id)
-        outcome = self._attempt(
-            self._verdict_argv, work_route(args.work_item_id, args.task_scope),
-            timeout=request.timeout_seconds, stdin_bytes=frame.payload,
-            separate_stderr=True, model=verifier.model, mode="review",
-            output_limit=(None if request.capability == REVIEW_CAPABILITY
-                          else OUTPUT_LIMIT_BYTES[args.output_limit_profile]))
+        try:
+            outcome = self._attempt(
+                self._verdict_argv, work_route(args.work_item_id, args.task_scope),
+                timeout=request.timeout_seconds, stdin_bytes=frame.payload,
+                separate_stderr=True, model=verifier.model, mode="review",
+                output_limit=(None if request.capability == REVIEW_CAPABILITY
+                              else OUTPUT_LIMIT_BYTES[args.output_limit_profile]),
+                claim=self._claim_of(request, verification=True))
+        except RelayNotStarted as refused:
+            # Before the claim, or with a claim that could not be taken: whichever it was, the
+            # checker is not started, and a claim that failed is told as the marker it may leave.
+            return self._checker_answer(request, "marker_standing" if refused.code in (
+                "claim", "claim_standing") else "login_not_ready")
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._checker_answer(request, "tree_changed")
         if self._retained:

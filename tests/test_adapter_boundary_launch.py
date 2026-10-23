@@ -220,19 +220,53 @@ def test_an_unknown_attempt_mode_is_refused_on_every_platform_before_a_spawn(tmp
     assert runner.runs == [] and _fakegrok.spawns(log) == []
 
 
-def test_the_subscription_road_is_not_provided_and_is_refused_before_it_spawns(tmp_path):
+def _sign_in(adapter, tmp_path) -> None:
+    """Re-pin a harness to a subscription login kept in a fresh, empty directory."""
     login = tmp_path / "login"
     login.mkdir()
-    adapter, _root, log = claude_t.a_harness(
-        tmp_path, auth="subscription", auth_home=str(login))
+    adapter._pin = dataclasses.replace(adapter._pin, auth="subscription", auth_home=str(login))
+
+
+@pytest.mark.parametrize("harness", [
+    pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-relay"),
+    pytest.param((codex_t, _fakecodex, True), id="codex-without-relay"),
+    pytest.param((grok_t, _fakegrok, False), id="grok-build"),
+    pytest.param((kimi_t, _fakekimi, False), id="kimi-code"),
+])
+def test_a_subscription_road_with_no_relay_is_not_provided_and_is_refused_before_it_spawns(
+        harness, tmp_path):
+    """H5-V1 stays the answer for a harness that has no relay: Grok, Kimi, and the two others
+    with their relay taken off. Where the profile has one the road is covered (I2b)."""
+    module, fake, relayed = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _sign_in(adapter, tmp_path)
+    if relayed:
+        adapter.profile = dataclasses.replace(adapter.profile, login_relay=None)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
 
-    receipt = claude_t.run_once(adapter, claude_t.a_request())
+    receipt = module.run_once(adapter, module.a_request())
 
-    assert adapter.boundary_provided("dispatch") is False
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [False, False]
     assert receipt.outcome == "failed"
     assert receipt.detail == subscription_boundary_detail(adapter.profile.tool_noun)
-    assert _fakeclaude.spawns(log) == [] and runner.runs == []
+    assert fake.spawns(log) == [] and runner.runs == []
+
+
+@pytest.mark.parametrize("harness", [
+    pytest.param((claude_t, _fakeclaude), id="claude-code"),
+    pytest.param((codex_t, _fakecodex), id="codex"),
+])
+def test_a_subscription_road_with_a_relay_is_provided_where_the_runner_lends_relay_homes(
+        harness, tmp_path):
+    module, fake = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _sign_in(adapter, tmp_path)
+    confined(adapter, tmp_path / "scratch", platform="win32")
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [True, True]
+    assert [AdapterRegistry([adapter]).execution_boundary(adapter.manifest.adapter_id, mode)
+            for mode in ATTEMPT_MODES] == [True, True]
+    assert fake.spawns(log) == [], "asking the question started something"
 
 
 # -- 3. the preflights stay on the plain road ---------------------------------

@@ -83,6 +83,8 @@ REFUSALS = MappingProxyType({
 MIN_SECRET = 12
 #: The vendor's profile file is no credential and is large (projects, history): a bound of its own.
 PROFILE_LIMIT = 4 * 1024 * 1024
+#: How much longer than an attempt's own timeout its access token must live: ten minutes.
+MARGIN_SECONDS = 600
 #: Seconds from 1970 to the start of the year 10000: no instant after it is an expiry.
 _LATEST = 253402300800
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -410,6 +412,24 @@ def secret_values(doc: object, fields: tuple[str, ...]) -> tuple[bytes, ...]:
     return tuple(sorted(found))
 
 
+def every_text(doc: object) -> tuple[bytes, ...]:
+    """Every text value at any depth that is long enough to be a secret, as sorted distinct bytes.
+
+    For a credential document whose shape is no longer known: which of its texts is a token cannot
+    be said, so all of them are looked for.
+    """
+    found, pending = set(), [doc]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+        elif type(item) is str and len(item) >= MIN_SECRET:
+            found.add(item.encode("utf-8", "surrogatepass"))
+    return tuple(sorted(found))
+
+
 # --- readiness and the copy -------------------------------------------------------------------
 
 
@@ -467,6 +487,36 @@ def ready(auth_home: str | os.PathLike, spec: RelaySpec, now: datetime,
         return Refused("expiry_short")
     return Ready(_seal(leaf.digest, material), secret_values(leaf.doc, spec.secret_fields),
                  spec.account(leaf.doc, material), expires)
+
+
+def clock_instant(text: object) -> datetime | None:
+    """The timezone-aware instant a clock text of the product names, or None.
+
+    The product's clock is RFC 3339 text in UTC, written with a `Z`; any other offset is read as
+    it is. Text that is not a time, or a time with no zone, is no instant: the caller refuses on it
+    and does not guess "now".
+    """
+    if type(text) is not str:
+        return None
+    try:
+        found = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError:
+        return None
+    return found if found.utcoffset() is not None else None
+
+
+def ready_for(auth_home: str | os.PathLike, spec: RelaySpec, clock_text: str,
+              timeout_seconds: int | float) -> Ready | Refused:
+    """`ready` for ONE attempt: the token must outlast its timeout by `MARGIN_SECONDS`.
+
+    Judged at the instant the product's clock names now. A clock that names no instant is a refusal
+    (`expiry_unknown`), never a token taken to be fresh. The answer is for this attempt alone: the
+    caller asks again before every attempt, the step after a human gate and the checker included.
+    """
+    now = clock_instant(clock_text)
+    if now is None:
+        return Refused("expiry_unknown")
+    return ready(auth_home, spec, now, timedelta(seconds=timeout_seconds + MARGIN_SECONDS))
 
 
 def _relay_refusal(relay: Path) -> str | None:

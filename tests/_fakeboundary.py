@@ -26,7 +26,7 @@ from pathlib import Path
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.adapters.process_boundary import WindowsContainer
 from conductor.command.adapters.process_profile import ProfileRefused
-from conductor.command.adapters.relay_home import relay_home_shape
+from conductor.command.adapters.relay_home import relay_home_shape, relay_root_for
 from conductor.ownership_native import identity
 
 #: A well-formed AppContainer SID, which is all ``WindowsContainer`` checks.
@@ -118,6 +118,13 @@ class BoundaryRunner(ProcessRunner):
     the runner's loan and the transport's readiness use (``relay_home_shape``), against the
     project's login homes in ``auth_homes`` (none unless a test sets them), and refuses on entry,
     as the runner does, with a ``ProfileRefused``. It does not read DACLs: the loan's own tests do.
+
+    The two native questions a relay attempt asks the runner before its claim have doubles too:
+    ``ensure_relay_root`` makes the folder with no DACL (``relay_root_error``, when set, is raised
+    instead) and ``relay_acl_refusal`` answers ``acl_refusal`` (a text, a callable of the relay
+    home, or None). ``hooks`` name a callable per moment (``acl``, ``enter``, ``run``, ``exit``)
+    that a test uses to look at, or change, the world at exactly that moment; ``outcome``, when
+    set, is answered by ``run`` in place of a child.
     """
 
     def __init__(self, project_root, *, scratch, environ=None, spawns_allowed=True,
@@ -131,6 +138,28 @@ class BoundaryRunner(ProcessRunner):
         self.events: list[str] = []
         self.enter_error: BaseException | None = None
         self.exit_error: BaseException | None = None
+        self.relay_root_error: BaseException | None = None
+        self.acl_refusal = None
+        self.hooks: dict = {}
+        self.outcome = None
+
+    def _hook(self, moment: str, *arguments) -> None:
+        if moment in self.hooks:
+            self.hooks[moment](*arguments)
+
+    def ensure_relay_root(self, auth_home):  # type: ignore[override]
+        self.events.append("relay-root")
+        if self.relay_root_error is not None:
+            raise self.relay_root_error
+        root = relay_root_for(auth_home)
+        root.mkdir(exist_ok=True)
+        return root
+
+    def relay_acl_refusal(self, auth_home, relay_home=None):  # type: ignore[override]
+        self.events.append("acl" if relay_home is None else "acl-home")
+        self._hook("acl", relay_home)
+        refusal = self.acl_refusal
+        return refusal(relay_home) if callable(refusal) else refusal
 
     def _home(self, folders) -> Path | None:
         """The home the attempt stands on: a route beneath the project, or a judged relay home."""
@@ -162,10 +191,12 @@ class BoundaryRunner(ProcessRunner):
             "install": Path(folders.install)}
         self._open += 1
         try:
+            self._hook("enter", entry)
             yield WindowsContainer(SID, internet_client), entry.paths
         finally:
             self._open -= 1
             self.events.append("exit")
+        self._hook("exit", entry)
         if self.exit_error is not None:
             raise self.exit_error
 
@@ -173,28 +204,36 @@ class BoundaryRunner(ProcessRunner):
         inside = self._open > 0
         self.runs.append(Run(spec.argv, spec.cwd, dict(spec.env), spec.boundary, inside))
         self.events.append("run-inside" if inside else "run-outside")
+        if inside:
+            self._hook("run", spec)
+        if self.outcome is not None and inside:
+            return self.outcome
         argv = tuple(token for token in spec.argv if token not in NODE_FLAGS)
         return super().run(replace(spec, boundary=None, argv=argv))
 
 
-def recording(adapter, scratch, *, enter_error=None, exit_error=None) -> BoundaryRunner:
+def recording(adapter, scratch, *, enter_error=None, exit_error=None,
+              auth_homes=None) -> BoundaryRunner:
     """Put a recording boundary entry under a harness adapter, without confining it.
 
     The adapter keeps its pin, its root and its allowed environment; only the runner it spawns
-    through is replaced, by one that shares them.
+    through is replaced, by one that shares them. ``auth_homes`` are the real login homes the
+    project holds, which a relay home is judged against.
     """
     old = adapter._runner
     runner = BoundaryRunner(
         old._root, scratch=scratch, environ=old._environ, spawns_allowed=old._spawns_allowed,
-        auth_homes=getattr(old, "auth_homes", ()))
+        auth_homes=getattr(old, "auth_homes", ()) if auth_homes is None else auth_homes)
     runner.enter_error, runner.exit_error = enter_error, exit_error
     adapter._runner = runner
     return runner
 
 
-def confined(adapter, scratch, *, platform: str = "win32", enter_error=None, exit_error=None):
+def confined(adapter, scratch, *, platform: str = "win32", enter_error=None, exit_error=None,
+             auth_homes=None):
     """``recording`` and then ``confine`` the adapter for ``platform``."""
-    runner = recording(adapter, scratch, enter_error=enter_error, exit_error=exit_error)
+    runner = recording(adapter, scratch, enter_error=enter_error, exit_error=exit_error,
+                       auth_homes=auth_homes)
     adapter.confine(platform)
     return runner
 

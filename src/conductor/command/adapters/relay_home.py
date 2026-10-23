@@ -33,11 +33,14 @@ import itertools
 import os
 import re
 import secrets
+import stat
 from contextlib import ExitStack
 from pathlib import Path, PurePath
 
-from ...ownership_native import NativeHold
-from ..containment import contained_directory
+from ... import ownership
+from ...ownership_errors import OwnerRefused
+from ...ownership_native import NativeHold, identity
+from ..containment import contained_directory, portal_violation
 from .process_boundary import LOGIN_PARENTS, login_home_named
 from .process_loans import _explicit, _fields, _inside, _refused, _split
 from .process_profile import ProfileRefused
@@ -101,6 +104,85 @@ def relay_key(identity) -> str:
     if any(type(part) is not int or part < 0 for part in (volume, file_id)):
         raise ValueError("a project identity is a volume and a file id")
     return hashlib.sha256(f"{volume}:{file_id}".encode("ascii")).hexdigest()[:16]
+
+
+def project_key(root: object) -> str:
+    """The key folder of the project whose root folder is `root` (`relay_key` of its identity).
+
+    Raises:
+        OSError: the root folder cannot be identified.
+    """
+    return relay_key(identity(Path(root).resolve()))
+
+
+def mint_home(auth_home: object, root: object, kind: str) -> Path | None:
+    """A new, empty relay home `<relay>/<key>/<kind>-<16 hex>` of a project, or None if none can be.
+
+    The relay folder is the one `ensure_relay_root` proved and it must still stand: it is never
+    made here, because a folder made here would have no DACL of its own. The key folder is made
+    when it is absent and inherits what the relay folder hands down; the home is made new
+    (`exist_ok=False`), so a name that stands is never reused. Nothing is copied into it.
+
+    Args:
+        auth_home: The REAL login home the relay is for.
+        root: The project root, whose identity is the key.
+        kind: The harness's letter (`RelaySpec.kind`).
+    """
+    relay = relay_root_for(auth_home)
+    if relay is None or HOME_NAME.fullmatch(f"{kind}-{'0' * 16}") is None:
+        return None
+    try:
+        home = relay / project_key(root) / f"{kind}-{secrets.token_hex(8)}"
+        home.parent.mkdir(exist_ok=True)
+        home.mkdir()
+    except OSError:
+        return None
+    return home
+
+
+def lease_names(root: object, auth_home: object) -> bool:
+    """Whether the standing login lease of the calling thread, in the project at `root`, is the
+    lease of `auth_home`: the folder the lease recorded, by its identity and not its spelling.
+
+    Anything else is no: no live owner, no lease, an uncertain one, or a lease of another folder.
+    The relay is copied from the real login home only under the lease that holds it, so a copy
+    for a login the lease does not name is never made.
+    """
+    try:
+        leased = ownership.require_owner(root).leased_login()
+        return leased is not None and tuple(leased.identity) == tuple(
+            identity(Path(auth_home).resolve()))
+    except (OwnerRefused, OSError):
+        return False
+
+
+def leaf_kind(home: object, name: str) -> str:
+    """What stands at one plain name in a relay home, as the closed word of a home leaf.
+
+    The same answer `HarnessWorkspace.home_leaf_kind` gives for a home of the project, for a home
+    outside it: from `lstat` alone, nothing followed and nothing read. A home that is not a plain
+    folder, and a name that is a portal, a folder, a second hard link or anything not a regular
+    file, is `other`.
+    """
+    from . import harness_workspace as words  # deferred: it imports the runner, which imports this
+
+    target = Path(home) / name
+    try:
+        top = os.lstat(home)
+    except OSError:
+        return words.HOME_LEAF_OTHER
+    if not stat.S_ISDIR(top.st_mode) or portal_violation(Path(home), top) is not None:
+        return words.HOME_LEAF_OTHER
+    try:
+        found = os.lstat(target)
+    except FileNotFoundError:
+        return words.HOME_LEAF_ABSENT
+    except OSError:
+        return words.HOME_LEAF_OTHER
+    if (portal_violation(target, found) is not None or not stat.S_ISREG(found.st_mode)
+            or found.st_nlink != 1):
+        return words.HOME_LEAF_OTHER
+    return words.HOME_LEAF_EMPTY if found.st_size == 0 else words.HOME_LEAF_FILE
 
 
 def _spelled(path: object) -> Path | None:

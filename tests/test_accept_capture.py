@@ -54,6 +54,17 @@ class Checker(IndependentCheckTransport):
     def _preflight(self, _request):
         return None
 
+    def _relay_start(self, _mode):
+        """This checker has no subscription login, so no relay folder to prove or sweep."""
+        return None
+
+    def _relay_refused(self, _receipt):
+        return False
+
+    def _claim_of(self, _request, *, verification=False):
+        """The road hands its claim to the attempt; this `_attempt` double takes none."""
+        return None
+
     def _evidence(self):
         return self._workspace.digest_work_tree()
 

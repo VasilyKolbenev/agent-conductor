@@ -57,18 +57,23 @@ from tests._fakeboundary import confined, installed_outside_the_tree, recording
 from tests.test_command_run_store import CONFIG
 from tests.test_command_sandbox_route import RUN_ID, _As, _run_following, a_plan, sandbox
 
-#: The ways a harness the step is bound to can lack the boundary, each a different fact.
+#: The ways a harness the step is bound to can lack the boundary, each a different fact. The
+#: subscription login road lacks it where the harness has no relay (`profile.login_relay`): the
+#: Claude adapter here has its relay taken off, as a harness without one has none (I2b).
 LINUX, NEVER, SUBSCRIPTION, OUTSIDE = (
-    "a platform without a boundary", "a harness never confined", "the subscription login road",
+    "a platform without a boundary", "a harness never confined",
+    "the subscription login road of a harness with no relay",
     "a build installed outside the install tree")
 
 
-def _harness(tmp_path, way):
+def _harness(tmp_path, way, *, relay: bool = False):
     """The Claude adapter `CONFIG` binds ``claude-dev`` to, lacking the boundary in one way."""
     login = tmp_path / "login"
     login.mkdir()
     road = {"auth": "subscription", "auth_home": str(login)} if way == SUBSCRIPTION else {}
     adapter, _root, log = claude_t.a_harness(tmp_path, **road)
+    if way == SUBSCRIPTION and not relay:
+        adapter.profile = replace(adapter.profile, login_relay=None)
     scratch = tmp_path / "scratch"
     if way == OUTSIDE:
         installed_outside_the_tree(adapter, tmp_path)
@@ -161,6 +166,23 @@ def test_the_same_step_on_a_harness_that_has_the_boundary_passes_every_door(
     assert _hold_capabilities(recovered, plan, registry) is None
     assert _hold_plan_admits(_As("check"), recovered, registry=registry) is None
     assert (runner.runs, runner.entries) == ([], []), "judging a plan starts nothing"
+
+
+@pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
+def test_the_same_step_on_a_subscription_harness_that_has_a_relay_passes_every_door(
+        writes_the_word, tmp_path):
+    """The control of the subscription row above: with its relay the same road has the boundary."""
+    adapter, runner, log = _harness(tmp_path, SUBSCRIPTION, relay=True)
+    registry = AdapterRegistry([adapter])
+    plan, recovered = _plan_and_run(tmp_path, writes_the_word)
+
+    assert _sandboxes_are_provided(
+        RUN_ID, plan.nodes, execution_boundary=registry.execution_boundary,
+        config=CONFIG) is None
+    assert _hold_capabilities(recovered, plan, registry) is None
+    assert _hold_plan_admits(_As("check"), recovered, registry=registry) is None
+    assert (runner.runs, runner.entries) == ([], []), "judging a plan starts nothing"
+    assert _fakeclaude.spawns(log) == []
 
 
 @pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)

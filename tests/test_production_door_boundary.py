@@ -19,6 +19,7 @@ asks about instead of depending on the machine it runs on.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -102,6 +103,46 @@ def test_the_door_over_the_shipped_runner_says_yes_only_if_the_runners_entry_tak
     for provider_id in PROVIDER_CATALOG:
         assert [resolution.registry.execution_boundary(provider_id, mode)
                 for mode in ATTEMPT_MODES] == [takes] * 2, provider_id
+
+
+def _subscription_pins(tmp_path: Path) -> list[ProviderConfig]:
+    """The five pins, the four harnesses that sign in pinned to a subscription login (DSH: none)."""
+    return [pin if pin.provider_id == "deepseek-harness" else dataclasses.replace(
+        pin, auth="subscription", auth_home=str(tmp_path / "logins" / pin.provider_id))
+        for pin in _five_pins(tmp_path)]
+
+
+#: Which harness has a relay (`HarnessProfile.login_relay`): the subscription road is covered there.
+RELAYED = {"claude-code": True, "codex": True, "grok-build": False, "kimi-code": False}
+
+
+@pytest.mark.parametrize("provider_id", sorted(RELAYED))
+def test_the_production_door_over_subscription_pins_provides_the_boundary_where_there_is_a_relay(
+        provider_id, tmp_path, monkeypatch):
+    monkeypatch.setattr(provider_factory, "host_platform", lambda: "win32")
+    recording_runners(monkeypatch, tmp_path / "scratch")
+
+    resolution = resolve_providers(
+        _subscription_pins(tmp_path), root=tmp_path, clock=lambda: grok_t.NOW, ids=grok_t._Ids())
+
+    assert [resolution.registry.execution_boundary(provider_id, mode)
+            for mode in ATTEMPT_MODES] == [RELAYED[provider_id]] * 2
+
+
+@pytest.mark.parametrize("provider_id", sorted(RELAYED))
+def test_the_door_over_the_shipped_runner_and_subscription_pins_follows_its_entry_and_relay_loans(
+        provider_id, tmp_path, monkeypatch):
+    """No double: a harness with a relay is provided only if the shipped runner's entry takes the
+    call and says it lends a relay home, both read off the runner this build ships."""
+    monkeypatch.setattr(provider_factory, "host_platform", lambda: "win32")
+    wanted = RELAYED[provider_id] and takes_the_call(ProcessRunner.container_profile) and (
+        ProcessRunner.RELAY_HOME_LOANS is True)
+
+    resolution = resolve_providers(
+        _subscription_pins(tmp_path), root=tmp_path, clock=lambda: grok_t.NOW, ids=grok_t._Ids())
+
+    assert [resolution.registry.execution_boundary(provider_id, mode)
+            for mode in ATTEMPT_MODES] == [wanted] * 2
 
 
 def test_the_host_platform_is_the_one_the_interpreter_reports():

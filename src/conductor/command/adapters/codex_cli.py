@@ -704,7 +704,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         """
         failed = False
         try:
-            kind = self._workspace.home_leaf_kind(home, LAST_MESSAGE_NAME)
+            kind = self._home_leaf_kind(home, LAST_MESSAGE_NAME)
         except (WorkspaceNotContained, OSError):  # noqa: BLE001 -- no path onward
             failed = True
         if failed:

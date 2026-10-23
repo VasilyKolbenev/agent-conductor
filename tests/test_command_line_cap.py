@@ -191,6 +191,13 @@ CAPPED = (
     "tests/test_relay_profiles.py",
     "tests/test_codex_auth_store.py",
     "tests/test_login_relay_native.py",
+    "src/conductor/command/adapters/relay_attempt.py",
+    "tests/relay_roads.py",
+    "tests/_fakehome.py",
+    "tests/test_relay_road_success.py",
+    "tests/test_relay_road_refusals.py",
+    "tests/test_relay_road_lifecycle.py",
+    "tests/test_relay_road_words.py",
 )
 
 

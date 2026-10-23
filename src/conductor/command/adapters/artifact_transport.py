@@ -19,8 +19,9 @@ from .harness_profile import (
     TASK_CHANNEL_STDIN,
 )
 from .harness_workspace import INSTRUCTION_LIMIT, WorkspaceNotContained, work_route
-from .headless_cli import HeadlessCliTransport, residue_detail
+from .headless_cli import HeadlessCliTransport
 from .login_lifetime import LoginLeaseRefused
+from .relay_attempt import RelayNotStarted
 from .headless_values import (
     AttemptEvidence,
     attempt_relation,
@@ -211,7 +212,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         with self._workspace.owned():
             try:
                 return self._review(request, args, model)
-            except LoginLeaseRefused as refused:  # two closed ids, never the owner's sentence
+            except (LoginLeaseRefused, RelayNotStarted) as refused:  # closed ids, closed sentence
                 return self._receipt(request, "failed", None, str(refused))
             except WorkspaceNotContained:
                 return self._receipt(
@@ -341,9 +342,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         if refused is not None:
             return refused
         self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
-        if self._workspace.sweep_homes():
-            return self._receipt(
-                request, "failed", None, residue_detail(self.profile.tool_noun))
+        refused = self._homes_refusal(request, "review")
+        if refused is not None:
+            return refused
         # The material is resolved BEFORE the version preflight, as on the
         # dispatch road: a review whose inputs this run cannot hand it is
         # refused before any process is spawned.
@@ -373,7 +374,6 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             model: str | None = None) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
-        self._workspace.claim(request.run_id, request.action_id)
         # stdout becomes durable artifact content, so stderr is separate:
         # vendor diagnostics must not be published as part of the review.
         # Separated stderr is discarded, never read here; a CLI may echo
@@ -382,8 +382,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         # the whole of what the redaction gate has to cover.
         outcome = self._attempt(
             self._review_argv, work_route(args.work_item_id, args.task_scope),
-            timeout=request.timeout_seconds, stdin_bytes=payload,
-            separate_stderr=True, model=model, mode="review")
+            timeout=request.timeout_seconds, stdin_bytes=payload, separate_stderr=True,
+            model=model, mode="review",
+            claim=self._claim_of(request))
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))

@@ -80,7 +80,7 @@ import sys
 import time
 from pathlib import Path
 
-from tests import _fakeexe
+from tests import _fakeexe, _fakehome
 
 #: Where each spawn appends its one JSON line.
 SPAWN_LOG = "FAKECLAUDE_SPAWN_LOG"
@@ -226,6 +226,14 @@ HOME_FILE = "FAKECLAUDE_HOME_FILE"
 #: itself would put that token in the runner's own scan set -- and a test would
 #: watch the OLD scan catch it and conclude that nothing was missing.
 REFRESH_LOGIN = "FAKECLAUDE_REFRESH_LOGIN"
+#: Add the spawn's own report of what its config directory held when it began (`_fakehome`):
+#: file names and whether a refresh token stood in a credential, never a value.
+HOME_REPORT = "FAKECLAUDE_HOME_REPORT"
+#: Rewrite `accessToken` of the credential in this child's own config directory with this value
+#: (HEX, for the reason `REFRESH_LOGIN` is) and print it. Unlike `REFRESH_LOGIN` the rest of the
+#: document stays, so the file is still in the shape a relay admits: the case of a vendor that
+#: renews its own access token, which only a reading of the relay home after the spawn can see.
+ROTATE_ACCESS = "FAKECLAUDE_ROTATE_ACCESS"
 #: `name:text` written into this child's own config directory during the LOGIN
 #: STATUS spawn -- the preflight, not the task. A rule that stops a task running
 #: and a rule that refuses one that has already run are different rules, and
@@ -444,6 +452,8 @@ def _record(argv: list[str], task: dict | None, marker: dict | None,
         "marker": marker,
         "frame": frame,
     }
+    if os.environ.get(HOME_REPORT) and os.environ.get(CLAUDE_HOME_NAME):
+        row["home_report"] = _fakehome.report(os.environ[CLAUDE_HOME_NAME])
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -490,6 +500,12 @@ def _run_prompt(checker=False, fix: str | None = None) -> int:
         (Path(env[CLAUDE_HOME_NAME]) / ".credentials.json").write_text(
             json.dumps({"claudeAiOauth": {"accessToken": fresh}}),
             encoding="utf-8", newline="\n")
+        sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(ROTATE_ACCESS) and env.get(CLAUDE_HOME_NAME):
+        fresh = bytes.fromhex(env[ROTATE_ACCESS]).decode("utf-8")
+        _fakehome.rotate(env[CLAUDE_HOME_NAME], ".credentials.json",
+                         ("claudeAiOauth", "accessToken"), fresh)
         sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
     if env.get(EMIT_STDOUT):

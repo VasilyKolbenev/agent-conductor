@@ -24,9 +24,17 @@ can be absent or expired, it is proved before a task is spawned, by the vendor's
 own status command -- read for the METHOD it names, because both vendors answer
 an API key with the same exit code they answer a subscription with.
 
+A harness that has a relay (``HarnessProfile.login_relay``) is the one exception
+to the second road for a TASK attempt of a confined transport: its child is
+pointed at a relay home that holds a copy of the access token and no refresh
+token, never at the pinned directory (``relay_attempt``). The questions that
+precede a task (version, login status) and a quota read still stand on the
+pinned directory, as they always did.
+
 What a mixin needs from the class it is mixed into is stated rather than
-assumed: ``profile``, ``_attempt``, ``_receipt`` and ``_login_residue``, all of
-them ``HeadlessCliTransport``'s.
+assumed: ``profile``, ``_attempt``, ``_receipt``, ``_login_residue``,
+``_relayed``, ``_route_selected`` and ``_unready``, all of them
+``HeadlessCliTransport``'s.
 """
 from __future__ import annotations
 
@@ -59,15 +67,20 @@ class LoginRoad:
         auth, auth_home = self._login()
         return auth_home if auth == SUBSCRIPTION else ""
 
-    def _home_value(self, home: Path) -> str:
+    def _home_value(self, home: Path, mode: str | None = None) -> str:
         """What the child's home environment variable is set to for this spawn.
 
         The minted, doomed directory on the API-key road; the operator's pinned
-        login directory on the subscription one. It is the same variable either
-        way -- no new name is invented for a login -- and it is the only value
-        this road changes about a spawn.
+        login directory on the subscription one -- except for a TASK attempt of
+        a harness that has a relay, which is handed its relay home instead
+        (``_relayed``; ``home`` is then that relay home, never the real login).
+        ``mode`` is the task attempt's mode and is absent for every other spawn
+        (a version print, a login status, a quota read), which stand on the real
+        login, as does any spawn of a transport that was never confined. It is
+        the same variable either way -- no new name is invented for a login --
+        and it is the only value this road changes about a spawn.
         """
-        return self._signed_in_road() or str(home)
+        return str(home) if self._relayed(mode) else self._signed_in_road() or str(home)
 
     def _login_preflight(
             self, request: ActionRequest) -> ActionResultReceipt | None:
@@ -154,8 +167,15 @@ class LoginRoad:
         had excluded. The names that can carry configuration or trust are
         therefore declared per provider and refused here, before the spawn that
         would read them.
+
+        On a relay road the ENVIRONMENT is judged first and for the same reason: the version
+        print and the login status are put to the real login home with it, and a name in it that
+        replaces the login or reroutes its traffic (``relay_attempt._route_selected``) must be
+        refused before either of them, not after.
         """
         profile = self.profile
+        if self._route_selected():
+            return self._unready(request, "env")
         if not self._signed_in_road() or not profile.login_forbidden:
             return None
         if not self._login_home_grants(self._signed_in_road()):
@@ -248,7 +268,9 @@ class LoginRoad:
         it is holding, and the contract this build makes about that directory is
         a contract about lifetime.
 
-        ONE field, deliberately. `_retained` and `_login_residue` are read by
+        ONE sample, deliberately: the values this road saw and the readiness it
+        proved for a relay attempt that did not come (`_relay_ready` holds the
+        real credential's secrets). `_retained` and `_login_residue` are read by
         receipts this road has not finished building yet, and clearing them
         here would erase what those receipts have to say. This is not the
         symmetric opposite of `_begin_road` and must not be made into one.
@@ -258,6 +280,7 @@ class LoginRoad:
         stops holding the reference when the road that took it is over.
         """
         self._login_seen = ()
+        self._relay_ready = None
 
     def _keep_login_values(self, relation: tuple[str, str, str, str]) -> None:
         """Hand what this road has seen to the attempt it belongs to.

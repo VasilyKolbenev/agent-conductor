@@ -445,8 +445,7 @@ class ProcessRunner:
     """Own children beneath one root, with an explicit environment snapshot."""
 
     ownership_scopes = OwnershipScopes(threading.RLock())
-    #: The entry loans an absolute relay home (`relay_home`). A fact of the class, so a door can
-    #: ask before any runner exists (`boundary_entry.entry_lends_relay_homes`).
+    #: The entry loans an absolute relay home (`relay_home`); doors ask `entry_lends_relay_homes`.
     RELAY_HOME_LOANS = True
 
     @classmethod
@@ -484,11 +483,10 @@ class ProcessRunner:
         are routes walked from the project root like a working folder (`ContainmentError` for a
         link or a way out); a home written as an absolute path is a relay home and never a folder
         of the project (`absolute_home`), judged by the loan (`relay_home`). Nothing is made or
-        granted when one is refused. A runner for a project
-        opened for viewing refuses first (`CommandSpecError`), before the native helper is even
-        imported, so no profile, journal record or grant exists for a project that never spawns.
-        Off Windows the runner refuses too (`CommandSpecError`), before the native helper is
-        imported, creating nothing.
+        granted when one is refused. A runner for a project opened for viewing refuses first
+        (`CommandSpecError`), before the native helper is even imported, so no profile, journal
+        record or grant exists for a project that never spawns. Off Windows the runner refuses
+        too (`CommandSpecError`), before the native helper is imported, creating nothing.
         """
         if not self._spawns_allowed:
             raise CommandSpecError(_VIEWING)
@@ -521,6 +519,12 @@ class ProcessRunner:
             raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
         from . import _winlaunch, relay_home
         return relay_home.ensure_relay_root(auth_home, native=_winlaunch)
+
+    @staticmethod
+    def relay_acl_refusal(auth_home, relay_home=None) -> str | None:
+        """Why the DACLs a relay attempt rests on are not as it needs them, or None (Windows)."""
+        from . import _winlaunch, relay_home as relay
+        return relay.relay_acl_refusal(_winlaunch, auth_home, relay_home)
 
     def start(self, spec: CommandSpec) -> OwnedProcess:
         """Spawn and return an ownership token that must be explicitly stopped.
@@ -771,10 +775,9 @@ class ProcessAdapter:
         spec = _spec_from_payload(prepared.adapter_payload, request.timeout_seconds)
         outcome = self._runner.run(spec)
         mapped, detail = _map_outcome(outcome)
-        # A zero the vocabulary refused to read as success (undelivered input) is not carried:
-        # the runtime admits `failed` only with no code or a non-zero one, and recorded the
-        # pair as `unknown` otherwise (the same defect the first real login found on the
-        # harness road, 23.09.2026).
+        # A zero the vocabulary refused to read as success (undelivered input) is not carried: the
+        # runtime admits `failed` only with no code or a non-zero one, and recorded the pair as
+        # `unknown` otherwise (the defect the first real login found on this road, 23.09.2026).
         return ActionResultReceipt(
             receipt_id=self._ids("receipt"), action_id=request.action_id,
             run_id=request.run_id, attempt_id=request.attempt_id,

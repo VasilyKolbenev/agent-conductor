@@ -422,6 +422,35 @@ def test_a_leaf_of_the_real_login_home_with_its_own_entry_for_a_container_is_ref
     assert relay_acl_refusal(_winlaunch, site.login, site.home) is None
 
 
+def test_the_runners_own_question_is_the_one_the_transport_asks_before_and_after_the_home(
+        tmp_path):
+    """`ProcessRunner.relay_acl_refusal` hands the helper its native calls, with or without a home.
+
+    The transport asks it twice (`relay_attempt`): with the login only, at its readiness, and with
+    the relay home it has just made. The login side is the same answer for both; the relay side
+    only the second one reads.
+    """
+    from tests import os_boundary_windows as ac
+    site = RelaySite(tmp_path)
+    assert ProcessRunner.relay_acl_refusal(site.login) is None
+    assert ProcessRunner.relay_acl_refusal(site.login, site.home) is None
+    ac.grant(site.login / ".credentials.json", "S-1-15-2-1", "R")
+    login_side = ("the login home entry .credentials.json has an entry for ALL APPLICATION "
+                  "PACKAGES, a package or a capability")
+    assert ProcessRunner.relay_acl_refusal(site.login) == login_side
+    assert ProcessRunner.relay_acl_refusal(site.login, site.home) == login_side
+
+
+def test_the_runners_own_question_reads_the_relay_home_only_when_it_is_given_one(tmp_path):
+    from tests import os_boundary_windows as ac
+    site = RelaySite(tmp_path)
+    ac.grant(site.home, "S-1-1-0", "R")
+
+    assert ProcessRunner.relay_acl_refusal(site.login) is None
+    assert ProcessRunner.relay_acl_refusal(site.login, site.home) == (
+        "the relay home has an entry of its own: it may hold only what it inherits")
+
+
 def test_a_leaf_with_an_all_packages_entry_is_read_by_a_child_though_its_home_is_closed(tmp_path):
     # The control of the refusal above: without it a child reads the leaf by its full path. The
     # entry is added AFTER the runner's check, so the attempt starts: the exposure itself, which

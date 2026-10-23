@@ -1,20 +1,28 @@
-"""H5-V1: in V1 a task runs inside the execution boundary only on the API-key road.
+"""H5-V1 after I2b: a task on a subscription login runs inside the execution boundary only where the
+harness has a RELAY, and the one answer for the road is still one.
 
-The owner's decision of 21.10.2026 (``docs/recovery/2026-10-20/OPEN-DECISIONS.md``, H5-V1): a
-connection that signs in by subscription is refused, honestly and before anything exists; the
-scheme with a temporary home that holds only the credential comes after V1. This file holds the
-decision where the code answers it:
+The owner's decision of 21.10.2026 (``docs/recovery/2026-10-20/OPEN-DECISIONS.md``, H5-V1)
+refused a connection that signs in by subscription, honestly and before anything exists, because
+its child would need rights on the operator's own login home. The relay (H5-SUB-R5, decision of
+23.10.2026) gives the child a fresh home with a copy of the access token instead, so the refusal
+now stands only for a harness that has no relay (``HarnessProfile.login_relay``): Grok Build and
+Kimi Code, and Claude Code and Codex with the relay taken off their profiles, which is the road a
+harness without one is on. This file holds that where the code answers it:
 
 - one answer for the road (``AttemptLaunch._login_road_covered``) stands behind the doors, the
-  refusal before the claim, the spawn and the checker, on every harness that signs in;
+  refusal before the claim, the spawn and the checker, on every harness that signs in: yes for
+  the two with a relay (and a runner that lends a relay home), no for the others;
 - ``process_boundary.LOGIN_LOAN_OPEN`` opens none of them: it is the runner's own gate on a login
   home, no transport names one, and opening it starts nothing;
 - the refusal comes before any side effect: no claim, no home, no login lease, no spawn;
 - the review road and the independent-checker road each ask the question themselves, so a
   subscription review and a subscription checker are refused through the runtime, not only when
   the helper under them is called directly;
+- a road that skips the preflight cannot start a child either, on either side of the relay;
 - the API-key road on Windows stays covered, with the runner's gate closed or open;
 - the receipt names the cause where the login is the one fact missing, and only there.
+
+What a relayed task does is held in ``test_relay_road_success`` and the files beside it.
 """
 from __future__ import annotations
 
@@ -34,23 +42,23 @@ from conductor.command.adapters.harness_profile import (
 from conductor.command.adapters.independent_check import CheckFrameError
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.artifacts import ArtifactDocument
-from conductor.command.contracts import RunEnvelope
+from conductor.command.contracts import ActionProposal, RunEnvelope
 from conductor.command.execution_boundary import ATTEMPT_MODES, BoundaryUnavailable
 from conductor.command.failure_reasons import reason_words
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import AttemptState, Budget, ControlRuntime
 
 from tests import _fakeclaude, _fakecodex, _fakedsh, _fakegrok, _fakekimi
+from tests import test_command_claude_review as claude_review
 from tests import test_command_claude_transport as claude_t
+from tests import test_command_codex_review as codex_review
 from tests import test_command_codex_transport as codex_t
 from tests import test_command_dsh_harness as dsh_t
 from tests import test_command_grok_transport as grok_t
 from tests import test_command_kimi_transport as kimi_t
 from tests._boundary_assumed import boundary_assumed  # noqa: F401
-from tests._fakeboundary import confined, installed_outside_the_tree
-from tests.test_command_claude_review import (
-    CONFIG, INPUT_REF, RUN_ID, SEED_CONTENT, _confirmation, _Ids, _proposal)
-from tests.test_independent_checker_transport import setup as checker_setup
+from tests._fakeboundary import BoundaryRunner, confined, installed_outside_the_tree
+from tests.test_independent_checker_transport import _run_state
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "conductor"
 
@@ -60,15 +68,28 @@ SIGNED_IN = [pytest.param((claude_t, _fakeclaude), id="claude-code"),
              pytest.param((grok_t, _fakegrok), id="grok-build"),
              pytest.param((kimi_t, _fakekimi), id="kimi-code")]
 EVERY = [*SIGNED_IN, pytest.param((dsh_t, _fakedsh), id="deepseek-harness")]
+#: The two that have a relay (`login_relay`): their subscription road is covered.
+RELAYED = SIGNED_IN[:2]
+#: The harnesses a subscription road is refused for. The third member is whether the profile has a
+#: relay that is taken off (Claude Code, Codex): Grok and Kimi were never given one.
+REFUSED = [pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-relay"),
+           pytest.param((codex_t, _fakecodex, True), id="codex-without-relay"),
+           pytest.param((grok_t, _fakegrok, False), id="grok-build"),
+           pytest.param((kimi_t, _fakekimi, False), id="kimi-code")]
 #: The runner's gate as shipped, and opened the way the loan's own tests open it.
 GATE = [pytest.param(False, id="gate-closed"), pytest.param(True, id="gate-open")]
 
 
-def _signed_in(adapter, tmp_path) -> Path:
-    """Re-pin a harness to a subscription login kept in a fresh, empty directory."""
+def _signed_in(adapter, tmp_path, *, strip: bool = False) -> Path:
+    """Re-pin a harness to a subscription login kept in a fresh, empty directory.
+
+    ``strip`` takes the relay off the profile: the road of a harness that has none.
+    """
     login = tmp_path / "login"
     login.mkdir()
     adapter._pin = replace(adapter._pin, auth="subscription", auth_home=str(login))
+    if strip:
+        adapter.profile = replace(adapter.profile, login_relay=None)
     return login
 
 
@@ -110,35 +131,39 @@ def _no_home_left(root: Path, adapter) -> bool:
 REVIEW_KNOBS = {_fakeclaude.EMIT_REVIEW: "enabled-review-output",
                 _fakeclaude.LEAK_CHECK: "enabled-review-leak-check",
                 "ANTHROPIC_API_KEY": "sk-ant-api03-SYNTHETIC-SUBSCRIPTION-NEVER-REAL"}
+CODEX_REVIEW_KNOBS = {_fakecodex.EMIT_REVIEW: "enabled-review-output"}
 
 
 def _confirmed_review(adapter, root: Path):
     """Seed one review step under ``root`` and drive it through Confirm over ``adapter``."""
+    module = claude_review if adapter.manifest.adapter_id == "claude-code" else codex_review
+    seed = (claude_review.SEED_CONTENT if module is claude_review
+            else "# Candidate\n\nReview this exact proposal.")
     store = RunStore(root)
     store.create_run(RunEnvelope(
-        run_id=RUN_ID, cycle_id="review-cycle", created_at=claude_t.NOW,
-        config_digest=snapshot_digest(CONFIG), mode="confirm"), CONFIG)
+        run_id=module.RUN_ID, cycle_id="review-cycle", created_at=claude_t.NOW,
+        config_digest=snapshot_digest(module.CONFIG), mode="confirm"), module.CONFIG)
     store.append(ArtifactDocument(
-        artifact_id="artifact-source-1", artifact_ref=INPUT_REF, run_id=RUN_ID,
-        created_at=claude_t.NOW, media_type="text/markdown", content=SEED_CONTENT))
-    proposal = _proposal()
+        artifact_id="artifact-source-1", artifact_ref=module.INPUT_REF, run_id=module.RUN_ID,
+        created_at=claude_t.NOW, media_type="text/markdown", content=seed))
+    proposal: ActionProposal = module._proposal()
     store.append(proposal)
     runtime = ControlRuntime(
-        store, AdapterRegistry([adapter]), clock=lambda: claude_t.NOW, ids=_Ids())
+        store, AdapterRegistry([adapter]), clock=lambda: claude_t.NOW, ids=module._Ids())
     budget = Budget(max_actions=8, max_action_seconds=3600, max_confirmation_age_seconds=3600)
-    return runtime.execute(runtime.authorize(_confirmation(proposal), budget=budget))
+    return runtime.execute(runtime.authorize(module._confirmation(proposal), budget=budget))
 
 
 # -- (a) one answer for the road, and the runner's gate opens none of it ------
 
 
 @pytest.mark.parametrize("gate", GATE)
-@pytest.mark.parametrize("harness", SIGNED_IN)
-def test_every_door_refuses_the_subscription_road_whatever_the_runners_gate(
+@pytest.mark.parametrize("harness", REFUSED)
+def test_every_door_refuses_a_subscription_road_with_no_relay_whatever_the_runners_gate(
         harness, gate, tmp_path, monkeypatch):
-    module, fake = harness
+    module, fake, strip = harness
     adapter, _root, log = module.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path)
+    _signed_in(adapter, tmp_path, strip=strip)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     registry = AdapterRegistry([adapter])
@@ -148,6 +173,49 @@ def test_every_door_refuses_the_subscription_road_whatever_the_runners_gate(
             for mode in ATTEMPT_MODES] == [False, False]
     assert (runner.entries, runner.runs) == ([], [])
     assert fake.spawns(log) == []
+
+
+@pytest.mark.parametrize("gate", GATE)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_every_door_admits_a_subscription_road_with_a_relay_whatever_the_runners_gate(
+        harness, gate, tmp_path, monkeypatch):
+    module, fake = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
+    registry = AdapterRegistry([adapter])
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [True, True]
+    assert [registry.execution_boundary(adapter.manifest.adapter_id, mode)
+            for mode in ATTEMPT_MODES] == [True, True]
+    assert (runner.entries, runner.runs) == ([], [])
+    assert fake.spawns(log) == []
+
+
+class _LendsNoRelayHome(BoundaryRunner):
+    """A runner whose entry takes the call but does not say it lends a relay home."""
+
+    RELAY_HOME_LOANS = False
+
+
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_relay_road_over_a_runner_that_lends_no_relay_home_is_refused_before_a_spawn(
+        harness, tmp_path):
+    module, fake = harness
+    adapter, root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path)
+    old = adapter._runner
+    adapter._runner = _LendsNoRelayHome(
+        old._root, scratch=tmp_path / "scratch", environ=old._environ)
+    adapter.confine("win32")
+
+    receipt = module.run_once(adapter, module.a_request())
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [False, False]
+    assert receipt.outcome == "failed"
+    assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
+    assert fake.spawns(log) == [] and _no_home_left(root, adapter)
 
 
 def test_the_transport_names_no_login_home_so_no_transport_reaches_the_runners_gate():
@@ -182,12 +250,12 @@ def test_only_the_runners_loan_reads_its_gate_and_no_door_asks_it():
 
 
 @pytest.mark.parametrize("gate", GATE)
-@pytest.mark.parametrize("harness", SIGNED_IN)
-def test_a_subscription_dispatch_is_refused_before_any_claim_home_lease_or_spawn(
+@pytest.mark.parametrize("harness", REFUSED)
+def test_a_subscription_dispatch_with_no_relay_is_refused_before_any_claim_home_lease_or_spawn(
         harness, gate, tmp_path, monkeypatch):
-    module, fake = harness
+    module, fake, strip = harness
     adapter, root, log = module.a_harness(tmp_path)
-    login = _signed_in(adapter, tmp_path)
+    login = _signed_in(adapter, tmp_path, strip=strip)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -206,10 +274,12 @@ def test_a_subscription_dispatch_is_refused_before_any_claim_home_lease_or_spawn
 
 
 @pytest.mark.parametrize("mode", ATTEMPT_MODES)
-def test_a_road_that_skips_the_question_still_cannot_spawn_on_the_subscription_road(
-        mode, tmp_path, monkeypatch):
-    adapter, root, log = claude_t.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path)
+@pytest.mark.parametrize("harness", [REFUSED[0], REFUSED[1]])
+def test_a_road_that_skips_the_question_still_cannot_spawn_without_a_relay(
+        harness, mode, tmp_path, monkeypatch):
+    module, fake, strip = harness
+    adapter, root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path, strip=strip)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", True)
     entered = _leases(monkeypatch)
@@ -217,13 +287,36 @@ def test_a_road_that_skips_the_question_still_cannot_spawn_on_the_subscription_r
     with pytest.raises(BoundaryUnavailable):
         adapter._attempt(("--version",), "work/work-001", timeout=30, mode=mode)
 
-    assert entered == [] and runner.runs == [] and _fakeclaude.spawns(log) == []
+    assert entered == [] and runner.runs == [] and fake.spawns(log) == []
     assert _no_home_left(root, adapter)
 
 
-def test_a_subscription_checker_is_refused_before_it_spawns(tmp_path, monkeypatch):
-    adapter, _root, log = codex_t.a_harness(tmp_path)
+@pytest.mark.parametrize("mode", ATTEMPT_MODES)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_road_that_skips_the_preflight_cannot_spawn_on_a_relay_either(
+        harness, mode, tmp_path, monkeypatch):
+    """With a relay the boundary is provided, but nothing proved the login ready: nothing starts."""
+    from conductor.command.adapters.relay_attempt import RelayNotStarted
+
+    module, fake = harness
+    adapter, root, log = module.a_harness(tmp_path)
     _signed_in(adapter, tmp_path)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    _leases(monkeypatch)
+
+    with pytest.raises(RelayNotStarted):
+        adapter._attempt(("--version",), "work/work-001", timeout=30, mode=mode)
+
+    assert runner.runs == [] and runner.entries == [] and fake.spawns(log) == []
+    assert _no_home_left(root, adapter)
+
+
+@pytest.mark.parametrize("harness", [REFUSED[0], REFUSED[1]])
+def test_a_subscription_checker_with_no_relay_is_refused_before_it_spawns(
+        harness, tmp_path, monkeypatch):
+    module, fake, strip = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path, strip=strip)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", True)
 
@@ -231,15 +324,29 @@ def test_a_subscription_checker_is_refused_before_it_spawns(tmp_path, monkeypatc
         adapter._hold_checker_boundary()
 
     assert refused.value.reason == "boundary_unavailable"
-    assert runner.runs == [] and _fakecodex.spawns(log) == []
+    assert runner.runs == [] and fake.spawns(log) == []
+
+
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_subscription_checker_with_a_relay_passes_the_boundary_question(
+        harness, tmp_path):
+    module, _fake = harness
+    adapter, _root, _log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path)
+    confined(adapter, tmp_path / "scratch", platform="win32")
+
+    adapter._hold_checker_boundary()
 
 
 @pytest.mark.parametrize("gate", GATE)
-def test_a_subscription_review_is_refused_before_any_claim_home_lease_or_spawn(
-        gate, tmp_path, monkeypatch):
+@pytest.mark.parametrize("harness", [REFUSED[0], REFUSED[1]])
+def test_a_subscription_review_with_no_relay_is_refused_before_any_claim_home_lease_or_spawn(
+        harness, gate, tmp_path, monkeypatch):
     """The review road asks the question itself: the helper under the runtime is not enough."""
-    adapter, root, log = claude_t.a_harness(tmp_path, **REVIEW_KNOBS)
-    login = _signed_in(adapter, tmp_path)
+    module, fake, strip = harness
+    knobs = REVIEW_KNOBS if module is claude_t else CODEX_REVIEW_KNOBS
+    adapter, root, log = module.a_harness(tmp_path, **knobs)
+    login = _signed_in(adapter, tmp_path, strip=strip)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -251,7 +358,7 @@ def test_a_subscription_review_is_refused_before_any_claim_home_lease_or_spawn(
     assert attempt.state is AttemptState.FAILED, attempt.receipt.detail
     assert [(row.outcome, row.detail) for row in receipts] == [("failed", sentence)]
     assert attempt.receipt.detail == f"adapter reported failed: {reason_words(sentence)}"
-    assert _fakeclaude.spawns(log) == [], "a child was started on the subscription road"
+    assert fake.spawns(log) == [], "a child was started on the subscription road"
     assert (runner.entries, runner.runs, runner.events) == ([], [], [])
     assert entered == [], "the shared login lease was taken"
     assert not adapter._workspace.is_claimed(attempt.request.run_id, attempt.request.action_id)
@@ -260,17 +367,30 @@ def test_a_subscription_review_is_refused_before_any_claim_home_lease_or_spawn(
 
 
 @pytest.mark.parametrize("gate", GATE)
+@pytest.mark.parametrize("vendor", ["claude-code", "codex"])
 @pytest.mark.usefixtures("boundary_assumed")
-def test_a_subscription_checker_is_refused_through_the_runtime_before_any_claim_home_or_lease(
-        gate, tmp_path, monkeypatch):
+def test_a_subscription_checker_with_no_relay_is_refused_through_the_runtime_before_any_claim(
+        vendor, gate, tmp_path, monkeypatch):
     """The checker road asks the question itself: not only ``_hold_checker_boundary`` called alone.
 
     The doer is a plain API-key transport that finishes its work; the checker, a different
-    harness, holds the subscription login and is the only one confined.
+    harness, holds the subscription login with its relay taken off and is the only one confined.
     """
-    runtime, authorization, store, _doer, checker, _log, check_log, root = checker_setup(
-        tmp_path, cross=True)
-    login = _signed_in(checker, tmp_path)
+    if vendor == "codex":
+        doer, root, _dlog = claude_t.a_harness(
+            tmp_path / "doer", **{_fakeclaude.WRITE_FILE: "result.txt:done"})
+        checker, _, check_log = codex_t.a_harness(
+            tmp_path / "checker", root=root, **{_fakecodex.EMIT_VERDICT: "enabled-verdict-accept"})
+        fake = _fakecodex
+    else:
+        doer, root, _dlog = codex_t.a_harness(
+            tmp_path / "doer", **{_fakecodex.WRITE_FILE: "result.txt:done"})
+        checker, _, check_log = claude_t.a_harness(
+            tmp_path / "checker", root=root, **{_fakeclaude.EMIT_VERDICT: "enabled-verdict-accept"})
+        fake = _fakeclaude
+    runtime, authorization, store = _run_state(
+        root, doer, checker, True, False, None, None, None)
+    login = _signed_in(checker, tmp_path, strip=True)
     runner = confined(checker, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -279,7 +399,7 @@ def test_a_subscription_checker_is_refused_through_the_runtime_before_any_claim_
 
     assert attempt.state is AttemptState.VERIFICATION_FAILED, attempt.receipt.detail
     assert attempt.receipt.detail == verify_holds.CHECKER_BOUNDARY_UNAVAILABLE
-    assert _fakecodex.spawns(check_log) == [], "the checker was started on the subscription road"
+    assert fake.spawns(check_log) == [], "the checker was started on the subscription road"
     assert (runner.entries, runner.runs, runner.events) == ([], [], [])
     assert [args for args in entered if args[1]] == [], "the shared login lease was taken"
     assert not checker.verification_started(attempt.request)
@@ -340,6 +460,8 @@ def test_an_api_key_review_through_the_runtime_runs_inside_the_boundary_whatever
 def test_an_api_key_checker_through_the_runtime_runs_inside_the_boundary_whatever_the_gate(
         gate, tmp_path, monkeypatch):
     """The control of the checker test above: the same run, API key, is not refused."""
+    from tests.test_independent_checker_transport import setup as checker_setup
+
     runtime, authorization, _store, _doer, checker, _log, check_log, _root = checker_setup(
         tmp_path, cross=True)
     runner = confined(checker, tmp_path / "scratch", platform="win32")
@@ -368,20 +490,23 @@ def test_the_subscription_sentence_names_the_login_mode_and_the_runtime_words_fo
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
-def test_where_the_platform_has_no_boundary_the_login_is_not_named(platform, tmp_path):
+@pytest.mark.parametrize("strip", [True, False], ids=["no-relay", "relay"])
+def test_where_the_platform_has_no_boundary_the_login_is_not_named(strip, platform, tmp_path):
     adapter, _root, log = claude_t.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path)
-    confined(adapter, tmp_path / "scratch", platform=platform)
+    _signed_in(adapter, tmp_path, strip=strip)
+    runner = confined(adapter, tmp_path / "scratch", platform=platform)
 
     receipt = claude_t.run_once(adapter, claude_t.a_request())
 
     assert receipt.detail == boundary_detail(adapter.profile.tool_noun)
     assert _fakeclaude.spawns(log) == []
+    assert runner.events == [] and runner.entries == [], "the runner was asked for something"
 
 
-def test_a_build_installed_outside_the_tree_is_not_blamed_on_the_login(tmp_path):
+@pytest.mark.parametrize("strip", [True, False], ids=["no-relay", "relay"])
+def test_a_build_installed_outside_the_tree_is_not_blamed_on_the_login(strip, tmp_path):
     adapter, _root, log = claude_t.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path)
+    _signed_in(adapter, tmp_path, strip=strip)
     installed_outside_the_tree(adapter, tmp_path)
     confined(adapter, tmp_path / "scratch", platform="win32")
 

@@ -84,7 +84,7 @@ import sys
 import time
 from pathlib import Path
 
-from tests import _fakeexe
+from tests import _fakeexe, _fakehome
 from tests._fakeenv import probe_report
 
 #: Where each spawn appends its one JSON line.
@@ -177,6 +177,13 @@ NO_LAST_MESSAGE = "FAKECODEX_NO_LAST_MESSAGE"
 #: Put a DIRECTORY where the file should be, for the kind the adapter refuses to
 #: read as a message.
 LAST_MESSAGE_DIRECTORY = "FAKECODEX_LAST_MESSAGE_DIRECTORY"
+#: Add the spawn's own report of what its `CODEX_HOME` held when it began (`_fakehome`): file
+#: names and whether a refresh token stood in a credential, never a value.
+HOME_REPORT = "FAKECODEX_HOME_REPORT"
+#: Rewrite `tokens.access_token` of `auth.json` in this child's own `CODEX_HOME` with this value
+#: (HEX, so the value is not in the environment the runner scans) and print it: a vendor that
+#: renews its own access token, in a file that keeps the shape a relay admits.
+ROTATE_ACCESS = "FAKECODEX_ROTATE_ACCESS"
 
 #: The closed form of the leak probe token. It arrives ONLY inside the piped
 #: task, never through the environment, so the scan needs no exemption for the
@@ -380,6 +387,8 @@ def _record(argv: list[str], task: dict | None, marker: dict | None,
         "marker": marker,
         "last_message": last_message,
     }
+    if os.environ.get(HOME_REPORT) and home:
+        row["home_report"] = _fakehome.report(home)
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -416,6 +425,11 @@ def _run_task(checker=False) -> int:
         return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
+    if env.get(ROTATE_ACCESS) and env.get(CODEX_HOME_NAME):
+        fresh = bytes.fromhex(env[ROTATE_ACCESS]).decode("utf-8")
+        _fakehome.rotate(env[CODEX_HOME_NAME], "auth.json", ("tokens", "access_token"), fresh)
+        sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()

@@ -83,7 +83,6 @@ from .harness_profile import (
     HeadlessCliError,
     bounded_output,
     is_absolute,
-    residue_detail,
     reviewed_env_allow,
     reviewed_pin_path,
     uncontained_detail,
@@ -106,6 +105,7 @@ from ._procgroup import COMMAND_LINE_LIMIT, command_line_units
 from .harness_attempt import AttemptLaunch
 from .headless_login import LoginRoad
 from .login_lifetime import LoginLeaseRefused
+from .relay_attempt import RelayAttempt, RelayNotStarted
 from .headless_receipts import ReceiptWriting
 from .headless_routing import ModelRouting
 from .task_binding import (
@@ -121,7 +121,8 @@ from .process import STDIN_LIMIT, ProcessRunner
 
 
 class HeadlessCliTransport(
-        ReceiptWriting, ModelRouting, LoginRoad, AttemptLaunch, InstructionBinding):
+        ReceiptWriting, ModelRouting, LoginRoad, AttemptLaunch, RelayAttempt,
+        InstructionBinding):
     """Run one headless task per authorized action, and prove nothing more.
 
     A concrete provider subclasses this in its OWN module, sets ``profile``, and
@@ -364,7 +365,9 @@ class HeadlessCliTransport(
                 return self._dispatch(request, args, prepared.model)
             except InstructionChanged as changed:
                 return self._receipt(request, "failed", None, str(changed))
-            except LoginLeaseRefused as refused:  # two closed ids, never the owner's sentence
+            except (LoginLeaseRefused, RelayNotStarted) as refused:
+                # Two closed ids, never the owner's sentence; or a relay attempt refused before
+                # its claim (a closed sentence, `relay_attempt`).
                 return self._receipt(request, "failed", None, str(refused))
             except WorkspaceNotContained:  # noqa: BLE001 -- carry no path onward
                 failed = True
@@ -414,9 +417,9 @@ class HeadlessCliTransport(
         # unknown ownership under the home root is either somebody else's or the
         # residue of a cleanup that failed, and running a task over either would
         # be building on a promise this build has already broken once.
-        if self._workspace.sweep_homes():
-            return self._receipt(
-                request, "failed", None, residue_detail(self.profile.tool_noun))
+        refused = self._homes_refusal(request, "dispatch")
+        if refused is not None:
+            return refused
         refused = self._preflight(request) or self._preflight_residue(request)
         if refused is not None:
             return refused
@@ -427,12 +430,14 @@ class HeadlessCliTransport(
         if not self._task_fits_its_channel(argv, payload):
             return self._receipt(request, "failed", None,
                 "the materialized task exceeds the bounded task channel, so no task was spawned")
-        self._workspace.claim(request.run_id, request.action_id)
+        # The claim is the attempt's to take, at its moment: first on every road but a relayed one,
+        # whose own order is lease, copy, boundary entered, claim (`_attempt`, `relay_attempt`).
         outcome = self._attempt(
             argv, work.relative_to(self._workspace.root).as_posix(),
             timeout=request.timeout_seconds, stdin_bytes=payload, model=model,
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile],
-            separate_stderr=self.dispatch_separate_stderr, mode="dispatch")
+            separate_stderr=self.dispatch_separate_stderr, mode="dispatch",
+            claim=self._claim_of(request))
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))
@@ -521,7 +526,10 @@ class HeadlessCliTransport(
             return None
 
     def _preflight(self, request: ActionRequest) -> ActionResultReceipt | None:
-        """Prove the pinned build's EXACT version, or refuse before any task runs."""
+        """Prove the pinned build's EXACT version, or refuse before any task runs.
+
+        On a relay road the login is proved ready as the LAST step (``_relay_preflight``).
+        """
         profile = self.profile
         self._workspace.work_root()
         # BEFORE the version probe, not after it. Every spawn on this road --
@@ -548,7 +556,10 @@ class HeadlessCliTransport(
                 f"the pinned {profile.tool_noun} build is not the reviewed "
                 f"{profile.reviewed_version} this adapter was written against, "
                 f"so no task was spawned")
-        return self._login_preflight(request)
+        # The login status is the last use of the real login home by anything that could change
+        # it, so what a relayed attempt rests on is proved after it and never before.
+        refused = self._login_preflight(request)
+        return refused if refused is not None else self._relay_preflight(request)
 
     def _release_attempt(self, relation: tuple[str, str, str, str]) -> None:
         """Drop what ONE finished attempt left on this transport."""

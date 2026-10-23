@@ -134,7 +134,7 @@ def _read(adapter, protocol, project):
         adapter._begin_road()
         try:
             home = adapter._signed_in_road()
-            if not home or adapter._login_home_grants(home):
+            if not home or adapter._login_home_grants(home) or adapter._route_selected():
                 raise NativeQuotaReadError('not_supported')
             if adapter._workspace.sweep_homes():
                 raise NativeQuotaReadError()

@@ -83,6 +83,10 @@ CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safel
 CHECKER_LOGIN_RESIDUE = (
     "the checker left state this build does not declare in its login directory")
 CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass preflight"
+#: The checker's subscription login could not be prepared for an isolated attempt: the relay folder
+#: or the login itself (its shape, its expiry, its folders) was refused before anything was claimed.
+#: A different fact from a build that failed its preflight, so a different sentence. No path.
+CHECKER_LOGIN_NOT_READY = "the checker's login is not ready for an isolated attempt"
 #: The checker is confined and the execution boundary is not provided for its read-only attempt on
 #: this build, so it spawned nothing (R5). No platform, path or vendor detail rides this sentence.
 CHECKER_BOUNDARY_UNAVAILABLE = (
