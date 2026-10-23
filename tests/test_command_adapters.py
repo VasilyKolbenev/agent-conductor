@@ -64,9 +64,12 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
 # ``process_loans`` is the same journal for the folders that already exist (the work
 # folder, the home, the install folder): it holds them, reads their DACLs through the
 # injected natives and takes the profile's entries away again.
+# ``relay_home`` is the judgement of one more such folder, the relay home outside the project: its
+# shape (lstat walk), the DACL of the relay folder it makes, and the entries it refuses to see.
 SDK_WORKSPACE_DOOR = frozenset({
     "artifact_transport.py", "harness_workspace.py", "login_home.py",
-    "work_seed.py", "process_profile.py", "process_acl.py", "process_loans.py"})
+    "work_seed.py", "process_profile.py", "process_acl.py", "process_loans.py",
+    "relay_home.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({

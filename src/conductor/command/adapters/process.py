@@ -68,6 +68,7 @@ from .process_errors import (  # LaunchRefused is raised by `_procgroup` and rea
     CommandSpecError, ContainmentError, LaunchRefused, OwnershipError, ProcessRunnerError)
 from .process_loans import holds_entry
 from .process_profile import ProfileJournal
+from .relay_home import absolute_home
 from .environment_values import (
     ENV_NAME as _ENV_NAME,
     EnvironmentValues,
@@ -444,6 +445,9 @@ class ProcessRunner:
     """Own children beneath one root, with an explicit environment snapshot."""
 
     ownership_scopes = OwnershipScopes(threading.RLock())
+    #: The entry loans an absolute relay home (`relay_home`). A fact of the class, so a door can
+    #: ask before any runner exists (`boundary_entry.entry_lends_relay_homes`).
+    RELAY_HOME_LOANS = True
 
     @classmethod
     @contextmanager
@@ -476,9 +480,11 @@ class ProcessRunner:
         """One AppContainer profile for one attempt: a context manager (`process_profile`).
 
         `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
-        attempt stands on, or the login home its lease names. The work folder and the home are
-        routes walked from the project root like a working folder (`ContainmentError` for a link
-        or a way out), and nothing is made or granted when one is refused. A runner for a project
+        attempt stands on, or the login home its lease names. The work folder and a project home
+        are routes walked from the project root like a working folder (`ContainmentError` for a
+        link or a way out); a home written as an absolute path is a relay home and never a folder
+        of the project (`absolute_home`), judged by the loan (`relay_home`). Nothing is made or
+        granted when one is refused. A runner for a project
         opened for viewing refuses first (`CommandSpecError`), before the native helper is even
         imported, so no profile, journal record or grant exists for a project that never spawns.
         Off Windows the runner refuses too (`CommandSpecError`), before the native helper is
@@ -496,8 +502,10 @@ class ProcessRunner:
 
     def _loaned(self, folders) -> dict[str, Path]:
         found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
-        if folders.home is not None:
-            found["home"] = self._resolve_cwd(folders.home)
+        if folders.home is not None:  # a route is walked; an absolute path is a relay home
+            absolute = Path(folders.home).is_absolute()
+            found["home"] = (absolute_home(folders.home, self._root) if absolute
+                             else self._resolve_cwd(folders.home))
         if getattr(folders, "login", None) is not None:
             found["login"] = Path(folders.login)
         return found
@@ -505,6 +513,14 @@ class ProcessRunner:
     def recover_container_profiles(self) -> None:
         from . import _winlaunch
         ProfileJournal.for_project(self._root, _winlaunch).recover()
+
+    @staticmethod
+    def ensure_relay_root(auth_home) -> Path:
+        """The relay folder of a login home, made if absent and proven (`relay_home`)."""
+        if os.name != "nt":
+            raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
+        from . import _winlaunch, relay_home
+        return relay_home.ensure_relay_root(auth_home, native=_winlaunch)
 
     def start(self, spec: CommandSpec) -> OwnedProcess:
         """Spawn and return an ownership token that must be explicitly stopped.

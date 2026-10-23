@@ -32,12 +32,21 @@ and the vendor's executable configuration lives there. A login home is refused, 
 exists. In V1 it stays closed (the owner's decision H5-V1 of 21.10.2026), and no transport names
 one: the subscription road is refused by the transport before any claim.
 
+A home can also be a RELAY home (`relay_home`): an absolute folder `<relay>/<key>/<name>` beside the
+logins folder, outside the project, that holds a copy of the login state the attempt works on. It
+is loaned exactly like the per-spawn home (rights `modify`, key `home`, the same journal and
+recovery); only its judgement differs. A home is a relay home when it was written as an absolute
+path, and a project's own home is a route (the runner refuses an absolute path that lies in the
+project). It must have the shape `relay_home_shape` gives, and before a profile exists the relay
+folder must have its protected DACL, the key folder and the relay home only entries they inherit,
+and no real login home beside it (nor an entry at its top) an entry for a container as a whole.
+
 Nothing here widens an ACL beyond the four kinds of folder `AttemptFolders` names. That is a law of
 this runner and not a manner of its callers: an install folder is the version folder of a pinned
 harness and never a login folder or a folder that holds one, a home is a minted folder of a
-catalogued harness home root, a work folder is one item of the work tree, the login home is the
-folder the attempt's own lease names, and a spawn on a loan starts a program that stands in the
-loaned install folder (`holds_entry`).
+catalogued harness home root or a relay home, a work folder is one item of the work tree, the login
+home is the folder the attempt's own lease names, and a spawn on a loan starts a program that
+stands in the loaned install folder (`holds_entry`).
 """
 from __future__ import annotations
 
@@ -360,13 +369,42 @@ class FolderLoans:
                 raise _refused(f"the login home overlaps the {key} folder")
         self._refuse_hooks(login)
 
+    def _refuse_relay_home(self, spelled: Path, real: dict[str, Path], root: Path) -> None:
+        """A home outside the project is a relay home or nothing (`relay_home`).
+
+        The runner has already refused an absolute home that lies in the project
+        (`relay_home.absolute_home`), so what is outside it here was written as an absolute path.
+        The shape is judged on the home as it was written, because a real path has no link left in
+        it to be seen, and the folder that is lent must be the one the walk judged: the real place
+        read again after the walk must be the one read before it. The DACLs are read afterwards
+        (the relay folder, the key folder, the home, and every real login home beside the relay
+        folder). Nothing is held for writing and nothing is changed, and this runs before a
+        profile exists.
+        """
+        from . import relay_home  # deferred: it reads this module's parsers
+        logins = self._logins()
+        reason = relay_home.relay_home_shape(
+            logins, root, tuple(self.profiles.root_identity), spelled, real["work"],
+            real["install"])
+        if reason is None and Path(os.path.realpath(spelled)) != real["home"]:
+            reason = "the folder to lend is not the one its written route leads to"
+        if reason is None:
+            reason = relay_home.relay_side_refusal(
+                self.native, spelled, hold_factory=self.hold_factory)
+        if reason is None:
+            reason = relay_home.logins_refusal(
+                self.native, logins, spelled, hold_factory=self.hold_factory)
+        if reason is not None:
+            raise _refused(f"the relay home is refused: {reason}")
+
     def targets(self, folders) -> dict[str, Path]:
         """The folders of a loan, checked and in their real places; nothing is held or changed.
 
         Raises:
             ProfileRefused: `profile_acl_invalid` for a missing or foreign key, a folder that is not
                 a plain directory, one that overlaps another or a login folder, a login home the
-                attempt's lease does not name, or one the rules above forbid.
+                attempt's lease does not name, a home outside the project that is not a relay home
+                of this project, or one the rules above forbid.
         """
         if self.profiles.owner_root is None:
             raise _refused("trusted ACL callbacks are absent")
@@ -379,10 +417,13 @@ class FolderLoans:
                            "executable configuration in it (a review ruling is open)")
         root = Path(os.path.realpath(self.profiles.owner_root))
         real = {key: _plain_directory(Path(path)) for key, path in folders.items()}
+        relay = "home" in real and not _inside(real["home"], root)  # outside the project
         for name in ("work", "home"):
-            if name in real:
+            if name in real and not (relay and name == "home"):
                 _refuse_attempt_folder(name, real[name], root)
         _refuse_install(real["install"], root, self.environ)
+        if relay:
+            self._refuse_relay_home(Path(folders["home"]), real, root)
         home, work = real.get("home"), real["work"]
         if home is not None and (_inside(home, work) or _inside(work, home)):
             raise _refused("the home and the work folder overlap")

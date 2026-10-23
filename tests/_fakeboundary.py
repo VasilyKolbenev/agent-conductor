@@ -25,6 +25,9 @@ from pathlib import Path
 
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.adapters.process_boundary import WindowsContainer
+from conductor.command.adapters.process_profile import ProfileRefused
+from conductor.command.adapters.relay_home import relay_home_shape
+from conductor.ownership_native import identity
 
 #: A well-formed AppContainer SID, which is all ``WindowsContainer`` checks.
 SID = "S-1-15-2-1-2-3-4-5-6-7"
@@ -110,17 +113,38 @@ class BoundaryRunner(ProcessRunner):
 
     ``entries``, ``runs`` and ``events`` are the record; ``enter_error`` and ``exit_error``, when
     set, are raised when the block is entered and when it is left after a clean body.
+
+    A home written as an ABSOLUTE path is a relay home. The double judges it by the very function
+    the runner's loan and the transport's readiness use (``relay_home_shape``), against the
+    project's login homes in ``auth_homes`` (none unless a test sets them), and refuses on entry,
+    as the runner does, with a ``ProfileRefused``. It does not read DACLs: the loan's own tests do.
     """
 
-    def __init__(self, project_root, *, scratch, environ=None, spawns_allowed=True):
+    def __init__(self, project_root, *, scratch, environ=None, spawns_allowed=True,
+                 auth_homes=()):
         super().__init__(project_root, environ=environ, spawns_allowed=spawns_allowed)
         self._scratch = Path(scratch)
         self._open = 0
+        self.auth_homes = tuple(auth_homes)
         self.entries: list[Entry] = []
         self.runs: list[Run] = []
         self.events: list[str] = []
         self.enter_error: BaseException | None = None
         self.exit_error: BaseException | None = None
+
+    def _home(self, folders) -> Path | None:
+        """The home the attempt stands on: a route beneath the project, or a judged relay home."""
+        if folders.home is None:
+            return None
+        home = Path(folders.home)
+        if not home.is_absolute():
+            return self._root / folders.home
+        reason = relay_home_shape(
+            self.auth_homes, self._root, identity(self._root), home,
+            self._root / folders.work, Path(folders.install))
+        if reason is not None:
+            raise ProfileRefused("profile_acl_invalid", f"the relay home is refused: {reason}")
+        return home
 
     @contextmanager
     def container_profile(self, *, internet_client=False, mode=None, folders=None):
@@ -129,12 +153,12 @@ class BoundaryRunner(ProcessRunner):
         self.events.append("enter")
         if self.enter_error is not None:
             raise self.enter_error
+        home = self._home(folders)
         runtime = self._scratch / f"attempt-{len(self.entries)}" / "runtime"
         runtime.mkdir(parents=True)
         entry.paths = {
             "parent": runtime.parent, "runtime": runtime,
-            "work": self._root / folders.work,
-            "home": None if folders.home is None else self._root / folders.home,
+            "work": self._root / folders.work, "home": home,
             "install": Path(folders.install)}
         self._open += 1
         try:
@@ -161,7 +185,8 @@ def recording(adapter, scratch, *, enter_error=None, exit_error=None) -> Boundar
     """
     old = adapter._runner
     runner = BoundaryRunner(
-        old._root, scratch=scratch, environ=old._environ, spawns_allowed=old._spawns_allowed)
+        old._root, scratch=scratch, environ=old._environ, spawns_allowed=old._spawns_allowed,
+        auth_homes=getattr(old, "auth_homes", ()))
     runner.enter_error, runner.exit_error = enter_error, exit_error
     adapter._runner = runner
     return runner

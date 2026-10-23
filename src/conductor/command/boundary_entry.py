@@ -5,6 +5,8 @@ drift apart. A confined attempt asks ``ProcessRunner.container_profile`` for its
 build whose runner has no such entry would raise out of it once the attempt was claimed, and
 the attempt would be recorded ``unknown``. So the doors ask first, by the signature alone:
 ``entry_takes_the_call`` binds the call to the entry the runner has and never calls it.
+``entry_lends_relay_homes`` is the same kind of fact for one more thing the call may name: an
+absolute relay home instead of a per-spawn home beneath the project.
 
 A leaf of the ``command`` package, like ``execution_boundary``: standard library only, no file,
 no process. The adapters import it, and it imports none of them.
@@ -22,6 +24,16 @@ def entry_call(mode: str, folders: object | None) -> dict[str, object]:
         folders: The attempt's own folders, or None when the call is only being checked.
     """
     return {"mode": mode, "internet_client": True, "folders": folders}
+
+
+def entry_lends_relay_homes(runner: object) -> bool:
+    """Whether the entry of ``runner`` loans an absolute relay home as the attempt's home.
+
+    A static fact of the runner's class (``RELAY_HOME_LOANS``), read without building or calling
+    anything. Only the boolean True counts; a runner that says nothing, or anything else, does not
+    lend one, so a door that routes an attempt through a relay home asks this first.
+    """
+    return getattr(type(runner), "RELAY_HOME_LOANS", False) is True
 
 
 def entry_takes_the_call(runner: object, mode: str) -> bool:

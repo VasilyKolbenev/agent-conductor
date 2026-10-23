@@ -169,6 +169,13 @@ CAPPED = (
     "tests/node_run.py",
     "tests/test_node_run.py",
     "tests/test_boot_kuser.py",
+    "src/conductor/command/adapters/relay_home.py",
+    "tests/relay_fixtures.py",
+    "tests/test_relay_home_shape.py",
+    "tests/test_relay_home_acl.py",
+    "tests/test_relay_home_loans.py",
+    "tests/test_relay_home_boundary.py",
+    "tests/test_relay_home_native.py",
 )
 
 

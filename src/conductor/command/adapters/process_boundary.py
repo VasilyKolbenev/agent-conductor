@@ -83,18 +83,29 @@ def _route(name: str, value: object) -> None:
         raise ValueError(f"{name} must be a route beneath the project root")
 
 
+def _home(value: object) -> None:
+    """A home: a route beneath the project, or an absolute path (a relay home, `relay_home`)."""
+    if type(value) is str and "\x00" not in value and Path(value).is_absolute():
+        if any(part in (".", "..") for part in re.split(r"[\\/]", value)):
+            raise ValueError("home must be an absolute path with no '.' or '..' in it")
+        return
+    _route("home", value)
+
+
 @dataclass(frozen=True)
 class AttemptFolders:
     """The existing folders an attempt works on, which the runner loans to its AppContainer.
 
     `work` and `home` are routes relative to the project root (`work/<id>`, the per-spawn home);
-    `home` is None on the login road. `install` is the ABSOLUTE folder that holds the pinned
-    executable and what it loads. `login` is the ABSOLUTE login home the attempt holds under the
-    shared login lease, and None otherwise; no transport names one (in V1 the subscription road
-    is refused before any claim, H5-V1). Nothing here grants anything: the runner checks each
-    folder, takes the login home only if the attempt's own lease names it, and its journal grants
-    and returns it (`process_loans`). A `login` is refused while `login_loan_provided()` is
-    False, and it is, as shipped.
+    `home` is None on the login road, and may instead be the ABSOLUTE relay home of the attempt
+    (`relay_home`), which the loan judges by its shape and takes as written; an absolute path means
+    a relay home and nothing else, so one that lies in the project is refused. `install` is the
+    ABSOLUTE folder that holds the pinned executable and what it loads. `login` is the ABSOLUTE
+    login home the attempt holds under the shared login lease, and None otherwise; no transport
+    names one (in V1 the subscription road is refused before any claim, H5-V1). Nothing here
+    grants anything: the runner checks each folder, takes the login home only if the attempt's own
+    lease names it, and its journal grants and returns it (`process_loans`). A `login` is refused
+    while `login_loan_provided()` is False, and it is, as shipped.
     """
 
     work: str
@@ -105,7 +116,7 @@ class AttemptFolders:
     def __post_init__(self):
         _route("work", self.work)
         if self.home is not None:
-            _route("home", self.home)
+            _home(self.home)
         if (type(self.install) is not str or "\x00" in self.install
                 or not Path(self.install).is_absolute()):
             raise ValueError("install must be the absolute folder of the pinned executable")
