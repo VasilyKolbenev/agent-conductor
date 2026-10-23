@@ -203,8 +203,11 @@ cannot provide a required sandbox`; инспектор `do`: `sandbox: project-r
 → «Создать новый запуск»: «ID запуска» и «ID цикла» `r5-main`; версия 1; «Автоматически в заданных
 пределах» (Studio добавит `automation_contract`, `studio-taskflow.js:129`); `role-thinker`,
 `role-diagnostician`, `role-designer`, `role-implementer` → `claude-code`; `role-checker` → `codex`;
-модель пустая (по умолчанию harness) или полный ID по выбору владельца (алиасы `sonnet`/`opus`/`haiku`/
-`fable` отклоняются, `claude_code.py:352`) → «Создать запуск».
+для `role-checker` модель явно `gpt-6.1-sol`, только после успешного M2b на pinned Codex 0.112.0.
+Пустое поле у checker не использовать: M2a выбрал устаревший `gpt-5.3-codex` и получил отказ.
+Решение и один разрешённый повтор: [H5-M2-MODEL](tasks/H5-SUB-R5-M2-MODEL-REPORT.md).
+Для ролей Claude модель пустая (default harness) или полный ID по выбору владельца;
+алиасы `sonnet`/`opus`/`haiku`/`fable` отклоняются (`claude_code.py:352`) → «Создать запуск».
 
 **4.2. Документы** («Опубликовать документ», до предпросмотра). `artifact-brief`:
 ```text
