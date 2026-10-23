@@ -203,9 +203,13 @@ cannot provide a required sandbox`; инспектор `do`: `sandbox: project-r
 → «Создать новый запуск»: «ID запуска» и «ID цикла» `r5-main`; версия 1; «Автоматически в заданных
 пределах» (Studio добавит `automation_contract`, `studio-taskflow.js:129`); `role-thinker`,
 `role-diagnostician`, `role-designer`, `role-implementer` → `claude-code`; `role-checker` → `codex`;
-для `role-checker` модель явно `gpt-6.1-sol`, только после успешного M2b на pinned Codex 0.112.0.
-Пустое поле у checker не использовать: M2a выбрал устаревший `gpt-5.3-codex` и получил отказ.
-Решение и один разрешённый повтор: [H5-M2-MODEL](tasks/H5-SUB-R5-M2-MODEL-REPORT.md).
+Межвендорный проход пока не запускать: M2a и M2b Codex отказали на модели, рабочий ID не выбран.
+Следующий шаг Codex — [metadata C и подготовка A](tasks/H5-CODEX-COMPAT-TASK.md).
+Разрешён промежуточный B: отдельный запуск `r5-claude-preliminary`, где `role-checker` →
+другой участник Claude Code с другим instance ID, новой checker-попыткой и digest результата.
+Остальные шаги, граница, человеческие решения и бюджет сохраняются; квота Claude общая.
+B использует один разрешённый цикл и не закрывает Claude → Codex или R5. Позднейший межвендорный
+проход потребует своего лимита. [Решение после M2b](tasks/H5-SUB-R5-M2-MODEL-REPORT.md).
 Для ролей Claude модель пустая (default harness) или полный ID по выбору владельца;
 алиасы `sonnet`/`opus`/`haiku`/`fable` отклоняются (`claude_code.py:352`) → «Создать запуск».
 
