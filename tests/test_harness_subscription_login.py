@@ -268,7 +268,8 @@ def test_codex_moves_its_home_and_keeps_the_model_text_out_of_it(tmp_path):
         "the agent's last message was written where the login lives")
     asked = [row for row in _fakecodex.spawns(log)
              if _fakecodex.login_question(row["argv"])]
-    assert [row["argv"] for row in asked] == [["login", "status"]]
+    assert [row["argv"] for row in asked] == [
+        ["-c", 'cli_auth_credentials_store="file"', "login", "status"]]
 
 
 def test_codex_refuses_a_run_whose_login_is_missing(tmp_path):
@@ -286,7 +287,7 @@ def test_codex_refuses_a_run_whose_login_is_missing(tmp_path):
     assert receipt.outcome == "failed"
     assert "reports no subscription login" in receipt.detail
     assert "CODEX_HOME" in receipt.detail
-    assert "run login" in receipt.detail, receipt.detail
+    assert 'run -c cli_auth_credentials_store="file" login' in receipt.detail, receipt.detail
     assert _fakecodex.task_spawns(log) == []
 
 

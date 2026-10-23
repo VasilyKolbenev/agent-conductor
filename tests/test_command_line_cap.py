@@ -176,6 +176,21 @@ CAPPED = (
     "tests/test_relay_home_loans.py",
     "tests/test_relay_home_boundary.py",
     "tests/test_relay_home_native.py",
+    "src/conductor/command/adapters/login_relay.py",
+    "src/conductor/command/adapters/claude_relay.py",
+    "src/conductor/command/adapters/codex_relay.py",
+    "src/conductor/command/adapters/codex_quota.py",
+    "src/conductor/command/adapters/relay_env.py",
+    "tests/relay_credentials.py",
+    "tests/test_login_relay_leaf.py",
+    "tests/test_login_relay_flow.py",
+    "tests/test_login_relay_discard.py",
+    "tests/test_claude_relay.py",
+    "tests/test_codex_relay.py",
+    "tests/test_relay_env.py",
+    "tests/test_relay_profiles.py",
+    "tests/test_codex_auth_store.py",
+    "tests/test_login_relay_native.py",
 )
 
 

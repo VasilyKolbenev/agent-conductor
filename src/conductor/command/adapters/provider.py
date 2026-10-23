@@ -46,6 +46,7 @@ from typing import Any, ClassVar
 from ..contracts import ContractError, _id, _text, canonical_json
 from .base import CAPABILITIES, _ARGUMENT_SCHEMAS, AdapterContractError, AdapterRegistry
 from .deep_contracts import DeepProtocol, _env_names
+from .relay_env import route_env_named
 
 #: Every reviewed provider protocol/version token an operator may pin.
 KNOWN_PROTOCOLS = frozenset(protocol.value for protocol in DeepProtocol)
@@ -327,6 +328,12 @@ class ProviderConfig:
                 raise ProviderConfigError(
                     f"subscription authentication may not forward {forwarded}: "
                     "the harness would bill an API account instead of the subscription")
+            rerouted = list(route_env_named(self.env_allow))
+            if rerouted:
+                raise ProviderConfigError(
+                    f"subscription authentication may not forward {rerouted}: they replace the "
+                    "login or reroute the harness's traffic, so a task would not run on the "
+                    "login that was pinned")
         elif self.auth_home:
             raise ProviderConfigError(
                 f"auth_home is read only in {SUBSCRIPTION_AUTH} authentication")

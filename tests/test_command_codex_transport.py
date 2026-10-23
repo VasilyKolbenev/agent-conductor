@@ -220,6 +220,7 @@ def test_the_whole_argv_is_the_pinned_binary_this_builds_flags_and_one_minted_pa
     assert argv[:-2] == [
         "exec", "--skip-git-repo-check", "--ephemeral",
         "--color", "never", "--sandbox", "workspace-write",
+        "-c", 'cli_auth_credentials_store="file"',
         "-c", "analytics.enabled=false",
         "-c", 'otel.exporter="none"',
         "-c", 'otel.metrics_exporter="none"',

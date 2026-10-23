@@ -175,7 +175,8 @@ def test_the_codex_review_argv_is_read_only_and_carries_no_task(tmp_path):
     home = spawned[0]["codex_home"]
     assert argv == [
         *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
-        *COLOR_ARGV, *REVIEW_SANDBOX_ARGV, *TELEMETRY_ARGV,
+        *COLOR_ARGV, *REVIEW_SANDBOX_ARGV,
+        "-c", 'cli_auth_credentials_store="file"', *TELEMETRY_ARGV,
         "-o", str(Path(home) / LAST_MESSAGE_NAME), STDIN_PROMPT,
     ]
     assert "workspace-write" not in argv

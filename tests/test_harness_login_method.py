@@ -27,7 +27,8 @@ from tests.test_harness_subscription_login import (
 
 
 @pytest.mark.parametrize("method", [
-    "api_key", "quiet_key", "key_source", "vertex", "none", "stale",
+    "api_key", "quiet_key", "key_source", "env_token", "env_token_plan", "token_source",
+    "vertex", "none", "stale",
     "methodless", "scalar", "garbage",
     # A method this build has never seen, and an empty one. Neither is a known
     # refusal, and a rule written as exclusions admitted both.

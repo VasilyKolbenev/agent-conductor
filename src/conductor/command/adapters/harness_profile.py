@@ -26,6 +26,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from ..contracts import ContractError, _id
 from .base import AdapterContractError
+from .login_relay import RelaySpec
 
 #: The one control any of these adapters carries. stop, retry and switch stay
 #: ABSENT rather than present and empty, because none is implemented and the
@@ -472,6 +473,11 @@ class HarnessProfile:
     #: refuses it could never match -- a policy that reads as if it were doing
     #: something.
     unstable_models: tuple[str, ...] = ()
+    #: The relay a subscription attempt of this harness works on instead of the real login home,
+    #: or None for a harness that has none (`login_relay`). Declared facts only, so the profile
+    #: stays plain data to the digest that freezes it into a grant (`policy_providers`); declaring
+    #: one opens no road by itself: whether a transport runs a task on it is the transport's.
+    login_relay: RelaySpec | None = None
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.
@@ -517,6 +523,22 @@ class HarnessProfile:
                 f"a task travels by one of {TASK_CHANNELS}, not "
                 f"{self.task_channel!r}")
         self._hold_model_routing()
+        self._hold_relay()
+
+    def _hold_relay(self) -> None:
+        """Prove the relay declaration: a spec, and a credential the leak scan already reads.
+
+        A relay copies one credential file, and a child that echoed it back must not be able to
+        publish it, so the file is one of `login_credentials` (read to widen the leak scan).
+        """
+        if self.login_relay is None:
+            return
+        if not isinstance(self.login_relay, RelaySpec):
+            raise HeadlessCliError("login_relay is a relay spec, or None")
+        if self.login_relay.credential not in self.login_credentials:
+            raise HeadlessCliError(
+                "the credential a relay copies is one the leak scan reads, so it is among "
+                "login_credentials")
 
     def _reviewed_login_names(self) -> None:
         """Prove the login lists before either can be joined to a directory."""

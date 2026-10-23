@@ -216,8 +216,8 @@ this file or in none.
 """
 from __future__ import annotations
 
-from .quota_contracts import QuotaPolicy, bucket_windows
-from .subscription_quota import SubscriptionRpc, native_subscription_connection
+from .codex_quota import QUOTA_POLICY, QUOTA_RPC
+from .subscription_quota import native_subscription_connection
 
 import re
 from collections.abc import Callable
@@ -227,6 +227,7 @@ from types import MappingProxyType
 from .deep_adapters import _DeepAdapter
 from .deep_codecs import FakeCodexCodec
 from .deep_contracts import DeepProtocol
+from .codex_relay import AUTH_STORE_ARGV, CODEX_MCP_CREDENTIALS, CODEX_RELAY
 from .harness_workspace import (
     HOME_LEAF_ABSENT,
     HOME_LEAF_EMPTY,
@@ -341,11 +342,13 @@ STDIN_PROMPT = "-"
 #: build runs it. OBSERVED on the reviewed binary: `login --help` declares the
 #: bare form beside `--with-api-key`, which reads a key from stdin and is the
 #: road this build does not take when an operator pinned a subscription.
-LOGIN_ARGV = ("login",)
+#: `AUTH_STORE_ARGV` (`codex_relay`) keeps the login in a FILE, because the relay copies one: the
+#: sign-in a person runs, this status read, a task, a review, a check and the quota read carry it.
+LOGIN_ARGV = (*AUTH_STORE_ARGV, "login")
 #: MEASURED on the reviewed binary with an empty `CODEX_HOME`: `login status`
 #: exits 1 and writes "Not logged in" to stderr. That sentence IS read -- it is
 #: the only thing separating a subscription from an API key, since both exit 0.
-LOGIN_STATUS_ARGV = ("login", "status")
+LOGIN_STATUS_ARGV = (*AUTH_STORE_ARGV, "login", "status")
 #: MEASURED at 0.112.0 with a fresh `CODEX_HOME` and one real `exec`: a `tmp`
 #: directory holding a lock and two batch files per spawn. Per-run, so it is
 #: taken back after every spawn.
@@ -359,7 +362,7 @@ LOGIN_SCRATCH = ("tmp",)
 LOGIN_EXPECTED = ("skills", "auth.json", "version.json")
 #: Where this vendor's own login writes the credential. DECLARED, like the name
 #: above it, and read only to widen the leak scan.
-LOGIN_CREDENTIALS = ("auth.json",)
+LOGIN_CREDENTIALS = ("auth.json", CODEX_MCP_CREDENTIALS)
 #: What this vendor says when it is signed in, and what it says when the login
 #: it found is an API key. MEASURED on 0.112.0 with synthetic credential files:
 #: a ChatGPT-shaped `auth.json` answers "Logged in using ChatGPT" and exits 0;
@@ -499,7 +502,7 @@ CODEX_PROFILE = HarnessProfile(
     # it true: witnesses read the argv each road really builds.
     vendor_sandbox=((DISPATCH_CAPABILITY, " ".join(SANDBOX_ARGV)),
                     (REVIEW_CAPABILITY, " ".join(REVIEW_SANDBOX_ARGV))),
-    model_flag=MODEL_FLAG)
+    model_flag=MODEL_FLAG, login_relay=CODEX_RELAY)
 
 
 class CodexCliError(HeadlessCliError):
@@ -629,7 +632,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         return (
             *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
             *COLOR_ARGV, *SANDBOX_ARGV, *self._model_argv(model),
-            *TELEMETRY_ARGV,
+            *AUTH_STORE_ARGV, *TELEMETRY_ARGV,
             *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
             STDIN_PROMPT)
 
@@ -665,7 +668,7 @@ class CodexCliTransport(ArtifactAwareTransport):
         return (
             *EXEC_ARGV, *SKIP_GIT_REPO_CHECK_ARGV, *EPHEMERAL_ARGV,
             *COLOR_ARGV, *REVIEW_SANDBOX_ARGV, *self._model_argv(model),
-            *TELEMETRY_ARGV,
+            *AUTH_STORE_ARGV, *TELEMETRY_ARGV,
             *LAST_MESSAGE_ARGV, str(self._last_message_path(home)),
             STDIN_PROMPT)
 
@@ -779,22 +782,3 @@ class CodexAdapter(_DeepAdapter):
 #: This module's own statement of which concrete type is reviewed for the fake
 #: protocol above, read from the class's OWN ``__dict__`` and never inherited.
 CodexAdapter.REVIEWED_TYPE = CodexAdapter
-
-# The provider owns every native field; the helper only walks keyed windows.
-
-
-
-def _native_quota(payload):
-    return bucket_windows(
-        payload, map_field="rateLimitsByLimitId", legacy_field="rateLimits",
-        default_limit="codex", limit_field="limitId", window_fields=("primary", "secondary"),
-        used_field="usedPercent", reset_field="resetsAt", duration_field="windowDurationMins").bound_to(QUOTA_POLICY)
-
-
-QUOTA_POLICY = QuotaPolicy("openai", "codex-account-read", "codex-app-server",
-                           "quota", "unix", _native_quota)
-
-QUOTA_RPC = SubscriptionRpc(("app-server",),
-    b'{"id":1,"method":"initialize","params":{"clientInfo":{"name":"december_command","version":"1.0"}}}\n'
-    b'{"method":"initialized","params":{}}\n{"id":2,"method":"account/read","params":{"refreshToken":false}}\n'
-    b'{"id":3,"method":"account/rateLimits/read"}\n', (1, 2, 3), ("account", "type"), "chatgpt")

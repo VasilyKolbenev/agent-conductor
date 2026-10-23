@@ -190,6 +190,7 @@ def _refuse_name(token: str, index: int, total: int,
     """
     from conductor.command.adapters.process import injecting_env_reason
     from conductor.command.adapters.provider import API_BILLING_ENV
+    from conductor.command.adapters.relay_env import route_env_named
 
     where = _place(index, total)
     if "=" in token:
@@ -209,6 +210,11 @@ def _refuse_name(token: str, index: int, total: int,
         return (f"{token!r} pays for model access through an API account, and "
                 "you pinned the subscription login. Passing both would bill the "
                 "API account without saying so, so this build refuses the pair.")
+    if subscription and route_env_named([token]):
+        return (f"{token!r} replaces the subscription login or reroutes the harness's traffic "
+                "(a token, an account, a credential store, a proxy or the certificates it "
+                "trusts), and you pinned the subscription login. A task would then not run on "
+                "that login, so this build refuses the pair.")
     return None
 
 

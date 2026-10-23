@@ -149,6 +149,21 @@ LOGIN_ANSWERS = {
     "key_source": {"loggedIn": True, "authMethod": "claude.ai",
                    "apiProvider": "firstParty", "subscriptionType": "max",
                    "apiKeySource": "ANTHROPIC_API_KEY"},
+    #: A token that came from the environment or a file descriptor. By the bytes of
+    #: the pinned 2.1.239 (read, not run) the status then answers `authMethod:
+    #: "oauth_token"` and names no plan (the plan is added for `claude.ai` only):
+    #: this is the shape the binary builds, and it is refused by the method clause.
+    "env_token": {"loggedIn": True, "authMethod": "oauth_token",
+                  "apiProvider": "firstParty"},
+    #: The same method beside a valid plan, so the method clause alone refuses it.
+    "env_token_plan": {"loggedIn": True, "authMethod": "oauth_token",
+                       "apiProvider": "firstParty", "subscriptionType": "max"},
+    #: SYNTHETIC, not measured: the status of 2.1.239 never prints `tokenSource` (it is a
+    #: key of the control channel's account object, `claude_quota._control_usage`). It is
+    #: here beside every other clause satisfied, to keep the defence-in-depth clause killed.
+    "token_source": {"loggedIn": True, "authMethod": "claude.ai",
+                     "apiProvider": "firstParty", "subscriptionType": "max",
+                     "tokenSource": "CLAUDE_CODE_OAUTH_TOKEN"},
     #: Signed OUT while still naming the method it last used.
     "stale": {"loggedIn": False, "authMethod": "claude.ai",
               "apiProvider": "firstParty", "subscriptionType": "max"},

@@ -141,9 +141,9 @@ def test_a_subscription_row_refuses_an_api_billing_name_while_it_is_typed(
     home = tmp_path / "auth" / "claude-code"
 
     assert configure(project, menu_choice("claude-code"), str(executable),
-                     "1", str(home), "ANTHROPIC_API_KEY", "HTTPS_PROXY",
+                     "1", str(home), "ANTHROPIC_API_KEY", "MY_TOOL_SETTING",
                      "y") == 0
 
     said = capsys.readouterr().err
     assert "pays for model access through an API account" in said, said
-    assert written(project)["providers"][0]["env_allow"] == ["HTTPS_PROXY"]
+    assert written(project)["providers"][0]["env_allow"] == ["MY_TOOL_SETTING"]

@@ -156,9 +156,10 @@ def test_an_api_key_row_still_forwards_the_credential_that_road_needs(name):
 
 
 def test_a_subscription_row_may_forward_a_variable_that_is_not_a_credential():
+    """Not a proxy either: a proxy replaces the route of the login (`tests/test_relay_env.py`)."""
     config = a_config(
-        auth=SUBSCRIPTION_AUTH, auth_home=AUTH_HOME, env_allow=["HTTPS_PROXY"])
-    assert config.env_allow == ("HTTPS_PROXY",)
+        auth=SUBSCRIPTION_AUTH, auth_home=AUTH_HOME, env_allow=["MY_TOOL_SETTING"])
+    assert config.env_allow == ("MY_TOOL_SETTING",)
 
 
 def test_the_operator_file_reads_and_writes_the_two_new_keys(tmp_path):
