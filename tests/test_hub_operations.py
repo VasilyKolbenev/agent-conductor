@@ -163,7 +163,10 @@ def _add_held_at_start(tmp_path):
         popen=fake_cli())
     ident = manager.begin(PICK, "Project", True)
     for _ in range(300):
-        if manager.get(ident)["step"] == "start":
+        # "start" shows as soon as the child's last step line is read (operations.py:377); the
+        # project is registered only with the result (:249), so both are the precondition
+        row = manager.get(ident)
+        if row["step"] == "start" and row["project_id"] is not None:
             return manager, ident, gate
         time.sleep(0.01)
     gate.set()
