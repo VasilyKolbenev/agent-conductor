@@ -92,6 +92,9 @@ CHECKER_LOGIN_NOT_READY = "the checker's login is not ready for an isolated atte
 CHECKER_BOUNDARY_UNAVAILABLE = (
     "the execution boundary is not provided for the checker's attempt on this build")
 CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
+#: The checker's claim could not be taken and no marker stands, so nothing was reserved and nothing
+#: was started: a different fact from the sentence above, which says a marker exists (Q13).
+CHECKER_CLAIM_REFUSED = "the checker could not reserve its check, so nothing was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
 #: The checker's own shared login lease was refused when its guard was entered, so that attempt

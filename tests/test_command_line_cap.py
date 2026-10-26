@@ -201,6 +201,7 @@ CAPPED = (
     "tests/test_desk_wizard_boundary_words.py",
     "tests/test_provider_task_road.py",
     "tests/test_relay_road_leaving.py",
+    "tests/test_relay_claude_native.py",
 )
 
 

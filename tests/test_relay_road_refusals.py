@@ -730,24 +730,53 @@ def test_a_checker_that_cannot_leave_the_boundary_has_claimed_its_check_and_is_n
     assert site.leftovers() == [] and site.lease_is_free()
 
 
-@pytest.mark.parametrize("stands", [False, True], ids=["no-marker", "marker-written"])
-def test_a_checker_whose_claim_cannot_be_taken_starts_nothing_and_says_a_marker_stands(
-        stands, tmp_path, monkeypatch):
+#: A checker that does not start, by what is true of its marker: the sentence of the receipt,
+#: spelled out (each sentence has its own closed key, `test_relay_road_words`). Without a marker
+#: nothing was reserved and no marker stands (`claim_refused`); a marker that stands before the
+#: claim, was written by a claim that failed, or cannot be looked at, is a check that is claimed
+#: and is not repeated (`marker_standing`, Q13).
+STANDING = "this action already claimed its independent checker; no second check was started"
+CLAIM_NOT_TAKEN = {
+    "no-marker": "the checker could not reserve its check, so nothing was started",
+    "marker-before": STANDING, "marker-written": STANDING, "marker-unreadable": STANDING,
+}
+
+
+@pytest.mark.parametrize("case", list(CLAIM_NOT_TAKEN))
+def test_a_checker_whose_claim_cannot_be_taken_starts_nothing_and_names_what_is_true(
+        case, tmp_path, monkeypatch):
+    words = CLAIM_NOT_TAKEN[case]
     site = Site(tmp_path, CLAUDE, **CHECKER_KNOBS)
-    real = HarnessWorkspace.claim_verification
+    claim, real = HarnessWorkspace.claim, HarnessWorkspace.claim_verification
+
+    def claimed_before(self, run_id, action_id):
+        claim(self, run_id, action_id)
+        real(self, run_id, action_id)  # the real marker of the check, there before the checker
 
     def refuse(self, run_id, action_id):
-        if stands:
+        if case == "marker-written":
             real(self, run_id, action_id)
+            raise OSError(28, "no space left on the device")
+        if case == "marker-unreadable":
+            monkeypatch.setattr(HarnessWorkspace, "is_verification_claimed", _raising(
+                WorkspaceNotContained("the marker route cannot be walked")))
             raise OSError(28, "no space left on the device")
         raise WorkspaceNotContained("the marker route is not contained")
 
     monkeypatch.setattr(HarnessWorkspace, "claim_verification", refuse)
+    if case == "marker-before":  # the check was claimed before the checker began: not again
+        monkeypatch.setattr(HarnessWorkspace, "claim", claimed_before)
 
     attempt, evidence = _checked_run(site, site.adapter, site.adapter, False)
+    monkeypatch.undo()
 
+    # The two sentences are told apart by their own words (`test_relay_road_words`): the sentence
+    # of the receipt is the key the transport answered with.
     assert attempt.state is AttemptState.VERIFICATION_FAILED, attempt.receipt.detail
-    assert attempt.receipt.detail == verify_holds.CHECKER_MARKER_STANDING
+    assert attempt.receipt.detail == words
     assert evidence == [] and len(site.tasks()) == 1, "the checker ran, or left evidence"
-    assert site.adapter.verification_started(attempt.request) is stands
+    # Real markers: the one before and the one the failed claim wrote. The unreadable one is taken
+    # as standing, not found, and the refused claim left none.
+    assert site.adapter.verification_started(attempt.request) is (
+        case in ("marker-before", "marker-written"))
     assert site.leftovers() == [] and site.lease_is_free()

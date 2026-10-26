@@ -122,6 +122,47 @@ def test_a_sentence_of_what_a_child_did_is_never_taken_for_a_refusal():
         "the process exited non-zero")
 
 
+#: The whole closed set of reasons a checker's transport may answer with, spelled out: a new one
+#: is a decision, and is added here by hand together with its words (`verify_road.CHECK_REASONS`).
+CHECKER_REASONS = frozenset({
+    "verified", "homes_refused", "preflight_refused", "marker_standing", "claim_refused",
+    "no_verdict", "tree_changed", "rejected", "frame_over_limit", "frame_env_echo",
+    "material_unavailable", "login_residue", "rejected_findings_refused", "snapshot_damaged",
+    "object_format_changed", "base_missing", "reserved_path", "irregular_result",
+    "result_too_large", "unportable_name", "case_collision", "boundary_unavailable",
+    "login_not_ready"})
+MARKER_STANDING_WORDS = (
+    "this action already claimed its independent checker; no second check was started")
+CLAIM_REFUSED_WORDS = "the checker could not reserve its check, so nothing was started"
+
+
+def _checker_answer(reason: str) -> AdapterVerification:
+    return AdapterVerification(
+        adapter_id="claude-code", action_id="act-1", state="error",
+        observed_at="2026-08-22T12:00:00Z", detail=reason, evidence_refs=())
+
+
+def test_a_checker_that_could_not_reserve_its_check_is_not_one_whose_marker_stands():
+    """Two refusals, two keys, two sentences: a claim refused leaves no marker, so it never says
+    that the action already claimed its check (Q13)."""
+    assert verify_road.check_reason(_checker_answer("claim_refused"), "default") == (
+        CLAIM_REFUSED_WORDS)
+    assert verify_road.check_reason(_checker_answer("marker_standing"), "default") == (
+        MARKER_STANDING_WORDS)
+    assert verify_holds.CHECKER_CLAIM_REFUSED == CLAIM_REFUSED_WORDS
+    assert verify_holds.CHECKER_MARKER_STANDING == MARKER_STANDING_WORDS
+    assert independent_check.CheckFrameError("claim_refused").reason == "claim_refused"
+    assert "marker" not in CLAIM_REFUSED_WORDS and "already" not in CLAIM_REFUSED_WORDS
+
+
+def test_the_closed_set_of_checker_reasons_has_words_for_every_reason_it_answers_with():
+    assert independent_check.REASONS == CHECKER_REASONS
+    assert {reason for _state, reason in verify_road.CHECK_REASONS} <= CHECKER_REASONS
+    assert len(set(verify_road.CHECK_REASONS.values())) == len(verify_road.CHECK_REASONS)
+    assert ("error", "claim_refused") in verify_road.CHECK_REASONS
+    assert ("error", "marker_standing") in verify_road.CHECK_REASONS
+
+
 def test_a_checker_whose_login_is_not_ready_has_a_closed_key_and_a_sentence_of_its_own():
     verification = AdapterVerification(
         adapter_id="claude-code", action_id="act-1", state="error",

@@ -70,9 +70,11 @@ class IndependentCheckTransport:
                 claim=self._claim_of(request, verification=True))
         except RelayNotStarted as refused:
             # Before the claim, or with a claim that could not be taken: whichever it was, the
-            # checker is not started, and a claim that failed is told as the marker it may leave.
-            return self._checker_answer(request, "marker_standing" if refused.code in (
-                "claim", "claim_standing") else "login_not_ready")
+            # checker is not started. A claim refused with no marker is told as that (nothing was
+            # reserved); one whose marker stands, or cannot be looked at, as the marker it leaves.
+            reason = {"claim": "claim_refused", "claim_standing": "marker_standing"}.get(
+                refused.code, "login_not_ready")
+            return self._checker_answer(request, reason)
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._checker_answer(request, "tree_changed")
         if self._retained:

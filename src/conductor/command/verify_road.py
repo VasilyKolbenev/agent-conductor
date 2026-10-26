@@ -30,6 +30,7 @@ CHECK_REASONS = MappingProxyType({
     ("error", "boundary_unavailable"): words.CHECKER_BOUNDARY_UNAVAILABLE,
     ("error", "login_not_ready"): words.CHECKER_LOGIN_NOT_READY,
     ("error", "marker_standing"): words.CHECKER_MARKER_STANDING,
+    ("error", "claim_refused"): words.CHECKER_CLAIM_REFUSED,
     ("error", "no_verdict"): words.CHECKER_NO_VERDICT,
     ("error", "material_unavailable"): words.CHECKER_MATERIAL_UNAVAILABLE,
     ("mismatch", "tree_changed"): words.CHECKER_TREE_CHANGED,

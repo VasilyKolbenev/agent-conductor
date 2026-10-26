@@ -21,7 +21,7 @@ from .result_manifest import marked_policy, manifest_digest
 VERDICT_ACCEPT = "VERDICT: accept"
 VERDICT_REJECT = "VERDICT: reject"
 REASONS = frozenset({
-    "verified", "homes_refused", "preflight_refused", "marker_standing",
+    "verified", "homes_refused", "preflight_refused", "marker_standing", "claim_refused",
     "no_verdict", "tree_changed", "rejected", "frame_over_limit", "frame_env_echo",
     "material_unavailable", "login_residue", "rejected_findings_refused",
     "snapshot_damaged", "object_format_changed", "base_missing", "reserved_path",

@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
@@ -20,13 +21,13 @@ from tests.test_harness_subscription_login import a_harness
 from tests.test_project_ownership import activated
 
 
-def child(base, home, code):
+def child(base, home, code, timeout=20):
     source = Path(ownership.__file__).resolve().parents[1]
     environment = {key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR") if key in os.environ}
     environment.update(PYTHONPATH=str(source) + os.pathsep + str(source.parent),
                        PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1")
     return subprocess.run([sys.executable, "-c", code, str(base), str(home)],
-        cwd=base, env=environment, capture_output=True, timeout=20, check=False)
+        cwd=base, env=environment, capture_output=True, timeout=timeout, check=False)
 
 
 ATTEMPT = """
@@ -48,6 +49,29 @@ with acquire_owner(root):
 """
 
 
+#: Hang guards of the test below, in seconds: neither is a product limit, and neither is a retry.
+#: The first attempt reaches its held cleanup through a real spawn, which took 1 to 17 s on this
+#: machine (I2b report, measured; the cause of the spread is not established), so the setup deadline
+#: is not the old 8 s. The held cleanup waits for the parent's signal, and only a parent that never
+#: gives it ends the wait. The second project's accepted attempt is a new interpreter plus the
+#: same real spawn, so its guard is the setup deadline too, not the 20 s of `child`.
+SETUP_DEADLINE = 60
+RELEASE_WATCHDOG = 90
+
+
+def reached_the_held_cleanup(held, worker, errors):
+    """The setup handshake: the first attempt is at its held post-spawn cleanup, or a failure
+    that names the precondition it did not meet. Nothing is skipped and nothing is repeated."""
+    end = time.monotonic() + SETUP_DEADLINE
+    while not held.is_set() and worker.is_alive() and time.monotonic() < end:
+        held.wait(0.05)
+    assert not errors, f"precondition not met, the first attempt failed before its cleanup {errors}"
+    assert held.is_set(), (
+        "precondition not met, the first attempt " + (
+            f"did not reach its held post-spawn cleanup within {SETUP_DEADLINE} s"
+            if worker.is_alive() else "ended without reaching its held post-spawn cleanup"))
+
+
 def test_two_real_projects_share_one_resource_through_post_spawn_cleanup(tmp_path, monkeypatch):
     home = tmp_path / "login"
     home.mkdir()
@@ -55,13 +79,14 @@ def test_two_real_projects_share_one_resource_through_post_spawn_cleanup(tmp_pat
     _, second_root, second_log = a_harness(tmp_path / "two", auth="subscription", auth_home=str(home))
     activated(root)
     activated(second_root)
-    entered, release = threading.Event(), threading.Event()
+    held, release = threading.Event(), threading.Event()
     original = first._take_back_login
     results, errors = [], []
 
     def held_cleanup(auth_home, before):
-        entered.set()
-        assert release.wait(15), "test did not release post-spawn cleanup"
+        held.set()  # the handshake: the lease is held and the first attempt is at its cleanup
+        assert release.wait(RELEASE_WATCHDOG), (
+            f"the parent gave no signal to release the cleanup within {RELEASE_WATCHDOG} s")
         return original(auth_home, before)
 
     def attempt():
@@ -76,20 +101,21 @@ def test_two_real_projects_share_one_resource_through_post_spawn_cleanup(tmp_pat
         worker = threading.Thread(target=attempt)
         worker.start()
         try:
-            assert entered.wait(8), errors
+            reached_the_held_cleanup(held, worker, errors)
             refused = child(tmp_path / "two", home, ATTEMPT)
             assert refused.returncode == 0, refused.stderr
-            assert b"login_owner_busy" in refused.stdout
+            assert b"login_owner_busy" in refused.stdout, "the second was not refused while held"
             assert not second_log.exists(), "loser spawned before owning the shared login"
         finally:
             release.set()
             worker.join(10)
-        assert not worker.is_alive() and not errors
+        assert not worker.is_alive(), "the first attempt did not finish after the release"
+        assert not errors, f"the first attempt's worker failed: {errors}"
         assert results[0].exit_code == 0
-    accepted = child(tmp_path / "two", home, ATTEMPT)
+    accepted = child(tmp_path / "two", home, ATTEMPT, timeout=SETUP_DEADLINE)
     assert accepted.returncode == 0, accepted.stderr
-    assert accepted.stdout.strip() == b"completed"
-    assert second_log.is_file()
+    assert accepted.stdout.strip() == b"completed", "the second did not run after the release"
+    assert second_log.is_file(), "the second did not spawn after the release"
 
 
 def test_normal_shared_lease_keeps_credentials_out_of_ownership_records(tmp_path):
