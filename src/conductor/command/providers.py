@@ -269,6 +269,20 @@ def login_hint(protocol: str) -> tuple[str, tuple[str, ...]] | None:
     return None
 
 
+def has_login_relay(provider_id: str) -> bool:
+    """Whether a catalogued harness runs a task on a subscription login by a relay.
+
+    A fact of the harness's own profile (`HarnessProfile.login_relay`), read off the adapter
+    CLASS the catalogue holds, so a surface that asks a person where to keep a login can tell
+    the harnesses whose login must stand where a relay is derived from it (Claude Code and
+    Codex) from those whose subscription login only serves quota reads (Grok Build, Kimi Code).
+    A provider the catalogue does not hold, and one with no profile, has none.
+    """
+    entry = PROVIDER_CATALOG.get(provider_id)
+    profile = getattr(getattr(entry, "adapter_class", None), "profile", None)
+    return getattr(profile, "login_relay", None) is not None
+
+
 def availability_of(config: ProviderConfig, *,
                     catalog: object = PROVIDER_CATALOG) -> str:
     """What `resolve_providers` will call this config, without building anything.

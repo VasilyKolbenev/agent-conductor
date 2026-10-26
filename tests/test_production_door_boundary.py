@@ -105,10 +105,15 @@ def test_the_door_over_the_shipped_runner_says_yes_only_if_the_runners_entry_tak
                 for mode in ATTEMPT_MODES] == [takes] * 2, provider_id
 
 
-def _subscription_pins(tmp_path: Path) -> list[ProviderConfig]:
-    """The five pins, the four harnesses that sign in pinned to a subscription login (DSH: none)."""
+def _subscription_pins(
+        tmp_path: Path, *, kept=("DecemberCommand", "logins")) -> list[ProviderConfig]:
+    """The five pins, the four harnesses that sign in pinned to a subscription login (DSH: none).
+
+    ``kept`` is the folder the logins are kept in: where the product keeps them by default
+    (``<anything>/DecemberCommand/logins/<id>``), which a relay is derived from.
+    """
     return [pin if pin.provider_id == "deepseek-harness" else dataclasses.replace(
-        pin, auth="subscription", auth_home=str(tmp_path / "logins" / pin.provider_id))
+        pin, auth="subscription", auth_home=str(tmp_path.joinpath(*kept, pin.provider_id)))
         for pin in _five_pins(tmp_path)]
 
 
@@ -127,6 +132,24 @@ def test_the_production_door_over_subscription_pins_provides_the_boundary_where_
 
     assert [resolution.registry.execution_boundary(provider_id, mode)
             for mode in ATTEMPT_MODES] == [RELAYED[provider_id]] * 2
+
+
+@pytest.mark.parametrize("kept", [("logins",), ("DecemberCommand",), ("DecemberCommand", "other")],
+                         ids=["logins-alone", "product-folder-alone", "beside-logins"])
+@pytest.mark.parametrize("provider_id", sorted(RELAYED))
+def test_the_production_door_refuses_a_subscription_pin_kept_outside_the_product_logins_folder(
+        provider_id, kept, tmp_path, monkeypatch):
+    """A relay is derived from `<anything>/DecemberCommand/logins/<id>` alone, so a pin kept
+    anywhere else is not provided the boundary for any harness, with a relay or without."""
+    monkeypatch.setattr(provider_factory, "host_platform", lambda: "win32")
+    recording_runners(monkeypatch, tmp_path / "scratch")
+
+    resolution = resolve_providers(
+        _subscription_pins(tmp_path, kept=kept), root=tmp_path, clock=lambda: grok_t.NOW,
+        ids=grok_t._Ids())
+
+    assert [resolution.registry.execution_boundary(provider_id, mode)
+            for mode in ATTEMPT_MODES] == [False, False]
 
 
 @pytest.mark.parametrize("provider_id", sorted(RELAYED))

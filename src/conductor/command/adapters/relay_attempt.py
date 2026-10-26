@@ -87,10 +87,20 @@ OWN_PHRASES = MappingProxyType({
 })
 #: The refusals only a new sign-in repairs: their sentence says which command to run.
 SIGN_IN_AGAIN = frozenset({"expiry_short", "expiry_unknown"})
+#: The refusals that say nothing against the login: the relay home, the command, the boundary or
+#: the claim of the attempt failed, and the attempt could not start in isolation. Every other
+#: refusal is about the login or the folders it stands in, and says the login is not ready.
+NOT_THE_LOGIN = frozenset({"mint", "spec", "enter", "claim", "claim_standing"})
 
 
-def refusal_prefix(tool: str) -> str:
-    """The words every refusal of a login for an isolated attempt begins with."""
+def refusal_prefix(tool: str, code: str | None = None) -> str:
+    """The words a refusal begins with: of the login, or (for `NOT_THE_LOGIN`) of the start.
+
+    Without a code it is the opening of every refusal about the login, which is what a preflight
+    can answer (`RelayAttempt._relay_refused`).
+    """
+    if code in NOT_THE_LOGIN:
+        return f"the {tool} attempt could not start in isolation: "
     return f"the {tool} login is not ready for an isolated attempt: "
 
 
@@ -116,7 +126,7 @@ def refusal_sentence(tool: str, code: str, sign_in: str | None = None, home_env:
         if home_env:
             where = f"{home_env} set to the login directory this provider pins and run "
         again = f"; sign in again with {where}{sign_in}"
-    return f"{refusal_prefix(tool)}{phrase}, so no task was spawned{again}"
+    return f"{refusal_prefix(tool, code)}{phrase}, so no task was spawned{again}"
 
 
 @dataclass(frozen=True)

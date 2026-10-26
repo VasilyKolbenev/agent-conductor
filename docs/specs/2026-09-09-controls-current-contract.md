@@ -27,14 +27,22 @@ before.
 are two sentences the moment one of them is edited, and the one a person reads
 would be the one nobody checks against the guards.
 
-## A provider row: seven names
+## A provider row: eight names
 
 `provider_id`, `display_name`, `availability`, `implementation`, `controls` are
-the frozen five and are unchanged. Two more:
+the frozen five and are unchanged. Three more:
 
 - **`auth`** — the login the operator's own row pinned: `api_key`,
   `subscription`, or `unpinned` where no row named one. It is a fact about
   CONFIGURATION and is no evidence that the login works.
+- **`task_road`** — where a task of this provider would run on this machine: `boundary`,
+  a dispatch is launched inside the execution boundary, or `refused`, it is refused
+  before it starts. It is the registry's own answer for a dispatch, and it fails closed: a
+  provider that is not available has no adapter and says `refused`. It is a fact about this
+  BUILD and this MACHINE, no evidence that a login works, and it shares no word with the
+  other three vocabularies. A consumer that draws it draws it only for a provider that is
+  `available`: for any other `refused` says that no adapter exists, not that this machine
+  cannot give the boundary.
 - **`vendor_sandbox`** — the vendor's own sandbox mode, per road, in the
   vendor's own flag words. **Three answers, and they are not two:**
   - `null` — this integration declares nothing. NOT a finding about the vendor.
@@ -45,8 +53,8 @@ the frozen five and are unchanged. Two more:
   confined anything. What the field reports is what this build ASKS a vendor
   for; whether the vendor's platform enforces it is the vendor's business.
 
-`availability`, `implementation` and `auth` remain three separate closed
-vocabularies sharing no value, and `display_name` remains a label to render and
+`availability`, `implementation`, `auth` and `task_road` remain four separate
+closed vocabularies sharing no value, and `display_name` remains a label to render and
 never a fact to parse.
 
 ## An instance row: `isolation`, keyed by road
@@ -238,6 +246,7 @@ to carry one.
       "availability": "available",
       "implementation": "real_experimental",
       "auth": "api_key",
+      "task_road": "refused",
       "controls": [
         "dispatch"
       ],
@@ -293,7 +302,7 @@ to carry one.
     {
       "name": "login_directory_gained_state",
       "category": "detected_after_spawn",
-      "sentence": "Undeclared state appearing in the pinned login directory is measured after the spawn, by comparing it with what was declared."
+      "sentence": "Undeclared state appearing in the pinned login directory is measured after each spawn that stands on it, by comparing it with what was declared. A subscription task of a harness with a relay does not stand on that directory: it works on a copy of the access token, without its refresh token, in a relay home outside the project, which is read back and removed when the attempt ends."
     },
     {
       "name": "review_changed_the_tree",
@@ -511,6 +520,7 @@ carrying no reviewed declaration at all (`null`, `unknown`).
       "availability": "available",
       "implementation": "real_experimental",
       "auth": "api_key",
+      "task_road": "refused",
       "controls": [
         "dispatch"
       ],
@@ -522,6 +532,7 @@ carrying no reviewed declaration at all (`null`, `unknown`).
       "availability": "available",
       "implementation": "real_experimental",
       "auth": "api_key",
+      "task_road": "refused",
       "controls": [
         "dispatch"
       ],
@@ -572,7 +583,7 @@ carrying no reviewed declaration at all (`null`, `unknown`).
     {
       "name": "login_directory_gained_state",
       "category": "detected_after_spawn",
-      "sentence": "Undeclared state appearing in the pinned login directory is measured after the spawn, by comparing it with what was declared."
+      "sentence": "Undeclared state appearing in the pinned login directory is measured after each spawn that stands on it, by comparing it with what was declared. A subscription task of a harness with a relay does not stand on that directory: it works on a copy of the access token, without its refresh token, in a relay home outside the project, which is read back and removed when the attempt ends."
     },
     {
       "name": "review_changed_the_tree",

@@ -194,8 +194,24 @@ export const AGENTS_COPY = Object.freeze({
     "Настроено чтение ключа из окружения."
   ],
   "agents.auth_subscription": [
-    "Configured to use the vendor's own login, kept in its own directory. In this version it only reads quotas: a task runs inside the execution boundary only with an API key.",
-    "Настроена собственная авторизация провайдера в отдельном каталоге. В этой версии она служит только для чтения квот: задача исполняется в изоляции только с API-ключом."
+    "Configured to use the vendor's own login, kept in its own directory.",
+    "Настроена собственная авторизация провайдера в отдельном каталоге."
+  ],
+  "agents.auth_subscription_boundary": [
+    "Configured to use the vendor's own login, kept in its own directory. A task runs inside the execution boundary on a copy of that login that has no refresh token; the login directory itself is never given to the task.",
+    "Настроена собственная авторизация провайдера в отдельном каталоге. Задача исполняется в изоляции на копии этого входа без refresh-токена; сам каталог входа задаче не выдаётся."
+  ],
+  "agents.auth_subscription_refused": [
+    "Configured to use the vendor's own login, kept in its own directory. A task on this login is refused before it starts. Possible reasons: a subscription login for this harness is not supported inside the execution boundary yet; its login directory is not named ...\\DecemberCommand\\logins\\<name>; or this machine cannot give the boundary (it needs Windows and a build installed under ...\\harnesses\\<name>\\<version>).",
+    "Настроена собственная авторизация провайдера в отдельном каталоге. Задача с этим входом отклоняется до запуска. Возможные причины: вход по подписке для этого агента в изоляции пока не поддержан; каталог входа не называется ...\\DecemberCommand\\logins\\<имя>; либо этот компьютер не даёт изоляцию (нужны Windows и сборка, установленная в ...\\harnesses\\<имя>\\<версия>)."
+  ],
+  "agents.task_road_boundary": [
+    "A task of this harness runs inside the execution boundary.",
+    "Задача этого агента исполняется в изоляции (execution boundary)."
+  ],
+  "agents.task_road_refused": [
+    "A task of this harness is refused before it starts: it cannot run inside the execution boundary here.",
+    "Задача этого агента отклоняется до запуска: здесь она не может исполняться в изоляции."
   ],
   "agents.auth_unpinned": [
     "No provider configuration names it, so no login was pinned.",
@@ -282,12 +298,12 @@ export const AGENTS_COPY = Object.freeze({
     "Провайдеры ещё не настроены. Чтобы выполнять шаги на этом компьютере, сначала добавьте настройку."
   ],
   "agents.setup_explainer": [
-    "It asks which harness you have, where it is on this machine, and which environment variables it may read — NAMES only. It never asks for a credential: a value is read from your environment when a step runs and is written down nowhere.",
-    "Команда запросит инструмент, путь к нему и имена разрешённых переменных окружения. Секретные значения вводить не нужно: они читаются из окружения при запуске шага."
+    "Stop the server first (Ctrl+C in its window): while it runs, the command refuses with owner_busy. It asks which harness you have, where it is on this machine, and which environment variables it may read — NAMES only. For a subscription login that a task can run on (the wizard says which) it also asks for the login folder, which must be named ...\\DecemberCommand\\logins\\<id>, and prints the two lines that sign in. It never asks for a credential: a value is read from your environment when a step runs and is written down nowhere.",
+    "Сначала остановите сервер (Ctrl+C в его окне): пока он работает, команда откажет с owner_busy. Команда запросит инструмент, путь к нему и имена разрешённых переменных окружения. Для входа по подписке, на котором может исполняться задача (мастер скажет, на каком), она спросит ещё папку входа, которая должна называться ...\\DecemberCommand\\logins\\<id>, и напечатает две строки входа. Секретные значения вводить не нужно: они читаются из окружения при запуске шага."
   ],
   "agents.provider_explainer": [
-    "Three facts per row, and they answer different questions. What the MACHINE resolved is whether the pinned executable is there; what the BUILD claims is whether this version talks to the real product or answers from a fixture; what the CONFIG pinned is which login it would use. None is read off another, and none of them is evidence that a real authenticated run ever happened.",
-    "Для каждого инструмента отдельно показаны наличие исполняемого файла, реализация подключения и настроенный способ входа. Эти сведения сами по себе не подтверждают успешный запуск с авторизацией."
+    "Four facts per row, and they answer different questions. What the MACHINE resolved is whether the pinned executable is there; what the BUILD claims is whether this version talks to the real product or answers from a fixture; what the CONFIG pinned is which login it would use; and the road of a task is where a task of the harness would run on this machine, shown only for a harness the machine can start. The road is a fact of the build, the machine and the shape of the login folder, not of the login: its expiry is checked before every task. None is read off another, and none of them is evidence that a real authenticated run ever happened.",
+    "Для каждого инструмента отдельно показаны наличие исполняемого файла, реализация подключения, настроенный способ входа и дорога задачи: где задача этого инструмента исполнялась бы на этом компьютере (только для инструмента, который компьютер может запустить). Дорога задачи — факт сборки, компьютера и вида папки входа, а не самого входа: срок входа проверяется перед каждой задачей. Эти сведения сами по себе не подтверждают успешный запуск с авторизацией."
   ],
   "agents.model_unpinned": [
     "No model was pinned for this instance, so whatever the provider's own configuration decides is what runs. That is not a default this screen chose.",

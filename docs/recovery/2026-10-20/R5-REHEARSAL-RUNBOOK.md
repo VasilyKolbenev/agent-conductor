@@ -1,5 +1,14 @@
 # R5: предварительная developer rehearsal на ноутбуке владельца — runbook
 
+> **ЗАМЕНЁН инструкцией [R5-CLAUDE-B-RUNBOOK](R5-CLAUDE-B-RUNBOOK.md) (23.10.2026; пометка —
+> I3).** Этот файл — история API-варианта, его шаги и команды не выполнять. Устарели, в
+> частности, абзац «Фактический
+> корень — `%USERPROFILE%\Documents\Codex\work\r5`» и переменная `$H` из `%LOCALAPPDATA%`: CLI
+> перенесены в защищённый корень `%USERPROFILE%\DecemberCommand\harnesses\<имя>\<версия>\`
+> (H5-CODEX-COMPAT A, Р1; старые установки в `work\r5\harnesses` — только свидетельство),
+> входы живут в `%USERPROFILE%\DecemberCommand\logins\<id>`; старый wheel `0a493ad` не используется,
+> API-ключи не нужны.
+
 **23.10.2026: для первого Claude → Claude использовать отдельный
 [R5-CLAUDE-B-RUNBOOK](R5-CLAUDE-B-RUNBOOK.md).** Проект и тексты уже подготовлены;
 старт — после I2b/I3 и нового wheel. Старые API-команды, пути и negative control ниже

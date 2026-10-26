@@ -198,6 +198,9 @@ CAPPED = (
     "tests/test_relay_road_refusals.py",
     "tests/test_relay_road_lifecycle.py",
     "tests/test_relay_road_words.py",
+    "tests/test_desk_wizard_boundary_words.py",
+    "tests/test_provider_task_road.py",
+    "tests/test_relay_road_leaving.py",
 )
 
 

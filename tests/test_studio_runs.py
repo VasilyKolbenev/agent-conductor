@@ -474,12 +474,25 @@ def test_the_agents_screen_spells_the_login_a_row_pinned() -> None:
         CONTRACT_AUTH_STATES)
 
 
+def test_the_agents_screen_spells_the_road_a_task_takes() -> None:
+    from conductor.command.adapters import provider
+
+    roads = sorted(provider.TASK_ROADS)
+    assert roads == ["boundary", "refused"]
+    assert frozen_list(PEOPLE_FILE, "TASK_ROAD_STATES") == roads
+    assert sorted(frozen_keys(PEOPLE_FILE, "TASK_ROAD_MEANINGS")) == roads
+    assert sorted(frozen_keys(PEOPLE_FILE, "SUBSCRIPTION_ROADS")) == roads
+    assert frozen_list(PANEL / "studio-model.js", "PROVIDER_TASK_ROAD") == roads
+
+
 def test_the_machine_the_build_and_the_login_never_share_a_word() -> None:
     """Three questions, three vocabularies. A shared value would let a reader
     take one answer for another."""
     assert not set(AVAILABILITY_STATES) & set(IMPLEMENTATION_STATES)
     assert not set(CONTRACT_AUTH_STATES) & set(AVAILABILITY_STATES)
     assert not set(CONTRACT_AUTH_STATES) & set(IMPLEMENTATION_STATES)
+    assert not {"boundary", "refused"} & (
+        set(AVAILABILITY_STATES) | set(IMPLEMENTATION_STATES) | set(CONTRACT_AUTH_STATES))
     assert not (set(frozen_list(PEOPLE_FILE, "AVAILABILITY_STATES"))
                 & set(frozen_list(PEOPLE_FILE, "IMPLEMENTATION_STATES")))
     assert not (set(frozen_list(PEOPLE_FILE, "AUTH_STATES"))

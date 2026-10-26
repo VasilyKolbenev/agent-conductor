@@ -418,14 +418,27 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.chain.refused": ["The server refused this link: {code}.",
     "Сервер отказал на этом звене: {code}."],
   "wizard.chain.boundary": ["This step needs the isolation (execution boundary), and this "
-    + "computer cannot give it to the agent chosen, so nothing was started. In this version a "
-    + "task runs in the isolation only on Windows, only for an agent that signs in with an API "
-    + "key (not a subscription), and only from a build installed under "
+    + "computer cannot give it to the agent chosen, so nothing was started. A task runs in the "
+    + "isolation only on Windows and only from a build installed under "
     + "...\\harnesses\\<name>\\<version>\\.",
     "Этому шагу нужна изоляция (execution boundary), а выбранному агенту этот компьютер её "
-    + "дать не может, поэтому ничего не запускалось. В этой версии задача исполняется в "
-    + "изоляции только на Windows, только у агента со входом по API-ключу (не по подписке) и "
-    + "только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\."],
+    + "дать не может, поэтому ничего не запускалось. Задача исполняется в изоляции только на "
+    + "Windows и только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\."],
+  "wizard.chain.boundary_login": ["This step needs the isolation (execution boundary), and this "
+    + "computer cannot give it to the agent chosen, so nothing was started. A task runs in the "
+    + "isolation only on Windows and only from a build installed under "
+    + "...\\harnesses\\<name>\\<version>\\. The agent chosen signs in with a subscription, and a "
+    + "task on that login is refused before it starts: its login directory must be named "
+    + "...\\DecemberCommand\\logins\\<name> (set it up with conduct providers while the server is "
+    + "stopped), and a subscription login for some harnesses is not supported inside the "
+    + "isolation yet. Choose another agent, or one that signs in with an API key.",
+    "Этому шагу нужна изоляция (execution boundary), а выбранному агенту этот компьютер её "
+    + "дать не может, поэтому ничего не запускалось. Задача исполняется в изоляции только на "
+    + "Windows и только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\. "
+    + "Выбранный агент входит по подписке, и задача с этим входом отклоняется до запуска: "
+    + "каталог входа должен называться ...\\DecemberCommand\\logins\\<имя> (задайте его командой "
+    + "conduct providers при остановленном сервере), а вход по подписке для некоторых агентов в "
+    + "изоляции пока не поддержан. Выберите другого агента или агента со входом по API-ключу."],
   "wizard.chain.conflict_run": ["A run with this number is already open with another "
     + "arrangement of the roles: they were changed after an answer was lost.",
     "Запуск с этим номером уже открыт с другой расстановкой: роли меняли после потерянного "

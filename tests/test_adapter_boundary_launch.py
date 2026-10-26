@@ -220,13 +220,24 @@ def test_an_unknown_attempt_mode_is_refused_on_every_platform_before_a_spawn(tmp
     assert runner.runs == [] and _fakegrok.spawns(log) == []
 
 
-def _sign_in(adapter, tmp_path) -> None:
-    """Re-pin a harness to a subscription login kept in a fresh, empty directory."""
-    login = tmp_path / "login"
-    login.mkdir()
+#: Where the product keeps its logins, which a relay is derived from.
+PRODUCT_LOGIN = ("DecemberCommand", "logins", "x")
+
+
+def _sign_in(adapter, tmp_path, folder=PRODUCT_LOGIN) -> None:
+    """Re-pin a harness to a subscription login kept in a fresh, empty directory.
+
+    By default it is kept where the product keeps its logins.
+    """
+    login = tmp_path.joinpath(*folder)
+    login.mkdir(parents=True)
     adapter._pin = dataclasses.replace(adapter._pin, auth="subscription", auth_home=str(login))
 
 
+@pytest.mark.parametrize("folder", [
+    pytest.param(PRODUCT_LOGIN, id="the-product-folder"),
+    pytest.param(("auth", "x"), id="any-other-folder"),
+])
 @pytest.mark.parametrize("harness", [
     pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-relay"),
     pytest.param((codex_t, _fakecodex, True), id="codex-without-relay"),
@@ -234,12 +245,14 @@ def _sign_in(adapter, tmp_path) -> None:
     pytest.param((kimi_t, _fakekimi, False), id="kimi-code"),
 ])
 def test_a_subscription_road_with_no_relay_is_not_provided_and_is_refused_before_it_spawns(
-        harness, tmp_path):
+        harness, folder, tmp_path):
     """H5-V1 stays the answer for a harness that has no relay: Grok, Kimi, and the two others
-    with their relay taken off. Where the profile has one the road is covered (I2b)."""
+    with their relay taken off. Where the profile has one the road is covered (I2b). The folder
+    of the login is no part of the answer: only a relay is derived from it, so a harness without
+    one is told the same honest sentence whichever folder its login is kept in."""
     module, fake, relayed = harness
     adapter, _root, log = module.a_harness(tmp_path)
-    _sign_in(adapter, tmp_path)
+    _sign_in(adapter, tmp_path, folder)
     if relayed:
         adapter.profile = dataclasses.replace(adapter.profile, login_relay=None)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")

@@ -29,7 +29,7 @@ const ODD = [
 const slot = (words) => [...words.map((word) => [`member ${word}`, word]), ...ODD];
 const rowFor = (id, implementation, auth) => ({
   provider_id: `p${id}`, display_name: `Provider ${id}`, availability: "available",
-  implementation, auth, controls: ["c1"], vendor_sandbox: null,
+  implementation, auth, task_road: "boundary", controls: ["c1"], vendor_sandbox: null,
 });
 const rows = [];
 for (const [implLabel, impl] of slot(m.PROVIDER_IMPLEMENTATION)) {
@@ -92,3 +92,28 @@ def test_the_roster_projection_answers_every_odd_implementation_and_auth_with_a_
 
     assert answer["refused"] == [], f"the projection refused instead of dropping: {answer}"
     assert answer["rows"] > 9, "the corpus holds no odd value, so it proves nothing"
+
+def test_the_third_arm_keeps_a_row_only_for_a_road_a_task_can_take():
+    """`task_road` is judged in the same condition and by the same rule: a closed word or no row.
+
+    A row that says nothing of it, or a word outside `PROVIDER_TASK_ROAD`, is dropped like any
+    other malformed row, and the two words are both kept, so a refused road is still a row.
+    """
+    body = _CORPUS + r"""
+    const odd = [["missing", undefined], ["unknown word", "bogus"], ["empty", ""], ["null", null],
+      ["wrong case", "Boundary"], ["padded", "boundary "], ["inherited", "constructor"],
+      ["array", ["boundary"]], ["boxed", new String("refused")]];
+    const keep = (road) => {
+      const row = {...rowFor(1, "unproven", "api_key"), task_road: road};
+      if (road === undefined) delete row.task_road;
+      return m.projectProviders([row]).map((one) => one.taskRoad);
+    };
+    console.log(JSON.stringify({words: m.PROVIDER_TASK_ROAD,
+      kept: m.PROVIDER_TASK_ROAD.map(keep), dropped: odd.filter(([, road]) => keep(road).length)
+      .map(([label]) => label)}));
+    """
+    answer = run_js(body, _MODULES)
+
+    assert answer["words"] == ["boundary", "refused"]
+    assert answer["kept"] == [["boundary"], ["refused"]]
+    assert answer["dropped"] == [], f"a row with an odd road was kept: {answer['dropped']}"

@@ -596,9 +596,14 @@ class CodexCliTransport(ArtifactAwareTransport):
         Codex needs no second argv for it. Its whole login lives in `CODEX_HOME`
         -- the same variable the API-key road points at a minted, doomed
         directory -- so pinning a subscription moves that one value and leaves
-        every token of `codex exec` exactly where it was. The attempt home is
-        still minted: it is where `-o` writes the agent's last message, which is
-        model text and must not land in a directory that survives the spawn.
+        every token of `codex exec` exactly where it was. A TASK on a subscription
+        login does not stand on the pinned directory at all: it is told a relay home
+        (`relay_attempt`), a fresh folder outside the project that holds a copy of
+        the access token and no refresh token, and the pinned directory is only
+        asked the version print, the login status and the quota read. An attempt
+        home is minted either way (the relay home is that home on the relay road):
+        it is where `-o` writes the agent's last message, which is model text and
+        must not land in a directory that survives the spawn.
         """
         return self._pin.auth, self._pin.auth_home
 
@@ -691,7 +696,8 @@ class CodexCliTransport(ArtifactAwareTransport):
 
         The home is deleted the moment the attempt returns, so this is the only
         moment the question can be asked at all -- and it is asked of the
-        WORKSPACE DOOR, which is where every filesystem fact this package needs
+        WORKSPACE DOOR (or, for the relay home of a subscription task, of
+        `relay_home`), which is where every filesystem fact this package needs
         is established. This module never opens the file, never follows a name,
         and never learns a byte of what the child wrote.
 

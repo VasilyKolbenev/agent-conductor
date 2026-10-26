@@ -60,17 +60,21 @@ from tests.test_command_sandbox_route import RUN_ID, _As, _run_following, a_plan
 #: The ways a harness the step is bound to can lack the boundary, each a different fact. The
 #: subscription login road lacks it where the harness has no relay (`profile.login_relay`): the
 #: Claude adapter here has its relay taken off, as a harness without one has none (I2b).
-LINUX, NEVER, SUBSCRIPTION, OUTSIDE = (
+LINUX, NEVER, SUBSCRIPTION, OUTSIDE, FOLDER = (
     "a platform without a boundary", "a harness never confined",
     "the subscription login road of a harness with no relay",
-    "a build installed outside the install tree")
+    "a build installed outside the install tree",
+    "a relay road whose login is not kept in DecemberCommand/logins/<name>")
+#: Where the login is kept, in the form the relay needs and in a form it cannot be derived from.
+PRODUCT_LOGIN, OTHER_LOGIN = ("DecemberCommand", "logins", "claude-dev"), ("login",)
 
 
 def _harness(tmp_path, way, *, relay: bool = False):
     """The Claude adapter `CONFIG` binds ``claude-dev`` to, lacking the boundary in one way."""
-    login = tmp_path / "login"
-    login.mkdir()
-    road = {"auth": "subscription", "auth_home": str(login)} if way == SUBSCRIPTION else {}
+    signed_in = way in (SUBSCRIPTION, FOLDER)
+    login = tmp_path.joinpath(*(OTHER_LOGIN if way == FOLDER or not relay else PRODUCT_LOGIN))
+    login.mkdir(parents=True)
+    road = {"auth": "subscription", "auth_home": str(login)} if signed_in else {}
     adapter, _root, log = claude_t.a_harness(tmp_path, **road)
     if way == SUBSCRIPTION and not relay:
         adapter.profile = replace(adapter.profile, login_relay=None)
@@ -98,7 +102,7 @@ def _plan_and_run(tmp_path, writes_the_word=True):
 
 
 @pytest.mark.parametrize("writes_the_word", PLAN_WORDINGS)
-@pytest.mark.parametrize("way", [LINUX, NEVER, SUBSCRIPTION, OUTSIDE])
+@pytest.mark.parametrize("way", [LINUX, NEVER, SUBSCRIPTION, OUTSIDE, FOLDER])
 def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(
         way, writes_the_word, tmp_path):
     adapter, runner, log = _harness(tmp_path, way)
@@ -120,7 +124,7 @@ def test_a_step_whose_harness_has_no_boundary_is_refused_before_spawn(
     assert _fakeclaude.spawns(log) == [], "a child was started for a step with no boundary"
 
 
-@pytest.mark.parametrize("way", [LINUX, SUBSCRIPTION, OUTSIDE])
+@pytest.mark.parametrize("way", [LINUX, SUBSCRIPTION, OUTSIDE, FOLDER])
 def test_a_confined_adapter_asked_anyway_for_a_step_without_the_boundary_starts_no_child(
         way, tmp_path):
     """Defence in depth: a caller that skipped the doors still cannot start the child."""

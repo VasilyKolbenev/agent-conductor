@@ -334,9 +334,10 @@ def test_a_read_that_fails_after_a_reload_is_said_and_asked_again_only_by_the_ow
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_a_step_the_boundary_cannot_carry_says_why_in_a_sentence_of_its_own(bench, lang):
-    """H5-V1: the run's plan door refuses a step whose agent has no execution boundary. The
-    link says what that means for this version (Windows, an API key, the install tree) instead
-    of a bare `service_refused`; nothing was written, and a retry asks the same door again."""
+    """The run's plan door refuses a step whose agent has no execution boundary. The link says
+    what that means for this machine (Windows, the install tree) instead of a bare
+    `service_refused`; nothing was written, and a retry asks the same door again. The sentence
+    is the general one here: no agent chosen is a subscription login whose task road is refused."""
     to_prepare(bench, lang, refuse={"prep_run": {"code": "service_refused", "count": 1,
                                                  "detail": {"run_id": "task-bench-r1",
                                                             "node_id": "build",
@@ -347,4 +348,30 @@ def test_a_step_the_boundary_cannot_carry_says_why_in_a_sentence_of_its_own(benc
     refusal = bench.page.locator('[data-refusal-link="run"]')
     assert refusal.inner_text() == bench.say("wizard.chain.boundary")
     assert server.world(bench)["runs_written"] == 0
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_step_whose_agent_is_a_refused_subscription_login_names_the_folder_of_the_login(
+        bench, lang):
+    """The same refusal over a roster whose agents all sign in by subscription and whose task road
+    is refused (`auth`, `task_road`): the sentence is the one about the login, which names the
+    folder the login must be kept in and the command that sets it up."""
+    workflows = fixture("wizard", "workflows.json")
+    roster = [{**row, "auth": "subscription", "task_road": "refused"}
+              for row in workflows["providers"]]
+    to_step(bench, lang, "prepare", reads=wizard_reads(
+        flow={name: ok(state) for name, state in FLOWS.items()}, flow_read=NO_DRAFTS,
+        workflows=ok({**workflows, "providers": roster})))
+    server.install(bench, flows=FLOWS, refuse={"prep_run": {"code": "service_refused", "count": 1,
+                                                            "detail": {"run_id": "task-bench-r1",
+                                                                       "node_id": "build",
+                                                                       "sandbox":
+                                                                           "execution-boundary"}}})
+    expect(bench.root()).to_have_attribute("data-wizard-current", "prepare")
+    press(bench)
+    expect(bench.page.locator('[data-prepare="refused"]')).to_be_visible()
+    refusal = bench.page.locator('[data-refusal-link="run"]')
+    assert refusal.inner_text() == bench.say("wizard.chain.boundary_login")
+    assert "DecemberCommand" in refusal.inner_text()
     assert bench.problems == []

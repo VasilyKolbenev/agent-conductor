@@ -143,17 +143,17 @@ def test_projection_exposes_only_names_availability_and_proven_controls():
         # That is not the same answer as "this vendor ships none".
         {"provider_id": "claude-code", "display_name": "Claude Code",
          "availability": "available", "implementation": "unproven",
-         "auth": "unpinned", "controls": sorted(CONTROLS),
+         "auth": "unpinned", "task_road": "refused", "controls": sorted(CONTROLS),
          "vendor_sandbox": None},
         {"provider_id": "codex", "display_name": "Codex",
          "availability": "executable_absent", "implementation": "unproven",
-         "auth": "unpinned", "controls": sorted(CONTROLS),
+         "auth": "unpinned", "task_road": "refused", "controls": sorted(CONTROLS),
          "vendor_sandbox": None},
     ]
     for row in rows:
         assert set(row) == {
             "provider_id", "display_name", "availability", "implementation",
-            "auth", "controls", "vendor_sandbox"}
+            "auth", "task_road", "controls", "vendor_sandbox"}
         assert "observe" not in row["controls"]
 
 

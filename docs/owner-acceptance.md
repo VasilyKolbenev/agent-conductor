@@ -195,6 +195,10 @@ you exactly what to do about it, and what it must name is a COMMAND:
 
 Run it with the server stopped: first Ctrl+C in the server's window, as in step 16. While
 `conduct up` holds the project the command refuses with `owner_busy` before its first question.
+For Claude Code or Codex choose `1` at the login question and give the folder
+`%USERPROFILE%\DecemberCommand\logins\<id>` as a full path: the wizard refuses a folder named
+otherwise, and prints the two lines that sign in (the variable pointed at that folder, then the
+tool's own sign-in); run them in your own PowerShell, not in the wizard.
 
 It asks which harness you have, where it is on this disk, and which environment variables it
 may read. Whether it asks a fourth question — the entrypoint — depends on the harness, and it
@@ -232,26 +236,42 @@ Restart `conduct up` the way step 16 does (Ctrl+C in the server's window, then t
 command; never `Stop-Process`), and the same Agents screen must now show that provider as
 **available** — providers are read once at startup, and the command says so when it finishes.
 
-Without a compatible reviewed installation and explicitly authorized credentials, continue
-the editing checks but record the real-execution steps as blocked, never passed. Two more facts
-of this build. The first is the owner's decision H5-V1 (21 October 2026,
-[OPEN-DECISIONS](recovery/2026-10-20/OPEN-DECISIONS.md)): in V1 real tasks run only on the API-key
-road, so a step that must run a task is refused before anything starts when its participant signs in
-by subscription; reading the subscription's quotas still works, and the scheme with a temporary copy
-of the credentials is left until after V1. The second is that the same refusal comes on every platform but
-Windows (the boundary exists only there). The plan's door words it *step '…' demands sandbox route
-'execution-boundary' that this build does not provide*; in the desk wizard the step reads *This step
-needs the isolation (execution boundary), and this computer cannot give it to the agent chosen, so
-nothing was started…* (message key `wizard.chain.boundary`), and the Agents screen says on a
-subscription row that it only reads quotas. Record it as blocked, in those words. A task runs on
-Windows by the API-key road, with the pinned build installed under a folder shaped
-`...\harnesses\<name>\<version>\`; see the [first-run instructions](first-run-v1.md). One caveat for
-a subscription connection: reading its quotas is not a task, but it does launch the vendor's CLI
-(its version check and the vendor's RPC), outside the boundary and with the real login directory.
-Each user supplies their own credentials; the product distributes neither the owner's key nor
-its value. Configure names in the wizard, keep values in the environment of the launched
-server, and never paste a real key into the document form, terminal command history or a
-report.
+Without a compatible reviewed installation and your own sign-in to the tool, continue the editing
+checks but record the real-execution steps as blocked, never passed. Facts of this build:
+
+- A task runs only on Windows, inside the execution boundary, with the pinned build installed under
+  a folder shaped `...\harnesses\<name>\<version>\` (the protected place is
+  `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`); see the
+  [first-run instructions](first-run-v1.en.md).
+- **Claude Code and Codex are built to run on their subscription login, with no API key.** The login
+  is kept in `%USERPROFILE%\DecemberCommand\logins\<id>` (the wizard refuses any other folder). You
+  sign in yourself, in your own PowerShell, with `CLAUDE_CONFIG_DIR` (`CODEX_HOME` for Codex)
+  pointed at that folder, using the two lines the wizard prints. The task works on a copy of the
+  access token without the refresh token; the login folder itself is never given to it. A login
+  whose access token does not outlast the step's timeout by ten minutes is refused before anything
+  starts, with a request to sign in again. Not yet checked with the real vendors: Claude Code gave
+  one real answer on such a copy outside the isolation and no task has run inside it, and the
+  vendor's server refused both probes of the pinned Codex 0.112.0 (on the model). Record a refusal
+  there as blocked, in the product's own words (`adapter reported failed: …` on the Runs screen),
+  never as passed.
+- Grok Build and Kimi Code read their subscription for quotas only: a subscription login for them is
+  not supported inside the boundary yet, so a step that must run a task is refused before anything
+  starts. DeepSeek, and any tool set up with an API key, run by the API-key road.
+- The same refusal comes on every platform but Windows (the boundary exists only there).
+
+Record a refusal as blocked, in the product's own words. The plan's door words it *step '…' demands
+sandbox route 'execution-boundary' that this build does not provide*; in the desk wizard the step
+reads *This step needs the isolation (execution boundary), and this computer cannot give it to the
+agent chosen, so nothing was started…* (message key `wizard.chain.boundary`, or
+`wizard.chain.boundary_login` when a chosen agent signs in by subscription and its task road is
+refused). The Agents screen shows the chip `boundary` or `refused` on every row of a tool this
+machine can start (a row that says `unconfigured` or `executable_absent` shows no road), and a
+subscription row also says why. One caveat for a subscription connection: the version check, the
+login status and the quota request launch the vendor's CLI outside the boundary, with the real
+login directory.
+Each user supplies their own sign-in and keys; the product distributes neither the owner's key nor
+its value. Configure names in the wizard, keep values in the environment of the launched server,
+and never paste a real key into the document form, terminal command history or a report.
 
 ## 8. Walk every field of the inspector
 

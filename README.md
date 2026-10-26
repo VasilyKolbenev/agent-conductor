@@ -101,10 +101,15 @@ December Command coordinates these applications; you keep their accounts and pay
 | DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
 These are the V1 integration targets, not a claim that all five have passed live acceptance.
-In this build a task runs only on Windows, inside the execution boundary, and by the API-key road:
-a subscription login is read for quotas but in V1 does not run tasks (the owner's decision H5-V1;
-a scheme with a temporary copy of the credentials is left until after V1), and macOS and Linux refuse a
-task step before it starts ([details](docs/first-run-v1.en.md#where-tasks-run-in-this-build)).
+In this build a task runs only on Windows, inside the execution boundary. Claude Code and Codex
+are built to run it on their subscription login, without an API key: the task works on a copy of
+the access token (never the refresh token) in a relay folder, and the login itself stays in
+`%USERPROFILE%\DecemberCommand\logins\<id>`. No such task has run yet with the real vendors:
+Claude Code gave one real answer on such a copy outside the isolation, and the vendor's server
+refused both probes of the pinned Codex version. Grok Build and Kimi Code read their subscription
+for quotas only: a subscription login for them is not supported inside the boundary yet, so a task
+is refused before it starts. DeepSeek uses its API key. macOS and Linux refuse a task step before
+it starts ([details](docs/first-run-v1.en.md#where-tasks-run-in-this-build)).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.

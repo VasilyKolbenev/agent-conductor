@@ -41,7 +41,8 @@ import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
   utf8Bytes} from "./desk-wizard-base.js";
-import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
+import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, editInstruction,
+  hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
@@ -67,7 +68,7 @@ export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
 export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
   taskText, utf8Bytes,
-  assignmentView, hasProviders, instructionFields, previousAssignment,
+  assignmentView, boundaryOf, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,

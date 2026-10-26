@@ -44,7 +44,8 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
             api._templates, api._providers, api._project(),
             registry=api._registry, offered_ids=api._offered_provider_ids)
     if route.name == "runs":
-        return studio_routes.list_runs(api._store, api._providers, computed_at=api._clock())
+        return studio_routes.list_runs(
+            api._store, api._providers, computed_at=api._clock(), registry=api._registry)
     if route.name == "tasks":
         return task_routes.list_tasks(api._tasks)
     if route.name == "task":

@@ -83,14 +83,17 @@ def test_the_readiness_is_spent_by_the_attempt_it_was_proved_for(tmp_path):
     from conductor.command.adapters.relay_attempt import RelayNotStarted
 
     site = Site(tmp_path, CLAUDE)
+    request = site.request()
 
     def attempt():
-        return site.adapter._attempt(("--version",), "work", timeout=30, mode="dispatch")
+        # A relayed attempt is always handed the claim of its action (it takes it itself).
+        return site.adapter._attempt(("--version",), "work", timeout=30, mode="dispatch",
+                                     claim=site.adapter._claim_of(request))
 
     with site.owned():
         site.adapter._workspace.work_root()
         assert site.adapter._relay_start("dispatch") is None
-        assert site.adapter._preflight(site.request()) is None
+        assert site.adapter._preflight(request) is None
         assert attempt().exit_code == 0, "the attempt the readiness was proved for did not run"
         with pytest.raises(RelayNotStarted) as refused:
             attempt()

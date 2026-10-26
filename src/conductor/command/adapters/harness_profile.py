@@ -76,16 +76,17 @@ def boundary_detail(tool: str) -> str:
 
 
 def subscription_boundary_detail(tool: str) -> str:
-    """A task attempt refused because this transport signs in by subscription (H5-V1).
+    """A task attempt refused because a subscription login for this harness has no road yet.
 
     Said only where the login is the one fact missing: the platform has the boundary and the
-    launch would be covered (``AttemptLaunch._boundary_refusal``). It names the login MODE, a
-    word the operator's own configuration and the Agents screen already show, and no directory,
-    account or vendor detail. In V1 a task runs inside the boundary only on the API-key road
-    (the owner's decision H5-V1 of 21.10.2026).
+    launch would be covered (``AttemptLaunch._boundary_refusal``), and the harness has no relay
+    (``HarnessProfile.login_relay``): a task of Claude Code and Codex on a subscription login
+    runs on a relay home, and that of Grok Build and Kimi Code is not supported inside the
+    boundary yet. It names the login MODE, a word the operator's own configuration and the Agents
+    screen already show, and no directory, account or vendor detail.
     """
-    return (f"this {tool} connection signs in with a subscription, and in this version a task "
-            "runs inside the execution boundary only with an API key, so no task was spawned")
+    return (f"this {tool} connection signs in with a subscription, which is not supported inside "
+            "the execution boundary for this harness yet, so no task was spawned")
 
 
 def residue_detail(tool: str) -> str:

@@ -178,7 +178,7 @@ function wireProviders(value) {
   return Object.freeze(projectProviders(value).map((row) => Object.freeze({
     provider_id: row.providerId, display_name: row.displayName,
     availability: row.availability, implementation: row.implementation,
-    auth: row.auth, controls: row.controls,
+    auth: row.auth, task_road: row.taskRoad, controls: row.controls,
     vendor_sandbox: row.vendorSandbox,
   })));
 }

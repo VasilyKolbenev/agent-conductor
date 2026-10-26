@@ -118,7 +118,8 @@ def _wizard_providers(providers, registry, offered_ids):
     known channel, even if its display contract names the provider.
     """
     offered = frozenset(offered_ids)
-    rows = provider_projection(providers)
+    rows = provider_projection(
+        providers, boundary=None if registry is None else registry.execution_boundary)
     for row in rows:
         row["offered"] = row["provider_id"] in offered
         adapter = None
@@ -613,16 +614,18 @@ def _task_payload(
             "unreadable": record is None}
 
 
-def list_runs(store: "RunStore", providers, *, computed_at: str) -> Answer:
+def list_runs(store: "RunStore", providers, *, computed_at: str, registry=None) -> Answer:
     """Every run in this project, and the roster this build resolved.
 
     Nothing here is stored and nothing here writes: every field of every row is
     computed from the run's own durable records, and the replay is ``read``
-    rather than ``recover``, so a listing repairs nothing either.
+    rather than ``recover``, so a listing repairs nothing either. The roster's road of
+    a task (``task_road``) is the answer of ``registry``, which fails closed when absent.
     """
     return 200, {
         "runs": [run_row(store, run_id, computed_at=computed_at) for run_id in run_ids(store)],
-        "providers": provider_projection(providers),
+        "providers": provider_projection(
+            providers, boundary=None if registry is None else registry.execution_boundary),
     }
 
 

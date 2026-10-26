@@ -336,6 +336,53 @@ def _login_lines(home: str, executable: str, hint,
             f"{_quoted(executable, False)} " + " ".join(hint[1])]
 
 
+#: What the login question says about tasks, by whether the harness has a relay
+#: (`HarnessProfile.login_relay`). With a relay a task of a subscription login runs inside the
+#: execution boundary on a copy of the access token, so the login must stand where the relay is
+#: derived from it; without one the subscription is read for quotas and tasks are refused.
+_RELAY_FOLDER = "DecemberCommand\\logins\\<id>"
+_RELAY_QUESTION = (
+    "Absolute path of the login directory (<something>\\DecemberCommand\\logins\\<name>): ")
+_RELAY_NOTE = (
+    "  On Windows, with 1 a task runs inside the execution boundary on a copy of that login "
+    "that has no refresh token; the login folder itself is never given to a task. "
+    "With 2 a task runs there too.")
+_NO_RELAY_NOTE = (
+    "  With 1 the quotas are read and every task is refused before it starts: a subscription "
+    "login for this harness is not supported inside the execution boundary yet. "
+    "Only 2 runs tasks there (on Windows).")
+
+
+def _ask_login_home(ask: Callable[[str], str], provider_id: str, relayed: bool) -> str:
+    """Ask where the subscription login is kept: anywhere, or with a relay, in the product's folder.
+
+    A harness with a relay runs a task on a copy of the login in a relay home, and the relay
+    folder is derived from the written place of the login alone (`relay_home.relay_root_for`,
+    the very function the doors ask), so a login kept anywhere but in
+    `<something>\\DecemberCommand\\logins\\<name>` could not run a task. That is said while the
+    folder is chosen and the question is asked again, instead of writing a row every task is
+    refused for. A refusal never repeats what was typed.
+    """
+    if not relayed:
+        return _ask_absolute(
+            ask, "Absolute path of the directory to keep that login in: ",
+            optional=False, noun="login directory")
+    from conductor.command.adapters.relay_home import relay_root_for
+
+    example = f"%USERPROFILE%\\{_RELAY_FOLDER.replace('<id>', provider_id)}"
+    _say(f"\n  A login with a relay is kept in a folder named <something>\\{_RELAY_FOLDER},")
+    _say(f"  for example {example}.")
+    _say("  A task on a login kept anywhere else is refused before it starts.")
+    _say("  Type the whole path: %USERPROFILE% is your user folder, e.g. C:\\Users\\you.")
+    while True:
+        home = _ask_absolute(ask, _RELAY_QUESTION, optional=False, noun="login directory")
+        if relay_root_for(home) is not None:
+            return home
+        _say("  that is not a folder named <something>\\DecemberCommand\\logins\\<name>, so a "
+             "task on a login kept there would be refused before it starts; for example "
+             f"{example}.")
+
+
 def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
                executable: str) -> tuple[str, str]:
     """Ask which login this provider uses, or state the only one there is.
@@ -349,10 +396,13 @@ def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
     The subscription road asks for a DIRECTORY, never a credential: the vendor's
     own command writes the login there, this build only points the harness at
     it, and the command is printed so a person can run it in their own shell.
+    Where the harness has a relay the directory is the product's own folder for
+    it (`_ask_login_home`), and the command is printed with the variable that
+    points the vendor at that folder, so the sign-in is kept there.
     """
     from conductor.command.adapters.provider import (
         DEFAULT_AUTH_MODE, SUBSCRIPTION_AUTH)
-    from conductor.command.providers import login_hint
+    from conductor.command.providers import has_login_relay, login_hint
 
     hint = login_hint(protocol)
     if hint is None:
@@ -360,11 +410,12 @@ def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
              "reads its credential from the environment by one of the names "
              "you allow below.")
         return DEFAULT_AUTH_MODE, ""
+    relayed = has_login_relay(provider_id)
     _say(f"\nHow does {provider_id} sign in?")
-    _say("  1  its own subscription login, kept in a directory you name")
+    _say("  1  its own subscription login, kept in " + (
+        f"a folder named {_RELAY_FOLDER}" if relayed else "a directory you name"))
     _say("  2  a credential this build reads from the environment")
-    _say("  In this version only 2 runs tasks inside the execution boundary (on Windows);")
-    _say("  with 1 the quotas are read and every task is refused before it starts.")
+    _say(_RELAY_NOTE if relayed else _NO_RELAY_NOTE)
     while True:
         answer = ask("> ").strip()
         if answer == "2":
@@ -372,13 +423,14 @@ def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
         if answer == "1":
             break
         _say("  type 1 or 2.")
-    home = _ask_absolute(
-        ask, "Absolute path of the directory to keep that login in: ",
-        optional=False, noun="login directory")
+    home = _ask_login_home(ask, provider_id, relayed)
     _say("\n  Sign in yourself, once, in your own shell -- this build never "
          "runs a login. Paste these two lines:")
     for line in _login_lines(home, executable, hint):
         _say(f"    {line}")
+    if relayed:
+        _say(f"  {hint[0]} must point at that folder, not at your own profile: the sign-in is "
+             "kept there, and a task runs on a copy of it.")
     return SUBSCRIPTION_AUTH, home
 
 

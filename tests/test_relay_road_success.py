@@ -351,20 +351,26 @@ def test_a_credential_the_child_spoilt_in_its_relay_home_is_taken_as_echoed(tmp_
     assert site.adapter._login_echo is True
 
 
+#: A text only a key the build was not reviewed against holds: not a named secret field of the
+#: credential, so only a reading of EVERY text of the document finds it.
+UNREVIEWED = "fake-claude-unreviewed-text-UUUUUUUUUUUU"
+
+
 def test_every_text_of_a_relay_credential_that_left_its_shape_joins_what_is_scanned_for(tmp_path):
     """A document that still parses but is no longer the credential the relay admits (a key the
     build was not reviewed against): which of its texts is a token cannot be said, so all of them
-    are looked for. The renewed token reaches the file only through a hex knob, so it is nowhere
-    in the environment the scan already holds."""
-    spoilt = '.credentials.json:{"claudeAiOauth": {"accessToken": "tiny", "unreviewed": 1}}'
-    site = Site(tmp_path, CLAUDE, **{_fakeclaude.HOME_FILE: spoilt,
-                                     _fakeclaude.ROTATE_ACCESS: ROTATED.encode("utf-8").hex()})
+    are looked for, and not only the fields the reviewed shape names as secret. The text sits
+    under a key outside the schema and outside the secret fields, and nowhere else: it is no
+    value of the environment the scan already holds."""
+    spoilt = ('.credentials.json:{"claudeAiOauth": {"accessToken": "tiny", '
+              f'"unreviewed": "{UNREVIEWED}"}}}}')
+    site = Site(tmp_path, CLAUDE, **{_fakeclaude.HOME_FILE: spoilt})
     request = site.request()
 
     site.run(request)
 
     held = site.adapter._sensitive_values(attempt_relation(request))
-    assert ROTATED.encode("utf-8") in held, "a text of a credential out of its shape is not scanned"
+    assert UNREVIEWED.encode("utf-8") in held, "a text of a credential out of its shape is not held"
     assert site.adapter._login_echo is True
     site.adapter.release(request)
 

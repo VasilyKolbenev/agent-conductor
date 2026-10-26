@@ -9,8 +9,8 @@
 import {BUILT_STEPS, LIMITS, evolve, inputChars, isLanguage, taskText, utf8Bytes}
   from "./desk-wizard-base.js";
 import {factsOf} from "./desk-wizard-cycle.js";
-import {BINDING_CODES, argvFit, assignmentFrom, fieldsOf, offersFor, previousRun, quotaOf,
-  rolesOf, rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
+import {BINDING_CODES, argvFit, assignmentFrom, boundaryCause, fieldsOf, offersFor, previousRun,
+  quotaOf, rolesOf, rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 
 export function heldFlow(state) {
   const {choice, flow, flowFor} = state.cycle;
@@ -81,6 +81,12 @@ export function assignedTo(state) {
   const rows = assignmentView(state).filter((row) => row.provider !== null);
   return rows.length === 0 ? null
     : Object.fromEntries(rows.map((row) => [row.role_id, row.provider]));
+}
+
+//: `login` or `plain` (`boundaryCause`) for the harnesses now chosen: with which words step 5 says
+//: that the isolation could not be given.
+export function boundaryOf(state) {
+  return boundaryCause(providersOf(state), assignedTo(state));
 }
 
 //: What is sent with the flow for diagnostics once the owner has reached the roles step, and

@@ -106,6 +106,11 @@ SUBSCRIPTION_PROTOCOLS = frozenset({
 UNPINNED_AUTH = "unpinned"
 #: Every value the wire may carry for the login question.
 CONTRACT_AUTH_STATES = frozenset(AUTH_MODES | {UNPINNED_AUTH})
+#: The two words of the road a task of a provider takes, a fact of the provider row beside its
+#: login (`provider_projection`): ``boundary`` where a dispatch is launched inside the execution
+#: boundary, ``refused`` where it is refused before it starts. Neither shares a value with the
+#: availability, implementation or login words.
+TASK_ROADS = ("boundary", "refused")
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -641,11 +646,30 @@ class ProviderRegistry:
             raise ProviderConfigError(str(error)) from None
 
 
-def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str, Any]]:
+def task_road(boundary: Callable[[str, str], object] | None, provider_id: str) -> str:
+    """The road a dispatch of this provider takes: ``boundary`` or ``refused`` (`TASK_ROADS`).
+
+    ``boundary`` is the registry's own question, `AdapterRegistry.execution_boundary`, asked for
+    a dispatch. It fails closed, as the registry does: no question asked, a provider the registry
+    does not hold (one that is not available has no adapter), an error, or any answer but a plain
+    ``True`` is ``refused``.
+    """
+    if boundary is None:
+        return "refused"
+    try:
+        return "boundary" if boundary(provider_id, "dispatch") is True else "refused"
+    except Exception:  # noqa: BLE001 -- what cannot be established is refused
+        return "refused"
+
+
+def provider_projection(
+        contracts: Iterable[ProviderContract], *,
+        boundary: Callable[[str, str], object] | None = None) -> list[dict[str, Any]]:
     """Project reviewed provider contracts onto the closed Cockpit surface.
 
-    Each row carries exactly the six names the UI may see -- provider id,
-    display name, availability, implementation, the pinned login, and the PROVEN
+    Each row carries exactly the eight names the UI may see -- provider id,
+    display name, availability, implementation, the pinned login, the road a task
+    takes (``task_road``, from ``boundary``: see `task_road`), and the PROVEN
     controls -- and nothing a provider did not declare. ``auth`` is the mode an
     operator WROTE, never a proof that the login works: what a machine can start,
     which build answers, which login was pinned, and whether a real authenticated
@@ -672,6 +696,7 @@ def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str,
             "availability": contract.availability,
             "implementation": contract.implementation,
             "auth": contract.auth,
+            "task_road": task_road(boundary, contract.provider_id),
             "controls": sorted(capability for capability, _ in contract.schema_pairs),
             # The vendor's own mechanism, per road, carried rather than derived:
             # the request path may not know which provider has what. `null` is

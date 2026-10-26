@@ -39,6 +39,8 @@ export const PROVIDER_IMPLEMENTATION = Object.freeze(
 //: command/adapters/provider.py CONTRACT_AUTH_STATES -- which login a row
 //: PINNED, or that no row named it. Never a proof that the login works.
 export const PROVIDER_AUTH = Object.freeze(["api_key", "subscription", "unpinned"]);
+//: command/adapters/provider.py TASK_ROADS -- where a task runs; no word of the three above.
+export const PROVIDER_TASK_ROAD = Object.freeze(["boundary", "refused"]);
 //: command/workflow_draft.py DIAGNOSTIC_CODES. A diagnostic is coded by the
 //: exception TYPE the real constructor raised; the prose is never parsed.
 export const DIAGNOSTIC_CODES = Object.freeze(
@@ -175,23 +177,19 @@ export function frozenList(rows) {
 
 // ── the roster and the offers: decoration, so a bad row is DROPPED ────────
 const PROVIDER_KEYS = ["provider_id", "display_name", "availability",
-  "implementation", "auth", "controls", "vendor_sandbox"];
+  "implementation", "auth", "task_road", "controls", "vendor_sandbox"];
 
 /**
  * The vendor's own sandbox, per road, or `null` where nothing was declared.
  *
- * Three answers and they stay three: `null` is an integration that declares
- * nothing, `[]` is a declared absence, and pairs are the tokens each road pins.
- * `undefined` is this function's own word for "malformed", so a caller can tell
- * a declared absence from a value it must refuse. There is no spare answer to
- * fold it into: `null` would report an unreadable declaration as "this
- * integration declares nothing", and `[]` would publish it as "this vendor
- * ships none" -- each of them a claim, made out of a value nobody could read.
+ * Three answers and they stay three: `null` is an integration that declares nothing, `[]` is a
+ * declared absence, and pairs are the tokens each road pins. `undefined` is this function's own
+ * word for "malformed", so a caller can tell a declared absence from a value it must refuse:
+ * `null` would report an unreadable declaration as "declares nothing", and `[]` as "ships none".
  *
- * It lives HERE, beside the roster's own key list, because two seams read this
- * field: the roster on three routes, and the controls route's standings. One
- * of them keeping its own copy of the rule is how the two come to disagree
- * about what `null` means.
+ * It lives HERE, beside the roster's own key list, because two seams read this field: the roster
+ * on three routes, and the controls route's standings. One of them keeping its own copy of the
+ * rule is how the two come to disagree about what `null` means.
  */
 export function projectVendorDetail(value) {
   if (value === null || value === undefined) return null;
@@ -221,7 +219,8 @@ export function projectProviders(rows) {
         || exactKeys(row, [...PROVIDER_KEYS, "offered", "task_channel"]))) continue;
     if (!isId(row.provider_id) || !isText(row.display_name)) continue;
     if (!PROVIDER_AVAILABILITY.includes(row.availability)) continue;
-    if (!PROVIDER_IMPLEMENTATION.includes(row.implementation) || !PROVIDER_AUTH.includes(row.auth)) continue;
+    if (!PROVIDER_IMPLEMENTATION.includes(row.implementation) || !PROVIDER_AUTH.includes(row.auth)
+        || !PROVIDER_TASK_ROAD.includes(row.task_road)) continue;
     if (!Array.isArray(row.controls) || !row.controls.every(isId)) continue;
     // A malformed declaration is DROPPED like any other bad row rather than
     // read as an absence: "we did not look" is the one answer this field exists
@@ -238,6 +237,7 @@ export function projectProviders(rows) {
       availability: row.availability,
       implementation: row.implementation,
       auth: row.auth,
+      taskRoad: row.task_road,
       controls: frozenList(row.controls.slice()),
       vendorSandbox,
     }));

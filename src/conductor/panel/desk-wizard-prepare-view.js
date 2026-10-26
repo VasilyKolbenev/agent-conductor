@@ -8,14 +8,16 @@
 // host through `ctx.send`; leaving to open a run goes through `ctx.leave`.
 import {element} from "./command-view.js";
 import {action, textField} from "./desk-wizard-draw.js";
-import {prepareFacts} from "./desk-wizard-model.js";
+import {boundaryOf, prepareFacts} from "./desk-wizard-model.js";
 
 //: The refusals that have a sentence of their own; any other is said by its code.
 const SENTENCES = Object.freeze({record_conflict: "wizard.chain.conflict_run",
   draft_conflict: "wizard.flow.changed"});
-//: The route a plan door refuses that has a sentence of its own: the execution boundary, which
-//: in this version only a connection with an API key on Windows has (H5-V1).
-const ROUTES = Object.freeze({"execution-boundary": "wizard.chain.boundary"});
+//: The route a plan door refuses that has a sentence of its own: the execution boundary. It has
+//: two, chosen by the pair (`auth`, `task_road`) of the agents chosen (`boundaryOf`): the general
+//: one, and the one about a subscription login whose task road is refused.
+const ROUTES = Object.freeze({"execution-boundary": Object.freeze({
+  plain: "wizard.chain.boundary", login: "wizard.chain.boundary_login"})});
 
 function linkRow(ctx, row, at) {
   return element("li", {"data-link": row.link, "data-status": row.status}, [
@@ -25,8 +27,9 @@ function linkRow(ctx, row, at) {
 
 function refusalNote(ctx, refusal) {
   const code = refusal.reason === null ? refusal.code : `${refusal.code} · ${refusal.reason}`;
-  const route = refusal.code === "service_refused" && typeof refusal.reason === "string"
-    && Object.hasOwn(ROUTES, refusal.reason) ? ROUTES[refusal.reason] : null;
+  const named = refusal.code === "service_refused" && typeof refusal.reason === "string"
+    && Object.hasOwn(ROUTES, refusal.reason);
+  const route = named ? ROUTES[refusal.reason][boundaryOf(ctx.wizard)] : null;
   const key = Object.hasOwn(SENTENCES, refusal.code) ? SENTENCES[refusal.code]
     : route ?? "wizard.chain.refused";
   return element("p", {"data-refusal-link": refusal.link, role: "alert",

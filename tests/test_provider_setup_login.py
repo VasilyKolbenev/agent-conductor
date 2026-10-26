@@ -11,6 +11,8 @@ would really run.
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from conductor.provider_setup import _login_lines
@@ -45,12 +47,142 @@ def test_the_login_question_is_put_only_where_a_login_is_driven(
     said = capsys.readouterr().err
     if LOGIN_ASKED[provider_id]:
         assert f"How does {provider_id} sign in?" in said, said
-        assert "only 2 runs tasks inside the execution boundary" in said, said
+        assert "only 2 runs tasks inside the execution boundary" not in said, said
     else:
         assert "sign in?" not in said, said
         assert "execution boundary" not in said, said
         assert "drives no vendor login" in said, said
     assert written(project)["providers"][0].get("auth", "api_key") == "api_key"
+
+
+#: Which harness has a relay (`HarnessProfile.login_relay`), stated here by hand: the login with a
+#: relay is kept in the product's folder and runs a task inside the boundary; the other is read for
+#: quotas and refused a task (a subscription login for it is not supported there yet).
+RELAYED = {"claude-code": True, "codex": True, "grok-build": False, "kimi-code": False}
+RELAY_NOTE = ("On Windows, with 1 a task runs inside the execution boundary on a copy of that "
+              "login that has no refresh token; the login folder itself is never given to a task.")
+NO_RELAY_NOTE = ("With 1 the quotas are read and every task is refused before it starts: a "
+                 "subscription login for this harness is not supported inside the execution "
+                 "boundary yet.")
+
+
+def product_login(base, provider_id):
+    """Where the product keeps the login of one harness: the folder a relay is derived from."""
+    return base / "DecemberCommand" / "logins" / provider_id
+
+
+@pytest.mark.parametrize("provider_id", sorted(RELAYED))
+def test_the_menu_says_what_a_subscription_login_does_for_this_harness_and_not_for_another(
+        project, tmp_path, capsys, provider_id):
+    executable, _ = pinned_files(tmp_path, provider_id)
+
+    assert configure(project, *pin_answers(provider_id, executable, None), "", "y") == 0
+
+    said = capsys.readouterr().err
+    assert (RELAY_NOTE in said) is RELAYED[provider_id], said
+    assert (NO_RELAY_NOTE in said) is (not RELAYED[provider_id]), said
+    assert ("DecemberCommand\\logins\\<id>" in said) is RELAYED[provider_id], said
+
+
+#: Where a login with a relay is NOT kept: the wrong forms the doors refuse
+#: (`tests/test_subscription_road_boundary.WRONG_FOLDERS`), spelled by hand under a base folder.
+#: ``{id}`` is the id of the harness.
+WRONG_FORMS = [
+    pytest.param(("login",), id="a-bare-folder"),
+    pytest.param(("auth", "{id}"), id="another-folder-named-for-the-harness"),
+    pytest.param(("logins", "{id}"), id="logins-without-the-product-folder"),
+    pytest.param(("DecemberCommand", "{id}"), id="the-product-folder-without-logins"),
+    pytest.param(("DecemberCommand", "logins"), id="logins-itself"),
+    pytest.param(("DecemberCommand", "other", "{id}"), id="another-folder-beside-logins"),
+]
+
+
+@pytest.mark.parametrize("form", WRONG_FORMS)
+@pytest.mark.parametrize("provider_id", ["claude-code", "codex"])
+def test_a_login_with_a_relay_is_asked_for_the_product_folder_and_another_is_asked_again(
+        project, tmp_path, capsys, provider_id, form):
+    """The relay is derived from `<anything>/DecemberCommand/logins/<name>` alone, so a login kept
+    anywhere else could not run a task: the dialogue says so while the folder is being chosen,
+    names the folder to use, and asks again, instead of writing a row every task is refused for.
+    Every wrong form the doors refuse is refused here, and the row it finally writes is one the
+    doors admit (`relay_root_for`, the one function both ask)."""
+    from conductor.command.adapters.relay_home import relay_root_for
+
+    executable, _ = pinned_files(tmp_path, provider_id)
+    elsewhere = tmp_path.joinpath(*(part.format(id=provider_id) for part in form))
+    home = product_login(tmp_path, provider_id)
+
+    assert configure(project, menu_choice(provider_id), str(executable), "1", str(elsewhere),
+                     str(home), "", "y") == 0
+
+    row = written(project)["providers"][0]
+    assert row["auth"] == "subscription" and row["auth_home"] == str(home)
+    assert relay_root_for(row["auth_home"]) is not None
+    said = capsys.readouterr().err
+    refusals = [line for line in said.splitlines() if "is not a folder named" in line]
+    assert len(refusals) == 1 and "<something>\\DecemberCommand\\logins\\<name>" in refusals[0]
+    assert f"%USERPROFILE%\\DecemberCommand\\logins\\{provider_id}" in said, said
+    assert "Type the whole path: %USERPROFILE% is your user folder" in said, said
+    assert str(elsewhere) not in refusals[0], "the refusal repeats the path that was typed"
+    if not str(home).startswith(str(elsewhere)):   # a wrong form can be the front of the right one
+        assert str(elsewhere) not in said, "the dialogue repeats the path that was typed"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a path with no drive is absolute off Windows only")
+@pytest.mark.parametrize("provider_id", ["claude-code", "codex"])
+def test_a_path_that_names_the_product_folder_but_is_not_absolute_here_is_asked_again(
+        project, tmp_path, capsys, provider_id):
+    """The wizard reads a path as absolute in either spelling, and the doors judge it by the host.
+
+    ``/Users/you/DecemberCommand/logins/<id>`` is absolute in the POSIX spelling and names the
+    product folder, so the check of the written names passes; on a Windows host it is no absolute
+    path, so the relay has no home for it and every task on a row that kept it would be refused.
+    The wizard asks the very function the doors ask, and asks again."""
+    from conductor.command.adapters import process_boundary
+    from conductor.command.adapters.relay_home import relay_root_for
+
+    posix = f"/Users/you/DecemberCommand/logins/{provider_id}"
+    assert process_boundary.login_home_named(posix) and relay_root_for(posix) is None
+    executable, _ = pinned_files(tmp_path, provider_id)
+    home = product_login(tmp_path, provider_id)
+
+    assert configure(project, menu_choice(provider_id), str(executable), "1", posix, str(home),
+                     "", "y") == 0
+
+    assert written(project)["providers"][0]["auth_home"] == str(home)
+    said = capsys.readouterr().err
+    assert said.count("is not a folder named <something>\\DecemberCommand\\logins\\<name>") == 1
+    assert posix not in said, "the refusal repeats the path that was typed"
+
+
+@pytest.mark.parametrize("provider_id,variable", [
+    ("claude-code", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME")])
+def test_the_sign_in_lines_point_the_vendors_variable_at_the_product_folder(
+        project, tmp_path, capsys, provider_id, variable):
+    executable, _ = pinned_files(tmp_path, provider_id)
+    home = product_login(tmp_path, provider_id)
+
+    assert configure(project, menu_choice(provider_id), str(executable), "1", str(home), "",
+                     "y") == 0
+
+    said = capsys.readouterr().err
+    first = next(line for line in said.splitlines() if variable in line and str(home) in line)
+    assert first.strip().startswith(("$env:", "export ")), first
+    assert f"{variable} must point at that folder" in said, said
+
+
+@pytest.mark.parametrize("provider_id", ["grok-build", "kimi-code"])
+def test_a_login_without_a_relay_is_still_kept_in_any_absolute_folder(
+        project, tmp_path, capsys, provider_id):
+    executable, _ = pinned_files(tmp_path, provider_id)
+    anywhere = tmp_path / "auth" / provider_id
+
+    assert configure(project, menu_choice(provider_id), str(executable), "1", str(anywhere), "",
+                     "y") == 0
+
+    assert written(project)["providers"][0]["auth_home"] == str(anywhere)
+    said = capsys.readouterr().err
+    assert "DecemberCommand" not in said and "%USERPROFILE%" not in said, said
 
 
 def test_the_vendor_login_writes_a_directory_and_prints_the_command_to_run(
@@ -62,7 +194,7 @@ def test_the_vendor_login_writes_a_directory_and_prints_the_command_to_run(
     performs a login, and a product that did would be holding an account.
     """
     executable, _ = pinned_files(tmp_path, "claude-code")
-    home = tmp_path / "auth" / "claude-code"
+    home = product_login(tmp_path, "claude-code")
 
     assert configure(project, menu_choice("claude-code"), str(executable),
                      "1", "auth/claude-code", str(home), "", "y") == 0
@@ -84,16 +216,15 @@ def test_the_vendor_login_writes_a_directory_and_prints_the_command_to_run(
     assert f"login dir   {home}" in said, said
 
 
-@pytest.mark.parametrize("where", [
-    r"C:\Program Files\Conduct Login\claude-code",
-    r"C:\Users\O'Brien\conduct\login",
-])
+@pytest.mark.parametrize("parent", ["Conduct Login", "O'Brien"])
 def test_the_printed_login_command_survives_a_real_machine_path(
-        project, tmp_path, capsys, where):
+        project, tmp_path, capsys, parent):
     """A space splits an unquoted argument and an apostrophe ends the quoting a
     naive printer opened. Both are ordinary in a Windows path, and a command a
-    person cannot paste is not a command."""
+    person cannot paste is not a command. The folder is the product's own form, kept
+    under a native parent that carries the space or the apostrophe."""
     executable, _ = pinned_files(tmp_path, "claude-code")
+    where = str(product_login(tmp_path / parent, "claude-code"))
 
     assert configure(project, menu_choice("claude-code"), str(executable),
                      "1", where, "", "y") == 0
@@ -138,7 +269,7 @@ def test_a_subscription_row_refuses_an_api_billing_name_while_it_is_typed(
     """Refused at the question, not at the finished row: a dialogue that took
     every answer and then refused would cost a person the whole conversation."""
     executable, _ = pinned_files(tmp_path, "claude-code")
-    home = tmp_path / "auth" / "claude-code"
+    home = product_login(tmp_path, "claude-code")
 
     assert configure(project, menu_choice("claude-code"), str(executable),
                      "1", str(home), "ANTHROPIC_API_KEY", "MY_TOOL_SETTING",

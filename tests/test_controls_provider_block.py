@@ -225,18 +225,18 @@ def test_the_provider_roster_rides_the_controls_route_and_adds_none_of_its_own(
     assert payload["isolation_facts"]
 
 
-def test_every_provider_row_carries_exactly_the_seven_agreed_names(tmp_path):
-    """Seven now: what the VENDOR's own sandbox is, per road, joined the row.
+def test_every_provider_row_carries_exactly_the_eight_agreed_names(tmp_path):
+    """Eight now: the road a task takes (`task_road`, the registry's own answer for a dispatch)
+    joined the row after the vendor's own sandbox, per road, did.
 
-    It is a fact about somebody else's product and it sits beside the other
-    per-provider facts for that reason -- the request path may not know which
-    provider has what, so the answer is carried here and never derived
-    downstream.
+    Both are facts about somebody else's product or about this machine, and they sit beside the
+    other per-provider facts for that reason -- the request path may not know which provider has
+    what, so the answer is carried here and never derived downstream.
     """
     rows = controls(tmp_path)["providers"]
     assert [set(row) for row in rows] == [{
         "provider_id", "display_name", "availability", "implementation",
-        "auth", "controls", "vendor_sandbox"}] * len(rows)
+        "auth", "task_road", "controls", "vendor_sandbox"}] * len(rows)
     assert [row["provider_id"] for row in rows] == sorted(ROSTER)
 
 
@@ -337,9 +337,10 @@ def test_renaming_a_provider_changes_its_display_name_and_nothing_else(tmp_path)
     assert without_display_name(after) == without_display_name(before)
 
 
-def test_a_projection_row_is_built_from_contracts_alone(tmp_path):
+def test_a_projection_row_is_built_from_contracts_and_the_answer_of_the_registry(tmp_path):
     resolution = resolve(tmp_path)
-    assert provider_projection(resolution.contracts) == controls(
+    assert provider_projection(
+        resolution.contracts, boundary=resolution.registry.execution_boundary) == controls(
         tmp_path)["providers"]
 
 

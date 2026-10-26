@@ -120,12 +120,17 @@ SIGN_IN = {
     CODEX: "CODEX_HOME set to the login directory this provider pins and run "
            '-c cli_auth_credentials_store="file" login'}
 RE_LOGIN = ("expiry_short", "expiry_unknown")
+#: The refusals that say nothing against the login: the attempt could not be started inside the
+#: isolation (the relay home, the command, the boundary, the claim). Every other refusal is about
+#: the login or its folders, and says the login is not ready.
+NOT_THE_LOGIN = ("mint", "spec", "enter", "claim", "claim_standing")
 
 
 def sentence(vendor, code: str) -> str:
     again = f"; sign in again with {SIGN_IN[vendor]}" if code in RE_LOGIN else ""
-    return (f"the {vendor.tool} login is not ready for an isolated attempt: {PHRASES[code]}, "
-            f"so no task was spawned{again}")
+    head = (f"the {vendor.tool} attempt could not start in isolation: " if code in NOT_THE_LOGIN
+            else f"the {vendor.tool} login is not ready for an isolated attempt: ")
+    return f"{head}{PHRASES[code]}, so no task was spawned{again}"
 
 
 def assert_refused_before_the_claim(site: Site, request, receipt, code: str, *, entered=False):

@@ -63,6 +63,15 @@ SANDBOXES = {
     "codex-preview": None,
     "codex-unpinned": None,
 }
+#: The road a task of each frozen row takes (`task_road`). LITERAL per-row pins again: the rows are
+#: GATED FIXTURE adapters that never say they are confined, and the projection that froze them was
+#: asked of no registry, so every row fails closed (`refused`) as the registry itself does.
+ROADS = {
+    "claude-code": "refused",
+    "codex": "refused",
+    "codex-preview": "refused",
+    "codex-unpinned": "refused",
+}
 #: The third closed provider vocabulary, added to the frozen vocabulary document
 #: the UI lane reads: a set the lane must not widen or narrow either.
 LOGIN_STATES = ["api_key", "subscription", "unpinned"]
@@ -140,8 +149,9 @@ def current_form(value):
         assert "auth" not in result["row_fields"], "historical fixture was rewritten"
         assert "vendor_sandbox" not in result["row_fields"], (
             "historical fixture was rewritten")
+        assert "task_road" not in result["row_fields"], "historical fixture was rewritten"
         result["row_fields"] = sorted(
-            [*result["row_fields"], "auth", "vendor_sandbox"])
+            [*result["row_fields"], "auth", "vendor_sandbox", "task_road"])
         # The login DIRECTORY is withheld from every row: the wire carries which
         # login was pinned and never where its credential is kept.
         result["withheld_from_rows"] = sorted(
@@ -149,4 +159,5 @@ def current_form(value):
         for row in result["rows"]:
             row["auth"] = LOGINS[row["provider_id"]]
             row["vendor_sandbox"] = SANDBOXES[row["provider_id"]]
+            row["task_road"] = ROADS[row["provider_id"]]
     return result

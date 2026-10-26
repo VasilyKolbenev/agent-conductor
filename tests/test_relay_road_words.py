@@ -23,7 +23,7 @@ from conductor.command.failure_reasons import REASONS, reason_words
 
 from tests.relay_roads import CLAUDE, CODEX
 from tests.test_relay_road_refusals import (
-    COMMAND, HOME_ENV, PHRASES, RE_LOGIN, WORDS, sentence)
+    COMMAND, HOME_ENV, NOT_THE_LOGIN, PHRASES, RE_LOGIN, WORDS, sentence)
 
 
 def test_the_phrases_this_suite_spells_are_the_ones_the_product_writes_for_every_login_refusal():
@@ -40,6 +40,63 @@ def test_every_refusal_sentence_earns_the_words_the_runtime_owns(code):
         assert reason_words(said) == WORDS[code]
         if code not in RE_LOGIN:
             assert HOME_ENV[vendor] not in said, "only a new sign-in names the login variable"
+
+
+#: The sentences of the refusals that are not about the login, spelled out for Claude Code, whole.
+NOT_THE_LOGIN_SENTENCES = {
+    "mint": "the Claude Code attempt could not start in isolation: the relay home of the attempt "
+            "could not be made, so no task was spawned",
+    "spec": "the Claude Code attempt could not start in isolation: the command of the attempt "
+            "could not be built for its relay home, so no task was spawned",
+    "enter": "the Claude Code attempt could not start in isolation: the execution boundary "
+             "refused the relay home of the attempt, so no task was spawned",
+    "claim": "the Claude Code attempt could not start in isolation: the action could not be "
+             "claimed for the attempt, so no task was spawned",
+    "claim_standing": "the Claude Code attempt could not start in isolation: the claim of the "
+                      "action could not be completed but its marker stands, and a repeat of the "
+                      "action is unknown, so no task was spawned",
+}
+#: And two of the refusals about the login, whose words are not changed.
+LOGIN_SENTENCES = {
+    "acl": "the Claude Code login is not ready for an isolated attempt: a folder of the login or "
+           "of its relay is open to an isolated child, so no task was spawned",
+    "lease": "the Claude Code login is not ready for an isolated attempt: the login lease of the "
+             "attempt does not name this login, so no task was spawned",
+}
+
+
+@pytest.mark.parametrize("code", sorted(NOT_THE_LOGIN_SENTENCES))
+def test_a_refusal_that_is_not_about_the_login_says_the_attempt_could_not_start_in_isolation(code):
+    from conductor.command.adapters.relay_attempt import refusal_sentence
+
+    said = refusal_sentence("Claude Code", code, "auth login --claudeai", "CLAUDE_CONFIG_DIR")
+
+    assert said == NOT_THE_LOGIN_SENTENCES[code]
+    assert "login is not ready" not in said
+    assert reason_words(said) == WORDS[code], "the runtime's words follow the phrase, not the head"
+
+
+@pytest.mark.parametrize("code", sorted(LOGIN_SENTENCES))
+def test_a_refusal_about_the_login_or_its_folders_still_says_the_login_is_not_ready(code):
+    from conductor.command.adapters.relay_attempt import refusal_sentence
+
+    said = refusal_sentence("Claude Code", code, "auth login --claudeai", "CLAUDE_CONFIG_DIR")
+
+    assert said == LOGIN_SENTENCES[code]
+    assert "could not start in isolation" not in said
+
+
+def test_the_refusals_that_are_not_about_the_login_are_exactly_the_five_of_the_attempt():
+    """Every code of the closed table is one or the other, and the five are named here by hand:
+    the set the product holds is the one this suite spells, and it names only codes the attempt
+    itself owns (none of the login's own refusals)."""
+    from conductor.command.adapters.login_relay import REFUSALS
+    from conductor.command.adapters.relay_attempt import NOT_THE_LOGIN as PRODUCT_SET, OWN_PHRASES
+
+    assert sorted(PRODUCT_SET) == sorted(NOT_THE_LOGIN) == sorted(NOT_THE_LOGIN_SENTENCES)
+    assert set(PRODUCT_SET) <= set(OWN_PHRASES) and not set(PRODUCT_SET) & set(REFUSALS)
+    others = sorted(set(PHRASES) - set(NOT_THE_LOGIN))
+    assert len(others) == 25 and len(PHRASES) == 30
 
 
 def test_no_two_refusals_share_their_words_and_none_names_a_path_or_a_vendor_value():

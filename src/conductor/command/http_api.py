@@ -373,7 +373,8 @@ class CommandApi:
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
         """Join neither deployment facts nor build facts by a display label."""
-        providers = provider_projection(self._providers)
+        providers = provider_projection(
+            self._providers, boundary=self._registry.execution_boundary)
         # The login mode and the vendor's own sandbox are MACHINE facts and live
         # on the provider row; a binding is a RUN fact. Joined here, once, so the
         # browser is never the place two projections become a promise.

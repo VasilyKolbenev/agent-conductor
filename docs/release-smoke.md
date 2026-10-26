@@ -465,12 +465,17 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that this build does
   not provide*), and again when an attempt is authorized, for runs that were opened before the rule
   existed. One route is judged by fact and not by name: `execution-boundary`, which every step that
-  starts an agent implies, is provided only on Windows and only to a connection on the API-key road
-  (the owner's decision H5-V1 of 21 October 2026). Where it is not provided, the plan's door uses
-  the sentence above, and the desk wizard's run step reads *This step needs the isolation
-  (execution boundary), and this computer cannot give it to the agent chosen, so nothing was
-  started…* (message key `wizard.chain.boundary`). On a subscription connection the Agents screen
-  already says so beforehand: *a task runs inside the execution boundary only with an API key*.
+  starts an agent implies, is provided only on Windows, and there to a connection on an API key and
+  to a subscription login of Claude Code and Codex kept in
+  `%USERPROFILE%\DecemberCommand\logins\<id>` (their task works on a relay copy of the access token,
+  never the login itself). A subscription login of Grok Build and Kimi Code is not supported inside
+  the boundary yet. Where the boundary is not provided, the plan's door uses the sentence above, and
+  the desk wizard's run step reads *This step needs the isolation (execution boundary), and this
+  computer cannot give it to the agent chosen, so nothing was started…* (message key
+  `wizard.chain.boundary`, or `wizard.chain.boundary_login` when a chosen agent signs in by
+  subscription and its road is refused). The Agents screen already says so beforehand: every
+  row of a provider this machine can start carries the chip `boundary` or `refused`, and a
+  subscription row says why.
   **What it costs:** a workflow drawn against an earlier build that named such a route must be
   edited before a run will open against it — remove or change that attachment in the inspector's
   **Route and policy attachments** and publish a new revision.

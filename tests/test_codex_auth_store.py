@@ -68,7 +68,7 @@ def test_the_wizard_prints_the_sign_in_that_keeps_the_login_in_a_file(
     from conductor.provider_setup import _login_lines
 
     executable, _ = pinned_files(tmp_path, "codex")
-    home = tmp_path / "auth" / "codex"
+    home = tmp_path / "DecemberCommand" / "logins" / "codex"  # where a relay is derived from
 
     assert configure(project, menu_choice("codex"), str(executable), "1", str(home), "", "y") == 0
 

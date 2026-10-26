@@ -37,11 +37,12 @@ LOGIN_SHAPE = "DecemberCommand/logins/<name>"
 #: shipped. The rights of a credential refresh let the attempt create files in that home and
 #: overwrite every file beneath it, and the vendor's executable configuration (hooks, tool servers,
 #: user instructions, a notify command) lives there and is run again with the person's rights by
-#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. In V1 it stays
-#: closed (the owner's decision H5-V1 of 21.10.2026). It is the runner's own gate and opens no
-#: road: whether a transport may start a task on the subscription road is answered by the
-#: transport (`AttemptLaunch._login_road_covered`, False in V1), and no transport names a login
-#: home, so only the loan's own tests reach this gate (`tests/login_gate.py`).
+#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. It stays closed.
+#: It is the runner's own gate and opens no road: a subscription task of Claude Code and Codex
+#: runs on a relay home that holds a copy of the access token (`relay_home`), and whether a
+#: transport may start one is answered by the transport (`AttemptLaunch._login_road_covered`). No
+#: transport names a login home, so only the loan's own tests reach this gate
+#: (`tests/login_gate.py`).
 LOGIN_LOAN_OPEN = False
 
 
@@ -51,7 +52,8 @@ def login_loan_provided() -> bool:
     Only the boolean True counts as open. The runner refuses a login home with this answer `False`
     (`ProfileRefused`, before any profile, journal record or change exists). No door asks it and
     no transport names a login home (`harness_attempt.AttemptFolders` has no `login`), so it is
-    not a second answer about the subscription road: that answer is the transport's alone.
+    not a second answer about the subscription road: that answer is the transport's alone, and a
+    subscription task works on a relay home and never on the login home.
     """
     return LOGIN_LOAN_OPEN is True
 
@@ -102,7 +104,7 @@ class AttemptFolders:
     a relay home and nothing else, so one that lies in the project is refused. `install` is the
     ABSOLUTE folder that holds the pinned executable and what it loads. `login` is the ABSOLUTE
     login home the attempt holds under the shared login lease, and None otherwise; no transport
-    names one (in V1 the subscription road is refused before any claim, H5-V1). Nothing here
+    names one (a subscription task works on a relay home, never on the login home). Nothing here
     grants anything: the runner checks each folder, takes the login home only if the attempt's own
     lease names it, and its journal grants and returns it (`process_loans`). A `login` is refused
     while `login_loan_provided()` is False, and it is, as shipped.

@@ -20,6 +20,11 @@ harness without one is on. This file holds that where the code answers it:
   the helper under them is called directly;
 - a road that skips the preflight cannot start a child either, on either side of the relay;
 - the API-key road on Windows stays covered, with the runner's gate closed or open;
+- a relay road is covered only where the login is kept in the folder the relay is derived from,
+  ``<anything>/DecemberCommand/logins/<name>`` (``relay_home.relay_root_for``), judged by the
+  written names alone: a login kept anywhere else has no relay home to run on; a harness with no
+  relay is refused whichever folder its login is kept in, with the honest sentence of its own;
+- a relayed attempt is always handed the claim of its action (a fault of the code otherwise);
 - the receipt names the cause where the login is the one fact missing, and only there.
 
 What a relayed task does is held in ``test_relay_road_success`` and the files beside it.
@@ -80,13 +85,22 @@ REFUSED = [pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-r
 GATE = [pytest.param(False, id="gate-closed"), pytest.param(True, id="gate-open")]
 
 
-def _signed_in(adapter, tmp_path, *, strip: bool = False) -> Path:
+#: Where a relay road keeps its login: the folder the relay is derived from.
+PRODUCT_FOLDER = ("DecemberCommand", "logins", "x")
+#: Where a harness with NO relay may keep its login: the product's folder, or any other. Nothing is
+#: derived from the folder there, so the answer and the honest sentence cannot depend on it.
+ANY_FOLDER = [pytest.param(PRODUCT_FOLDER, id="the-product-folder"),
+              pytest.param(("auth", "x"), id="any-other-folder")]
+
+
+def _signed_in(adapter, tmp_path, *, strip: bool = False, folder=PRODUCT_FOLDER) -> Path:
     """Re-pin a harness to a subscription login kept in a fresh, empty directory.
 
+    ``folder`` is where it is kept under ``tmp_path``: by default the form a relay requires.
     ``strip`` takes the relay off the profile: the road of a harness that has none.
     """
-    login = tmp_path / "login"
-    login.mkdir()
+    login = tmp_path.joinpath(*folder)
+    login.mkdir(parents=True)
     adapter._pin = replace(adapter._pin, auth="subscription", auth_home=str(login))
     if strip:
         adapter.profile = replace(adapter.profile, login_relay=None)
@@ -157,13 +171,14 @@ def _confirmed_review(adapter, root: Path):
 # -- (a) one answer for the road, and the runner's gate opens none of it ------
 
 
+@pytest.mark.parametrize("folder", ANY_FOLDER)
 @pytest.mark.parametrize("gate", GATE)
 @pytest.mark.parametrize("harness", REFUSED)
 def test_every_door_refuses_a_subscription_road_with_no_relay_whatever_the_runners_gate(
-        harness, gate, tmp_path, monkeypatch):
+        harness, gate, folder, tmp_path, monkeypatch):
     module, fake, strip = harness
     adapter, _root, log = module.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path, strip=strip)
+    _signed_in(adapter, tmp_path, strip=strip, folder=folder)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     registry = AdapterRegistry([adapter])
@@ -246,16 +261,127 @@ def test_only_the_runners_loan_reads_its_gate_and_no_door_asks_it():
                        "command/adapters/process_loans.py"]
 
 
+# -- (a2) a relay road is covered only for a login kept where the relay can be derived ------
+
+#: Where a login can be written that is not ``<anything>/DecemberCommand/logins/<name>``.
+WRONG_FOLDERS = [
+    pytest.param(("login",), id="a-bare-folder"),
+    pytest.param(("logins", "x"), id="logins-without-the-product-folder"),
+    pytest.param(("DecemberCommand", "x"), id="the-product-folder-without-logins"),
+    pytest.param(("DecemberCommand", "logins"), id="logins-itself"),
+    pytest.param(("DecemberCommand", "other", "x"), id="another-folder-beside-logins"),
+]
+
+
+@pytest.mark.parametrize("folder", WRONG_FOLDERS)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_every_door_refuses_a_relay_road_whose_login_is_not_kept_in_the_product_folder(
+        harness, folder, tmp_path):
+    module, fake = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path, folder=folder)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    registry = AdapterRegistry([adapter])
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [False, False]
+    assert [registry.execution_boundary(adapter.manifest.adapter_id, mode)
+            for mode in ATTEMPT_MODES] == [False, False]
+    assert (runner.entries, runner.runs) == ([], []) and fake.spawns(log) == []
+
+
+@pytest.mark.parametrize("folder", [
+    pytest.param(PRODUCT_FOLDER, id="the-product-spelling"),
+    pytest.param(("decembercommand", "LOGINS", "claude"), id="case-folded")])
+@pytest.mark.parametrize("harness", RELAYED)
+def test_the_folder_of_the_login_is_judged_by_its_written_names_and_nothing_is_read(
+        harness, folder, tmp_path):
+    """A pure fact of the path: the doors answer for a folder that was never made."""
+    module, fake = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    login = tmp_path.joinpath(*folder)
+    adapter._pin = replace(adapter._pin, auth="subscription", auth_home=str(login))
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+
+    assert [adapter.boundary_provided(mode) for mode in ATTEMPT_MODES] == [True, True]
+    assert not login.exists() and not login.parent.exists(), "the door made or read a folder"
+    assert (runner.entries, runner.runs) == ([], []) and fake.spawns(log) == []
+
+
+@pytest.mark.parametrize("folder", WRONG_FOLDERS)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_dispatch_on_a_relay_road_with_its_login_in_another_folder_is_refused_before_anything(
+        harness, folder, tmp_path, monkeypatch):
+    module, fake = harness
+    adapter, root, log = module.a_harness(tmp_path)
+    login = _signed_in(adapter, tmp_path, folder=folder)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    entered = _leases(monkeypatch)
+    request = module.a_request()
+
+    receipt = module.run_once(adapter, request)
+
+    assert receipt.outcome == "failed"
+    assert receipt.detail == (
+        f"the execution boundary is not provided for this {adapter.profile.tool_noun} attempt on "
+        "this build, so no task was spawned")
+    assert fake.spawns(log) == [], "a child was started with its login in another folder"
+    assert (runner.entries, runner.runs, runner.events) == ([], [], [])
+    assert entered == [], "the shared login lease was taken"
+    assert not adapter._workspace.is_claimed(request.run_id, request.action_id)
+    assert _no_home_left(root, adapter)
+    assert list(login.iterdir()) == [], "the login home was touched"
+
+
+@pytest.mark.parametrize("folder", WRONG_FOLDERS)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_checker_on_a_relay_road_with_its_login_in_another_folder_is_refused_before_it_spawns(
+        harness, folder, tmp_path):
+    module, fake = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path, folder=folder)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+
+    with pytest.raises(CheckFrameError) as refused:
+        adapter._hold_checker_boundary()
+
+    assert refused.value.reason == "boundary_unavailable"
+    assert runner.runs == [] and fake.spawns(log) == []
+
+
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_review_on_a_relay_road_with_its_login_in_another_folder_is_refused_before_any_claim(
+        harness, tmp_path, monkeypatch):
+    """The review road asks the question itself, through the runtime."""
+    module, fake = harness
+    knobs = REVIEW_KNOBS if module is claude_t else CODEX_REVIEW_KNOBS
+    adapter, root, log = module.a_harness(tmp_path, **knobs)
+    login = _signed_in(adapter, tmp_path, folder=("login",))
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    entered = _leases(monkeypatch)
+    receipts = _receipts(monkeypatch, adapter)
+    sentence = boundary_detail(adapter.profile.tool_noun)
+
+    attempt = _confirmed_review(adapter, root)
+
+    assert attempt.state is AttemptState.FAILED, attempt.receipt.detail
+    assert [(row.outcome, row.detail) for row in receipts] == [("failed", sentence)]
+    assert fake.spawns(log) == [], "a child was started with its login in another folder"
+    assert (runner.entries, runner.runs, runner.events) == ([], [], [])
+    assert entered == [] and list(login.iterdir()) == []
+    assert not adapter._workspace.is_claimed(attempt.request.run_id, attempt.request.action_id)
+
+
 # -- (b) refused before any side effect ----------------------------------------
 
 
+@pytest.mark.parametrize("folder", ANY_FOLDER)
 @pytest.mark.parametrize("gate", GATE)
 @pytest.mark.parametrize("harness", REFUSED)
 def test_a_subscription_dispatch_with_no_relay_is_refused_before_any_claim_home_lease_or_spawn(
-        harness, gate, tmp_path, monkeypatch):
+        harness, gate, folder, tmp_path, monkeypatch):
     module, fake, strip = harness
     adapter, root, log = module.a_harness(tmp_path)
-    login = _signed_in(adapter, tmp_path, strip=strip)
+    login = _signed_in(adapter, tmp_path, strip=strip, folder=folder)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -303,20 +429,42 @@ def test_a_road_that_skips_the_preflight_cannot_spawn_on_a_relay_either(
     _signed_in(adapter, tmp_path)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     _leases(monkeypatch)
+    claim = adapter._claim_of(module.a_request())
 
     with pytest.raises(RelayNotStarted):
-        adapter._attempt(("--version",), "work/work-001", timeout=30, mode=mode)
+        adapter._attempt(("--version",), "work/work-001", timeout=30, mode=mode, claim=claim)
 
     assert runner.runs == [] and runner.entries == [] and fake.spawns(log) == []
     assert _no_home_left(root, adapter)
 
 
+@pytest.mark.parametrize("mode", ATTEMPT_MODES)
+@pytest.mark.parametrize("harness", RELAYED)
+def test_a_relay_attempt_given_no_claim_is_a_fault_of_the_code_and_starts_nothing(
+        harness, mode, tmp_path, monkeypatch):
+    """The claim of a relayed attempt is taken by the attempt itself, after the boundary is
+    entered; an attempt that was handed none would run with no marker, so it is refused first."""
+    module, fake = harness
+    adapter, root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path)
+    runner = confined(adapter, tmp_path / "scratch", platform="win32")
+    entered = _leases(monkeypatch)
+
+    with pytest.raises(adapter.error, match="claim"):
+        adapter._attempt(("--version",), "work/work-001", timeout=30, mode=mode)
+
+    assert entered == [], "the shared login lease was taken for an attempt that cannot be claimed"
+    assert runner.runs == [] and runner.entries == [] and fake.spawns(log) == []
+    assert _no_home_left(root, adapter)
+
+
+@pytest.mark.parametrize("folder", ANY_FOLDER)
 @pytest.mark.parametrize("harness", [REFUSED[0], REFUSED[1]])
 def test_a_subscription_checker_with_no_relay_is_refused_before_it_spawns(
-        harness, tmp_path, monkeypatch):
+        harness, folder, tmp_path, monkeypatch):
     module, fake, strip = harness
     adapter, _root, log = module.a_harness(tmp_path)
-    _signed_in(adapter, tmp_path, strip=strip)
+    _signed_in(adapter, tmp_path, strip=strip, folder=folder)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", True)
 
@@ -338,15 +486,16 @@ def test_a_subscription_checker_with_a_relay_passes_the_boundary_question(
     adapter._hold_checker_boundary()
 
 
+@pytest.mark.parametrize("folder", ANY_FOLDER)
 @pytest.mark.parametrize("gate", GATE)
 @pytest.mark.parametrize("harness", [REFUSED[0], REFUSED[1]])
 def test_a_subscription_review_with_no_relay_is_refused_before_any_claim_home_lease_or_spawn(
-        harness, gate, tmp_path, monkeypatch):
+        harness, gate, folder, tmp_path, monkeypatch):
     """The review road asks the question itself: the helper under the runtime is not enough."""
     module, fake, strip = harness
     knobs = REVIEW_KNOBS if module is claude_t else CODEX_REVIEW_KNOBS
     adapter, root, log = module.a_harness(tmp_path, **knobs)
-    login = _signed_in(adapter, tmp_path, strip=strip)
+    login = _signed_in(adapter, tmp_path, strip=strip, folder=folder)
     runner = confined(adapter, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -366,16 +515,25 @@ def test_a_subscription_review_with_no_relay_is_refused_before_any_claim_home_le
     assert list(login.iterdir()) == [], "the login home was touched"
 
 
+#: The two ways a checker's subscription road is not covered, as ``(strip, folder)``: its relay
+#: taken off the profile, or a relay whose login is kept in a folder it cannot be derived from.
+UNCOVERED = [pytest.param((True, PRODUCT_FOLDER), id="no-relay"),
+             pytest.param((False, ("login",)), id="relay-with-its-login-in-another-folder")]
+
+
+@pytest.mark.parametrize("road", UNCOVERED)
 @pytest.mark.parametrize("gate", GATE)
 @pytest.mark.parametrize("vendor", ["claude-code", "codex"])
 @pytest.mark.usefixtures("boundary_assumed")
-def test_a_subscription_checker_with_no_relay_is_refused_through_the_runtime_before_any_claim(
-        vendor, gate, tmp_path, monkeypatch):
+def test_a_subscription_checker_the_boundary_cannot_cover_is_refused_through_the_runtime(
+        vendor, gate, road, tmp_path, monkeypatch):
     """The checker road asks the question itself: not only ``_hold_checker_boundary`` called alone.
 
     The doer is a plain API-key transport that finishes its work; the checker, a different
-    harness, holds the subscription login with its relay taken off and is the only one confined.
+    harness, holds the subscription login with its relay taken off, or kept in another folder than
+    the relay is derived from, and is the only one confined: it is refused before any claim.
     """
+    strip, folder = road
     if vendor == "codex":
         doer, root, _dlog = claude_t.a_harness(
             tmp_path / "doer", **{_fakeclaude.WRITE_FILE: "result.txt:done"})
@@ -390,7 +548,7 @@ def test_a_subscription_checker_with_no_relay_is_refused_through_the_runtime_bef
         fake = _fakeclaude
     runtime, authorization, store = _run_state(
         root, doer, checker, True, False, None, None, None)
-    login = _signed_in(checker, tmp_path, strip=True)
+    login = _signed_in(checker, tmp_path, strip=strip, folder=folder)
     runner = confined(checker, tmp_path / "scratch", platform="win32")
     monkeypatch.setattr(process_boundary, "LOGIN_LOAN_OPEN", gate)
     entered = _leases(monkeypatch)
@@ -479,14 +637,37 @@ def test_an_api_key_checker_through_the_runtime_runs_inside_the_boundary_whateve
 
 
 def test_the_subscription_sentence_names_the_login_mode_and_the_runtime_words_for_it():
-    sentence = subscription_boundary_detail("Claude Code")
+    """What a harness with no relay (Grok Build, Kimi Code) is told: the owner's own words, that a
+    subscription login for it is not supported inside the isolation yet, and nothing about an API
+    key being the only road."""
+    sentence = subscription_boundary_detail("Grok Build")
 
     assert sentence == (
-        "this Claude Code connection signs in with a subscription, and in this version a task "
-        "runs inside the execution boundary only with an API key, so no task was spawned")
+        "this Grok Build connection signs in with a subscription, which is not supported inside "
+        "the execution boundary for this harness yet, so no task was spawned")
     assert reason_words(sentence) == (
-        "a subscription login does not run tasks inside the execution boundary in this version")
-    assert reason_words(boundary_detail("Claude Code")) != reason_words(sentence)
+        "a subscription login for this harness is not supported inside the execution boundary yet")
+    assert reason_words(boundary_detail("Grok Build")) != reason_words(sentence)
+    assert "API key" not in sentence and "in this version" not in sentence
+
+
+@pytest.mark.parametrize("folder", ANY_FOLDER)
+@pytest.mark.parametrize("harness", [REFUSED[2], REFUSED[3]])
+def test_grok_and_kimi_are_refused_a_subscription_task_with_the_honest_words(
+        harness, folder, tmp_path):
+    module, fake, strip = harness
+    adapter, _root, log = module.a_harness(tmp_path)
+    _signed_in(adapter, tmp_path, strip=strip, folder=folder)
+    confined(adapter, tmp_path / "scratch", platform="win32")
+
+    receipt = module.run_once(adapter, module.a_request())
+
+    assert receipt.outcome == "failed" and fake.spawns(log) == []
+    assert receipt.detail.endswith(
+        "which is not supported inside the execution boundary for this harness yet, so no task "
+        "was spawned")
+    assert reason_words(receipt.detail) == (
+        "a subscription login for this harness is not supported inside the execution boundary yet")
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])

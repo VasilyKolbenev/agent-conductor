@@ -247,7 +247,7 @@ def test_the_roster_keeps_the_three_answers_and_drops_what_it_cannot_read(
     def row(provider_id, sandbox):
         return {"provider_id": provider_id, "display_name": "A provider",
                 "availability": "available", "implementation": "real_experimental",
-                "auth": "unpinned", "controls": ["dispatch"],
+                "auth": "unpinned", "task_road": "refused", "controls": ["dispatch"],
                 "vendor_sandbox": sandbox}
 
     kept = page.evaluate(

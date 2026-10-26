@@ -470,8 +470,9 @@ def test_the_links_are_said_done_running_todo_skipped_unknown_or_refused_as_they
 
 
 def test_a_plan_door_that_cannot_provide_the_boundary_stops_at_the_run_and_names_the_route():
-    """H5-V1: the run's plan door refuses a step whose agent has no execution boundary (a
-    subscription login, a platform without one, a build outside the install tree). The detail
+    """The run's plan door refuses a step whose agent has no execution boundary (a subscription
+    login of a harness with no relay or kept outside `DecemberCommand/logins/<name>`, a platform
+    without one, a build outside the install tree). The detail
     carries no `reason`; the route it could not provide is what the chain keeps as the reason,
     so the step can say the sentence of its own instead of a bare code."""
     out = run_js(CHAIN + """

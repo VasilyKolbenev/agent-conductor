@@ -79,7 +79,7 @@ def test_the_door_admits_a_plugin_that_binds_a_schema_to_every_declared_control(
     assert provider_projection(door.contracts()) == [
         {"provider_id": "plugin", "display_name": "Plugin",
          "availability": "available", "implementation": "unproven",
-         "auth": "unpinned", "controls": ["dispatch", "stop"],
+         "auth": "unpinned", "task_road": "refused", "controls": ["dispatch", "stop"],
          "vendor_sandbox": None}]
 
 

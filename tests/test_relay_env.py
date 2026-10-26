@@ -140,7 +140,7 @@ def test_the_environment_road_still_forwards_what_it_always_did(name):
 def test_the_wizard_refuses_such_a_name_while_it_is_typed_and_writes_the_one_after(
         project, tmp_path, capsys, name):
     executable, _ = pinned_files(tmp_path, "claude-code")
-    home = tmp_path / "auth" / "claude-code"
+    home = tmp_path / "DecemberCommand" / "logins" / "claude-code"  # where a relay is derived from
 
     assert configure(project, menu_choice("claude-code"), str(executable),
                      "1", str(home), name, "MY_TOKEN_NAME", "y") == 0

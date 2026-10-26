@@ -1,7 +1,8 @@
 """The wizard's provider rows are the server's rows, plus only the two facts still owed to it.
 
 `GET /command/workflows` answers with `provider_projection`: provider id, display name,
-availability, implementation, the pinned login, the proven `controls` and the vendor's sandbox.
+availability, implementation, the pinned login, the road a task takes (`task_road`), the proven
+`controls` and the vendor's sandbox.
 The wizard needs two more facts of each harness (`offered`: whether this version offers it, and
 `task_channel`: how it is fed), which the server does not carry yet. A stand-in row that grew
 keys the server never emits let the model read a shape that does not exist, so these guards hold
@@ -53,7 +54,8 @@ def _rows(name: str) -> list[dict]:
 def test_a_fixture_provider_row_has_the_servers_keys_and_only_the_owed_facts_beyond_them():
     real = set(_served(*ADAPTERS[0]))
     assert real == {"provider_id", "display_name", "availability", "implementation", "auth",
-                    "controls", "vendor_sandbox"}, "the projection itself changed: re-read it"
+                    "task_road", "controls", "vendor_sandbox"}, (
+        "the projection itself changed: re-read it")
     for row in _rows("workflows.json"):
         assert set(row) - OWED == real, row["provider_id"]
         assert set(row) & OWED == OWED, "both owed facts or none: " + row["provider_id"]

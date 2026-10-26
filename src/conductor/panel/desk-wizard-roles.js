@@ -105,6 +105,15 @@ export function rosterState(providers) {
   return rosterOf(providers).length === 0 ? "none" : "ready";
 }
 
+//: Why the isolation was refused, read from the rows of the agents chosen for the roles and from no
+//: name: `login` when one of them signs in by subscription and its task road is refused (the pair
+//: `auth`, `task_road`), else `plain`. A row that serves no `task_road` claims no cause.
+export function boundaryCause(providers, chosen) {
+  const ids = new Set(Object.values(chosen ?? {}));
+  return providerRows(providers).some((row) => ids.has(row.provider_id)
+    && row.auth === "subscription" && row.task_road === "refused") ? "login" : "plain";
+}
+
 export function offersFor(role, roster) {
   return roster.filter((row) => row.available && role.needs.every((need) => row.roads.includes(need)));
 }

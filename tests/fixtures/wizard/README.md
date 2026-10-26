@@ -27,8 +27,10 @@ The `git_*` and `setup_*` files are held to the contract's key sets by
 are invented; their keys are the contract's.
 
 The provider rows of `workflows.json` are the server's own (`provider_projection`: `provider_id`,
-`display_name`, `availability`, `implementation`, `auth`, `controls`, `vendor_sandbox`; the roads a
-harness has are its `controls`) plus two facts that are still OWED by the server, lane L's to add:
+`display_name`, `availability`, `implementation`, `auth`, `task_road`, `controls`,
+`vendor_sandbox`; the roads a harness has are its `controls`, and `task_road` is `boundary` where a
+task of it runs inside the execution boundary and `refused` where it is refused before it starts)
+plus two facts that are still OWED by the server, lane L's to add:
 `offered` (whether this version offers the harness, the owner's list) and `task_channel` (how it is
 fed, in the shape `studio-automation-providers.js` already judges). `workflows_served.json` is the
 same answer with exactly what the server serves today, without the two owed facts. The wizard treats

@@ -81,10 +81,27 @@ export const AUTH_STATES = Object.freeze(
 //: because that is all a config file can say.
 export const AUTH_MEANINGS = Object.freeze({
   api_key: "Configured to read a credential from the environment.",
-  subscription: "Configured to use the vendor's own login, kept in its own directory. In this "
-    + "version it only reads quotas: a task runs inside the execution boundary only with an "
-    + "API key.",
+  subscription: "Configured to use the vendor's own login, kept in its own directory.",
   unpinned: "No provider configuration names it, so no login was pinned.",
+});
+//: command/adapters/provider.py TASK_ROADS -- where a task of a harness runs. A fourth question,
+//: and it shares no word with the three above.
+export const TASK_ROAD_STATES = Object.freeze(["boundary", "refused"]);
+export const TASK_ROAD_MEANINGS = Object.freeze({
+  boundary: "A task of this harness runs inside the execution boundary.",
+  refused: "A task of this harness is refused before it starts: it cannot run inside the "
+    + "execution boundary here.",
+});
+//: What the PAIR (`auth`, `task_road`) of a subscription row adds to its login: the words of the
+//: login are chosen by the road a task takes on it, never by the name of a vendor.
+export const SUBSCRIPTION_ROADS = Object.freeze({
+  boundary: "A task runs inside the execution boundary on a copy of that login that has no "
+    + "refresh token; the login directory itself is never given to the task.",
+  refused: "A task on this login is refused before it starts. Possible reasons: a subscription "
+    + "login for this harness is not supported inside the execution boundary yet; its login "
+    + "directory is not named ...\\DecemberCommand\\logins\\<name>; or this machine cannot give "
+    + "the boundary (it needs Windows and a build installed under ...\\harnesses\\<name>\\"
+    + "<version>).",
 });
 //: What each build state means, in the user's words.
 export const IMPLEMENTATION_MEANINGS = Object.freeze({
@@ -130,6 +147,8 @@ const IMPLEMENTATION_CHANNEL = Object.freeze({
 const AUTH_CHANNEL = Object.freeze({
   api_key: "none", subscription: "none", unpinned: "none",
 });
+//: Where a task runs, as a chip: a refused road is a fact the person must see, not a neutral one.
+const TASK_ROAD_CHANNEL = Object.freeze({boundary: "pass", refused: "fail"});
 const GATE_CHANNEL = Object.freeze({
   idle: "wait", satisfied: "pass", failed: "fail",
   changes_requested: "wait", waived: "none", unknown: "wait",
@@ -638,6 +657,13 @@ function providerRow(row, state) {
   const availability = show(row.availability);
   const implementation = show(row.implementation);
   const auth = show(row.auth);
+  // The road a task takes, when the row says one and this machine can start the harness at all: one
+  // it cannot start has no adapter and so says `refused`, which would read as a verdict on the
+  // machine when the cause is that nothing was set up. A row that says none claims nothing.
+  const road = availability === "available" && Object.hasOwn(TASK_ROAD_MEANINGS, row.task_road)
+    ? row.task_road : null;
+  const login = auth === "subscription" && road !== null
+    ? `agents.auth_subscription_${road}` : `agents.auth_${auth}`;
   // The name, the id and each fact with its meaning read apart, on screen and in the text a
   // reader is given: adjacent spans with no space between them run together (as on Decisions).
   return element("li", {className: "studio-provider"}, [
@@ -655,7 +681,9 @@ function providerRow(row, state) {
     chip(AUTH_CHANNEL[auth] || "none", auth), " ",
     element("span", {className: "studio-why",
       text: Object.hasOwn(AUTH_MEANINGS, auth)
-        ? L(state, `agents.auth_${auth}`) : L(state, "agents.auth_unknown")}),
+        ? L(state, login) : L(state, "agents.auth_unknown")}),
+    ...(road === null ? [] : [" ", chip(TASK_ROAD_CHANNEL[road], road), " ",
+      element("span", {className: "studio-why", text: L(state, `agents.task_road_${road}`)})]),
     localizedFact(state, "agents.proven_controls", row.controls),
   ]);
 }
