@@ -3,7 +3,9 @@
 Действующая инструкция B, подготовлена Codex 23.10.2026 на `2a5bcdd` по поручению владельца.
 Она заменяет API-подготовку, старый wheel и negative control прежнего R5-REHEARSAL-RUNBOOK.
 Сам цикл ещё не выполнен. B — промежуточный результат; Claude → Codex, R5 и V1 не закрывает.
-Основа: H5-SUB-R5-TASK, решения `61a629f` и `2a5bcdd`; нужны завершённые I2b/I3.
+Основа: H5-SUB-R5-TASK, решения `61a629f` и `2a5bcdd`; нужны завершённые I2b/I3. Условия
+старта приведены к решениям Codex от 26.10 (`tasks/H5-SUB-R5-I2B-DECISION-REPORT.md`,
+`tasks/H5-SUB-R5-I2B-CLOSE-TASK.md`).
 
 ## Уже подготовлено
 
@@ -18,50 +20,90 @@
 
 ## Что завершает Opus до старта
 
-1. Закоммиченные I2b/I3, целевые проверки и ревью, нативный свидетель подписочной дороги
-   Claude для planning/review, do и checker. Подмена boundary или один login status недостаточны.
+Порядок и границы — `tasks/H5-SUB-R5-I2B-CLOSE-TASK.md` §1.
+
+1. Закоммиченный I3, Q13 (`claim_refused`) и Q11 (удержание login в тесте) на сохранённой базе,
+   целевые проверки в обеих кодировках и ревью; итоговый полный набор тестов на окончательном
+   коммите в чистом detached worktree (CLOSE-TASK §3).
 2. Claude 2.1.239 в защищённом
    `%USERPROFILE%\DecemberCommand\harnesses\claude-code\2.1.239\claude.exe`;
    sha256 и ACL по Р1 `2a5bcdd`. Установку копирует поток A, этот runbook её не дублирует.
-3. Новый wheel из названного commit, sha256, отдельный venv вне `%LOCALAPPDATA%` и исходника;
-   импорт из установленного wheel. Старый `rh-0a493ad` не использовать;
-   editable не выдавать за установленный wheel.
-4. Заполнить `$KIT\run-ready.json` из заготовки: реальные пути, SHA и ссылки на доказательства,
-   `ready: true` только после выполнения этих условий. Полный релизный CI остаётся отдельным
-   требованием; предварительный B допустим после целевых проверок и ревью по H5 TASK.
-5. Проверить подписочный вход в отдельном home продукта, свежесть для ближайшей попытки
-   (timeout + 10 минут). При необходимости подготовить владельцу штатный повторный вход.
-   Не читать/выводить секреты; не использовать личный профиль рабочего Claude.
+3. Продукт по Р7 в защищённом `%USERPROFILE%\DecemberCommand\product\<sha12>\` (venv, wheel,
+   `scratch`) и manifest `%USERPROFILE%\DecemberCommand\product\<sha12>.manifest.json`: wheel из
+   названного commit окончательного кода, sha256, установка из wheel (не editable), импорт из
+   установленного wheel. Старый `rh-0a493ad` не использовать. Проверка —
+   `preflight.ps1 -Mode check -Product <sha12>` без проблем (команда в «Подготовке»). Этот wheel
+   локальный для B, не финальный CI-кандидат R5.
+4. A2 по D13: только нативный `claude.exe --version` в режимах boundary dispatch и review, в UTF-8
+   и cp1251, на синтетическом входе, без prompt и без входа владельца; не больше четырёх запусков,
+   платных запросов нет. A2 показывает запуск и освобождение ресурсов, но не подписку, не чтение
+   токена, не отсутствие refresh, не модель, не checker и не цикл.
+5. Заполнить `$KIT\run-ready.json` из заготовки: реальные пути, SHA и ссылки на доказательства,
+   `ready: true` только после выполнения пунктов 1–4 и отчёта подготовки
+   `tasks/H5-SUB-R5-I2B-CLOSE-REPORT.md` (CLOSE-TASK §1 п. 4, §6). Это указатель и копия сведений,
+   не основание доверия: основание — защищённый manifest. Полный релизный CI остаётся отдельным
+   требованием; предварительный B допустим после целевых проверок, итогового полного набора (п. 1)
+   и ревью по H5 TASK.
+6. Свежий вход владельца в `$LOGIN` (блок «Свежий вход» ниже) — после пунктов 1–5, прямо перед B;
+   токен должен пережить ближайшую попытку (timeout + 10 минут). Не читать и не выводить секреты;
+   не использовать личный профиль рабочего Claude.
 
-Дождаться A целиком или Codex 0.164.0 для B не требуется. Если I3 ещё не убрал надписи
-«subscription только квоты / задачи только API», закончить уже назначенную правку I3.
+Свидетельства. У Claude один настоящий ответ, на копии входа вне изоляции. Dispatch, review и
+checker внутри изоляции впервые проходят в B: это первый прогон, не повтор проверенного.
+
+Дождаться A целиком или Codex 0.164.0 для B не требуется: из A нужен только A2 (пункт 4). Если I3
+ещё не убрал надписи «subscription только квоты / задачи только API», закончить уже назначенную
+правку I3.
 
 ## Подготовка приложения, без запуска модели
 
-Два обычных окна PowerShell из «Пуска»: А — подготовка, Б — сервер. После готовности сборки:
+Два обычных окна PowerShell из «Пуска»: А — подготовка, Б — сервер. После готовности сборки
+в обоих окнах выполнить два блока: имена, затем (после `preflight.ps1`, окно А) пути.
+`<sha12>` подставляет ведущий при установке продукта:
 
 ```powershell
+$SHA12 = '<sha12>'
+$DC = Join-Path $env:USERPROFILE 'DecemberCommand'
 $KIT = Join-Path $env:USERPROFILE 'Documents\Codex\work\dalio-claude-preliminary'
 $P = Join-Path $env:USERPROFILE 'DecemberRehearsal'
+```
+
+Перед стартом, в окне А, выполнить `preflight.ps1` из отчёта П0–П5 A (защищённый корень, хеши,
+ACL, `tasks/H5-CODEX-COMPAT-A-P0-P5-REPORT.md`) вместе с проверкой установленного продукта (wheel,
+venv, базовый Python, Р7, `tasks/H5-SUB-R5-I2B-DECISION-REPORT.md`):
+
+```powershell
+& (Join-Path $DC 'h5-a\tools\preflight.ps1') -Mode check -Product $SHA12
+```
+
+Любая проблема в его выводе или код выхода 2 — стоп, приложение не запускать. Без `-Product`
+«0 problems» установленный продукт не покрывает. Пути `$PY`, `$CONDUCT` и `$SCRATCH` берутся из
+защищённого manifest (Р7), а не из изменяемого `run-ready.json`; несовпадение с ним (пути, SHA
+wheel, `source_commit` против `commit` manifest, `commit` против `$SHA12`) — стоп:
+
+```powershell
+$manifestPath = Join-Path $DC "product\$SHA12.manifest.json"
+$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $readyText = Get-Content -LiteralPath (Join-Path $KIT 'run-ready.json') -Raw -Encoding UTF8
 $ready = $readyText | ConvertFrom-Json
-if (-not $ready.ready) { throw 'I2b/I3 and installed wheel are not ready' }
-$PY = $ready.venv_python
-$CONDUCT = $ready.conduct_exe
-$CLAUDE = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\claude-code\2.1.239\claude.exe'
-$LOGIN = Join-Path $env:USERPROFILE 'DecemberCommand\logins\claude-code'
+if (-not $ready.ready) { throw 'I2b/I3, the A2 smoke and the installed product are not ready' }
+if ($ready.venv_python -ne $manifest.venv_python) { throw 'run-ready.json differs from manifest' }
+if ($ready.conduct_exe -ne $manifest.conduct_exe) { throw 'run-ready.json differs from manifest' }
+if ($ready.wheel_sha256 -ne $manifest.wheel.sha256) { throw 'run-ready.json differs from manifest' }
+if ($ready.source_commit -ne $manifest.commit) { throw 'run-ready.json differs from manifest' }
+if (-not ([string]$manifest.commit).StartsWith($SHA12)) { throw 'manifest is not of this build' }
+$PY = $manifest.venv_python
+$CONDUCT = $manifest.conduct_exe
+$SCRATCH = $manifest.scratch
+$CLAUDE = Join-Path $DC 'harnesses\claude-code\2.1.239\claude.exe'
+$LOGIN = Join-Path $DC 'logins\claude-code'
+$env:TEMP = $SCRATCH
+$env:TMP = $SCRATCH
 $env:PYTHONPATH = ''
 ```
 
-Перед стартом выполнить `preflight.ps1` из отчёта П0–П5 A (защищённый корень, хеши, ACL,
-`tasks/H5-CODEX-COMPAT-A-P0-P5-REPORT.md`). Любая проблема в его выводе — стоп, приложение не
-запускать. Он не проверяет установленный продукт (wheel, venv, базовый Python): «0 problems» это
-не покрывает; проверка защищённой установки `product\<sha>` — отдельный шаг подготовки B (Р7,
-`tasks/H5-SUB-R5-I2B-DECISION-REPORT.md`):
-
-```powershell
-& (Join-Path $env:USERPROFILE 'DecemberCommand\h5-a\tools\preflight.ps1') -Mode check
-```
+`TEMP` и `TMP` окна — защищённый `scratch` продукта (Р8): процессы вне boundary (версия, статус
+входа, квоты) не пишут в общий TEMP. Task-TEMP внутри boundary по-прежнему задаёт сама попытка.
 
 Перед инициализацией сохранить исходные sha256; сверить с `seed-manifest.json`.
 Исходный пакет повторно не создавать и не сбрасывать. Затем один раз, при остановленном сервере:
@@ -70,25 +112,51 @@ $env:PYTHONPATH = ''
 & $CONDUCT init --template default-orbit --dir $P
 & $CONDUCT ownership activate --legacy-writers-stopped --dir $P
 & $CONDUCT ownership status --dir $P
+```
+
+Ожидается ownership `active`.
+
+**Свежий вход** делает владелец, в окне А, перед мастером (CLOSE-TASK §6). Папку входа создать
+заранее: мастер её не создаёт. Вход идёт в браузере аккаунтом подписки; ассистент входа не
+выполняет и login-home не читает. Без переменной инструмент войдёт в личный профиль, а папка
+продукта останется пустой:
+
+```powershell
+New-Item -ItemType Directory -Force -Path $LOGIN | Out-Null
+$env:CLAUDE_CONFIG_DIR = $LOGIN
+& $CLAUDE auth login --claudeai
+Remove-Item Env:CLAUDE_CONFIG_DIR
+```
+
+Мастер задаёт вопросы Python, а не PowerShell: переменная в ответе не раскрывается, и `$CLAUDE`
+будет отвергнут как неабсолютный путь. Напечатать значения и вставить в мастер их, а не имена:
+
+```powershell
+$CLAUDE
+$LOGIN
 & $CONDUCT providers --dir $P
 ```
 
-Ожидается ownership `active`. В мастере настроить **одну** строку `claude-code`:
+В мастере настроить **одну** строку `claude-code`:
 
 | Поле | Значение |
 | --- | --- |
 | Provider | Claude Code (`claude-code`) |
-| Executable | `$CLAUDE` из защищённого корня |
+| Executable | значение `$CLAUDE`, напечатанное выше (полный путь) |
 | How does it sign in? | `1`, собственный подписочный вход |
-| Login directory | `$LOGIN`, уже существующий отдельный home продукта |
+| Login directory | значение `$LOGIN`, напечатанное выше; папка уже создана и содержит свежий вход |
 | Environment variable NAMES | `SYSTEMROOT WINDIR PATH TEMP TMP` |
 | Write it? | `y` после проверки сводки `login subscription` |
+
+После вопроса о папке входа мастер печатает две строки входа («Paste these two lines»): не выполнять
+их. Свежий вход уже сделан выше, а повторный заменил бы его.
 
 Ключи не создавать, второй provider или второй вход для checker не нужны.
 `availability available` подтверждает доступность установки, а не успех модельной задачи.
 На время репетиции не работать параллельно с этим login-home; source читается под lease.
 
-Окно Б: прочитать те же `$ready`, `$CONDUCT`, `$P` и очистить `PYTHONPATH`, затем:
+Окно Б: выполнить те же два блока (имена; manifest, `run-ready.json`, `TEMP`/`TMP` из `$SCRATCH`,
+чистый `PYTHONPATH`); `CLAUDE_CONFIG_DIR` в нём не задавать. Затем:
 
 ```powershell
 & $CONDUCT up --dir $P --port 7801
@@ -142,6 +210,9 @@ $env:PYTHONPATH = ''
    новая попытка и digest потреблённых материалов. На первый reject с пригодными замечаниями
    допускается одна коррекция do и повторная проверка в том же цикле; второй reject — стоп.
    Unknown, проблемы входа или потерю дерева не превращать в разрешение повторить вызов.
+   Отказ входа посреди цикла (например `the pinned login expires before the attempt would end;
+   sign in again`) — стоп и запись слов. Повторный вход и новое предложение шага решает Codex;
+   в бюджете 6+2 их нет.
 8. До `gate-result` прочитать рабочие файлы, проверить тесты и неизменность исходника ниже.
    **Владелец:** `gate-result` → `approve` → «Записать решение», только если результат принят.
    «План завершён» не заменяет проверку. `request_changes` запускает внешнюю петлю перепланирования;
@@ -149,19 +220,43 @@ $env:PYTHONPATH = ''
 
 ## Если запуск остановился
 
-При ошибке `could not start the pinned build` или состоянии `recovery_required` — стоп. Действие,
-возможно, уже выполнялось: не повторять его и не начинать новых попыток. Закрыть сервер (Ctrl+C),
-перезагрузить ОС (**Перезагрузка**, не завершение работы), затем в новом окне PowerShell, с теми же
-`$CONDUCT`, `$P` и `$LOGIN`:
+Ключ — то, что видно на экране и в отказе. Действие, возможно, уже выполнялось: не повторять его и
+не начинать новых попыток, а сервер закрыть (Ctrl+C). Повторного вызова в бюджете B нет;
+продолжение — решение Codex. Два признака:
+
+1. Исход `unknown` со словами `adapter execute lost its result`. Результат шага потерян, а владение
+   проектом цело: одни эти слова перезагрузки не требуют. Причину они не называют; фраза
+   `could not start the pinned build` на экран не выводится.
+2. Шаг остаётся начатым без результата, а Studio на каждое действие, которое пишет, отвечает
+   «The run store is unavailable.» (в русском интерфейсе «Хранилище запусков недоступно.»). Это
+   случай Q12: закреплённая сборка не запустилась внутри runner, владение проектом и аренда входа
+   стали неопределёнными, квитанцию записать нельзя. Ctrl+C печатает `stop uncertain`, а следующий
+   `up` откажет с `recovery_required`.
+
+Если `up` или следующее действие откажет с `recovery_required` либо `login_recovery_required`
+(после признака 2 `up` откажет наверняка) — перезагрузить ОС (**Перезагрузка**, не завершение
+работы). Затем в новом окне PowerShell из «Пуска» заново выполнить оба блока «Подготовки» (имена;
+manifest и `TEMP`/`TMP` из `$SCRATCH`): прежних `$CONDUCT`, `$P` и `$LOGIN` там нет. Затем команда
+для названного кода; после признака 2 — обе, потому что аренда входа осталась открытой вместе с
+записью проекта:
 
 ```powershell
-& $CONDUCT ownership recover --dir $P
-& $CONDUCT ownership recover-login --auth-home $LOGIN
+& $CONDUCT ownership recover --dir $P                       # recovery_required
+& $CONDUCT ownership recover-login --auth-home $LOGIN       # login_recovery_required
 ```
 
 Если команда просит подготовленной перезагрузки (запись старой сборки на Windows), следовать её
-выводу. Пока обе команды не завершились успехом, приложение не запускать. В журнал записать факт и
-код отказа, без токенов и содержимого login-home.
+выводу. Отказ команды, которой нечего восстанавливать, — не препятствие: `recover` говорит
+`recovery_refused: there is no abandoned owner session to recover`, а `recover-login` при
+остановленном сервере и чистой аренде — `login_owner_busy: shared login recovery cannot hold its
+resource`. Эти слова значат «нечего восстанавливать» только для точного абсолютного пути
+существующей папки входа (`$LOGIN`): опечатка в пути или несуществующая папка дают тот же ответ.
+Приложение не запускать и действий не начинать, пока `up` отказывает с `recovery_required`; после
+`login_recovery_required` или признака 2 — и пока `recover-login` не ответил `recovered` либо
+отказом `login_owner_busy` при точном `$LOGIN`. После восстановления шаг без результата может
+закрыться `unknown` со словами `effect lease has no durable observation; execution was not
+repeated`: продукт его не повторил, не повторять и вручную. В журнал записать факт и код отказа,
+без токенов и содержимого login-home.
 
 ## Проверка полезного результата и принятие
 

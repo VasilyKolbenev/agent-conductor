@@ -27,6 +27,10 @@ commands are identical on every platform.
 
 ## 1. Install a clean wheel
 
+Open PowerShell from the Start menu, not from the terminal inside the Claude or Codex app: a window
+started by those apps keeps what it installs under `%LOCALAPPDATA%` in the app's own package folder,
+where your own window does not see it.
+
 ```powershell
 $ACC = Join-Path $env:LOCALAPPDATA "DecemberCommand\acceptance"
 New-Item -ItemType Directory -Path $ACC | Out-Null
@@ -75,15 +79,15 @@ scaffold is not yet an owned project. Activate it before opening Studio:
 **You must see** `active`. Activation creates `conductor.v3/` and the legacy-writer
 fence; do not edit those paths by hand. The flag confirms that legacy writers have
 stopped. In this newly created project none have been started. See
-[first-run instructions](first-run-v1.md) for provider setup and existing-data limits.
+[first-run instructions](first-run-v1.en.md) for provider setup and existing-data limits.
 
 ## 3. Open the application
 
 `conduct up` occupies the window it runs in until you stop it with Ctrl+C (step 16), so give it
-a window of its own. Open a **second** Windows PowerShell window and leave it for the server;
-keep this first window for commands. The variables do not carry over, so in the second window
-set them again (with the folder names you chose in steps 1 and 2), clear `PYTHONPATH` there too,
-exactly as step 1 does, and start the server:
+a window of its own. Open a **second** Windows PowerShell window, from the Start menu as in step 1,
+and leave it for the server; keep this first window for commands. The variables do not carry over,
+so in the second window set them again (with the folder names you chose in steps 1 and 2), clear
+`PYTHONPATH` there too, exactly as step 1 does, and start the server:
 
 ```powershell
 $env:PYTHONPATH = ""
@@ -186,8 +190,14 @@ harness, but binding both roles to the same participant must be refused.
 Go to **Agents**.
 
 On a fresh machine you will see the providers this build knows about, each marked
-**unconfigured** — the product ships no credentials and discovers nothing. The screen must tell
-you exactly what to do about it, and what it must name is a COMMAND:
+**unconfigured** — the product ships no credentials and discovers nothing. The Agents screen of a
+running server lists these rows and says what each fact means; it does not print the setup command
+for a row that is not set up (it prints one only for an empty list, which a running server never
+shows). The command comes from this document; note in your verdict that the screen did not name it.
+The roles step of the desk wizard, when no tool is set up, says to run `conduct providers` or to
+edit the providers file, and does not say that the server must be stopped. Run the command with the
+server stopped, as below, and do not edit the file by hand.
+What you run is a COMMAND:
 
 ```powershell
 & $CONDUCT providers --dir $PROJ
@@ -198,7 +208,11 @@ Run it with the server stopped: first Ctrl+C in the server's window, as in step 
 For Claude Code or Codex choose `1` at the login question and give the folder
 `%USERPROFILE%\DecemberCommand\logins\<id>` as a full path: the wizard refuses a folder named
 otherwise, and prints the two lines that sign in (the variable pointed at that folder, then the
-tool's own sign-in); run them in your own PowerShell, not in the wizard.
+tool's own sign-in); run them in your own PowerShell, not in the wizard. The wizard does not
+create that folder, and Codex stops with an error when its home folder does not exist: first run
+`New-Item -ItemType Directory -Force -Path <that folder> | Out-Null`, then the two lines. The
+[first-run instructions](first-run-v1.en.md#where-to-get-the-pinned-builds) say where the pinned
+builds come from.
 
 It asks which harness you have, where it is on this disk, and which environment variables it
 may read. Whether it asks a fourth question — the entrypoint — depends on the harness, and it
@@ -265,7 +279,8 @@ reads *This step needs the isolation (execution boundary), and this computer can
 agent chosen, so nothing was started…* (message key `wizard.chain.boundary`, or
 `wizard.chain.boundary_login` when a chosen agent signs in by subscription and its task road is
 refused). The Agents screen shows the chip `boundary` or `refused` on every row of a tool this
-machine can start (a row that says `unconfigured` or `executable_absent` shows no road), and a
+machine can start. A row where this computer cannot start the tool (its availability is not
+`available`: `unconfigured`, `executable_absent` or `version_mismatch`) shows no road. A
 subscription row also says why. One caveat for a subscription connection: the version check, the
 login status and the quota request launch the vendor's CLI outside the boundary, with the real
 login directory.

@@ -110,6 +110,9 @@ refused both probes of the pinned Codex version. Grok Build and Kimi Code read t
 for quotas only: a subscription login for them is not supported inside the boundary yet, so a task
 is refused before it starts. DeepSeek uses its API key. macOS and Linux refuse a task step before
 it starts ([details](docs/first-run-v1.en.md#where-tasks-run-in-this-build)).
+The candidate that the release notes describe was built before the isolation, so it runs a task on
+a subscription login without it. The build that has the subscription road inside the isolation is
+not published yet ([step 1](docs/first-run-v1.en.md#1-install-the-identified-build)).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.

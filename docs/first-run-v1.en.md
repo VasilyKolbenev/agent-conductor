@@ -154,6 +154,31 @@ Run the interactive wizard, once for each needed connection:
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
 
+### Where to get the pinned builds
+
+The tool must stand in `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`. An ordinary
+install of the vendor's tool elsewhere in your profile is not accepted, and this build does not
+install the tool for you. In the alpha the maintainer hands over these folders together with the
+build. If you place them yourself:
+
+- **Claude Code 2.1.239.** Take `claude.exe` of that version from the release store that the
+  vendor's own installer reads, and compare its sha256 with `platforms.win32-x64.checksum` in the
+  `manifest.json` of the same version there:
+
+  ```text
+  https://downloads.claude.ai/claude-code-releases/2.1.239/win32-x64/claude.exe
+  https://downloads.claude.ai/claude-code-releases/2.1.239/manifest.json
+  ```
+
+  Place the file in `...\harnesses\claude-code\2.1.239\`.
+- **Codex 0.112.0.** The Windows build is a second version of the same npm package, not a package
+  of its own: the registry has no `@openai/codex-win32-x64`. Download from the npm registry the
+  tarballs of `@openai/codex@0.112.0` and `@openai/codex@0.112.0-win32-x64`, and compare each with
+  the `integrity` value the registry gives. Run no install script. Put the contents of the
+  `package` folder of the first tarball in `...\harnesses\codex\0.112.0\node_modules\@openai\codex`
+  and those of the second in `...\harnesses\codex\0.112.0\node_modules\@openai\codex-win32-x64`.
+  The executable is the `codex.exe` under `codex-win32-x64` that the sign-in lines below name.
+
 **Run the wizard while the server is stopped** (Ctrl+C in its window; the command refuses with
 `owner_busy` otherwise), then start `conduct up` again: providers are read once, at startup.
 
@@ -203,23 +228,30 @@ The DSH desktop application is not a substitute for the CLI entrypoint in this c
 
 For a subscription, use a dedicated login folder of the product, never your own profile of the tool.
 The wizard prints two lines for you to run **in your own PowerShell**; it does not sign in for you.
-The first points the tool at the login folder, the second is the tool's own sign-in:
+The first points the tool at the login folder, the second is the tool's own sign-in. The wizard
+does not create the login folder, and Codex stops with an error when its home folder does not
+exist, so create the folder before the two lines (the `New-Item` line of each block below):
 
 ```powershell
 # Claude Code
-$env:CLAUDE_CONFIG_DIR = Join-Path $env:USERPROFILE 'DecemberCommand\logins\claude-code'
+$login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\claude-code'
+New-Item -ItemType Directory -Force -Path $login | Out-Null
+$env:CLAUDE_CONFIG_DIR = $login
 $claude = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\claude-code\2.1.239\claude.exe'
 & $claude auth login --claudeai
 ```
 
 ```powershell
 # Codex (the pair -c ... keeps the login in a file, which the product can copy)
-$env:CODEX_HOME = Join-Path $env:USERPROFILE 'DecemberCommand\logins\codex'
+$login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\codex'
+New-Item -ItemType Directory -Force -Path $login | Out-Null
+$env:CODEX_HOME = $login
 $codex = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\codex\0.112.0\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\codex\codex.exe'
 & $codex -c cli_auth_credentials_store="file" login
 ```
 
-The wizard prints these lines with the paths you gave it: copy its lines, not these examples.
+The wizard prints the two lines (the variable, then the sign-in) with the paths you gave it: copy
+its lines, not these examples. It does not print the line that creates the folder.
 Complete the sign-in in the browser with your subscription account. Without the variable the tool
 signs in to your own profile, and the product's folder stays empty. A working login does not need
 to be repeated, but its access token has a limited life: before every task the product requires it
@@ -339,11 +371,14 @@ one. Recovery on Windows is in the table below.
 **You should see:** Overview explaining the new project's state, and the Workflow, Runs, Decisions, and Agents screens.
 An empty new project is normal. A permanent spinner or blank page is not.
 
-On **Agents**, inspect the configured tools and their quota readings. In the row of a tool this
-machine can start, with a subscription login, next to the `subscription` chip, read the chip
-`boundary` or `refused` (a row that says `unconfigured` shows no road yet):
-`boundary` means a task of this tool runs inside the execution boundary on this machine, `refused`
-means it is refused before it starts, and the sentence beside it names the possible reasons.
+On **Agents**, inspect the configured tools and their quota readings. A tool you have not set up
+is a row marked `unconfigured`. The screen does not print the setup command for such a row: take it
+from step 3 (`conduct providers`, with the server stopped). In the row of a tool this machine can
+start, with a subscription login, next to the `subscription` chip, read the chip `boundary` or
+`refused`: `boundary` means a task of this tool runs inside the execution boundary on this
+machine, `refused` means it is refused before it starts, and the sentence beside it names the
+possible reasons. A row where this computer cannot start the tool (its availability is not
+`available`: `unconfigured`, `executable_absent` or `version_mismatch`) shows no road.
 Opening Studio reads quota sources; it does not start model work. Refreshing the page's readings reads the server cache.
 Read the source, timestamp, and status as well as the number: unavailable is not zero usage,
 and a deferred update keeps the previous observation's age. DeepSeek shows money and currency; reset does not apply.
@@ -365,11 +400,24 @@ and on a Claude Code or Codex login kept outside `...\DecemberCommand\logins\<na
 refused before it starts (see [Where tasks run in this build](#where-tasks-run-in-this-build)).
 In the desk wizard the roles step offers the available tools; assign Claude Code or
 Codex on their subscription login, and the preparation step names the reason in the sentence above
-if a chosen tool cannot be given the boundary. A task that ends with `unknown` is never repeated:
-do not run it again. If the error says `could not start the pinned build`, or the server refuses
-with `recovery_required` or `login_recovery_required`, stop, restart Windows (**Restart**) and run
-the two recovery commands of the table below. An action the Runs screen sends "outside this window"
-is closed with `conduct reconcile`, not with a restart (see the table).
+if a chosen tool cannot be given the boundary. If no tool is set up yet, that step says to run
+`conduct providers` or to edit the providers file: run the command with the server stopped (step 3)
+and do not edit the file by hand.
+
+A task that ends with `unknown` is never repeated: do not run it again, and start no other
+attempt. Two signs say to stop the server (Ctrl+C) first:
+
+- The Runs screen says `adapter execute lost its result`. The result of the step was lost, and the
+  ownership of the project is intact, so these words alone need no restart.
+- A step stays started with no result, and Studio answers every action that writes with "The run
+  store is unavailable." Ownership of the project turned uncertain, for example because the pinned
+  tool could not start inside the isolation, and nothing can be recorded any more. Ctrl+C then
+  prints `stop uncertain`, and the next `conduct up` refuses with `recovery_required`.
+
+If `conduct up` or an action refuses with `recovery_required` or `login_recovery_required`, restart
+Windows (**Restart**) and run the recovery command for the code you saw (see the table below). An
+action the Runs screen sends "outside this window" is closed with `conduct reconcile`, not with a
+restart (see the table).
 For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or [two-task acceptance](acceptance-two-tasks.md).
 
 ## If something is blocked
@@ -378,20 +426,24 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | --- | --- |
 | No `ownership` command | Check the executable path and identified build. |
 | `owner_busy` | Stop the other server using this project cleanly. Reloading the browser does not release ownership. |
-| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. On Windows, a record from an older build needs a [prepared restart](#recovery-of-an-old-windows-record) first. If a server of this build was ended by force (not with Ctrl+C), Windows needs a full Restart (**Restart**, not shut down), then the same command; `--prepare-restart` is not needed for such a record, and the command says so. |
-| `login_recovery_required` | The same road for the shared login lease: a [prepared restart](#recovery-of-an-old-windows-record) if it asks for one, then `conduct ownership recover-login --auth-home <login directory>`. This does not start model work. |
+| `recovery_required` | Run `conduct ownership recover --dir <project>` for the explicit recovery check; do not delete service records. This does not start model work. On Windows, a record from an older build needs a [prepared restart](#recovery-of-an-old-windows-record) first. If a server of this build was ended by force (not with Ctrl+C), Windows needs a full Restart (**Restart**, not shut down), then the same command; `--prepare-restart` is not needed for such a record, and the command says so. You see this code at `conduct up`, not on the Runs screen: a project that needs recovery records no receipt. If the command refuses with `recovery_refused: there is no abandoned owner session to recover`, the project has nothing to recover: that is not an obstacle. |
+| `login_recovery_required` | The same road for the shared login lease: a [prepared restart](#recovery-of-an-old-windows-record) if it asks for one, then `conduct ownership recover-login --auth-home <login directory>`. This does not start model work. You see this code on the Runs screen as `adapter reported failed: the shared login lease was refused: the shared login has a lease that was not closed (login_recovery_required)`. Stop the server first. Only the command for the code you saw is needed (after a step that stays started with no result, both: see the row for it): if `recover-login` refuses with `login_owner_busy: shared login recovery cannot hold its resource` while no server or tool works through the login, this login has no abandoned lease. There is nothing to recover, and that is not an obstacle. This holds only when `<login directory>` is the exact absolute path of the existing login folder of step 3: a mistyped path or a folder that does not exist gets the same words. |
 | `not_authenticated` | Complete the native login in the configured dedicated profile, then retry the appropriate reading. |
 | DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
 | A step is refused: `demands sandbox route 'execution-boundary'`; in the desk wizard "This step needs the isolation (execution boundary)…" (`wizard.chain.boundary`, `wizard.chain.boundary_login`); in a receipt `this <tool> connection signs in with a subscription…` | This is the boundary refusing; nothing was started. On macOS / Linux this build does not run tasks. A subscription login of Kimi Code or Grok Build does not run tasks yet: use another agent or an API key (choice `2` in `conduct providers`). For Claude Code and Codex check that the login folder is named `...\DecemberCommand\logins\<name>` and the tool is installed under `...\harnesses\<name>\<version>\`. Details: [Where tasks run in this build](#where-tasks-run-in-this-build). |
 | The Runs screen says `adapter reported failed: the pinned login expires before the attempt would end; sign in again` (or `…: when the pinned login expires is not known; sign in again`) | The access token of the Claude Code or Codex login does not outlast the step's timeout by ten minutes, or its expiry cannot be read. Nothing was started. Sign in again with the two lines `conduct providers` prints (step 3: the variable that points at the login folder, then the tool's own sign-in), then retry. Signed in without the variable, the tool fills your own profile and the folder stays as it was. |
-| The Runs screen says `adapter reported failed: the pinned login has no credential file to copy`, `…'s credential file is damaged` (or `is not an ordinary file`, `is too large`, `is in a shape this build does not know`), `…holds no access token`, `…holds an API key, which is not a subscription`, `…is on the API-billing plan` or `…does not say which plan it is on` | Nothing was started. The login folder holds no plain subscription login this build can copy. No file or a damaged one: sign in again in that folder (step 3). An API key or a console plan: sign in in that folder with a subscription account; a task on an API key is the other road (choice `2` in `conduct providers`). Any other `the pinned login …` sentence names a fact of the login or of its folders; sign in again in the folder, and keep the words for a bug report if it repeats. |
+| The Runs screen says `adapter reported failed: the pinned login has no credential file to copy`, `…'s credential file is damaged` (or `is not an ordinary file`, `is too large`, `is in a shape this build does not know`), `…holds no access token`, `…holds an API key, which is not a subscription`, `…is on the API-billing plan` or `…does not say which plan it is on` | Nothing was started. The login folder holds no plain subscription login this build can copy. No file or a damaged one: sign in again in that folder (step 3). An API key or a console plan: sign in in that folder with a subscription account; a task on an API key is the other road (choice `2` in `conduct providers`). Any other sentence about the pinned login or its relay (`the pinned login …`, `the account of the pinned login …`, `the login lease of the attempt does not name the pinned login`, and the like) names a fact of the login, of its folders or of the attempt's lease: nothing was started, and the words are what a bug report needs. After a sentence that begins `the pinned login`, sign in again in the folder first (step 3). |
 | The Runs screen says `adapter reported failed: the environment of the attempt replaces the pinned login or reroutes its traffic` | Nothing was started. The server's environment, or the names allowed for this provider, carries a name that replaces the login or reroutes its traffic (a token, a proxy, a base URL, certificates). Remove it: stop the server, run `conduct providers` again without it, and start the server from an environment that does not have it. |
-| The Runs screen says `adapter reported failed: the attempt's relay home could not be made` (or `the attempt's command could not be built`, `the execution boundary refused the attempt's relay home`, `the action could not be claimed for the attempt`) | Nothing was started, and the login is not the cause: do not sign in again. Retry the step once; if the same words come back, keep them for a bug report. |
+| The Runs screen says `adapter reported failed: the relay folder of the pinned login is not usable` | Nothing was started, and the login is not the cause: do not sign in again. The folder `...\DecemberCommand\relay` is not as the product needs it (for example it has an extra entry in its access list). That folder is shared by every project and every login of this `DecemberCommand` folder: stop every server and the hub that work through these logins, remove the folder, start the server: the product makes it again. Do not protect it by hand. |
+| The Runs screen says `adapter reported failed: a folder of the pinned login or of its relay is open to an isolated child` | Nothing was started, and the login is not the cause: do not sign in again. The access list of the login folder, of the `logins` folder above it, of a file at the top of the login folder, or of a relay folder has an entry for ALL APPLICATION PACKAGES, for an application package or for a capability, so an isolated task could read it. The product never edits these lists: remove the entry and retry. For the `relay` folder, stop every server and the hub that work through these logins and remove it (previous row). If you cannot tell which folder it is, keep the words and ask the maintainer to check the `DecemberCommand` folders with the preflight. |
+| The Runs screen says `adapter reported failed: the attempt's relay home could not be made` (or `the attempt's relay home could not be used`, `the attempt's relay home was not empty`, `the login could not be copied into the attempt's relay home`, `the attempt's command could not be built`, `the execution boundary refused the attempt's relay home`, `the action could not be claimed for the attempt`) | Nothing was started, and the login is not the cause: do not sign in again. Retry the step once; if the same words come back, keep them for a bug report. |
+| The Runs screen says only `adapter reported failed`, with no words after it, after an attempt that was interrupted | A home of that attempt may have stayed: the product removes such a home itself, and refuses the next attempt only when it could not remove it. Nothing was started. Stop every server and the hub that work through these logins (the folder is shared by all projects and logins), remove the folder `...\DecemberCommand\relay` (the product makes it again), start the server, then retry once. If the words stay bare, the leftover lies in the folder of attempt homes inside the project itself: keep the words for a bug report and do not delete it by hand. |
 | The Runs screen says `adapter reported failed: the claim of the action could not be completed and its marker stands` | The action may have been claimed: do not repeat it. Keep the words for a bug report. If the server later refuses with `recovery_required`, follow the `recovery_required` rows of this table. |
-| The Runs screen says `Outside this window: conduct reconcile` (an action a crash stranded before it could start) | Run `conduct reconcile --dir <project>`: it lists the stranded actions, one `<run> <action>` line each. `conduct reconcile --dir <project> --run <RUN> --action <ACTION>` closes exactly one with a terminal `unknown` receipt. It starts nothing and never reports success. It is not the road for `recovery_required` and needs no restart. |
-| A task failed with `the … harness could not start the pinned build`, or `recovery_required` / `login_recovery_required` after a task | Stop and do not repeat the task: it may have run. Close the server (Ctrl+C), restart Windows (**Restart**), then run `conduct ownership recover --dir <project>` and `conduct ownership recover-login --auth-home <login directory>` (see below). A task that ended `unknown` without any of these words needs no restart; it is not repeated either. |
+| The Runs screen says `Outside this window: conduct reconcile` (an action a crash stranded before it could start) | Run `conduct reconcile --dir <project>`: it lists the stranded actions, one `<run> <action>` line each. `conduct reconcile --dir <project> --run <RUN> --action <ACTION>` closes exactly one with a terminal `unknown` receipt. It starts nothing and never reports success. It is not the road for `recovery_required` and needs no restart. The list can be read while the server runs; the closing command takes ownership of the project, so stop the server first (Ctrl+C), or it refuses with `owner_busy`. |
+| A task ended `unknown` and the Runs screen says `adapter execute lost its result` | Do not repeat the task or start another attempt: it may have run. Stop the server (Ctrl+C). These words mean that the result of the step was lost while the ownership of the project is intact. They do not name a cause, and alone they need no restart. If `conduct up`, or the next action, then refuses with `recovery_required` or `login_recovery_required`, restart Windows (**Restart**) and run the command for that code (the `recovery_required` and `login_recovery_required` rows). |
+| A step stays started with no result, and Studio answers each action that writes with "The run store is unavailable." (Ctrl+C then prints `stop uncertain`) | Nothing can be recorded: the ownership of the project turned uncertain, for example because the pinned tool could not start inside the isolation, so the result of the step could not be written. Do not repeat the step or any other action. Stop the server (Ctrl+C). The next `conduct up` refuses with `recovery_required`. Restart Windows (**Restart**), then run `conduct ownership recover --dir <project>`, and on the subscription road also, at once, `conduct ownership recover-login --auth-home <login directory>`: the lease of the login was left open too. A refusal that says there is nothing to recover is not an obstacle (the `recovery_required` and `login_recovery_required` rows). After the recovery the step may be closed `unknown` with the words `effect lease has no durable observation; execution was not repeated`: the product did not repeat it, and you do not either. |
 | Saving a draft: `windows_path_too_long` | Shorten the workflow identifier or move the project to a shorter path (see step 2). |
 
 ### Recovery of an old Windows record
