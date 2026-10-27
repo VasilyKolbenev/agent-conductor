@@ -2,10 +2,207 @@
 
 Действующая инструкция B, подготовлена Codex 23.10.2026 на `2a5bcdd` по поручению владельца.
 Она заменяет API-подготовку, старый wheel и negative control прежнего R5-REHEARSAL-RUNBOOK.
-Сам цикл ещё не выполнен. B — промежуточный результат; Claude → Codex, R5 и V1 не закрывает.
+Первый проход B1 (27.10) остановлен с `unknown` (`tasks/H5-B-RUN1-REPORT.md`); второй проход B2
+идёт по разделу «Второй проход B2» ниже, он имеет приоритет над шагами B1 там, где они
+расходятся. B — промежуточный результат; Claude → Codex, R5 и V1 не закрывает.
 Основа: H5-SUB-R5-TASK, решения `61a629f` и `2a5bcdd`; нужны завершённые I2b/I3. Условия
 старта приведены к решениям Codex от 26.10 (`tasks/H5-SUB-R5-I2B-DECISION-REPORT.md`,
-`tasks/H5-SUB-R5-I2B-CLOSE-TASK.md`).
+`tasks/H5-SUB-R5-I2B-CLOSE-TASK.md`) и 27.10 (`tasks/H5-B-RUN2-DECISION-REPORT.md`, `c0b438d`).
+
+## Второй проход B2
+
+Один дополнительный проход по решению Codex `c0b438d`: новый запуск того же процесса, новый
+grant, до 6 действий + 2 проверок; вместе с B1 известный максимум — 7 действий и 2 проверки.
+Третий цикл, дополнительный probe и автоматический повтор не разрешены. Отчёт подготовки —
+`tasks/H5-B-RUN2-PREP-REPORT.md`.
+
+**Уже сделано ведущим (не повторять).** Исправление длинных путей `52f3d50` (отчёт `d01713d`),
+полный core на нём; продукт `product\52f3d505d7fb`, preflight 0 problems; `$KIT\run-ready.json`
+для B2 (файл B1 сохранён как `run-ready.b1-bc61db88995c.json`); остаток B1 восстановлен после
+перезагрузки (`recovered`), два тестовых профиля убраны. Не выполнять снова: `init`,
+`ownership activate`, создание процесса, мастер `providers` (строка `claude-code` уже записана),
+создание seed. Журнал B1 и его `unknown` не трогать.
+
+### Б2.1. Окно А, сервер остановлен
+
+Обычное окно PowerShell из «Пуска». Окно А держать открытым до конца B2: функция проверки входа
+ниже живёт только в нём. Любой красный текст или `STOP` в окне А — стоп, сказать ведущему.
+Имена и проверка установки:
+
+```powershell
+$SHA12 = '52f3d505d7fb'
+$DC = Join-Path $env:USERPROFILE 'DecemberCommand'
+$KIT = Join-Path $env:USERPROFILE 'Documents\Codex\work\dalio-claude-preliminary'
+$P = Join-Path $env:USERPROFILE 'DecemberRehearsal'
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File `
+    (Join-Path $DC 'h5-a\tools\preflight.ps1') -Mode check -Product $SHA12
+"preflight exit $LASTEXITCODE"
+```
+
+Ожидается `problems 0` и `preflight exit 0`. Скрипт запускается отдельным процессом с политикой
+только для него: в обычном окне запуск скриптов на этой машине запрещён, настройку Windows не
+менять. Затем пути из защищённого manifest (тот же блок, что в «Подготовке»):
+
+```powershell
+$manifestPath = Join-Path $DC "product\$SHA12.manifest.json"
+$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$readyText = Get-Content -LiteralPath (Join-Path $KIT 'run-ready.json') -Raw -Encoding UTF8
+$ready = $readyText | ConvertFrom-Json
+if (-not $ready.ready) { throw 'I2b/I3, the A2 smoke and the installed product are not ready' }
+if ($ready.venv_python -ne $manifest.venv_python) { throw 'run-ready.json differs from manifest' }
+if ($ready.conduct_exe -ne $manifest.conduct_exe) { throw 'run-ready.json differs from manifest' }
+if ($ready.wheel_sha256 -ne $manifest.wheel.sha256) { throw 'run-ready.json differs from manifest' }
+if ($ready.source_commit -ne $manifest.commit) { throw 'run-ready.json differs from manifest' }
+if (-not ([string]$manifest.commit).StartsWith($SHA12)) { throw 'manifest is not of this build' }
+$PY = $manifest.venv_python
+$CONDUCT = $manifest.conduct_exe
+$SCRATCH = $manifest.scratch
+$CLAUDE = Join-Path $DC 'harnesses\claude-code\2.1.239\claude.exe'
+$LOGIN = Join-Path $DC 'logins\claude-code'
+$env:TEMP = $SCRATCH
+$env:TMP = $SCRATCH
+$env:PYTHONPATH = ''
+```
+
+Что это файл B2, исходник цел, проект закрыт (любая ошибка останавливает весь блок):
+
+```powershell
+& {
+    if ($ready.pass -notlike 'B2*') { throw 'run-ready.json is not the B2 one' }
+    $seed = (Get-Content -LiteralPath (Join-Path $KIT 'seed-manifest.json') -Raw -Encoding UTF8 |
+        ConvertFrom-Json).files
+    $names = @($seed.PSObject.Properties.Name)
+    if ($names.Count -ne 3) { throw 'seed-manifest.json does not name the three seed files' }
+    foreach ($k in $names) {
+        $h = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $P $k)).Hash.ToLower()
+        if ($h -ne $seed.$k) { throw "seed file changed: $k" }
+    }
+    & $CONDUCT ownership status --dir $P
+}
+```
+
+Ожидается последняя строка `"state": "closed"` и ни одной красной.
+
+**Свежий вход** — при остановленном сервере. Вход B1 был около 08:00 UTC, измеренный срок токена
+около 8 часов, продукт сам вход не обновляет. Выполнить в окне А (вход идёт в браузере аккаунтом
+подписки; папка входа уже есть, вход заменит её содержимое):
+
+```powershell
+$env:CLAUDE_CONFIG_DIR = $LOGIN
+& $CLAUDE auth login --claudeai
+Remove-Item Env:CLAUDE_CONFIG_DIR
+```
+
+Мастер `providers` не запускать: строка `claude-code` уже записана и после входа не меняется.
+
+**Проверка готовности входа** — та же проверка входа, что делает продукт (`login_relay.ready`:
+форма файла входа, план, аккаунт, переключатель credman, срок), плюс запрещённые в папке входа
+`settings.json` и `CLAUDE.md`. Остальные проверки шага (ACL relay, окружение, `auth status`)
+продукт делает сам. Печатает только `ok` и минуты или `STOP` и код отказа; токены и содержимое
+файлов не выводит и ничего не пишет. Отказ готовности во время цикла уже считается действием,
+поэтому проверять заранее:
+
+```powershell
+function Show-LoginReady([int]$NeedMinutes) {
+    if (-not $PY -or -not $LOGIN -or -not (Test-Path -LiteralPath $LOGIN -PathType Container)) {
+        return 'STOP: $PY or $LOGIN is not set (run the names and manifest blocks)'
+    }
+    $code = @(
+        'import sys, datetime as d'
+        'from conductor.command.adapters import login_relay as r'
+        'from conductor.command.adapters.claude_relay import CLAUDE_RELAY'
+        'now = d.datetime.now(d.timezone.utc)'
+        'x = r.ready(sys.argv[1], CLAUDE_RELAY, now, d.timedelta(minutes=int(sys.argv[2])))'
+        'if isinstance(x, r.Refused): print(''STOP: product refuses: '' + x.code)'
+        'else: print(''ok: expires {:%H:%M}Z, left {} min, needed {} min''.format(x.expires_at,'
+        '    int((x.expires_at - now).total_seconds() // 60), sys.argv[2]))'
+    ) -join "`n"
+    & $PY -I -B -c $code $LOGIN $NeedMinutes
+    foreach ($n in 'settings.json', 'CLAUDE.md') {
+        if (Test-Path -LiteralPath (Join-Path $LOGIN $n)) { "STOP: $n in the login folder" }
+    }
+}
+Show-LoginReady 100
+```
+
+100 минут: grant 60, время между этой проверкой и разрешением (просмотр границ, иногда повторный),
+последний do до 5 минут и его checker, которому продукт требует 15 минут (шаг 300 с + 600 с) от
+его начала, и запас. Свежий вход даёт около 8 часов. Ожидается `ok: … left … min`; `STOP` —
+сервер не запускать, сказать ведущему.
+
+### Б2.2. Окно Б и Studio
+
+Второе обычное окно PowerShell. Выполнить те же блоки имён и manifest, что в окне А (без
+`preflight` и без входа; `CLAUDE_CONFIG_DIR` не задавать), затем:
+
+```powershell
+& $CONDUCT up --dir $P --port 7801
+```
+
+Дождаться `serving … — Ctrl+C to stop`, открыть `http://127.0.0.1:7801/`; язык интерфейса —
+русский (выбор «Язык» в шапке). В «Участниках» у строки `claude-code` четыре метки: `available`,
+`real_experimental`, `subscription`, `boundary`. Вместо `available` или `boundary` что-то другое
+(`executable_absent`, `version_mismatch`, `unconfigured`, `refused`) или нет строки — стоп,
+сказать ведущему. Квоту до цикла снимает ведущий.
+
+**Главное правило B2.** Все записи — только на странице запуска `r5-claude-b2`. Перед каждой
+публикацией, разрешением и решением проверить, что выбран `r5-claude-b2`. В той же задаче стоят
+два прежних запуска, оба по-прежнему показывают формы документов и границ:
+
+- `r5-claude-preliminary` (процесс без checker, документы опубликованы, разрешения не было):
+  разрешение на нём сразу запустит настоящий goal вне бюджета;
+- `r5-claude-preliminary-v5` (B1, разрешение истекло): разрешение запишется в журнал B1 и займёт
+  слот проекта, и B2 откажет `slot_busy`.
+
+На них ничего не нажимать; если случилось — стоп, сказать ведущему. За весь B2 — **одно
+записанное разрешение** на `r5-claude-b2`: нажатие, на которое «Сервер отказал в этом запросе»,
+ничего не записывает и не считается; «Повторить тот же запрос» повторяет то же разрешение, а не
+новое.
+
+1. **«Процесс»**: в выборе «Процесс» — `r5-claude-dalio-v5 — Стандартный цикл`, не
+   `r5-claude-dalio`. В процессе ничего не менять и не публиковать: запуск берёт последнюю
+   опубликованную версию, а нужна версия 1.
+2. **«Задача»**: `R5 Claude — count_succeeded`, новую задачу не создавать. Studio перейдёт в
+   «Запуски» и откроет B1 — вернуться в «Процесс», задача останется выбранной.
+3. Раскрыть **«Открыть запуск — версия 1 опубликована»**. «ID запуска» и «ID цикла» —
+   `r5-claude-b2`. «Режим управления» выставлен сам: «Автоматически в заданных пределах». Во всех
+   пяти «Роль role-…» — `Claude Code (headless, experimental) (claude-code)`, «Модель» пустые.
+   «Создать запуск». Перейти в «Запуски» и убедиться, что выбран `r5-claude-b2` и время его
+   создания — сейчас (не B1).
+4. **«Опубликовать документ»** на `r5-claude-b2`, по одному разу: `artifact-brief`, затем
+   `instruction-plan`. «Тип текста» — `text/plain` у каждого из двух (по умолчанию и после
+   первой публикации снова стоит `text/markdown`).
+   Содержимое — одноимённый TXT из `$KIT` целиком, с последним переводом строки; счётчик перед
+   публикацией — `2685` и `2474` байт. Другие ссылки (`artifact-goal`, `artifact-plan` и т. д.)
+   не публиковать: такой документ стал бы готовым входом вместо работы модели.
+5. Окно А: `Show-LoginReady 100` — `ok`. Затем на `r5-claude-b2`: «Ваше имя» `vasily` →
+   «Просмотреть границы запуска». Сверить: 6 действий, 600 с на действие, 2400 с всего, срок
+   разрешения 3600 с; шаги по 300 с, попыток 1/1/1/1, у do 2; «Независимо проверяет:
+   instance-role-checker»; «Исходные документы и инструкции» — ровно `instruction-plan-0` и
+   `artifact-brief-0` (виден `-1` или другой документ — не разрешать, сказать ведущему).
+   «Разрешить ограниченный запуск» — до времени в строке «Просмотр действителен до …Z» (5 минут).
+   Удачное нажатие заканчивается словами «Ваш точный запрос прочитан из истории запуска.»
+   (перед ними может мелькнуть «Результат неизвестен…»). Если «Сервер отказал в этом запросе» —
+   просмотр устарел: `Show-LoginReady 100`, снова «Просмотреть границы запуска», поля не менять,
+   затем «Разрешить».
+6. Дождаться goal → identify → diagnose → design (шаг 6 B1). Grant 60 минут идёт и во время
+   решений, отвечать без задержки. Перед `approve` на `gate-confirm-do` (ключ
+   `r5-claude-b2/gate-confirm-do`) — в окне А `Show-LoginReady 100`; `STOP` — не одобрять,
+   сказать ведущему.
+7. do + отдельный checker — шаг 7 B1. Рабочая копия — та же папка, что у B1,
+   `$P\work\_tasks\task-4ff3ae8a-d46e-45cf-bd6e-591a38eed541\work-001` (сейчас пуста).
+8. Проверка результата и `gate-result` — шаг 8 B1 и раздел «Проверка полезного результата».
+
+**Остановка.** `unknown`, отказ входа (`the pinned login expires before the attempt would end`),
+сбой уборки или входа, потеря дерева, второй reject — стоп по «Если запуск остановился»: Ctrl+C,
+не повторять, третьего цикла нет. Если на `r5-claude-b2` снова видна форма границ («Срок
+разрешения истёк») или кнопка «Продолжить ограниченный запуск» — не нажимать: стоп, сказать
+ведущему. Если окно А закрыто — заново блоки имён и manifest и функция `Show-LoginReady`. После
+перезагрузки по «Если запуск остановился» брать блоки имён и manifest из Б2.1, а не из
+«Подготовки» (там `<sha12>` не подставлен).
+Счётчики Studio показывают только B2 (с 0 из 6); общий счёт с B1 ведёт отчёт. После цикла —
+квота после, `evidence-template.json` → копия для B2 в `Documents\Codex\work\b2-run\`, сервер
+штатно закрыть.
 
 ## Уже подготовлено
 
@@ -296,8 +493,8 @@ Pop-Location
 Модельные probes, negative control и второй цикл этим runbook не назначаются.
 Не копировать auth.json, credentials, сырые OAuth-ответы или токены в журнал/скриншоты.
 
-Последний доказанный шаг | первый несделанный: исходный проект и тексты подготовлены |
-новый проверенный wheel, защищённая установка и запуск UI ещё впереди.
-Не повторять создание seed и старые M2; подписочный цикл пока не запускался.
-Следующий шаг: Opus завершает I2b/I3 и заполняет `run-ready.json`;
-затем один проход по этой странице.
+Последний доказанный шаг | первый несделанный: B1 остановлен с `unknown`, исправление длинных
+путей `52f3d50`, продукт `52f3d505d7fb`, остаток B1 восстановлен 27.10 | B2 не выполнен.
+Не повторять создание seed, старые M2, B1 и прежний A2.
+Следующий шаг: владелец проходит раздел «Второй проход B2»; ведущий следит за журналом
+`r5-claude-b2` только чтением и проверяет результат до `gate-result`.
