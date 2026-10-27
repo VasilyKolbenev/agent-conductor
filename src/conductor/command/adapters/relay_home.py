@@ -41,6 +41,7 @@ from ... import ownership
 from ...ownership_errors import OwnerRefused
 from ...ownership_native import NativeHold, identity
 from ..containment import contained_directory, portal_violation
+from ..long_path import extended
 from .process_boundary import LOGIN_PARENTS, login_home_named
 from .process_loans import _explicit, _fields, _inside, _refused, _split
 from .process_profile import ProfileRefused
@@ -168,13 +169,13 @@ def leaf_kind(home: object, name: str) -> str:
 
     target = Path(home) / name
     try:
-        top = os.lstat(home)
+        top = os.lstat(extended(home))
     except OSError:
         return words.HOME_LEAF_OTHER
     if not stat.S_ISDIR(top.st_mode) or portal_violation(Path(home), top) is not None:
         return words.HOME_LEAF_OTHER
     try:
-        found = os.lstat(target)
+        found = os.lstat(extended(target))
     except FileNotFoundError:
         return words.HOME_LEAF_ABSENT
     except OSError:

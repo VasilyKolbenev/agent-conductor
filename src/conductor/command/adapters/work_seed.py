@@ -6,6 +6,10 @@ take a base directory the door has already proved contained, and the two readers
 they need from the door -- the one that looks at a name without following it and
 the one that hashes a leaf -- so this module holds no route of its own and does
 not import the door.
+
+Every walk names its base in the extended-length form (`long_path`), so each child it meets is
+named so too: what a child made in the work tree may be past 260 characters, and the evidence
+must hold it, not lose it to an error or call it absent.
 """
 from __future__ import annotations
 
@@ -16,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..containment import RouteViolationCode, portal_violation
+from ..long_path import extended
 
 
 class CaptureRefused(ValueError):
@@ -29,7 +34,7 @@ def capture_work_tree(base, leaf, read_file, *, max_files=7000, max_bytes=128 * 
     The seed permits 5000 files/64 MiB and its accumulated diff 2000 rows/64 MiB. Their
     sum bounds this read without charging unchanged seed bytes to the diff twice.
     """
-    result, total = {}, 0
+    result, total, base = {}, 0, Path(extended(base))
     found = leaf(base)
     if found is None or not stat.S_ISDIR(found.st_mode):
         raise CaptureRefused("material_unavailable")
@@ -56,6 +61,7 @@ def capture_work_tree(base, leaf, read_file, *, max_files=7000, max_bytes=128 * 
 
 def work_modes(base, leaf):
     """Recheck executable bits without a second content capture for the frame."""
+    base = Path(extended(base))
     result, stack = {}, [base]
     while stack:
         for path in sorted(stack.pop().iterdir()):
@@ -80,6 +86,7 @@ def digest_work_tree(
     kind rather than by content, is on ``HarnessWorkspace.digest_work_tree``.
     """
     rows: dict[str, str] = {}
+    base = Path(extended(base))
     found = leaf(base)
     if found is None or not stat.S_ISDIR(found.st_mode):
         return rows
@@ -116,6 +123,7 @@ def read_work_tree(
     this walk runs.
     """
     tree, contents = {}, {}
+    base, work_root = Path(extended(base)), Path(extended(work_root))
     if leaf(base) is None:
         return tree, contents
     stack = [base]

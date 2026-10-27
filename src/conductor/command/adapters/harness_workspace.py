@@ -78,6 +78,7 @@ from threading import Lock, RLock
 from weakref import WeakValueDictionary
 
 from .workspace_turn import _RootGate, indexed_root_gate
+from ..long_path import extended
 from ..path_admission import admit_work_path
 from ..work_layout import WORK_DIR, TASKS_DIR, work_parts, work_route
 from .attempt_scope import AttemptScope
@@ -200,7 +201,7 @@ def _leaf(path: Path) -> os.stat_result | None:
     answer.
     """
     try:
-        return os.lstat(path)
+        return os.lstat(extended(path))
     except FileNotFoundError:
         return None
     except OSError as error:
@@ -253,7 +254,7 @@ def _remove_portal(path: Path, found: os.stat_result) -> None:
 def _remove_tree(root: Path) -> None:
     """Delete everything beneath ``root`` and then ``root``, following nothing."""
     directories: list[Path] = []
-    stack = [root]
+    stack = [Path(extended(root))]  # what a child made may be past 260 characters
     while stack:
         current = stack.pop()
         directories.append(current)
@@ -550,7 +551,9 @@ class HarnessWorkspace:
         if not stat.S_ISDIR(found.st_mode):
             raise _refuse(RouteViolation(RouteViolationCode.NOT_DIRECTORY, homes))
         refused: list[str] = []
-        for path in sorted(homes.iterdir()):
+        # Listed in the extended-length form: each name then stands as it is, where a plain one is
+        # read by the system as another (`...` is this root, `h ` and `h.` are `h`).
+        for path in sorted(Path(extended(homes)).iterdir()):
             entry = _leaf(path)
             if entry is None:
                 continue

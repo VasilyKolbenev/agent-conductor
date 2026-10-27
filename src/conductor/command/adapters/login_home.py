@@ -61,6 +61,8 @@ import os
 import stat
 from pathlib import Path
 
+from ..long_path import extended
+
 
 def entries(home: str) -> frozenset[str] | None:
     """The TOP-LEVEL names standing in a login directory, read by name alone.
@@ -341,7 +343,7 @@ def _walk(target: Path, prefix: str, room: "int | None" = None) -> "list[str | N
     # one that stood when this file was read.
     room = MEASURE_LIMIT if room is None else room
     rows: list[str | None] = []
-    stack = [(target, prefix)]
+    stack = [(Path(extended(target)), prefix)]  # a spawn's tree may be past 260 characters
     while stack:
         here, said = stack.pop()
         try:
@@ -473,15 +475,19 @@ def take_back(home: str, scratch: tuple[str, ...],
         return ()
     wanted = [name for name in sorted(added)
               if name.split("/", 1)[0] in scratch]
-    return tuple(name for name in wanted if _take_one(Path(home) / name))
+    return tuple(name for name in wanted if _take_one(home, name))
 
 
-def _take_one(target: Path) -> bool:
-    """Remove one name, following nothing; True if it is still standing after."""
+def _take_one(home: str, name: str) -> bool:
+    """Remove one name of a login directory, following nothing; True if it is still standing."""
     from ..containment import portal_violation
     from .harness_workspace import _leaf, _remove_portal, _remove_tree
 
     try:
+        # The home is named in the extended-length form (the spawn's names may be past 260
+        # characters) and the measured name is joined to it as it is: asked of the system alone,
+        # `a ` and `a.` are `a`, and `...` is the folder above.
+        target = Path(extended(home)) / name
         found = _leaf(target)
         if found is None:
             return False

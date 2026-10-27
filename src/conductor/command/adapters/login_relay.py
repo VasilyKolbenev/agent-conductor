@@ -51,6 +51,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import MappingProxyType
 
+from ..long_path import extended
 from .login_home import CREDENTIAL_LIMIT
 
 #: Every reason a login or an attempt home is refused, with the sentence that says it. A sentence
@@ -361,7 +362,7 @@ def read_leaf(path: str | os.PathLike, limit: int = CREDENTIAL_LIMIT) -> Leaf | 
         path: The credential file.
         limit: The most it may hold, in bytes.
     """
-    target = os.fspath(path)
+    target = extended(path)
     try:
         before = os.lstat(target)
     except (FileNotFoundError, NotADirectoryError):
@@ -616,16 +617,6 @@ def copy_in(auth_home: str | os.PathLike, relay_home: str | os.PathLike, spec: R
 # --- taking a relay home away -----------------------------------------------------------------
 
 
-def _long(path: str) -> str:
-    """The absolute extended-length form on Windows (so a deep path has a name), else absolute."""
-    absolute = os.path.abspath(path)
-    if os.name != "nt" or absolute.startswith("\\\\?\\"):
-        return absolute
-    if absolute.startswith("\\\\"):
-        return "\\\\?\\UNC\\" + absolute[2:]
-    return "\\\\?\\" + absolute
-
-
 def _is_link(info) -> bool:
     return stat.S_ISLNK(info.st_mode) or getattr(info, "st_reparse_tag", 0) != 0
 
@@ -693,7 +684,7 @@ def discard(relay_home: str | os.PathLike, names: tuple[str, ...] = ()) -> bool:
         True if nothing stands at the relay home any more, False if anything was left.
     """
     try:
-        top = _long(os.fspath(relay_home))
+        top = extended(relay_home)
         try:
             info = os.lstat(top)
         except FileNotFoundError:
@@ -737,7 +728,7 @@ def sweep(relay_root: str | os.PathLike, key: str, kind: str,
         raise ValueError("kind is one lower-case letter")
     homes = re.compile(rf"{kind}-[0-9a-f]{{16}}\Z")
     try:
-        base = os.path.join(_long(os.fspath(relay_root)), key)
+        base = os.path.join(extended(relay_root), key)
         try:
             info = os.lstat(base)
         except FileNotFoundError:

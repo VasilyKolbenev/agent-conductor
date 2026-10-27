@@ -202,6 +202,12 @@ CAPPED = (
     "tests/test_provider_task_road.py",
     "tests/test_relay_road_leaving.py",
     "tests/test_relay_claude_native.py",
+    "src/conductor/command/long_path.py",
+    "tests/_deep_tree.py",
+    "tests/test_long_path.py",
+    "tests/test_long_path_attempt.py",
+    "tests/test_long_path_homes.py",
+    "tests/test_long_path_native.py",
 )
 
 

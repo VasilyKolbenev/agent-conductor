@@ -20,6 +20,7 @@ import stat
 from ... import boot_prepared, boot_witness, ownership_boot
 from ...boot_witness import BootRefused
 from ...ownership_native import NativeHold, identity
+from ..long_path import extended
 from .process_boundary import WindowsContainer
 from .process_profile import ProfileRefused, _bytes, _plain, _replace, _write_new
 
@@ -58,7 +59,7 @@ def _walk_plain(directory: Path) -> list[Path]:
         if len(seen) > _LIMIT:
             raise ProfileRefused("profile_acl_invalid", "owned attempt exceeds cleanup bound")
         try:
-            with os.scandir(here) as children:
+            with os.scandir(extended(here)) as children:  # a child's tree may be past 260
                 for entry in children:
                     if len(seen) + len(pending) >= _LIMIT:
                         raise ProfileRefused("profile_acl_invalid", "owned attempt exceeds cleanup bound")

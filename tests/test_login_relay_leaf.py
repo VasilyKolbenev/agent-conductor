@@ -50,7 +50,8 @@ def as_the_os_words_it(monkeypatch, target, **answer):
 
     def lstat(path, *args, **kwargs):
         found = real(path, *args, **kwargs)
-        if os.fspath(path) != os.fspath(target):
+        # `read_leaf` names the file in the extended-length form (`long_path`): the same file
+        if os.fspath(path).removeprefix("\\\\?\\") != os.fspath(target):
             return found
         fields = {name: getattr(found, name) for name in dir(found) if name.startswith("st_")}
         fields.update(answer)
