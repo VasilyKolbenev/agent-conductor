@@ -75,3 +75,15 @@ trusted-control, который должен отказать с PROBE до се
 Будущий тест нормализует только два именованных trace-поля в metadata suffix после url;
 status/body/url/auth error/code сохраняет. Offline guards различают содержательные изменения;
 canonical digest сохраняется до редактирования диагностики. Это не объявляет старый тест зелёным.
+
+Trusted-control также отказал своему старому критерию (17,8 с, без PROBE). Новое основание S164
+`config/src/loader/mod.rs:89-104,1325-1341,1924-1934`: model_provider теперь безусловно удаляется
+из project-local config даже у trusted проекта. Поэтому пара на этом ключе не проверяет trust.
+
+Codex разрешает продолжить узко, заменив оба плеча на невалидный TOML
+`[PROBE_INVALID_PROJECT_LAYER` с переводом строки. S164:1893-1912: trusted parse error отказывает,
+untrusted превращается в пустой disabled слой. Trusted witness: nonzero, точная строка
+`Error parsing project config file` и путь именно этого файла. Полный bounded combined output
+контроля сохранять при ошибке; generic nonzero не принимать. Новый offline guard и один полный
+P8 с новым poison, прежними production argv/доступом/60 с; это новый различающий эксперимент,
+не retry старого control. До успеха P8 не закрыт. Старые результаты остаются в отчёте.
