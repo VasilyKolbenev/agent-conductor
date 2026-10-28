@@ -150,8 +150,8 @@ def purpose_clause(args) -> str:
     carry a NUL either: `settled_purpose` refused all three before the plan was
     frozen, and the argument door refuses them again on the way back in.
 
-    Empty when the plan named none, so a step with no purpose is handed exactly
-    the frame it was handed before this field existed.
+    Empty when the plan named none, so a step with no purpose is handed the
+    same frame as one with a purpose, less this clause and nothing else.
     """
     said = getattr(args, "step_purpose", OMITTED)
     if said is OMITTED:

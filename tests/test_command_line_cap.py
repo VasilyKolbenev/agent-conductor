@@ -214,6 +214,7 @@ CAPPED = (
     "tests/test_long_path_attempt.py",
     "tests/test_long_path_homes.py",
     "tests/test_long_path_native.py",
+    "tests/test_dalio_analysis_prompt.py",
 )
 
 

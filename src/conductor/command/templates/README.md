@@ -91,8 +91,8 @@ authorizing an appropriate finite cycle budget remains separate work.
 Revisions 1, 2 and 3 remain unchanged and explicitly selectable. A new starter
 does not alter a previously saved custom workflow, published revision or run.
 
-`dalio-v5` is the current **Стандартный цикл**, offered first when creating a
-workflow. It is revision 4 plus the road a rejected execution is corrected by,
+`dalio-v5` was the **Стандартный цикл** until revision 6 (below), and stays
+selectable as it is. It is revision 4 plus the road a rejected execution is corrected by,
 and nothing else: `do` reaches the result gate only `on_succeeded`, and on
 `on_failed` it enters `correct`, a loop of bound 2 home to `do`. Revision 4 had
 no such road — the Policy runtime corrects only along a failed step's `on_failed`
@@ -115,6 +115,18 @@ actions and one correction six, both within the default eight; a full replanned
 second lap still needs nine and is not promised under that default.
 `graph_dalio.validate_dalio_correction_template` holds this revision to its own
 shape; the one-loop check for revisions 1–4 is unchanged.
+
+`dalio-v6` is the current **Стандартный цикл**, offered first when creating a
+workflow. It is revision 5 plus a `purpose` on each analytical step — `goal`,
+`identify`, `diagnose`, `design` — and nothing else; `tests/test_dalio_analysis_prompt.py`
+holds the difference against revision 5's digest. Revision 5 named no purpose,
+and the shared review frame named the result reference as the thing to review, so
+a live Goal step reviewed the missing `artifact-goal` instead of formulating the
+goal. The frame now says that the result reference names the new document the
+step creates, never an input; a step with a purpose carries it out, a step without
+one reviews its inputs, and neither creates a file for its reply. Each purpose
+asks for the answer in the language of the materials, so that a Russian brief
+should yield Russian documents; the live repeat has to confirm it.
 
 ## The desk's ready cycles
 

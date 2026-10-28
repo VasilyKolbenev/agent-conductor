@@ -1,6 +1,6 @@
 """The shipped standard cycle corrects one independent rejection under one authorization.
 
-What the product decides is real, with one setup step taken directly: the shipped `dalio-v5` file
+What the product decides is real, with one setup step taken directly: the shipped default-cycle file
 is materialized by the product's own `materialize` and appended to the run's journal BEFORE
 `server.build`, not through the server's routes. From there everything goes through the server's
 HTTP doors on a real project owner: the input documents, the Policy preview and authorization, and
@@ -234,8 +234,8 @@ def standard(tmp_path):
         subject.close()
 
 
-def test_the_default_standard_cycle_is_revision_five():
-    assert DEFAULT_TEMPLATE == "dalio-v5" and load_template(DEFAULT_TEMPLATE).revision == 5
+def test_the_default_standard_cycle_is_revision_six():
+    assert DEFAULT_TEMPLATE == "dalio-v6" and load_template(DEFAULT_TEMPLATE).revision == 6
 
 
 def test_a_clean_result_runs_five_steps_under_one_grant_through_both_human_doors(standard):

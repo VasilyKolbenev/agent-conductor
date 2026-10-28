@@ -22,9 +22,9 @@ Three properties fail in different ways and are therefore held separately:
   instruction. Refused by the plan contract before freezing, and again at the
   argument door, because an adapter driven with a hand-made request reaches no
   plan;
-- **absent stays absent.** No shipped starter names a purpose, so their
-  revision digests must not move and a step without one must be handed exactly
-  the frame it was handed before this field existed;
+- **absent stays absent.** A starter that names no purpose keeps its revision
+  digest, and a step without one is handed the same frame as a step with one,
+  less the purpose clause and nothing else;
 - **the plan is the authority.** `graph_causality` refuses any proposal whose
   arguments are not byte-identical to the node's payload, so a purpose the plan
   did not author cannot be smuggled into a child by whoever composes a proposal.

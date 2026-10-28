@@ -280,7 +280,7 @@ def materialize(template: GraphTemplate, binding: RunBinding,
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 #: The current standard cycle offered first to a new workflow. Earlier files
 #: remain loadable by their exact names; this never upgrades a frozen run.
-DEFAULT_TEMPLATE = "dalio-v5"
+DEFAULT_TEMPLATE = "dalio-v6"
 
 
 def load_template(name: str) -> GraphTemplate:
