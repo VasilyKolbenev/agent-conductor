@@ -21,7 +21,9 @@ with exactly the two observed methods above, without experimentalApi or wildcard
 Keep `SubscriptionRpc.decode` strict; an unrequested/unknown notification still refuses.
 Test via the actual quota read payload, simulating the CLI boundary's notification behavior.
 Red without opt-out, green with it, missing-method/no-op/unknown-notification mutants as relevant.
-Changing the fixed RPC changes provider authority as the existing digest contract requires.
+The fixed metadata RPC is not part of `ProviderAuthority.facts`; do not claim its payload alone
+changes the grant digest. The accompanying P7 login-name profile changes are included via
+`asdict(profile)`. First product use receives a fresh owner grant; no existing grant is reused.
 
 ## P7: account only for measured names
 
