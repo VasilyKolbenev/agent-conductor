@@ -39,20 +39,26 @@ Claude, Codex и Grok; сейчас каждое чтение Codex и Grok — 
 
 - `adapters/service_metadata.py`, класс `ServiceMetadata` — **первая база** `GrokBuildAdapter` и
   `CodexCliTransport` (иначе C3 ставит его после `LoginRoad` и он мёртв, скептик B-4). Переносятся
-  `_attempt`, `_remember_login_values`, `_login_secrets`, `_echoed_login` и состояние с теми же
-  именами (`_service`, `_service_metadata`, `_service_values`, `_service_protected`; на них
+  `_attempt`, `_echoed_login` и (после дополнения 1 — как `_spawn_secrets`) `_login_secrets` с
+  `_remember_login_values`, и состояние с теми же именами (`_service`, `_service_metadata`, `_service_values`, `_service_protected`; на них
   смотрит `test_grok_service_echo.py:142-143`).
 - Крючки провайдера: `_service_for(argv, stdin_bytes) -> SubscriptionRpc | None`;
   `_reply_metadata() -> dict[str, frozenset[bytes]]` (поле входа → допустимые значения; «ключ
   побеждает» по одному документу — здесь); `_masked_reply(output, service, own_fields) -> bytes`.
 - **Тотальность** (B-1): крючки работают под общей арендой входа, исключение отравляет вход до
   перезапуска ОС (`ownership_login.py:249-255`). Миксин: исключение `_reply_metadata` →
-  `_login_secrets` возвращает полный набор; исключение `_masked_reply` → `_echoed_login` = True.
-  Пересериализация маски — `ensure_ascii=True` (одиночный суррогат не роняет `encode`).
-- **Поток** (SEC-3): `publish()` читает `_login_secrets` без очереди рабочей папки, а квотное
-  чтение идёт в потоке сборщика. Область обмена действует только в потоке, который её открыл
-  (`threading.get_ident()` сохраняется рядом с `_service`); в любом другом потоке
-  `_login_secrets` — полный набор, и состояние `_service*` им не пополняется.
+  полный набор значений до конца обмена; исключение `_masked_reply` → `_echoed_login` = True.
+  Пересериализация маски — `ensure_ascii=False`, как у Grok сейчас (дополнение 1): `True`
+  экранировал бы не-ASCII допущенное значение вне своего поля, и поиск его байтов промахнулся бы;
+  одиночный суррогат роняет `encode`, тотальность превращает это в отказ.
+- **Роли, не потоки** (SEC-3, дополнение 1): `publish()` читает `_login_secrets` без очереди
+  рабочей папки, а квотное чтение идёт в потоке сборщика. `LoginRoad` получает
+  `_spawn_secrets()` (по умолчанию — `_login_secrets()`), и `headless_spec.attempt_spec` берёт
+  `sensitive_extra` из него. Миксин переопределяет только `_spawn_secrets` и `_echoed_login`:
+  `_login_secrets` (публикация, история `_remember_login_values`) всегда полный и состояние
+  `_service*` не трогает. `_spawn_secrets` и `_echoed_login` вызываются только внутри попытки,
+  а попытки и квотное чтение идут по очереди рабочей папки. `threading` не нужен (его запрещает
+  `test_command_adapters.py` для модулей-значений).
 - **Правило места** (меняет и Grok): значение V судится в полях, чьи допустимые образцы **равны V
   или содержат V**, и маскируются эти образцы, а не только V. Так `principal_id` внутри
   идентификатора картинки проходит, а `principal_id` в адресе вне него — нет (сохраняет
@@ -69,7 +75,7 @@ Claude, Codex и Grok; сейчас каждое чтение Codex и Grok — 
   содержится в нём (включая значение `.credentials.json`, `login_owner_id`, `last_refresh`).
 - Маска: только если `QUOTA_RPC.decode(output)` принял весь обмен; точное равенство в двух местах —
   `result.accountId` ответа id 3 и `result.workspaceRouting.chatgptAccountId` ответа id 2 (только
-  если `workspaceRouting` — объект). Остальное — отказ.
+  если `workspaceRouting` — объект). Остальное — отказ. Пересериализация — `ensure_ascii=False`.
 - Не ловит: `rateLimitUpsell` (произвольный JSON сервера, приходит исчерпанному аккаунту) может
   повторить идентификатор — тогда отказ, безопасно; покажет живое чтение.
 

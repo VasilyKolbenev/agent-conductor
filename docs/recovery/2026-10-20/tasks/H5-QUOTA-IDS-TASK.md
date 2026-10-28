@@ -63,6 +63,28 @@
 - `codex_cli.py` выходит за 800 строк;
 - поведение vendor расходится с дизайном (форма ответа, поля) — не угадывать.
 
+## Дополнение 1 (ведущий, после стопа I2)
+
+Стоп I2 верен: `threading` в модуле-значении запрещает
+`test_command_adapters.py::test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_modules`.
+Решение ведущего — роли вместо потоков (дизайн, «Роли, не потоки»):
+
+- список файлов дополняется: `src/conductor/command/adapters/headless_login.py` — новый метод
+  `LoginRoad._spawn_secrets()` (по умолчанию `return self._login_secrets()`, докстринг о том,
+  что это набор для скана одного спавна); `src/conductor/command/adapters/headless_spec.py:55` —
+  `sensitive_extra` из `adapter._spawn_secrets()`;
+- `ServiceMetadata`: без `threading`, `_service_thread`, `_in_exchange`; переопределяет
+  `_spawn_secrets` (нынешнее тело `_login_secrets` с тотальностью) и `_echoed_login` (в обмене
+  сверяет с `_spawn_secrets()`); `_login_secrets` и `_remember_login_values` не переопределяет;
+- структурные тесты I1 (новый файл) правятся под это: в `ServiceMetadata` разрешаются `_attempt`,
+  `_spawn_secrets`, `_echoed_login`; свидетель потока — `_login_secrets()` и
+  `_sensitive_values(...)` из другого потока во время обмена дают полный набор и не меняют
+  `_service_values`;
+- `ensure_ascii=False` и у Codex (отклонение исполнителя по Grok принято).
+
+Метки прогонов — не длиннее 2 знаков (`rmbase.py` отказывает длиннее 4 с префиксом `qu`/`qc`).
+Несколько файлов в `-Only` — через `powershell -Command "& <script> -Tag X -Only 'a','b'"`.
+
 ## Отчёт исполнителя
 
 По итерациям: изменённые файлы, красные тесты до и зелёные после, команды и числа
