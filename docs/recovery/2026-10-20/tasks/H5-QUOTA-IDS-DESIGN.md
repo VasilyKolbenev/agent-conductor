@@ -1,94 +1,125 @@
-Итог: дизайн v1 узкого допуска идентификаторов аккаунта в ответах лимитов Codex и Grok |
-ветка `recovery/2026-10-20` после `a98e918` | кода нет | следующий шаг: скептики по линзам,
-затем v2 и TASK исполнителю.
+Итог: дизайн v2 узкого допуска идентификаторов аккаунта в ответах лимитов Codex и Grok, после
+четырёх скептиков (v1 `c50cc20`) | ветка `recovery/2026-10-20` | кода нет | следующий шаг: TASK
+исполнителю, итерации I1–I3.
 
-# H5-QUOTA-IDS — идентификатор аккаунта в ответе лимитов (Codex, Grok), DESIGN v1
+# H5-QUOTA-IDS — идентификатор аккаунта в ответе лимитов (Codex, Grok), DESIGN v2
 
-Ведущий — Opus 5.5 (решение владельца PROC-NO-CODEX, 28.10). Основание: V1-HARNESS требует
-видимых лимитов Claude, Codex и Grok; сейчас каждое чтение Codex и Grok — `source_error`.
+Ведущий — Opus 5.5 (PROC-NO-CODEX, 28.10). Основание: V1-HARNESS требует видимых лимитов
+Claude, Codex и Grok; сейчас каждое чтение Codex и Grok — `source_error`.
 
-## Измеренные причины
+## Измеренные и найденные причины
 
-| Harness | Что совпало | Где | Доказательство |
-| --- | --- | --- | --- |
-| Codex 0.164.0 | `auth.json` `tokens.account_id` | `$.result.accountId` ответа id 3 (`account/rateLimits/read`) | `H5-CODEX-QUOTA-ECHO-CLASSIFY-REPORT.md`; исходник vendor `6aaac69` `v2/account.rs` `GetAccountRateLimitsResponse.account_id` |
-| Grok 1.0.5 | `principal_id` (= `user_id`) | внутри `profileImageUrl` ответа id 2 (`_x.ai/auth/info`) | `H5-HARNESS-CHECK-REPORT.md`, причина 2 |
-| Grok 1.0.5 | новые имена `models_cache.json`, `worktrees.db` в доме входа | `_login_residue` | там же, причина 1 |
+| # | Harness | Что совпало | Где | Доказательство |
+| --- | --- | --- | --- | --- |
+| 1 | Codex 0.164.0 | `auth.json` `tokens.account_id` | `$.result.accountId` ответа id 3 | `H5-CODEX-QUOTA-ECHO-CLASSIFY-REPORT.md`; vendor `6aaac69` `v2/account.rs` `GetAccountRateLimitsResponse.account_id` (`Option<String>`) |
+| 2 | Codex 0.164.0 | то же значение | `$.result.workspaceRouting.chatgptAccountId` ответа id 2 (`account/read`) | скептик VF-1: `GetAccountResponse.workspace_routing` (experimental, но не вырезается для клиента без `experimentalApi`), `workspace_routing.rs` `chatgpt_account_id: entry.id` при `entry.id == get_account_id()`; измерение класс `other` это не исключает |
+| 3 | Grok 1.0.5 | `principal_id` (= `user_id`) | внутри `profileImageUrl` ответа id 2 | `H5-HARNESS-CHECK-REPORT.md`, причина 2; vendor `19d42e35` `extensions/auth.rs` `handle_info`: адрес — сам `profile_image_asset_id` (если http/https) или `grok-asset:///{asset_id}`, значит `principal_id` стоит внутри допустимого идентификатора картинки |
+| 4 | Grok 1.0.5 | новые `models_cache.json`, `worktrees.db` в доме входа | `_login_residue` | там же, причина 1 |
 
 Механизм отказа: `login_home.credential_values` берёт каждую строку от 12 знаков из объявленных
-файлов входа; на квотной дороге это и `sensitive_extra` runner (`headless_spec.py:55`), и
+файлов входа; на квотной дороге это `sensitive_extra` runner (`headless_spec.py:55`) и
 `_echoed_login` после запуска (`headless_login.py:301-315`); `_clean` отказывает
-(`subscription_quota.py:102-107`). У Grok уже есть узкий допуск метаданных: значение
-допускается только в своём поле проверенного ответа (`grok_build.py:361-430, 565-624`).
+(`subscription_quota.py:102-107`). У Grok уже есть узкий допуск: значение допускается только в
+своём поле проверенного ответа (`grok_build.py:361-430, 565-624`).
 
 ## Что меняется и что нет
 
 Меняется только квотный обмен Codex и Grok (`SubscriptionRpc` по точному argv и stdin).
-Не меняются: дороги задач, ревью и checker; `secret_fields` relay; история публикации (все
-значения входа остаются в `_login_seen`); декодер лимитов (поля доступности — отдельно, после
-живого чтения исчерпанного аккаунта); `LOGIN_CONFIG_KEYS`; preflight.
+Не меняются: дороги задач, ревью и checker; `secret_fields` relay; история публикации; сырой
+побайтовый поиск ключей (как во всём продукте; канонизация JSON-экранирования — отдельная
+общая задача, скептик SEC-1, опровергнуто как дефект этого дизайна); декодер лимитов (поля
+доступности — после живого чтения исчерпанного аккаунта); `LOGIN_CONFIG_KEYS`; preflight.
 
-## Интерфейс: два варианта
+## Интерфейс
 
-**A — копия.** `CodexCliTransport` получает свои `_attempt`, `_login_secrets`, `_echoed_login`,
-`_remember_login_values` (миксин в `codex_quota.py`: `codex_cli.py` — 773 строки при пределе
-800), повторяя логику Grok с таблицей Codex. Grok меняет только таблицу.
-- плюс: Grok не трогается структурно;
-- минус: две копии самой хрупкой логики (обновление входа посреди обмена, происхождение
-  значения по полю, «ключ побеждает»), которые разойдутся.
+Рассмотрены A (копия логики Grok в Codex) и B (вынос в общий миксин). **Выбран B**: общая часть —
+обновление входа посреди обмена, происхождение значения по полю, «ключ побеждает» между
+выборками (`grok_build.py:382-423`); копия этой логики — худший долг. Свои у провайдера (и при A
+тоже): чтение файла входа и маска ответа.
 
-**B — вынос.** Четыре метода и состояние `_service*` из `GrokBuildAdapter` переносятся без
-изменения смысла в миксин `ServiceMetadata` (`adapters/service_metadata.py`). Провайдер даёт
-три крючка: `_service_for(argv, stdin_bytes) -> SubscriptionRpc | None`,
-`_reply_metadata() -> dict[str, frozenset[bytes]]` (поле входа → допустимые значения),
-`_masked_reply(output, service, own_fields) -> bytes`. Grok отдаёт свои нынешние функции,
-Codex — свою таблицу.
-- плюс: одна реализация защиты; Grok-тесты (`test_grok_service_echo.py`, 10 тестов)
-  закрепляют поведение вынесенного кода;
-- минус: перенос кода Grok — риск регрессии, ловится его тестами.
+- `adapters/service_metadata.py`, класс `ServiceMetadata` — **первая база** `GrokBuildAdapter` и
+  `CodexCliTransport` (иначе C3 ставит его после `LoginRoad` и он мёртв, скептик B-4). Переносятся
+  `_attempt`, `_remember_login_values`, `_login_secrets`, `_echoed_login` и состояние с теми же
+  именами (`_service`, `_service_metadata`, `_service_values`, `_service_protected`; на них
+  смотрит `test_grok_service_echo.py:142-143`).
+- Крючки провайдера: `_service_for(argv, stdin_bytes) -> SubscriptionRpc | None`;
+  `_reply_metadata() -> dict[str, frozenset[bytes]]` (поле входа → допустимые значения; «ключ
+  побеждает» по одному документу — здесь); `_masked_reply(output, service, own_fields) -> bytes`.
+- **Тотальность** (B-1): крючки работают под общей арендой входа, исключение отравляет вход до
+  перезапуска ОС (`ownership_login.py:249-255`). Миксин: исключение `_reply_metadata` →
+  `_login_secrets` возвращает полный набор; исключение `_masked_reply` → `_echoed_login` = True.
+  Пересериализация маски — `ensure_ascii=True` (одиночный суррогат не роняет `encode`).
+- **Поток** (SEC-3): `publish()` читает `_login_secrets` без очереди рабочей папки, а квотное
+  чтение идёт в потоке сборщика. Область обмена действует только в потоке, который её открыл
+  (`threading.get_ident()` сохраняется рядом с `_service`); в любом другом потоке
+  `_login_secrets` — полный набор, и состояние `_service*` им не пополняется.
+- **Правило места** (меняет и Grok): значение V судится в полях, чьи допустимые образцы **равны V
+  или содержат V**, и маскируются эти образцы, а не только V. Так `principal_id` внутри
+  идентификатора картинки проходит, а `principal_id` в адресе вне него — нет (сохраняет
+  `test_an_image_url_cannot_hide_another_metadata_fields_value`). Таблица Grok не расширяется
+  кортежами, `replace(..., 1)` остаётся.
 
-**Выбор: B.** Две реализации уже есть (§2.4 допускает абстракцию); копия логики защиты —
-худший долг.
+## Codex (`codex_quota.py`; `codex_cli.py` — 773 строки, получает только базу и делегаты)
 
-## Codex
-
-- Ключи: каждая строка от 12 знаков объявленных файлов входа (`auth.json`, `.credentials.json`),
-  кроме значения `tokens.account_id`; значение поля вне схемы vendor (`codex_relay._TOP`,
-  `_TOKENS`) — ключ.
-- Допустимо: `tokens.account_id`, если это строка от 12 знаков и не равна ключу, не содержит
-  его и не содержится в нём.
-- Маска: только если `QUOTA_RPC.decode(output)` принял весь обмен; только ответ id 3, только
-  верхнее поле `result.accountId`, только точное равенство → `""`. Затем весь вывод снова
-  сверяется со всеми значениями. В любом другом месте (`account/read`, `rateLimits*`,
-  вложенно, неизвестное поле, внутри другой строки) — отказ, как сейчас.
+- Документы: `auth.json` и `.credentials.json`, по одному чтению каждого через
+  `login_home.credential_document`.
+- Ключи **по месту**: каждая строковая лист-ячейка обоих файлов от 12 знаков, кроме одной ячейки
+  `auth.json` `tokens.account_id`.
+- Допустимо: `tokens.account_id` — строка от 12 знаков, не равна ключу, не содержит его и не
+  содержится в нём (включая значение `.credentials.json`, `login_owner_id`, `last_refresh`).
+- Маска: только если `QUOTA_RPC.decode(output)` принял весь обмен; точное равенство в двух местах —
+  `result.accountId` ответа id 3 и `result.workspaceRouting.chatgptAccountId` ответа id 2 (только
+  если `workspaceRouting` — объект). Остальное — отказ.
+- Не ловит: `rateLimitUpsell` (произвольный JSON сервера, приходит исчерпанному аккаунту) может
+  повторить идентификатор — тогда отказ, безопасно; покажет живое чтение.
 
 ## Grok
 
-- `GROK_REPLY_METADATA` → поле ответа к кортежу полей входа; `profileImageUrl` →
-  (`profile_image_asset_id`, `principal_id`, `user_id`); остальные — по одному полю.
-- `_mask_value`: в `profileImageUrl` вырезаются все вхождения проверяемого значения (только
-  внутри этого поля); прочие поля — точное равенство, как сейчас.
-- `login_scratch` += `models_cache.json`, `worktrees.db`: появившиеся при спавне продукта
-  забираются, прежние — оператора. Явное решение вместо запрета автоматического расширения
-  H5-GROK-M1; только измеренные имена.
+- Правило места выше; таблица полей ответа дополняется сквозными полями `handle_info` с точным
+  равенством: `firstName`→`first_name`, `lastName`→`last_name`, `teamName`→`team_name`,
+  `teamRole`→`team_role`, `organizationId`→`organization_id`, `organizationName`→
+  `organization_name`, `organizationRole`→`organization_role`, `principalType`→`principal_type`,
+  `userBlockedReason`→`user_blocked_reason` (VF-3; основание — исходник, не измерение).
+- `login_scratch` += `models_cache.json`, `worktrees.db` (только измеренные имена; явное решение
+  вместо запрета H5-GROK-M1). `-wal`/`-shm` не объявляются: появились — отказ.
+
+## Итерации
+
+- **I1 — вынос без изменения поведения.** Только `ServiceMetadata` + Grok на нём. Все 11 функций
+  (20 случаев) `test_grok_service_echo.py` и `test_grok_quota.py` без правок ожиданий, UTF-8 и
+  cp1251; структурный тест: четыре метода у Grok разрешаются в `ServiceMetadata`.
+- **I2 — тотальность и поток.** Свидетели: исключение крючка не выходит из `_attempt`, итог —
+  отказ; `_login_secrets` из другого потока во время обмена — полный набор.
+- **I3 — Codex.** Крючки, база, свидетели ниже.
+- **I4 — Grok.** Правило места, сквозные поля, scratch, буквальная фиксация списков профиля.
 
 ## Швы тестов
 
 | Шов | Ловит | Не ловит |
 | --- | --- | --- |
-| Codex: фейковый app-server, `accountId` = `account_id` в `$.result.accountId` → `read()` даёт окна; `sensitive_extra` без `account_id`, с токенами | ложный отказ; исключение токенов из скана | живой порядок полей vendor |
-| Codex: `accountId` в `account/read`, в окне, вложенно, в неизвестном поле, внутри строки → отказ | допуск вне места | — |
-| Codex: токен где угодно; `account_id`, совпавший с токеном или внутри него; обмен, который отвергает декодер → отказ | ослабление «ключ побеждает» | — |
+| Codex: фейк повторяет скан runner (как `EchoRunner`), `auth.json` реальной формы 0.164 (`auth_mode`, `login_owner_id`, `oauth_provenance`), id 3 — `rateLimitsByLimitId` + `accountId`, id 2 — `workspaceRouting`; путь сборщик → HTTP-строка: окна есть, `account_id` в строке нет | ложный отказ; утечку в строку | живой порядок полей |
+| Codex: `accountId` в id 1, в `account`, в окне, вложенно, в неизвестном поле, внутри строки → отказ | допуск вне места | — |
+| Codex: обмен, который отвергает декодер, с `accountId` → `source_error` и `_login_echo` | маску без проверки декодером | — |
+| Codex: токен где угодно; `account_id`, равный значению `.credentials.json`, `login_owner_id`, токена или внутри них → отказ | «ключ побеждает» по обоим файлам | — |
 | Codex: обновлённый посреди обмена токен в выводе → отказ | дыру обновления | — |
-| Codex: дороги задач и ревью видят `account_id` как секрет | утечку допуска наружу | — |
-| Grok: `principal_id` в `profileImageUrl` → чтение; в другом поле или рядом с ключом → отказ | ложный отказ и допуск вне места | живую форму адреса |
-| Grok: `models_cache.json`/`worktrees.db` появились → забраны, чтение; другое имя → отказ | остаток | SQLite `-wal`/`-shm` (не измерены) |
-| Grok: все 10 тестов `test_grok_service_echo.py` без правок ожиданий | регрессию переноса | — |
+| Codex: задачи и ревью видят `account_id` как секрет; `_sensitive_values` во время обмена из другого потока содержит его | утечку допуска наружу | — |
+| Grok: `profileImageUrl` = `grok-asset:///` + идентификатор с `principal_id` внутри, и форма https → чтение; `principal_id` в адресе вне идентификатора → отказ | правило места | серверную форму идентификатора |
+| Grok: сквозные поля с значениями от 12 знаков в своём поле → чтение, в чужом → отказ | расширение таблицы | — |
+| Grok: scratch появились → забраны, чтение; были до запуска → не тронуты; `worktrees.db-wal` появился → отказ | остаток | — |
+| Структурный: методы у Grok и Codex разрешаются в `ServiceMetadata` | мёртвый миксин | — |
 
-Мутанты: маска не применяется; маска на любом поле; «ключ побеждает» убран; вынос без
-`_remember_login_values`.
+Мутанты: маска не применяется; маска на любом поле; маска без декодера; «ключ побеждает» убран;
+ключи только из `auth.json`; правило места «только равенство» (как до v2); миксин второй базой.
 
-## Проверка и живой шаг
+## Правила
 
-Затронутые тесты в UTF-8 и cp1251, мутанты, затем полный core объединённой версии. Живое
-чтение лимитов Codex и Grok — отдельным шагом на новой защищённой сборке, с владельцем.
+Новые файлы — в `CAPPED` (`tests/test_command_line_cap.py`), строки до 100 знаков (перенос строки
+`grok_build.py:379` при выносе). Затронутые тесты в UTF-8 и cp1251, мутанты, затем полный core
+объединённой версии. Живое чтение лимитов Codex и Grok — отдельным шагом на новой защищённой
+сборке, с владельцем.
+
+## Находки скептиков
+
+Подтверждены и учтены: VF-1 (P2), B-1, B-3, T1, T2, T3 (P3 после проверки), SEC-2, SEC-3, B-4,
+B-5, VF-2, VF-3, T4–T8 (P3). Опровергнуты: SEC-1 (сырой поиск ключей — свойство всего продукта),
+B-2 (дизайн и так отдаёт крючки Codex). Записи — журнал workflow `wf_be628f87-772`.
