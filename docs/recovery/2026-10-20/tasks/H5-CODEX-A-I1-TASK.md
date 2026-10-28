@@ -30,7 +30,8 @@
   Если действительный launch-шов лежит в другом файле, сначала сообщить ведущему.
 - Ведущий: `codex_cli.py`, `provider.py`, при измеренном основании `codex_quota.py`;
   `tests/_fakecodex.py`, `_fakeboundary.py`, `test_command_codex_version.py`,
-  `test_codex_auth_store.py`, `test_command_codex_real_smoke.py`, `test_harness_login_method.py`,
+  `test_codex_auth_store.py`, `test_command_codex_transport.py`,
+  `test_command_codex_real_smoke.py`, `test_harness_login_method.py`,
   `test_harness_login_leaks.py`, `test_subscription_quota.py`, `test_quota_deferral_studio.py`,
   `test_studio_quota_session_rows.py`, `test_relay_profiles.py`, `test_command_line_cap.py`;
   новый `tests/test_codex_compatibility.py`, документы A и отдельный отчёт.
