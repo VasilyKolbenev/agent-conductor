@@ -1,14 +1,18 @@
 """Codex's relay: which login is admitted, and what an attempt is given of it.
 
-Codex CLI 0.112.0 keeps one ChatGPT login in `auth.json`: `tokens` (`id_token`, `access_token`,
-`refresh_token`, `account_id`), `last_refresh`, an `auth_mode` and an `OPENAI_API_KEY` slot. The
-relay admits that shape and nothing wider. The slot must be empty: a file that holds an API key
-answers "logged in" like a subscription does and the key wins, so a run on it would be billed to an
-API account nobody pinned (measured on 0.112.0, `codex_cli.API_KEY_MARKER`). A key the schema does
-not name, at the top or among the tokens, is refused by name. `auth_mode` is in the real file of a
+Codex CLI 0.164.0 keeps one ChatGPT login in `auth.json`: `tokens` (`id_token`, `access_token`,
+`refresh_token`, `account_id`), `last_refresh`, an `auth_mode` and an `OPENAI_API_KEY` slot. Its
+tokens may also hold `login_owner_id` (text) and `oauth_provenance` (exactly `issuer` and
+`client_id`, both text). The relay admits that closed shape and the older one without those
+optional fields. The API-key slot must be empty regardless of the CLI's mode selection: this
+route admits only the pinned subscription. A key the schema does not name, at the top or among
+the tokens, is refused by name. `auth_mode` is in the real file of a
 ChatGPT login (measured, M1 of 23.10.2026) and is admitted only as the text `chatgpt`; a file
 without it is admitted as before, and any other mode, or a value that is not text, is refused. The
 copy keeps the field as it is.
+
+The copy preserves `login_owner_id` but drops `oauth_provenance`: refresh routing metadata is
+not part of the access-only attempt. Neither this removal nor refresh stripping changes the source.
 
 Codex reads its login from a file or from the system keyring by the config key
 `cli_auth_credentials_store` (`file`, `keyring`, `auto`, `ephemeral`; a wrong literal fails the
@@ -56,7 +60,8 @@ CODEX_FORM = (("refresh_token", ""),)
 #: The one login mode of a subscription, as `auth.json` of a ChatGPT login spells it.
 CHATGPT_MODE = "chatgpt"
 _TOP = frozenset({"OPENAI_API_KEY", "tokens", "last_refresh", "auth_mode"})
-_TOKENS = frozenset({"id_token", "access_token", "refresh_token", "account_id"})
+_TOKENS = frozenset({"id_token", "access_token", "refresh_token", "account_id", "login_owner_id",
+                     "oauth_provenance"})
 
 
 @dataclass(frozen=True)
@@ -75,12 +80,25 @@ class CodexRelay(RelaySpec):
                 return "foreign_credentials"
         tokens = doc.get(SECTION)
         if (type(tokens) is not dict or not set(tokens) <= _TOKENS
-                or any(type(value) is not str for value in tokens.values())
+                or any(type(value) is not str for key, value in tokens.items()
+                       if key != "oauth_provenance")
                 or ("last_refresh" in doc and type(doc["last_refresh"]) is not str)):
             return "unknown_shape"
+        if "oauth_provenance" in tokens:
+            provenance = tokens["oauth_provenance"]
+            if (type(provenance) is not dict or set(provenance) != {"issuer", "client_id"}
+                    or any(type(value) is not str for value in provenance.values())):
+                return "unknown_shape"
         if not tokens.get("access_token"):
             return "no_access_token"
         return None if tokens.get("account_id") else "account_unknown"
+
+    def strip(self, doc: dict) -> dict:
+        copied = super().strip(doc)
+        tokens = copied.get(SECTION)
+        if type(tokens) is dict:
+            tokens.pop("oauth_provenance", None)
+        return copied
 
     def bootstrap(self, real_home: Path) -> dict[str, bytes] | Refused:
         """Nothing: `config.toml` carries executable configuration and is not copied."""

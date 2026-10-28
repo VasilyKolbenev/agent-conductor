@@ -100,9 +100,9 @@ VERSION_FAILS = "FAKECODEX_VERSION_FAILS"
 #: signed-in answer, so a subscription test about something else is not forced
 #: to arrange a login first.
 LOGIN_FAILS = "FAKECODEX_LOGIN_FAILS"
-#: Which login the STATUS spawn reports, in this vendor's own words. MEASURED on
-#: 0.112.0: both of the first two exit 0, and a file holding a subscription AND
-#: a key answers with the key.
+#: Which login the STATUS spawn reports, in the measured 0.164.0 wording. Both
+#: subscription and API-key-only status exit 0; the relay checks mixed credentials
+#: separately rather than trusting the status sentence to disclose the API-key slot.
 LOGIN_METHOD = "FAKECODEX_LOGIN_METHOD"
 #: `name:text` written into this child's own `CODEX_HOME` during the LOGIN
 #: STATUS spawn -- the preflight, not the task. It exists so a road can be shown
@@ -111,7 +111,8 @@ LOGIN_METHOD = "FAKECODEX_LOGIN_METHOD"
 PREFLIGHT_HOME_FILE = "FAKECODEX_PREFLIGHT_HOME_FILE"
 LOGIN_ANSWERS = {
     "subscription": "Logged in using ChatGPT",
-    "api_key": "Logged in using an API key - sk-synth***key",
+    "api_key": "API key configured - sk-synth***key\n"
+               "Authentication is checked when you send a request.",
     "none": "Not logged in",
     #: Exits 0 and says nothing this build recognises -- a localized build, a
     #: future wording, a banner where the verdict should be. It is the only
@@ -472,7 +473,8 @@ def main() -> int:
     checker = (task_text.startswith("conduct independent verification")
                and any(argv[index:index + 2] == ["--sandbox", "read-only"]
                        for index in range(len(argv))))
-    written = _write_last_message(argv)
+    exit_name = VERDICT_EXIT if checker and os.environ.get(EMIT_VERDICT) else EXIT
+    written = _write_last_message(argv) if int(os.environ.get(exit_name, "0")) == 0 else None
     if not task["read"]:
         _record(argv, task, None, written)
         return _run_task(checker)

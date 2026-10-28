@@ -63,6 +63,7 @@ from . import login_relay, relay_home
 from .harness_profile import residue_detail
 from .harness_workspace import WorkspaceNotContained
 from .headless_spec import attempt_spec
+from .relay_env import access_only_switch
 from .login_lifetime import owned_login_attempt
 from .process import ProcessOutcome, ProcessRunnerError
 from .process_profile import ProfileRefused
@@ -260,17 +261,20 @@ class RelayAttempt:
     def _route_selected(self) -> bool:
         """Whether the environment the spawns really get carries a name that replaces the login.
 
-        Judged by the values the runner selects (`capture_environment`, with the profile's forced
-        names), not by the names a row lists: a name the allowlist holds that the environment does
-        not carry is not selected. Asked before the version print and the login status, which are
-        put to the real login home with this very environment, and before a quota read, which is
-        too. False off the relay road, and for a transport never confined (the harness fakes).
+        Operator selection is checked BEFORE code-owned overrides, even when the operator's
+        value equals the code's. A name absent from the selected environment is not forwarded.
+        Only the exact access-only switch declared by Codex's profile is exempt among forced
+        values; preflights on the real login never receive it (`headless_spec`). Asked before
+        the version, login status and quota reads. False off the confined relay road.
         """
         if not (self._confine and self._relay_road()):
             return False
-        chosen = self._runner.capture_environment(
-            self._env_allow(), overrides=dict(self.profile.forced_env))
-        return any(self.profile.login_relay.forbids(name) for name in chosen.values)
+        spec = self.profile.login_relay
+        chosen = self._runner.capture_environment(self._env_allow())
+        if any(spec.forbids(name) for name in chosen.values):
+            return True
+        return any(spec.forbids(name) and not access_only_switch(self.profile, name, value)
+                   for name, value in self.profile.forced_env)
 
     # -- the readiness of the login, as the last step of the preflight ---------------------------
 

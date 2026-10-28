@@ -565,7 +565,7 @@ def test_the_starters_are_read_off_the_wheel_and_are_nobodys_workflow(tmp_path):
     assert store.workflows() == () and workflow_rows(store) == []
 
     rows = starters()
-    assert rows[0]["starter_id"] == "dalio-v5"
+    assert rows[0]["starter_id"] == "dalio-v6"
     assert sorted(row["starter_id"] for row in rows) == sorted(
         path.stem for path in TEMPLATE_DIR.glob("*.json"))
     for row in rows:

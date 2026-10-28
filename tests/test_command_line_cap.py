@@ -56,6 +56,9 @@ CAPPED = (
     "src/conductor/command/workflow_flow.py",
     "tests/_boundary_assumed.py",
     "tests/_fakeboundary.py",
+    "tests/_fakeprocess.py",
+    "tests/conftest.py",
+    "tests/test_fake_process_runner.py",
     "tests/git_first_bench.py",
     "tests/git_first_readers.py",
     "tests/git_first_scratch.py",
@@ -187,6 +190,9 @@ CAPPED = (
     "tests/test_login_relay_discard.py",
     "tests/test_claude_relay.py",
     "tests/test_codex_relay.py",
+    "tests/test_codex_compatibility.py",
+    "tests/test_codex_native_compat.py",
+    "tests/test_codex_relay_environment.py",
     "tests/test_relay_env.py",
     "tests/test_relay_profiles.py",
     "tests/test_codex_auth_store.py",
@@ -208,6 +214,7 @@ CAPPED = (
     "tests/test_long_path_attempt.py",
     "tests/test_long_path_homes.py",
     "tests/test_long_path_native.py",
+    "tests/test_dalio_analysis_prompt.py",
 )
 
 

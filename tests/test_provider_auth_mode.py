@@ -140,7 +140,9 @@ def test_a_subscription_row_is_admitted_with_an_absolute_login_directory():
 def test_the_api_billing_variables_are_a_closed_named_roster():
     assert API_BILLING_ENV == frozenset({
         "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-        "OPENAI_API_KEY", "CODEX_API_KEY"})
+        "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN",
+        "OPENAI_FEDERATION_RULE_ID", "OPENAI_IDENTITY_TOKEN_FILE",
+        "OPENAI_WORKLOAD_IDENTITY_CONTEXT", "CODEX_GUARDIAN_DECISIONS_API_KEY"})
 
 
 @pytest.mark.parametrize("name", sorted(API_BILLING_ENV))

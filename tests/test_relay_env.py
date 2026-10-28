@@ -32,11 +32,23 @@ CLAUDE_NAMES = (
     "CLAUDE_CODE_HOST_CREDS_FILE", "CLAUDE_SECURESTORAGE_CONFIG_DIR",
     "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN", "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     "CLAUDE_CODE_ACCOUNT_UUID", "CLAUDE_CODE_USER_EMAIL", "CLAUDE_CODE_ORGANIZATION_UUID")
-CODEX_NAMES = ("CODEX_REFRESH_TOKEN_URL_OVERRIDE",)
+CODEX_NAMES = (
+    "CODEX_REFRESH_TOKEN_URL_OVERRIDE", "CODEX_REVOKE_TOKEN_URL_OVERRIDE",
+    "CODEX_AUTHAPI_BASE_URL", "CODEX_APP_SERVER_LOGIN_CLIENT_ID", "CODEX_SQLITE_HOME",
+    "CODEX_CA_CERTIFICATE", "CODEX_EXEC_SERVER_URL", "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+    "CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID", "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+    "CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID", "CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL",
+    "CODEX_AGENT_IDENTITY_JWKS_BASE_URL", "CODEX_APP_SERVER_LOGIN_ISSUER", "CODEX_CONNECTORS_TOKEN",
+    "CODEX_ROLLOUT_TRACE_ROOT", "OPENAI_ORGANIZATION", "OPENAI_PROJECT",
+    "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_OSS_BASE_URL", "CODEX_OSS_PORT")
+CODEX_CREDENTIAL_NAMES = (
+    "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID",
+    "OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
+    "CODEX_GUARDIAN_DECISIONS_API_KEY")
 COMMON_NAMES = (
     "ANTHROPIC_BASE_URL", "OPENAI_BASE_URL", "NODE_EXTRA_CA_CERTS", "NODE_TLS_REJECT_UNAUTHORIZED",
     "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")
-EVERY_NAME = CLAUDE_NAMES + CODEX_NAMES + COMMON_NAMES
+EVERY_NAME = CLAUDE_NAMES + CODEX_NAMES + CODEX_CREDENTIAL_NAMES + COMMON_NAMES
 HARMLESS = ("MY_TOKEN_NAME", "LANG", "NO_PROXY", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
 REFUSAL_WORDS = "replaces the subscription login or reroutes the harness's traffic"
 
@@ -45,12 +57,14 @@ def test_the_roster_of_names_is_the_one_f10_of_the_design_lists():
     assert relay_env.COMMON_ROUTE_ENV == tuple(sorted(COMMON_NAMES))
     assert relay_env.CLAUDE_ROUTE_ENV == tuple(sorted(CLAUDE_NAMES))
     assert relay_env.CODEX_ROUTE_ENV == tuple(sorted(CODEX_NAMES))
+    assert relay_env.CODEX_CREDENTIAL_ENV == tuple(sorted(CODEX_CREDENTIAL_NAMES))
     assert relay_env.SUBSCRIPTION_ROUTE_ENV == tuple(sorted(EVERY_NAME))
 
 
 def test_each_harness_carries_its_own_names_and_the_common_ones():
     assert CLAUDE_RELAY.forbidden_env == tuple(sorted(CLAUDE_NAMES + COMMON_NAMES))
-    assert CODEX_RELAY.forbidden_env == tuple(sorted(CODEX_NAMES + COMMON_NAMES))
+    assert CODEX_RELAY.forbidden_env == tuple(sorted(
+        CODEX_NAMES + CODEX_CREDENTIAL_NAMES + COMMON_NAMES))
     assert relay_env.CLAUDE_FORBIDDEN_ENV == CLAUDE_RELAY.forbidden_env
     assert relay_env.CODEX_FORBIDDEN_ENV == CODEX_RELAY.forbidden_env
 
@@ -58,7 +72,7 @@ def test_each_harness_carries_its_own_names_and_the_common_ones():
 @pytest.mark.parametrize("name", EVERY_NAME)
 def test_a_spec_forbids_its_names_in_any_spelling_and_not_the_other_harnesses(name):
     for spec, own in ((CLAUDE_RELAY, CLAUDE_NAMES + COMMON_NAMES),
-                      (CODEX_RELAY, CODEX_NAMES + COMMON_NAMES)):
+                      (CODEX_RELAY, CODEX_NAMES + CODEX_CREDENTIAL_NAMES + COMMON_NAMES)):
         expected = name in own
         assert spec.forbids(name) is expected
         assert spec.forbids(name.lower()) is expected
@@ -89,7 +103,8 @@ def test_a_subscription_row_may_not_forward_a_name_that_replaces_the_login(name)
         a_config(auth=SUBSCRIPTION_AUTH, auth_home=AUTH_HOME, env_allow=[name])
 
     assert name in str(error.value)
-    assert "reroute" in str(error.value)
+    expected = "bill an API account" if name in CODEX_CREDENTIAL_NAMES else "reroute"
+    assert expected in str(error.value)
 
 
 @pytest.mark.parametrize("name", EVERY_NAME)

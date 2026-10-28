@@ -6,37 +6,24 @@ levels appear below and each fact says which it rests on, because a fact from on
 of them has already been wrong about the others:
 
     OBSERVED  the installed native binary, run directly:
-              `@openai/codex@0.112.0` vendors
-              `vendor/x86_64-pc-windows-msvc/codex/codex.exe`
-    SOURCE    github.com/openai/codex @ 343074d4207d572809bd8cea15f4be1d09d98e0b
+              `@openai/codex@0.164.0` vendors
+              `vendor/x86_64-pc-windows-msvc/bin/codex.exe`
+    SOURCE    github.com/openai/codex @ 6aaac694803004a63c6f393d153c96d22521a6b9
     DOCS      developers.openai.com/codex/noninteractive, which 308-redirects to
               learn.chatgpt.com/docs/non-interactive-mode -- a page that can
               change under this citation, so its wording is QUOTED here
 
-**The pinned tree is a LATER build than the reviewed one, and this is not a
-footnote.** `codex-rs/exec/src/cli.rs` at that commit declares `--strict-config`,
-`--ignore-rules` and `--ignore-user-config`; the reviewed binary rejects all
-three outright -- `error: unexpected argument '--ignore-user-config' found`, exit
-2 -- and a scan of the executable's own bytes finds no `ignore-user-config` in
-it while finding every other name this module sends. So an argv written from that
-tree would have failed EVERY dispatch, on a flag whose absence nothing else here
-would have reported. Every argv fact below is therefore OBSERVED against the
-binary, and SOURCE is used for what a binary cannot show: what a flag MEANS, and
-what a default IS.
-
-**The reviewed version is 0.112.0, and it comes from an observation rather than
-from a pinned file** -- the first provider in this roster of which that is true.
-There is nowhere else to read it: `codex-rs/Cargo.toml` carries
-`version = "0.0.0"` for the whole workspace (releases are stamped at build), and
-`CHANGELOG.md` is a single line pointing at the releases page. The number was
-first established by the owner from the installed binary and is re-observed here
-from the vendored native executable, which prints exactly 19 bytes:
-`codex-cli 0.112.0\\r\\n`.
+The 0.164.0 candidate was measured in H5-CODEX-COMPAT A, P0-P5, on 23.10.2026.
+Its version print is exactly `codex-cli 0.164.0\\n` (18 bytes). Older observations
+below about workspace configuration are historical 0.112.0 evidence, not proof
+of the new binary's isolation; P8/P9 retain their own native witnesses.
+The production argv was checked against the candidate's own help. In particular,
+no unmeasured `--ignore-user-config` flag is added from a different source tree.
 
 **The print carries the PACKAGE name, not the program name**, and that is the
 trap this module exists on the far side of. `codex-rs/cli/src/main.rs` declares
 `#[clap(author, version, bin_name = "codex")]`, so a parser written from the
-source reads `codex 0.112.0` and refuses every real install -- while the catalog
+source reads `codex 0.164.0` and refuses every real install -- while the catalog
 row goes on advertising the provider as available. Clap renders the CRATE name
 for `--version`, the crate is `codex-cli`, and the binary is `codex`. This is the
 Grok defect exactly, avoided only by running the thing.
@@ -134,10 +121,9 @@ Grok defect exactly, avoided only by running the thing.
   for the day an install stops behaving this way. `--ignore-user-config` would
   not have covered this in any case: it names only `$CODEX_HOME/config.toml`,
   which a freshly minted home does not have either.
-- **No environment is FORCED at all**, and this provider is the first with an
-  empty `forced_env`. It is not an omission: this vendor publishes its switches
-  as CONFIG rather than as environment, so they travel where every other
-  code-owned token this build sends travels -- in argv, through `-c`.
+- **Only access-only copies receive the code-owned refresh override.** The profile
+  binds its exact value into the grant digest; the launch seam omits it on the
+  real login home. User-supplied route variables remain forbidden, even if equal.
 
 **Telemetry is switched off through five published config keys**, each of which
 exists in the reviewed binary (its own bytes carry `analytics`,
@@ -159,12 +145,8 @@ of which SOURCE describes:
                                 value would put the OPERATOR'S OWN INSTRUCTION
                                 into an exported trace.
 
-A SIXTH switch exists and is deliberately NOT sent: `feedback.enabled`, "When
-`false`, disables feedback collection across Codex product surfaces." It governs
-an interactive flow `codex exec` never enters, and the owner's ruling named five.
-Widening a code-owned environment is a review decision, so it is reported here
-rather than added quietly -- which is the same reason the absence of
-`--ignore-user-config` above is written down instead of worked around.
+A sixth code-owned switch, `feedback.enabled=false`, follows the accepted R10
+decision. It controls feedback collection, not every possible network operation.
 
 **`-o/--output-last-message` is a production channel**, and every condition on it
 is structural:
@@ -179,16 +161,11 @@ is structural:
   what a receipt may say is one of four CLOSED words;
 - the file's mere existence is NOT read as the task having been read. DOCS says
   the flag "writes the final message to the file and still prints it to
-  `stdout`", and SOURCE's `handle_last_message` writes an EMPTY file and warns on
-  stderr when there was no agent message at all -- so absent, empty and written
-  are three different facts about the CLI's own reporting and none of them is a
-  fact about the work. The empty case is OBSERVED as well as source-derived: the
-  reviewed binary, driven through this transport's own production argv with no
-  credential forwarded, exited 1 and left a zero-byte file at the path this build
-  minted. That is the ordinary shape of a failed run, and a build that read
-  "the file is there" as "the task was done" would have called it a success. The
-  far side of the pipe is closed instead by the opt-in real smoke, which asks for
-  a token that exists only in what was piped and finds it in this file.
+  `stdout`". In 0.164.0 SOURCE writes it only for TurnStatus::Completed; a failed
+  or interrupted turn leaves no file. A completed turn without an agent message
+  can leave an empty file. None of absent, empty or written proves useful work.
+  The opt-in real smoke asks for a token that exists only in stdin and checks it
+  in the completed response; absence alone cannot prove configuration isolation.
 
 **No exit-code contract is published for this mode**, so the profile declares
 `exit_codes_published=False` and every receipt says a zero is the process having
@@ -228,6 +205,7 @@ from .deep_adapters import _DeepAdapter
 from .deep_codecs import FakeCodexCodec
 from .deep_contracts import DeepProtocol
 from .codex_relay import AUTH_STORE_ARGV, CODEX_MCP_CREDENTIALS, CODEX_RELAY
+from .relay_env import CODEX_ACCESS_ONLY_ENV
 from .harness_workspace import (
     HOME_LEAF_ABSENT,
     HOME_LEAF_EMPTY,
@@ -254,7 +232,7 @@ CODEX_PROVIDER_ID = "codex"
 #: native binary rather than read from a pinned file, because the pinned tree
 #: carries a `0.0.0` placeholder and the changelog carries a link. A preflight
 #: reading anything else refuses.
-REVIEWED_CODEX_VERSION = "0.112.0"
+REVIEWED_CODEX_VERSION = "0.164.0"
 #: The protocol token an operator pins to select this adapter.
 CODEX_PROTOCOL = DeepProtocol.CODEX_HEADLESS_V1.value
 #: Experimental is said in the one field the Cockpit projection carries.
@@ -276,11 +254,8 @@ CODEX_SCHEMA_PAIRS = (
 CODEX_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAME whose VALUE is minted fresh per attempt.
 CODEX_HOME_ENV = "CODEX_HOME"
-#: EMPTY, and the first profile in the roster of which that is true. This vendor
-#: publishes its switches as config keys rather than as environment variables, so
-#: they are sent through `-c` below and there is nothing left for this field to
-#: carry. An empty tuple says that; a pair invented to fill it would not.
-CODEX_FORCED_ENV: tuple[tuple[str, str], ...] = ()
+#: Bound into the profile digest; launch applies it only to an access-only copy.
+CODEX_FORCED_ENV = CODEX_ACCESS_ONLY_ENV
 #: The code-owned flags, in the order they are sent. The subcommand stands first
 #: because every flag after it is one `codex exec` owns rather than one the
 #: top-level CLI does -- `-o` in particular is declared on `exec` and is not a
@@ -323,6 +298,7 @@ TELEMETRY_ARGV = (
     "-c", 'otel.metrics_exporter="none"',
     "-c", 'otel.trace_exporter="none"',
     "-c", "otel.log_user_prompt=false",
+    "-c", "feedback.enabled=false",
 )
 #: Where the CLI is told to write the agent's last message. The flag takes a
 #: FILE; the name below is a single route component and the directory it stands
@@ -349,35 +325,36 @@ LOGIN_ARGV = (*AUTH_STORE_ARGV, "login")
 #: exits 1 and writes "Not logged in" to stderr. That sentence IS read -- it is
 #: the only thing separating a subscription from an API key, since both exit 0.
 LOGIN_STATUS_ARGV = (*AUTH_STORE_ARGV, "login", "status")
-#: MEASURED at 0.112.0 with a fresh `CODEX_HOME` and one real `exec`: a `tmp`
-#: directory holding a lock and two batch files per spawn. Per-run, so it is
-#: taken back after every spawn.
-LOGIN_SCRATCH = ("tmp",)
-#: The same measurement: a `skills` tree unpacked on the first real `exec`. It
-#: is a cache the vendor rebuilds when it is absent, so removing it after every
-#: spawn would be paying to unpack it again; it is left alone instead.
-#: `auth.json` is the file the vendor's own login writes and is DECLARED rather
-#: than measured -- no login has been performed on this machine -- so the first
-#: real login is where that half of this list is confirmed.
-LOGIN_EXPECTED = ("skills", "auth.json", "version.json")
-#: Where this vendor's own login writes the credential. DECLARED, like the name
-#: above it, and read only to widen the leak scan.
+#: MEASURED at 0.164.0: P6 app-server metadata created these state names in both
+#: access-only homes; P11 owner login also created `log`. Account for exactly
+#: those names, with no database wildcard. Only newly added scratch is removed;
+#: existing operator files remain, including older files inside these directories.
+LOGIN_SCRATCH = (
+    "tmp", "log", ".sandbox",
+    "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
+    "logs_2.sqlite", "logs_2.sqlite-shm", "logs_2.sqlite-wal",
+    "memories_1.sqlite", "memories_1.sqlite-shm", "memories_1.sqlite-wal",
+    "queue_1.sqlite", "queue_1.sqlite-shm", "queue_1.sqlite-wal",
+    "state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal",
+)
+#: Preserve the measured credential and rebuilt skills cache, plus version metadata.
+#: P6 measured models_cache.json and installation_id; the pinned upstream defines
+#: these as the persistent model catalogue and a created/reused UUID, not config grants.
+LOGIN_EXPECTED = ("skills", "auth.json", "version.json", "models_cache.json", "installation_id")
+#: P11 confirmed the vendor's file login; read only to widen the leak scan.
 LOGIN_CREDENTIALS = ("auth.json", CODEX_MCP_CREDENTIALS)
-#: What this vendor says when it is signed in, and what it says when the login
-#: it found is an API key. MEASURED on 0.112.0 with synthetic credential files:
-#: a ChatGPT-shaped `auth.json` answers "Logged in using ChatGPT" and exits 0;
-#: one holding only `OPENAI_API_KEY` answers "Logged in using an API key - sk-…"
-#: and ALSO exits 0. A file holding BOTH answers with the API key -- the key
-#: wins where nobody asked it to, which is why the marker below is what refuses
-#: rather than the presence of a subscription token deciding.
+#: P4 of the 0.164.0 candidate: ChatGPT answers "Logged in using ChatGPT";
+#: an API-key-only file answers "API key configured ..."; both exit 0.
+#: A mixed file may answer ChatGPT, so the relay separately refuses a nonempty
+#: API-key slot. A status sentence alone does not prove which file will be copied.
 #: The whole sentence a subscription answers with, and the phrase that names the
-#: road this build refuses. MEASURED on 0.112.0 with synthetic credential files.
+#: road this build refuses. Measured on 0.164.0 with synthetic credential files.
 #: The admitting form is a CLOSED sentence rather than "says logged in and does
 #: not say API key", because an answer this build has never seen -- a localized
 #: build, a future wording, a banner -- would otherwise be admitted by the mere
 #: absence of the phrase it knows to refuse.
 SUBSCRIPTION_SENTENCE = "Logged in using ChatGPT"
-API_KEY_MARKER = "using an API key"
+API_KEY_MARKER = "API key configured"
 #: The name that carries this vendor's configuration AND its project trust map,
 #: and the two top-level keys in it that give the isolation away. MEASURED: a
 #: `config.toml` here naming the work tree as a trusted project made the vendor
@@ -387,7 +364,7 @@ API_KEY_MARKER = "using an API key"
 #: The KEYS and not the name, because the vendor writes its own configuration
 #: file beside its own login: refusing the name would refuse the directory this
 #: build had just told a person to create, and would do it permanently.
-LOGIN_FORBIDDEN = ("config.toml",)
+LOGIN_FORBIDDEN = ("config.toml", ".env", "environments.toml")
 LOGIN_CONFIG_KEYS = ("projects", "model_provider")
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
@@ -431,8 +408,8 @@ _ANSWER_BY_KIND = MappingProxyType({
 
 #: What each answer adds to a receipt that already said what was observed. Every
 #: one of them is about the CLI's own REPORTING and none claims anything about
-#: the work, because the file says nothing about the work: the vendor writes it
-#: whatever the model did, and writes it empty when the model said nothing.
+#: the work: a completed turn may write an empty or nonempty message, while a
+#: failed or interrupted turn has no last-message file in the reviewed binary.
 ANSWER_DETAIL = MappingProxyType({
     ANSWER_WRITTEN: (
         " the pinned build also wrote a final message into the file this "
@@ -440,10 +417,10 @@ ANSWER_DETAIL = MappingProxyType({
         "CLI's own reporting and is not evidence that the task was read or done"),
     ANSWER_EMPTY: (
         " the pinned build wrote an EMPTY final message file, which is what it "
-        "does when a run produced no final agent message at all"),
+        "does when a completed turn produced no final agent message"),
     ANSWER_ABSENT: (
-        " the pinned build wrote no final message file at all, so it never "
-        "reached the point where it reports one"),
+        " the pinned build wrote no final message file at all; failed or interrupted "
+        "turns do not report a completed final message"),
     ANSWER_UNREADABLE: (
         " what stands at the final message name this dispatch minted is not a "
         "plain file this build can read as one, so nothing about a final "
@@ -565,14 +542,21 @@ class CodexCliTransport(ArtifactAwareTransport):
     def _login_home_grants(self, home: str) -> tuple[str, ...]:
         """What this login directory gives away, read from the files themselves.
 
-        Every name the profile declares is read, not one this method spells: a
-        second name added to that list would otherwise have no reader at all and
-        be silently inert.
+        The two additional configuration sources are forbidden by name, ignoring case. Other
+        declared files retain the existing closed configuration-key inspection.
         """
         from . import login_home
 
-        return tuple(
+        strict = (".env", "environments.toml")
+        held = login_home.entries(home)
+        if held is None:
+            return self.profile.login_forbidden
+        folded = {name.casefold() for name in held}
+        named = tuple(name for name in self.profile.login_forbidden
+                      if name in strict and name.casefold() in folded)
+        return named + tuple(
             grant for name in self.profile.login_forbidden
+            if name not in strict
             for grant in login_home.config_grants(home, name, LOGIN_CONFIG_KEYS))
 
     def _login_method_admitted(self, output: bytes) -> bool:
@@ -580,9 +564,8 @@ class CodexCliTransport(ArtifactAwareTransport):
 
         It writes that sentence to stderr, which this build's runner merges into
         the captured output, and it says one of two things. The API-key form is
-        what refuses -- and it refuses even when a subscription token sits in the
-        same file, because MEASURED on 0.112.0 the key wins that tie and the run
-        would have been billed to an API account nobody pinned.
+        what refuses. The relay also checks the file: the 0.164.0 status can name
+        ChatGPT for mixed credentials, which the relay must still reject.
 
         Nothing is reported onward: the key fragment this sentence carries is
         read here and never quoted into a receipt.

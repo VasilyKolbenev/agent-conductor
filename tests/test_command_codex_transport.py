@@ -226,6 +226,7 @@ def test_the_whole_argv_is_the_pinned_binary_this_builds_flags_and_one_minted_pa
         "-c", 'otel.metrics_exporter="none"',
         "-c", 'otel.trace_exporter="none"',
         "-c", "otel.log_user_prompt=false",
+        "-c", "feedback.enabled=false",
         "-o"], argv
     assert argv[-1] == "-", "the stdin sentinel must stand last"
     # The one varying token is a path this build minted inside its OWN attempt
@@ -505,14 +506,9 @@ def test_a_reading_the_door_refuses_is_unreadable_and_never_absent(tmp_path):
 # --- the environment every spawn is given -------------------------------------
 
 
-def test_this_provider_forces_no_environment_and_nothing_of_the_parents_arrives(
+def test_the_api_road_gets_no_refresh_override_or_unselected_parent_environment(
         tmp_path, monkeypatch):
-    """An EMPTY `forced_env`, and a child that got nothing of the parent's.
-
-    This vendor publishes its switches as config keys rather than as environment
-    variables, so they ride in argv through `-c` and there is nothing left to
-    force. That is asked of the CHILD rather than of the profile, because an
-    empty tuple says only what this build sent, not what arrived.
+    """The access-only override in the profile is absent from this API-road child.
 
     What is NOT claimed, and what the name used to claim: that the child sees
     only the pin. It does not, and no build can make it -- the Python runtime
@@ -527,7 +523,8 @@ def test_this_provider_forces_no_environment_and_nothing_of_the_parents_arrives(
 
     run_once(adapter, a_request())
 
-    assert CODEX_FORCED_ENV == ()
+    assert CODEX_FORCED_ENV == (
+        ("CODEX_REFRESH_TOKEN_URL_OVERRIDE", "http://127.0.0.1:9/oauth/token"),)
     allowed = {_fakecodex.SPAWN_LOG, CODEX_HOME_ENV}
     rows = _fakecodex.spawns(log)
     assert len(rows) == 2, f"EXPECTED_PREFLIGHT_AND_TASK={len(rows)}"
@@ -541,6 +538,7 @@ def test_this_provider_forces_no_environment_and_nothing_of_the_parents_arrives(
         assert row["probe"] == NO_PROBE, (
             "THE_PARENTS_ENVIRONMENT_REACHED_THE_CHILD")
         names = set(row["env_names"])
+        assert "CODEX_REFRESH_TOKEN_URL_OVERRIDE" not in names
         assert allowed <= names, f"THE_CHILD_WAS_MISSING={sorted(allowed - names)}"
 
 

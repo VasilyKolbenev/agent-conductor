@@ -2,6 +2,7 @@
 from __future__ import annotations
 from .process import CommandSpec
 from .harness_profile import bounded_output
+from .relay_env import access_only_switch
 
 #: Every harness child is told not to write Python bytecode caches. A review must leave the work
 #: tree as it found it, and a reviewer that runs the project's own Python -- its tests, say --
@@ -12,7 +13,7 @@ CHILD_ENV = (("PYTHONDONTWRITEBYTECODE", "1"),)
 
 def _named(unset_env):
     """Whether a name is one the spawn runs without, in any casing: Windows folds environment
-    names, and on other systems dropping a differently cased name from this one spawn costs nothing."""
+    names; on other systems dropping a different spelling from this spawn costs nothing."""
     dropped = {name.upper() for name in unset_env}
     return lambda name: name.upper() in dropped
 
@@ -26,6 +27,10 @@ def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
     # switch, and an operator allowlist the runner copies from its own environment.
     # An override cannot delete a name, so the allowlist has to lose it as well.
     dropped = _named(unset_env)
+    relayed = adapter._relayed(mode)
+    forced = {name: value for name, value in adapter.profile.forced_env
+              if not dropped(name)
+              and (relayed or not access_only_switch(adapter.profile, name, value))}
     return CommandSpec(
         argv=(*adapter._argv_prefix(),
               *adapter._tokens(argv, home, model)), cwd=cwd,
@@ -37,7 +42,7 @@ def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
         # refuses that collision at construction, and this
         # ordering means the promise holds even if it did not.
         env={**dict(CHILD_ENV),
-             **{name: value for name, value in adapter.profile.forced_env if not dropped(name)},
+             **forced,
              adapter.profile.home_env: adapter._home_value(home, mode)},
         output_limit=bounded_output(adapter.profile, output_limit),
         timeout_seconds=timeout,

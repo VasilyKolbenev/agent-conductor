@@ -16,7 +16,7 @@ from tests.test_command_quota_routes import contracts
 from tests.test_studio_quotas import _js
 from tests.test_subscription_quota import AT, PAYLOAD
 
-SOURCE = QuotaSource(QUOTA_POLICY, "0.112.0")
+SOURCE = QuotaSource(QUOTA_POLICY, "0.164.0")
 
 
 def _payload(observe, *names):
@@ -33,7 +33,7 @@ def _projected(payload):
 
 def test_session_bound_subscription_reading_reaches_the_studio():
     payload = _payload(lambda context: parse_observation(
-        PAYLOAD, policy=QUOTA_POLICY, version="0.112.0", observed_at=AT, connection=context))
+        PAYLOAD, policy=QUOTA_POLICY, version="0.164.0", observed_at=AT, connection=context))
     row = payload["snapshots"][0]
     assert row["account"] is None and row["state"] == "observed" and row["windows"]
     assert _projected(payload) == payload
@@ -49,7 +49,7 @@ def test_session_bound_subscription_failure_reaches_the_studio():
 
 def test_an_unknown_account_reading_is_still_never_grouped():
     payload = _payload(lambda context: parse_observation(
-        PAYLOAD, policy=QUOTA_POLICY, version="0.112.0", observed_at=AT,
+        PAYLOAD, policy=QUOTA_POLICY, version="0.164.0", observed_at=AT,
         connection=context), "codex-alias")
     assert _projected(payload) == payload, "control: the honest two-row payload is read"
     # One row claiming both bindings, nothing else wrong: only isolation can refuse it.

@@ -1,10 +1,10 @@
-"""Build a REAL single-file executable for a fake whose provider pins one binary.
+"""Build and register a single-file fixture for a provider that pins one binary.
 
-Two products in the roster install as native binaries, so their adapters pin ONE
-absolute path and put nothing in front of it. A fake driven through
-``sys.executable`` would exercise the interpreter-and-entrypoint shape instead
-and would quietly prove nothing about theirs, so this produces a file the
-operating system really runs.
+The adapters still emit one absolute pin in their logical argv. On Windows pytest's
+``_fakeprocess`` seam starts only these registered fixtures through the current Python:
+Windows App Control can reject generated unsigned PE files. This preserves real pipes,
+timeouts and fake behavior, but does not prove native PE startup. Real CLI/native tests
+retain their original launch path and establish that separate claim.
 
 On Windows that means reusing the console-script launcher stub the environment
 already ships: ``pip.exe`` and friends are a small native launcher followed by an
@@ -44,6 +44,8 @@ import sys
 import sysconfig
 import zipfile
 from pathlib import Path
+
+from tests import _fakeprocess
 
 #: Console scripts this environment is likely to ship, tried in order.
 _CANDIDATES = ("pip.exe", "pytest.exe", "pip3.exe")
@@ -156,7 +158,7 @@ def _body(repo_root: Path, module: str) -> str:
 
 
 def build(directory: str | os.PathLike[str], stem: str, module: str) -> Path | None:
-    """A REAL single-file executable that runs ``tests.<module>.main``.
+    """A registered single-file fixture that runs ``tests.<module>.main``.
 
     Returns None when this platform grants no way to build one without a shell,
     so a caller SKIPS instead of quietly testing the wrong pin shape.
@@ -173,10 +175,14 @@ def build(directory: str | os.PathLike[str], stem: str, module: str) -> Path | N
             archive.writestr("__main__.py", _body(repo_root, module))
         exe = target / f"{stem}.exe"
         exe.write_bytes(stub + buffer.getvalue())
-        return exe.resolve()
+        built = exe.resolve()
+        _fakeprocess.register_built(built, module)
+        return built
     script = target / stem
     script.write_text(
         f"#!{sys.executable}\n" + _body(repo_root, module), encoding="utf-8",
         newline="\n")
     script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
-    return script.resolve()
+    built = script.resolve()
+    _fakeprocess.register_built(built, module)
+    return built
