@@ -34,6 +34,9 @@
   `test_harness_login_leaks.py`, `test_subscription_quota.py`, `test_quota_deferral_studio.py`,
   `test_studio_quota_session_rows.py`, `test_relay_profiles.py`, `test_command_line_cap.py`;
   новый `tests/test_codex_compatibility.py`, документы A и отдельный отчёт.
+- Нативный свидетель: новый opt-in `tests/test_codex_native_compat.py` на существующем шаблоне
+  `test_relay_claude_native`; только fake auth и --version/login status/doctor без prompt.
+  Старый test_adapter_boundary_launch использует recording boundary и сам П9 не доказывает.
 
 Не раздувать codex_cli (790/800) и test_relay_road_refusals (782/800).
 Не трогать защищённую сборку B3, личные профили, журнал/seed DecemberRehearsal.
