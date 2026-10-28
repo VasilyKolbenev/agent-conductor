@@ -113,8 +113,11 @@ def test_two_real_projects_share_one_resource_through_post_spawn_cleanup(tmp_pat
         assert not errors, f"the first attempt's worker failed: {errors}"
         assert results[0].exit_code == 0
     accepted = child(tmp_path / "two", home, ATTEMPT, timeout=SETUP_DEADLINE)
-    assert accepted.returncode == 0, accepted.stderr
-    assert accepted.stdout.strip() == b"completed", "the second did not run after the release"
+    # The child prints a runner error to stdout and raises on leaving the owner: show both, so a
+    # red names its cause (full core 56d0a22, cp1251: recovery_required with stdout unseen).
+    assert accepted.returncode == 0, (accepted.stdout, accepted.stderr)
+    assert accepted.stdout.strip() == b"completed", (
+        "the second did not run after the release", accepted.stdout, accepted.stderr)
     assert second_log.is_file(), "the second did not spawn after the release"
 
 
