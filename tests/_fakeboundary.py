@@ -84,6 +84,9 @@ def installed_outside_the_tree(adapter, base) -> None:
     elsewhere.mkdir()
     moved = elsewhere / Path(adapter._pin.executable).name
     shutil.copy2(adapter._pin.executable, moved)
+    from tests._fakeprocess import register_copy
+
+    register_copy(adapter._pin.executable, moved)
     adapter._pin = replace(adapter._pin, executable=str(moved))
 
 
