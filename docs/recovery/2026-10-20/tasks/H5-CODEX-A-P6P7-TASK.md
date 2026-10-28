@@ -58,3 +58,18 @@ the same protected/source-lease/access-only/retirement/secret-projection checks 
 Do not repeat model/list, P11, P8/P9 or infer with a model in this step.
 Failure records the exact safe reason and stops; no retries, alternate model or API key.
 M2 remains the separately approved single 60-second `0.164.0 / gpt-6.1-sol` probe after prerequisites.
+
+## Protected build launcher on this Windows host
+
+Build of code `9788eb9289bb61d5055061e7fdf3309dcc78de92` completed wheel/venv/import, then
+`product_install.py:149` failed at generated `conduct.exe --help` with WinError 4551.
+Evidence: `Documents/Codex/work/codex-r4-product-build.log`. Protected venv Python signature
+is Valid; pip's generated console launcher is NotSigned. Windows protection remains enabled.
+
+Codex permits completing this exact existing installation without rebuilding or deleting it:
+verify archive, wheel members versus installed files, base inventory and module origin; smoke
+the documented equivalent `[venv_python, -I, -m, conductor, --help]`. `pyproject.toml` maps
+`conduct` to `conductor.__main__:main`. Record this launch argv and the blocked wrapper in a new
+protected manifest; the existing wrapper remains inventoried, never launched again by this task.
+This is a local invocation choice, not proof that an unsigned installer is ready for distribution.
+External bounded finalizer only; no product source/test changes, exemptions or policy changes.
