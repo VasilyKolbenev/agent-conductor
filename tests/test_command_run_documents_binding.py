@@ -107,9 +107,9 @@ def test_entry_nodes_read_brief_and_materials_in_every_bundled_desk_template(nam
 
 
 def test_the_frozen_dalio_revisions_enter_by_the_brief_alone():
-    """Why the test above says `desk`: the five Dalio files are published revisions, replayed by
+    """Why the test above says `desk`: the six Dalio files are published revisions, replayed by
     every run that used them, so they keep the inputs they were published with."""
-    assert DALIO == tuple(f"dalio-v{number}" for number in range(1, 6))
+    assert DALIO == tuple(f"dalio-v{number}" for number in range(1, 7))
     for name in DALIO:
         document = load_template(name).as_dict()
         entries = entry_nodes(document)
