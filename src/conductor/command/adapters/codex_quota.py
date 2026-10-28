@@ -1,10 +1,11 @@
 """Codex's quota read: the policy, the app-server exchange, and the mapping of its fields.
 
-Moved out of `codex_cli`, which stands at the 800-line cap, with no change of what is read or
-asked. The exchange is the one the subscription quota reader runs against the app-server of the
+Moved out of `codex_cli`, which stands at the 800-line cap. The exchange is the one the
+subscription quota reader runs against the app-server of the
 CLI (`subscription_quota.native_subscription_connection`): initialise, read the account, read the
 rate limits. It carries `AUTH_STORE_ARGV` like every Codex spawn that reads the login
-(`codex_relay`).
+(`codex_relay`). Initialize opts out of the two ordinary notifications measured in P6 on
+0.164.0. The decoder still refuses any notification that reaches this finite reply exchange.
 """
 from __future__ import annotations
 
@@ -28,7 +29,9 @@ QUOTA_POLICY = QuotaPolicy("openai", "codex-account-read", "codex-app-server",
 QUOTA_RPC = SubscriptionRpc(
     (*AUTH_STORE_ARGV, "app-server"),
     b'{"id":1,"method":"initialize","params":'
-    b'{"clientInfo":{"name":"december_command","version":"1.0"}}}\n'
+    b'{"clientInfo":{"name":"december_command","version":"1.0"},'
+    b'"capabilities":{"optOutNotificationMethods":'
+    b'["account/updated","remoteControl/status/changed"]}}}\n'
     b'{"method":"initialized","params":{}}\n'
     b'{"id":2,"method":"account/read","params":{"refreshToken":false}}\n'
     b'{"id":3,"method":"account/rateLimits/read"}\n',

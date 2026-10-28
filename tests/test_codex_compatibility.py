@@ -102,3 +102,82 @@ def test_fake_checker_final_file_follows_the_exit_road_it_actually_uses(
     assert answer.exists() is (expected == 0)
     if expected == 0:
         assert answer.read_text(encoding="utf-8") == "the fake Codex CLI reports a final message"
+
+
+@pytest.mark.parametrize("preexisting", [False, True])
+def test_native_quota_accounts_for_measured_home_state(tmp_path, monkeypatch, preexisting):
+    """P6/P11 names at the CLI seam, through the actual quota read and login cleanup."""
+    from conductor.command.quota_plans import quota_plan_for
+    from tests.test_subscription_quota import PAYLOAD, adapter as quota_adapter
+
+    value, runner, home = quota_adapter(tmp_path)
+    scratch_dirs = ("tmp", "log", ".sandbox")
+    scratch_files = (
+        "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
+        "logs_2.sqlite", "logs_2.sqlite-shm", "logs_2.sqlite-wal",
+        "memories_1.sqlite", "memories_1.sqlite-shm", "memories_1.sqlite-wal",
+        "queue_1.sqlite", "queue_1.sqlite-shm", "queue_1.sqlite-wal",
+        "state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal",
+    )
+    kept_files = ("models_cache.json", "installation_id", "version.json")
+    original = b'{"synthetic":"operator-owned-login"}\n'
+    (home / "auth.json").write_bytes(original)
+    (home / "owner-notes.txt").write_bytes(b"operator-owned")
+    if preexisting:
+        for name in scratch_files:
+            (home / name).write_bytes(b"operator-owned")
+        for name in scratch_dirs:
+            (home / name).mkdir()
+            (home / name / "previous.txt").write_bytes(b"operator-owned")
+    run = runner.run
+
+    def write_measured_state(spec):
+        if spec.argv[-1] == "app-server":
+            assert runner._child_env(spec)["CODEX_HOME"] == str(home)
+            for name in (*scratch_files, *kept_files):
+                if not (home / name).exists():
+                    (home / name).write_bytes(b"synthetic-vendor-state")
+            for name in (*scratch_dirs, "skills"):
+                (home / name).mkdir(exist_ok=True)
+                (home / name / "current.txt").write_bytes(b"synthetic-vendor-state")
+        return run(spec)
+
+    monkeypatch.setattr(runner, "run", write_measured_state)
+
+    assert quota_plan_for("p7-provider", value).request.read() == PAYLOAD
+    assert len(runner.specs) == 2
+    assert [spec.argv[-1] for spec in runner.specs] == ["--version", "app-server"]
+    assert (home / "auth.json").read_bytes() == original
+    assert (home / "owner-notes.txt").read_bytes() == b"operator-owned"
+    for name in (*kept_files, "skills/current.txt"):
+        assert (home / name).read_bytes() == b"synthetic-vendor-state"
+    for name in scratch_files:
+        assert (home / name).exists() is preexisting, name
+        if preexisting:
+            assert (home / name).read_bytes() == b"operator-owned"
+    for name in scratch_dirs:
+        assert (home / name).exists() is preexisting, name
+        if preexisting:
+            assert (home / name / "previous.txt").read_bytes() == b"operator-owned"
+        assert not (home / name / "current.txt").exists(), name
+
+
+def test_native_quota_still_refuses_an_unmeasured_new_database(tmp_path, monkeypatch):
+    from conductor.command.adapters.quota_connection import NativeQuotaReadError
+    from conductor.command.quota_plans import quota_plan_for
+    from tests.test_subscription_quota import adapter as quota_adapter
+
+    value, runner, home = quota_adapter(tmp_path)
+    run = runner.run
+
+    def write_unknown_state(spec):
+        if spec.argv[-1] == "app-server":
+            (home / "future_1.sqlite").write_bytes(b"synthetic-unaccounted-state")
+        return run(spec)
+
+    monkeypatch.setattr(runner, "run", write_unknown_state)
+
+    with pytest.raises(NativeQuotaReadError):
+        quota_plan_for("p7-provider", value).request.read()
+    assert len(runner.specs) == 2
+    assert (home / "future_1.sqlite").read_bytes() == b"synthetic-unaccounted-state"

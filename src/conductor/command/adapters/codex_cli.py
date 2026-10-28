@@ -325,19 +325,23 @@ LOGIN_ARGV = (*AUTH_STORE_ARGV, "login")
 #: exits 1 and writes "Not logged in" to stderr. That sentence IS read -- it is
 #: the only thing separating a subscription from an API key, since both exit 0.
 LOGIN_STATUS_ARGV = (*AUTH_STORE_ARGV, "login", "status")
-#: MEASURED at 0.112.0 with a fresh `CODEX_HOME` and one real `exec`: a `tmp`
-#: directory holding a lock and two batch files per spawn. Per-run, so it is
-#: taken back after every spawn.
-LOGIN_SCRATCH = ("tmp",)
-#: The same measurement: a `skills` tree unpacked on the first real `exec`. It
-#: is a cache the vendor rebuilds when it is absent, so removing it after every
-#: spawn would be paying to unpack it again; it is left alone instead.
-#: `auth.json` is the file the vendor's own login writes and is DECLARED rather
-#: than measured -- no login has been performed on this machine -- so the first
-#: real login is where that half of this list is confirmed.
-LOGIN_EXPECTED = ("skills", "auth.json", "version.json")
-#: Where this vendor's own login writes the credential. DECLARED, like the name
-#: above it, and read only to widen the leak scan.
+#: MEASURED at 0.164.0: P6 app-server metadata created these state names in both
+#: access-only homes; P11 owner login also created `log`. Account for exactly
+#: those names, with no database wildcard. Only newly added scratch is removed;
+#: existing operator files remain, including older files inside these directories.
+LOGIN_SCRATCH = (
+    "tmp", "log", ".sandbox",
+    "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
+    "logs_2.sqlite", "logs_2.sqlite-shm", "logs_2.sqlite-wal",
+    "memories_1.sqlite", "memories_1.sqlite-shm", "memories_1.sqlite-wal",
+    "queue_1.sqlite", "queue_1.sqlite-shm", "queue_1.sqlite-wal",
+    "state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal",
+)
+#: Preserve the measured credential and rebuilt skills cache, plus version metadata.
+#: P6 measured models_cache.json and installation_id; the pinned upstream defines
+#: these as the persistent model catalogue and a created/reused UUID, not config grants.
+LOGIN_EXPECTED = ("skills", "auth.json", "version.json", "models_cache.json", "installation_id")
+#: P11 confirmed the vendor's file login; read only to widen the leak scan.
 LOGIN_CREDENTIALS = ("auth.json", CODEX_MCP_CREDENTIALS)
 #: P4 of the 0.164.0 candidate: ChatGPT answers "Logged in using ChatGPT";
 #: an API-key-only file answers "API key configured ..."; both exit 0.
