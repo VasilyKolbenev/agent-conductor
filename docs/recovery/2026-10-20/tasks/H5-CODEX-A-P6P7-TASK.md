@@ -34,6 +34,14 @@ Root will confirm exact classification before implementation. Both metadata home
 `queue_1.sqlite`, `queue_1.sqlite-shm`, `queue_1.sqlite-wal`, `skills`,
 `state_5.sqlite`, `state_5.sqlite-shm`, `state_5.sqlite-wal`, `tmp`.
 P11 also measured `log`. Preserve pre-existing operator files; only newly added scratch is removed.
+Codex classification: scratch is `tmp`, `log`, `.sandbox` and the fifteen exact SQLite names
+above (five databases plus their `-shm`/`-wal` companions). Expected retains the existing
+auth/skills/version names and adds only `models_cache.json` and `installation_id`.
+The pinned upstream `models-manager/src/cache.rs` defines the persistent model cache;
+`core/src/installation_id.rs` creates/reuses a UUID. Neither name grants project configuration.
+Source: https://github.com/openai/codex/tree/rust-v0.164.0/codex-rs .
+`log` is scratch so newly added nested logs are measured even under a pre-existing directory;
+pre-existing files remain. Test both new residue and pre-existing sentinel preservation.
 No wildcard sqlite allowlist, new config authority or arbitrary unknown-file tolerance.
 Behavioral witness: native quota road creates measured names, returns quota and accounts for
 its residue; an unknown new name still refuses. No test merely comparing constants.
