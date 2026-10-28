@@ -5,7 +5,8 @@ Work by `docs/recovery/2026-10-20/WORKING-STANDARD.md` in every task: roles, tas
 evidence, reports and commits, Windows environment, safety, release, owner communication.
 The 2026-10-21 owner clarification in `docs/v1-v2-scope.md` supersedes the earlier API-only
 recovery scope: five subscription harnesses, Dalio's default cycle, custom no-code cycles,
-and evidenced usage/reset windows. Read it before continuing H5 or R5.
+and evidenced usage/reset windows. Its 2026-10-28 owner decision narrows V1 acceptance to
+Claude Code and Codex. Read it before continuing H5 or R5.
 
 Start with `docs/recovery/2026-10-20/CLAUDE-CODE-HANDOFF.md`,
 then the adjacent `BASELINE.md`, `CI-BASELINE-NOTES.md` and

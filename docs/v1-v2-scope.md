@@ -34,6 +34,11 @@ support and evidence separately. Native subscription execution inside the produc
 boundary is still unfinished; this requirement does not claim the current wheel supports it.
 Preserve the independent checker, explicit budgets, human gates and original-project safety.
 
+**Owner decision, 2026-10-28 (V1-HARNESS):** V1 acceptance requires Claude Code and Codex
+to execute and check tasks through their subscriptions, and shows the subscription limits
+of Claude Code, Codex and Grok. Grok and Kimi as executors, and DeepSeek, are marked "not
+yet supported" in V1 and form the next slice. The five harnesses remain the product goal.
+
 ## What remains non-negotiable in V1
 
 The product is a local-first control plane for heterogeneous coding harnesses.
