@@ -64,3 +64,14 @@ SystemRoot из системного окружения, остальные не
 resolve/runner capture без spawn: 1 failed на прежнем регистре; SYSTEMROOT даёт 2 passed.
 Предпосылка теперь проверена на действительном выбранном окружении. Codex разрешает завершить P8
 одним новым полным запуском с этим регистром, без изменения timeout. Предыдущий исход сохранён.
+
+Теперь clean/poison оба completed exit 1 (15,859/18,469 с), без truncation/env echo/PROBE,
+оба дошли до HTTP401 на Responses. Сравнение hash всей final-error строки отказало. S164
+`protocol/src/error.rs:637-660` добавляет в неё cf-ray/request id; равенство целых строк —
+неверный контракт. Утраченные terminal bodies восстановить нельзя, их полное равенство не доказано.
+
+Codex: для конкретного config-poison достаточно уже измеренных invariants выше и ровно одного
+trusted-control, который должен отказать с PROBE до сети. Clean/poison снова не запускать.
+Будущий тест нормализует только два именованных trace-поля в metadata suffix после url;
+status/body/url/auth error/code сохраняет. Offline guards различают содержательные изменения;
+canonical digest сохраняется до редактирования диагностики. Это не объявляет старый тест зелёным.
