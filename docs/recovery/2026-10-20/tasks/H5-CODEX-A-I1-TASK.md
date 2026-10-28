@@ -25,7 +25,7 @@
 Все исполнители в отдельном worktree, только в перечисленных своих файлах; коммитит Codex.
 
 - Relay: `src/conductor/command/adapters/codex_relay.py`, `tests/test_codex_relay.py`.
-- Env/launch: `relay_env.py`, `relay_attempt.py`, `headless_attempt.py` в том же каталоге
+- Env/launch: `relay_env.py`, `relay_attempt.py`, `headless_spec.py` в том же каталоге
   adapters; `tests/test_relay_env.py`, новый `tests/test_codex_relay_environment.py`.
   Если действительный launch-шов лежит в другом файле, сначала сообщить ведущему.
 - Ведущий: `codex_cli.py`, `provider.py`, при измеренном основании `codex_quota.py`;
