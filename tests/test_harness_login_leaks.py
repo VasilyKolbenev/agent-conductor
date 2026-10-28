@@ -688,8 +688,16 @@ def test_the_two_declared_lists_are_the_measured_ones():
         "projects", "file-history")
     assert CLAUDE_PROFILE.login_expected == (
         ".claude.json", "backups", ".credentials.json")
-    assert CODEX_PROFILE.login_scratch == ("tmp",)
-    assert CODEX_PROFILE.login_expected == ("skills", "auth.json", "version.json")
+    # P6/P7 and P11 measured 0.164.0: exact state names, cache and installation UUID.
+    assert CODEX_PROFILE.login_scratch == (
+        "tmp", "log", ".sandbox",
+        "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
+        "logs_2.sqlite", "logs_2.sqlite-shm", "logs_2.sqlite-wal",
+        "memories_1.sqlite", "memories_1.sqlite-shm", "memories_1.sqlite-wal",
+        "queue_1.sqlite", "queue_1.sqlite-shm", "queue_1.sqlite-wal",
+        "state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal")
+    assert CODEX_PROFILE.login_expected == (
+        "skills", "auth.json", "version.json", "models_cache.json", "installation_id")
     # `config.toml` moved from tolerated to REFUSED: it carries this vendor's
     # project trust map, and a trusted work tree re-admits the configuration an
     # empty per-attempt home had excluded.
