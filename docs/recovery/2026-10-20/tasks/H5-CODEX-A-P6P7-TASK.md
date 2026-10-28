@@ -73,3 +73,12 @@ the documented equivalent `[venv_python, -I, -m, conductor, --help]`. `pyproject
 protected manifest; the existing wrapper remains inventoried, never launched again by this task.
 This is a local invocation choice, not proof that an unsigned installer is ready for distribution.
 External bounded finalizer only; no product source/test changes, exemptions or policy changes.
+
+## Existing census guard missed by the first scoped test list
+
+Full run on `9788eb9`, UTF-8 shard 4, found one outdated independent literal assertion:
+`tests/test_harness_login_leaks.py::test_the_two_declared_lists_are_the_measured_ones` still
+expects Codex's old `tmp`/three-name census. Its failure is retained in the full-run log.
+Codex adds only that file to scope: update the Codex literals to the measured classification
+above, keep the Claude assertions and the independent literal guard. No product change.
+Check the whole affected file in both encodings and caps; removing a new declared name must fail.
