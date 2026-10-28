@@ -89,7 +89,9 @@ SUBSCRIPTION_AUTH = "subscription"
 #: not a proof: a credential forwarded under some other name is not caught here,
 #: and nothing in this build can see the value.
 API_BILLING_ENV = frozenset({
-    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"})
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID", "OPENAI_IDENTITY_TOKEN_FILE",
+    "OPENAI_WORKLOAD_IDENTITY_CONTEXT", "CODEX_GUARDIAN_DECISIONS_API_KEY"})
 #: The reviewed protocols whose transport really drives a vendor login. A mode is
 #: not a label: pinning ``subscription`` where no transport implements it would
 #: leave an operator reading a login this build never performs, so it is refused
@@ -328,7 +330,7 @@ class ProviderConfig:
                 raise ProviderConfigError(
                     "subscription authentication needs auth_home, "
                     "the directory this provider's login is kept in")
-            forwarded = sorted(set(self.env_allow) & API_BILLING_ENV)
+            forwarded = sorted(name for name in self.env_allow if name.upper() in API_BILLING_ENV)
             if forwarded:
                 raise ProviderConfigError(
                     f"subscription authentication may not forward {forwarded}: "

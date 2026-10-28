@@ -33,7 +33,7 @@ class ReaderRunner(ProcessRunner):
         self.payload = transcript()
     def run(self, spec):
         self.specs.append(spec)
-        output = b'codex-cli 0.112.0' if spec.argv[-1] == '--version' else self.payload
+        output = b'codex-cli 0.164.0' if spec.argv[-1] == '--version' else self.payload
         return ProcessOutcome('completed',0,output,False,spec.output_limit,0,'synthetic',
                               'delivered' if spec.stdin_bytes else 'not_provided')
 
@@ -98,7 +98,7 @@ def test_auth_refusal_does_not_echo_email_error_or_claim_zero(tmp_path):
 
 def test_session_cache_never_merges_and_rebind_rejects_old_success_or_error():
     a,b = SessionContext.create(QUOTA_POLICY),SessionContext.create(QUOTA_POLICY)
-    source = QuotaSource(QUOTA_POLICY,'0.112.0')
+    source = QuotaSource(QUOTA_POLICY,'0.164.0')
     cache = QuotaService()
     old = cache.bind('one',None,source,connection=a)
     sibling = cache.bind('two',None,source,connection=b)
@@ -136,7 +136,7 @@ def test_collector_publishes_real_fields_then_removes_them_on_next_error(tmp_pat
     collector = QuotaCollector(cache,(plan,),clock=lambda:clock[0])
     collector._collect(*collector._work[0])
     row = cache.snapshot('bound-provider',now=AT,max_age=timedelta(minutes=5)).as_dict()
-    assert row['windows'][0]['remaining_percent']==73 and row['source']['version']=='0.112.0'
+    assert row['windows'][0]['remaining_percent']==73 and row['source']['version']=='0.164.0'
     runner.payload = b'bad-private-upstream\n'
     clock[0] += timedelta(seconds=1)
     collector._collect(*collector._work[0])

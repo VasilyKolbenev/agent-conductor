@@ -43,8 +43,8 @@ NODE_FLAGS = ("--preserve-symlinks", "--preserve-symlinks-main")
 #: so the install folder an adapter asks for is a fact of the layout and not of the fake.
 LAYOUT = {
     "claude-code": ("2.1.239", ()),
-    "codex": ("0.112.0", ("node_modules", "@openai", "codex-win32-x64", "vendor",
-                          "x86_64-pc-windows-msvc", "codex")),
+    "codex": ("0.164.0", ("node_modules", "@openai", "codex-win32-x64", "vendor",
+                          "x86_64-pc-windows-msvc", "bin")),
     "grok-build": ("1.0.5", ()),
     "kimi-code": ("0.38.0", ()),
     "deepseek-harness": ("0.1.0-rc.7-pnpm", ("node_modules", "@deepseek-ai", "dsh", "lib")),

@@ -7,14 +7,13 @@ on, on something else, and nothing afterwards can see it. A row that pins the su
 refuses these names (`provider.ProviderConfig`, and the question in `conduct providers`), and the
 relay spec of each harness carries the same names for a pin that was built without a row.
 
-The roster is the one design fact F10 of H5-SUB-R5 lists (names read from the pinned binaries,
-Claude Code 2.1.239 and Codex 0.112.0), not a list of every variable a proxy library knows and not
-a complete census of what the binaries read: a name that F10 does not list is not refused here.
+The roster comes from F10 of H5-SUB-R5 and the Codex 0.164.0 source/binary census P5 of
+H5-CODEX-COMPAT A. It is not a list of every variable a proxy library might read.
 Names are matched ignoring case on every platform: a Windows variable named `https_proxy` IS
 `HTTPS_PROXY`, and elsewhere the lower-case spelling of a proxy variable is the one most tools read
 first.
 
-A value module: names and one pure function, nothing read from the machine.
+A value module: names and pure decisions, nothing read from the machine.
 """
 from __future__ import annotations
 
@@ -34,12 +33,40 @@ CLAUDE_ROUTE_ENV = tuple(sorted((
     "CLAUDE_SECURESTORAGE_CONFIG_DIR", "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
     "CLAUDE_CODE_CUSTOM_OAUTH_URL", "CLAUDE_CODE_ACCOUNT_UUID", "CLAUDE_CODE_USER_EMAIL",
     "CLAUDE_CODE_ORGANIZATION_UUID")))
-#: Codex: the endpoint a refresh token is sent to.
-CODEX_ROUTE_ENV = ("CODEX_REFRESH_TOKEN_URL_OVERRIDE",)
+#: Codex: OAuth/store endpoints, certificates, remote execution, identity and raw trace routes.
+CODEX_ROUTE_ENV = tuple(sorted((
+    "CODEX_REFRESH_TOKEN_URL_OVERRIDE", "CODEX_REVOKE_TOKEN_URL_OVERRIDE",
+    "CODEX_AUTHAPI_BASE_URL", "CODEX_APP_SERVER_LOGIN_CLIENT_ID", "CODEX_SQLITE_HOME",
+    "CODEX_CA_CERTIFICATE", "CODEX_EXEC_SERVER_URL", "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+    "CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID", "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+    "CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID", "CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL",
+    "CODEX_AGENT_IDENTITY_JWKS_BASE_URL", "CODEX_APP_SERVER_LOGIN_ISSUER", "CODEX_CONNECTORS_TOKEN",
+    "CODEX_ROLLOUT_TRACE_ROOT", "OPENAI_ORGANIZATION", "OPENAI_PROJECT",
+    "CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "CODEX_OSS_BASE_URL", "CODEX_OSS_PORT")))
+
+#: Alternate credentials must be refused by the transport too, including a direct pin that did
+#: not pass through ProviderConfig. A login-status sentence is not an environment-source guard.
+CODEX_CREDENTIAL_ENV = tuple(sorted((
+    "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID",
+    "OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
+    "CODEX_GUARDIAN_DECISIONS_API_KEY")))
+
+#: This code-owned pair enters the profile digest, but only the access-only child receives it.
+#: It constrains the refresh route; it does not promise that refresh can never be attempted.
+CODEX_ACCESS_ONLY_ENV = (("CODEX_REFRESH_TOKEN_URL_OVERRIDE", "http://127.0.0.1:9/oauth/token"),)
+
+
+def access_only_switch(profile, name: str, value: str) -> bool:
+    """The one exact code-owned switch of Codex's access-only relay, never an operator grant."""
+    relay = profile.login_relay
+    return (profile.home_env == "CODEX_HOME" and relay is not None
+            and relay.kind == "x" and relay.credential == "auth.json"
+            and (name, value) in CODEX_ACCESS_ONLY_ENV)
+
 
 #: What a spec of each harness forbids, in its own `forbidden_env`.
 CLAUDE_FORBIDDEN_ENV = tuple(sorted({*CLAUDE_ROUTE_ENV, *COMMON_ROUTE_ENV}))
-CODEX_FORBIDDEN_ENV = tuple(sorted({*CODEX_ROUTE_ENV, *COMMON_ROUTE_ENV}))
+CODEX_FORBIDDEN_ENV = tuple(sorted({*CODEX_ROUTE_ENV, *CODEX_CREDENTIAL_ENV, *COMMON_ROUTE_ENV}))
 #: What the config door and the wizard refuse beside a subscription: the union, because the door
 #: does not branch on which harness a row is for. A name one harness does not read is harmless in
 #: the row of another, and a row that forwarded it would gain nothing it could use.

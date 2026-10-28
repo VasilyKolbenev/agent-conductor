@@ -693,7 +693,7 @@ def test_the_two_declared_lists_are_the_measured_ones():
     # `config.toml` moved from tolerated to REFUSED: it carries this vendor's
     # project trust map, and a trusted work tree re-admits the configuration an
     # empty per-attempt home had excluded.
-    assert CODEX_PROFILE.login_forbidden == ("config.toml",)
+    assert CODEX_PROFILE.login_forbidden == ("config.toml", ".env", "environments.toml")
     assert CLAUDE_PROFILE.login_forbidden == ("settings.json", "CLAUDE.md")
 
 

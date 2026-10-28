@@ -1,14 +1,14 @@
 """The Codex relay: what the real `auth.json` must look like, and what an attempt is given of it.
 
-Codex 0.112.0 keeps one subscription login in `auth.json`: a ChatGPT token set, and an API key
-slot that must be empty (a file that holds a key answers "logged in" like a subscription does and
-the key wins, so a run on it would be billed to an API account nobody pinned). The relay admits
-that shape only.
+Codex 0.164.0 keeps one subscription login in `auth.json`: a ChatGPT token set, optional owner
+and provenance fields, and an API-key slot that must be empty for this subscription route.
+The relay admits that closed shape and the older one without the optional fields.
 
 The copy the child gets has no usable refresh token. The pinned CLI refuses a file that lacks the
 `refresh_token` field altogether (measured by Codex on 23.10.2026: `missing field refresh_token`)
-and reads one holding an empty string, so the relay writes the empty string and changes nothing
-else: not `last_refresh`, not a deadline. Whether the CLI then WORKS on it is the live measurement
+and reads one holding an empty string, so the relay writes the empty string and drops refresh
+provenance. It changes neither `last_refresh` nor a deadline, and preserves the owner. Whether the
+CLI then WORKS on it is the live measurement
 M2, not something this file can show.
 
 The expiry is the `exp` of the access token, read from its JWT payload with no check of any
@@ -44,6 +44,46 @@ def leaf_with(**top):
 
 def test_a_full_chatgpt_login_is_admitted():
     assert admit(fake.codex_leaf()) is None
+
+
+@pytest.mark.parametrize("added", [
+    {"login_owner_id": "fake-owner-0164"},
+    {"oauth_provenance": {"issuer": "https://fake.invalid", "client_id": "fake-client"}},
+    {"login_owner_id": "fake-owner-0164",
+     "oauth_provenance": {"issuer": "https://fake.invalid", "client_id": "fake-client"}},
+    {"login_owner_id": "", "oauth_provenance": {"issuer": "", "client_id": ""}},
+])
+def test_the_optional_0164_login_fields_are_admitted_without_changing_the_source(added):
+    original = leaf_with(tokens={**fake.codex_leaf()["tokens"], **added})
+    before = copy.deepcopy(original)
+
+    assert admit(original) is None
+    assert original == before
+
+
+@pytest.mark.parametrize("owner", [None, 5, True, [], {}, b"owner"])
+def test_the_0164_login_owner_id_must_be_text(owner):
+    assert admit(leaf_with(tokens={**fake.codex_leaf()["tokens"], "login_owner_id": owner})) == (
+        "unknown_shape")
+
+
+@pytest.mark.parametrize("provenance", [
+    None, 5, True, [], "issuer", {}, {"issuer": "https://fake.invalid"},
+    {"client_id": "fake-client"},
+    {"issuer": "https://fake.invalid", "client_id": "fake-client", "extra": "forbidden"},
+    {"issuer": None, "client_id": "fake-client"},
+    {"issuer": "https://fake.invalid", "client_id": 5},
+    {"issuer": "https://fake.invalid", "client_id": True},
+])
+def test_the_0164_provenance_is_exactly_two_named_text_fields(provenance):
+    tokens = {**fake.codex_leaf()["tokens"], "oauth_provenance": provenance}
+
+    assert admit(leaf_with(tokens=tokens)) == "unknown_shape"
+
+
+@pytest.mark.parametrize("name", ["login_owner_id", "oauth_provenance"])
+def test_the_0164_fields_are_not_admitted_at_the_top_of_the_login(name):
+    assert admit(leaf_with(**{name: "fake-value"})) == "foreign_credentials"
 
 
 def test_a_login_with_no_last_refresh_is_admitted():
@@ -156,6 +196,28 @@ def test_the_access_only_copy_has_an_empty_refresh_token_and_everything_else_as_
                    "refresh_token": "",
                    "account_id": "fake-codex-account-0001"},
         "last_refresh": "2026-10-23T11:00:00Z"}
+
+
+def test_the_0164_copy_keeps_the_owner_and_drops_provenance_without_changing_the_source():
+    original = fake.codex_leaf()
+    original["tokens"].update({
+        "login_owner_id": "fake-owner-0164",
+        "oauth_provenance": {"issuer": "https://fake.invalid", "client_id": "fake-client"}})
+    before = copy.deepcopy(original)
+
+    stripped = CODEX_RELAY.strip(original)
+
+    assert stripped == {
+        "OPENAI_API_KEY": None,
+        "tokens": {"id_token": original["tokens"]["id_token"],
+                   "access_token": original["tokens"]["access_token"],
+                   "refresh_token": "",
+                   "account_id": "fake-codex-account-0001",
+                   "login_owner_id": "fake-owner-0164"},
+        "last_refresh": "2026-10-23T11:00:00Z"}
+    assert original == before
+    stripped["tokens"]["login_owner_id"] = "changed-in-copy"
+    assert original == before
 
 
 def test_the_refresh_token_field_is_present_because_the_cli_needs_it():
