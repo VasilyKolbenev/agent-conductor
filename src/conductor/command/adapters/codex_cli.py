@@ -193,7 +193,8 @@ this file or in none.
 """
 from __future__ import annotations
 
-from .codex_quota import QUOTA_POLICY, QUOTA_RPC
+from .codex_quota import QUOTA_POLICY, QUOTA_RPC, masked_reply, reply_metadata, service_for
+from .service_metadata import ServiceMetadata
 from .subscription_quota import native_subscription_connection
 
 import re
@@ -506,7 +507,7 @@ def codex_pin(executable: str, env_allow: tuple[str, ...] = (), *,
         auth=auth, auth_home=auth_home)
 
 
-class CodexCliTransport(ArtifactAwareTransport):
+class CodexCliTransport(ServiceMetadata, ArtifactAwareTransport):
     """Run one Codex CLI task per authorized action, and prove nothing more."""
 
     profile = CODEX_PROFILE
@@ -517,6 +518,17 @@ class CodexCliTransport(ArtifactAwareTransport):
 
     def quota_connection(self):
         return native_subscription_connection(self, QUOTA_POLICY, QUOTA_RPC)
+
+    # The three hooks of `ServiceMetadata`, answered by `codex_quota`: the quota read may repeat
+    # the account id, in two places of its own reply and nowhere else.
+    def _service_for(self, argv, stdin_bytes):
+        return service_for(argv, stdin_bytes)
+
+    def _reply_metadata(self):
+        return reply_metadata(self._signed_in_road(), self.profile.login_credentials)
+
+    def _masked_reply(self, output, service, own_fields):
+        return masked_reply(output, service, own_fields)
 
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,

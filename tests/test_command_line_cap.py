@@ -215,6 +215,9 @@ CAPPED = (
     "tests/test_long_path_homes.py",
     "tests/test_long_path_native.py",
     "tests/test_dalio_analysis_prompt.py",
+    "src/conductor/command/adapters/service_metadata.py",
+    "tests/test_service_metadata.py",
+    "tests/test_codex_quota_echo.py",
 )
 
 

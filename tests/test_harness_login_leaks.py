@@ -677,6 +677,7 @@ def test_the_two_declared_lists_are_the_measured_ones():
     """
     from conductor.command.adapters.claude_code import CLAUDE_PROFILE
     from conductor.command.adapters.codex_cli import CODEX_PROFILE
+    from conductor.command.adapters.grok_build import GROK_PROFILE
 
     # `session-env` and `shell-snapshots`: MEASURED on the first real login (23.09.2026),
     # written by a spawn that starts a shell; left undeclared they failed every such task.
@@ -703,6 +704,15 @@ def test_the_two_declared_lists_are_the_measured_ones():
     # empty per-attempt home had excluded.
     assert CODEX_PROFILE.login_forbidden == ("config.toml", ".env", "environments.toml")
     assert CLAUDE_PROFILE.login_forbidden == ("settings.json", "CLAUDE.md")
+    # Grok 1.0.5. `models_cache.json` and `worktrees.db`: MEASURED on the first real login
+    # (28.10.2026, H5-HARNESS-CHECK), written by the spawn that starts the agent, so they are
+    # per-run state like the rest. Only those names: their `-wal` and `-shm` are NOT declared, so
+    # a spawn that leaves one is a residue and a refusal rather than a quiet cleanup.
+    assert GROK_PROFILE.login_scratch == (
+        "logs", "sessions", "active_sessions.json", "active_sessions.lock",
+        ".config-init.lock", "managed_config.lock", "models_cache.json", "worktrees.db")
+    assert GROK_PROFILE.login_expected == (
+        "auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md")
 
 
 @pytest.mark.parametrize("bad", [

@@ -131,6 +131,7 @@ from __future__ import annotations
 
 from . import login_home
 from .quota_connection import NativeQuotaReadError
+from .service_metadata import ServiceMetadata
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
 
 from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
@@ -278,7 +279,10 @@ GROK_PROFILE = HarnessProfile(
     login_argv=("--no-auto-update", "agent", "stdio"), login_command=("login",),
     login_credentials=("auth.json",),
     login_scratch=("logs", "sessions", "active_sessions.json", "active_sessions.lock",
-                   ".config-init.lock", "managed_config.lock"),
+                   ".config-init.lock", "managed_config.lock",
+                   # MEASURED (1.0.5, 28.10.2026): a spawn that starts the agent writes these two.
+                   # Their `-wal` and `-shm` are not declared: one that appears is a residue.
+                   "models_cache.json", "worktrees.db"),
     login_expected=("auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md"),
     login_forbidden=("mcp_credentials.json", "mcp.json", "hooks", "plugins", "skills", "lsp.json"),
     capability=DISPATCH_CAPABILITY, output_limit=GROK_OUTPUT_LIMIT,
@@ -302,7 +306,7 @@ def grok_pin(executable: str, env_allow: tuple[str, ...] = (), *,
         auth=auth, auth_home=auth_home)
 
 
-class GrokBuildAdapter(ArtifactAwareTransport):
+class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
     """Run one Grok Build prompt per authorized action, and prove nothing more."""
 
     profile = GROK_PROFILE
@@ -358,69 +362,8 @@ class GrokBuildAdapter(ArtifactAwareTransport):
     def quota_connection(self):
         return native_subscription_connection(self, QUOTA_POLICY, GROK_QUOTA_RPC)
 
-    #: The native metadata exchange the running spawn is, or None for every other spawn.
-    _service: SubscriptionRpc | None = None
-
-    def _attempt(self, argv, cwd, **options):
-        """Mark a native metadata exchange, known by its exact argv and stdin, for one spawn."""
-        self._service = (_SERVICE_BY_PAYLOAD.get(options.get("stdin_bytes"))
-                         if argv == _RPC_ARGV else None)
-        self._service_metadata: dict[str, frozenset[bytes]] = {}
-        self._service_values: tuple[bytes, ...] = ()
-        self._service_protected: tuple[bytes, ...] = ()
-        try:
-            return super()._attempt(argv, cwd, **options)
-        finally:
-            self._service = None
-            self._service_metadata = {}
-            self._service_values = self._service_protected = ()
-
-    def _remember_login_values(self) -> None:
-        """Publication history retains every value, including metadata allowed in a service reply."""
-        self._login_seen = tuple(dict.fromkeys((*self._login_seen, *super()._login_secrets())))
-
-    def _login_secrets(self) -> tuple[bytes, ...]:
-        """Every login value, less -- on a metadata exchange only -- the metadata its reply repeats.
-
-        The runner scans the whole output for what this returns before the spawn,
-        and ``_echoed_login`` reads the same split after it, so the two sides never
-        disagree about which values a reply may carry.
-        """
-        values = super()._login_secrets()
-        if self._service is None:
-            return values
-        metadata = self._reply_metadata()
-        admitted = frozenset().union(*metadata.values())
-        self._service_values = tuple(dict.fromkeys((*self._service_values, *values)))
-        self._service_protected = tuple(dict.fromkeys((*self._service_protected,
-            *(value for value in values if value not in admitted))))
-        for field, samples in metadata.items():
-            self._service_metadata[field] = self._service_metadata.get(field, frozenset()) | samples
-        # A refresh may replace metadata or change a value's role. Keep its old
-        # field provenance, while a protected role on either side always wins.
-        self._service_metadata = {field: frozenset(value for value in samples
-            if not any(value in key or key in value for key in self._service_protected))
-            for field, samples in self._service_metadata.items()}
-        admitted = frozenset().union(*self._service_metadata.values())
-        return tuple(value for value in self._service_values if value not in admitted)
-
-    def _echoed_login(self, output: bytes) -> bool:
-        """A key anywhere, or admitted metadata anywhere but its own field of a verified reply."""
-        if self._service is None:
-            return super()._echoed_login(output)
-        if not output or not self._signed_in_road():
-            return False
-        if any(value in output for value in self._login_secrets()):
-            return True
-        metadata = self._service_metadata
-        for value in frozenset().union(*metadata.values()):
-            # Judge each value at its own fields: masking another metadata
-            # value must not conceal this one inside it.
-            own_fields = {field: frozenset((value,)) for field, samples in metadata.items()
-                          if value in samples}
-            if value in _masked_reply(output, self._service, own_fields):
-                return True
-        return False
+    def _service_for(self, argv, stdin_bytes: bytes | None) -> SubscriptionRpc | None:
+        return _SERVICE_BY_PAYLOAD.get(stdin_bytes) if argv == _RPC_ARGV else None
 
     def _reply_metadata(self) -> dict[str, frozenset[bytes]]:
         home = self._signed_in_road()
@@ -428,6 +371,10 @@ class GrokBuildAdapter(ArtifactAwareTransport):
             return {}
         (name,) = self.profile.login_credentials
         return _reply_metadata(login_home.credential_document(home, name))
+
+    def _masked_reply(self, output: bytes, service: SubscriptionRpc,
+                      own_fields: dict[str, frozenset[bytes]]) -> bytes:
+        return _masked_reply(output, service, own_fields)
 
     def _parsed_version(self, output: bytes) -> str | None:
         r"""The semver this parser reads out of a version print, or ``None``.
@@ -542,12 +489,21 @@ GROK_AUTH_FIELDS = (
     "user_blocked_reason", "team_blocked_reasons", "coding_data_retention_opt_out",
     "has_grok_code_access", "refresh_token", "expires_at", "oidc_issuer", "oidc_client_id")
 GROK_AUTH_CREDENTIALS = ("key", "refresh_token")
-#: auth/info reply field -> the login field whose value it repeats. MEASURED on a real
-#: subscription login (1.0.5, 28.09.2026, names only): these four, and no other reply
-#: field, carried a login value; the image URL carries the asset id inside it.
+#: auth/info reply field -> the login field whose value it repeats. The first four are MEASURED
+#: on a real subscription login (1.0.5, 28.09.2026, names only): the image URL carries the asset
+#: id inside it, and (28.10.2026) the principal id inside the image URL. That the principal id
+#: stands inside the asset id itself is read from the source (`handle_info`: the address is the
+#: asset id, or `grok-asset:///` and it), not measured; the live read will confirm it. The nine
+#: after them are the rest of what `handle_info` passes through from the login record (SOURCE,
+#: `handle_info` in extensions/auth.rs at PINNED_COMMIT; not measured): each repeats its own
+#: login field whole, so it is read at exact equality and nowhere else.
 GROK_REPLY_METADATA = MappingProxyType({
     "email": "email", "teamId": "team_id", "principalId": "principal_id",
-    "profileImageUrl": "profile_image_asset_id"})
+    "profileImageUrl": "profile_image_asset_id",
+    "firstName": "first_name", "lastName": "last_name", "teamName": "team_name",
+    "teamRole": "team_role", "organizationId": "organization_id",
+    "organizationName": "organization_name", "organizationRole": "organization_role",
+    "principalType": "principal_type", "userBlockedReason": "user_blocked_reason"})
 #: The leak scan's own floor for a login value (`login_home.credential_values`).
 _SECRET_FLOOR = 12
 

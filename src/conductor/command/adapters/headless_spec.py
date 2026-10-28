@@ -52,4 +52,4 @@ def attempt_spec(adapter, argv, home, cwd, *, timeout, stdin_bytes=None,
         # vendor login lives in a file, so the runner cannot derive it
         # from the environment the way it derives every other credential
         # this build hands a child.
-        sensitive_extra=(*adapter._login_secrets(), *extra))
+        sensitive_extra=(*adapter._spawn_secrets(), *extra))

@@ -224,6 +224,16 @@ class LoginRoad:
         return login_home.credential_values(
             auth_home, self.profile.login_credentials)
 
+    def _spawn_secrets(self) -> tuple[bytes, ...]:
+        """The values the runner scans ONE spawn's output for, read as that spawn is built.
+
+        The whole login set, ``_login_secrets``, unless a transport says otherwise. A transport
+        whose spawn is a native metadata exchange overrides THIS and nothing else, because
+        ``_login_secrets`` is what publication and the checker read, in any thread, and it stays
+        whole. It is called only inside an attempt, and attempts go by turns of the workspace.
+        """
+        return self._login_secrets()
+
     def _begin_road(self) -> None:
         """Re-derive everything one ROAD may report, before it reports any of it.
 
