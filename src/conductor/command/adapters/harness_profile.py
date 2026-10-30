@@ -298,12 +298,23 @@ class ExecutablePin:
         object.__setattr__(self, "auth_home", auth_home)
 
 
-#: The two channels a one-shot task may travel by, and there is no third.
+#: The three channels a one-shot task may travel by, and there is no fourth.
 #: `argv` puts the prompt in the child's command line, where any process lister
-#: on the machine can read it; `stdin` pipes it, where none can.
+#: on the machine can read it; `stdin` pipes it, where none can; `file` writes it
+#: once into the folder of the attempt itself, for a vendor whose headless mode
+#: reads its prompt only from a file path (`task_file`).
 TASK_CHANNEL_ARGV = "argv"
 TASK_CHANNEL_STDIN = "stdin"
-TASK_CHANNELS = (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN)
+TASK_CHANNEL_FILE = "file"
+TASK_CHANNELS = (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN, TASK_CHANNEL_FILE)
+#: The channels that keep the task off the command line. A class owes the same
+#: two seams for either (`_stdin_argv`, `_task_stdin`), and every road that asks
+#: "does this task stay off the argv" asks it of this tuple, in one spelling.
+OFF_ARGV_CHANNELS = (TASK_CHANNEL_STDIN, TASK_CHANNEL_FILE)
+#: The one name the task file is given. ASCII and fixed by code: it carries no
+#: run, no action and no word of the task, and it is never `.json`, which the
+#: vendor reads as a different kind of file. No login list may carry it.
+TASK_FILE_NAME = "conduct-task.txt"
 
 
 @dataclass(frozen=True)
@@ -407,10 +418,10 @@ class HarnessProfile:
     #: the constant this pair was written from -- a declaration nobody spends is
     #: prose, and prose about a protection is what this surface exists to stop.
     vendor_sandbox: tuple[tuple[str, str], ...] | None = None
-    #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
+    #: WHERE this vendor's one-shot mode takes the task. A closed choice of three,
     #: and it is structural rather than advisory: the transport calls a
-    #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes
-    #: no task argument at all.
+    #: DIFFERENT argv builder for each, and the one it calls for `stdin` or for
+    #: `file` takes no task argument at all.
     #:
     #: That is the whole point. An earlier attempt asked an argv builder twice
     #: with two probe texts and compared the answers, which proves only that
@@ -525,6 +536,24 @@ class HarnessProfile:
                 f"{self.task_channel!r}")
         self._hold_model_routing()
         self._hold_relay()
+        self._hold_task_file_name()
+
+    def _hold_task_file_name(self) -> None:
+        """Prove no login list, and no relay, carries the name the task file is given.
+
+        The task file is written into the home of an attempt and taken away with it, first,
+        by name. A list that carried the name would make a file this build writes one it also
+        tolerates, reads or keeps in a login folder, and two meanings of one name is how a
+        task ends up published or deleted by a rule written for something else.
+        """
+        taken = (*self.login_scratch, *self.login_expected, *self.login_credentials,
+                 *self.login_forbidden)
+        if self.login_relay is not None:
+            taken += tuple(self.login_relay.files)
+        if TASK_FILE_NAME in taken:
+            raise HeadlessCliError(
+                f"{TASK_FILE_NAME} is the name the task file is placed under, so no login "
+                "list and no relay file may carry it")
 
     def _hold_relay(self) -> None:
         """Prove the relay declaration: a spec, and a credential the leak scan already reads.

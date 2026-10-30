@@ -16,7 +16,7 @@ from .harness_profile import (
     DISPATCH_CAPABILITY,
     REVIEW_CAPABILITY,
     PREFLIGHT_RESIDUE_DETAIL,
-    TASK_CHANNEL_STDIN,
+    OFF_ARGV_CHANNELS,
 )
 from .harness_workspace import INSTRUCTION_LIMIT, WorkspaceNotContained, work_route
 from .headless_cli import HeadlessCliTransport
@@ -121,8 +121,8 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)
         capabilities = list(self.manifest.capabilities)
         if self.review_enabled:
-            if self.profile.task_channel != TASK_CHANNEL_STDIN:
-                raise self.error("review artifact content requires the stdin channel")
+            if self.profile.task_channel not in OFF_ARGV_CHANNELS:
+                raise self.error("review artifact content requires the stdin or file channel")
             if type(self)._review_argv is ArtifactAwareTransport._review_argv:
                 raise self.error("a review-capable provider owes a read-only argv")
             capabilities.append(REVIEW_CAPABILITY)

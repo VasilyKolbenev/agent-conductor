@@ -1,0 +1,1910 @@
+{
+  "facts": {
+    "claude/api_key": {
+      "providers": [
+        {
+          "config": {
+            "auth": "api_key",
+            "auth_home": "",
+            "entrypoint": "",
+            "env_allow": [],
+            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+            "protocol": "claude-code-headless-v1",
+            "provider_id": "claude-code"
+          },
+          "contract": {
+            "auth": "api_key",
+            "availability": "available",
+            "available": true,
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Claude Code (headless, experimental)",
+            "implementation": "real_experimental",
+            "lifecycle": [
+              "execute",
+              "observe",
+              "prepare",
+              "verify"
+            ],
+            "provider_id": "claude-code",
+            "schema_pairs": [
+              [
+                "dispatch",
+                "deep-arguments-v1"
+              ],
+              [
+                "review",
+                "deep-arguments-v1"
+              ]
+            ],
+            "vendor": "Anthropic",
+            "vendor_sandbox": [],
+            "version": "claude-code-headless-v1"
+          },
+          "file_budget": 131072,
+          "input_limits": {
+            "frame": 262144,
+            "instruction": 262144,
+            "stdin": 262144
+          },
+          "manifest": {
+            "adapter_id": "claude-code",
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Claude Code (headless, experimental)",
+            "docs_url": "https://code.claude.com/docs/en/headless",
+            "vendor": "Anthropic",
+            "version": "2.1.239"
+          },
+          "output_limits": {
+            "normal": 16384,
+            "small": 4096
+          },
+          "task_channel": {
+            "channel": "stdin",
+            "limit": 262144,
+            "scope": "task",
+            "unit": "utf8_bytes"
+          },
+          "transport": {
+            "capability": "dispatch",
+            "display_name": "Claude Code (headless, experimental)",
+            "docs_url": "https://code.claude.com/docs/en/headless",
+            "exit_codes_published": true,
+            "forced_env": [
+              [
+                "DISABLE_AUTOUPDATER",
+                "1"
+              ],
+              [
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                "1"
+              ]
+            ],
+            "home_dir": ".claude-home",
+            "home_env": "CLAUDE_CONFIG_DIR",
+            "home_id_kind": "claude-home",
+            "login_argv": [
+              "auth",
+              "status",
+              "--json"
+            ],
+            "login_command": [
+              "auth",
+              "login",
+              "--claudeai"
+            ],
+            "login_credentials": [
+              ".credentials.json"
+            ],
+            "login_expected": [
+              ".claude.json",
+              "backups",
+              ".credentials.json"
+            ],
+            "login_forbidden": [
+              "settings.json",
+              "CLAUDE.md"
+            ],
+            "login_relay": {
+              "credential": ".credentials.json",
+              "files": [
+                ".credentials.json",
+                ".claude.json"
+              ],
+              "forbidden_env": [
+                "ALL_PROXY",
+                "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_ACCOUNT_UUID",
+                "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+                "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+                "CLAUDE_CODE_HOST_CREDS_FILE",
+                "CLAUDE_CODE_OAUTH_CLIENT_ID",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+                "CLAUDE_CODE_OAUTH_SCOPES",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+                "CLAUDE_CODE_ORGANIZATION_UUID",
+                "CLAUDE_CODE_USER_EMAIL",
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                "HTTPS_PROXY",
+                "HTTP_PROXY",
+                "NODE_EXTRA_CA_CERTS",
+                "NODE_TLS_REJECT_UNAUTHORIZED",
+                "OPENAI_BASE_URL",
+                "SSL_CERT_DIR",
+                "SSL_CERT_FILE"
+              ],
+              "form": [
+                [
+                  "refreshToken",
+                  null
+                ],
+                [
+                  "refreshTokenExpiresAt",
+                  null
+                ]
+              ],
+              "kind": "c",
+              "refresh_fields": [
+                "refreshToken",
+                "refreshTokenExpiresAt"
+              ],
+              "secret_fields": [
+                "accessToken",
+                "refreshToken"
+              ],
+              "section": "claudeAiOauth"
+            },
+            "login_scratch": [
+              "sessions",
+              ".last-cleanup",
+              "session-env",
+              "shell-snapshots",
+              "plans",
+              "projects",
+              "file-history"
+            ],
+            "marker_dir": ".claude-marker",
+            "model_flag": "--model",
+            "output_limit": 49152,
+            "reviewed_version": "2.1.239",
+            "task_channel": "stdin",
+            "task_noun": "Claude Code prompt",
+            "tool_noun": "Claude Code",
+            "unstable_models": [
+              "sonnet",
+              "opus",
+              "haiku",
+              "fable"
+            ],
+            "vendor": "Anthropic",
+            "vendor_sandbox": [],
+            "version_argv": [
+              "--version"
+            ],
+            "version_timeout_seconds": 30
+          }
+        }
+      ]
+    },
+    "claude/subscription": {
+      "providers": [
+        {
+          "config": {
+            "auth": "subscription",
+            "auth_home": "<TMP>/DecemberCommand/logins/x",
+            "entrypoint": "",
+            "env_allow": [],
+            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+            "protocol": "claude-code-headless-v1",
+            "provider_id": "claude-code"
+          },
+          "contract": {
+            "auth": "subscription",
+            "availability": "available",
+            "available": true,
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Claude Code (headless, experimental)",
+            "implementation": "real_experimental",
+            "lifecycle": [
+              "execute",
+              "observe",
+              "prepare",
+              "verify"
+            ],
+            "provider_id": "claude-code",
+            "schema_pairs": [
+              [
+                "dispatch",
+                "deep-arguments-v1"
+              ],
+              [
+                "review",
+                "deep-arguments-v1"
+              ]
+            ],
+            "vendor": "Anthropic",
+            "vendor_sandbox": [],
+            "version": "claude-code-headless-v1"
+          },
+          "file_budget": 131072,
+          "input_limits": {
+            "frame": 262144,
+            "instruction": 262144,
+            "stdin": 262144
+          },
+          "manifest": {
+            "adapter_id": "claude-code",
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Claude Code (headless, experimental)",
+            "docs_url": "https://code.claude.com/docs/en/headless",
+            "vendor": "Anthropic",
+            "version": "2.1.239"
+          },
+          "output_limits": {
+            "normal": 16384,
+            "small": 4096
+          },
+          "task_channel": {
+            "channel": "stdin",
+            "limit": 262144,
+            "scope": "task",
+            "unit": "utf8_bytes"
+          },
+          "transport": {
+            "capability": "dispatch",
+            "display_name": "Claude Code (headless, experimental)",
+            "docs_url": "https://code.claude.com/docs/en/headless",
+            "exit_codes_published": true,
+            "forced_env": [
+              [
+                "DISABLE_AUTOUPDATER",
+                "1"
+              ],
+              [
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+                "1"
+              ]
+            ],
+            "home_dir": ".claude-home",
+            "home_env": "CLAUDE_CONFIG_DIR",
+            "home_id_kind": "claude-home",
+            "login_argv": [
+              "auth",
+              "status",
+              "--json"
+            ],
+            "login_command": [
+              "auth",
+              "login",
+              "--claudeai"
+            ],
+            "login_credentials": [
+              ".credentials.json"
+            ],
+            "login_expected": [
+              ".claude.json",
+              "backups",
+              ".credentials.json"
+            ],
+            "login_forbidden": [
+              "settings.json",
+              "CLAUDE.md"
+            ],
+            "login_relay": {
+              "credential": ".credentials.json",
+              "files": [
+                ".credentials.json",
+                ".claude.json"
+              ],
+              "forbidden_env": [
+                "ALL_PROXY",
+                "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_ACCOUNT_UUID",
+                "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+                "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+                "CLAUDE_CODE_HOST_CREDS_FILE",
+                "CLAUDE_CODE_OAUTH_CLIENT_ID",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+                "CLAUDE_CODE_OAUTH_SCOPES",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+                "CLAUDE_CODE_ORGANIZATION_UUID",
+                "CLAUDE_CODE_USER_EMAIL",
+                "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                "HTTPS_PROXY",
+                "HTTP_PROXY",
+                "NODE_EXTRA_CA_CERTS",
+                "NODE_TLS_REJECT_UNAUTHORIZED",
+                "OPENAI_BASE_URL",
+                "SSL_CERT_DIR",
+                "SSL_CERT_FILE"
+              ],
+              "form": [
+                [
+                  "refreshToken",
+                  null
+                ],
+                [
+                  "refreshTokenExpiresAt",
+                  null
+                ]
+              ],
+              "kind": "c",
+              "refresh_fields": [
+                "refreshToken",
+                "refreshTokenExpiresAt"
+              ],
+              "secret_fields": [
+                "accessToken",
+                "refreshToken"
+              ],
+              "section": "claudeAiOauth"
+            },
+            "login_scratch": [
+              "sessions",
+              ".last-cleanup",
+              "session-env",
+              "shell-snapshots",
+              "plans",
+              "projects",
+              "file-history"
+            ],
+            "marker_dir": ".claude-marker",
+            "model_flag": "--model",
+            "output_limit": 49152,
+            "reviewed_version": "2.1.239",
+            "task_channel": "stdin",
+            "task_noun": "Claude Code prompt",
+            "tool_noun": "Claude Code",
+            "unstable_models": [
+              "sonnet",
+              "opus",
+              "haiku",
+              "fable"
+            ],
+            "vendor": "Anthropic",
+            "vendor_sandbox": [],
+            "version_argv": [
+              "--version"
+            ],
+            "version_timeout_seconds": 30
+          }
+        }
+      ]
+    },
+    "codex/api_key": {
+      "providers": [
+        {
+          "config": {
+            "auth": "api_key",
+            "auth_home": "",
+            "entrypoint": "",
+            "env_allow": [],
+            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+            "protocol": "codex-headless-v1",
+            "provider_id": "codex"
+          },
+          "contract": {
+            "auth": "api_key",
+            "availability": "available",
+            "available": true,
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Codex CLI (headless, experimental)",
+            "implementation": "real_experimental",
+            "lifecycle": [
+              "execute",
+              "observe",
+              "prepare",
+              "verify"
+            ],
+            "provider_id": "codex",
+            "schema_pairs": [
+              [
+                "dispatch",
+                "deep-arguments-v1"
+              ],
+              [
+                "review",
+                "deep-arguments-v1"
+              ]
+            ],
+            "vendor": "OpenAI",
+            "vendor_sandbox": [
+              [
+                "dispatch",
+                "--sandbox workspace-write"
+              ],
+              [
+                "review",
+                "--sandbox read-only"
+              ]
+            ],
+            "version": "codex-headless-v1"
+          },
+          "file_budget": 131072,
+          "input_limits": {
+            "frame": 262144,
+            "instruction": 262144,
+            "stdin": 262144
+          },
+          "manifest": {
+            "adapter_id": "codex",
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Codex CLI (headless, experimental)",
+            "docs_url": "https://developers.openai.com/codex/noninteractive",
+            "vendor": "OpenAI",
+            "version": "0.164.0"
+          },
+          "output_limits": {
+            "normal": 16384,
+            "small": 4096
+          },
+          "task_channel": {
+            "channel": "stdin",
+            "limit": 262144,
+            "scope": "task",
+            "unit": "utf8_bytes"
+          },
+          "transport": {
+            "capability": "dispatch",
+            "display_name": "Codex CLI (headless, experimental)",
+            "docs_url": "https://developers.openai.com/codex/noninteractive",
+            "exit_codes_published": false,
+            "forced_env": [
+              [
+                "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
+                "http://127.0.0.1:9/oauth/token"
+              ]
+            ],
+            "home_dir": ".codex-home",
+            "home_env": "CODEX_HOME",
+            "home_id_kind": "codex-home",
+            "login_argv": [
+              "-c",
+              "cli_auth_credentials_store=\"file\"",
+              "login",
+              "status"
+            ],
+            "login_command": [
+              "-c",
+              "cli_auth_credentials_store=\"file\"",
+              "login"
+            ],
+            "login_credentials": [
+              "auth.json",
+              ".credentials.json"
+            ],
+            "login_expected": [
+              "skills",
+              "auth.json",
+              "version.json",
+              "models_cache.json",
+              "installation_id"
+            ],
+            "login_forbidden": [
+              "config.toml",
+              ".env",
+              "environments.toml"
+            ],
+            "login_relay": {
+              "credential": "auth.json",
+              "files": [
+                "auth.json"
+              ],
+              "forbidden_env": [
+                "ALL_PROXY",
+                "ANTHROPIC_BASE_URL",
+                "CODEX_ACCESS_TOKEN",
+                "CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL",
+                "CODEX_AGENT_IDENTITY_JWKS_BASE_URL",
+                "CODEX_API_KEY",
+                "CODEX_APP_SERVER_LOGIN_CLIENT_ID",
+                "CODEX_APP_SERVER_LOGIN_ISSUER",
+                "CODEX_AUTHAPI_BASE_URL",
+                "CODEX_CA_CERTIFICATE",
+                "CODEX_CONNECTORS_TOKEN",
+                "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+                "CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID",
+                "CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID",
+                "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+                "CODEX_EXEC_SERVER_URL",
+                "CODEX_GUARDIAN_DECISIONS_API_KEY",
+                "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+                "CODEX_OSS_BASE_URL",
+                "CODEX_OSS_PORT",
+                "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
+                "CODEX_REVOKE_TOKEN_URL_OVERRIDE",
+                "CODEX_ROLLOUT_TRACE_ROOT",
+                "CODEX_SQLITE_HOME",
+                "HTTPS_PROXY",
+                "HTTP_PROXY",
+                "NODE_EXTRA_CA_CERTS",
+                "NODE_TLS_REJECT_UNAUTHORIZED",
+                "OPENAI_API_KEY",
+                "OPENAI_BASE_URL",
+                "OPENAI_FEDERATION_RULE_ID",
+                "OPENAI_IDENTITY_TOKEN_FILE",
+                "OPENAI_ORGANIZATION",
+                "OPENAI_PROJECT",
+                "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
+                "SSL_CERT_DIR",
+                "SSL_CERT_FILE"
+              ],
+              "form": [
+                [
+                  "refresh_token",
+                  ""
+                ]
+              ],
+              "kind": "x",
+              "refresh_fields": [
+                "refresh_token"
+              ],
+              "secret_fields": [
+                "id_token",
+                "access_token",
+                "refresh_token",
+                "OPENAI_API_KEY"
+              ],
+              "section": "tokens"
+            },
+            "login_scratch": [
+              "tmp",
+              "log",
+              ".sandbox",
+              "goals_1.sqlite",
+              "goals_1.sqlite-shm",
+              "goals_1.sqlite-wal",
+              "logs_2.sqlite",
+              "logs_2.sqlite-shm",
+              "logs_2.sqlite-wal",
+              "memories_1.sqlite",
+              "memories_1.sqlite-shm",
+              "memories_1.sqlite-wal",
+              "queue_1.sqlite",
+              "queue_1.sqlite-shm",
+              "queue_1.sqlite-wal",
+              "state_5.sqlite",
+              "state_5.sqlite-shm",
+              "state_5.sqlite-wal"
+            ],
+            "marker_dir": ".codex-marker",
+            "model_flag": "--model",
+            "output_limit": 49152,
+            "reviewed_version": "0.164.0",
+            "task_channel": "stdin",
+            "task_noun": "Codex CLI task",
+            "tool_noun": "Codex CLI",
+            "unstable_models": [],
+            "vendor": "OpenAI",
+            "vendor_sandbox": [
+              [
+                "dispatch",
+                "--sandbox workspace-write"
+              ],
+              [
+                "review",
+                "--sandbox read-only"
+              ]
+            ],
+            "version_argv": [
+              "--version"
+            ],
+            "version_timeout_seconds": 30
+          }
+        }
+      ]
+    },
+    "codex/subscription": {
+      "providers": [
+        {
+          "config": {
+            "auth": "subscription",
+            "auth_home": "<TMP>/DecemberCommand/logins/x",
+            "entrypoint": "",
+            "env_allow": [],
+            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+            "protocol": "codex-headless-v1",
+            "provider_id": "codex"
+          },
+          "contract": {
+            "auth": "subscription",
+            "availability": "available",
+            "available": true,
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Codex CLI (headless, experimental)",
+            "implementation": "real_experimental",
+            "lifecycle": [
+              "execute",
+              "observe",
+              "prepare",
+              "verify"
+            ],
+            "provider_id": "codex",
+            "schema_pairs": [
+              [
+                "dispatch",
+                "deep-arguments-v1"
+              ],
+              [
+                "review",
+                "deep-arguments-v1"
+              ]
+            ],
+            "vendor": "OpenAI",
+            "vendor_sandbox": [
+              [
+                "dispatch",
+                "--sandbox workspace-write"
+              ],
+              [
+                "review",
+                "--sandbox read-only"
+              ]
+            ],
+            "version": "codex-headless-v1"
+          },
+          "file_budget": 131072,
+          "input_limits": {
+            "frame": 262144,
+            "instruction": 262144,
+            "stdin": 262144
+          },
+          "manifest": {
+            "adapter_id": "codex",
+            "capabilities": [
+              "observe",
+              "dispatch",
+              "review"
+            ],
+            "display_name": "Codex CLI (headless, experimental)",
+            "docs_url": "https://developers.openai.com/codex/noninteractive",
+            "vendor": "OpenAI",
+            "version": "0.164.0"
+          },
+          "output_limits": {
+            "normal": 16384,
+            "small": 4096
+          },
+          "task_channel": {
+            "channel": "stdin",
+            "limit": 262144,
+            "scope": "task",
+            "unit": "utf8_bytes"
+          },
+          "transport": {
+            "capability": "dispatch",
+            "display_name": "Codex CLI (headless, experimental)",
+            "docs_url": "https://developers.openai.com/codex/noninteractive",
+            "exit_codes_published": false,
+            "forced_env": [
+              [
+                "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
+                "http://127.0.0.1:9/oauth/token"
+              ]
+            ],
+            "home_dir": ".codex-home",
+            "home_env": "CODEX_HOME",
+            "home_id_kind": "codex-home",
+            "login_argv": [
+              "-c",
+              "cli_auth_credentials_store=\"file\"",
+              "login",
+              "status"
+            ],
+            "login_command": [
+              "-c",
+              "cli_auth_credentials_store=\"file\"",
+              "login"
+            ],
+            "login_credentials": [
+              "auth.json",
+              ".credentials.json"
+            ],
+            "login_expected": [
+              "skills",
+              "auth.json",
+              "version.json",
+              "models_cache.json",
+              "installation_id"
+            ],
+            "login_forbidden": [
+              "config.toml",
+              ".env",
+              "environments.toml"
+            ],
+            "login_relay": {
+              "credential": "auth.json",
+              "files": [
+                "auth.json"
+              ],
+              "forbidden_env": [
+                "ALL_PROXY",
+                "ANTHROPIC_BASE_URL",
+                "CODEX_ACCESS_TOKEN",
+                "CODEX_AGENT_IDENTITY_AUTHAPI_BASE_URL",
+                "CODEX_AGENT_IDENTITY_JWKS_BASE_URL",
+                "CODEX_API_KEY",
+                "CODEX_APP_SERVER_LOGIN_CLIENT_ID",
+                "CODEX_APP_SERVER_LOGIN_ISSUER",
+                "CODEX_AUTHAPI_BASE_URL",
+                "CODEX_CA_CERTIFICATE",
+                "CODEX_CONNECTORS_TOKEN",
+                "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN",
+                "CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID",
+                "CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID",
+                "CODEX_EXEC_SERVER_NOISE_REGISTRY_URL",
+                "CODEX_EXEC_SERVER_URL",
+                "CODEX_GUARDIAN_DECISIONS_API_KEY",
+                "CODEX_INTERNAL_ORIGINATOR_OVERRIDE",
+                "CODEX_OSS_BASE_URL",
+                "CODEX_OSS_PORT",
+                "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
+                "CODEX_REVOKE_TOKEN_URL_OVERRIDE",
+                "CODEX_ROLLOUT_TRACE_ROOT",
+                "CODEX_SQLITE_HOME",
+                "HTTPS_PROXY",
+                "HTTP_PROXY",
+                "NODE_EXTRA_CA_CERTS",
+                "NODE_TLS_REJECT_UNAUTHORIZED",
+                "OPENAI_API_KEY",
+                "OPENAI_BASE_URL",
+                "OPENAI_FEDERATION_RULE_ID",
+                "OPENAI_IDENTITY_TOKEN_FILE",
+                "OPENAI_ORGANIZATION",
+                "OPENAI_PROJECT",
+                "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
+                "SSL_CERT_DIR",
+                "SSL_CERT_FILE"
+              ],
+              "form": [
+                [
+                  "refresh_token",
+                  ""
+                ]
+              ],
+              "kind": "x",
+              "refresh_fields": [
+                "refresh_token"
+              ],
+              "secret_fields": [
+                "id_token",
+                "access_token",
+                "refresh_token",
+                "OPENAI_API_KEY"
+              ],
+              "section": "tokens"
+            },
+            "login_scratch": [
+              "tmp",
+              "log",
+              ".sandbox",
+              "goals_1.sqlite",
+              "goals_1.sqlite-shm",
+              "goals_1.sqlite-wal",
+              "logs_2.sqlite",
+              "logs_2.sqlite-shm",
+              "logs_2.sqlite-wal",
+              "memories_1.sqlite",
+              "memories_1.sqlite-shm",
+              "memories_1.sqlite-wal",
+              "queue_1.sqlite",
+              "queue_1.sqlite-shm",
+              "queue_1.sqlite-wal",
+              "state_5.sqlite",
+              "state_5.sqlite-shm",
+              "state_5.sqlite-wal"
+            ],
+            "marker_dir": ".codex-marker",
+            "model_flag": "--model",
+            "output_limit": 49152,
+            "reviewed_version": "0.164.0",
+            "task_channel": "stdin",
+            "task_noun": "Codex CLI task",
+            "tool_noun": "Codex CLI",
+            "unstable_models": [],
+            "vendor": "OpenAI",
+            "vendor_sandbox": [
+              [
+                "dispatch",
+                "--sandbox workspace-write"
+              ],
+              [
+                "review",
+                "--sandbox read-only"
+              ]
+            ],
+            "version_argv": [
+              "--version"
+            ],
+            "version_timeout_seconds": 30
+          }
+        }
+      ]
+    }
+  },
+  "specs": {
+    "claude/api/checker": [
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-1",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "doer-model",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-2",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      },
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-4",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Independently judge the supplied result and return the requested verdict. Your final reply carries the verdict itself, never a pointer to a file or plan.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "checker-model",
+          "--permission-mode",
+          "plan"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-5",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": true,
+        "stdin": [
+          1036,
+          "5b2fd0890222ce96f7a7f81597348af06373c8c1af6fa207194be5ee0ec38b00"
+        ]
+      }
+    ],
+    "claude/api/dispatch": [
+      {
+        "argv": [
+          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-1",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-2",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      }
+    ],
+    "claude/api/review": [
+      {
+        "argv": [
+          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-1",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Read the task supplied on standard input and produce the complete output document it asks for. Your final reply is that document: write the whole document in it, not a summary of it or a pointer to a file or plan.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--permission-mode",
+          "plan"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-2",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": true,
+        "stdin": [
+          841,
+          "0677ceaa6297b9c15b0f715547575cec98efce439636aedecf1f840a484ee245"
+        ]
+      }
+    ],
+    "claude/relay/checker": [
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "auth",
+          "status",
+          "--json"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "doer-model",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/relay/<KEY16>/c-<HEX16>",
+          "DISABLE_AUTOUPDATER": "1",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "auth",
+          "status",
+          "--json"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "-p",
+          "Independently judge the supplied result and return the requested verdict. Your final reply carries the verdict itself, never a pointer to a file or plan.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "checker-model",
+          "--permission-mode",
+          "plan"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/relay/<KEY16>/c-<HEX16>",
+          "DISABLE_AUTOUPDATER": "1",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-2/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-2/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-2/runtime"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": true,
+        "stdin": [
+          1036,
+          "5b2fd0890222ce96f7a7f81597348af06373c8c1af6fa207194be5ee0ec38b00"
+        ]
+      }
+    ],
+    "claude/relay/dispatch": [
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "auth",
+          "status",
+          "--json"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/relay/<KEY16>/c-<HEX16>",
+          "DISABLE_AUTOUPDATER": "1",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      }
+    ],
+    "claude/relay/review": [
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "auth",
+          "status",
+          "--json"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/logins/x",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "--safe-mode",
+          "-p",
+          "Read the task supplied on standard input and produce the complete output document it asks for. Your final reply is that document: write the whole document in it, not a summary of it or a pointer to a file or plan.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--permission-mode",
+          "plan"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/DecemberCommand/relay/<KEY16>/c-<HEX16>",
+          "DISABLE_AUTOUPDATER": "1",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "cd0be5fc015bb3226c8410920ec20e234a75ce13f9fc418ce6edd60a70f55deb",
+          "18f1a134d1ecdc235e1f3da96142dfd0b85c3792acb2cb4d9704bce0150b4064",
+          "7686e2760db0b699f5a74c61106673b8d5bb03e34a4e6e9b20735ff07cbfb33e",
+          "12a1f0b9cafdcbc616b4b256954c480248e5db2f5a03e6eae67d17a1cf4eb2ad",
+          "17e0e9515d09d038eec161fdf14fb0634d17f93c0e32063e33371d2b59e39761",
+          "55c740869d6feafb41a8f2869b37e0f015a62a7ebbc924b86a03ad8f6d7bc331"
+        ],
+        "separate_stderr": true,
+        "stdin": [
+          743,
+          "71fe59cb815fd3a63d656d1ec5b5d00152626d01bd7497a670c571beca6a2f3a"
+        ]
+      }
+    ],
+    "codex/api/checker": [
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-1",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "doer-model",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/doer/root/.claude-home/claude-home-2",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      },
+      {
+        "argv": [
+          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/doer/root/.codex-home/codex-home-1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "read-only",
+          "--model",
+          "checker-model",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/doer/root/.codex-home/codex-home-2/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/doer/root/.codex-home/codex-home-2",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": true,
+        "stdin": [
+          1036,
+          "5b2fd0890222ce96f7a7f81597348af06373c8c1af6fa207194be5ee0ec38b00"
+        ]
+      }
+    ],
+    "codex/api/dispatch": [
+      {
+        "argv": [
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/root/.codex-home/codex-home-1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/root/.codex-home/codex-home-2/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/root/.codex-home/codex-home-2",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": true,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      }
+    ],
+    "codex/api/review": [
+      {
+        "argv": [
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/root/.codex-home/codex-home-1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "read-only",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/root/.codex-home/codex-home-2/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/root/.codex-home/codex-home-2",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": true,
+        "stdin": [
+          840,
+          "bdabdcfb253fd169d3e1aa7b3cd53f869747ee54e0c623c65ffbfd7cf8c27a89"
+        ]
+      }
+    ],
+    "codex/relay/checker": [
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--version"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-1",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "--bare",
+          "-p",
+          "Execute the complete task supplied on standard input.",
+          "--input-format",
+          "text",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--model",
+          "doer-model",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "env": {
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CONFIG_DIR": "<TMP>/root/.claude-home/claude-home-2",
+          "DISABLE_AUTOUPDATER": "1",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [],
+        "separate_stderr": false,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "login",
+          "status"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "read-only",
+          "--model",
+          "checker-model",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>",
+          "CODEX_REFRESH_TOKEN_URL_OVERRIDE": "http://127.0.0.1:9/oauth/token",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": true,
+        "stdin": [
+          1036,
+          "5b2fd0890222ce96f7a7f81597348af06373c8c1af6fa207194be5ee0ec38b00"
+        ]
+      }
+    ],
+    "codex/relay/dispatch": [
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "login",
+          "status"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "workspace-write",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>",
+          "CODEX_REFRESH_TOKEN_URL_OVERRIDE": "http://127.0.0.1:9/oauth/token",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": true,
+        "stdin": [
+          162,
+          "fb4f4788e917819806ae13b50ea1ad8767e9267d7006c0abd88b05d0358878b3"
+        ]
+      }
+    ],
+    "codex/relay/review": [
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "--version"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "login",
+          "status"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/logins/x",
+          "PYTHONDONTWRITEBYTECODE": "1"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": false,
+        "stdin": null
+      },
+      {
+        "argv": [
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "exec",
+          "--skip-git-repo-check",
+          "--ephemeral",
+          "--color",
+          "never",
+          "--sandbox",
+          "read-only",
+          "-c",
+          "cli_auth_credentials_store=\"file\"",
+          "-c",
+          "analytics.enabled=false",
+          "-c",
+          "otel.exporter=\"none\"",
+          "-c",
+          "otel.metrics_exporter=\"none\"",
+          "-c",
+          "otel.trace_exporter=\"none\"",
+          "-c",
+          "otel.log_user_prompt=false",
+          "-c",
+          "feedback.enabled=false",
+          "-o",
+          "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>/last-message.txt",
+          "-"
+        ],
+        "env": {
+          "CODEX_HOME": "<TMP>/DecemberCommand/relay/<KEY16>/x-<HEX16>",
+          "CODEX_REFRESH_TOKEN_URL_OVERRIDE": "http://127.0.0.1:9/oauth/token",
+          "LOCALAPPDATA": "<TMP>/scratch-x/attempt-1/runtime",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "TEMP": "<TMP>/scratch-x/attempt-1/runtime",
+          "TMP": "<TMP>/scratch-x/attempt-1/runtime"
+        },
+        "sensitive_extra": [
+          "08e0e44cfa33a68d245f4eae81693f0148a3e09af5ce9c70a522c949a44fe0f0",
+          "1748831069035823b66819a613e5adc184d9898ec9ddd09b0ad9544b39d7fb9c",
+          "f9661343d9ec10420114be0495336e282ad60c9378a2505f13175e88821a16bd",
+          "52cc3d2d9a5287100d16c1c5b602dfd27aa9bbac9990c122fee4daeaccc36ea6",
+          "cbfec0b1a6db5fdf46d17bff963dd70050d244a1cda21b628981991d1a913cfe"
+        ],
+        "separate_stderr": true,
+        "stdin": [
+          743,
+          "84987f76b5f56503fab0209345757bcd12205402dd6c5375856b201278f1654f"
+        ]
+      }
+    ]
+  }
+}

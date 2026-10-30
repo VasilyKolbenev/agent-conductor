@@ -37,6 +37,10 @@ export const RUN_DOCS_COPY = Object.freeze({
     "{adapter} receives its task on standard input: the whole task — this document, the instruction and every other input included — must fit in {limit} bytes of UTF-8. A larger task is refused before it starts.",
     "{adapter} получает задачу через стандартный ввод: вся задача — вместе с этим документом, инструкцией и остальными входами — должна уместиться в {limit} байт UTF-8. Более крупная задача отклоняется до запуска."
   ],
+  "run_docs.channel_file": [
+    "{adapter} receives its task as a file in the folder of its own attempt: the whole task — this document, the instruction and every other input included — must fit in {limit} bytes of UTF-8. A larger task is refused before it starts.",
+    "{adapter} получает задачу файлом в папке своей попытки: вся задача — вместе с этим документом, инструкцией и остальными входами — должна уместиться в {limit} байт UTF-8. Более крупная задача отклоняется до запуска."
+  ],
   "run_docs.no_source": [
     "This run holds no document yet to start from.",
     "В запуске ещё нет документа, который можно взять за основу."

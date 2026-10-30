@@ -218,6 +218,11 @@ CAPPED = (
     "src/conductor/command/adapters/service_metadata.py",
     "tests/test_service_metadata.py",
     "tests/test_codex_quota_echo.py",
+    "tests/test_harness_core_snapshot.py",
+    "src/conductor/command/adapters/task_file.py",
+    "tests/test_task_file.py",
+    "tests/test_task_channel_file.py",
+    "tests/test_studio_task_channel_file.py",
 )
 
 

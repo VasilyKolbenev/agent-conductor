@@ -12,7 +12,8 @@ const CONTRACT = ["provider_id", "display_name", "vendor", "version", "capabilit
 const MANIFEST = ["adapter_id", "display_name", "vendor", "version", "capabilities", "docs_url"];
 // The bound a task is refused at before its claim, with the unit and scope that bound measures
 // (policy_providers._task_channel); the channel must be the one the transport profile declares.
-const CHANNELS = {argv: ["utf16_units", "command_line"], stdin: ["utf8_bytes", "task"]};
+const CHANNELS = {argv: ["utf16_units", "command_line"], stdin: ["utf8_bytes", "task"],
+  file: ["utf8_bytes", "task"]};
 //: One task-channel fact's closed shape, read alike by the grant review and the run's controls.
 export function taskChannelShape(value) {
   return object(value, ["channel", "limit", "unit", "scope"]) && Object.hasOwn(CHANNELS, value.channel)

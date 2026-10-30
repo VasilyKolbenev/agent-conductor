@@ -18,15 +18,18 @@ provider, a fix to any of those is a fix that has to be made five times and will
 eventually be made four.
 
 So it lives here once, and a provider is a PROFILE plus two small methods. WHICH
-two is decided by the profile's ``task_channel``, a closed choice of ``argv`` or
-``stdin``, and that is structural rather than advisory:
+two is decided by the profile's ``task_channel``, a closed choice of ``argv``,
+``stdin`` or ``file``, and that is structural rather than advisory:
 
-- ``_argv_prefix`` -- what the operator's pin contributes to argv, on either
+- ``_argv_prefix`` -- what the operator's pin contributes to argv, on any
   channel;
 - on the ``argv`` channel, ``_task_argv(task_text)`` -- where the vendor's flags
   put the prompt;
-- on the ``stdin`` channel, ``_stdin_argv(home, model)`` and
-  ``_task_stdin(task_text)``. The argv builder there takes NO task argument,
+- on the ``stdin`` and ``file`` channels, ``_stdin_argv(home, model)`` and
+  ``_task_stdin(task_text)``. On ``file`` the bytes are written once into the
+  attempt home by ``headless_spec.attempt_spec`` (``task_file``), and the argv
+  builder names that file by ``task_file.path_in(home)``. The argv builder there
+  takes NO task argument,
   which is the whole guarantee that no byte of an operator's instruction can
   reach a command line any process lister on the machine can read. An earlier
   version tried to CHECK that instead, by calling one builder twice with probe
@@ -72,6 +75,7 @@ from pathlib import Path
 from ..contracts import ActionRequest, ActionResultReceipt
 from .harness_profile import (
     DISPATCH_CAPABILITY,
+    OFF_ARGV_CHANNELS,
     OUTPUT_LIMIT,
     PREFLIGHT_LOGIN_RESIDUE_DETAIL,
     PREFLIGHT_RESIDUE_DETAIL,
@@ -170,17 +174,18 @@ class HeadlessCliTransport(
             raise self.error(
                 "a headless transport spawns only through an owned runner")
         profile = self.profile
-        if profile.task_channel == TASK_CHANNEL_STDIN:
-            # A profile can DECLARE the stdin channel; only the class can honour
-            # it. Refusing here rather than at the first dispatch is the same
-            # rule the profile itself follows: a code-owned mistake is caught
-            # before an operator's run is standing on it.
+        if profile.task_channel in OFF_ARGV_CHANNELS:
+            # A profile can DECLARE a channel off the command line (stdin or
+            # file); only the class can honour it. Refusing here rather than at
+            # the first dispatch is the same rule the profile itself follows: a
+            # code-owned mistake is caught before an operator's run is standing
+            # on it.
             kind = type(self)
             for seam in ("_stdin_argv", "_task_stdin"):
                 if getattr(kind, seam) is getattr(HeadlessCliTransport, seam):
                     raise self.error(
-                        f"this provider's task travels by stdin, so it owes its "
-                        f"own {seam}")
+                        f"this provider's task travels by {profile.task_channel}, "
+                        f"so it owes its own {seam}")
         self.manifest = AdapterManifest(
             adapter_id=adapter_id, display_name=profile.display_name,
             vendor=profile.vendor, version=profile.reviewed_version,
@@ -258,11 +263,13 @@ class HeadlessCliTransport(
         raise NotImplementedError
 
     def _task_stdin(self, task_text: str) -> bytes:
-        """The bytes a STDIN-channel provider hands the child, and its whole task.
+        """The bytes a STDIN- or FILE-channel provider hands the child, and its whole task.
 
-        Only ever called for ``task_channel == "stdin"``. A provider on the argv
-        channel never reaches here and never opens a pipe: its spawn is the
-        DEVNULL spawn it had before either seam existed.
+        Only ever called for a channel off the command line (``stdin`` or ``file``). On
+        ``file`` the bytes are written once into the attempt home and the child is given no
+        stdin at all (``headless_spec.attempt_spec``). A provider on the argv channel never
+        reaches here and never opens a pipe: its spawn is the DEVNULL spawn it had before
+        either seam existed.
         """
         raise NotImplementedError
 
@@ -500,7 +507,7 @@ class HeadlessCliTransport(
         is called instead by ``_spawn``, which holds the minted home and has
         never seen ``task_text`` at all.
         """
-        if self.profile.task_channel == TASK_CHANNEL_STDIN:
+        if self.profile.task_channel in OFF_ARGV_CHANNELS:
             return self._stdin_argv, self._task_stdin(task_text)
         return self._task_argv(task_text), None
 

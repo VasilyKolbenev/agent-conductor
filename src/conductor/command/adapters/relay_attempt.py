@@ -60,7 +60,7 @@ from types import MappingProxyType
 from ...ownership_errors import OwnerRefused
 from ..contracts import ActionRequest, ActionResultReceipt
 from . import login_relay, relay_home
-from .harness_profile import residue_detail
+from .harness_profile import TASK_CHANNEL_FILE, TASK_FILE_NAME, residue_detail
 from .harness_workspace import WorkspaceNotContained
 from .headless_spec import attempt_spec
 from .relay_env import access_only_switch
@@ -228,7 +228,19 @@ class RelayAttempt:
             key = relay_home.project_key(self._workspace.root)
         except (ProfileRefused, ProcessRunnerError, OSError):
             return "root"
-        return "homes" if login_relay.sweep(root, key, spec.kind, spec.files) else None
+        return "homes" if login_relay.sweep(root, key, spec.kind, self._first_names()) else None
+
+    def _first_names(self) -> tuple[str, ...]:
+        """The names a relay home gives up first, before its tree is removed as a whole.
+
+        The files of the copy of the login, so that a tree that cannot be removed leaves no
+        credential behind; and, for a provider whose task travels by file, the task file, so
+        that the task goes with the copy and not after it (`task_file`).
+        """
+        files = self.profile.login_relay.files
+        if self.profile.task_channel == TASK_CHANNEL_FILE:
+            return (*files, TASK_FILE_NAME)
+        return files
 
     def _claim_of(self, request: ActionRequest, *, verification: bool = False) -> Claim:
         """The claim of this request's action, or of its independent check, for one attempt."""
@@ -348,7 +360,7 @@ class RelayAttempt:
             return self._relay_in(home, ready, argv, cwd, timeout=timeout, mode=mode,
                                   claim=claim, **options)
         finally:
-            if not login_relay.discard(home, spec.files):
+            if not login_relay.discard(home, self._first_names()):
                 self._retained += 1
 
     def _relay_in(self, home: Path, ready: login_relay.Ready, argv, cwd: str, *, timeout,

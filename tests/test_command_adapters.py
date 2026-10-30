@@ -70,10 +70,13 @@ SDK_EXECUTION_DOOR = frozenset({"process.py", "_procgroup.py", "_winlaunch.py"})
 # strictly as a file that something else wrote, writes the access-only copy into an empty relay
 # home and removes one again (a tree walk that follows no link). The two specs beside it
 # (``claude_relay``, ``codex_relay``) and ``relay_env`` read through it and are value modules.
+# ``task_file`` is the one writer of a task for a provider whose vendor reads its prompt from a
+# file: it creates a single new file in an attempt home, reads it back and removes it again on a
+# failure, and refuses every other folder (H5-GROK-DIAGNOSE I1). It holds no execution door either.
 SDK_WORKSPACE_DOOR = frozenset({
     "artifact_transport.py", "harness_workspace.py", "login_home.py",
     "work_seed.py", "process_profile.py", "process_acl.py", "process_loans.py",
-    "relay_home.py", "login_relay.py"})
+    "relay_home.py", "login_relay.py", "task_file.py"})
 # Names that would let a value module reach an executable, the filesystem, or the
 # import system on its own.
 BANNED_SDK_CALLS = frozenset({
