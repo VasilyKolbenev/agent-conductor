@@ -1,9 +1,10 @@
-Итог: владелец разрешил активацию, новую сборку и живые проверки; стоп при 25% остатка.
+Итог: владелец разрешил активацию, новую сборку и живые проверки; стоп при 20% остатка.
 
 # H5-GROK-ACTIVATE: first Codex + Grok Dalio
 
 Authority: owner message 30.10.2026, additional 15 percentage points from 40% remaining.
-Hard stop: 75% account usage. Read counter at checkpoints; save state before stopping.
+Owner extension after the connection outage: stop at 20% remaining (80% used).
+At that decision 34% remained. Read counter at checkpoints; save state before stopping.
 Base: 63fd1f2; DESIGN H5-GROK-DIAGNOSE-DESIGN at 183904f, I2/I3A/I3B reports.
 Codex substitutes for unavailable Opus under existing PROC-CODEX-RETURN decision.
 
@@ -68,3 +69,12 @@ lease and OS boundary. This replaces the older P-before-build ordering; no P res
 claimed. G2 and all G6 preconditions/rubric/stop rules remain mandatory. No extra probe is
 spent outside the product. Prepare a short bounded diagnosis of the existing three-file
 runstats seed; the full Dalio is a separate fresh run after successful G6.
+
+## Interrupted full check
+
+Full run 6039eeb started 18:21 MSK, 30.10.2026. Fourteen UTF-8 native modules completed.
+Seven ordinary shards lost their processes at about 18:29; on reconnect at 20:40 no
+listed shard PID existed, no ordinary JUnit was published. Progress already contained
+failures before interruption; diagnose those failures, do not attribute them to the network.
+Evidence: work/grok-activation/run-20261030T152106166187Z. This run is NOT green;
+cp1251 and the protected build have not started. Old logs and temp folders remain.
