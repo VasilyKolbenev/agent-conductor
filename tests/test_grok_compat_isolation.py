@@ -40,7 +40,7 @@ def _harness(tmp_path, subscription=False):
     login.mkdir()
     (login / "auth.json").write_text("{}", encoding="utf-8")
     # These are explicitly selected operator values, not unselected ambient variables.
-    environment = {name: "true" for name in COMPAT}
+    environment = {} if subscription else {name: "true" for name in COMPAT}
     environment[_fakegrok.SPAWN_LOG] = str(log)
     config = ProviderConfig(
         provider_id="grok-build", executable=str(executable), protocol=GROK_PROTOCOL,

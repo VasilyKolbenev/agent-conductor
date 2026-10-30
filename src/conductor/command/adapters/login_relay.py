@@ -181,7 +181,7 @@ class RelaySpec(ABC):
     form of the copy is a changed digest, and an old grant is refused. The behaviour is in methods.
 
     Attributes:
-        kind: The letter that names this harness's relay homes (`c-<16 hex>`, `x-<16 hex>`).
+        kind: The relay-home letter: `c-<16 hex>`, `x-<16 hex>` or `g-<16 hex>`.
         credential: The name of the credential file in the login home.
         files: Every file name the relay may be given, the credential among them. What a spec
             returns from `bootstrap` is among them, and `discard` and `sweep` take these first.

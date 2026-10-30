@@ -63,7 +63,7 @@ from . import login_relay, relay_home
 from .harness_profile import TASK_CHANNEL_FILE, TASK_FILE_NAME, residue_detail
 from .harness_workspace import WorkspaceNotContained
 from .headless_spec import attempt_spec
-from .relay_env import access_only_switch
+from .relay_env import access_only_switch, grok_compat_switch
 from .login_lifetime import owned_login_attempt
 from .process import ProcessOutcome, ProcessRunnerError
 from .process_profile import ProfileRefused
@@ -275,8 +275,8 @@ class RelayAttempt:
 
         Operator selection is checked BEFORE code-owned overrides, even when the operator's
         value equals the code's. A name absent from the selected environment is not forwarded.
-        Only the exact access-only switch declared by Codex's profile is exempt among forced
-        values; preflights on the real login never receive it (`headless_spec`). Asked before
+        Only exact Codex access-only and Grok compatibility pairs are exempt among forced
+        values. Grok pairs also remain on real-login metadata children. Asked before
         the version, login status and quota reads. False off the confined relay road.
         """
         if not (self._confine and self._relay_road()):
@@ -285,7 +285,9 @@ class RelayAttempt:
         chosen = self._runner.capture_environment(self._env_allow())
         if any(spec.forbids(name) for name in chosen.values):
             return True
-        return any(spec.forbids(name) and not access_only_switch(self.profile, name, value)
+        return any(spec.forbids(name)
+                   and not (access_only_switch(self.profile, name, value)
+                            or grok_compat_switch(self.profile, name, value))
                    for name, value in self.profile.forced_env)
 
     # -- the readiness of the login, as the last step of the preflight ---------------------------

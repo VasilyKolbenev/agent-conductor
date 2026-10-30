@@ -133,6 +133,8 @@ from . import login_home
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
+from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS
+from .relay_env import GROK_COMPAT_ENV, GROK_ROUTE_ENV
 
 from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
 
@@ -185,18 +187,7 @@ GROK_FORCED_ENV = (
     (GROK_FEEDBACK_ENV, SWITCHED_OFF),
     # G0b / H5-GROK-DIAGNOSE addendum 1: metadata children run outside the task boundary too.
     # Disable imports from personal profiles on every child; operator values cannot enable them.
-    ("GROK_CLAUDE_SKILLS_ENABLED", "false"),
-    ("GROK_CLAUDE_RULES_ENABLED", "false"),
-    ("GROK_CLAUDE_AGENTS_ENABLED", "false"),
-    ("GROK_CLAUDE_MCPS_ENABLED", "false"),
-    ("GROK_CLAUDE_HOOKS_ENABLED", "false"),
-    ("GROK_CLAUDE_SESSIONS_ENABLED", "false"),
-    ("GROK_CURSOR_SKILLS_ENABLED", "false"),
-    ("GROK_CURSOR_RULES_ENABLED", "false"),
-    ("GROK_CURSOR_AGENTS_ENABLED", "false"),
-    ("GROK_CURSOR_MCPS_ENABLED", "false"),
-    ("GROK_CURSOR_HOOKS_ENABLED", "false"),
-    ("GROK_CURSOR_SESSIONS_ENABLED", "false"),
+    *GROK_COMPAT_ENV,
 )
 #: The code-owned flags. No caller contributes one, and the prompt stands LAST so
 #: no token after it could be taken for a flag. ``--no-auto-update`` stands
@@ -473,8 +464,7 @@ LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": Tru
 
 # Native 1.0.5 ACP calibration: these metadata requests do not create a session
 # or send a model prompt. Billing requires the native xAI session auth gate.
-GROK_LOGIN_OVERRIDES = ("XAI_API_KEY", "GROK_CLI_CHAT_PROXY_BASE_URL", "GROK_AUTH_PROVIDER_COMMAND",
-    "GROK_OIDC_ISSUER", "GROK_OIDC_CLIENT_ID", "GROK_DEPLOYMENT_KEY")
+GROK_LOGIN_OVERRIDES = GROK_ROUTE_ENV
 GROK_LOGIN_ARGV = ("login",)
 _RPC_ARGV = ("--no-auto-update", "agent", "stdio")
 _RPC_INIT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
@@ -492,17 +482,7 @@ _SERVICE_BY_PAYLOAD = MappingProxyType({GROK_AUTH_RPC.payload: GROK_AUTH_RPC,
 #: The id of the auth/info reply in both exchanges above.
 _RPC_INFO_ID = 2
 
-#: The login file is the vendor's `AuthStore`, a map of `GrokAuth` records (SOURCE,
-#: crates/codegen/xai-grok-shell/src/auth/model.rs at PINNED_COMMIT, the commit the
-#: reviewed 1.0.5 prints). These are that record's fields; `key` and `refresh_token`
-#: carry the credential, and a field outside this list is unknown and counts as one.
-GROK_AUTH_FIELDS = (
-    "key", "auth_mode", "create_time", "user_id", "email", "first_name", "last_name",
-    "profile_image_asset_id", "principal_type", "principal_id", "team_id", "team_name",
-    "team_role", "organization_id", "organization_name", "organization_role",
-    "user_blocked_reason", "team_blocked_reasons", "coding_data_retention_opt_out",
-    "has_grok_code_access", "refresh_token", "expires_at", "oidc_issuer", "oidc_client_id")
-GROK_AUTH_CREDENTIALS = ("key", "refresh_token")
+#: GROK_AUTH_FIELDS and GROK_AUTH_CREDENTIALS are reexported from the relay value module.
 #: auth/info reply field -> the login field whose value it repeats. The first four are MEASURED
 #: on a real subscription login (1.0.5, 28.09.2026, names only): the image URL carries the asset
 #: id inside it, and (28.10.2026) the principal id inside the image URL. That the principal id

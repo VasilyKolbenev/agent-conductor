@@ -55,6 +55,50 @@ CODEX_CREDENTIAL_ENV = tuple(sorted((
 #: It constrains the refresh route; it does not promise that refresh can never be attempted.
 CODEX_ACCESS_ONLY_ENV = (("CODEX_REFRESH_TOKEN_URL_OVERRIDE", "http://127.0.0.1:9/oauth/token"),)
 
+#: Grok 1.0.5 AuthStore scope and compatibility switches (H5-GROK-DIAGNOSE, addendum 1).
+GROK_SCOPE = "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828"
+GROK_COMPAT_ENV = (
+    ("GROK_CLAUDE_SKILLS_ENABLED", "false"), ("GROK_CLAUDE_RULES_ENABLED", "false"),
+    ("GROK_CLAUDE_AGENTS_ENABLED", "false"), ("GROK_CLAUDE_MCPS_ENABLED", "false"),
+    ("GROK_CLAUDE_HOOKS_ENABLED", "false"), ("GROK_CLAUDE_SESSIONS_ENABLED", "false"),
+    ("GROK_CURSOR_SKILLS_ENABLED", "false"), ("GROK_CURSOR_RULES_ENABLED", "false"),
+    ("GROK_CURSOR_AGENTS_ENABLED", "false"), ("GROK_CURSOR_MCPS_ENABLED", "false"),
+    ("GROK_CURSOR_HOOKS_ENABLED", "false"), ("GROK_CURSOR_SESSIONS_ENABLED", "false"),
+)
+GROK_ROUTE_ENV = (
+    "XAI_API_KEY", "GROK_CLI_CHAT_PROXY_BASE_URL", "GROK_AUTH_PROVIDER_COMMAND",
+    "GROK_OIDC_ISSUER", "GROK_OIDC_CLIENT_ID", "GROK_DEPLOYMENT_KEY")
+GROK_ROUTE_PREFIXES = ("GROK_TRACE_UPLOAD_", "GROK_INTERNAL_OTLP_")
+GROK_FORBIDDEN_ENV = tuple(sorted({*GROK_ROUTE_ENV, *COMMON_ROUTE_ENV,
+    *(name for name, _value in GROK_COMPAT_ENV),
+    "GROK_AUTH", "GROK_AUTH_PATH", "GROK_AUTH_EARLY_INVALIDATION_SECS",
+    "GROK_AUTH_TOKEN_TTL", "GROK_AUTH_PROVIDER_LABEL", "GROK_LOCAL_AUTH",
+    "GROK_OAUTH2_ISSUER", "GROK_OAUTH2_CLIENT_ID", "GROK_OAUTH2_PRINCIPAL_TYPE",
+    "GROK_OAUTH2_PRINCIPAL_ID", "GROK_OAUTH2_SCOPES", "GROK_OAUTH2_REFERRER",
+    "GROK_OIDC_SCOPES", "GROK_OIDC_AUDIENCE", "GROK_FORCE_LOGIN_TEAM_ID",
+    "GROK_DISABLE_API_KEY_AUTH", "GROK_FOLDER_TRUST", "GROK_TRACK_HEADLESS",
+    "GROK_WS_URL", "GROK_WS_ORIGIN", "GROK_TELEMETRY_EVENTS_URL",
+    "GROK_TELEMETRY_EVENTS_API_KEY", "GROK_TELEMETRY_MIXPANEL_TOKEN",
+    "XAI_API_BASE_URL", "GROK_MODELS_BASE_URL", "GROK_MODELS_LIST_URL",
+    "GROK_MANAGED_CONFIG_URL", "GROK_FEEDBACK_BASE_URL", "GROK_ALPHA_TEST_KEY",
+    "GROK_AUTH_FORCE_DARK_WAKE"}))
+
+
+def grok_forbidden_name(name: str, *, names=GROK_FORBIDDEN_ENV,
+                        prefixes=GROK_ROUTE_PREFIXES) -> bool:
+    """One pure decision for Grok's bound relay policy and the subscription config door."""
+    folded = name.casefold()
+    return (any(folded == own.casefold() for own in names)
+            or any(folded.startswith(prefix.casefold()) for prefix in prefixes))
+
+
+def grok_compat_switch(profile, name: str, value: str) -> bool:
+    """Only Grok's exact code-owned import disable; never exempts an operator selection."""
+    relay = profile.login_relay
+    return (profile.home_env == "GROK_HOME" and relay is not None
+            and relay.kind == "g" and relay.credential == "auth.json"
+            and relay.section == GROK_SCOPE and (name, value) in GROK_COMPAT_ENV)
+
 
 def access_only_switch(profile, name: str, value: str) -> bool:
     """The one exact code-owned switch of Codex's access-only relay, never an operator grant."""
@@ -70,7 +114,8 @@ CODEX_FORBIDDEN_ENV = tuple(sorted({*CODEX_ROUTE_ENV, *CODEX_CREDENTIAL_ENV, *CO
 #: What the config door and the wizard refuse beside a subscription: the union, because the door
 #: does not branch on which harness a row is for. A name one harness does not read is harmless in
 #: the row of another, and a row that forwarded it would gain nothing it could use.
-SUBSCRIPTION_ROUTE_ENV = tuple(sorted({*CLAUDE_FORBIDDEN_ENV, *CODEX_FORBIDDEN_ENV}))
+SUBSCRIPTION_ROUTE_ENV = tuple(sorted({
+    *CLAUDE_FORBIDDEN_ENV, *CODEX_FORBIDDEN_ENV, *GROK_FORBIDDEN_ENV}))
 
 _FOLDED = frozenset(name.casefold() for name in SUBSCRIPTION_ROUTE_ENV)
 
@@ -81,4 +126,5 @@ def route_env_named(names: Iterable[str]) -> tuple[str, ...]:
     Args:
         names: Environment variable names, as an operator wrote them.
     """
-    return tuple(name for name in names if name.casefold() in _FOLDED)
+    return tuple(name for name in names
+                 if name.casefold() in _FOLDED or grok_forbidden_name(name))

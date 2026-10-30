@@ -48,8 +48,8 @@ from .process_profile import ProfileRefused
 
 #: The folder beside `logins` that holds the relay homes of every project of the product.
 RELAY_DIR = "relay"
-#: `c` for Claude Code or `x` for Codex, then 16 hex. Short on purpose: the child's paths are long.
-HOME_NAME = re.compile(r"[cx]-[0-9a-f]{16}\Z")
+#: c/x/g for Claude/Codex/Grok, then 16 hex. Short: the child's paths are long.
+HOME_NAME = re.compile(r"[cxg]-[0-9a-f]{16}\Z")
 _ALLOW = ("A", "OA")
 _PLAIN = ("A", "OA", "D", "OD")
 #: ALL APPLICATION PACKAGES, and the prefixes of a package SID and of a capability SID.
@@ -252,7 +252,7 @@ def relay_home_shape(auth_homes, root, root_identity, path, work, install) -> st
     except ValueError:
         return "the identity of the project is not a volume and a file id"
     if HOME_NAME.fullmatch(home.name) is None:
-        return "the relay home is not named c-<16 hex> or x-<16 hex>"
+        return "the relay home is not named c-<16 hex>, x-<16 hex> or g-<16 hex>"
     if key.name != wanted:  # exactly: the product writes the key in lower case, as it names a home
         return "the relay home stands in the key folder of another project"
     if (relay.name.casefold(), top.name.casefold()) != (RELAY_DIR, LOGIN_PARENTS[0]):

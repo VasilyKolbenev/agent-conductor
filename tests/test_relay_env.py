@@ -58,7 +58,9 @@ def test_the_roster_of_names_is_the_one_f10_of_the_design_lists():
     assert relay_env.CLAUDE_ROUTE_ENV == tuple(sorted(CLAUDE_NAMES))
     assert relay_env.CODEX_ROUTE_ENV == tuple(sorted(CODEX_NAMES))
     assert relay_env.CODEX_CREDENTIAL_ENV == tuple(sorted(CODEX_CREDENTIAL_NAMES))
-    assert relay_env.SUBSCRIPTION_ROUTE_ENV == tuple(sorted(EVERY_NAME))
+    # Grok's independent literal roster is held in test_grok_relay_environment.
+    assert relay_env.SUBSCRIPTION_ROUTE_ENV == tuple(sorted(
+        set(EVERY_NAME) | set(relay_env.GROK_FORBIDDEN_ENV)))
 
 
 def test_each_harness_carries_its_own_names_and_the_common_ones():
