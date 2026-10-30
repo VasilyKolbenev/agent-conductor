@@ -1,4 +1,4 @@
-Итог: Grok review подключён и проверен целевыми тестами; полный core и live G6 ещё не закрыты.
+Итог: Grok включён, полный core зелёный в двух кодировках, сборка установлена; G6 ждёт свежего входа.
 
 # H5-GROK-ACTIVATE — evidence checkpoint
 
@@ -95,12 +95,36 @@ G2 at 18:17 MSK: one known OIDC scope, no unknown fields, 203.2 minutes remainin
 360-minute token lifetime. All 55 credential-string/input collision counts were zero.
 This TTL is historical, not readiness for a later launch. No credential values were logged.
 
-## Next, not yet proven
+## Final full checks and installed product
 
-Finish shared fixture census and clean full checks; build new protected product from that
-exact SHA; setup DecemberGrokG6; public API seed excludes canary and preserves source hashes;
-read current login/quota, then owner grant for one Grok review/600s. Only a clean successful
-G6 permits the separate fresh Dalio run. Optional unisolated P was explicitly skipped.
-No Claude row, login or quota polling in the new project; Codex and Grok only.
-Prepared helpers setup-g6.py and prepare-g6.py are outside Git, not yet executed. Reviewer
-found and fixed Git environment isolation and cp1251 JSON decoding before use.
+Exact 48a787cde881425abee17ff151413b5c29e04c03: all 42 jobs passed, 19,629 passed and
+432 skipped in EACH encoding, zero failures/errors. Both mode witnesses and final clean Git
+state recorded. results.json SHA256 f0c93a08fd8c55db08634c3d39533bfea1e2ae4a043df16073d43a098fa8a5ce.
+These are local Windows checks, not green cross-platform CI or release acceptance.
+
+Protected product installed at DecemberCommand/product/48a787cde881.
+Archive SHA256 f3e01ce03dab6f0a73e173b91d58e0778fd8dcaeb7c6046b522c305c0ff1171f;
+wheel SHA256 02b8c3212b9ddadb6bfcf1af4a8a33cbf0ff9a6cb66ab20550996f8bc1222a2c;
+manifest SHA256 1b0633a51ee560703d416ae1239272c77639883a068b6f10c28b111614b074c9.
+Preflight of the new product at 22:15 MSK: 62 harness files, zero problems/notes.
+Old installed products preserved. No push.
+
+## Prepared live G6; first missing step
+
+setup-g6.py and prepare-g6.py executed successfully. Fresh DecemberGrokG6 on port7804;
+source commit fab5f7558b273423873b420f7877f13d3739d17a; three seed file hashes verified,
+AGENT.md canary excluded through public seed API. Run grok-g6-first has one diagnose,
+600 seconds, one action; preview created, authorization absent, spent_actions=0.
+No model task was launched. Only Codex/Grok configured; Claude is unconfigured and not polled.
+
+Initial live quota: Codex observed/current, 23% remaining at that observation. Grok returned
+source_error. Before server start its access token had expired 34.3 minutes earlier;
+expiry is proven, but the precise cause of source_error is not established. Server stopped
+with Ctrl+C, port7804 free, ownership status closed. Auth values never printed.
+Owner asked to use work/grok-activation/login-grok.ps1 for fresh login (pending).
+Do not repeat setup-g6.py or prepare-g6.py: the project/workflow/task/run already exist.
+After login: inspect safe metadata/readiness, start existing launcher, check fresh quota,
+refresh preview and present owner grant in the app. G6 has not passed; no Dalio run exists.
+Only a clean successful G6 permits the separate fresh Dalio run. Optional P stays skipped.
+The unexecuted prepare-dalio-codex-grok.py requires actual G6 proof and a fresh input check.
+Owner stop remains 20%; latest Codex usage observation: 22% remaining.
