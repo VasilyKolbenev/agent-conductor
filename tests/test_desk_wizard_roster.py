@@ -19,10 +19,12 @@ from conductor.command.adapters.codex_cli import (
     CODEX_CAPABILITIES, CODEX_DISPLAY_NAME, CODEX_LIFECYCLE, CODEX_PROVIDER_ID,
     CODEX_SCHEMA_PAIRS)
 from conductor.command.adapters.grok_build import (
-    GROK_CAPABILITIES, GROK_DISPLAY_NAME, GROK_LIFECYCLE, GROK_PROVIDER_ID, GROK_SCHEMA_PAIRS)
+    GROK_CAPABILITIES, GROK_DISPLAY_NAME, GROK_LIFECYCLE, GROK_PROFILE, GROK_PROVIDER_ID,
+    GROK_SCHEMA_PAIRS)
 from conductor.command.adapters.kimi_code import (
     KIMI_CAPABILITIES, KIMI_DISPLAY_NAME, KIMI_LIFECYCLE, KIMI_PROVIDER_ID, KIMI_SCHEMA_PAIRS)
 from conductor.command.adapters.provider import ProviderContract, provider_projection
+from conductor.command.policy_providers import task_channel_fact
 from tests.desk_wizard_node import FIXTURES, fixture
 
 #: The facts of a provider row the server does not serve yet. The one place they are named:
@@ -79,7 +81,10 @@ def test_the_roads_of_every_harness_this_build_has_are_the_ones_the_fixture_says
         assert rows[served["provider_id"]]["controls"] == served["controls"], adapter[0]
         assert rows[served["provider_id"]]["display_name"] == served["display_name"]
     assert rows[CLAUDE_PROVIDER_ID]["controls"] == ["dispatch", "review"]
-    assert rows[GROK_PROVIDER_ID]["controls"] == ["dispatch"], "no review road yet"
+    assert rows[GROK_PROVIDER_ID]["controls"] == ["dispatch", "review"]
+    assert rows[GROK_PROVIDER_ID]["task_road"] == "review_only"
+    assert rows[GROK_PROVIDER_ID]["task_channel"] == task_channel_fact(GROK_PROFILE) == {
+        "channel": "file", "limit": 262144, "unit": "utf8_bytes", "scope": "task"}
 
 
 def test_the_readme_names_the_two_owed_facts_as_owed():

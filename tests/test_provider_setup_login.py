@@ -58,7 +58,7 @@ def test_the_login_question_is_put_only_where_a_login_is_driven(
 #: Which harness has a relay (`HarnessProfile.login_relay`), stated here by hand: the login with a
 #: relay is kept in the product's folder and runs a task inside the boundary; the other is read for
 #: quotas and refused a task (a subscription login for it is not supported there yet).
-RELAYED = {"claude-code": True, "codex": True, "grok-build": False, "kimi-code": False}
+RELAYED = {"claude-code": True, "codex": True, "grok-build": True, "kimi-code": False}
 RELAY_NOTE = ("On Windows, with 1 a task runs inside the execution boundary on a copy of that "
               "login that has no refresh token; the login folder itself is never given to a task.")
 NO_RELAY_NOTE = ("With 1 the quotas are read and every task is refused before it starts: a "
@@ -98,7 +98,7 @@ WRONG_FORMS = [
 
 
 @pytest.mark.parametrize("form", WRONG_FORMS)
-@pytest.mark.parametrize("provider_id", ["claude-code", "codex"])
+@pytest.mark.parametrize("provider_id", ["claude-code", "codex", "grok-build"])
 def test_a_login_with_a_relay_is_asked_for_the_product_folder_and_another_is_asked_again(
         project, tmp_path, capsys, provider_id, form):
     """The relay is derived from `<anything>/DecemberCommand/logins/<name>` alone, so a login kept
@@ -129,7 +129,7 @@ def test_a_login_with_a_relay_is_asked_for_the_product_folder_and_another_is_ask
 
 
 @pytest.mark.skipif(os.name != "nt", reason="a path with no drive is absolute off Windows only")
-@pytest.mark.parametrize("provider_id", ["claude-code", "codex"])
+@pytest.mark.parametrize("provider_id", ["claude-code", "codex", "grok-build"])
 def test_a_path_that_names_the_product_folder_but_is_not_absolute_here_is_asked_again(
         project, tmp_path, capsys, provider_id):
     """The wizard reads a path as absolute in either spelling, and the doors judge it by the host.
@@ -156,7 +156,7 @@ def test_a_path_that_names_the_product_folder_but_is_not_absolute_here_is_asked_
 
 
 @pytest.mark.parametrize("provider_id,variable", [
-    ("claude-code", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME")])
+    ("claude-code", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME"), ("grok-build", "GROK_HOME")])
 def test_the_sign_in_lines_point_the_vendors_variable_at_the_product_folder(
         project, tmp_path, capsys, provider_id, variable):
     executable, _ = pinned_files(tmp_path, provider_id)
@@ -171,7 +171,7 @@ def test_the_sign_in_lines_point_the_vendors_variable_at_the_product_folder(
     assert f"{variable} must point at that folder" in said, said
 
 
-@pytest.mark.parametrize("provider_id", ["grok-build", "kimi-code"])
+@pytest.mark.parametrize("provider_id", ["kimi-code"])
 def test_a_login_without_a_relay_is_still_kept_in_any_absolute_folder(
         project, tmp_path, capsys, provider_id):
     executable, _ = pinned_files(tmp_path, provider_id)
