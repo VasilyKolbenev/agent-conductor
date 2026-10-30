@@ -9,7 +9,7 @@ from conductor.command.policy_providers import ProviderAuthority
 from conductor.command.providers import resolve_providers
 from tests import _fakegrok
 from tests.test_command_grok_transport import (
-    INSTRUCTION_BODY, NOW, _Ids, _executable, a_request, run_once)
+    DispatchForTests, INSTRUCTION_BODY, NOW, _Ids, _executable, a_request, run_once)
 
 
 COMPAT = {
@@ -64,11 +64,13 @@ def test_selected_true_values_cannot_enable_compat_imports_in_any_child(tmp_path
         assert adapter.quota_connection().read() == {"config": {"creditUsagePercent": 41}}
         expected.append(["--no-auto-update", "agent", "stdio"])
     else:
+        adapter = DispatchForTests(adapter._pin, adapter._runner, root=adapter._root,
+                                   clock=adapter._clock, ids=adapter._ids)
         assert run_once(adapter, a_request()).outcome == "succeeded"
         if road == "subscription-dispatch":
             expected.append(["--no-auto-update", "agent", "stdio"])
         expected.append(["--no-auto-update", "--output-format", "plain",
-                         "--allow", "Edit", "--allow", "Write", "--single"])
+                         "--allow", "Edit", "--allow", "Write", "--prompt-file"])
     rows = _fakegrok.spawns(log)
     assert len(rows) == len(expected), "the expected native fake children must really run"
     for row, prefix in zip(rows, expected, strict=True):

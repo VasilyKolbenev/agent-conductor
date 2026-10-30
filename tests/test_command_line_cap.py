@@ -11,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "tests/test_grok_activation.py",
     "src/conductor/command/accept_gh.py",
     "src/conductor/command/accept_github.py",
     "src/conductor/command/accept_pull_request.py",

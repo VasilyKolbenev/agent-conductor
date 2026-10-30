@@ -1,5 +1,9 @@
 """Grok Build, driven headlessly: one pinned binary, one prompt, one attempt.
 
+The active V1 task is read-only review over --prompt-file in a fresh attempt home, with an
+access-only subscription relay. Dispatch argv below is dormant test coverage; historical
+--single documentation describes the earlier transport, not the active task channel.
+
 Every vendor fact below was read from xAI's own published sources and is pinned
 to a PERMALINK, so a later reader re-checks the exact bytes this module was
 written against rather than whatever the page says today. Every repository path
@@ -129,11 +133,11 @@ twice, and verification that reads only independent workspace evidence.
 """
 from __future__ import annotations
 
-from . import login_home
+from . import login_home, task_file
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
-from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS
+from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS, GROK_RELAY
 from .relay_env import GROK_COMPAT_ENV, GROK_ROUTE_ENV
 
 from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
@@ -145,7 +149,8 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .deep_contracts import DeepProtocol
-from .artifact_transport import ArtifactAwareTransport
+from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
+from .harness_profile import TASK_CHANNEL_FILE
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
     DISPATCH_CAPABILITY,
@@ -165,9 +170,10 @@ REVIEWED_GROK_VERSION = "1.0.5"
 GROK_PROTOCOL = DeepProtocol.GROK_HEADLESS_V1.value
 #: Experimental is said in the one field the Cockpit projection carries.
 GROK_DISPLAY_NAME = "Grok Build (headless, experimental)"
-#: Observation, and the one control this adapter really implements.
-GROK_CAPABILITIES = ("observe", DISPATCH_CAPABILITY)
-GROK_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),)
+#: The shared dispatch schema remains declared, but task_modes refuses that road in V1.
+GROK_CAPABILITIES = ("observe", DISPATCH_CAPABILITY, REVIEW_CAPABILITY)
+GROK_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),
+                     (REVIEW_CAPABILITY, "deep-arguments-v1"))
 #: The four seams the registration door requires of every provider.
 GROK_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAME whose VALUE is minted fresh per attempt.
@@ -189,30 +195,28 @@ GROK_FORCED_ENV = (
     # Disable imports from personal profiles on every child; operator values cannot enable them.
     *GROK_COMPAT_ENV,
 )
-#: The code-owned flags. No caller contributes one, and the prompt stands LAST so
-#: no token after it could be taken for a flag. ``--no-auto-update`` stands
-#: FIRST: a background update check during a dispatch would change the very
-#: build the preflight just proved.
+#: The code-owned flags. The task travels only in a fresh attempt-home file; the
+#: command line names it and carries no task text. Disable update checks on every task.
 NO_AUTO_UPDATE_ARGV = ("--no-auto-update",)
 OUTPUT_FORMAT_ARGV = ("--output-format", "plain")
-#: ``-p`` and ``--single`` are one flag; the long spelling is used so a reader of
-#: the argv cannot mistake it for anything else.
-PROMPT_FLAG = "--single"
 #: What a DISPATCH may do that headless mode forbids by default (spec 10.2, review ruling of
 #: 28.09.2026). A headless run without auto-approval denies the Edit and Write tools -- measured
 #: live, a dispatch ended "no changed file" -- and the pinned headless guide documents ``--allow``
 #: as repeatable. The tool names are case-sensitive at PINNED_COMMIT
 #: (``xai-grok-workspace/src/permission/rules.rs``), and Bash is a separate rule that stays
-#: gated. These two pairs stand in the dispatch argv ONLY: the version print, the account
-#: exchange and any review argv keep the argv they had, and no wider grant (Bash, yolo, a
-#: permission mode) is ever added.
+#: gated. These two pairs stand in the dormant dispatch argv ONLY. Active review instead
+#: permits Read/Grep/Glob and explicitly denies edit, shell, web and MCP tools below.
 ALLOW_FLAG = "--allow"
 DISPATCH_ALLOWED_TOOLS = ("Edit", "Write")
 DISPATCH_PERMISSION_ARGV = tuple(
     token for tool in DISPATCH_ALLOWED_TOOLS for token in (ALLOW_FLAG, tool))
+#: Review may read, never edit or run a shell/web/MCP tool. OS review rights remain authoritative.
+REVIEW_PERMISSION_ARGV = ("--allow", "Read", "--allow", "Grep", "--allow", "Glob",
+                          "--deny", "Edit", "--deny", "Bash", "--deny", "WebFetch",
+                          "--deny", "WebSearch", "--deny", "MCPTool")
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
-GROK_OUTPUT_LIMIT = 16 * 1024
+GROK_OUTPUT_LIMIT = 48 * 1024
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -291,6 +295,7 @@ GROK_PROFILE = HarnessProfile(
     login_expected=("auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md"),
     login_forbidden=("mcp_credentials.json", "mcp.json", "hooks", "plugins", "skills", "lsp.json"),
     capability=DISPATCH_CAPABILITY, output_limit=GROK_OUTPUT_LIMIT,
+    task_channel=TASK_CHANNEL_FILE, login_relay=GROK_RELAY,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="grok-home")
 
@@ -312,10 +317,13 @@ def grok_pin(executable: str, env_allow: tuple[str, ...] = (), *,
 
 
 class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
-    """Run one Grok Build prompt per authorized action, and prove nothing more."""
+    """Run one read-only Grok review; dispatch and independent checking remain closed."""
 
     profile = GROK_PROFILE
     error = GrokBuildError
+    review_enabled = True
+    serves_checks = False
+    task_modes = ("review",)
 
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,
@@ -333,10 +341,17 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
-    def _task_argv(self, task_text: str) -> tuple[str, ...]:
-        """``--no-auto-update --output-format plain --allow Edit --allow Write --single <task>``."""
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        """Dormant dispatch builder, exercised only by an explicitly enabled test subclass."""
         return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, *DISPATCH_PERMISSION_ARGV,
-                PROMPT_FLAG, task_text)
+                "--prompt-file", task_file.path_in(home))
+
+    def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, *REVIEW_PERMISSION_ARGV,
+                "--prompt-file", task_file.path_in(home))
+
+    def _task_stdin(self, task_text: str) -> bytes:
+        return task_text.encode("utf-8")
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow

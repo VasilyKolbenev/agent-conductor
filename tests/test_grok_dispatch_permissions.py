@@ -18,7 +18,7 @@ No live run is made here: the one live dispatch that edits a file waits for the 
 """
 from __future__ import annotations
 
-from conductor.command.adapters.artifact_transport import ArtifactAwareTransport
+from conductor.command.adapters import task_file
 from conductor.command.adapters.grok_build import (
     GROK_AUTH_RPC,
     GROK_QUOTA_RPC,
@@ -26,7 +26,8 @@ from conductor.command.adapters.grok_build import (
 )
 
 from tests import _fakegrok
-from tests.test_command_grok_transport import _recorded, a_harness, a_request, run_once
+from tests.test_command_grok_transport import (
+    DispatchForTests, _recorded, a_harness, a_request, run_once)
 
 #: The only tool names a Grok dispatch may be told to allow (case-sensitive in the vendor).
 ALLOWED = ("Edit", "Write")
@@ -43,10 +44,10 @@ def _dispatch_argv(tmp_path) -> tuple[str, ...]:
 def test_the_grok_dispatch_argv_allows_edit_and_write_and_keeps_the_prompt_last(tmp_path):
     argv = _dispatch_argv(tmp_path)
 
-    flags = argv[1:-2]  # between the pinned binary and ``--single <prompt>``
+    flags = argv[1:-2]  # between the pinned binary and ``--prompt-file <path>``
     assert flags == ("--no-auto-update", "--output-format", "plain",
                      "--allow", "Edit", "--allow", "Write")
-    assert argv[-2] == "--single"
+    assert argv[-2] == "--prompt-file"
     assert sorted(_fakegrok.allowed_tools(list(argv))) == sorted(ALLOWED)
 
 
@@ -68,9 +69,10 @@ def test_the_version_preflight_and_the_account_exchange_carry_no_permission_flag
         assert "--allow" not in exchange.argv
 
 
-def test_grok_still_declares_no_review_road_so_no_review_argv_could_grow_an_allow():
-    assert GrokBuildAdapter.review_enabled is False
-    assert GrokBuildAdapter._review_argv is ArtifactAwareTransport._review_argv
+def test_production_grok_keeps_dispatch_and_independent_checking_closed():
+    assert GrokBuildAdapter.review_enabled is True
+    assert GrokBuildAdapter.task_modes == ("review",)
+    assert GrokBuildAdapter.verify_for is None
 
 
 def test_a_dispatch_through_the_denying_fake_changes_the_file_it_was_told_to(tmp_path):
@@ -89,9 +91,10 @@ def test_a_dispatch_through_the_denying_fake_changes_the_file_it_was_told_to(tmp
 def test_the_same_dispatch_without_the_allow_flags_changes_nothing_in_the_fake(tmp_path):
     """The control: the fake denies, so the test above is not vacuous."""
 
-    class NoPermissions(GrokBuildAdapter):
-        def _task_argv(self, task_text):  # the pre-ruling argv, flags removed
-            return ("--no-auto-update", "--output-format", "plain", "--single", task_text)
+    class NoPermissions(DispatchForTests):
+        def _stdin_argv(self, home, model):  # the pre-ruling argv, flags removed
+            return ("--no-auto-update", "--output-format", "plain",
+                    "--prompt-file", task_file.path_in(home))
 
     adapter, root, log = a_harness(tmp_path, FAKEGROK_WRITE_FILE="guard.py:# a real change\n")
     denied = NoPermissions(adapter._pin, adapter._runner, root=root,

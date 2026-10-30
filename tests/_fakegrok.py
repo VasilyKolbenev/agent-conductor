@@ -37,6 +37,7 @@ zero prompt lines, not merely report a failure.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -54,6 +55,7 @@ VERSION = "FAKEGROK_VERSION"
 #: Bytes written to stdout / stderr by a prompt spawn (the secret-planting seam).
 EMIT_STDOUT = "FAKEGROK_STDOUT"
 EMIT_STDERR = "FAKEGROK_STDERR"
+EMIT_REVIEW = "FAKEGROK_REVIEW"
 #: An output bomb, in bytes, written past any sane capture bound.
 BOMB_BYTES = "FAKEGROK_BOMB_BYTES"
 #: Seconds a prompt spawn sleeps before exiting; drives the real timeout path.
@@ -117,7 +119,8 @@ def spawns(log_path: str | os.PathLike[str]) -> list[dict]:
 
 def prompt_spawns(log_path: str | os.PathLike[str]) -> list[dict]:
     """Only the spawns that really ran a prompt, never the version preflights."""
-    return [row for row in spawns(log_path) if row["argv"][:1] != ["--version"]]
+    return [row for row in spawns(log_path) if row["argv"][:1] != ["--version"]
+            and row["argv"] != ["--no-auto-update", "agent", "stdio"]]
 
 
 # --- the child body ----------------------------------------------------------
@@ -140,6 +143,18 @@ def _record(argv: list[str]) -> None:
         # `tests/_fakeenv.py` for why an exact name set was not the question.
         "probe": probe_report(),
     }
+    if "--prompt-file" in argv:
+        task = Path(argv[argv.index("--prompt-file") + 1])
+        payload = task.read_bytes()
+        row.update(task_file=str(task), task_sha256=hashlib.sha256(payload).hexdigest(),
+                   task_size=len(payload))
+        home = Path(os.environ[GROK_HOME_NAME])
+        auth = home / "auth.json"
+        records = json.loads(auth.read_bytes()) if auth.exists() else {}
+        body = next(iter(records.values()), {})
+        row["home_report"] = {"files": sorted(path.name for path in home.iterdir()),
+                              "refresh": "refresh_token" in body,
+                              "access": bool(body.get("key")), "account": body.get("user_id")}
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -158,6 +173,9 @@ def allowed_tools(argv: list[str]) -> set[str]:
 
 def _run_prompt(argv: list[str]) -> int:
     env = os.environ
+    if env.get(EMIT_REVIEW):
+        sys.stdout.buffer.write(b"# Diagnosis\nThe fake review read the supplied candidate.\n")
+        sys.stdout.buffer.flush()
     may_write = "Write" in allowed_tools(argv)
     if env.get(WRITE_FILE) and may_write:
         _write_pair(Path.cwd(), env[WRITE_FILE])

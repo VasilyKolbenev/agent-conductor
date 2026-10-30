@@ -263,7 +263,7 @@ def test_the_real_runtime_path_still_sends_the_exact_argv_and_environment(tmp_pa
     assert preflight["argv"] == ["--version"]
     assert prompt["argv"][:8] == [
         "--no-auto-update", "--output-format", "plain",
-        "--allow", "Edit", "--allow", "Write", "--single"]
+        "--allow", "Edit", "--allow", "Write", "--prompt-file"]
     assert len(prompt["argv"]) == 9
 
     expected_switches = {name: "0" for name in _fakegrok.SWITCH_NAMES}
