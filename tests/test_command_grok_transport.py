@@ -309,8 +309,9 @@ def test_all_four_documented_switches_are_turned_off_on_every_spawn(tmp_path):
     # constant, so flipping the published disable value -- turning telemetry,
     # trace upload, Mixpanel and feedback all ON -- left the entire suite green.
     # The NAMES still come from the adapter, cross-checked against the fake, so
-    # a fifth switch appearing cannot pass unnoticed either.
-    assert set(dict(GROK_FORCED_ENV)) == set(_fakegrok.SWITCH_NAMES), (
+    # another switch appearing cannot pass unnoticed either. Personal-profile imports have
+    # their own child witness in test_grok_compat_isolation, with the vendor's "false" spelling.
+    assert set(dict(GROK_FORCED_ENV)) == set(_fakegrok.SWITCH_NAMES + _fakegrok.COMPAT_NAMES), (
         "the adapter and the fake disagree about which switches exist")
     expected = {name: "0" for name in _fakegrok.SWITCH_NAMES}
     for row in _fakegrok.spawns(log):

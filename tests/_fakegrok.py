@@ -93,6 +93,12 @@ GROK_HOME_NAME = "GROK_HOME"
 SWITCH_NAMES = (
     "GROK_TELEMETRY_ENABLED", "GROK_TELEMETRY_TRACE_UPLOAD",
     "GROK_TELEMETRY_MIXPANEL_ENABLED", "GROK_FEEDBACK_ENABLED")
+# Independent vendor-name witness, never imported from the production profile.
+COMPAT_NAMES = (
+    "GROK_CLAUDE_SKILLS_ENABLED", "GROK_CLAUDE_RULES_ENABLED", "GROK_CLAUDE_AGENTS_ENABLED",
+    "GROK_CLAUDE_MCPS_ENABLED", "GROK_CLAUDE_HOOKS_ENABLED", "GROK_CLAUDE_SESSIONS_ENABLED",
+    "GROK_CURSOR_SKILLS_ENABLED", "GROK_CURSOR_RULES_ENABLED", "GROK_CURSOR_AGENTS_ENABLED",
+    "GROK_CURSOR_MCPS_ENABLED", "GROK_CURSOR_HOOKS_ENABLED", "GROK_CURSOR_SESSIONS_ENABLED")
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
@@ -128,6 +134,7 @@ def _record(argv: list[str]) -> None:
         # All FOUR documented switches, by name, so a test holds every one of
         # them rather than the one that happened to be checked.
         "switches": {name: os.environ.get(name) for name in SWITCH_NAMES},
+        "compat_switches": {name: os.environ.get(name) for name in COMPAT_NAMES},
         "env_names": sorted(os.environ),
         # Two booleans about the parent's probe, and never a value. See
         # `tests/_fakeenv.py` for why an exact name set was not the question.
@@ -172,6 +179,24 @@ def _run_prompt(argv: list[str]) -> int:
     return int(env.get(EXIT, "0"))
 
 
+def _run_metadata() -> int:
+    """Answer only the finite auth/billing exchange, without a model or account."""
+    replies = {
+        "initialize": {"_meta": {"defaultAuthMethodId": "cached_token"}},
+        "_x.ai/auth/info": {"methodId": "cached_token"},
+        "_x.ai/billing": {"config": {"creditUsagePercent": 41}},
+    }
+    for line in sys.stdin:
+        request = json.loads(line)
+        method = request.get("method")
+        if method not in replies:
+            return 2
+        response = {"jsonrpc": "2.0", "id": request["id"], "result": replies[method]}
+        sys.stdout.buffer.write(json.dumps(response).encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
     _record(argv)
@@ -182,6 +207,8 @@ def main() -> int:
             os.environ.get(VERSION, DEFAULT_VERSION).encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
         return 0
+    if argv == ["--no-auto-update", "agent", "stdio"]:
+        return _run_metadata()
     return _run_prompt(argv)
 
 

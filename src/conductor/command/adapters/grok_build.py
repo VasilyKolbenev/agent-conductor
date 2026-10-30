@@ -183,6 +183,20 @@ GROK_FORCED_ENV = (
     (GROK_TRACE_UPLOAD_ENV, SWITCHED_OFF),
     (GROK_MIXPANEL_ENV, SWITCHED_OFF),
     (GROK_FEEDBACK_ENV, SWITCHED_OFF),
+    # G0b / H5-GROK-DIAGNOSE addendum 1: metadata children run outside the task boundary too.
+    # Disable imports from personal profiles on every child; operator values cannot enable them.
+    ("GROK_CLAUDE_SKILLS_ENABLED", "false"),
+    ("GROK_CLAUDE_RULES_ENABLED", "false"),
+    ("GROK_CLAUDE_AGENTS_ENABLED", "false"),
+    ("GROK_CLAUDE_MCPS_ENABLED", "false"),
+    ("GROK_CLAUDE_HOOKS_ENABLED", "false"),
+    ("GROK_CLAUDE_SESSIONS_ENABLED", "false"),
+    ("GROK_CURSOR_SKILLS_ENABLED", "false"),
+    ("GROK_CURSOR_RULES_ENABLED", "false"),
+    ("GROK_CURSOR_AGENTS_ENABLED", "false"),
+    ("GROK_CURSOR_MCPS_ENABLED", "false"),
+    ("GROK_CURSOR_HOOKS_ENABLED", "false"),
+    ("GROK_CURSOR_SESSIONS_ENABLED", "false"),
 )
 #: The code-owned flags. No caller contributes one, and the prompt stands LAST so
 #: no token after it could be taken for a flag. ``--no-auto-update`` stands

@@ -25,7 +25,6 @@ from pathlib import Path
 
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.grok_build import (
-    GROK_FORCED_ENV,
     REVIEWED_GROK_VERSION,
     GROK_HOME_ENV,
     HOME_DIR,
@@ -267,7 +266,7 @@ def test_the_real_runtime_path_still_sends_the_exact_argv_and_environment(tmp_pa
         "--allow", "Edit", "--allow", "Write", "--single"]
     assert len(prompt["argv"]) == 9
 
-    expected_switches = {name: "0" for name, _value in GROK_FORCED_ENV}
+    expected_switches = {name: "0" for name in _fakegrok.SWITCH_NAMES}
     homes = []
     for row in spawns:
         assert row["switches"] == expected_switches, (

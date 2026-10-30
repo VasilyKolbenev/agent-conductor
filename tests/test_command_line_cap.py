@@ -117,6 +117,7 @@ CAPPED = (
     "tests/test_git_setup_first_wait.py",
     "tests/test_git_setup_modes.py",
     "tests/test_grok_dispatch_permissions.py",
+    "tests/test_grok_compat_isolation.py",
     "tests/test_materials_refused_refusal.py",
     "tests/test_policy_driver_ended.py",
     "tests/test_policy_driver_queue.py",
