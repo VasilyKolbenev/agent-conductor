@@ -108,3 +108,10 @@ reproduced stale Grok fixture/roster expectations to migrate in these files, pre
 their refusal/positive witnesses and all other harness behavior. The first three
 failures reproduce the subscription no-relay fixture failing to strip Grok's new relay.
 No generic weakening, skipped tests or product changes are authorized by this extension.
+
+The clean 0d781e1 complete run reproduced another stale declaration in
+test_desk_wizard_roster.py:79: the wizard's fixture still says Grok controls=[dispatch].
+Update this exact expectation and tests/fixtures/wizard/workflows{,_served}.json to
+the accepted capability/file channel facts. Run all wizard consumers in both encodings
+and review the diff. Keep simulated task-road scenarios and all non-Grok rows unchanged.
+This is test data migration, not permission to relax capability or auto-selection guards.
