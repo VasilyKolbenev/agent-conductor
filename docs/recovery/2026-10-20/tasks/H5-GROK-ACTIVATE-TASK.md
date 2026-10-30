@@ -115,3 +115,8 @@ Update this exact expectation and tests/fixtures/wizard/workflows{,_served}.json
 the accepted capability/file channel facts. Run all wizard consumers in both encodings
 and review the diff. Keep simulated task-road scenarios and all non-Grok rows unchanged.
 This is test data migration, not permission to relax capability or auto-selection guards.
+Connected consumers are also in scope: tests/test_desk_wizard_roles.py and its browser_tests
+counterpart. Preserve argv-size witnesses using an explicitly argv-capable provider instead
+of real Grok. Current Grok fixture uses review_only/file; do/checker exclusion remains required.
+The same census found tests/test_provider_setup_login.py asserting that Grok has no relay:
+reproduce, move Grok to existing relay-home witnesses, and retain Kimi's non-relay witness.
