@@ -553,3 +553,36 @@ Red-first: тест краснеет на 14f94cf и зеленеет после
 - Проактивный refresh при чтениях квоты — [гип] до G0b.
 - `subscription_boundary_detail` не переформулируется, только docstring
   (A/harness_profile.py:78-89).
+
+## Дополнение 1 — итог G0b и решения ведущего (30.10.2026)
+
+G0b — GO (workflow `wf_bb1e70f0-fb1`, только чтение):
+- бинарь `h5-a\staged\grok-build\1.0.5\grok.exe` (sha256 `4b924daa…be64`, 142 651 720 Б) содержит
+  аргумент `prompt-file` («Single-turn prompt from a file», 0x77d17d6) и ошибку headless
+  `prompt is empty` (0x77a4b78); строки разрешений Read, Grep, Glob, Edit, Bash, WebFetch,
+  WebSearch, MCPTool и `--allow`/`--deny` есть; stdin в prompt не читается (встроенная
+  документация);
+- коммит `5115b46bc9`, который печатает бинарь, — внутренний хеш монорепозитория, публично его нет;
+  ближайшее публичное дерево 1.0.5 — `9fabade`; по всем пунктам дизайна (prompt-file, правила
+  deny > ask > allow, TokenType, проактивный refresh, места hooks) оно, `19d42e35` и встроенная
+  документация 1.0.5 совпадают [вендор + строки бинаря, не поведение];
+- в 1.0.5 без запроса работают read_file, list_dir, grep и web_search: `--deny WebSearch` несущий,
+  `--allow Read/Grep/Glob` лишний, но безвреден.
+
+Новая находка: вне изоляции Grok 1.0.5 читает профиль владельца — hooks из
+`~\.claude\settings*.json` (всегда доверены), mcpServers из `~\.claude.json`, skills, commands,
+rules и CLAUDE*.md из `~\.claude`, а также `~\.cursor`; по умолчанию всё включено.
+
+Решения ведущего:
+1. Профиль Grok принудительно задаёт для КАЖДОГО запуска (версия, статус, чтение лимитов,
+   review) `GROK_{CLAUDE,CURSOR}_{SKILLS,RULES,AGENTS,MCPS,HOOKS,SESSIONS}_ENABLED=false`
+   (forced_env; значение `false` — документированное). Это меняет digest профиля Grok
+   (действующих грантов Grok нет) и поведение чтения лимитов Grok — регрессионный тест
+   обязателен. Строки §9 «вне V1» про SKILLS отменяются.
+2. GROK_FORBIDDEN_ENV дополняется именами, найденными в бинаре: XAI_API_BASE_URL,
+   GROK_MODELS_BASE_URL, GROK_MODELS_LIST_URL, GROK_MANAGED_CONFIG_URL, GROK_FEEDBACK_BASE_URL,
+   GROK_ALPHA_TEST_KEY, GROK_AUTH_FORCE_DARK_WAKE, GROK_TRACE_UPLOAD_*, GROK_INTERNAL_OTLP_*,
+   и переключатели compat (оператор не может включить их обратно).
+3. До сборки Y чтения лимитов Grok идут без переключателей (как с 28.10). Скрипт G2 первым шагом
+   этапа A покажет, есть ли у владельца hooks или mcpServers в `~\.claude*`; если есть — строка
+   Grok в этапе A не читается, лимиты Grok — на Y.
