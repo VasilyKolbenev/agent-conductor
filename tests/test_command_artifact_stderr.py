@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import pytest
@@ -49,11 +50,13 @@ from conductor.command.runtime import (
     ControlRuntime,
 )
 
-from tests import _fakeclaude, _fakecodex
+from tests import _fakeclaude, _fakecodex, _fakegrok
 from tests.test_command_claude_transport import NOW as CLAUDE_NOW
 from tests.test_command_claude_transport import a_harness as claude_harness
 from tests.test_command_codex_transport import NOW as CODEX_NOW
 from tests.test_command_codex_transport import a_harness as codex_harness
+from tests.test_command_grok_transport import NOW as GROK_NOW
+from tests.test_command_grok_transport import a_harness as grok_harness
 
 
 #: The control word, spelled here rather than imported from the transport this
@@ -95,6 +98,7 @@ class _Driver:
     harness: Callable[..., Any]
     fake: Any
     now: str
+    expected_output: str
 
 
 #: The children this module can drive. Membership is not the roster -- the
@@ -102,8 +106,10 @@ class _Driver:
 #: each other, so a review-capable provider with no child here is a failure and
 #: never a silently missing case.
 _DRIVERS = {
-    "claude-code": _Driver(claude_harness, _fakeclaude, CLAUDE_NOW),
-    "codex": _Driver(codex_harness, _fakecodex, CODEX_NOW),
+    "claude-code": _Driver(claude_harness, _fakeclaude, CLAUDE_NOW, _fakeclaude.REVIEW_OUTPUT),
+    "codex": _Driver(codex_harness, _fakecodex, CODEX_NOW, _fakecodex.REVIEW_OUTPUT),
+    "grok-build": _Driver(partial(grok_harness, production=True), _fakegrok, GROK_NOW,
+                          "# Diagnosis\nThe fake review read the supplied candidate."),
 }
 
 #: Every catalogued provider that declares the review control, in a stable order.
@@ -216,7 +222,7 @@ def test_no_review_capable_provider_publishes_what_its_child_wrote_to_stderr(
     assert attempt.state is AttemptState.SUCCEEDED, attempt.receipt.detail
     assert STDERR_ONLY not in published[0].content, (
         f"{provider_id}: the child's stderr became durable artifact content")
-    assert published[0].content == driver.fake.REVIEW_OUTPUT + "\n"
+    assert published[0].content == driver.expected_output + "\n"
     journal = json.dumps(
         [row.value.as_dict() for row in records], sort_keys=True)
     assert STDERR_ONLY not in journal, (

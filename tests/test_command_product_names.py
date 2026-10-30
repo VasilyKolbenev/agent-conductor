@@ -78,9 +78,10 @@ def test_product_top_names_are_single_components_without_repeats():
     assert not [name for name in names.PRODUCT_TOP_NAMES if "/" in name or "\\" in name or not name]
 
 
-def test_agent_instruction_names_are_the_six_of_spec_9_2():
+def test_agent_instruction_names_include_the_reviewed_grok_and_cursor_sources():
     assert names.AGENT_INSTRUCTION_NAMES == (
-        "AGENTS.md", "CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/")
+        "AGENTS.md", "AGENT.md", "CLAUDE.md", "CLAUDE.local.md",
+        ".claude/", ".codex/", ".grok/", ".kimi/", ".cursor/")
 
 
 def test_agent_instruction_names_live_beside_the_adapters_and_product_names_hands_them_on():
@@ -90,7 +91,7 @@ def test_agent_instruction_names_live_beside_the_adapters_and_product_names_hand
         "the request path names no vendor: the names are the adapters' to spell")
 
 
-def test_five_of_the_six_instruction_names_carry_a_vendor_word_which_keeps_them_out_of_here():
+def test_instruction_names_carry_vendor_words_which_keep_them_out_of_here():
     """Why `AGENT_INSTRUCTION_NAMES` is not spelled in `product_names` although spec 9.2 puts it
     there: `product_names` is a module of the request path, and the provider-breadth guard
     (`test_alpha1_gate_g_provider_breadth`) forbids a provider word in any literal of that path.
@@ -101,7 +102,7 @@ def test_five_of_the_six_instruction_names_carry_a_vendor_word_which_keeps_them_
     words = _family_tokens()
     carrying = [name for name in agent_instructions.AGENT_INSTRUCTION_NAMES
                 if any(word in name.lower() for word in words)]
-    assert carrying == ["CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/"]
+    assert carrying == ["CLAUDE.md", "CLAUDE.local.md", ".claude/", ".codex/", ".grok/", ".kimi/"]
     literals = [node.value.lower() for node in ast.walk(ast.parse(
         Path(names.__file__).read_text(encoding="utf-8")))
         if isinstance(node, ast.Constant) and isinstance(node.value, str)]

@@ -661,7 +661,7 @@ def test_the_real_transport_carries_both_controls_and_owes_a_read_only_argv():
 
 
 def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
-    """The roster is real, all five of it, and two of the five can review.
+    """The roster is real, all five of it, and three of the five can review.
 
     Codex was the last `fixture_only` row. Nothing in the catalog speaks a fake
     protocol any more, so a test that wants one builds its own catalog.
@@ -678,7 +678,7 @@ def test_no_catalogued_provider_is_a_fixture_any_more(tmp_path):
     reviewers = [
         provider_id for provider_id, entry in PROVIDER_CATALOG.items()
         if "review" in entry.capabilities]
-    assert reviewers == ["claude-code", "codex"]
+    assert reviewers == ["claude-code", "codex", "grok-build"]
 
 
 def test_a_dispatch_keeps_the_progress_log_on_stderr_out_of_the_bounded_answer(tmp_path):

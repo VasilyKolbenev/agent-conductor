@@ -243,13 +243,13 @@ def _sign_in(adapter, tmp_path, folder=PRODUCT_LOGIN) -> None:
 @pytest.mark.parametrize("harness", [
     pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-relay"),
     pytest.param((codex_t, _fakecodex, True), id="codex-without-relay"),
-    pytest.param((grok_t, _fakegrok, False), id="grok-build"),
+    pytest.param((grok_t, _fakegrok, True), id="grok-build-without-relay"),
     pytest.param((kimi_t, _fakekimi, False), id="kimi-code"),
 ])
 def test_a_subscription_road_with_no_relay_is_not_provided_and_is_refused_before_it_spawns(
         harness, folder, tmp_path):
-    """H5-V1 stays the answer for a harness that has no relay: Grok, Kimi, and the two others
-    with their relay taken off. Where the profile has one the road is covered (I2b). The folder
+    """The refusal stays the answer for Kimi and for the other harnesses with their relay
+    explicitly taken off. Where the profile has one the road is covered. The folder
     of the login is no part of the answer: only a relay is derived from it, so a harness without
     one is told the same honest sentence whichever folder its login is kept in."""
     module, fake, relayed = harness
@@ -507,15 +507,17 @@ def _grok_through_the_provider_door(tmp_path, platform, monkeypatch):
     return resolution.registry, resolution.registry.resolve(GROK_PROVIDER_ID), log
 
 
-def test_the_provider_door_builds_an_unconfined_adapter_only_when_the_caller_names_none(
+def test_the_provider_door_leaves_grok_unconfined_but_still_refuses_dispatch(
         tmp_path, monkeypatch):
     registry, adapter, log = _grok_through_the_provider_door(tmp_path, None, monkeypatch)
 
     receipt = grok_t.run_once(adapter, grok_t.a_request())
 
-    assert receipt.outcome == "succeeded", receipt.detail
+    assert receipt.outcome == "failed"
+    assert receipt.detail == boundary_detail("Grok Build")
     assert registry.execution_boundary(GROK_PROVIDER_ID, "dispatch") is False
-    assert len(_fakegrok.spawns(log)) == 2, "the launch is the one that existed before R5"
+    assert registry.execution_boundary(GROK_PROVIDER_ID, "review") is False
+    assert _fakegrok.spawns(log) == [], "production Grok dispatch stays closed without confinement"
 
 
 @pytest.mark.parametrize("platform,provided", [("win32", True), ("linux", False)])
@@ -524,7 +526,7 @@ def test_the_provider_door_confines_the_adapter_for_the_platform_it_is_given(
     registry, adapter, _log = _grok_through_the_provider_door(tmp_path, platform, monkeypatch)
 
     assert [registry.execution_boundary(GROK_PROVIDER_ID, mode)
-            for mode in ("dispatch", "review")] == [provided, provided]
+            for mode in ("dispatch", "review")] == [False, provided]
 
 
 def test_an_adapter_the_provider_door_confined_for_a_platform_without_a_boundary_does_not_run(

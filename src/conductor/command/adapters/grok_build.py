@@ -150,9 +150,9 @@ from types import MappingProxyType
 
 from .deep_contracts import DeepProtocol
 from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
-from .harness_profile import TASK_CHANNEL_FILE
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
+    TASK_CHANNEL_FILE,
     DISPATCH_CAPABILITY,
     ExecutablePin,
     HarnessProfile,
