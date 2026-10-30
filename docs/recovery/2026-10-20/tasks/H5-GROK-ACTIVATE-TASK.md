@@ -90,3 +90,7 @@ Lead also fixes the reproduced import-graph violation: re-export TASK_CHANNEL_FI
 headless_cli and import it there in grok_build, as existing providers reach shared profile
 facts through that single facade. Existing test_adapter_module_graph is red on the exact
 two-import-site assertion; its constraint remains unchanged.
+
+The same interrupted shard also identified two stale literal censuses in
+test_command_product_names.py. Update their exact expected names for the accepted
+nine-name seed policy; preserve vendor-boundary and identity assertions.
