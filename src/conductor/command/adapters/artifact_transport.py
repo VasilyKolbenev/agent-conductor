@@ -83,6 +83,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
     """Add immutable role handoffs and durable verification to one-shot CLIs."""
 
     review_enabled = False
+    serves_checks = True
 
     @staticmethod
     def _artifact_document(value):
@@ -105,10 +106,10 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
                 profile.capability: "deep-arguments-v1",
                 REVIEW_CAPABILITY: "deep-arguments-v1",
             }
-        if not cls.review_enabled:
-            # A dispatch-only transport owes no read-only argv. Inheriting a
-            # method is not evidence it can serve a checker. It can still be a
-            # doer, publish its dispatch result, and release retained material.
+        if not cls.review_enabled or not cls.serves_checks:
+            # A dispatch-only or checker-disabled transport is not a checker.
+            # Inherited methods do not override that provider declaration. It
+            # may still publish its own result and release retained material.
             for name in ("verify_for", "verification_started"):
                 setattr(cls, name, None)
         else:

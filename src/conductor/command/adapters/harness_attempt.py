@@ -136,6 +136,9 @@ def confined_spec(
 class AttemptLaunch:
     """Start one attempt in a fresh home, inside the boundary when confined, then take it back."""
 
+    #: A provider may narrow task execution without restricting metadata spawns (mode=None).
+    task_modes = ATTEMPT_MODES
+
     #: Set once by ``confine``; the class default is the launch that existed before R5.
     _confine = False
     _boundary_platform = ""
@@ -178,7 +181,7 @@ class AttemptLaunch:
         Apart from the platform: the login it holds (``_login_road_covered``) and the launch
         (``_launch_covers``).
         """
-        return self._login_road_covered() and self._launch_covers(mode)
+        return mode in self.task_modes and self._login_road_covered() and self._launch_covers(mode)
 
     def _login_road_covered(self) -> bool:
         """Whether the login this transport holds may start a task inside the boundary.
@@ -242,7 +245,7 @@ class AttemptLaunch:
         return self._boundary_prefix() if self._confined_attempt(mode) else self._argv_prefix()
 
     def _boundary_refusal(self, request, mode: str):
-        """A failed receipt when a confined transport cannot cover this task, else None.
+        """A failed receipt for a forbidden mode or an unavailable confined task, else None.
 
         Asked at the top of every road that starts a task, BEFORE its version preflight, so a
         refusal spawns nothing, borrows no login and creates no folder, home or marker. Where
@@ -250,10 +253,12 @@ class AttemptLaunch:
         covered), the receipt names it: a subscription login for a harness with no relay is not
         supported inside the boundary yet; otherwise it names no cause.
         """
-        if not self._confine or self.boundary_provided(mode):
+        if mode in self.task_modes and (
+                not self._confine or self.boundary_provided(mode)):
             return None
         tool = self.profile.tool_noun
-        login_only = (not self._login_road_covered() and self._launch_covers(mode)
+        login_only = (mode in self.task_modes and not self._login_road_covered()
+                      and self._launch_covers(mode)
                       and boundary_provided(self._boundary_platform, mode))
         detail = subscription_boundary_detail(tool) if login_only else boundary_detail(tool)
         return self._receipt(request, "failed", None, detail)
@@ -264,6 +269,8 @@ class AttemptLaunch:
         The same question as ``_boundary_refusal``, asked once more at the spawn itself: a road
         that forgot to ask first still cannot start a child outside the boundary.
         """
+        if mode in ATTEMPT_MODES and mode not in self.task_modes:
+            raise BoundaryUnavailable(self._boundary_platform, mode)
         if not self._confined_attempt(mode):
             return
         require_boundary(self._boundary_platform, mode)
@@ -296,6 +303,10 @@ class AttemptLaunch:
             RelayNotStarted: A relayed attempt was refused before its claim.
             HeadlessCliError: A relayed attempt was given no claim.
         """
+        # A restriction added after preflight must refuse before even the ordinary road's claim.
+        # Allowed modes retain their existing claim/boundary order; metadata has no task mode.
+        if mode in ATTEMPT_MODES and mode not in self.task_modes:
+            self._hold_boundary(mode)
         if not self._relayed(mode):
             if claim is not None:
                 claim()
