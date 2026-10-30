@@ -8,7 +8,7 @@
 `action-d33def94f20427ac77afc6fe2ddb9910` технически succeeded за 11,5 с, но вместо цели
 создало ревью о невозможности проверить отсутствующий `artifact-goal`.
 Доказательство: `Documents/Codex/work/codex-first-product/first-goal-api.json`,
-SHA-256 `15e2eb19d49a1a137bcd710a01a5fd987535316bae81370aeabdb3c521f2855`.
+SHA-256 `15e2eb19d49a1a137bcd710a01a5fd987535316bae81370aeabdbe3c521f2855`.
 
 В dalio-v5 нет purpose аналитических этапов; stage/title в prompt не передаются.
 Общий ArtifactAwareTransport._review_task называет result_artifact_ref предметом ревью,

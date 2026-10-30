@@ -37,7 +37,7 @@
    Но artifact-goal — ревью «документ отсутствует», а не сформулированная цель. Семантически
    результат НЕ принят. 600 с в spent_task_seconds — резерв, не фактическая длительность.
    `work/codex-first-product/first-goal-api.json`, SHA256
-   `15e2eb19d49a1a137bcd710a01a5fd987535316bae81370aeabdb3c521f2855`.
+   `15e2eb19d49a1a137bcd710a01a5fd987535316bae81370aeabdbe3c521f2855`.
 6. Уборка подтверждена: три записи attempt b44a4b280dd93c989235b6b0cc160285 retired;
    attempt/relay/AppContainer отсутствуют, ACL возвращены, login leases и процессы отсутствуют.
    Сервер остановлен Ctrl+C, порт 7802 свободен, проект closed. SOURCE.txt совпал с исходным
