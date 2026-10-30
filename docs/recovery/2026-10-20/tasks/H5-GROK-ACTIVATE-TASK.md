@@ -85,3 +85,8 @@ test_command_artifact_stderr.py and test_command_attempt_scope_runtime.py. New p
 Grok dispatch must fail before children; Windows road is dispatch=False/review=True;
 explicit non-relay fixtures must actually remove the now-present relay. Preserve other
 harness witnesses and do not change product guards to satisfy historical expectations.
+
+Lead also fixes the reproduced import-graph violation: re-export TASK_CHANNEL_FILE from
+headless_cli and import it there in grok_build, as existing providers reach shared profile
+facts through that single facade. Existing test_adapter_module_graph is red on the exact
+two-import-site assertion; its constraint remains unchanged.
