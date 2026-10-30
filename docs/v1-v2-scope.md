@@ -39,6 +39,12 @@ to execute and check tasks through their subscriptions, and shows the subscripti
 of Claude Code, Codex and Grok. Grok and Kimi as executors, and DeepSeek, are marked "not
 yet supported" in V1 and form the next slice. The five harnesses remain the product goal.
 
+**Owner decision, 2026-10-30 (V1-GROK-ROLE):** Grok also takes one minimal role in the V1
+Dalio v6 run, to show it working: role-diagnostician, the single read-only `diagnose` step.
+Claude Code keeps the other steps and Codex stays the independent checker. If Grok's task
+road is not ready in time, Claude Code takes that step and Grok joins in a later run, so the
+Claude Code and Codex core is not delayed. Kimi and DeepSeek remain "not yet supported".
+
 ## What remains non-negotiable in V1
 
 The product is a local-first control plane for heterogeneous coding harnesses.
