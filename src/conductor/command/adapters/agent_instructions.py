@@ -9,4 +9,7 @@ from __future__ import annotations
 
 #: A trailing slash marks a folder. Found at any depth and compared without regard to case; never
 #: copied into a task by default.
-AGENT_INSTRUCTION_NAMES = ("AGENTS.md", "CLAUDE.md", ".claude/", ".codex/", ".grok/", ".kimi/")
+AGENT_INSTRUCTION_NAMES = (
+    "AGENTS.md", "AGENT.md", "CLAUDE.md", "CLAUDE.local.md",
+    ".claude/", ".codex/", ".grok/", ".kimi/", ".cursor/",
+)

@@ -218,6 +218,24 @@ def test_instruction_files_are_left_out_unless_the_owner_asks_for_them(repo):
 
 
 @needs_git
+@pytest.mark.parametrize("instruction", [
+    "AGENT.md", "nested/agent.MD", "CLAUDE.local.md", "deep/claude.LOCAL.md",
+    ".cursor/rules/main.mdc", "nested/.CURSOR/skills/check/SKILL.md",
+])
+def test_grok_compat_instructions_are_not_in_the_actual_seed(repo, instruction):
+    folder, reader = repo
+    commit(folder, {instruction: "canary-instruction\n", "src/a.py": "source\n"})
+    left = staged(folder, reader)
+    assert tree_of(staging_of(folder, left)) == {"src/a.py": b"source\n"}
+    assert left.agent_instructions_skipped == (instruction,)
+    seed_stage.remove_staging(folder, left.staging)
+    kept = staged(folder, reader, include_agent_instructions=True)
+    assert tree_of(staging_of(folder, kept)) == {
+        instruction: b"canary-instruction\n", "src/a.py": b"source\n"}
+    assert kept.agent_instructions_skipped == ()
+
+
+@needs_git
 def test_a_git_lfs_pointer_is_seeded_as_it_is_and_named_in_a_warning(repo):
     folder, reader = repo
     pointer = (b"version https://git-lfs.github.com/spec/v1\noid sha256:" + b"b" * 64
