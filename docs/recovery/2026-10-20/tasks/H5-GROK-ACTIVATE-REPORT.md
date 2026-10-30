@@ -127,4 +127,22 @@ After login: inspect safe metadata/readiness, start existing launcher, check fre
 refresh preview and present owner grant in the app. G6 has not passed; no Dalio run exists.
 Only a clean successful G6 permits the separate fresh Dalio run. Optional P stays skipped.
 The unexecuted prepare-dalio-codex-grok.py requires actual G6 proof and a fresh input check.
-Owner stop remains 20%; latest Codex usage observation: 22% remaining.
+At that checkpoint the owner stop was 20%; it is superseded by the update below.
+
+## Fresh login and one-run quota exception, 30 October evening
+
+Owner completed fresh Grok login. Product readiness with a 25-minute horizon passed;
+safe metadata showed about 359 minutes remaining. After login quota is observed/current,
+but used/remaining percentages are null. One native metadata-only diagnostic at 22:47 MSK
+confirmed the percentage field is absent upstream; no model calls. Missing usage stays unknown.
+
+Owner decision committed as 8a1cc2d: permit one G6 despite unknown percentage, one action,
+600 seconds, three read-only seed files, subscription, no repeat. This does not authorize
+a full Dalio with unknown quota. The separate application grant remains an owner action.
+Server restarted on 7804 (PTY 12291), protected preflight 62 files / 0 problems / 0 notes.
+Latest public automation read: unconfigured, authorization=null, spent_actions=0.
+First missing step is the owner's application grant; no G6 result is claimed.
+
+Owner stop is now 10% remaining; latest Codex observation is 21% remaining.
+Kimi Desktop 3.2.23.24 is installed, kimi command absent from PATH; integration is queued,
+not established by the presence of Desktop. No Claude polling or model calls were performed.
