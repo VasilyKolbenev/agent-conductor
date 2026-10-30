@@ -128,3 +128,8 @@ numbers, to distinguish upstream omission from parser loss. No model call for th
 Keep missing usage unknown; do not silently equate it to zero or waive G6's quota condition.
 Owner also installed Kimi Desktop. Record it as the next integration candidate; inspect its
 supported control interface before assuming that it matches the existing Kimi Code adapter.
+
+Owner explicitly approved one G6 diagnosis with unknown Grok usage percentage on 30.10.
+This replaces only the G6 <85% precondition for this one run: one action, 600 seconds,
+read-only three-file seed, subscription, no automatic repeat. It does not admit a full
+Dalio run under unknown quota. The owner still grants execution in the application.
