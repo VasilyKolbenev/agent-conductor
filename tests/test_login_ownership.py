@@ -30,13 +30,18 @@ def child(base, home, code, timeout=20):
         cwd=base, env=environment, capture_output=True, timeout=timeout, check=False)
 
 
+#: This interpreter is not the test's: the seam that tests/conftest.py installs is not in it, and
+#: the fake `a_harness` builds in it is registered here. It starts that fake through the seam
+#: itself.
 ATTEMPT = """
-import sys
+import os, subprocess, sys
 from pathlib import Path
 from conductor.ownership import acquire_owner
 from conductor.command.adapters.harness_workspace import WORK_DIR
 from conductor.command.adapters.process import ProcessRunnerError
+from tests import _fakeprocess
 from tests.test_harness_subscription_login import a_harness
+subprocess.Popen = _fakeprocess.popen_for(subprocess.Popen, windows=os.name == 'nt')
 adapter, root, log = a_harness(Path(sys.argv[1]), auth='subscription', auth_home=sys.argv[2])
 with acquire_owner(root):
     adapter._workspace.work_root()
@@ -119,6 +124,47 @@ def test_two_real_projects_share_one_resource_through_post_spawn_cleanup(tmp_pat
     assert accepted.stdout.strip() == b"completed", (
         "the second did not run after the release", accepted.stdout, accepted.stderr)
     assert second_log.is_file(), "the second did not spawn after the release"
+
+
+#: What the child below is told about the launch of its fake, in the order the launch happens.
+#: The recorder stands UNDER whatever the child installs, so it sees the argv the seam rewrote, and
+#: it reports when the interpreter ends, whatever the attempt did: a refused attempt is still told.
+RECORD = """
+import atexit, json, subprocess, sys
+launched = []
+
+
+class Recorded(subprocess.Popen):
+    def __init__(self, args, *positional, **options):
+        launched.append([str(part) for part in args[:2]])
+        super().__init__(args, *positional, **options)
+
+
+subprocess.Popen = Recorded
+atexit.register(lambda: print(json.dumps({'python': sys.executable, 'launched': launched})))
+"""
+
+
+def test_the_child_that_runs_a_fake_starts_it_through_the_current_python(tmp_path):
+    home = tmp_path / "login"
+    home.mkdir()
+    _, root, _ = a_harness(tmp_path / "two", auth="subscription", auth_home=str(home))
+    activated(root)
+
+    done = child(tmp_path / "two", home, RECORD + ATTEMPT, timeout=SETUP_DEADLINE)
+
+    lines = done.stdout.decode(errors="replace").splitlines()
+    assert lines, ("the child said nothing", done.returncode, done.stderr)
+    report = json.loads(lines[-1])
+    python, launched, seen = report["python"], report["launched"], (lines, done.stderr)
+    assert launched, ("the child never started its fake", seen)
+    if os.name == "nt":
+        assert [part[0] for part in launched] == [python] * len(launched), seen
+        assert {Path(part[1]).name for part in launched} == {"claude.exe"}, seen
+    else:
+        assert {Path(part[0]).name for part in launched} == {"claude"}, seen
+    assert lines[:-1] == ["completed"], seen
+    assert done.returncode == 0, seen
 
 
 def test_normal_shared_lease_keeps_credentials_out_of_ownership_records(tmp_path):

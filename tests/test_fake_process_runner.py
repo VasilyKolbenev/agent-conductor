@@ -1,6 +1,7 @@
 """The fixture launch seam preserves real process behavior without executing synthetic PE."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 
@@ -65,6 +66,14 @@ def test_native_not_intercepted_and_a_same_named_unregistered_pin_is_not_a_fake(
 def test_non_windows_keeps_the_original_process_constructor():
     original, _calls = _recorder()
     assert _fakeprocess.popen_for(original, windows=False) is original
+
+
+def test_a_test_that_undoes_its_monkeypatch_leaves_the_launch_seam_standing(monkeypatch):
+    """`undo()` reverts what the test patched, not the seam the suite installed for it: a fake
+    started after it must still go through the current Python, not the unsigned PE itself."""
+    monkeypatch.undo()
+    expected = "RegisteredFakePopen" if os.name == "nt" else "Popen"
+    assert subprocess.Popen.__name__ == expected
 
 
 def test_recording_launch_registers_only_an_explicit_verified_copy(tmp_path):
