@@ -59,3 +59,12 @@ On a failed live witness stop that road, preserve evidence and diagnose within b
 
 At each checkpoint: last proven | first undone | do not repeat. Code and report commits
 separate, local only; update verified local Git bundle before final handoff.
+
+## Lead live-order decision, 30.10.2026
+
+G6 will be the first live Grok model task. Skip optional P: its draft duplicates relay
+logic and lacks the product login lease, while G6 exercises the actual installed product,
+lease and OS boundary. This replaces the older P-before-build ordering; no P result is
+claimed. G2 and all G6 preconditions/rubric/stop rules remain mandatory. No extra probe is
+spent outside the product. Prepare a short bounded diagnosis of the existing three-file
+runstats seed; the full Dalio is a separate fresh run after successful G6.
