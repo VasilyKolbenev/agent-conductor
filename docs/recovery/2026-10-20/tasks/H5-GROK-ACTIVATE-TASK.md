@@ -94,3 +94,8 @@ two-import-site assertion; its constraint remains unchanged.
 The same interrupted shard also identified two stale literal censuses in
 test_command_product_names.py. Update their exact expected names for the accepted
 nine-name seed policy; preserve vendor-boundary and identity assertions.
+
+One exception to the design's untouched Codex tests: test_command_codex_transport.py's
+shared catalog census explicitly names all review providers. Add Grok to that literal
+and its docstring only; no Codex behavior expectation or snapshot changes. Reproduced
+failure names the extra grok-build row, exactly the activation's intended catalog fact.
