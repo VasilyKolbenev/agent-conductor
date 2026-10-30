@@ -78,3 +78,10 @@ listed shard PID existed, no ordinary JUnit was published. Progress already cont
 failures before interruption; diagnose those failures, do not attribute them to the network.
 Evidence: work/grok-activation/run-20261030T152106166187Z. This run is NOT green;
 cp1251 and the protected build have not started. Old logs and temp folders remain.
+
+Full-suite follow-up: lead authorizes updating demonstrated stale Grok expectations in
+test_adapter_boundary_launch.py and, only after reproduction, test_cockpit_command_api_boundary_freeze.py,
+test_command_artifact_stderr.py and test_command_attempt_scope_runtime.py. New production
+Grok dispatch must fail before children; Windows road is dispatch=False/review=True;
+explicit non-relay fixtures must actually remove the now-present relay. Preserve other
+harness witnesses and do not change product guards to satisfy historical expectations.
