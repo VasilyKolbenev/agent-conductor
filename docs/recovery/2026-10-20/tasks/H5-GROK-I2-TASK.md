@@ -22,6 +22,8 @@ This slice prepares the relay without registering it in the production Grok prof
   and addendum 1. Wildcards GROK_TRACE_UPLOAD_* and GROK_INTERNAL_OTLP_* are prefix checks,
   not invalid literal environment names in RelaySpec.forbidden_env.
   GrokRelay.forbids and route_env_named use the same pure prefix/name decision.
+  Only the GrokRelay subclass stores forbidden_prefixes, so its grant digest binds the
+  prefix policy. The helper accepts names/prefixes explicitly; forbids uses its own fields.
 - Do not add RelaySpec dataclass fields or change Claude/Codex forbidden tuples or snapshots.
 - Add a separate grok_compat_switch: only exact declared false pairs, GROK_HOME,
   relay kind g, auth.json and the fixed Grok scope. Use it only in the forced-pair check of
