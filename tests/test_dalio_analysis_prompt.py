@@ -144,6 +144,13 @@ def test_standard_step_reaches_child_as_creation_from_bound_inputs(
     assert spawns[0]["marker"] == {
         "in_stdin": True, "in_argv": False, "in_cwd": False, "in_env": False}
     assert PURPOSES[stage] not in str(observed[0].argv)
+    if provider == "claude":
+        # Codex's argv ends in "-" and carries no sentence. Claude's sentence beside the frame
+        # must name the same output document and no review: the frame says the name is not
+        # an input to find or review.
+        sentence = spawns[0]["argv"][2]
+        assert "output document" in sentence
+        assert "review" not in sentence.lower()
     records = store.read(RUN).records
     artifacts = [row.value for row in records if row.kind == "artifact"]
     assert len(artifacts) == 2

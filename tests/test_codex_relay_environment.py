@@ -18,6 +18,7 @@ from tests.test_subscription_quota import PAYLOAD, adapter as quota_adapter
 
 NAME = "CODEX_REFRESH_TOKEN_URL_OVERRIDE"
 VALUE = "http://127.0.0.1:9/oauth/token"
+OPERATOR = "https://route.invalid/operator-refresh-0123456789"
 CREDENTIAL_NAMES = (
     "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID",
     "OPENAI_IDENTITY_TOKEN_FILE", "OPENAI_WORKLOAD_IDENTITY_CONTEXT",
@@ -126,6 +127,54 @@ def test_an_api_task_does_not_get_the_access_only_refresh_route(tmp_path, bounda
     assert len(_fakecodex.task_spawns(log)) == 1
     assert len(seen) == 2
     assert all(NAME not in env for _, env in seen)
+
+
+@pytest.mark.parametrize("boundary", [False, True])
+def test_the_publication_scan_holds_the_value_the_api_task_child_really_received(
+        tmp_path, boundary):
+    adapter, _root, _log = a_harness(tmp_path, **{NAME: OPERATOR})
+    with_code_owned_route(adapter)
+    if boundary:
+        confined(adapter, tmp_path / "scratch", platform="win32")
+    seen = record_environments(adapter._runner)
+
+    receipt = run_once(adapter, a_request())
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert all(env.get(NAME) == OPERATOR for _, env in seen)
+    held = adapter._sensitive_values()
+    assert OPERATOR.encode() in held, "the value the child received is not scanned"
+    assert VALUE.encode() not in held, "a value no API child received is scanned for"
+
+
+def test_the_relayed_task_scan_keeps_the_code_owned_route_the_child_received(tmp_path):
+    site = Site(tmp_path, CODEX)
+    with_code_owned_route(site.adapter)
+    pin = site.adapter._pin
+    # A direct pin: beside a subscription the product refuses this name, and a forced pair
+    # reaches the scan only for a name in `env_allow`.
+    site.adapter._pin = replace(pin, env_allow=(*pin.env_allow, NAME))
+    seen = record_environments(site.runner)
+
+    receipt = site.run()
+
+    assert receipt.outcome == "succeeded", receipt.detail
+    assert seen[-1][1][NAME] == VALUE, "the access-only task child was not given the route"
+    assert VALUE.encode() in site.adapter._sensitive_values()
+
+
+def test_the_scan_of_an_unconfined_relay_road_holds_no_route_no_child_received(
+        tmp_path, monkeypatch):
+    """Only a confined transport is relayed: `_confine` is half of the scan's predicate."""
+    adapter, _root, _log = a_harness(tmp_path, **{NAME: OPERATOR})
+    with_code_owned_route(adapter)
+    monkeypatch.setattr(adapter, "_relay_road", lambda: True)
+
+    assert adapter._relay_road() and adapter._confine is False and NAME in adapter._env_allow()
+    assert adapter._relayed("dispatch") is False, "an unconfined transport is not relayed"
+    held = adapter._sensitive_values()
+    assert OPERATOR.encode() in held, "the value the task child would receive is not scanned"
+    assert VALUE.encode() not in held, "a route no child of this transport received is scanned"
 
 
 @pytest.mark.parametrize("name", CREDENTIAL_NAMES)

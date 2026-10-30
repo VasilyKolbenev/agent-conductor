@@ -1,9 +1,11 @@
-"""A deterministic stand-in for a pinned Codex CLI binary, and a REAL executable.
+"""A deterministic stand-in for a pinned Codex CLI binary, run as a real child process.
 
 Codex CLI installs as a native binary -- the npm package vendors one and spawns
 it through a shim -- so its adapter pins ONE absolute path and puts nothing in
-front of it. The executable is built by ``tests/_fakeexe.py``, which produces a
-file the operating system really runs with no shell involved.
+front of it. The one file is built by ``tests/_fakeexe.py`` and no shell is involved.
+What starts it is that module's narrow statement: off Windows the operating system
+runs it; on Windows pytest's ``tests/_fakeprocess.py`` seam (522bbf0) starts it with
+the current Python, so native PE startup is not proven here.
 
 Every branch this child takes is chosen by a ``FAKECODEX_*`` environment knob
 rather than by timing, an install, or a network, and importing this module never
@@ -228,7 +230,10 @@ except ImportError:  # pragma: no cover -- never on a configured tree
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
-    """A REAL single-file executable standing in for the pinned codex binary."""
+    """The single file pinned as the codex binary, or None where none can be built.
+
+    How it starts is the narrow statement in the module docstring of ``tests/_fakeexe.py``.
+    """
     return _fakeexe.build(directory, "codex", "_fakecodex")
 
 

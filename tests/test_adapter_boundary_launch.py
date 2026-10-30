@@ -2,7 +2,9 @@
 
 The entry is ``ProcessRunner.container_profile`` (H's contract, ``H-to-L-execution-boundary``).
 This file proves lane L's half over a recording double of it (``tests/_fakeboundary.py``) and the
-harness fakes, which are real executables that log every spawn they receive:
+harness fakes, which run as real child processes (the built ones on Windows through the current
+Python, ``tests/_fakeprocess.py``; the DSH fake is a Python script on every platform, outside
+that seam) and log every spawn they receive:
 
 - a confined adapter starts its TASK attempt inside the entry, and only that attempt: the version
   preflight, the login status and the quota reads are handed no project folder and stay outside;

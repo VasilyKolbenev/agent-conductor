@@ -11,9 +11,11 @@ the entry without a Windows host, a container profile or a live owner:
 - that a refused entry, or a refused exit, reaches the adapter as the entry's own error.
 
 It confines nothing. A child that is started with a launch value runs plainly, with the value
-removed from its spec, so the harness fakes (``tests/_fake*``) can still be real executables. The
-witness that a confined agent cannot write the project root or the owner's ``.git`` is the host's
-native one (``tests/test_process_acl_native.py``), not this file's.
+removed from its spec, so the harness fakes (``tests/_fake*``) can still run as real children
+(the built ones on Windows through the current Python, ``tests/_fakeprocess.py``, not as native
+PEs; the DSH fake is a Python script on every platform, outside that seam). The witness that a
+confined agent cannot write the project root or the owner's ``.git`` is the host's native one
+(``tests/test_process_acl_native.py``), not this file's.
 """
 from __future__ import annotations
 

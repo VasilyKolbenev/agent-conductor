@@ -181,3 +181,96 @@ def test_native_quota_still_refuses_an_unmeasured_new_database(tmp_path, monkeyp
         quota_plan_for("p7-provider", value).request.read()
     assert len(runner.specs) == 2
     assert (home / "future_1.sqlite").read_bytes() == b"synthetic-unaccounted-state"
+
+
+@pytest.mark.parametrize("database_stood", [False, True])
+def test_native_quota_takes_a_wal_back_only_with_its_database(
+        tmp_path, monkeypatch, database_stood):
+    """A database the operator had stays with its write-ahead files, read or not."""
+    from conductor.command.quota_plans import quota_plan_for
+    from tests.test_subscription_quota import PAYLOAD, adapter as quota_adapter
+
+    value, runner, home = quota_adapter(tmp_path)
+    names = ("state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal")
+    if database_stood:
+        (home / names[0]).write_bytes(b"operator-owned")
+    run = runner.run
+
+    def write_the_state(spec):
+        if spec.argv[-1] == "app-server":
+            for name in names:
+                if not (home / name).exists():
+                    (home / name).write_bytes(b"synthetic-vendor-state")
+        return run(spec)
+
+    monkeypatch.setattr(runner, "run", write_the_state)
+
+    assert quota_plan_for("p7-provider", value).request.read() == PAYLOAD
+    assert [(home / name).exists() for name in names] == [database_stood] * 3
+    if database_stood:
+        assert (home / names[0]).read_bytes() == b"operator-owned"
+        assert (home / names[1]).read_bytes() == b"synthetic-vendor-state"
+        assert (home / names[2]).read_bytes() == b"synthetic-vendor-state"
+
+
+def test_take_back_leaves_the_companions_of_a_database_it_could_not_remove(
+        tmp_path, monkeypatch):
+    from conductor.command.adapters import login_home
+    from conductor.command.adapters.codex_cli import LOGIN_SCRATCH
+
+    names = ("state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal")
+    for name in names:
+        (tmp_path / name).write_bytes(b"synthetic-vendor-state")
+    real = login_home._take_one
+    monkeypatch.setattr(
+        login_home, "_take_one", lambda where, name: name == names[0] or real(where, name))
+
+    left = login_home.take_back(str(tmp_path), LOGIN_SCRATCH, frozenset(names))
+
+    assert left == names, "a database that stays was left without its write-ahead files"
+    assert all((tmp_path / name).exists() for name in names)
+
+
+@pytest.mark.parametrize("database_stood", [False, True])
+def test_take_back_keeps_a_companion_beside_a_standing_database_and_removes_an_orphan(
+        tmp_path, database_stood):
+    from conductor.command.adapters import login_home
+    from conductor.command.adapters.codex_cli import LOGIN_SCRATCH
+
+    if database_stood:
+        (tmp_path / "state_5.sqlite").write_bytes(b"operator-owned")
+    (tmp_path / "state_5.sqlite-wal").write_bytes(b"synthetic-vendor-state")
+
+    left = login_home.take_back(
+        str(tmp_path), LOGIN_SCRATCH, frozenset({"state_5.sqlite-wal"}))
+
+    assert left == (), "a companion that was kept, or removed, is not residue"
+    assert (tmp_path / "state_5.sqlite-wal").exists() is database_stood
+
+
+def test_take_back_keeps_and_counts_a_companion_beside_a_database_it_cannot_measure(
+        tmp_path, monkeypatch):
+    """A stat that fails otherwise than as absent is no answer: not 'stood', not 'gone'."""
+    import os
+
+    from conductor.command.adapters import login_home
+    from conductor.command.adapters.codex_cli import LOGIN_SCRATCH
+
+    (tmp_path / "state_5.sqlite").write_bytes(b"operator-owned")
+    (tmp_path / "state_5.sqlite-wal").write_bytes(b"synthetic-vendor-state")
+    real = os.lstat
+
+    def lstat(path, *args, **kwargs):
+        if str(path).endswith("state_5.sqlite"):
+            raise PermissionError(13, "synthetic: the database cannot be measured")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+    left = login_home.take_back(
+        str(tmp_path), LOGIN_SCRATCH, frozenset({"state_5.sqlite-wal"}))
+
+    monkeypatch.undo()
+    assert left == ("state_5.sqlite-wal",), "a measurement not taken was not counted as residue"
+    assert (tmp_path / "state_5.sqlite-wal").exists()
+    assert (tmp_path / "state_5.sqlite").read_bytes() == b"operator-owned"

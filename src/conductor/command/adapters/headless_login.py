@@ -346,10 +346,12 @@ class LoginRoad:
         for the same reason, it may not raise: an exception here would skip the
         attempt home's own discard and replace the outcome of the spawn.
 
-        Only what APPEARED is judged, and only what appeared is taken back.
-        Whatever the operator's own login put there before this build ever ran
-        is theirs, and a product that refused over it -- or deleted it -- would
-        be acting on the credential it was pointed at.
+        Only what APPEARED is judged, and only what appeared is taken back --
+        except a SQLite companion (`-wal`, `-shm`) beside a database that stood
+        before the spawn: it appeared, but it belongs to that database and stays
+        (`login_home.take_back`). Whatever the operator's own login put there
+        before this build ever ran is theirs, and a product that refused over it
+        -- or deleted it -- would be acting on the credential it was pointed at.
 
         A measurement this build could not take counts as residue rather than as
         a clean directory: a promise that could not be checked was not kept.

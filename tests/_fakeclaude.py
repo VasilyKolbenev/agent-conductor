@@ -1,8 +1,10 @@
-"""A deterministic stand-in for a pinned Claude Code binary, and a REAL executable.
+"""A deterministic stand-in for a pinned Claude Code binary, run as a real child process.
 
 Claude Code installs as a native binary, so its adapter pins ONE absolute path
-and puts nothing in front of it. The executable is built by ``tests/_fakeexe.py``,
-which produces a file the operating system really runs with no shell involved.
+and puts nothing in front of it. The one file is built by ``tests/_fakeexe.py`` and no
+shell is involved. What starts it is that module's narrow statement: off Windows the
+operating system runs it; on Windows pytest's ``tests/_fakeprocess.py`` seam (522bbf0)
+starts it with the current Python, so native PE startup is not proven here.
 
 Every branch this child takes is chosen by a ``FAKECLAUDE_*`` environment knob
 rather than by timing, an install, or a network, and importing this module never
@@ -290,7 +292,10 @@ except ImportError:  # pragma: no cover -- never on a configured tree
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
-    """A REAL single-file executable standing in for the pinned claude binary."""
+    """The single file pinned as the claude binary, or None where none can be built.
+
+    How it starts is the narrow statement in the module docstring of ``tests/_fakeexe.py``.
+    """
     return _fakeexe.build(directory, "claude", "_fakeclaude")
 
 

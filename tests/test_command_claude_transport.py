@@ -1,8 +1,10 @@
-"""Claude Code driven for real, against a fake that is a REAL single executable.
+"""Claude Code driven for real, against a one-file fake that runs as a real child process.
 
 Every claim here is a relation driven through the real provider door, the real
 owned-process runner and a real child process: the fake stands in for the pinned
-binary, never for the adapter.
+binary, never for the adapter. On Windows that child is the current Python running the
+registered fixture (``tests/_fakeprocess.py``, 522bbf0), so native PE startup is not
+among the claims.
 
 What is held here is what is specific to Claude Code, and one of those is new to
 this roster:

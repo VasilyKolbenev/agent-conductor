@@ -2,8 +2,9 @@
 
 What is real here: the activated project and its live owner, the shared login lease of a login
 home at `<tmp>/DecemberCommand/logins/x` (the lease of `ownership_login`, never replaced), the
-product's transport, the owned-process runner under the fake boundary, and a child process that
-is a real executable. What is a double: the boundary entry of the runner
+product's transport, the owned-process runner under the fake boundary, and a real child process
+(on Windows the current Python running the fixture, `tests/_fakeprocess.py`, so native PE startup
+is not claimed). What is a double: the boundary entry of the runner
 (`tests/_fakeboundary.py`), which confines nothing and records every call, and the vendor CLIs
 (`tests/_fakeclaude.py`, `tests/_fakecodex.py`), which take their login from the folder they are
 handed. Every credential is

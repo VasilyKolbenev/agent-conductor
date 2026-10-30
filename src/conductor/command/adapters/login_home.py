@@ -19,10 +19,10 @@ it is, and the credential is not read in order to decide whether it moved.
 
 Two roads DO read, and both read for a reason the residue half does not have.
 ``config_grants`` reads a vendor's own configuration file to find out whether it
-gives the isolation away, because refusing that file by NAME would refuse the
-directory the vendor's own login command produced. ``credential_values`` reads
-the credential itself for the opposite reason again: to protect it rather than
-to judge it. The leak
+gives the isolation or the login's route away, because refusing that file by
+NAME would refuse the directory the vendor's own login command produced.
+``credential_values`` reads the credential itself for the opposite reason
+again: to protect it rather than to judge it. The leak
 scan was built from the values of allowlisted environment names, because that is
 where every credential this build ever handed a child came from. A vendor's own
 login does not arrive that way -- it lives in a file -- so a child that echoed it
@@ -112,8 +112,9 @@ def config_grants(home: str, name: str, keys: tuple[str, ...]) -> tuple[str, ...
     the vendor wrote.
 
     What is refused is the CONTENT that gives something away: the trust map that
-    re-admits a work tree's own configuration, and a provider override. Anything
-    else in that file is the operator's business.
+    re-admits a work tree's own configuration, a provider override, and an
+    endpoint override that sends the login's bearer elsewhere. Anything else in
+    that file is the operator's business.
 
     A file this build cannot read or parse answers with every key it was asked
     about: a configuration whose contents cannot be established is not one this
@@ -470,12 +471,68 @@ def take_back(home: str, scratch: tuple[str, ...],
     What it could not remove is RETURNED rather than swallowed. A cleanup that
     failed silently is a promise reported as kept because nothing checked it,
     and the caller has to be able to say so.
+
+    A SQLite companion (`-wal`, `-shm`) is judged with its database, never
+    alone. Beside a database that STOOD before the spawn it is left standing and
+    is not residue: a write-ahead log removed by itself can leave a checkpoint a
+    kill cut short with a half-written database file, and it is what a session an
+    operator keeps open in the same directory writes through. Beside a database
+    this build could not remove it stays too, and it counts, as its database
+    does. It does the same beside a database this build could not measure: a
+    measurement not taken is residue, not a database that stood. A companion
+    with no database at all is an orphan and goes like any other scratch name.
+    The companion kept beside a database that stood is not looked at: the portal
+    rule above does not reach it. Only the pinned CLI could put a non-file there,
+    and SQLite writes plain files.
     """
     if not _pinned(home) or not added:
         return ()
-    wanted = [name for name in sorted(added)
-              if name.split("/", 1)[0] in scratch]
-    return tuple(name for name in wanted if _take_one(home, name))
+    left: list[str] = []
+    for name in sorted(added):  # `x.sqlite` sorts before its `-shm` and `-wal`
+        if name.split("/", 1)[0] not in scratch:
+            continue
+        base = _database_of(name, scratch)
+        if base is not None and base in left:
+            left.append(name)  # its database stays as residue: never orphan the companion
+            continue
+        stood = _stood_before(home, base, added)
+        if stood is None:
+            left.append(name)  # its database could not be measured: kept, and it counts
+        elif stood:
+            continue  # beside a database that stood before the spawn: kept, not residue
+        elif _take_one(home, name):
+            left.append(name)
+    return tuple(left)
+
+
+#: SQLite's write-ahead companions of a database file.
+_COMPANIONS = ("-wal", "-shm")
+
+
+def _database_of(name: str, scratch: tuple[str, ...]) -> str | None:
+    """The declared top-level database a companion name belongs to, or None."""
+    for suffix in _COMPANIONS:
+        base = name[:-len(suffix)]
+        if "/" not in name and name.endswith(suffix) and base in scratch:
+            return base
+    return None
+
+
+def _stood_before(home: str, base: str | None, added: frozenset[str]) -> bool | None:
+    """Whether this database stood before the spawn: None when it cannot be measured.
+
+    False for a name that is no companion (no database), for a database the spawn added and
+    for one that is not there (an orphan's companion). A stat that fails otherwise than as
+    absent is None: an answer this build did not take is neither "stood" nor "gone".
+    """
+    from .harness_workspace import _leaf
+
+    if base is None or base in added:
+        return False
+    try:
+        return _leaf(Path(extended(home)) / base) is not None
+    except Exception:  # noqa: BLE001 -- `_leaf` refuses an unreadable name with a RuntimeError
+        return None
 
 
 def _take_one(home: str, name: str) -> bool:

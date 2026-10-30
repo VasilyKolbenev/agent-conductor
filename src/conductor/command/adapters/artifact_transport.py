@@ -22,6 +22,7 @@ from .harness_workspace import INSTRUCTION_LIMIT, WorkspaceNotContained, work_ro
 from .headless_cli import HeadlessCliTransport
 from .login_lifetime import LoginLeaseRefused
 from .relay_attempt import RelayNotStarted
+from .relay_env import access_only_switch
 from .headless_values import (
     AttemptEvidence,
     attempt_relation,
@@ -638,7 +639,13 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         """Every value a surface of this attempt must not be seen carrying.
 
         The profile home is code-owned, displaced the operator's value, and
-        never enters the frame. Other overrides match the runner's own read.
+        never enters the frame. The forced pairs are those a task attempt of
+        this transport receives: the access-only switch only on a relayed
+        attempt, a confined transport on the relay road
+        (`harness_attempt._relayed`, `headless_spec.attempt_spec`), so otherwise it is
+        the operator's own value for that name that the scan holds. A pair
+        reaches the scan only for a name in `env_allow`; beside a subscription
+        the product refuses such a name, so only a direct pin holds one here.
 
         The vendor's own login is added on top, and it has to be: it is the one
         credential this build hands a child that never came through the
@@ -658,11 +665,13 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         watching the file while a child runs, which is a different mechanism
         from this one and is not claimed.
         """
+        # The predicate `relay_attempt` asks: a relayed attempt is the one given the pair.
+        relayed = self._confine and self._relay_road()
+        forced = {name: value for name, value in self.profile.forced_env
+                  if relayed or not access_only_switch(self.profile, name, value)}
         current = (
             self._runner.allowed_environment_values(
-                self._env_allow(),
-                overrides={**dict(self.profile.forced_env),
-                           self.profile.home_env: ""})
+                self._env_allow(), overrides={**forced, self.profile.home_env: ""})
             + self._login_secrets())
         if relation is None:
             return current

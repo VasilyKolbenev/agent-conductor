@@ -1,8 +1,10 @@
-"""Codex CLI driven for real, against a fake that is a REAL single executable.
+"""Codex CLI driven for real, against a one-file fake that runs as a real child process.
 
 Every claim here is a relation driven through the real provider door, the real
 owned-process runner and a real child process: the fake stands in for the pinned
-binary, never for the adapter.
+binary, never for the adapter. On Windows that child is the current Python running the
+registered fixture (``tests/_fakeprocess.py``, 522bbf0), so native PE startup is not
+among the claims.
 
 What is held here is what is specific to Codex CLI, and two of those are new to
 this roster:
@@ -25,10 +27,13 @@ this roster:
   Without it the CLI refuses any working root that is not a git repository, and
   every work subtree this build hands it is one. A dispatch that lost the flag
   would fail before the model was asked anything;
-- **nothing is forced into the environment at all.** This vendor publishes its
-  switches as CONFIG rather than as environment variables, so they ride in argv
-  through `-c`, and the child's environment is the operator's allowlist plus the
-  one minted home and nothing else.
+- **its switches ride in argv, not the environment.** Its telemetry and feedback
+  switches are config keys (five published, one code-owned by R10), so they travel
+  through `-c`. What this build adds to the operator's allowlist is code-owned: the
+  minted home in `CODEX_HOME`, `PYTHONDONTWRITEBYTECODE=1`, `GIT_CEILING_DIRECTORIES`
+  for a child in the work tree, and `LOCALAPPDATA`/`TEMP`/`TMP` for a confined attempt.
+  The profile's one forced pair, `CODEX_REFRESH_TOKEN_URL_OVERRIDE`, reaches only a
+  relayed access-only copy, never this API road (held below).
 
 The version is held in `tests/test_command_codex_version.py`, in its own module
 from the start: Grok Build's crossed the 800-line cap when two cases were added.

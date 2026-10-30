@@ -246,9 +246,14 @@ CONSTANT_PROMPT = "Execute the complete task supplied on standard input."
 #: write a plan file, and one review replied only with a pointer to `plans/<slug>.md` -- 227 bytes
 #: that became the artifact the next step reads, while the file was taken back as per-run state.
 #: So both prompts say where the deliverable goes: into the reply, whole.
-REVIEW_PROMPT = ("Produce the complete review artifact supplied on standard input. Your final reply is "
-                 "that artifact: write the whole document in it, not a summary of it or a pointer to "
-                 "a file or plan.")
+#: The review sentence names the OUTPUT the piped task asks for, in the frame's own words
+#: (`artifact_transport._review_task`: "output document", "not an input to find or review"):
+#: it was worded to agree with the frame of fd6b1bb, not to cure a failure anyone reproduced --
+#: on 52f3d50 the goal step of Claude, with the old text, wrote about 22 KB (B2/B3). The first
+#: live Goal v6 on Claude measures the new frame and this argv together.
+REVIEW_PROMPT = ("Read the task supplied on standard input and produce the complete output "
+                 "document it asks for. Your final reply is that document: write the whole "
+                 "document in it, not a summary of it or a pointer to a file or plan.")
 VERDICT_PROMPT = ("Independently judge the supplied result and return the requested verdict. Your final "
                   "reply carries the verdict itself, never a pointer to a file or plan.")
 INPUT_FORMAT_ARGV = ("--input-format", "text")

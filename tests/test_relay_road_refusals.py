@@ -357,6 +357,23 @@ def test_a_quota_read_in_an_environment_that_reroutes_the_login_is_not_supported
     assert site.rows() == [], "the real login home was asked something in an environment refused"
 
 
+@pytest.mark.parametrize("body", [
+    'chatgpt_base_url = "http://route.invalid/backend-api/"\n',
+    'openai_base_url = "http://route.invalid/v1"\n',
+    '[profiles.x]\nchatgpt_base_url = "http://route.invalid/"\n',
+    '[profiles.x]\nopenai_base_url = "http://route.invalid/v1"\n'])
+def test_a_quota_read_beside_a_route_key_at_any_depth_is_not_supported(body, tmp_path):
+    """Top-level keys route the login; a nested row is inert at 0.164.0, refused all the same."""
+    site = Site(tmp_path, CODEX)
+    (site.login / "config.toml").write_text(body, encoding="utf-8", newline="\n")
+
+    with pytest.raises(NativeQuotaReadError) as refused:
+        site.adapter.quota_connection().read()
+
+    assert refused.value.reason == "not_supported"
+    assert site.rows() == [], "the real login home was asked something beside a route key"
+
+
 def test_the_same_name_allowed_but_not_present_in_the_environment_is_not_selected(tmp_path):
     site = Site(tmp_path, CLAUDE)
     site.adapter._pin = replace(

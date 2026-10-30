@@ -289,8 +289,9 @@ SANDBOX_ARGV = ("--sandbox", "workspace-write")
 #: The flag is still pinned, because asking for the weakest policy the vendor
 #: offers is the honest request to make -- it just buys no claim.
 REVIEW_SANDBOX_ARGV = ("--sandbox", "read-only")
-#: The five published config keys that turn telemetry off, each sent as its own
-#: `-c key=value` pair. The VALUE half is parsed by the CLI as TOML, which is why
+#: Six config switches, each sent as its own `-c key=value` pair: the five published
+#: telemetry keys of the module docstring, then R10's code-owned `feedback.enabled`.
+#: The VALUE half is parsed by the CLI as TOML, which is why
 #: `"none"` carries its quotes: it is a TOML string, and it is the kebab-case
 #: spelling of the `None` exporter variant.
 TELEMETRY_ARGV = (
@@ -330,6 +331,9 @@ LOGIN_STATUS_ARGV = (*AUTH_STORE_ARGV, "login", "status")
 #: access-only homes; P11 owner login also created `log`. Account for exactly
 #: those names, with no database wildcard. Only newly added scratch is removed;
 #: existing operator files remain, including older files inside these directories.
+#: A `-wal`/`-shm` is not removed alone while its database stands (`login_home.take_back`):
+#: beside a database that stood before the spawn it stays and is not residue; beside one that
+#: could not be removed or measured it stays and counts; an orphan, with no database, goes.
 LOGIN_SCRATCH = (
     "tmp", "log", ".sandbox",
     "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
@@ -357,16 +361,26 @@ LOGIN_CREDENTIALS = ("auth.json", CODEX_MCP_CREDENTIALS)
 SUBSCRIPTION_SENTENCE = "Logged in using ChatGPT"
 API_KEY_MARKER = "API key configured"
 #: The name that carries this vendor's configuration AND its project trust map,
-#: and the two top-level keys in it that give the isolation away. MEASURED: a
-#: `config.toml` here naming the work tree as a trusted project made the vendor
-#: read that tree's own `.codex/config.toml`, which an empty home had excluded.
-#: That exclusion is this transport's stated isolation basis.
+#: and the keys in it that give the isolation or the login's route away, looked for
+#: at ANY depth (`login_home.config_grants`). MEASURED: a `config.toml` here naming
+#: the work tree as a trusted project made the vendor read that tree's own
+#: `.codex/config.toml`, which an empty home had excluded. That exclusion is this
+#: transport's stated isolation basis. `model_provider` picks another provider. The
+#: two base URLs are top-level `ConfigToml` fields of the pinned 0.164.0 (6aaac69) that
+#: send the requests carrying the login's bearer elsewhere. A nested row (`[profiles.x]`)
+#: is inert there and is refused all the same, conservatively, by the any-depth search.
+#: Their tie to the environment names of `relay_env.COMMON_ROUTE_ENV` is this build's
+#: policy symmetry, not a vendor equivalence. `profile` is not listed: the 0.164.0
+#: config loader fails on it, so it selects nothing there.
 #:
 #: The KEYS and not the name, because the vendor writes its own configuration
 #: file beside its own login: refusing the name would refuse the directory this
 #: build had just told a person to create, and would do it permanently.
 LOGIN_FORBIDDEN = ("config.toml", ".env", "environments.toml")
-LOGIN_CONFIG_KEYS = ("projects", "model_provider")
+LOGIN_CONFIG_KEYS = (
+    "projects", "model_provider",
+    "chatgpt_base_url", "openai_base_url",
+)
 MODEL_FLAG = "--model"
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; a review's stdout becomes an artifact, so it is artifacts' bound.
@@ -436,7 +450,7 @@ ANSWER_DETAIL = MappingProxyType({
 #: parser written from the source would spell the second and refuse every real
 #: install -- while this provider went on advertising itself available and
 #: failing every preflight. The form here is what the reviewed binary really
-#: prints, observed as 19 bytes.
+#: prints (module docstring; `tests/test_command_codex_version.py`: 18 bytes, LF).
 #:
 #: The anchors buy the usual thing: an unanchored pattern finds `0.112.0` inside
 #: a warning line and calls that the version. The closed prefix buys what this
