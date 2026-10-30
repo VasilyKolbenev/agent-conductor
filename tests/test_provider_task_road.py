@@ -2,10 +2,10 @@
 
 The Agents screen and the Desk wizard used to say one thing about every subscription login (that it
 only reads quotas). Since I2b a subscription task of Claude Code and Codex runs inside the
-execution boundary on a relay home, and Grok Build and Kimi Code still do not, so the screen has to
-be told which, and by a fact and not by a vendor's name: the registry's own answer for a dispatch
-(`AdapterRegistry.execution_boundary(provider_id, "dispatch")`), in two words, `boundary` or
-`refused`. It is on every row of the provider projection, because the window judges a row by one
+execution boundary on a relay home. Grok Build permits review only, and Kimi Code still refuses
+subscription tasks, so the screen is told by the registry's answers for dispatch and review:
+`boundary`, `review_only` or `refused`. It is on every row of the provider projection, because the
+window judges a row by one
 closed key set (`PROVIDER_KEYS`); it fails closed where no registry was asked, as the registry does.
 
 What this file holds: the projection's own rule, the answer of the production door for the roads
@@ -81,13 +81,14 @@ def test_the_production_door_says_boundary_for_the_roads_that_run_a_task_inside_
     roads = _roads(tmp_path, monkeypatch, _subscription_pins(tmp_path))
 
     assert roads == {"claude-code": "boundary", "codex": "boundary", "deepseek-harness": "boundary",
-                     "grok-build": "refused", "kimi-code": "refused"}
+                     "grok-build": "review_only", "kimi-code": "refused"}
 
 
-def test_an_api_key_road_is_a_boundary_for_all_five_on_windows(tmp_path, monkeypatch):
+def test_api_key_roads_on_windows_keep_grok_review_only(tmp_path, monkeypatch):
     roads = _roads(tmp_path, monkeypatch, _five_pins(tmp_path))
 
-    assert set(roads.values()) == {"boundary"} and len(roads) == 5
+    assert roads == {"claude-code": "boundary", "codex": "boundary", "deepseek-harness": "boundary",
+                     "grok-build": "review_only", "kimi-code": "boundary"}
 
 
 @pytest.mark.parametrize("kept", [("logins",), ("DecemberCommand",)], ids=["no-product-folder",

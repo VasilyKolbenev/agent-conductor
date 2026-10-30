@@ -10,7 +10,7 @@ three sides that can drift apart:
 - the door itself: asked for nothing, it confines each catalogued harness for the host it runs on;
 - the callers: no code under ``src`` names the unconfined launch, which exists for the harness
   fakes of the test suite and for nothing else;
-- the road: a Grok dispatch through ``server.build`` either starts inside the boundary entry or is
+- the road: a Grok review through ``server.build`` starts inside the boundary entry; a dispatch is
   refused with the harness fake's spawn log empty. It never starts on the plain runner.
 
 The host platform is read through ``providers.host_platform``, so each test names the platform it
@@ -32,8 +32,12 @@ from conductor.command.adapters.harness_profile import boundary_detail
 from conductor.command.adapters.harness_workspace import INSTRUCTION_DIR
 from conductor.command.adapters.process import ProcessRunner
 from conductor.command.adapters.provider import ProviderConfig
+from conductor.command.artifacts import ArtifactDocument
+from conductor.command.contracts import ActionProposal, RunEnvelope
 from conductor.command.execution_boundary import ATTEMPT_MODES
 from conductor.command.providers import PROVIDER_CATALOG, resolve_providers
+from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.runtime import AttemptState, Budget, Confirmation, ControlRuntime
 
 from tests import _fakegrok
 from tests import test_command_grok_transport as grok_t
@@ -82,8 +86,9 @@ def test_the_provider_door_asked_for_nothing_confines_each_harness_for_the_host_
 
     assert len(resolution.registry.manifests()) == len(PROVIDER_CATALOG) == 5
     for provider_id in PROVIDER_CATALOG:
+        expected = [False, provided] if provider_id == "grok-build" else [provided] * 2
         assert [resolution.registry.execution_boundary(provider_id, mode)
-                for mode in ATTEMPT_MODES] == [provided] * 2, provider_id
+                for mode in ATTEMPT_MODES] == expected, provider_id
 
 
 def test_the_door_over_the_shipped_runner_says_yes_only_if_the_runners_entry_takes_the_call(
@@ -101,8 +106,9 @@ def test_the_door_over_the_shipped_runner_says_yes_only_if_the_runners_entry_tak
         _five_pins(tmp_path), root=tmp_path, clock=lambda: grok_t.NOW, ids=grok_t._Ids())
 
     for provider_id in PROVIDER_CATALOG:
+        expected = [False, takes] if provider_id == "grok-build" else [takes] * 2
         assert [resolution.registry.execution_boundary(provider_id, mode)
-                for mode in ATTEMPT_MODES] == [takes] * 2, provider_id
+                for mode in ATTEMPT_MODES] == expected, provider_id
 
 
 def _subscription_pins(
@@ -118,7 +124,7 @@ def _subscription_pins(
 
 
 #: Which harness has a relay (`HarnessProfile.login_relay`): the subscription road is covered there.
-RELAYED = {"claude-code": True, "codex": True, "grok-build": False, "kimi-code": False}
+RELAYED = {"claude-code": True, "codex": True, "grok-build": True, "kimi-code": False}
 
 
 @pytest.mark.parametrize("provider_id", sorted(RELAYED))
@@ -130,8 +136,9 @@ def test_the_production_door_over_subscription_pins_provides_the_boundary_where_
     resolution = resolve_providers(
         _subscription_pins(tmp_path), root=tmp_path, clock=lambda: grok_t.NOW, ids=grok_t._Ids())
 
+    expected = [False, True] if provider_id == "grok-build" else [RELAYED[provider_id]] * 2
     assert [resolution.registry.execution_boundary(provider_id, mode)
-            for mode in ATTEMPT_MODES] == [RELAYED[provider_id]] * 2
+            for mode in ATTEMPT_MODES] == expected
 
 
 @pytest.mark.parametrize("kept", [("logins",), ("DecemberCommand",), ("DecemberCommand", "other")],
@@ -164,8 +171,9 @@ def test_the_door_over_the_shipped_runner_and_subscription_pins_follows_its_entr
     resolution = resolve_providers(
         _subscription_pins(tmp_path), root=tmp_path, clock=lambda: grok_t.NOW, ids=grok_t._Ids())
 
+    expected = [False, wanted] if provider_id == "grok-build" else [wanted] * 2
     assert [resolution.registry.execution_boundary(provider_id, mode)
-            for mode in ATTEMPT_MODES] == [wanted] * 2
+            for mode in ATTEMPT_MODES] == expected
 
 
 def test_the_host_platform_is_the_one_the_interpreter_reports():
@@ -210,7 +218,7 @@ def test_only_the_provider_door_confines_an_adapter():
     assert {file for file, _call in _source_calls("confine")} == {"providers.py"}
 
 
-# -- 3. the road: a Grok dispatch through the production build ------------------
+# -- 3. the roads: Grok review and refused dispatch through the production build --
 
 
 def _served_grok(tmp_path, monkeypatch, platform):
@@ -228,7 +236,8 @@ def _served_grok(tmp_path, monkeypatch, platform):
     (root / INSTRUCTION_DIR / "instr-001.md").write_text(
         grok_t.INSTRUCTION_BODY, encoding="utf-8", newline="\n")
     log = tmp_path / "spawns.log"
-    knobs = {_fakegrok.SPAWN_LOG: str(log), WRITE_KNOB: EDIT}
+    knobs = {_fakegrok.SPAWN_LOG: str(log), WRITE_KNOB: EDIT,
+             _fakegrok.EMIT_REVIEW: "enabled-fixed-review"}
     for name, value in knobs.items():
         monkeypatch.setenv(name, value)
     made = recording_runners(monkeypatch, tmp_path / "scratch")
@@ -241,28 +250,57 @@ def _served_grok(tmp_path, monkeypatch, platform):
     return served, made, root, log
 
 
-def test_a_grok_dispatch_through_the_production_build_starts_inside_the_boundary_entry(
+def test_a_grok_review_through_the_production_build_starts_inside_the_boundary_entry(
         tmp_path, monkeypatch):
     served, made, root, log = _served_grok(tmp_path, monkeypatch, "win32")
     try:
-        adapter = served.command_registry.resolve(GROK_PROVIDER_ID)
-        receipt = grok_t.run_once(adapter, grok_t.a_request())
+        store = RunStore(root)
+        config = {"cycle": {"id": "grok-review", "phases": ["diagnose"]},
+                  "instances": [{"id": "reviewer", "adapter": "grok-build"}]}
+        digest = snapshot_digest(config)
+        store.create_run(RunEnvelope(run_id="run-grok", cycle_id="grok-review",
+            created_at=grok_t.NOW, config_digest=digest, mode="confirm"), config)
+        store.append(ArtifactDocument(artifact_id="seed-1", artifact_ref="candidate",
+            run_id="run-grok", created_at=grok_t.NOW, media_type="text/markdown",
+            content="Review this candidate through the production door."))
+        proposal = ActionProposal(proposal_id="proposal-review", run_id="run-grok",
+            attempt_id="attempt-review", instance_id="reviewer", capability="review",
+            arguments={"work_item_id": "work-001", "target_artifact_refs": ["candidate"],
+                       "result_artifact_ref": "diagnosis", "review_profile": "quality"},
+            scope=("work",), proposed_by="lane", proposed_at=grok_t.NOW, timeout_seconds=60,
+            rationale="review the candidate", config_digest=digest, input_binding="proposal-v1")
+        store.append(proposal)
+        runtime = ControlRuntime(store, served.command_registry,
+                                 clock=lambda: grok_t.NOW, ids=grok_t._Ids())
+        confirmation = Confirmation(confirmation_id="confirmation-review", run_id="run-grok",
+            proposal_id=proposal.proposal_id, preview_digest=proposal.preview_digest,
+            capability="review", scope=("work",), config_digest=digest,
+            confirmed_by="test-owner", confirmed_at=grok_t.NOW)
+        attempt = runtime.execute(runtime.authorize(confirmation, budget=Budget(
+            max_actions=1, max_action_seconds=60, max_confirmation_age_seconds=60)))
+        records = store.read("run-grok").records
     finally:
         served.server_close()
 
     (runner,) = made
-    assert receipt.outcome == "succeeded", receipt.detail
+    assert attempt.state is AttemptState.SUCCEEDED
+    outputs = [row.value for row in records if row.kind == "artifact"
+               and row.value.source_action_id is not None]
+    assert len(outputs) == 1
+    assert outputs[0].content == "# Diagnosis\nThe fake review read the supplied candidate.\n"
+    assert outputs[0].input_artifact_ids == ("seed-1",)
     assert [served.command_registry.execution_boundary(GROK_PROVIDER_ID, mode)
-            for mode in ATTEMPT_MODES] == [True, True]
+            for mode in ATTEMPT_MODES] == [False, True]
     assert runner.events[-3:] == ["enter", "run-inside", "exit"]
     granted = [run for run in runner.runs if "--allow" in run.argv]
-    assert len(granted) == 1 and granted[0].inside, "the write grant ran outside the entry"
+    assert len(granted) == 1 and granted[0].inside, "the review ran outside the entry"
+    assert [entry.mode for entry in runner.entries] == ["review"]
+    assert _fakegrok.allowed_tools(list(granted[0].argv)) == {"Read", "Grep", "Glob"}
     assert len(_fakegrok.spawns(log)) == len(runner.runs)
-    assert (root / "work" / "work-001" / "guard.py").read_text(encoding="utf-8") == (
-        "# a real change\n")
+    assert not (root / "work" / "work-001" / "guard.py").exists()
 
 
-@pytest.mark.parametrize("platform", ["linux", "darwin"])
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
 def test_a_grok_dispatch_through_the_production_build_is_refused_before_it_spawns(
         platform, tmp_path, monkeypatch):
     served, made, root, log = _served_grok(tmp_path, monkeypatch, platform)

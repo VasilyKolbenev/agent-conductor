@@ -140,12 +140,13 @@ def test_every_catalogued_provider_carries_a_profile_this_module_would_accept():
 
 
 def test_a_profile_that_names_no_channel_takes_the_argv_one_it_always_had():
-    """The three providers that shipped before this field must not notice it."""
+    """Providers without an explicit channel retain argv; Grok explicitly uses a file."""
     assert a_profile().task_channel == TASK_CHANNEL_ARGV
-    for provider_id in ("deepseek-harness", "kimi-code", "grok-build"):
+    for provider_id in ("deepseek-harness", "kimi-code"):
         entry = PROVIDER_CATALOG[provider_id]
         assert entry.adapter_class.profile.task_channel == TASK_CHANNEL_ARGV, (
             f"{provider_id} changed channel")
+    assert PROVIDER_CATALOG["grok-build"].adapter_class.profile.task_channel == "file"
 
 
 def test_a_task_travels_by_one_of_three_channels_and_a_fourth_word_is_refused():

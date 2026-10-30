@@ -6,8 +6,8 @@ to that reader: a spec whose fields were functions would break every digest of a
 run at once. The behaviour lives in methods and the declaration in fields, and the fields are what a
 grant binds: a changed form of the copy is a changed digest and an old grant is refused.
 
-Only Claude Code and Codex declare a relay; the three others do not, and the road for them stays
-what it was.
+Claude Code, Codex and Grok Build declare a relay; DeepSeek and Kimi Code do not. The shared
+full-mode fixtures below cover Claude and Codex; Grok has its own relay and activation tests.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from conductor.command.adapters.codex_cli import (
 from conductor.command.adapters.codex_relay import CODEX_RELAY
 from conductor.command.adapters.dsh_harness import DSH_PROFILE
 from conductor.command.adapters.grok_build import GROK_PROFILE
+from conductor.command.adapters.grok_relay import GROK_RELAY
 from conductor.command.adapters.harness_profile import HeadlessCliError
 from conductor.command.adapters.kimi_code import KIMI_PROFILE
 from conductor.command.adapters.login_relay import RelaySpec
@@ -37,11 +38,11 @@ from tests.test_command_codex_transport import _executable as codex_executable
 RELAYED = {"claude": (CLAUDE_PROFILE, CLAUDE_RELAY), "codex": (CODEX_PROFILE, CODEX_RELAY)}
 
 
-def test_only_the_two_subscription_harnesses_declare_a_relay():
+def test_only_the_three_subscription_harnesses_declare_a_relay():
     assert CLAUDE_PROFILE.login_relay is CLAUDE_RELAY
     assert CODEX_PROFILE.login_relay is CODEX_RELAY
-    assert (DSH_PROFILE.login_relay, GROK_PROFILE.login_relay, KIMI_PROFILE.login_relay) == (
-        None, None, None)
+    assert GROK_PROFILE.login_relay is GROK_RELAY
+    assert (DSH_PROFILE.login_relay, KIMI_PROFILE.login_relay) == (None, None)
 
 
 def test_the_declared_facts_of_the_claude_relay():

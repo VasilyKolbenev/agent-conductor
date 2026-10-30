@@ -73,13 +73,13 @@ SIGNED_IN = [pytest.param((claude_t, _fakeclaude), id="claude-code"),
              pytest.param((grok_t, _fakegrok), id="grok-build"),
              pytest.param((kimi_t, _fakekimi), id="kimi-code")]
 EVERY = [*SIGNED_IN, pytest.param((dsh_t, _fakedsh), id="deepseek-harness")]
-#: The two that have a relay (`login_relay`): their subscription road is covered.
+#: Full-mode relay fixtures; Grok's review-only road is covered by test_grok_activation.
 RELAYED = SIGNED_IN[:2]
 #: The harnesses a subscription road is refused for. The third member is whether the profile has a
-#: relay that is taken off (Claude Code, Codex): Grok and Kimi were never given one.
+#: relay that is explicitly taken off; Kimi still has none.
 REFUSED = [pytest.param((claude_t, _fakeclaude, True), id="claude-code-without-relay"),
            pytest.param((codex_t, _fakecodex, True), id="codex-without-relay"),
-           pytest.param((grok_t, _fakegrok, False), id="grok-build"),
+           pytest.param((grok_t, _fakegrok, True), id="grok-build-without-relay"),
            pytest.param((kimi_t, _fakekimi, False), id="kimi-code")]
 #: The runner's gate as shipped, and opened the way the loan's own tests open it.
 GATE = [pytest.param(False, id="gate-closed"), pytest.param(True, id="gate-open")]
