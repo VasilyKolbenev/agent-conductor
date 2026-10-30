@@ -99,3 +99,12 @@ One exception to the design's untouched Codex tests: test_command_codex_transpor
 shared catalog census explicitly names all review providers. Add Grok to that literal
 and its docstring only; no Codex behavior expectation or snapshot changes. Reproduced
 failure names the extra grok-build row, exactly the activation's intended catalog fact.
+
+Final focused census covers these named test modules: test_subscription_road_boundary,
+test_relay_profiles, test_provider_task_road, test_independent_checker_transport,
+test_harness_profile, test_harness_login_leaks, test_production_door_boundary,
+test_provider_auth_mode and test_command_vendor_sandbox. The lead authorizes only
+reproduced stale Grok fixture/roster expectations to migrate in these files, preserving
+their refusal/positive witnesses and all other harness behavior. The first three
+failures reproduce the subscription no-relay fixture failing to strip Grok's new relay.
+No generic weakening, skipped tests or product changes are authorized by this extension.
