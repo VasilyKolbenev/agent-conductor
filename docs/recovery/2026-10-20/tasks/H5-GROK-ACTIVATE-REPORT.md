@@ -5,7 +5,8 @@
 Authority: TASK a46edea, live-order decision a93a09b, budget extension fd1527c.
 Owner stop is now 20% remaining. No push, real model call or owner grant performed here yet.
 Code: seed 6a9e359, activation 6039eeb, shared-contract follow-up af799fb.
-Final shared census: 0d781e1; exact candidate for the complete clean rerun.
+Shared census: 0d781e1; final wizard/login fixture migration: 48a787c.
+Current exact candidate for the complete clean rerun is 48a787c.
 
 ## Proven code behavior
 
@@ -53,6 +54,24 @@ not established. The interrupted run is NOT green and cp1251 did not start.
 Evidence: work/grok-activation/run-20261030T152106166187Z; do not overwrite logs or old temp roots.
 Next complete run uses two ordinary workers and records/stops at the first failure per shard;
 this changes scheduling, never assertions or test timeouts.
+
+Second clean full run (0d781e1) stopped normally at the first failed batch, not by interruption.
+UTF-8 native files passed; ordinary shards 0/1/3 passed with 2815/3253/2339 passed tests.
+Shard 2: 1258 passed, one failure in test_desk_wizard_roster: its fixture still declared
+Grok controls=[dispatch]. Remaining shards and cp1251 were not run. Evidence:
+work/grok-activation/run-20261030T175939023227Z. This run is NOT green.
+Connected wizard/browser and provider-login fixture migration is scoped by d911f3f/76deac0.
+The next exact-commit full run may use four ordinary workers (native files remain serial),
+with unchanged assertions/timeouts and fresh temp roots; it is not a retry of this failed SHA.
+
+Wizard/login migration 48a787c: initial red 3 failures, dependent role expectations 5 failures,
+browser role expectation 1 failure. All wizard core modules + provider_setup_login:
+472 passed in each encoding; browser role scenarios: 22 passed (RU/EN).
+Argv-size witnesses now use DeepSeek, Grok is review_only/file and excluded from do/checker;
+relay-home witnesses include Grok, Kimi retains the no-relay witness. Independent review clean.
+Six files only; non-Grok fixture rows unchanged. Evidence: work/grok-activation/wizard-migration.
+Full exact 48a787c starts in work/grok-live-check3, records
+work/grok-activation/run-20261030T182108700175Z; no result claimed while running.
 
 ## Protected machine
 
