@@ -120,3 +120,11 @@ counterpart. Preserve argv-size witnesses using an explicitly argv-capable provi
 of real Grok. Current Grok fixture uses review_only/file; do/checker exclusion remains required.
 The same census found tests/test_provider_setup_login.py asserting that Grok has no relay:
 reproduce, move Grok to existing relay-home witnesses, and retain Kimi's non-relay witness.
+
+Owner continuation 30.10: stop threshold lowered from 20% to 10% remaining.
+Fresh Grok login passed product readiness; quota is observed but percentage is null.
+Next: inspect the existing native metadata read, emitting only schema names/types and quota
+numbers, to distinguish upstream omission from parser loss. No model call for this diagnostic.
+Keep missing usage unknown; do not silently equate it to zero or waive G6's quota condition.
+Owner also installed Kimi Desktop. Record it as the next integration candidate; inspect its
+supported control interface before assuming that it matches the existing Kimi Code adapter.
