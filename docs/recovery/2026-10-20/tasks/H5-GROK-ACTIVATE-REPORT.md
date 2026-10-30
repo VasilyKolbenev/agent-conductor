@@ -146,3 +146,26 @@ First missing step is the owner's application grant; no G6 result is claimed.
 Owner stop is now 10% remaining; latest Codex observation is 21% remaining.
 Kimi Desktop 3.2.23.24 is installed, kimi command absent from PATH; integration is queued,
 not established by the presence of Desktop. No Claude polling or model calls were performed.
+
+## First G6 attempt: failed, no retry
+
+Owner entered vasily and granted in the application. At 20:25:07 UTC on 30 October the
+effect lease was recorded; execution_observed at 20:25:12.939 UTC recorded failed / exit 1.
+Result at 20:25:13 says only: adapter reported failed: the process exited non-zero.
+No evidence references or diagnosis artifact. Root cause is not established.
+
+Actual owner grant used the form defaults: one action, 300 seconds per action/node and
+300 total reserved seconds, rather than the planned 600. This is an observed deviation;
+the failure after about six seconds is not a timeout. spent_task_seconds=300 accounts
+for the reservation and is not the measured process duration. No additional attempt.
+
+All three acl/loan/profile journal records are retired; container-attempts is empty.
+The original three source file hashes match setup. Server stopped with Ctrl+C;
+ownership status returned closed. Saved receipt: work/grok-activation/g6-first-failed-receipt.json.
+The graph opened result-gate after the failed step; no human gate decision was made.
+G6 is NOT passed and no full Dalio is admitted by this result.
+
+Next: inspect existing evidence and failure handling without another model call.
+UX findings to preserve: disabled grant when Your name is empty has no explanation;
+the top status said running/no human action while authorization_required; planned bounds
+prepared through API do not populate the browser's local form draft.
