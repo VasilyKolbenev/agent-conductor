@@ -114,6 +114,6 @@ def test_the_third_arm_keeps_a_row_only_for_a_road_a_task_can_take():
     """
     answer = run_js(body, _MODULES)
 
-    assert answer["words"] == ["boundary", "refused"]
-    assert answer["kept"] == [["boundary"], ["refused"]]
+    assert answer["words"] == ["boundary", "refused", "review_only"]
+    assert answer["kept"] == [["boundary"], ["refused"], ["review_only"]]
     assert answer["dropped"] == [], f"a row with an odd road was kept: {answer['dropped']}"

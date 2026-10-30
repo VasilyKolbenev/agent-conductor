@@ -122,6 +122,7 @@ CAPPED = (
     "tests/test_grok_relay.py",
     "tests/test_grok_relay_environment.py",
     "tests/test_harness_task_modes.py",
+    "tests/test_review_only_road.py",
     "tests/test_materials_refused_refusal.py",
     "tests/test_policy_driver_ended.py",
     "tests/test_policy_driver_queue.py",

@@ -478,7 +478,7 @@ def test_the_agents_screen_spells_the_road_a_task_takes() -> None:
     from conductor.command.adapters import provider
 
     roads = sorted(provider.TASK_ROADS)
-    assert roads == ["boundary", "refused"]
+    assert roads == ["boundary", "refused", "review_only"]
     assert frozen_list(PEOPLE_FILE, "TASK_ROAD_STATES") == roads
     assert sorted(frozen_keys(PEOPLE_FILE, "TASK_ROAD_MEANINGS")) == roads
     assert sorted(frozen_keys(PEOPLE_FILE, "SUBSCRIPTION_ROADS")) == roads

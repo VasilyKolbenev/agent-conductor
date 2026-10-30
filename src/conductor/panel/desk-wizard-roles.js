@@ -87,6 +87,7 @@ export function rosterOf(providers) {
     return {id: row.provider_id,
       name: typeof row.display_name === "string" ? row.display_name : row.provider_id,
       available: row.availability === "available",
+      taskRoad: row.task_road,
       roads: (Array.isArray(row.controls) ? row.controls : [])
         .filter((one) => typeof one === "string"),
       channel: typeof channel?.channel === "string" ? channel.channel : null};
@@ -115,7 +116,9 @@ export function boundaryCause(providers, chosen) {
 }
 
 export function offersFor(role, roster) {
-  return roster.filter((row) => row.available && role.needs.every((need) => row.roads.includes(need)));
+  return roster.filter((row) => row.available && role.needs.every((need) => row.roads.includes(need))
+    && (row.taskRoad !== "review_only"
+      || (!role.needs.includes("dispatch") && role.verifies.length === 0)));
 }
 
 //: What is left of a harness's limit, or that it is not known. A reading that is missing,
@@ -160,8 +163,9 @@ function pick(role, ctx) {
   }
   const carries = role.needs.includes("dispatch");
   const fits = argvFit("", ctx.chars[role.role_id] ?? 0).fits;
-  const fitting = eligible.filter((row) => row.channel !== "argv" || !carries || fits);
-  if (fitting.length < eligible.length) notes.push("argv_not_fit");
+  const automatic = eligible.filter((row) => row.taskRoad !== "review_only");
+  const fitting = automatic.filter((row) => row.channel !== "argv" || !carries || fits);
+  if (fitting.length < automatic.length) notes.push("argv_not_fit");
   if (fitting.length === 0) return {provider: null, by: null, notes: [...notes, "none_eligible"]};
   const before = ctx.previous[role.role_id];
   if (fitting.some((row) => row.id === before)) return {provider: before, by: "previous", notes};

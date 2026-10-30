@@ -201,6 +201,14 @@ export const AGENTS_COPY = Object.freeze({
     "Configured to use the vendor's own login, kept in its own directory. A task runs inside the execution boundary on a copy of that login that has no refresh token; the login directory itself is never given to the task.",
     "Настроена собственная авторизация провайдера в отдельном каталоге. Задача исполняется в изоляции на копии этого входа без refresh-токена; сам каталог входа задаче не выдаётся."
   ],
+  "agents.auth_subscription_review_only": [
+    "Read-only isolation uses a login copy without a refresh token; editing is unsupported.",
+    "Чтение в изоляции на копии входа без refresh-токена; изменение файлов недоступно."
+  ],
+  "agents.task_road_review_only": [
+    "Only read-only tasks run in isolation; editing tasks are not supported.",
+    "В изоляции доступны только задачи чтения; изменение файлов не поддерживается."
+  ],
   "agents.auth_subscription_refused": [
     "Configured to use the vendor's own login, kept in its own directory. A task on this login is refused before it starts. Possible reasons: a subscription login for this harness is not supported inside the execution boundary yet; its login directory is not named ...\\DecemberCommand\\logins\\<name>; or this machine cannot give the boundary (it needs Windows and a build installed under ...\\harnesses\\<name>\\<version>).",
     "Настроена собственная авторизация провайдера в отдельном каталоге. Задача с этим входом отклоняется до запуска. Возможные причины: вход по подписке для этого агента в изоляции пока не поддержан; каталог входа не называется ...\\DecemberCommand\\logins\\<имя>; либо этот компьютер не даёт изоляцию (нужны Windows и сборка, установленная в ...\\harnesses\\<имя>\\<версия>)."

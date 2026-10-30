@@ -31,8 +31,8 @@ from tests.test_controls_provider_block import AVAILABLE_ID
 from tests.test_production_door_boundary import _five_pins, _subscription_pins
 
 
-def test_the_two_words_of_the_fact_are_closed():
-    assert provider_module.TASK_ROADS == ("boundary", "refused")
+def test_the_three_words_of_the_fact_are_closed():
+    assert provider_module.TASK_ROADS == ("boundary", "refused", "review_only")
 
 
 def test_every_row_carries_the_fact_and_it_fails_closed_where_no_registry_was_asked():
@@ -53,7 +53,8 @@ def test_only_a_plain_yes_of_the_registry_is_a_boundary(answer, word):
     (row,) = provider_projection([_contract()], boundary=boundary)
 
     assert row["task_road"] == word
-    assert asked == [(row["provider_id"], "dispatch")], "only a dispatch road is asked about"
+    modes = ["dispatch", "review"] if answer is False else ["dispatch"]
+    assert asked == [(row["provider_id"], mode) for mode in modes]
 
 
 def test_a_registry_that_cannot_answer_for_a_provider_refuses_it():

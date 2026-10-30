@@ -86,15 +86,18 @@ export const AUTH_MEANINGS = Object.freeze({
 });
 //: command/adapters/provider.py TASK_ROADS -- where a task of a harness runs. A fourth question,
 //: and it shares no word with the three above.
-export const TASK_ROAD_STATES = Object.freeze(["boundary", "refused"]);
+export const TASK_ROAD_STATES = Object.freeze(["boundary", "refused", "review_only"]);
 export const TASK_ROAD_MEANINGS = Object.freeze({
   boundary: "A task of this harness runs inside the execution boundary.",
+  review_only: "Only read-only tasks run in isolation; editing tasks are not supported.",
   refused: "A task of this harness is refused before it starts: it cannot run inside the "
     + "execution boundary here.",
 });
 //: What the PAIR (`auth`, `task_road`) of a subscription row adds to its login: the words of the
 //: login are chosen by the road a task takes on it, never by the name of a vendor.
 export const SUBSCRIPTION_ROADS = Object.freeze({
+  review_only: "Read-only tasks use an isolated copy of the login without a refresh token; "
+    + "editing tasks are not supported.",
   boundary: "A task runs inside the execution boundary on a copy of that login that has no "
     + "refresh token; the login directory itself is never given to the task.",
   refused: "A task on this login is refused before it starts. Possible reasons: a subscription "
@@ -148,7 +151,7 @@ const AUTH_CHANNEL = Object.freeze({
   api_key: "none", subscription: "none", unpinned: "none",
 });
 //: Where a task runs, as a chip: a refused road is a fact the person must see, not a neutral one.
-const TASK_ROAD_CHANNEL = Object.freeze({boundary: "pass", refused: "fail"});
+const TASK_ROAD_CHANNEL = Object.freeze({boundary: "pass", refused: "fail", review_only: "wait"});
 const GATE_CHANNEL = Object.freeze({
   idle: "wait", satisfied: "pass", failed: "fail",
   changes_requested: "wait", waived: "none", unknown: "wait",

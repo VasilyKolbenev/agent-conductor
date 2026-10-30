@@ -112,7 +112,7 @@ CONTRACT_AUTH_STATES = frozenset(AUTH_MODES | {UNPINNED_AUTH})
 #: login (`provider_projection`): ``boundary`` where a dispatch is launched inside the execution
 #: boundary, ``refused`` where it is refused before it starts. Neither shares a value with the
 #: availability, implementation or login words.
-TASK_ROADS = ("boundary", "refused")
+TASK_ROADS = ("boundary", "refused", "review_only")
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -649,17 +649,21 @@ class ProviderRegistry:
 
 
 def task_road(boundary: Callable[[str, str], object] | None, provider_id: str) -> str:
-    """The road a dispatch of this provider takes: ``boundary`` or ``refused`` (`TASK_ROADS`).
+    """A provider's proven task road, including one that supports only read-only tasks.
 
     ``boundary`` is the registry's own question, `AdapterRegistry.execution_boundary`, asked for
-    a dispatch. It fails closed, as the registry does: no question asked, a provider the registry
-    does not hold (one that is not available has no adapter), an error, or any answer but a plain
-    ``True`` is ``refused``.
+    a dispatch, then review only after an explicit False. An error or a non-boolean dispatch
+    answer is refused, never evidence that a provider supports a narrower road.
     """
     if boundary is None:
         return "refused"
     try:
-        return "boundary" if boundary(provider_id, "dispatch") is True else "refused"
+        dispatch = boundary(provider_id, "dispatch")
+        if dispatch is True:
+            return "boundary"
+        if dispatch is False and boundary(provider_id, "review") is True:
+            return "review_only"
+        return "refused"
     except Exception:  # noqa: BLE001 -- what cannot be established is refused
         return "refused"
 

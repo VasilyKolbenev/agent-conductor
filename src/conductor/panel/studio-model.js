@@ -40,7 +40,7 @@ export const PROVIDER_IMPLEMENTATION = Object.freeze(
 //: PINNED, or that no row named it. Never a proof that the login works.
 export const PROVIDER_AUTH = Object.freeze(["api_key", "subscription", "unpinned"]);
 //: command/adapters/provider.py TASK_ROADS -- where a task runs; no word of the three above.
-export const PROVIDER_TASK_ROAD = Object.freeze(["boundary", "refused"]);
+export const PROVIDER_TASK_ROAD = Object.freeze(["boundary", "refused", "review_only"]);
 //: command/workflow_draft.py DIAGNOSTIC_CODES. A diagnostic is coded by the
 //: exception TYPE the real constructor raised; the prose is never parsed.
 export const DIAGNOSTIC_CODES = Object.freeze(
