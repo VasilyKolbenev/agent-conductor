@@ -62,6 +62,13 @@ function validTerms(terms, detail) {
 export function automationEligible(detail) {
   return detail?.run.mode === "policy" && detail.config?.automation_contract === "bounded-run-v1";
 }
+export function projectGrantRefusal(answer) {
+  if (answer?.status !== "refused") return null;
+  if (answer.code === "preview_stale") return {notice: "preview_stale", preview: null};
+  if (answer.code !== "slot_busy") return null;
+  const holder = answer.payload?.error?.detail?.run_id;
+  return {notice: "slot_busy", holder: isId(holder) ? holder : null};
+}
 export function projectAutomationPreview(value, detail) {
   if (!automationEligible(detail) || !object(value, ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"])
       || !validProviderFacts(value.provider_facts, detail)

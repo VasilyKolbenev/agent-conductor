@@ -26,6 +26,24 @@ function input(state, held, actions, key, node = null) {
 }
 function boundsForm(state, held, actions) {
   const form = element("form", {className: "studio-automation__bounds"});
+  const {max_actions: actionsMax, max_action_seconds: actionSeconds,
+    max_total_task_seconds: total, duration_seconds: duration} = held.draft;
+  form.append(element("p", {"data-budget-summary": "", text: word(state, "budget_summary",
+    {actions: actionsMax, seconds: actionSeconds, total, duration})}), note(word(state, "budget_basis")));
+  const toggle = button(state, held.expanded ? "collapse_limits" : "edit_limits",
+    !held.pending && !held.request, () => {
+      if (!held.expanded || form.reportValidity()) actions.toggleLimits();
+    });
+  toggle.setAttribute("aria-expanded", String(Boolean(held.expanded)));
+  toggle.dataset.focus = "automation:limits";
+  form.append(toggle);
+  if (held.expanded) appendLimitInputs(form, state, held, actions);
+  const submit = button(state, "preview", !held.pending && !held.request && held.phase === "ready", () => {});
+  submit.type = "submit"; form.append(submit);
+  form.addEventListener("submit", (event) => { event.preventDefault(); if (form.reportValidity()) actions.preview(); });
+  return form;
+}
+function appendLimitInputs(form, state, held, actions) {
   for (const key of ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"])
     form.append(input(state, held, actions, key));
   for (const row of held.draft.node_limits) {
@@ -34,10 +52,6 @@ function boundsForm(state, held, actions) {
     group.append(input(state, held, actions, "timeout_seconds", row), input(state, held, actions, "max_attempts", row));
     form.append(group);
   }
-  const submit = button(state, "preview", !held.pending && !held.request && held.phase === "ready", () => {});
-  submit.type = "submit"; form.append(submit);
-  form.addEventListener("submit", (event) => { event.preventDefault(); if (form.reportValidity()) actions.preview(); });
-  return form;
 }
 function participant(state, detail, id, duty) {
   const found = detail.config.instances.find((row) => row.id === id);

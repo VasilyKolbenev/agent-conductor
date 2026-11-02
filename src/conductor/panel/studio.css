@@ -659,6 +659,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-automation{display:flex;flex-direction:column;gap:12px;overflow-wrap:anywhere}
 .studio-automation__bounds{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .studio-automation__bounds fieldset{min-width:0;display:grid;gap:8px}
+.studio-automation__bounds>p{grid-column:1/-1;margin:0}
 .studio-automation__review{display:flex;flex-direction:column;gap:16px}
 .studio-automation pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
 

@@ -1,8 +1,7 @@
 "use strict";
 // Human write callbacks and a serial read queue; no read can create authority.
 import {automationDraft, automationEligible, automationWriteReadBack, previewRequest, projectAutomation,
-  projectAutomationPreview} from "./studio-automation-model.js";
-import {isId} from "./studio-model.js";
+  projectAutomationPreview, projectGrantRefusal} from "./studio-automation-model.js";
 
 class AutomationFlow {
   constructor(door) {
@@ -32,7 +31,7 @@ class AutomationFlow {
         pending: false, preview: null, notice: this.value.request ? "unknown" : this.value.notice});
       const prior = this.held.get(id);
       this.publish({runId: id, phase: "empty", view: null,
-        draft: id ? automationDraft(detail) : null, request: null, notice: "", ...prior,
+        draft: id ? automationDraft(detail) : null, expanded: false, request: null, notice: "", ...prior,
         pending: false, preview: null}, false);
     }
     if (id && this.current()) return this.refresh();
@@ -87,6 +86,9 @@ class AutomationFlow {
       this.publish({draft: {...draft, [name]: text}, preview: name === "actor" ? this.value.preview : null}, redraw);
     }
   }
+  toggleLimits() {
+    if (!this.value.pending && !this.value.request) this.publish({expanded: !this.value.expanded});
+  }
   async preview() {
     if (!this.current() || this.value.pending || this.value.request) return;
     const body = previewRequest(this.value.draft);
@@ -131,13 +133,9 @@ class AutomationFlow {
       (result) => { answer = result; });
     if (asked !== this.operation || runId !== this.value.runId) return;
     const refused = answer?.status === "refused";
-    const grantRefusal = refused && request.target === "automationAuthorize"
-      && ["slot_busy", "preview_stale"].includes(answer.code);
-    const notice = grantRefusal ? answer.code : refused ? "refused" : "unknown";
-    const holder = answer?.payload?.error?.detail?.run_id;
-    this.publish({pending: false, notice, request: refused ? null : request,
-      holder: notice === "slot_busy" && isId(holder) ? holder : null,
-      ...(notice === "preview_stale" ? {preview: null} : {})});
+    const grantRefusal = request.target === "automationAuthorize" ? projectGrantRefusal(answer) : null;
+    this.publish({pending: false, notice: refused ? "refused" : "unknown",
+      request: refused ? null : request, holder: null, ...grantRefusal});
     if (this.current()) {
       this.door.refreshRun(runId);
       await this.refresh();
@@ -148,6 +146,6 @@ class AutomationFlow {
 export function automationFlow(door) {
   const flow = new AutomationFlow(door);
   return {snapshot: () => flow.value, ...Object.fromEntries(
-    ["sync", "clear", "disconnect", "refresh", "edit", "preview", "authorize", "control", "retry"]
+    ["sync", "clear", "disconnect", "refresh", "edit", "toggleLimits", "preview", "authorize", "control", "retry"]
       .map((name) => [name, flow[name].bind(flow)]))};
 }

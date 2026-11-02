@@ -81,6 +81,7 @@ def prepare(page, project):
     page.get_by_role("button", name="Read this run", exact=True).click()
     box = page.locator('[data-automation="run"]')
     expect(box.locator('[data-automation-state]')).to_have_attribute("data-automation-state", "unconfigured")
+    box.get_by_role("button", name="Edit limits").click()
     for name, value in {"actor": "owner", "max_actions": "2", "max_action_seconds": "30",
                         "max_total_task_seconds": "60", "duration_seconds": "300"}.items():
         box.locator(f'[data-focus="automation:run:{name}"]').fill(value)
@@ -92,6 +93,43 @@ def prepare(page, project):
     box.get_by_text("Instruction for work: instruction", exact=True).click()
     expect(box.locator("pre").filter(has_text="Keep this task.")).to_be_visible()
     return box
+
+
+def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        box = page.locator('[data-automation="run"]')
+        expect(box.locator("[data-automation-state]")).to_be_visible()
+        actor = box.get_by_role("textbox", name="Your name")
+        actor.fill("owner")
+        editor = box.locator('[data-focus="automation:run:duration_seconds"]')
+        expect(editor).to_be_hidden()
+        review = box.locator('[data-focus="automation:preview"]')
+        review.click()
+        expect(box.locator("[data-automation-preview]")).to_be_visible()
+        box.get_by_role("button", name="Edit limits").click()
+        editor.fill("0")
+        box.get_by_role("button", name="Close limit settings").click()
+        expect(editor).to_be_visible()
+        assert not editor.evaluate("(input) => input.validity.valid")
+        editor.fill("7200")
+        expect(box.locator("[data-automation-preview]")).to_have_count(0)
+        page.locator('[data-focus="preference-language"]').select_option("ru")
+        expect(editor).to_be_visible()
+        expect(editor).to_have_value("7200")
+        box.get_by_role("button", name="Свернуть настройки лимитов").click()
+        expect(editor).to_be_hidden()
+        expect(box.locator("[data-budget-summary]")).to_contain_text("7200")
+        with page.expect_response(lambda response: response.url.endswith("/automation/preview")) as result:
+            review.click()
+        assert result.value.json()["terms"]["duration_seconds"] == 7200
+        assert adapter.execute_calls == 0 and window.page_errors == []
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+    finally:
+        close_context(page.context)
 
 
 @pytest.mark.parametrize(("code", "holder"), [
