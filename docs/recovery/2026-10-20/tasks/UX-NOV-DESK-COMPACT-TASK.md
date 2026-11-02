@@ -11,3 +11,8 @@ and keep every role editable in one disclosure. Make missing assignments visible
 Keep the three-stage draft and detailed mode. Re-entering or pressing prepare
 twice cannot create a second immutable run. Test RU/EN on the served fake-provider
 project, including the mobile viewport. Recapture steps one and two.
+
+The reviewed grant must state where the owner is expected to decide. Take gate
+titles and incoming steps from the frozen run graph. A known graph without
+gates has no gate panel. If the graph is unread, say so. Capture the mobile
+answer before granting anything.
