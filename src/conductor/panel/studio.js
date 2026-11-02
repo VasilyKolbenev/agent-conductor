@@ -133,7 +133,15 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   // Every mount redraws from the state. What a person had focused, typed and
   // selected is carried across the pass by the net in `studio-focus.js`.
   function render() {
-    const key = focusTarget(), typed = typedValues(shell), presentation = {...state, locale: appearance.value.locale};
+    const key = focusTarget(), typed = typedValues(shell);
+    const held = automation.snapshot(), detail = state.runs.detail;
+    const needsRunPermission = state.connection === "open" && state.runs.phase === "ready"
+      && held.phase === "ready" && held.view?.run_id === state.runs.selectedId
+      && detail?.run?.run_id === state.runs.selectedId && detail?.graph?.schedule?.run_state === "open"
+      && detail.graph.situation?.state === "not_required" && held.view?.owner_present
+      && held.view.state === "unconfigured" && held.view.reason_code === "authorization_required"
+      && Boolean(held.view.next_node_id);
+    const presentation = {...state, locale: appearance.value.locale, needsRunPermission};
     mountShell(mounts, presentation, handlers);
     mountTasks(byId("studioTasks"), presentation, handlers);
     mountOverview(mounts.bodyOverview, presentation, handlers);
@@ -143,7 +151,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     mountInspector(mounts.inspector, presentation, handlers);
     mountRuns(mounts.bodyRuns, presentation, handlers);
     mountBridge(mounts.bridge, presentation, handlers);
-    mountAutomation(mounts.bodyRuns, presentation, automation.snapshot(), automation);
+    mountAutomation(mounts.bodyRuns, presentation, held, automation);
     mountDecisions(mounts.bodyDecisions, presentation, handlers);
     mountAgents(mounts.bodyAgents, presentation, handlers);
     restoreTyped(shell, typed);

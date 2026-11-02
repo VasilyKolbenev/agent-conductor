@@ -15,11 +15,11 @@ function paragraph(text) { return element("p", {text}); }
 function humanControl(state, handlers) {
   const detail = state.runs.detail, situation = detail?.graph?.situation;
   const fresh = state.connection === "open" && state.runs.phase === "ready" && situation;
-  const value = fresh ? situation.state : "unknown";
+  const value = state.needsRunPermission ? "required" : fresh ? situation.state : "unknown";
   const box = element("section", {className: "studio-bridge__box", "data-human-state": value}, [
     element("h3", {text: localize(state, "bridge.title")}),
     element("h4", {text: localize(state, "bridge.attention")}),
-    paragraph(localize(state, `bridge.${value}`)),
+    paragraph(localize(state, state.needsRunPermission ? "runhead.review_limits" : `bridge.${value}`)),
   ]);
   if (fresh) {
     box.append(paragraph(localize(state, "bridge.as_of", {at: situation.computed_at})));

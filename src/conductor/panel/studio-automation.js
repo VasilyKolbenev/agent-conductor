@@ -118,6 +118,7 @@ function review(state, held, actions) {
   ]);
   box.append(button(state, "authorize", held.phase === "ready" && Boolean(held.view?.owner_present)
     && Boolean(held.draft.actor.trim()) && !held.pending && !held.request, actions.authorize));
+  if (!held.draft.actor.trim()) box.append(note(word(state, "name_needed")));
   return box;
 }
 function status(state, held, actions) {

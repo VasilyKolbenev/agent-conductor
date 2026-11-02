@@ -21,6 +21,7 @@ export const AUTOMATION_COPY = Object.freeze({
   "automation.title": ["Bounded automatic run", "Ограниченный автоматический запуск"],
   "automation.explain": ["Review explicit limits, then authorize routine work. Human gates still wait for your answer.", "Проверьте ограничения и разрешите обычные шаги. Человеческие проверки по-прежнему ждут вашего решения."],
   "automation.actor": ["Your name", "Ваше имя"],
+  "automation.name_needed": ["Enter your name in the field above to enable authorization.", "Введите имя в поле «Ваше имя» выше, чтобы разрешить запуск."],
   "automation.max_actions": ["Maximum actions for this run", "Максимум действий за весь запуск"],
   "automation.max_action_seconds": ["Maximum seconds per action", "Максимум секунд на действие"],
   "automation.max_total_task_seconds": ["Total reserved task seconds", "Общий резерв времени задач, секунд"],

@@ -50,11 +50,12 @@ def bounded_project(tmp_path, request):
         GraphNode("ask", "gate", "Human choice", gate_id="answer"),
         GraphNode("work", "task", "Approved work", instance_id="doer", capability="dispatch",
                   arguments=ARGS, timeout_seconds=30, attempt_bound=2)),
-        edges=(GraphEdge("ask", "work", condition="on_approved"),)))
+        edges=((GraphEdge("work", "ask"),) if getattr(request, "param", False) == "task_first"
+               else (GraphEdge("ask", "work", condition="on_approved"),))))
     store.append(ArtifactDocument(artifact_id="instruction", run_id="run", artifact_ref="instructions",
         created_at=NOW, media_type="text/plain", content="Keep this task."))
     ownership_transition.activate(root, legacy_writers_stopped=True)
-    argv_facts = getattr(request, "param", False)
+    argv_facts = getattr(request, "param", False) is True
     adapter = (_ArgvScripted if argv_facts else DeepScripted)(execute_outcome="failed")
     registry = AdapterRegistry([adapter])
     subject = server.build(root, 0, registry=registry,
@@ -93,11 +94,41 @@ def prepare(page, project):
     return box
 
 
+@pytest.mark.parametrize("bounded_project", ["task_first"], indirect=True)
+def test_first_grant_is_the_visible_next_step(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        box = page.locator('[data-automation="run"]')
+        expect(box.locator("[data-automation-state]")).to_have_attribute(
+            "data-automation-state", "unconfigured")
+        expect(page.locator(".studio-runs__situation")).to_contain_text("Waiting for your permission")
+        expect(page.locator("#studioBridge")).to_contain_text("Review the run limits to start")
+        page.get_by_role("button", name="Set up this run", exact=True).click()
+        actor = box.get_by_role("textbox", name="Your name")
+        expect(actor).to_be_focused()
+        box.get_by_role("button", name="Review bounded run").click()
+        grant = box.get_by_role("button", name="Authorize bounded run")
+        expect(grant).to_be_disabled()
+        hint = box.get_by_text("Enter your name in the field above to enable authorization.")
+        expect(hint).to_be_visible()
+        actor.fill("owner")
+        expect(hint).to_have_count(0)
+        expect(grant).to_be_enabled()
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+        assert adapter.execute_calls == 0 and window.page_errors == []
+    finally:
+        close_context(page.context)
+
+
 def test_one_reviewed_permission_and_explicit_pause_resume_revoke(chromium: Browser, bounded_project):
     project, adapter = bounded_project
     page, window = _open(chromium, project)
     try:
         box = prepare(page, project)
+        expect(page.get_by_role("button", name="Set up this run", exact=True)).to_have_count(0)
+        expect(page.locator(".studio-runs__situation")).not_to_contain_text("Waiting for your permission")
         store = RunStore(project.root)
         assert not any(row.kind == "run_authorization" for row in store.read("run").records)
         for action, state in [("authorize", "waiting"), ("pause", "paused"),
