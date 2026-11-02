@@ -146,7 +146,6 @@ from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, 
 
 import json
 import re
-from dataclasses import dataclass
 from collections.abc import Callable
 from pathlib import Path
 from types import MappingProxyType
@@ -279,14 +278,7 @@ __all__ = [
     "GrokBuildAdapter", "GrokBuildError", "grok_pin",
 ]
 
-@dataclass(frozen=True)
-class GrokProfile(HarnessProfile):
-    """The reviewed response format is part of the provider facts and the grant digest."""
-
-    review_output_format: str = "json"
-
-
-GROK_PROFILE = GrokProfile(
+GROK_PROFILE = HarnessProfile(
     tool_noun="Grok Build", task_noun="Grok Build prompt",
     display_name=GROK_DISPLAY_NAME, vendor="xAI",
     docs_url="https://docs.x.ai/build/overview",
@@ -331,6 +323,7 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
     profile = GROK_PROFILE
     error = GrokBuildError
     review_enabled = True
+    review_output_format = "json"
     serves_checks = False
     task_modes = ("review",)
 
@@ -356,7 +349,7 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
                 "--prompt-file", task_file.path_in(home))
 
     def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
-        return (*NO_AUTO_UPDATE_ARGV, "--output-format", self.profile.review_output_format,
+        return (*NO_AUTO_UPDATE_ARGV, "--output-format", self.review_output_format,
                 *REVIEW_PERMISSION_ARGV,
                 "--prompt-file", task_file.path_in(home))
 

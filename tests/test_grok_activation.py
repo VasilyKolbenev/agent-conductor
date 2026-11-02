@@ -73,8 +73,6 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
     assert GrokBuildAdapter.profile.output_limit == 49152
     assert GrokBuildAdapter.profile.login_relay is not None
     assert GrokBuildAdapter.profile.login_relay.kind == "g"
-    from dataclasses import asdict
-    assert asdict(GrokBuildAdapter.profile)["review_output_format"] == "json"
 
 
 @pytest.mark.parametrize("auth,case,reason", [

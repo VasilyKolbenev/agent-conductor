@@ -32,6 +32,11 @@ class ProviderAuthority:
         # Profiles contain code-owned arguments, finite caps and login NAME rules,
         # never sampled credentials.
         transport = asdict(profile) if is_dataclass(profile) else {}
+        review_format = getattr(type(adapter), "review_output_format", None)
+        if review_format is not None:
+            if review_format != "json":
+                raise ContractError("unsupported review output format")
+            transport["review_output_format"] = review_format
         from .adapters.deep_commands import OUTPUT_LIMIT_BYTES
         from .adapters.harness_workspace import FILE_BUDGET, INSTRUCTION_LIMIT
         from .adapters.independent_check import FRAME_LIMIT

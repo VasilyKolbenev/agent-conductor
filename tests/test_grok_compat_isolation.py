@@ -85,6 +85,10 @@ def test_compat_pairs_are_bound_into_the_grok_grant_digest(tmp_path, monkeypatch
     profile = GrokBuildAdapter.profile
     current = authority.digest(config)
     facts = authority.facts(config)["providers"][0]["transport"]
+    assert facts["review_output_format"] == "json"
+    with monkeypatch.context() as patch:
+        patch.delattr(GrokBuildAdapter, "review_output_format")
+        assert authority.digest(config) != current, "a previous review format needs new authority"
     assert dict(facts["forced_env"]) == {**TELEMETRY, **COMPAT}
     old = replace(profile, forced_env=tuple(TELEMETRY.items()))
     monkeypatch.setattr(GrokBuildAdapter, "profile", old)
