@@ -230,6 +230,7 @@ CAPPED = (
     "tests/test_task_file.py",
     "tests/test_task_channel_file.py",
     "tests/test_studio_task_channel_file.py",
+    "tests/test_kimi_stage_probe_native.py",
 )
 
 

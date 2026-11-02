@@ -9,7 +9,8 @@ from threading import Thread
 
 import pytest
 
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows handle-relative stage and recovery")
+pytestmark = pytest.mark.skipif(
+    os.name != "nt", reason="Windows handle-relative stage and recovery")
 ROOT = Path(__file__).resolve().parents[1]
 ID = "02468ace02468ace02468ace02468ace"
 
@@ -102,7 +103,8 @@ def test_crash_boundary_decides_ownership_without_guessing(tmp_path, case, recov
         assert (root / "attempt/credentials/kimi-code.json").read_bytes() == b""
 
 
-@pytest.mark.parametrize("damage", ["replace", "hardlink", "portal", "extra", "missing", "torn-record"])
+@pytest.mark.parametrize("damage", [
+    "replace", "hardlink", "portal", "extra", "missing", "torn-record"])
 def test_unknown_identity_refuses_before_touching_anything(tmp_path, damage):
     assert probe(tmp_path, "interrupt").returncode == 75
     root = layout(tmp_path)
