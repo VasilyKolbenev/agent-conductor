@@ -70,15 +70,14 @@ export function createRunWriteHost({door, binding, refreshRun, onChange, onForei
     actor = desk.actor;
     const selectedRow = state.decisions.list.find((row) =>
       `${row.run_id}/${row.gate_id}` === state.decisions.draft.key);
-    const actionable = state.decisions.list.find((row) =>
+    const actionable = state.decisions.list.filter((row) =>
       !row.ended && row.decision !== "unknown"
         && (row.answerable === "first" || row.answerable === "supersede"));
-    if (id !== null && state.decisions.list.length
-        && (!selectedRow || (actionable && selectedRow !== actionable
-          && (selectedRow.ended || selectedRow.decision === "unknown"
-            || (selectedRow.answerable !== "first"
-              && selectedRow.answerable !== "supersede"))))) {
-      const row = actionable ?? state.decisions.list[0];
+    const unanswered = actionable.filter((row) => row.answerable === "first");
+    const choices = unanswered.length ? unanswered : actionable;
+    const row = choices.includes(selectedRow) ? selectedRow
+      : choices[0] ?? selectedRow ?? state.decisions.list[0];
+    if (id !== null && row && row !== selectedRow) {
       state = reduce(state, {type: "decision-chosen", key: `${row.run_id}/${row.gate_id}`});
       decisionRevision += 1;
     }
