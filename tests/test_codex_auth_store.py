@@ -18,6 +18,7 @@ the same value on both sides of the comparison.
 """
 from __future__ import annotations
 
+import os
 import pytest
 
 from conductor.command.adapters import codex_cli
@@ -77,7 +78,11 @@ def test_the_wizard_prints_the_sign_in_that_keeps_the_login_in_a_file(
             str(home), str(executable),
             ("CODEX_HOME", ("-c", 'cli_auth_credentials_store="file"', "login"))):
         assert line in said, said
-    assert ' -c cli_auth_credentials_store="file" login' in said
+    # A person pastes this command into the platform shell. Native transport argv
+    # uses the unescaped literal and is checked separately below.
+    suffix = (r' --% -c cli_auth_credentials_store=\"file\" login' if os.name == "nt"
+              else """ -c 'cli_auth_credentials_store="file"' login""")
+    assert any(line.endswith(suffix) for line in said.splitlines())
 
 
 def test_a_task_spawn_carries_the_store_once_ahead_of_the_telemetry_pairs(tmp_path):
