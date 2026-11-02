@@ -178,16 +178,17 @@ def test_a_timed_out_login_status_does_not_claim_a_missing_login_or_spawn_a_task
 
     def slow_status(spec):
         if "auth" in spec.argv and "status" in spec.argv:
-            return ProcessOutcome(status="timed_out", exit_code=None, output=b"private partial answer",
-                                  output_truncated=False, output_limit=spec.output_limit,
-                                  pid=1, token="status-token")
+            return ProcessOutcome(
+                status="timed_out", exit_code=None, output=b"private partial answer",
+                output_truncated=False, output_limit=spec.output_limit, pid=1, token="status-token")
         return run(spec)
 
     site.runner.run = slow_status
     receipt = site.run(request)
 
     assert receipt.outcome == "failed"
-    assert receipt.detail == "the Claude Code subscription login check timed out, so no task was spawned"
+    assert receipt.detail == (
+        "the Claude Code subscription login check timed out, so no task was spawned")
     assert not site.claimed(request) and site.tasks() == []
     assert site.leftovers() == [] and digests(site.login) == before and site.lease_is_free()
 
