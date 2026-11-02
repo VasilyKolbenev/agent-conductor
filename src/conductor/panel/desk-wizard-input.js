@@ -93,7 +93,7 @@ export function runInput(state, lang) {
   const body = request === null ? null : withLikes(request.body, fields);
   const held = heldFlow(state);
   const own = fields.filter((field) => field.source !== "like").map((field) => ({
-    ref: `instruction-${field.step_id}`, content: field.text}));
+    ref: field.instructionRef, content: field.text}));
   return {taskId: state.task.taskId, title: state.task.title, taskWritten: state.task.written,
     starterId: state.mode.starterId, view: state.mode.view, lang, resumed: false,
     workflowId: state.cycle.choice?.workflowId ?? null, dispatch: fields.length > 0,

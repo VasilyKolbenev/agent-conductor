@@ -46,6 +46,67 @@ def wizard_url(tmp_path) -> Iterator[str]:
         assert not thread.is_alive()
 
 
+@pytest.mark.parametrize(("lang", "width"), [("ru", 375), ("en", 1100)])
+def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browser, wizard_url, lang, width):
+    context = chromium.new_context(viewport={"width": width, "height": 900})
+    try:
+        page = context.new_page()
+        posts, errors, refusals = [], [], []
+        page.on("request", lambda req: posts.append(urlsplit(req.url).path) if req.method == "POST" else None)
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        page.on("response", lambda row: refusals.append((urlsplit(row.url).path, row.json()))
+                if row.status >= 400 and "/command/" in row.url else None)
+        page.goto(f"{wizard_url}#lang={lang}")
+        page.locator('[data-focus-key="pult:actor-change"]').click()
+        page.locator('[data-focus-key="pult:actor-name"]').fill("owner")
+        page.locator('[data-focus-key="pult:actor-save"]').click()
+        page.locator("#deskNewTask").click()
+        form = page.locator("#deskWizard")
+        def forward():
+            button = form.locator('[data-focus="wizard:next"]')
+            try:
+                expect(button).to_be_enabled(timeout=5000)
+            except AssertionError as exc:
+                raise AssertionError((form.locator("[data-body]").get_attribute("data-body"),
+                                      form.locator("[data-wizard-reason]").inner_text(),
+                                      form.locator(".desk-wizard__diagnostics").all_inner_texts())) from exc
+            button.click()
+        expect(form.locator("[data-guide-stage]")).to_have_count(3)
+        goal = "Проверить отчёт 🧭\nСохранить исходные строки."
+        form.locator('[data-focus="wizard:brief"]').fill(goal)
+        form.locator('[data-guide-details="optional"] summary').click()
+        title = form.locator('[data-focus="wizard:title"]')
+        expect(title).to_have_value("Проверить отчёт 🧭")
+        title.fill("Owner's task")
+        form.locator('[data-focus="wizard:mode"]').click()
+        expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal)
+        form.locator('[data-focus="wizard:mode"]').click()
+        form.locator('[data-focus="wizard:brief"]').fill(goal + " ✓")
+        form.locator('[data-focus="wizard:git:run_without_git"]').click()
+        forward()
+        expect(form.locator('[data-guide-stage="team"]')).to_have_attribute("aria-current", "step")
+        expect(form.locator('h3[data-card-id="dalio-v6"]')).to_be_visible()
+        expect(form.locator('[data-role="role-checker"]')).to_be_visible()
+        form.locator('[data-focus="wizard:back"]').click()
+        expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal + " ✓")
+        forward()
+        forward()
+        expect(form.locator('[data-guide-stage="review"]')).to_have_attribute("aria-current", "step")
+        expect(form.locator("[data-body]")).to_contain_text("Owner's task")
+        assert not any(path.endswith("/automation/preview") for path in posts)
+        form.locator('[data-focus="wizard:prepare:go"]').click()
+        try:
+            expect(form.locator('[data-focus="wizard:launch:start"]')).to_be_enabled(timeout=5000)
+        except AssertionError as exc:
+            raise AssertionError((refusals, form.inner_text())) from exc
+        assert not any(path.endswith("/automation/authorize") for path in posts)
+        assert sum(path.endswith("/automation/preview") for path in posts) == 1
+        assert errors == []
+        assert form.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
+    finally:
+        context.close()
+
+
 def test_new_task_uses_real_git_task_seed_and_run_routes(chromium: Browser, wizard_url: str):
     context = chromium.new_context(viewport={"width": 1100, "height": 1300})
     try:
@@ -72,6 +133,7 @@ def test_new_task_uses_real_git_task_seed_and_run_routes(chromium: Browser, wiza
         wizard = page.locator("#deskWizard [data-wizard]")
         expect(wizard).to_have_attribute("data-wizard-current", "task")
         assert ("GET", "/command/project/git") in asked
+        page.locator('[data-focus="wizard:mode"]').click()
         page.locator('[data-focus="wizard:title"]').fill("Host path")
         page.locator('[data-focus="wizard:brief"]').fill("Prepare the path.")
         page.locator('[data-focus="wizard:next"]').click()

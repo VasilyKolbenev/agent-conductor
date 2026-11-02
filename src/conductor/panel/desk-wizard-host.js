@@ -118,14 +118,15 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const taskId = resume?.taskId ?? `task-${nonceValue.slice(0, 24)}`;
     const task = tasks.find((row) => row.task_id === taskId);
     wizard = initialWizard({newTaskId: taskId, nonce: nonceValue, actor: actor ?? "",
+      firstRunGuide: resume === null && start.starterId === null,
       viewMode: mode === "view", starterId: resume?.starterId ?? start.starterId,
       setupDoor: typeof path.gitSetup === "function",
       ...(resume === null ? {} : {resume, taskWritten: true, title: task?.title ?? ""})});
     entrance = keys.new === "task" ? "new" : "prepare";
     timer = setInterval(() => dispatch({type: "tick", now: new Date().toISOString()}), 1000);
     dispatch({type: "open"});
-    queueMicrotask(() => mount.querySelector('[data-focus="wizard:title"], '
-      + '[data-focus="wizard:close"]')?.focus());
+    queueMicrotask(() => (mount.querySelector(wizard?.guided ? '[data-focus="wizard:brief"]'
+      : '[data-focus="wizard:title"]') ?? mount.querySelector('[data-focus="wizard:close"]'))?.focus());
   }
 
   function openNew() {

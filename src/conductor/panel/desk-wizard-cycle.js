@@ -54,10 +54,14 @@ function savedCard(row, pinnedId) {
 
 //: The cards, in order: the pinned cycle first, the two ready cycles, the saved ones, and last
 //: "build your own". A starter run shows one locked card and nothing else (spec 6.2).
-export function cardsOf(reads, starterId) {
+export function cardsOf(reads, starterId, firstRunGuide = false) {
   if (starterId !== null) return [starterCard(reads, starterId, null, true)];
   const pinnedId = pinnedOf(reads.cycle_read)?.workflow_id ?? null;
-  const cards = [...WIZARD_STARTERS.map((id) => starterCard(reads, id, pinnedId, false)),
+  const workflows = rowsOf(reads.workflows, "workflows");
+  const dalio = firstRunGuide && rowsOf(reads.workflows, "starters")
+    .some((row) => row.starter_id === "dalio-v6")
+    && !workflows.some((row) => row.workflow_id === "dalio-v6") ? ["dalio-v6"] : [];
+  const cards = [...[...dalio, ...WIZARD_STARTERS].map((id) => starterCard(reads, id, pinnedId, false)),
     ...savedRows(reads).map((row) => savedCard(row, pinnedId))];
   return [...cards.filter((card) => card.pinned), ...cards.filter((card) => !card.pinned),
     BUILD_CARD];
@@ -107,8 +111,8 @@ function titleOfCycle(reads, workflowId) {
 //: run are looked up in the list of cycles, so when that list could not be read
 //: (`workflowsUnread`) a cycle missing from it is unknown, not absent: nothing is chosen and no
 //: source is claimed.
-export function preselect(reads) {
-  const cards = cardsOf(reads, null).filter((card) => card.kind !== "build");
+export function preselect(reads, firstRunGuide = false) {
+  const cards = cardsOf(reads, null, firstRunGuide).filter((card) => card.kind !== "build");
   const cardFor = (id) => cards.find((card) => card.workflowId === id) ?? null;
   const base = {ready: ["workflows", "runs", "cycle_read"].every((name) => reads[name]),
     pinnedUnread: reads.cycle_read !== undefined && reads.cycle_read.status !== "ok",

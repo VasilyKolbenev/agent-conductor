@@ -245,12 +245,12 @@ export function assignmentFrom(revisionNodes, planNodes, instances) {
 
 // -- the instruction fields --------------------------------------------------------------
 
-function entryOf(step, entries) {
+function entryOf(step, entries, dalio) {
   if (Object.hasOwn(entries, step.step_id)) return entries[step.step_id];
   if (typeof step.instruction_from === "string") {
     return {source: "like", like: step.instruction_from, text: ""};
   }
-  const doer = roleKind(step.role_id) === "doer";
+  const doer = roleKind(step.role_id) === "doer" || (dalio && step.role_id === "role-implementer");
   return {source: doer ? "task" : "own", like: null, text: ""};
 }
 
@@ -259,9 +259,9 @@ function entryOf(step, entries) {
 //: empty; "like step X" is offered only where the wizard may write the flow (a cycle the product
 //: does not own), only to a step with no "like" of its own, and never to one others already
 //: follow (spec 6.2.4).
-export function fieldsOf(flow, entries, taskText, owned) {
+export function fieldsOf(flow, entries, taskText, owned, dalio = false) {
   const steps = dispatchSteps(flow);
-  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries)]));
+  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries, dalio)]));
   return steps.map((step) => {
     const entry = held.get(step.step_id);
     const sharedWith = steps.filter((one) => held.get(one.step_id).source === "like"
@@ -271,6 +271,7 @@ export function fieldsOf(flow, entries, taskText, owned) {
       .map((one) => one.step_id) : [];
     const kind = roleKind(step.role_id);
     return {step_id: step.step_id, title: step.title ?? null, role_id: step.role_id,
+      instructionRef: step.ext?.arguments?.instruction_ref ?? `instruction-${step.step_id}`,
       kind: kind === "doer" || kind === "tester" ? kind : "custom",
       required: entry.source !== "like", source: entry.source, like: entry.like,
       sharedWith, costNote: entry.source === "like", likeChoices: choices,

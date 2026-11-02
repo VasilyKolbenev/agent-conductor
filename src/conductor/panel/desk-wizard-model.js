@@ -39,8 +39,8 @@ import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard
 import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
-import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
-  utf8Bytes} from "./desk-wizard-base.js";
+import {BUILT_STEPS, GUIDE_STAGES, LIMITS, STEPS, briefDocument, evolve, frozen, guideStage,
+  inputChars, taskText, titleFromGoal, utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, editInstruction,
   hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
@@ -65,7 +65,7 @@ import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
-export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
+export {STEPS, BUILT_STEPS, GUIDE_STAGES, guideStage, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
   taskText, utf8Bytes,
   assignmentView, boundaryOf, hasProviders, instructionFields, previousAssignment,
@@ -147,6 +147,8 @@ export function initialWizard(opening) {
   const actor = typeof opening.actor === "string" ? opening.actor : "";
   return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
     nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
+    firstRunGuide: opening.firstRunGuide === true, guided: opening.firstRunGuide === true,
+    titleEdited: written,
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
@@ -237,7 +239,7 @@ function materialsPublication(state, lang) {
 // -- step 3: the cycle -------------------------------------------------------------------
 
 export function cycleCards(state) {
-  return cardsOf(state.reads, state.mode.starterId);
+  return cardsOf(state.reads, state.mode.starterId, state.firstRunGuide);
 }
 
 //: The card picked beforehand, and where the choice came from (spec 7.10).
@@ -270,9 +272,13 @@ function cyclePublication(state) {
 function applyPreselection(state) {
   const cycle = state.cycle;
   if (cycle.choice !== null || state.mode.starterId !== null) return state;
-  const found = preselect(state.reads);
-  if (!found.ready || found.choice === null) return state;
-  return evolve(state, {cycle: {...cycle, choice: found.choice, chosenBy: "preselection",
+  const found = preselect(state.reads, state.firstRunGuide);
+  if (!found.ready) return state;
+  const suggested = state.guided && !found.pinnedUnread && !found.workflowsUnread
+    && cycleCards(state).find((card) => card.id === "dalio-v6" && card.kind === "starter");
+  const choice = found.choice ?? (suggested ? {kind: "starter", workflowId: suggested.id} : null);
+  if (!choice) return state;
+  return evolve(state, {cycle: {...cycle, choice, chosenBy: found.choice ? "preselection" : "suggested",
     generation: cycle.generation + 1}});
 }
 
@@ -329,6 +335,7 @@ function gateOf(state, step) {
 }
 
 export function nextStep(state) {
+  if (state.guided) return GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) + 1]?.[1] ?? null;
   return BUILT_STEPS[BUILT_STEPS.indexOf(state.step) + 1] ?? null;
 }
 
@@ -339,7 +346,8 @@ export function nextStep(state) {
 //: that fails again after it was left (a read lands late). It does not say whether a step
 //: follows: the last built step is complete and still has nowhere to go.
 export function canAdvance(state) {
-  const held = [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
+  const held = state.guided ? BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(guideStage(state.step)[2]) + 1)
+    : [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
   for (const step of held) {
     const reason = gateOf(state, step);
     if (reason !== null) return Object.freeze({ok: false, reason, step});
@@ -679,16 +687,24 @@ function editTask(field, allowed) {
   return (state, event) => {
     if (typeof event.value !== "string" || state.task[field] === event.value) return state;
     if (!allowed(state) || (field === "title" && state.task.written)) return state;
-    return evolve(state, {task: {...state.task, [field]: event.value}});
+    const propose = state.guided && field === "brief" && !state.titleEdited && !state.task.written;
+    return evolve(state, {titleEdited: state.titleEdited || field === "title",
+      task: {...state.task, ...(propose ? {title: titleFromGoal(event.value)} : {}), [field]: event.value}});
   };
 }
 
 const HANDLERS = {
   open: (state) => (state.opened ? state : evolve(state, {opened: true})),
   goto: (state, event) => moveTo(state, event.step),
+  "guide-mode": (state) => state.firstRunGuide && !state.run.pressed
+    ? evolve(state, {guided: !state.guided}) : state,
   next: (state) => (canAdvance(state).ok && nextStep(state) !== null
     ? moveTo(state, nextStep(state)) : state),
   back: (state) => {
+    if (state.guided) {
+      const previous = GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) - 1];
+      return previous && !state.run.pressed ? moveTo(state, previous[1]) : state;
+    }
     const at = BUILT_STEPS.indexOf(state.step);
     return at > 0 ? evolve(state, {step: BUILT_STEPS[at - 1]}) : state;
   },

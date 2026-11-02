@@ -13,6 +13,16 @@ export const FILL_STEPS = Object.freeze(["task", "materials", "cycle", "roles"])
 //: The steps this build draws: the four the owner fills in, the preparation that writes them and
 //: the terms card the run starts or is queued from.
 export const BUILT_STEPS = Object.freeze([...FILL_STEPS, "prepare", "run"]);
+export const GUIDE_STAGES = Object.freeze([
+  ["result", "task", "materials"], ["team", "cycle", "roles"], ["review", "prepare", "run"],
+]);
+export function guideStage(step) {
+  return GUIDE_STAGES.find(([, first, last]) => step === first || step === last);
+}
+export function titleFromGoal(goal) {
+  const line = goal.split(/\r?\n/).find((part) => part.trim()) || "";
+  return [...line.replace(/[\x00-\x1f\x7f]/g, " ").trim()].slice(0, TASK_TITLE_LIMIT).join("");
+}
 export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
   documentBytes: MATERIAL_LIMITS.bytes, argvChars: ARGV_LIMIT, title: TASK_TITLE_LIMIT});
 

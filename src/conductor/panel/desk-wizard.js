@@ -21,7 +21,7 @@ import {action, choice, instantText, later, textField, timeText} from "./desk-wi
 import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
 import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
-import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
+import {BUILT_STEPS, GUIDE_STAGES, guideStage, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
   canAdvance, closeBusy, closeBusyWord, closeNeedsWarning, cycleCards, cycleFacts,
   documentPicker, firstFacts, gitReading, instructionFields, materialsEstimate, nextStep,
   preselection, rosterStatus, stepStates, taskFields} from "./desk-wizard-model.js";
@@ -34,8 +34,10 @@ function modeOf(wizard) {
 //: What one pass carries: the model's slice, the words in the reader's language, and the two ways
 //: out. `lang` is the language a document the wizard writes is composed in; leaving may name the
 //: run the desk should open (`{runId, stage}`).
-function context(state, handlers) {
+function context(state, handlers, mount) {
   return {wizard: state.wizard, lang: state.locale === "ru" ? "ru" : "en",
+    expanded: new Set([...mount.querySelectorAll("[data-guide-details][open]")]
+      .map((node) => node.dataset.guideDetails)),
     t: (key, params) => localize(state, key, params),
     send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome)};
 }
@@ -113,10 +115,10 @@ function closing(ctx) {
 
 // -- step 1: the task --------------------------------------------------------------------
 
-function taskField(ctx, field) {
+function taskField(ctx, field, label = null) {
   const locked = field === "title" && ctx.wizard.task.written;
   return textField(ctx, {key: `wizard:${field}`, name: field, multi: field !== "title", locked,
-    label: ctx.t(`wizard.task.${field}`), value: ctx.wizard.task[field],
+    label: label || ctx.t(`wizard.task.${field}`), value: ctx.wizard.task[field],
     onValue: (value) => ctx.send({type: `edit-${field}`, value}),
     extra: locked ? [element("small", {text: ctx.t("wizard.task.title_locked")})] : []});
 }
@@ -357,6 +359,7 @@ function unreadNote(ctx) {
 }
 
 function cardName(ctx, card) {
+  if (card.kind === "starter" && card.id === "dalio-v6") return ctx.t("wizard.guide.dalio");
   return card.kind === "starter" ? ctx.t(`wizard.cycle.name_${CYCLE_NAMES[card.id]}`)
     : card.title ?? card.id;
 }
@@ -572,15 +575,58 @@ function rolesBody(ctx) {
 const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody,
   prepare: prepareBody, run: runBody};
 
+function guideSteps(ctx) {
+  const current = guideStage(ctx.wizard.step)[0];
+  return element("ol", {className: "desk-wizard__steps", "aria-label": ctx.t("wizard.steps_label")},
+    GUIDE_STAGES.map(([name], index) => element("li", {"data-guide-stage": name,
+      "aria-current": name === current ? "step" : null, text: `${index + 1}. ${ctx.t(`wizard.guide.${name}`)}`})));
+}
+
+function disclosure(ctx, key, children, opened = false) {
+  return element("details", {open: opened || ctx.expanded.has(key) ? "" : null, "data-guide-details": key}, [
+    element("summary", {text: ctx.t(`wizard.guide.${key}`)}), ...children]);
+}
+
+function guideBody(ctx) {
+  const state = ctx.wizard, [stage] = guideStage(state.step);
+  if (stage === "result") {
+    const [git, ...materials] = materialsBody(ctx);
+    const gate = canAdvance(state);
+    return [taskField(ctx, "brief", ctx.t("wizard.guide.goal")), element("p", {text: ctx.t("wizard.guide.source")}),
+      git, disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials],
+        gate.step === "materials" && ["material_incomplete", "materials_over_bytes"].includes(gate.reason))];
+  }
+  if (stage === "team") {
+    const chosen = cycleCards(state).find((card) => card.workflowId === state.cycle.choice?.workflowId);
+    const roster = rosterStatus(state), facts = cycleFacts(state);
+    const team = roster === "ready" ? [element("ul", {className: "desk-wizard__roles"},
+      assignmentView(state).map((row) => roleRow(ctx, row)))] : [
+      element("p", {text: ctx.t(`wizard.providers.${roster}`)})];
+    const fields = instructionFields(state, ctx.lang);
+    return [...(chosen ? [element("h3", {text: cardName(ctx, chosen), "data-card-id": chosen.id, "data-chosen": "true"})] : []),
+      ...sourceLine(ctx), ...unreadNote(ctx),
+      disclosure(ctx, "choose", [element("ul", {className: "desk-wizard__cards"}, cardItems(ctx))], !chosen),
+      ...team, ...(fields.length ? [disclosure(ctx, "instructions",
+        fields.map((field) => instructionView(ctx, field)), canAdvance(state).reason === "instruction_empty")] : []),
+      ...flowStatus(ctx, facts), ...budgetView(ctx, facts), ...diagnosticsView(ctx, facts)];
+  }
+  return [element("p", {text: ctx.t("wizard.guide.named", {title: state.task.title})}),
+    ...(state.step === "run" ? runBody(ctx) : prepareBody(ctx))];
+}
+
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {
     throw new Error("the wizard is mounted without its handlers");
   }
-  const ctx = context(state, handlers), wizard = ctx.wizard;
+  const ctx = context(state, handlers, mount), wizard = ctx.wizard;
   const draw = Object.hasOwn(BODIES, wizard.step) ? BODIES[wizard.step] : () => [];
   mount.replaceChildren(element("section", {className: "desk-wizard", "data-wizard": "",
     "data-wizard-current": wizard.step, "data-mode": modeOf(wizard)}, [
-    head(ctx), stepper(ctx),
-    element("div", {className: "desk-wizard__body", "data-body": wizard.step}, draw(ctx)),
-    foot(ctx), ...closing(ctx)]));
+    head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
+    element("div", {className: "desk-wizard__body", "data-body": wizard.step},
+      wizard.guided ? guideBody(ctx) : draw(ctx)),
+    ...(wizard.guided && wizard.run.pressed ? [] : [foot(ctx)]),
+    ...(wizard.firstRunGuide && !wizard.run.pressed ? [action("wizard:mode",
+      ctx.t(wizard.guided ? "wizard.guide.details" : "wizard.guide.short"),
+      () => ctx.send({type: "guide-mode"}))] : []), ...closing(ctx)]));
 }

@@ -42,10 +42,14 @@ function charsByRole(state) {
   const flow = heldFlow(state), chars = {};
   if (flow === null) return chars;
   const inputs = inputChars(state);
-  for (const field of fieldsOf(flow.flow, state.roles.instructions, taskText(state, "ru"), false)) {
+  for (const field of fieldsOf(flow.flow, state.roles.instructions, taskText(state, "ru"), false, isDalio(state))) {
     chars[field.role_id] = Math.max(chars[field.role_id] ?? 0, field.text.length + inputs);
   }
   return chars;
+}
+
+function isDalio(state) {
+  return state.cycle.choice?.kind === "starter" && state.cycle.choice.workflowId === "dalio-v6";
 }
 
 //: The last run of this cycle as role to harness, or null while it is unread or unreadable.
@@ -92,7 +96,7 @@ export function boundaryOf(state) {
 //: What is sent with the flow for diagnostics once the owner has reached the roles step, and
 //: still after they step back: the roles they see are the roles the server judges.
 export function bindingNow(state) {
-  const reached = state.cycle.boundKey !== "null"
+  const reached = state.cycle.boundKey !== "null" || (state.guided && state.step === "cycle")
     || BUILT_STEPS.indexOf(state.step) >= BUILT_STEPS.indexOf("roles");
   return reached && state.cycle.choice !== null ? assignedTo(state) : null;
 }
@@ -109,7 +113,7 @@ export function syncBinding(state) {
 export function instructionFields(state, lang) {
   const flow = heldFlow(state);
   if (flow === null) return [];
-  const owned = !state.cycle.choice.workflowId.startsWith("desk-");
+  const owned = state.cycle.choice.kind !== "starter";
   const given = assignedTo(state) ?? {};
   const roster = rosterOf(providersOf(state));
   const argvFor = (field) => {
@@ -117,7 +121,7 @@ export function instructionFields(state, lang) {
     return row?.channel === "argv" && field.source !== "like"
       ? argvFit(field.text, inputChars(state)) : null;
   };
-  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned)
+  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned, isDalio(state))
     .map((field) => ({...field, argv: argvFor(field)}));
 }
 
@@ -139,7 +143,7 @@ export function rolesGate(state) {
 export function rolesPublication(state, lang) {
   const fields = instructionFields(state, lang);
   const documents = fields.filter((field) => field.source !== "like").map((field) => ({link: 5,
-    target: "artifacts", ref: `instruction-${field.step_id}`, media_type: "text/markdown",
+    target: "artifacts", ref: field.instructionRef, media_type: "text/markdown",
     content: field.text}));
   const likes = Object.fromEntries(fields.filter((field) => field.source === "like")
     .map((field) => [field.step_id, field.like]));

@@ -7,6 +7,18 @@
 export const WIZARD_COPY = Object.freeze({
   // -- the frame and the stepper --------------------------------------------------------
   "wizard.title": ["New task", "Новая задача"],
+  "wizard.guide.result": ["Result and project", "Результат и проект"],
+  "wizard.guide.team": ["Team and cycle", "Команда и цикл"],
+  "wizard.guide.review": ["Review and start", "Проверить и запустить"],
+  "wizard.guide.goal": ["What should be ready at the end?", "Что должно получиться в итоге?"],
+  "wizard.guide.source": ["The task has its own working folder. Choose where its files come from.", "У задачи будет свой рабочий каталог. Выберите, откуда она возьмёт файлы."],
+  "wizard.guide.details": ["Detailed wizard", "Подробный мастер"],
+  "wizard.guide.short": ["Three-step guide", "Мастер в три шага"],
+  "wizard.guide.optional": ["Title, success criteria and materials (optional)", "Название, критерии готовности и материалы (необязательно)"],
+  "wizard.guide.dalio": ["Dalio cycle · Do has a checker", "Цикл Далио · результат Do проверяет участник"],
+  "wizard.guide.instructions": ["Instructions for the team", "Инструкции для команды"],
+  "wizard.guide.choose": ["Choose a different cycle", "Выбрать другой цикл"],
+  "wizard.guide.named": ["Task: {title}", "Задача: {title}"],
   "wizard.close": ["Close", "Закрыть"],
   "wizard.next": ["Next", "Далее"],
   "wizard.back": ["Back", "Назад"],

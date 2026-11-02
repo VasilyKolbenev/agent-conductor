@@ -74,7 +74,8 @@ export function landRun(state, ask, result) {
   if (run.resume !== null && run.resume.lost) return startOver(next);
   //: The preview of the chain is the first card of step 6 (a later one replaces or keeps it).
   const carded = ask.name === "preview" && run.phase === "review"
-    ? evolve(next, {launch: adoptPreview(state.launch, run.preview, run.runId)}) : next;
+    ? evolve(next, {launch: adoptPreview(state.launch, run.preview, run.runId),
+      ...(state.guided ? {step: "run"} : {})}) : next;
   if (state.task.written) return carded;
   if (run.resume === null) {
     //: The title is fixed once the task is written: the same id with another title would clash.
