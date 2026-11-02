@@ -45,9 +45,11 @@ def _native_create():
 class HeldObject:
     """Only literal known children; one open handle owns the identity through disposition."""
 
-    def __init__(self, parent, name, *, create):
+    def __init__(self, parent, name, *, create, loan_anchor=False):
         if os.name != "nt" or name not in _NAMES:
             raise StageRefused("unsupported object or system")
+        if loan_anchor and (name != "attempt" or not create):
+            raise StageRefused("a loan anchor must create the attempt directory")
         native, unicode_type, attributes_type, status_type = _native_create()
         buf = ctypes.create_unicode_buffer(name)
         length = len(name.encode("utf-16-le"))
@@ -60,7 +62,10 @@ class HeldObject:
         options = 0x00200000 | 0x20 | (1 if directory else 0x40)
         # SYNCHRONIZE | DELETE | READ_ATTRIBUTES | READ_DATA | WRITE_DATA. Share READ only:
         # no other handle can rename/replace the checked object while this handle is open.
-        result = native(ctypes.byref(handle), 0x110083, ctypes.byref(attrs), ctypes.byref(status),
+        # An anchor requests no DELETE/write-data access, so the trusted grants hold can be
+        # acquired without releasing this creator's no-delete-sharing handle.
+        access = 0x100081 if loan_anchor else 0x110083
+        result = native(ctypes.byref(handle), access, ctypes.byref(attrs), ctypes.byref(status),
                         None, 0x80, 1, 2 if create else 1, options, None, 0)
         if result < 0:
             if not create and result & 0xffffffff == 0xc0000034:  # STATUS_OBJECT_NAME_NOT_FOUND

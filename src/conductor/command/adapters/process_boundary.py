@@ -114,6 +114,8 @@ class AttemptFolders:
     home: str | None
     install: str
     login: str | None = None
+    #: Supplied by a trusted creator, never from a user request. Binds a read-only home.
+    readonly_home_identity: tuple[int, int] | None = None
 
     def __post_init__(self):
         _route("work", self.work)
@@ -127,3 +129,8 @@ class AttemptFolders:
             raise ValueError("login must be the absolute login home the attempt's lease names")
         if self.login is not None and self.home is not None:
             raise ValueError("a per-spawn home and a login home are never both loaned")
+        ident = self.readonly_home_identity
+        if ident is not None and (self.home is None or type(ident) is not tuple or len(ident) != 2
+                or any(type(word) is not int for word in ident)
+                or not 0 <= ident[0] < 2**64 or not 0 < ident[1] < 2**128):
+            raise ValueError("a read-only home requires its valid native identity")

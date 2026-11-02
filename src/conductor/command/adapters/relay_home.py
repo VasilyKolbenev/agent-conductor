@@ -465,6 +465,83 @@ def relay_acl_refusal(native, auth_home, relay_home=None, *, hold_factory=Native
 _KIMI_CREDENTIAL_NAMES = ("kimi-code.json", "kimi-code-env-0e4f99c69cc27850.json")
 
 
+def _staged_names(path, allowed):
+    names = set()
+    with os.scandir(path) as rows:
+        for entry in rows:
+            if entry.name not in allowed:
+                raise _refused("the staged home contains an unreviewed entry")
+            names.add(entry.name)
+    return names
+
+
+def hold_staged_home(native, root, stack, hold_factory):
+    """Admit one synthetic Kimi layout under its actual grant handle, retaining all identities."""
+    if root.path.parent.name != ".kimi-home":
+        raise _refused("the staged home has an unreviewed layout")
+    held = {".": root}
+    try:
+        for name, directory in (("credentials", True), ("config.toml", False)):
+            hold = hold_factory(root.path / name, directory=directory, grants=False)
+            stack.callback(hold.close)
+            held[name] = hold
+        leaves = _staged_names(held["credentials"].path, _KIMI_CREDENTIAL_NAMES)
+        if len(leaves) != 1:
+            raise _refused("the staged home must contain one managed credential")
+        name = leaves.pop()
+        hold = hold_factory(held["credentials"].path / name, directory=False, grants=False)
+        stack.callback(hold.close)
+        held[name] = hold
+        check_staged_home(native, held)
+    except OSError as error:
+        raise _refused("the staged home could not be held") from error
+    return held
+
+
+def check_staged_home(native, held, sid=None):
+    """Before grant any package allow can expose a secret. After grant only our read ACEs fit."""
+    try:
+        top_names = {"credentials", "config.toml"}
+        if (_staged_names(held["."].path, top_names) != top_names
+                or _staged_names(held["credentials"].path, _KIMI_CREDENTIAL_NAMES)
+                != set(held) - {".", "credentials", "config.toml"}):
+            raise _refused("the staged home changed its layout")
+        for name, hold in held.items():
+            hold.check()
+            sddl, protected, _owner = native.acl_snapshot(hold)
+            if name != "." and protected:
+                raise _refused("a protected child of the staged home cannot inherit a read grant")
+            _check_staged_acl(sddl, sid, directory=name in (".", "credentials"))
+    except OSError as error:
+        raise _refused("the staged home ACL could not be established") from error
+
+
+def _check_staged_acl(sddl, sid, *, directory):
+    _head, entries = _split(sddl)
+    granted = False
+    for entry in entries:
+        fields = _fields(entry)
+        if len(fields) != 6 or fields[0] not in _PLAIN:
+            raise _refused("the staged home has an unreviewed ACL")
+        trustee = fields[5].upper()
+        package = trustee == _PACKAGE_ALIAS or trustee.startswith(_PACKAGE_SIDS)
+        if fields[0] not in _ALLOW or not package:
+            continue
+        if sid is None or trustee != sid:
+            raise _refused("the staged home is accessible to an ungranted container")
+        # Exact equivalents of the masks we install; SDDL may spell the same bits symbolically.
+        rights = fields[2].upper()
+        permitted = {"FR", "0X120089"}
+        if directory:
+            permitted.update(("FRFX", "FXFR", "0X1200A9"))
+        if rights not in permitted or fields[3] or fields[4]:
+            raise _refused("the staged home grants unreviewed package rights")
+        if "IO" not in fields[1]:
+            granted = True
+    if sid is not None and not granted:
+        raise _refused("the staged home did not acquire the effective read grant")
+
+
 def inspect_kimi_sources(native, homes, stack, hold_factory):
     """Pin existing objects, refuse open DACLs, and remember missing and present identities.
 

@@ -496,7 +496,7 @@ class ProcessRunner:
         loaned = None if folders is None else self._loaned(folders)
         return ProfileJournal.for_project(self._root, _winlaunch).container(
             internet_client=internet_client, mode=mode, active_tokens=self.active_tokens,
-            folders=loaned)
+            folders=loaned, readonly_home_identity=getattr(folders, "readonly_home_identity", None))
 
     def _loaned(self, folders) -> dict[str, Path]:
         found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}

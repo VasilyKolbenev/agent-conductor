@@ -106,6 +106,9 @@ def _refused(detail: str) -> ProfileRefused:
 def _entries(sid: str, rights: str) -> str:
     if rights == "rx":
         return f"(A;OICI;0x{_RX:x};;;{sid})"
+    if rights == "read":
+        return (f"(A;;0x{_RX:x};;;{sid})(A;CIIO;0x{_RX:x};;;{sid})"
+                f"(A;OIIO;0x{_RX & ~0x20:x};;;{sid})")
     if rights == "login":
         return (f"(A;;0x{_RWX:x};;;{sid})(A;CIIO;0x{_RWX:x};;;{sid})"
                 f"(A;OIIO;0x{_REFRESH:x};;;{sid})")
@@ -146,7 +149,8 @@ def loan_sddl(before: str, sid: str, rights: str) -> str:
     Args:
         before: The DACL text the native read gave (`O:...D:flags(ace)...`).
         sid: The attempt's AppContainer profile SID.
-        rights: `modify` (read, write, create, traverse on the folder, and those plus DELETE on what
+        rights: `read` (read/traverse directories, read files), or
+            `modify` (read, write, create, traverse on the folder, and those plus DELETE on what
             is inside it), `rx` (read and execute, inheritable) or `login` (the folder and a nested
             directory read, written into and traversed but never deleted; a nested regular file
             read, written and deleted, never run).
@@ -156,7 +160,7 @@ def loan_sddl(before: str, sid: str, rights: str) -> str:
             descriptor with a group or an audit part, a conditional entry, unbalanced brackets) or
             an unknown right. Nothing is guessed.
     """
-    if rights not in ("modify", "rx", "login"):
+    if rights not in ("modify", "rx", "login", "read"):
         raise _refused("the DACL text of a loaned folder is not understood")
     head, aces = _split(before)
     split = 0
@@ -344,17 +348,19 @@ class FolderLoans:
     """The loans of one attempt, journalled in `loan-<attempt>.json` beside its profile record."""
 
     def __init__(self, profiles, native, *, hold_factory=NativeHold, environ=None,
-                 login_homes=None, leased_login=None):
+                 login_homes=None, leased_login=None, readonly_home_identity=None):
         self.profiles, self.native = profiles, native
         self.directory = profiles.directory
         self.hold_factory = hold_factory
         self.environ = os.environ if environ is None else environ
+        self.readonly_home_identity = readonly_home_identity
         self.login_homes = login_homes  # a callable of no argument; None: the project's providers
         self.leased_login = leased_login  # a callable of no argument; None: the project's owner
         self.record, self.holds, self.paths = None, None, {}
         self.lease_retire = None  # retires the loan against the login lease the grant counts as
         self._source_ids = None
         self._source_homes = ()
+        self._staged_home = None
 
     def _logins(self) -> ConfiguredLogins:
         if self.login_homes is None:
@@ -437,6 +443,9 @@ class FolderLoans:
                            "executable configuration in it (a review ruling is open)")
         root = Path(os.path.realpath(self.profiles.owner_root))
         real = {key: _plain_directory(Path(path)) for key, path in folders.items()}
+        if self.readonly_home_identity is not None and ("home" not in real or
+                _identity_of(real["home"]) != self.readonly_home_identity):
+            raise _refused("the staged home no longer has its creator's identity")
         relay = "home" in real and not _inside(real["home"], root)  # outside the project
         for name in ("work", "home"):
             if name in real and not (relay and name == "home"):
@@ -498,6 +507,9 @@ class FolderLoans:
             self._check_sources(self._source_homes)
         for key, hold in holds.items():
             self._change(hold, lambda now, rights=rows[key]["rights"]: loan_sddl(now, sid, rights))
+        if self._staged_home is not None:
+            from .relay_home import check_staged_home
+            check_staged_home(self.native, self._staged_home, sid)
         if "login" in real:
             self._refuse_hooks(real["login"])  # and again, now that the rights are handed down
         record["phase"] = "applied"
@@ -571,8 +583,16 @@ class FolderLoans:
                 holds[key] = hold
                 if key == "login" and tuple(hold.identity) != tuple(leased.identity):
                     raise _refused("the login home is a folder the attempt's lease does not name")
+                readonly = key == "home" and self.readonly_home_identity is not None
+                if readonly and tuple(hold.identity) != self.readonly_home_identity:
+                    raise _refused("the held staged home is not the one its creator recorded")
+                if readonly:
+                    from .relay_home import hold_staged_home
+                    self._staged_home = hold_staged_home(
+                        self.native, hold, stack, self.hold_factory)
                 before, protected, owner_sid = self.native.acl_snapshot(hold)
-                rows[key] = {"path": str(path), "rights": self._rights(key, mode),
+                rights = "read" if readonly else self._rights(key, mode)
+                rows[key] = {"path": str(path), "rights": rights,
                              "identity": list(hold.identity), "before": before,
                              "protected": protected, "owner_sid": owner_sid}
         except BaseException:
@@ -628,7 +648,8 @@ class FolderLoans:
         for key, facts in row["loans"].items():
             if (type(facts) is not dict or set(facts) != _FACTS
                     or type(facts["path"]) is not str
-                    or facts["rights"] not in ("modify", "rx", "login")
+                    or (facts["rights"] not in ("modify", "rx", "login")
+                        and not (key == "home" and facts["rights"] == "read"))
                     or type(facts["identity"]) is not list or len(facts["identity"]) != 2
                     or any(type(x) is not int or x < 0 for x in facts["identity"])
                     or type(facts["before"]) is not str or type(facts["protected"]) is not bool

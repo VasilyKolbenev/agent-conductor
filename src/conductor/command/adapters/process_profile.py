@@ -248,20 +248,24 @@ class ProfileJournal:
             return []
         return AttemptAclJournal(self, self.native).prepare_restarts()
 
-    def _loans(self, mode, folders):
+    def _loans(self, mode, folders, readonly_home_identity=None):
         """The loans of a block that names folders, checked before any profile exists."""
         if folders is None:
+            if readonly_home_identity is not None:
+                raise ProfileRefused("profile_acl_invalid", "a staged home needs a loaned folder")
             return None
         if mode is None or self.native is None:
             raise ProfileRefused("profile_acl_invalid", "loaned folders need an attempt mode")
         from .process_loans import FolderLoans
-        loans = FolderLoans(self, self.native)
+        options = ({} if readonly_home_identity is None
+                   else {"readonly_home_identity": readonly_home_identity})
+        loans = FolderLoans(self, self.native, **options)
         loans.targets(folders)
         return loans
 
     @contextmanager
     def container(self, *, internet_client: bool = False, mode=None, active_tokens=None,
-                  folders=None):
+                  folders=None, readonly_home_identity=None):
         """One AppContainer profile for one attempt, and what the attempt may stand on.
 
         Args:
@@ -272,7 +276,7 @@ class ProfileJournal:
         """
         if mode not in (None, "dispatch", "review"):
             raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
-        loans = self._loans(mode, folders)
+        loans = self._loans(mode, folders, readonly_home_identity)
         path, sid = self.create_profile()
         acl = None
         try:
