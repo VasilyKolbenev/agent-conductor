@@ -185,9 +185,8 @@ On a fresh machine you will see the providers this build knows about, each marke
 running server lists these rows and says what each fact means; it does not print the setup command
 for a row that is not set up (it prints one only for an empty list, which a running server never
 shows). The command comes from this document; note in your verdict that the screen did not name it.
-The roles step of the desk wizard, when no tool is set up, says to run `conduct providers` or to
-edit the providers file, and does not say that the server must be stopped. Run the command with the
-server stopped, as below, and do not edit the file by hand.
+When no harness is configured, the Desk roles step directs you to stop the project server
+and open the setup wizard from the project folder. Use the command below.
 What you run is a COMMAND:
 
 ```powershell
