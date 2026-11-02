@@ -25,9 +25,10 @@ function rowsOf(read, key) {
 }
 
 //: The project's saved cycles: published, readable, and not the product's own (`desk-*`).
-function savedRows(reads) {
+function savedRows(reads, firstRunGuide) {
   return rowsOf(reads.workflows, "workflows").filter((row) => typeof row.workflow_id === "string"
-    && !row.workflow_id.startsWith("desk-") && Number.isSafeInteger(row.latest_revision)
+    && !row.workflow_id.startsWith("desk-") && (Number.isSafeInteger(row.latest_revision)
+      || firstRunGuide && row.workflow_id === "dalio-v6" && row.has_draft === true)
     && row.unreadable !== true);
 }
 
@@ -47,9 +48,10 @@ function starterCard(reads, id, pinnedId, locked) {
 
 function savedCard(row, pinnedId) {
   const pinned = row.workflow_id === pinnedId;
+  const published = Number.isSafeInteger(row.latest_revision);
   return {id: row.workflow_id, kind: "saved", workflowId: row.workflow_id,
-    title: typeof row.title === "string" ? row.title : row.workflow_id, pinned, published: true,
-    revision: row.latest_revision, locked: false, canPin: !pinned, canUnpin: pinned};
+    title: typeof row.title === "string" ? row.title : row.workflow_id, pinned, published,
+    revision: row.latest_revision, locked: false, canPin: published && !pinned, canUnpin: pinned};
 }
 
 //: The cards, in order: the pinned cycle first, the two ready cycles, the saved ones, and last
@@ -62,7 +64,7 @@ export function cardsOf(reads, starterId, firstRunGuide = false) {
     .some((row) => row.starter_id === "dalio-v6")
     && !workflows.some((row) => row.workflow_id === "dalio-v6") ? ["dalio-v6"] : [];
   const cards = [...[...dalio, ...WIZARD_STARTERS].map((id) => starterCard(reads, id, pinnedId, false)),
-    ...savedRows(reads).map((row) => savedCard(row, pinnedId))];
+    ...savedRows(reads, firstRunGuide).map((row) => savedCard(row, pinnedId))];
   return [...cards.filter((card) => card.pinned), ...cards.filter((card) => !card.pinned),
     BUILD_CARD];
 }

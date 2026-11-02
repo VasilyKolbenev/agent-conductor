@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from .adapters.provider import provider_projection
 from .adapters.base import AdapterContractError
+from .adapters.harness_profile import HarnessProfile
 from .policy_providers import task_channel_fact
 from .api_contracts import ApiRefusal
 from .studio_contracts import (
@@ -111,7 +112,7 @@ def list_workflows(templates: "TemplateStore", providers,
 
 
 def _wizard_providers(providers, registry, offered_ids):
-    """Add the wizard's two facts at this route, without changing shared provider rows.
+    """Add the wizard's registered capability facts without changing shared provider rows.
 
     The offered set is the caller's reviewed V1 catalogue; the task channel
     comes only from the registered adapter class. An unresolved adapter has no
@@ -130,7 +131,25 @@ def _wizard_providers(providers, registry, offered_ids):
                 pass
         row["task_channel"] = task_channel_fact(
             getattr(type(adapter), "profile", None)) if adapter is not None else None
+        row["model_pin_supported"] = _model_pin_supported(adapter)
     return rows
+
+
+def _model_pin_supported(adapter) -> bool | None:
+    profile = getattr(type(adapter), "profile", None)
+    return bool(profile.model_flag) if isinstance(profile, HarnessProfile) else None
+
+
+def _check_new_model_pins(asked, registry) -> None:
+    for row in asked.participants:
+        if row.model is None:
+            continue
+        try:
+            adapter = registry.resolve(row.provider_id)
+        except AdapterContractError:
+            continue  # Unknown capability, not proof this pin cannot be routed.
+        if _model_pin_supported(adapter) is False:
+            raise ApiRefusal.fixed("contract_invalid")
 
 
 def read_workflow(templates: "TemplateStore", workflow_id: str) -> Answer:
@@ -370,7 +389,7 @@ def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
 def open_run(
         store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
         *, tasks: "TaskStore", clock, ids, reachable, judge_plan, publish,
-        hold_route) -> Answer:
+        hold_route, registry) -> Answer:
     """Open one run, and give it its plan in the same call.
 
     The standing run is looked for FIRST, before the task store, the clock,
@@ -394,7 +413,7 @@ def open_run(
     standing = _standing_run(store, asked.run_id)
     snapshot = _frozen_snapshot(asked, tasks, standing)
     checked = None if standing is not None else _judged_revision(
-        templates, asked, snapshot, reachable, judge_plan)
+        templates, asked, snapshot, reachable, judge_plan, registry)
     with store.transaction():
         hold_route(asked.run_id)
         standing = _standing_run(store, asked.run_id)
@@ -455,7 +474,7 @@ def _standing_binding(asked: RunInput, standing) -> TaskBinding | None:
     return bound
 
 
-def _judged_revision(templates, asked, snapshot, reachable, judge_plan):
+def _judged_revision(templates, asked, snapshot, reachable, judge_plan, registry):
     """Judge a run about to be created, and hand back the value that was judged.
 
     Only a run about to be CREATED is judged -- the caller has already looked
@@ -469,6 +488,7 @@ def _judged_revision(templates, asked, snapshot, reachable, judge_plan):
     unrepresentable.
     """
     _providers_are_configured(asked, reachable)
+    _check_new_model_pins(asked, registry)
     if asked.workflow_id is None:
         return None
     checked = _workflow_revision(templates, asked)

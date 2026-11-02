@@ -146,6 +146,18 @@ def test_the_card_is_the_servers_numbers_unchanged_for_the_standard_cycle():
         ("artifact-materials", "sha256:" + "0defaced" * 8)]
 
 
+def test_changing_a_role_model_retires_the_prepared_card_without_starting_the_old_run():
+    out = run_js(LAUNCH + """
+      for(const row of d.workflows.providers) row.model_pin_supported=true;
+      const original=reviewed({clock:CLOCK});
+      const edit=wiz.stepWizard(original,{type:"role-model",role_id:"role-doer",text:"exact-build"});
+      const stale=wiz.stepWizard(edit.state,{type:"launch-start"});
+      show([Boolean(original.launch.preview),edit.state.launch.preview,wiz.prepareFacts(edit.state).prepared,
+        stale.asks.filter(a => a.target === "automationAuthorize").length]);
+    """, DATA, modules=MODULES)
+    assert out == [True, None, False, 0]
+
+
 def test_a_missing_run_read_cannot_supply_a_recipient_from_a_draft():
     out = run_js(LAUNCH + """
       const state = reviewed({clock: CLOCK});

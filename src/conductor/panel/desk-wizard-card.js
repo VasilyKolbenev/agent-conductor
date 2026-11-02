@@ -86,15 +86,21 @@ function windowLine(ctx, facts) {
 
 function stepRow(ctx, row) {
   const who = row.role === null ? row.step : `${roleWords(ctx, row.role)} · ${row.step}`;
-  const parts = [who, row.harness ?? ctx.t("wizard.launch.step_no_harness"),
+  const parts = [who, recipientName(ctx, row, "harness"),
     ctx.t("wizard.launch.step_timeout", {time: timeText(ctx, row.timeout)}),
     ctx.t("wizard.launch.step_attempts", {count: String(row.attempts)}),
     ...(row.clamped ? [ctx.t("wizard.launch.step_clamped")] : [])];
   const item = element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
     text: parts.join(" · ")});
   if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
-    {name: row.checker ?? ctx.t("wizard.launch.step_no_harness")})}));
+    {name: recipientName(ctx, row, "checker")})}));
   return item;
+}
+
+function recipientName(ctx, row, key) {
+  const name = row[key] ?? ctx.t("wizard.launch.step_no_harness");
+  const model = key === "checker" ? row.checkerModel : row.model;
+  return model ? `${name} (${model})` : name;
 }
 
 function stepsLine(ctx, facts) {
@@ -154,7 +160,7 @@ function termsCard(ctx, facts) {
 
 function guideTerms(ctx, facts) {
   const {card} = facts;
-  const names = (rows, key) => [...new Set(rows.map((row) => row[key] ?? ctx.t("wizard.launch.step_no_harness")))].join(", ");
+  const names = (rows, key) => [...new Set(rows.map((row) => recipientName(ctx, row, key)))].join(", ");
   const title = (key) => element("strong", {text: ctx.t(key)});
   const team = element("p", {"data-guide-executors": ""}, [title("wizard.guide.executor"), " · ",
     names(card.steps, "harness") || ctx.t("wizard.launch.step_no_harness")]);

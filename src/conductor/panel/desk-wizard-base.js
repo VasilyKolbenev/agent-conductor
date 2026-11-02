@@ -34,6 +34,7 @@ const WORDS = Object.freeze({
 });
 const encoder = new TextEncoder();
 const DRAFT_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+export const validModelText = (value) => typeof value === "string" && (value.trim() === "" || DRAFT_ID.test(value.trim()));
 
 function draftMaterials(rows, documents) {
   if (!Array.isArray(rows)) return [];
@@ -69,7 +70,11 @@ export function restoreAnswers(fresh, held, documents, offered) {
     instructions.push([id, {source: item.source, like: item.source === "like" ? item.like : null,
       text: item.text, back: item.back === "task" ? "task" : "own"}]);
   }
-  restored.roles = {owner: Object.fromEntries(owner), instructions: Object.fromEntries(instructions)};
+  const models = entries(held.models).filter(([, pin]) => pin && typeof pin.provider === "string" && DRAFT_ID.test(pin.provider)
+    && typeof pin.text === "string" && pin.text.length <= 128)
+    .map(([role, pin]) => [role, {provider: pin.provider, text: pin.text}]);
+  restored.roles = {owner: Object.fromEntries(owner), instructions: Object.fromEntries(instructions),
+    models: Object.fromEntries(models)};
   return evolve(fresh, restored);
 }
 

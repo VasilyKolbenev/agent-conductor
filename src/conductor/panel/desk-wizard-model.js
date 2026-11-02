@@ -41,7 +41,7 @@ import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, GUIDE_STAGES, LIMITS, STEPS, briefDocument, evolve, frozen, guideStage,
   inputChars, restoreAnswers, taskText, titleFromGoal, utf8Bytes} from "./desk-wizard-base.js";
-import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, editInstruction,
+import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, canEditModels, changeModel, editInstruction, reconcileModelPins,
   hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
@@ -75,6 +75,7 @@ export {STEPS, BUILT_STEPS, GUIDE_STAGES, guideStage, restoreAnswers, LIMITS, MA
   launchFacts, resumeView, wizardExit, wizardHash,
   FIRST_WORDS, closeBusy, closeBusyWord, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
+export {canEditModels};
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
 export const REASONS = Object.freeze([
@@ -84,7 +85,7 @@ export const REASONS = Object.freeze([
   "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
-  "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
+  "no_providers", "roster_pending", "roles_unassigned", "model_id_invalid", "instruction_empty",
   "instruction_too_large",
   "instruction_argv_over", "binding_pending", "binding_rows", "seed_needs_git",
   "resume_pending", "prepare_not_done"]);
@@ -726,6 +727,7 @@ const HANDLERS = {
   "cycle-choose": chooseCycle,
   "cycle-retry": retryFlow,
   "role-assign": assignRole,
+  "role-model": changeModel,
   "instruction-edit": editInstruction,
   "instruction-own": ownInstruction,
   "instruction-like": likeInstruction,
@@ -769,7 +771,11 @@ export function stepWizard(state, event) {
   if (!event || !Object.hasOwn(HANDLERS, event.type)) return {state, asks: []};
   const changed = HANDLERS[event.type](state, event);
   if (changed === state) return {state, asks: []};
-  const next = syncBinding(changed);
+  let next = syncBinding(reconcileModelPins(changed));
+  const bindingEdited = next.roles.models !== state.roles.models || event.type === "role-assign";
+  if (state.launch.preview && state.run.phase === "review" && bindingEdited && canEditModels(state) && !isPrepared(next)) {
+    next = evolve(next, {launch: initialLaunch(state.launch.actor)});
+  }
   const asks = wantedAsks(next).filter((ask) => !next.asked.includes(ask.id));
   if (asks.length === 0) return {state: next, asks};
   return {state: evolve(next, {asked: [...next.asked, ...asks.map((ask) => ask.id)]}), asks};

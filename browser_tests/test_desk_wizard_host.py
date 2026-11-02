@@ -10,6 +10,8 @@ from playwright.sync_api import Browser, expect
 
 from conductor import ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
+from conductor.command.adapters.codex_cli import CODEX_PROFILE
+from conductor.command.adapters.grok_build import GROK_PROFILE
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.policy_providers import ProviderAuthority
 from conductor.command.run_store import RunStore
@@ -24,15 +26,26 @@ def wizard_url(tmp_path, request) -> Iterator[str]:
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     ownership_transition.activate(root, legacy_writers_stopped=True)
     run_store = RunStore(root)
-    registry = AdapterRegistry([
-        _StandardAdapter(run_store, adapter_id="claude-code"),
-        _StandardAdapter(run_store, adapter_id="codex")])
+    if getattr(request, "param", False) == "pins":
+        class CheckedCodex(_StandardAdapter):
+            profile = CODEX_PROFILE
+
+        class CheckedGrok(_StandardAdapter):
+            profile = GROK_PROFILE
+
+        names = ("claude-code", "codex", "grok-build")
+        adapters = [_StandardAdapter(run_store, adapter_id=names[0]), CheckedCodex(run_store, adapter_id=names[1]),
+                    CheckedGrok(run_store, adapter_id=names[2])]
+    else:
+        names = ("claude-code", "codex")
+        adapters = [_StandardAdapter(run_store, adapter_id=name) for name in names]
+    registry = AdapterRegistry(adapters)
     httpd = server.build(root, 0, registry=registry)
-    declared = contracts()
+    declared = contracts(reachable=names, known=names)
     httpd.command_api._providers = declared
     # Injected adapters have no operator pins. Keep the same explicit test-only
     # provider digest used by the real-server flow driver bench.
-    if getattr(request, "param", False):
+    if getattr(request, "param", False) is True:
         configs = [ProviderConfig("claude-code", "/test/claude", "fake-claude-jsonl-v1"),
                    ProviderConfig("codex", "/test/codex", "fake-codex-jsonl-v1")]
         authority = ProviderAuthority(configs, declared, registry)
@@ -44,7 +57,7 @@ def wizard_url(tmp_path, request) -> Iterator[str]:
     # This fixture substitutes test adapters for the production catalogue.
     # Membership is explicit; availability still comes from the real contracts
     # and task-channel facts only from the registered adapter classes.
-    httpd.command_api._offered_provider_ids = frozenset({"claude-code", "codex"})
+    httpd.command_api._offered_provider_ids = frozenset(names)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     host, port = httpd.server_address[:2]
@@ -143,6 +156,68 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         assert form.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
     finally:
         context.close()
+
+
+@pytest.mark.parametrize("wizard_url", ["pins"], indirect=True)
+def test_owner_pinned_codex_and_default_grok_reach_the_frozen_grant_card(chromium: Browser, wizard_url):
+    page = chromium.new_page()
+    try:
+        errors = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        def open_assignments(form, phase):
+            summary = form.locator('[data-guide-details="assignments"] summary')
+            try:
+                expect(summary).to_be_visible()
+            except AssertionError as exc:
+                listed = page.request.get(wizard_url.split("/panel/")[0] + "/command/workflows").json()
+                raise AssertionError((phase, listed.get("workflows"), errors)) from exc
+            summary.click()
+        page.goto(wizard_url + "#lang=en")
+        page.locator('[data-focus-key="pult:actor-change"]').click()
+        page.locator('[data-focus-key="pult:actor-name"]').fill("owner")
+        page.locator('[data-focus-key="pult:actor-save"]').click()
+        page.locator("#deskNewTask").click()
+        form = page.locator("#deskWizard")
+        form.locator('[data-focus="wizard:brief"]').fill("Review three files.")
+        form.locator('[data-focus="wizard:git:run_without_git"]').click()
+        form.locator('[data-focus="wizard:next"]').click()
+        open_assignments(form, "fresh")
+        checker = form.locator('[data-focus="wizard:role:role-checker"]')
+        checker.select_option("codex")
+        model = form.locator('[data-focus="wizard:model:role-checker"]')
+        expect(model).to_have_value("")
+        model.fill("invalid model id")
+        expect(form.locator('[data-focus="wizard:next"]')).to_be_disabled()
+        model.fill("gpt-6.1-sol")
+        checker.select_option("claude-code")
+        checker.select_option("codex")
+        expect(model).to_have_value("")
+        model.fill("gpt-6.1-sol")
+        form.locator('[data-focus="wizard:role:role-diagnostician"]').select_option("grok-build")
+        expect(form.locator('[data-focus="wizard:model:role-diagnostician"]')).to_have_count(0)
+        page.reload()
+        form.locator('[data-focus="wizard:next"]').click()
+        open_assignments(form, "reloaded")
+        expect(model).to_have_value("gpt-6.1-sol")
+        form.locator('[data-focus="wizard:back"]').click()
+        form.locator('[data-focus="wizard:next"]').click()
+        form.locator('[data-focus="wizard:next"]').click()
+        with page.expect_request(lambda req: req.method == "POST" and req.url.endswith("/command/runs")) as sent:
+            form.locator('[data-focus="wizard:prepare:go"]').click()
+        body = sent.value.post_data_json
+        pins = {p["instance_id"]: (p["provider_id"], p["model"]) for p in body["participants"]}
+        assert pins["instance-role-checker"] == ("codex", "gpt-6.1-sol")
+        assert pins["instance-role-diagnostician"] == ("grok-build", None)
+        expect(form.locator("[data-guide-checkers]")).to_contain_text("gpt-6.1-sol")
+        form.locator('[data-focus="wizard:launch:actor"]').fill("owner")
+        expect(form.locator('[data-focus="wizard:launch:start"]')).to_be_enabled()
+        base = wizard_url.split("/panel/")[0]
+        config = page.request.get(f'{base}/command/runs/{body["run_id"]}').json()["config"]
+        frozen = {r["id"]: r.get("model") for r in config["instances"]}
+        assert frozen["instance-role-checker"] == "gpt-6.1-sol"
+        assert frozen["instance-role-diagnostician"] is None
+    finally:
+        page.context.close()
 
 
 def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Browser, wizard_url):

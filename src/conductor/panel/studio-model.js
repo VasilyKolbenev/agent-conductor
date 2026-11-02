@@ -206,17 +206,17 @@ export function projectVendorDetail(value) {
 }
 
 //: One provider as this build resolved it. Two rows for one provider id are
-//: two answers to one question and NEITHER survives -- the rule
-//: graph-payload.js's deployment projection already settled: "first wins" is
-//: not a fact about the provider, it hands arrival order the authority to name
-//: what a user is about to start a run on.
+//: ambiguous so neither survives. Optional profile facts only extend the workflow row.
 export function projectProviders(rows) {
   if (!Array.isArray(rows)) return frozenList([]);
   const out = [];
   const conflicted = new Set();
   for (const row of rows) {
-    if (!isPlainObject(row) || !(exactKeys(row, PROVIDER_KEYS)
-        || exactKeys(row, [...PROVIDER_KEYS, "offered", "task_channel"]))) continue;
+    if (!isPlainObject(row)) continue;
+    const pin = has(row, "model_pin_supported");
+    if (pin && row.model_pin_supported !== null && typeof row.model_pin_supported !== "boolean") continue;
+    if (!(exactKeys(row, PROVIDER_KEYS)
+        || exactKeys(row, [...PROVIDER_KEYS, "offered", "task_channel", ...(pin ? ["model_pin_supported"] : [])]))) continue;
     if (!isId(row.provider_id) || !isText(row.display_name)) continue;
     if (!PROVIDER_AVAILABILITY.includes(row.availability)) continue;
     if (!PROVIDER_IMPLEMENTATION.includes(row.implementation) || !PROVIDER_AUTH.includes(row.auth)

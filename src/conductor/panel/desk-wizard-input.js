@@ -75,8 +75,11 @@ function seedFacts(state) {
 function bindings(state) {
   const given = assignedTo(state) ?? {};
   const roles = Object.keys(given);
-  return {participants: roles.map((role) => ({instance_id: `instance-${role}`,
-    provider_id: given[role], model: null})),
+  return {participants: roles.map((role) => {
+    const pin = state.roles.models?.[role];
+    return {instance_id: `instance-${role}`, provider_id: given[role],
+      model: pin?.provider === given[role] ? pin.text.trim() || null : null};
+  }),
   assignments: Object.fromEntries(roles.map((role) => [role, `instance-${role}`]))};
 }
 

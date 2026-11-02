@@ -570,19 +570,20 @@ function warningsOf(budget) {
 function recipients(launch) {
   const plan = launch.reads.run !== null && launch.reads.run.status === "ok"
     ? launch.reads.run.payload : null;
-  const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row.adapter]));
+  const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row]));
   const providers = new Map((launch.preview.provider_facts?.providers ?? []).map((row) =>
     [row.config.provider_id, {id: row.config.provider_id, name: row.contract.display_name,
       version: row.contract.version ?? null}]));
   function nameOf(instance) {
-    const id = instances.get(instance);
+    const id = instances.get(instance)?.adapter;
     if (!id) return null;
     if (!providers.has(id)) providers.set(id, {id, name: id, version: null});
     return providers.get(id).name;
   }
   const byStep = new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id, {
     harness: nameOf(node.instance_id), checked: Boolean(node.verifier_instance_id),
-    checker: nameOf(node.verifier_instance_id)}]));
+    model: instances.get(node.instance_id)?.model ?? null, checker: nameOf(node.verifier_instance_id),
+    checkerModel: instances.get(node.verifier_instance_id)?.model ?? null}]));
   return {byStep, providers: [...providers.values()], gates: decisionPoints(plan?.graph?.definition)};
 }
 
@@ -613,7 +614,8 @@ export function cardFacts(launch, around) {
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
       role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
-      checked: byStep.get(row.node_id)?.checked ?? false, checker: byStep.get(row.node_id)?.checker ?? null,
+      model: byStep.get(row.node_id)?.model ?? null, checked: byStep.get(row.node_id)?.checked ?? false,
+      checker: byStep.get(row.node_id)?.checker ?? null, checkerModel: byStep.get(row.node_id)?.checkerModel ?? null,
       timeout: row.timeout_seconds, attempts: row.max_attempts,
       clamped: clamped.get(row.node_id) === true})),
     harnesses: providers, gates,

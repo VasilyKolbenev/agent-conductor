@@ -88,6 +88,7 @@ export function rosterOf(providers) {
       name: typeof row.display_name === "string" ? row.display_name : row.provider_id,
       available: row.availability === "available",
       taskRoad: row.task_road,
+      ...(typeof row.model_pin_supported === "boolean" ? {modelPinSupported: row.model_pin_supported} : {}),
       roads: (Array.isArray(row.controls) ? row.controls : [])
         .filter((one) => typeof one === "string"),
       channel: typeof channel?.channel === "string" ? channel.channel : null};

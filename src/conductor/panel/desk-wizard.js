@@ -22,7 +22,7 @@ import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
 import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
 import {BUILT_STEPS, GUIDE_STAGES, guideStage, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
-  canAdvance, closeBusy, closeBusyWord, closeNeedsWarning, cycleCards, cycleFacts,
+  canAdvance, canEditModels, closeBusy, closeBusyWord, closeNeedsWarning, cycleCards, cycleFacts,
   documentPicker, firstFacts, gitReading, instructionFields, materialsEstimate, nextStep,
   preselection, rosterStatus, stepStates, taskFields} from "./desk-wizard-model.js";
 
@@ -513,7 +513,21 @@ function roleRow(ctx, row) {
   return element("li", {className: "desk-wizard__role", "data-role": row.role_id,
     "data-by": row.by ?? "none", "data-subject": `role:${row.role_id}`}, [
     element("span", {text: roleName(ctx, row)}), rolePicker(ctx, row),
-    element("small", {text: by}), ...notes, ...clear]);
+    element("small", {text: by}), ...roleModel(ctx, row), ...notes, ...clear]);
+}
+
+function roleModel(ctx, row) {
+  const offer = row.offers.find((item) => item.id === row.provider);
+  if (offer?.modelPinSupported !== true) return offer?.modelPinSupported === false
+    ? [element("small", {text: ctx.t("wizard.role.model_default_only")})] : [];
+  const pin = ctx.wizard.roles.models?.[row.role_id];
+  const control = element("input", {type: "text", autocomplete: "off", maxlength: "128",
+    "data-focus": `wizard:model:${row.role_id}`, "data-focus-value": "state", spellcheck: "false"});
+  control.disabled = !canEditModels(ctx.wizard);
+  control.value = pin?.provider === row.provider ? pin.text : "";
+  control.addEventListener("input", () => ctx.send({type: "role-model", role_id: row.role_id, text: control.value}));
+  return [element("label", {}, [element("span", {text: ctx.t("wizard.role.model_id")}), control,
+    element("small", {text: ctx.t("wizard.role.model_hint")})])];
 }
 
 function fieldLabel(ctx, field) {

@@ -46,7 +46,7 @@ function typedAnswers(wizard) {
       ? {kind: row.kind, docId: row.docId, gitOid: row.gitOid, mode: row.mode, edits: row.edits ?? []}
       : {kind: row.kind, title: row.title, content: row.content}),
     cycleId: wizard.cycle.choice?.workflowId ?? null,
-    owner: wizard.roles.owner, instructions: wizard.roles.instructions};
+    owner: wizard.roles.owner, instructions: wizard.roles.instructions, models: wizard.roles.models ?? {}};
 }
 
 
