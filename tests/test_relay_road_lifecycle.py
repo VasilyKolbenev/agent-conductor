@@ -171,14 +171,36 @@ def test_a_project_home_that_cannot_be_made_for_a_question_is_a_receipt_and_the_
 # -- 2. a child that did not finish ----------------------------------------------------------
 
 
+def test_a_timed_out_login_status_does_not_claim_a_missing_login_or_spawn_a_task(tmp_path):
+    site = Site(tmp_path, CLAUDE)
+    request, before = site.request(), digests(site.login)
+    run = site.runner.run
+
+    def slow_status(spec):
+        if "auth" in spec.argv and "status" in spec.argv:
+            return ProcessOutcome(status="timed_out", exit_code=None, output=b"private partial answer",
+                                  output_truncated=False, output_limit=spec.output_limit,
+                                  pid=1, token="status-token")
+        return run(spec)
+
+    site.runner.run = slow_status
+    receipt = site.run(request)
+
+    assert receipt.outcome == "failed"
+    assert receipt.detail == "the Claude Code subscription login check timed out, so no task was spawned"
+    assert not site.claimed(request) and site.tasks() == []
+    assert site.leftovers() == [] and digests(site.login) == before and site.lease_is_free()
+
+
 def test_a_child_that_overran_its_timeout_is_a_receipt_and_its_relay_home_is_gone(tmp_path):
     site = Site(tmp_path, CLAUDE, **{_fakeclaude.SLEEP: "30"})
-    before = digests(site.login)
+    request, before = site.request(timeout=5), digests(site.login)
 
-    receipt = site.run(site.request(timeout=1))
+    receipt = site.run(request)
 
     assert receipt.outcome == "failed"
     assert receipt.detail == "the Claude Code prompt exceeded its timeout and was terminated"
+    assert site.claimed(request) and len(site.tasks()) == 1
     assert site.leftovers() == [] and digests(site.login) == before and site.lease_is_free()
 
 

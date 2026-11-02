@@ -118,6 +118,10 @@ class LoginRoad:
                 f"this build cannot establish a subscription login for the "
                 f"pinned {profile.tool_noun} build, so no task was spawned")
         outcome = self._attempt_login_status(request)
+        if outcome.status == "timed_out":
+            return self._receipt(
+                request, "failed", None,
+                f"the {profile.tool_noun} subscription login check timed out, so no task was spawned")
         answered = (outcome.status == "completed" and outcome.exit_code == 0
                     and not outcome.output_truncated)
         if answered and self._login_method_admitted(outcome.output):
