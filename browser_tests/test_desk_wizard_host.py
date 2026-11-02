@@ -84,6 +84,10 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
                                       form.locator(".desk-wizard__diagnostics").all_inner_texts())) from exc
             button.click()
         expect(form.locator("[data-guide-stage]")).to_have_count(3)
+        empty = form.locator('[data-focus="wizard:git:run_without_git"]')
+        expect(empty).to_be_visible()
+        expect(empty).to_have_attribute("aria-checked", "false")
+        expect(form.locator('[data-focus="wizard:git:connect_git"]')).not_to_be_visible()
         goal = "Проверить отчёт 🧭\nСохранить исходные строки."
         form.locator('[data-focus="wizard:brief"]').fill(goal)
         form.locator('[data-guide-details="optional"] summary').click()
@@ -94,11 +98,17 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal)
         form.locator('[data-focus="wizard:mode"]').click()
         form.locator('[data-focus="wizard:brief"]').fill(goal + " ✓")
-        form.locator('[data-focus="wizard:git:run_without_git"]').click()
+        empty.click()
+        expect(empty).to_have_attribute("aria-checked", "true")
         forward()
         expect(form.locator('[data-guide-stage="team"]')).to_have_attribute("aria-current", "step")
         expect(form.locator('h3[data-card-id="dalio-v6"]')).to_be_visible()
-        expect(form.locator('[data-role="role-checker"]')).to_be_visible()
+        expect(form.locator('[data-guide-role="executor"]')).to_contain_text("claude-code")
+        expect(form.locator('[data-guide-role="checker"]')).to_contain_text("codex")
+        expect(form.locator('[data-role="role-checker"] select')).not_to_be_visible()
+        form.locator('[data-guide-details="assignments"] summary').click()
+        expect(form.locator('[data-role="role-checker"] select')).to_be_visible()
+        expect(form.locator("[data-role]")).to_have_count(5)
         form.locator('[data-focus="wizard:back"]').click()
         expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal + " ✓")
         forward()
@@ -106,12 +116,14 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         expect(form.locator('[data-guide-stage="review"]')).to_have_attribute("aria-current", "step")
         expect(form.locator("[data-body]")).to_contain_text("Owner's task")
         assert not any(path.endswith("/automation/preview") for path in posts)
-        form.locator('[data-focus="wizard:prepare:go"]').click()
+        form.locator('[data-focus="wizard:prepare:go"]').dblclick()
         try:
             expect(form.locator('[data-focus="wizard:launch:start"]')).to_be_enabled(timeout=5000)
         except AssertionError as exc:
             raise AssertionError((refusals, form.inner_text())) from exc
         assert not any(path.endswith("/automation/authorize") for path in posts)
+        assert not any("/command/project/git/" in path for path in posts)
+        assert sum(path.endswith("/runs") for path in posts) == 1
         assert sum(path.endswith("/automation/preview") for path in posts) == 1
         expect(form.locator('[data-plan-step="do"]')).to_contain_text("claude-code")
         expect(form.locator('[data-plan-step="do"] [data-checker]')).to_contain_text("codex")

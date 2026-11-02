@@ -164,6 +164,17 @@ function exitsShown(git, facts) {
 
 function gitPanel(ctx) {
   const git = gitReading(ctx.wizard), dirty = git.params.dirty, facts = firstFacts(ctx.wizard);
+  if (ctx.wizard.guided && git.state === "not_git" && git.exits.includes("run_without_git")
+      && facts.phase !== "busy" && !facts.result && !facts.pending) {
+    const selected = ctx.wizard.materials.withoutGit;
+    return element("section", {className: "desk-wizard__git", "data-git-state": git.state}, [
+      element("p", {text: ctx.t("wizard.guide.empty_source")}),
+      choice("wizard:git:run_without_git", ctx.t(selected ? "wizard.guide.empty_chosen" : "wizard.guide.empty_choose"),
+        "switch", selected, () => ctx.send({type: "run-without-git"})),
+      disclosure(ctx, "git_setup", [...firstName(ctx, facts),
+        ...git.exits.filter((id) => id !== "run_without_git").map((id) => exitButton(ctx, id, facts)),
+        ...firstPanel(ctx, facts)])]);
+  }
   const parts = [element("h3", {text: ctx.t("wizard.git.heading")}),
     element("p", {className: "desk-wizard__git-sentence", text: gitSentence(ctx, git)})];
   if (git.state === "repo" && typeof dirty === "number" && dirty > 0) {
@@ -589,6 +600,35 @@ function disclosure(ctx, key, children, opened = false) {
     element("summary", {text: ctx.t(`wizard.guide.${key}`)}), ...children]);
 }
 
+function guideRole(ctx, label, rows) {
+  const people = new Map();
+  for (const row of rows) {
+    const offer = row.offers.find((one) => one.id === row.provider);
+    if (offer) people.set(offer.id, `${offer.name} · ${quotaText(ctx, offer.quota)}`);
+    else people.set(null, ctx.t("wizard.guide.missing_role"));
+  }
+  const group = element("section", {"data-guide-role": label}, [
+    element("h4", {text: ctx.t(`wizard.guide.${label}`)}),
+    ...[...people.values()].map((text) => element("p", {text})),
+  ]);
+  if (!people.size && label === "checker") group.append(element("p", {text: ctx.t("wizard.guide.no_checker")}));
+  return group;
+}
+
+function guideTeam(ctx, roster) {
+  if (roster !== "ready") return [element("p", {text: ctx.t(`wizard.providers.${roster}`)})];
+  const rows = assignmentView(ctx.wizard);
+  if (!rows.length) return [];
+  const dispatch = rows.filter((row) => row.needs.includes("dispatch"));
+  const doers = dispatch.length ? dispatch : rows.filter((row) => row.steps.length);
+  const checkers = rows.filter((row) => row.verifies.length);
+  const shared = checkers.some((row) => row.provider && doers.some((other) => other.provider === row.provider));
+  return [guideRole(ctx, "executor", doers), guideRole(ctx, "checker", checkers),
+    ...(shared ? [element("p", {text: ctx.t("wizard.guide.shared")})] : []),
+    disclosure(ctx, "assignments", [element("ul", {className: "desk-wizard__roles"},
+      rows.map((row) => roleRow(ctx, row)))], rows.some((row) => !row.provider))];
+}
+
 function guideBody(ctx) {
   const state = ctx.wizard, [stage] = guideStage(state.step);
   if (stage === "result") {
@@ -602,16 +642,16 @@ function guideBody(ctx) {
   if (stage === "team") {
     const chosen = cycleCards(state).find((card) => card.workflowId === state.cycle.choice?.workflowId);
     const roster = rosterStatus(state), facts = cycleFacts(state);
-    const team = roster === "ready" ? [element("ul", {className: "desk-wizard__roles"},
-      assignmentView(state).map((row) => roleRow(ctx, row)))] : [
-      element("p", {text: ctx.t(`wizard.providers.${roster}`)})];
     const fields = instructionFields(state, ctx.lang);
+    const checks = diagnosticsView(ctx, facts);
+    const warningsOnly = facts.diagnostics.length && facts.diagnostics.every((row) => row.severity === "warning");
     return [...(chosen ? [element("h3", {text: cardName(ctx, chosen), "data-card-id": chosen.id, "data-chosen": "true"})] : []),
       ...sourceLine(ctx), ...unreadNote(ctx),
       disclosure(ctx, "choose", [element("ul", {className: "desk-wizard__cards"}, cardItems(ctx))], !chosen),
-      ...team, ...(fields.length ? [disclosure(ctx, "instructions",
+      ...guideTeam(ctx, roster), ...(fields.length ? [disclosure(ctx, "instructions",
         fields.map((field) => instructionView(ctx, field)), canAdvance(state).reason === "instruction_empty")] : []),
-      ...flowStatus(ctx, facts), ...budgetView(ctx, facts), ...diagnosticsView(ctx, facts)];
+      ...flowStatus(ctx, facts), ...budgetView(ctx, facts),
+      ...(warningsOnly ? [disclosure(ctx, "checks", checks)] : checks)];
   }
   return [element("p", {text: ctx.t("wizard.guide.named", {title: state.task.title})}),
     ...(state.step === "run" ? runBody(ctx) : prepareBody(ctx))];
