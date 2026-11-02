@@ -11,7 +11,11 @@ would really run.
 """
 from __future__ import annotations
 
+import json
 import os
+import shlex
+import subprocess
+import sys
 
 import pytest
 
@@ -239,6 +243,35 @@ def test_the_printed_login_command_survives_a_real_machine_path(
     for line in expected:
         assert line in said, said
     assert written(project)["providers"][0]["auth_home"] == where
+
+
+@pytest.mark.parametrize(("provider_id", "expected"), [
+    ("codex", ["-c", 'cli_auth_credentials_store="file"', "login"]),
+    ("grok-build", ["--no-auto-update", "login"]),
+])
+def test_pasted_login_passes_the_pinned_arguments_to_the_native_process(
+        project, tmp_path, capsys, provider_id, expected):
+    executable, _ = pinned_files(tmp_path, provider_id)
+    login = product_login(tmp_path, provider_id)
+    assert configure(project, menu_choice(provider_id), str(executable), "1", str(login), "",
+                     "y") == 0
+    windows = os.name == "nt"
+    escaped = str(executable).replace("'", "''" if windows else "'\\''")
+    marker = ("& " if windows else "") + "'" + escaped + "'"
+    [command] = [line.strip() for line in capsys.readouterr().err.splitlines()
+                 if line.strip().startswith(marker)]
+    # Substitute only the executable. The operator's shell passes the printed arguments
+    # to a harmless native process that records argv; no actual sign-in is possible.
+    probe = tmp_path / "capture.py"
+    probe.write_text("import json,sys; print(json.dumps(sys.argv[1:]))", encoding="utf-8")
+    def quote(path):
+        return "'" + str(path).replace("'", "''") + "'" if windows else shlex.quote(str(path))
+    prefix = ("& " if windows else "") + quote(sys.executable) + " " + quote(probe)
+    shell = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"] if windows else ["sh", "-c"]
+    capture = subprocess.run([*shell, prefix + command[len(marker):]],
+                             capture_output=True, timeout=15)
+    assert capture.returncode == 0, capture.stderr
+    assert json.loads(capture.stdout) == expected
 
 
 def test_the_printed_command_is_for_the_shell_the_operator_is_in(monkeypatch):

@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
+import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -330,10 +332,15 @@ def _login_lines(home: str, executable: str, hint,
     """
     windows = os.name == "nt" if windows is None else windows
     if windows:
+        args = subprocess.list2cmdline(hint[1])
+        # The native Windows argv quoting must reach the child intact when a login
+        # flag has a literal quote (Codex's TOML string). Only code-owned flags follow --%.
+        if '"' in args:
+            args = "--% " + args
         return [f"$env:{hint[0]} = {_quoted(home, True)}",
-                f"& {_quoted(executable, True)} " + " ".join(hint[1])]
+                f"& {_quoted(executable, True)} {args}"]
     return [f"export {hint[0]}={_quoted(home, False)}",
-            f"{_quoted(executable, False)} " + " ".join(hint[1])]
+            f"{_quoted(executable, False)} " + shlex.join(hint[1])]
 
 
 #: What the login question says about tasks, by whether the harness has a relay

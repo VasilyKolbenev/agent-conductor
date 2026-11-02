@@ -180,6 +180,7 @@ GROK_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),
 GROK_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAME whose VALUE is minted fresh per attempt.
 GROK_HOME_ENV = "GROK_HOME"
+GROK_LOGIN_ARGV = ("--no-auto-update", "login")
 #: The four documented switches, and the value that turns each off. ``0`` is the
 #: demonstrated disable form; see the module docstring on why it is demonstrated
 #: rather than stated.
@@ -286,7 +287,7 @@ GROK_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=GROK_HOME_ENV, forced_env=GROK_FORCED_ENV,
     version_argv=VERSION_ARGV, exit_codes_published=False,
-    login_argv=("--no-auto-update", "agent", "stdio"), login_command=("login",),
+    login_argv=("--no-auto-update", "agent", "stdio"), login_command=GROK_LOGIN_ARGV,
     login_credentials=("auth.json",),
     login_scratch=("logs", "sessions", "active_sessions.json", "active_sessions.lock",
                    ".config-init.lock", "managed_config.lock",
@@ -543,7 +544,6 @@ LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": Tru
 # Native 1.0.5 ACP calibration: these metadata requests do not create a session
 # or send a model prompt. Billing requires the native xAI session auth gate.
 GROK_LOGIN_OVERRIDES = GROK_ROUTE_ENV
-GROK_LOGIN_ARGV = ("login",)
 _RPC_ARGV = ("--no-auto-update", "agent", "stdio")
 _RPC_INIT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
              b'{"protocolVersion":1,"clientCapabilities":{},'
