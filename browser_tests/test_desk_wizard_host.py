@@ -128,6 +128,12 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         expect(form.locator('[data-plan-step="do"]')).to_contain_text("claude-code")
         expect(form.locator('[data-plan-step="do"] [data-checker]')).to_contain_text("codex")
         expect(form.locator('[data-harness="codex"]')).to_be_visible()
+        checkpoints = form.locator("[data-owner-gates]")
+        expect(checkpoints.locator("li")).to_have_count(2)
+        expect(checkpoints.locator("li").first).to_contain_text("Human Gate - Confirm Do")
+        expect(checkpoints.locator("li").first).to_contain_text("Design the Plan")
+        expect(checkpoints.locator("li").last).to_contain_text("Result Gate")
+        expect(checkpoints.locator("li").last).to_contain_text("Do")
         assert errors == []
         assert form.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
     finally:

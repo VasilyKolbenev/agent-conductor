@@ -583,7 +583,17 @@ function recipients(launch) {
   const byStep = new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id, {
     harness: nameOf(node.instance_id), checked: Boolean(node.verifier_instance_id),
     checker: nameOf(node.verifier_instance_id)}]));
-  return {byStep, providers: [...providers.values()]};
+  return {byStep, providers: [...providers.values()], gates: decisionPoints(plan?.graph?.definition)};
+}
+
+function decisionPoints(definition) {
+  if (!Array.isArray(definition?.nodes)) return null;
+  const titles = new Map(definition.nodes.map((node) => [node.node_id, node.title || node.node_id]));
+  return definition.nodes.filter((node) => node.kind === "gate").map((node) => {
+    const incoming = (definition.edges ?? []).filter((edge) => edge.to_node === node.node_id);
+    return {title: titles.get(node.node_id),
+      after: [...new Set(incoming.map((edge) => titles.get(edge.from_node)).filter(Boolean))]};
+  });
 }
 
 /**
@@ -594,7 +604,7 @@ export function cardFacts(launch, around) {
   if (launch.preview === null) return null;
   const {terms, budget} = launch.preview;
   const clamped = new Map(budget.steps.map((row) => [row.step_id, row.clamped === true]));
-  const {byStep, providers} = recipients(launch);
+  const {byStep, providers, gates} = recipients(launch);
   return {actions: {max: terms.max_actions, of: budget.limits.max_actions},
     spent: budget.spent === null ? null : {actions: budget.spent.actions,
       seconds: budget.spent.seconds},
@@ -606,7 +616,7 @@ export function cardFacts(launch, around) {
       checked: byStep.get(row.node_id)?.checked ?? false, checker: byStep.get(row.node_id)?.checker ?? null,
       timeout: row.timeout_seconds, attempts: row.max_attempts,
       clamped: clamped.get(row.node_id) === true})),
-    harnesses: providers,
+    harnesses: providers, gates,
     receives: {instructions: terms.instruction_bindings.map((row) => ({step: row.node_id,
       digest: row.content_digest})),
     inputs: terms.initial_input_bindings.map((row) => ({ref: row.artifact_ref,

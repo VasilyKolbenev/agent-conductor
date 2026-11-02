@@ -130,10 +130,21 @@ function receivesLine(ctx, facts) {
     element("ul", {}, [...inputs, ...steps]), ...seedLine(ctx, receives.seed)]);
 }
 
+function ownerGates(ctx, gates) {
+  if (gates === null) return [element("p", {"data-owner-gates": "unknown", text: ctx.t("wizard.guide.gates_unknown")})];
+  if (!gates.length) return [];
+  return [element("section", {"data-owner-gates": "read"}, [
+    element("h4", {text: ctx.t("wizard.guide.gates")}),
+    element("p", {text: ctx.t("wizard.guide.gates_note")}),
+    element("ul", {}, gates.map((gate) => element("li", {},
+      [element("strong", {text: gate.title}), ...(gate.after.length ? [element("span",
+        {text: ctx.t("wizard.guide.gate_after", {steps: gate.after.join(", ")})})] : [])])))])];
+}
+
 function termsCard(ctx, facts) {
   return [element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
     actionsLine(ctx, facts), timeLine(ctx, facts), windowLine(ctx, facts),
-    stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)])];
+    ...ownerGates(ctx, facts.card.gates), stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)])];
 }
 
 // -- what surrounds the card -------------------------------------------------------------

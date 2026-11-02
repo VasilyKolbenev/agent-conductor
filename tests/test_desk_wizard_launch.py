@@ -152,9 +152,22 @@ def test_a_missing_run_read_cannot_supply_a_recipient_from_a_draft():
       const launch = {...state.launch, preview: {...state.launch.preview, provider_facts:null},
         reads:{...state.launch.reads, run:{status:"failed", payload:null}}};
       const card = wiz.launchFacts({...state, launch}).card;
-      show([card.steps.map(s => [s.harness,s.checker]),card.harnesses]);
+      show([card.steps.map(s => [s.harness,s.checker]),card.harnesses,card.gates]);
     """, DATA, modules=MODULES)
-    assert out == [[[None, None], [None, None]], []]
+    assert out == [[[None, None], [None, None]], [], None]
+
+
+def test_a_known_graph_without_gates_has_no_human_decision_panel():
+    out = run_js(LAUNCH + """
+      const state = reviewed({clock:CLOCK});
+      const reading = state.launch.reads.run;
+      const definition = {...reading.payload.graph.definition,
+        nodes:reading.payload.graph.definition.nodes.filter(n => n.kind!=="gate")};
+      const launch = {...state.launch, reads:{...state.launch.reads,run:{...reading,payload:{...reading.payload,
+        graph:{...reading.payload.graph,definition}}}}};
+      show(wiz.launchFacts({...state, launch}).card.gates);
+    """, DATA, modules=MODULES)
+    assert out == []
 
 
 def test_a_replacement_grants_card_says_what_was_spent_and_an_exhausted_one_says_so():
