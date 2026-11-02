@@ -176,6 +176,10 @@ def _run_prompt(argv: list[str]) -> int:
     if env.get(EMIT_REVIEW):
         message = "# Diagnosis\nThe fake review read the supplied candidate.\n"
         case = env[EMIT_REVIEW]
+        if case.startswith("terminal-json:"):
+            extra = json.loads(case.removeprefix("terminal-json:"))
+            print(json.dumps({"type": "error", "message": "sensitive-fixture", **extra}))
+            return 1
         if case.startswith("terminal-error:"):
             print(json.dumps({"type": "error", "message": case.removeprefix("terminal-error:"),
                               "sessionId": "private-fixture-session"}))

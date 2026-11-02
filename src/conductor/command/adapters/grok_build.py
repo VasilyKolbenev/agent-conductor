@@ -364,9 +364,8 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
             doc = decode_line(outcome.output)
             if outcome.exit_code != 0:
                 if doc.get("type") == "error" and isinstance(doc.get("message"), str):
-                    reason = _grok_error_reason(doc["message"])
-                    if reason:
-                        receipt = self._receipt(request, "failed", outcome.exit_code, reason)
+                    reason = _grok_error_reason(doc)
+                    receipt = self._receipt(request, "failed", outcome.exit_code, reason)
                 return b"", receipt
             if "type" in doc or "message" in doc or doc.get("stopReason") != "end_turn":
                 raise ValueError
@@ -473,9 +472,9 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
 
 
 
-def _grok_error_reason(message):
+def _grok_error_reason(doc):
     """Only product-owned categories may leave this module."""
-    text = message.casefold().strip().removesuffix(".")
+    text = doc["message"].casefold().strip().removesuffix(".")
     if text.startswith("not signed in"):
         return "the harness reported that sign-in is required"
     if text.startswith(("couldn't start session", "couldn't initialize", "couldn't create session")):
@@ -494,6 +493,12 @@ def _grok_error_reason(message):
     if (text == "connection closed unexpectedly"
             or any(word in text for word in ("connection refused", "connection reset", "dns error"))):
         return "the harness reported a connection failure"
+    usage = doc.get("usage")
+    total = usage.get("total_tokens") if isinstance(usage, dict) else None
+    if type(total) is int and total > 0:
+        return "the harness reported an unclassified service error with recorded token usage"
+    if doc.get("usage_is_incomplete") is True:
+        return "the harness reported an unclassified service error with incomplete usage data"
     return "the harness reported an unclassified service error"
 
 
