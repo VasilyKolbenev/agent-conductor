@@ -94,6 +94,42 @@ def prepare(page, project):
     return box
 
 
+@pytest.mark.parametrize(("code", "holder"), [
+    ("slot_busy", "earlier-run"), ("slot_busy", None), ("preview_stale", None),
+])
+def test_authorize_refusal_explains_next_step(chromium: Browser, bounded_project, code, holder):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        box = prepare(page, project)
+        writes = []
+        def refused(route):
+            writes.append(route.request.url)
+            route.fulfill(status=409, json={"error": {"code": code, "detail":
+                          {"run_id": holder} if holder else {}}})
+        page.route("**/automation/authorize", refused)
+        box.get_by_role("button", name="Authorize bounded run").click()
+        feedback = box.locator('[role="status"][data-automation-notice]')
+        if code == "slot_busy":
+            expect(feedback).to_contain_text("Another run")
+            expect(box.locator("[data-automation-preview]")).to_be_visible()
+            link = feedback.get_by_role("link")
+            if holder:
+                expect(link).to_have_attribute("href", "#screen=runs&run=earlier-run&lang=en")
+                expect(link).to_have_attribute("target", "_blank")
+            else:
+                expect(link).to_have_count(0)
+        else:
+            expect(feedback).to_contain_text("Review the run limits again")
+            expect(box.get_by_role("button", name="Authorize bounded run")).to_have_count(0)
+            expect(box.get_by_role("button", name="Review bounded run")).to_be_enabled()
+        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("owner")
+        assert len(writes) == 1 and adapter.execute_calls == 0 and window.page_errors == []
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+    finally:
+        close_context(page.context)
+
+
 @pytest.mark.parametrize("bounded_project", ["task_first"], indirect=True)
 def test_first_grant_is_the_visible_next_step(chromium: Browser, bounded_project):
     project, adapter = bounded_project

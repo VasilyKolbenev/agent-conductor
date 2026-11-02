@@ -2,6 +2,7 @@
 // Human write callbacks and a serial read queue; no read can create authority.
 import {automationDraft, automationEligible, automationWriteReadBack, previewRequest, projectAutomation,
   projectAutomationPreview} from "./studio-automation-model.js";
+import {isId} from "./studio-model.js";
 
 class AutomationFlow {
   constructor(door) {
@@ -129,8 +130,14 @@ class AutomationFlow {
     await this.door.write(request.target, runId, request.body, (result) => { answer = result; },
       (result) => { answer = result; });
     if (asked !== this.operation || runId !== this.value.runId) return;
-    this.publish({pending: false, notice: answer?.status === "refused" ? "refused" : "unknown",
-      request: answer?.status === "refused" ? null : request});
+    const refused = answer?.status === "refused";
+    const grantRefusal = refused && request.target === "automationAuthorize"
+      && ["slot_busy", "preview_stale"].includes(answer.code);
+    const notice = grantRefusal ? answer.code : refused ? "refused" : "unknown";
+    const holder = answer?.payload?.error?.detail?.run_id;
+    this.publish({pending: false, notice, request: refused ? null : request,
+      holder: notice === "slot_busy" && isId(holder) ? holder : null,
+      ...(notice === "preview_stale" ? {preview: null} : {})});
     if (this.current()) {
       this.door.refreshRun(runId);
       await this.refresh();

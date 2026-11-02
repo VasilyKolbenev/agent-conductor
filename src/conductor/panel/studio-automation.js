@@ -146,11 +146,19 @@ export function mountAutomation(mount, state, held, actions) {
     button(state, "refresh", state.connection === "open" && !held.pending, actions.refresh),
   ]);
   if (["loading", "failed", "disconnected"].includes(held.phase)) box.append(note(word(state, held.phase)));
-  if (held.notice) box.append(element("p", {"data-automation-notice": held.notice, text: word(state, held.notice)}));
+  const grantRefusal = ["slot_busy", "preview_stale"].includes(held.notice);
+  if (held.notice && !grantRefusal) box.append(element("p", {"data-automation-notice": held.notice, text: word(state, held.notice)}));
   if (held.view) box.append(status(state, held, actions));
   if (held.request) box.append(button(state, "retry", !held.pending && state.connection === "open", actions.retry));
   else if (!held.view?.authorization || ["expired", "revoked"].includes(held.view.state)) box.append(boundsForm(state, held, actions));
   if (held.preview) box.append(review(state, held, actions));
+  if (grantRefusal) {
+    const feedback = element("p", {role: "status", "data-automation-notice": held.notice, text: word(state, held.notice)});
+    if (held.notice === "slot_busy" && held.holder) feedback.append(" ", element("a", {target: "_blank", rel: "noopener",
+      href: `#screen=runs&run=${encodeURIComponent(held.holder)}&lang=${state.locale}`,
+      text: word(state, "open_holder", {id: held.holder})}));
+    box.append(feedback);
+  }
   const deck = mount.querySelector(".studio-deck");
   if (deck) deck.after(box); else mount.append(box);
 }
