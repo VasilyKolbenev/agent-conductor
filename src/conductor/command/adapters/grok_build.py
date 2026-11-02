@@ -484,20 +484,20 @@ def _grok_error_reason(message):
     """Only product-owned categories may leave this module."""
     text = message.casefold().strip()
     if text.startswith("not signed in"):
-        return "Grok reported that sign-in is required"
+        return "the harness reported that sign-in is required"
     if text.startswith(("couldn't start session", "couldn't initialize", "couldn't create session")):
-        return "Grok reported a session startup failure"
+        return "the harness reported a session startup failure"
     if "rate limit" in text or "quota exceeded" in text or "too many requests" in text:
-        return "Grok reported a subscription usage limit"
+        return "the harness reported a subscription usage limit"
     if "subscription required" in text or "requires a subscription" in text:
-        return "Grok reported that a subscription is required for this task"
+        return "the harness reported that a subscription is required for this task"
     if "model" in text and any(word in text for word in ("unsupported", "not supported", "not found")):
-        return "Grok reported that the requested model is unavailable"
+        return "the harness reported that the requested model is unavailable"
     if any(word in text for word in ("permission denied", "forbidden", "unauthorized")):
-        return "Grok reported an access refusal"
+        return "the harness reported an access refusal"
     if any(word in text for word in ("connection refused", "connection reset", "dns error")):
-        return "Grok reported a connection failure"
-    return "Grok reported an unclassified service error"
+        return "the harness reported a connection failure"
+    return "the harness reported an unclassified service error"
 
 
 def _native_quota(payload):

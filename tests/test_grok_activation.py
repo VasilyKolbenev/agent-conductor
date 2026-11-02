@@ -80,7 +80,7 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
 @pytest.mark.parametrize("auth,case,reason", [
     ("api_key", "enabled-fixed-review", None),
     ("subscription", "enabled-fixed-review", None),
-    ("subscription", "error-auth", "Grok reported that sign-in is required"),
+    ("subscription", "error-auth", "the harness reported that sign-in is required"),
     ("subscription", "escaped-login", "the review contained sensitive output"),
     ("subscription", "invalid-success", "the review returned an invalid terminal response"),
     ("subscription", "truncated", "longer than the capture bound"),
