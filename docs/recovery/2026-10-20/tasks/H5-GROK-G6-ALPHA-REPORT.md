@@ -30,4 +30,13 @@
 скрипт, не менять каталог настоящего входа и не повторять оплаченный diagnose.
 Полный цикл Codex → Grok остаётся открытым.
 
+После этого выполнен локальный эксперимент на 11 искусственных ответах через
+штатный парсер SubscriptionRpc. Один ответ с gate дал фиксированный признак
+ограничения, три без gate оставили доступ неизвестным, семь повреждённых или
+неавторизованных ответов отклонены. Текст причины и поля аккаунта не выходят
+из парсера. Прототип не добавляет разрешённый RPC в продукт. CLI не запускался.
+Для перехода к реальной проверке нужен узкий дозволенный обмен в изоляции с
+access-only копией и неизменностью исходного входа. Историческую причину
+неудачной попытки такой обмен задним числом не устанавливает.
+
 Источники протокола. [JSON при ошибке и стадия authenticate](https://github.com/xai-org/grok-build/blob/9fabade/crates/codegen/xai-grok-pager/src/headless.rs#L332-L342) · [Получение ответа authenticate](https://github.com/xai-org/grok-build/blob/9fabade/crates/codegen/xai-grok-pager/src/headless.rs#L459-L488) · [Условие появления gate](https://github.com/xai-org/grok-build/blob/9fabade/crates/codegen/xai-grok-shell/src/agent/mvp_agent/mod.rs#L1833-L1874).

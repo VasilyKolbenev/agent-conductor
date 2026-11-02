@@ -14,4 +14,24 @@ paid harnesses and the mixed Dalio cycle still need live acceptance.
 The full core runs on a77637a and 0241f44 correctly stopped on their failing
 batches. No wheel was promoted from them. The earlier 42-group green build
 a9044e1 is reserved for Grok diagnostics and does not contain the guided UX.
+
+## Final results of the 61f9269 rehearsal
+
+The Chromium gate ran all 114 modules. 113 passed and one failed. The failed
+English queue test observed a retry request before Playwright had forwarded it
+to the server. Delaying that request by 250 ms reproduced the same failure.
+b26c470 waits for the dialog to close and then checks the server's queue and
+the exact POST sequence. All 15 tests in the corrected queue module passed.
+
+The core gate ran 23 of 46 groups. 22 passed; the remaining group caught six
+direct closes in the wizard test's Chromium contexts. The gate stopped after
+that UTF-8 batch. 7a479cd drains route handlers using the shared browser harness
+before closing. All 19 guard tests and all 10 wizard-host Chromium tests passed.
+The two corrected browser modules and the guard passed together in the system
+encoding (44 tests). The login timeout classification also reaches the durable
+runtime vocabulary in 713d845 (302 targeted tests passed in each encoding).
+
+These results leave an exact full core and browser run, CI wheel and installed
+owner acceptance outstanding. No public release was made. See
+H5-GROK-G6-ALPHA-REPORT.md for the independent single live Grok attempt.
 The offline fixtures and Chromium checks above use no provider subscription.
