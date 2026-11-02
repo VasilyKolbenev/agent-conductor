@@ -50,6 +50,11 @@
   display:grid;gap:9px;min-width:0}
 .desk-decision-card .studio-choices{display:grid;gap:8px;min-width:0}
 .desk-decision-card .studio-choice{display:flex;gap:8px;align-items:flex-start}
+@media (max-width:600px){
+  .desk-decision-card{overflow-wrap:anywhere}
+  .desk-decision-card .studio-choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px}
+  .desk-decision-card .studio-choice span{grid-column:2}
+}
 .desk-decision-card .studio-field{display:grid;gap:5px}
 .desk-decision-card .studio-field input{box-sizing:border-box;width:100%;min-width:0;
   padding:8px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);
