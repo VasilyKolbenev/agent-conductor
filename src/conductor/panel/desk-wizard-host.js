@@ -42,8 +42,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   const draftCall = (draft, op, data) => door.submit("taskDraft", null,
     {project: draft.project, op, ...data});
   function discard(draft) {
-    if (draft?.key && !draft.busy && context.project?.() === draft.project) {
-      void draftCall(draft, "discard", {key: draft.key, base: draft.revision});
+    if (draft?.key && context.project?.() === draft.project) {
+      void draftCall(draft, "discard", {key: draft.key, base: draft.revision, edit: draft.edit ?? null});
     }
   }
   function dropDraft() {
@@ -67,7 +67,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
       }
       while (valid(draft) && draft.want !== draft.saved) {
         const sent = draft.want;
-        const answer = await draftCall(draft, "save", {key: draft.key, base: draft.revision,
+        draft.edit = token(nonce);
+        const answer = await draftCall(draft, "save", {key: draft.key, base: draft.revision, edit: draft.edit,
           answers: JSON.parse(sent)});
         if (answer.status !== "accepted" || answer.payload?.revision !== draft.revision + 1) {
           draft.stopped = answer.code === "draft_conflict" || answer.code === "route_not_found";

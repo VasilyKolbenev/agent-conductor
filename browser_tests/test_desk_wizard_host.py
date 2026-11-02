@@ -195,6 +195,7 @@ def test_owner_pinned_codex_and_default_grok_reach_the_frozen_grant_card(chromiu
         model.fill("gpt-6.1-sol")
         form.locator('[data-focus="wizard:role:role-diagnostician"]').select_option("grok-build")
         expect(form.locator('[data-focus="wizard:model:role-diagnostician"]')).to_have_count(0)
+        expect(form.locator('[data-draft="saved"]')).to_be_visible()
         page.reload()
         form.locator('[data-focus="wizard:next"]').click()
         open_assignments(form, "reloaded")
@@ -297,14 +298,16 @@ def test_copied_material_is_reread_and_only_the_owner_edit_is_saved(chromium: Br
         context.close()
 
 
-def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: Browser, wizard_url):
+@pytest.mark.parametrize("committed", [False, True], ids=["before-request", "before-ack"])
+def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: Browser, wizard_url, committed):
+    from browser_tests.desk_hold import until
     context = chromium.new_context()
     try:
         page = context.new_page()
         held = []
         def delay(route):
             if route.request.post_data_json["op"] == "save":
-                held.append(route)
+                held.append((route, route.fetch() if committed else None))
             else:
                 route.continue_()
         page.route("**/command/project/task-draft", delay)
@@ -316,14 +319,22 @@ def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: 
                                  and row.post_data_json["op"] == "save"):
             brief.fill("still editing")
         expect(form.locator('[data-draft="saving"]')).to_be_visible()
+        until(page, "the draft save is held before the request or acknowledgement", lambda: bool(held))
         assert not page.evaluate("window.dispatchEvent(new Event('beforeunload', {cancelable:true}))")
         assert "still editing" not in page.evaluate("JSON.stringify(history.state) + location.href")
-        form.locator('[data-focus="wizard:close"]').click()
-        assert page.evaluate("!history.state?.deskTaskDraft")
         with page.expect_response(lambda row: row.url.endswith("/project/task-draft")
                                   and row.request.post_data_json["op"] == "discard") as discarded:
-            held[0].continue_()
+            form.locator('[data-focus="wizard:close"]').click()
         assert discarded.value.status == 200
+        assert page.evaluate("!history.state?.deskTaskDraft")
+        with page.expect_response(lambda row: row.url.endswith("/project/task-draft")
+                                  and row.request.post_data_json["op"] == "save") as late:
+            route, remote = held[0]
+            if remote is None:
+                route.continue_()
+            else:
+                route.fulfill(response=remote)
+        assert late.value.status == (200 if committed else 404)
         page.locator("#deskNewTask").click()
         expect(brief).to_have_value("")
     finally:

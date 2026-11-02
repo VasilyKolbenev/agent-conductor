@@ -18,6 +18,8 @@ def installation(tmp_path):
 
 
 def call(subject, op, *, claim=PROJECT, token=TOKEN, project=PROJECT, **data):
+    if op in ("discard", "save") and "edit" not in data:
+        data["edit"] = None if op == "discard" else "d"*32
     body = {"op": op, "project": project, **data}
     payload = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode()
     headers = list(post_headers(body, token=token, length=len(payload)))
@@ -47,7 +49,8 @@ def test_editable_draft_is_scoped_without_creating_any_run_task_or_events(tmp_pa
     assert call(subject, "read", key=key, project="b"*32).status == 409
     assert call(subject, "save", key=key, base=0, answers=answers("other tab")).status == 409
     assert call(subject, "save", key=key, base=0, answers=answers()).payload == {"revision": 1}
-    assert call(subject, "save", key=key, base=1, answers={**answers(), "authorization": {}}).status == 422
+    bad = {**answers(), "authorization": {}}
+    assert call(subject, "save", key=key, base=1, answers=bad).status == 422
     assert call(subject, "discard", key=key, base=0).status == 409
     assert call(subject, "discard", key=key, base=1).status == 200
     assert call(subject, "save", key=key, base=1, answers=answers()).status == 404
@@ -81,6 +84,17 @@ def test_two_tabs_cannot_replace_each_others_edit_and_restart_forgets_input(tmp_
     assert call(subject, "read", key=key).status == 409
     restarted, _, _ = installation(tmp_path / "other")
     assert call(restarted, "read", key=key).status == 404
+
+
+def test_discard_can_remove_its_own_unacknowledged_save_but_not_a_clone_write(tmp_path):
+    subject, _, _ = installation(tmp_path)
+    key = call(subject, "open", task=TASK).payload["key"]
+    own, clone = "2"*32, "3"*32
+    assert call(subject, "save", key=key, base=0, edit=own, answers=answers()).status == 200
+    assert call(subject, "discard", key=key, base=0, edit=clone).status == 409
+    assert call(subject, "read", key=key).payload["answers"] == answers()
+    assert call(subject, "discard", key=key, base=0, edit=own).status == 200
+    assert call(subject, "save", key=key, base=0, edit=own, answers=answers()).status == 404
 
 
 @pytest.mark.parametrize("extra", [

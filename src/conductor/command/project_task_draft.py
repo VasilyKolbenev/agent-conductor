@@ -34,7 +34,8 @@ def matches(value, pattern):
 
 
 def validate_answers(answers):
-    fields(answers, "title brief hint titleEdited guided withoutGit includeInstructions items cycleId owner instructions models")
+    fields(answers, "title brief hint titleEdited guided withoutGit includeInstructions "
+           "items cycleId owner instructions models")
     for key in ("title", "brief", "hint"):
         require(isinstance(answers[key], str))
     for key in ("titleEdited", "guided", "withoutGit"):
@@ -50,7 +51,8 @@ def validate_answers(answers):
             require(item["mode"] in ("link", "copy") and isinstance(item["edits"], list))
             for edit in item["edits"]:
                 fields(edit, "start remove insert")
-                require(all(type(edit[k]) is int and 0 <= edit[k] <= 2**31 for k in ("start", "remove")))
+                require(all(type(edit[k]) is int and 0 <= edit[k] <= 2**31
+                            for k in ("start", "remove")))
                 require(isinstance(edit["insert"], str))
         else:
             fields(item, "kind title content")
@@ -64,15 +66,18 @@ def validate_answers(answers):
                 require(matches(value, _ID))
             elif key == "models":
                 fields(value, "provider text")
-                require(matches(value["provider"], _ID) and isinstance(value["text"], str) and len(value["text"]) <= 128)
+                require(matches(value["provider"], _ID) and isinstance(value["text"], str)
+                        and len(value["text"]) <= 128)
             else:
                 fields(value, "source like text back" if isinstance(value, dict) and "back" in value
                        else "source like text")
-                require(value["source"] in ("task", "own", "like") and value.get("back", "own") in ("task", "own"))
+                require(value["source"] in ("task", "own", "like")
+                        and value.get("back", "own") in ("task", "own"))
                 require(value["like"] is None or matches(value["like"], _ID))
                 require(isinstance(value["text"], str))
     try:
-        encoded = json.dumps(answers, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        encoded = json.dumps(answers, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":")).encode()
     except UnicodeEncodeError:
         raise ApiRefusal.fixed("contract_invalid") from None
     require(len(encoded) <= _BYTES)
@@ -86,6 +91,7 @@ class _Draft:
     expires: float
     revision: int = 0
     answers: bytes | None = None
+    last_edit: str | None = None
 
 
 class TaskDrafts:
@@ -99,14 +105,15 @@ class TaskDrafts:
             raise ApiRefusal.fixed("project_mismatch")
         op = body.get("op")
         require(op in ("open", "read", "save", "discard"))
-        fields(body, {"open": "op project task", "save": "op project key base answers",
-                      "discard": "op project key base"}.get(op, "op project key"))
+        fields(body, {"open": "op project task", "save": "op project key base edit answers",
+                      "discard": "op project key base edit"}.get(op, "op project key"))
         if op == "open":
             require(matches(body["task"], _TASK))
         else:
             require(matches(body["key"], _KEY))
         if op in ("save", "discard"):
             require(type(body["base"]) is int and 0 <= body["base"] < 2**53)
+            require(matches(body["edit"], _KEY) or (op == "discard" and body["edit"] is None))
         if op == "save":
             encoded = validate_answers(body["answers"])
         with self.lock:
@@ -124,7 +131,9 @@ class TaskDrafts:
                     return 200, {"discarded": True}
                 raise ApiRefusal.fixed("route_not_found")
             if op == "discard":
-                if row.revision != body["base"]:
+                own_pending = (row.revision == body["base"] + 1 and body["edit"] is not None
+                               and row.last_edit == body["edit"])
+                if row.revision != body["base"] and not own_pending:
                     raise ApiRefusal.fixed("draft_conflict")
                 del self.rows[body["key"]]
                 return 200, {"discarded": True}
@@ -133,8 +142,10 @@ class TaskDrafts:
                              "answers": None if row.answers is None else json.loads(row.answers)}
             if body["base"] == row.revision:
                 row.answers = encoded
+                row.last_edit = body["edit"]
                 row.expires = now + _TTL
                 row.revision += 1
-            elif body["base"] != row.revision - 1 or encoded != row.answers:
+            elif (body["base"] != row.revision - 1 or body["edit"] != row.last_edit
+                  or encoded != row.answers):
                 raise ApiRefusal.fixed("draft_conflict")
             return 200, {"revision": row.revision}
