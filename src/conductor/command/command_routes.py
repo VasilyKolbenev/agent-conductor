@@ -51,6 +51,7 @@ COMMAND_ROUTES = (
     ("GET", "/command/quotas"),
     ("GET", "/command/project/cycle"),
     ("POST", "/command/project/cycle/pin"),
+    ("POST", "/command/project/task-draft"),
     ("GET", "/command/project/auto-continue"),
     ("POST", "/command/project/auto-continue"),
     ("GET", "/command/runs/<run_id>/automation"),
@@ -136,6 +137,7 @@ _FIXED_ROUTES = {
     _PROJECT_PATH: ("GET", "project"),
     "/command/project/git": ("GET", "project_git"),
     "/command/project/git/setup": ("POST", "git_setup"),
+    "/command/project/task-draft": ("POST", "project_task_draft"),
     _TEMPLATES_PATH: ("POST", "templates"),
     _WORKFLOWS_PATH: ("GET", "workflows"),
 }

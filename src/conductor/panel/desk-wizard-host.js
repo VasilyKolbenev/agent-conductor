@@ -11,32 +11,16 @@ const outcome = (code) => ({status: "refused", code});
 const token = (nonce) => nonce().replaceAll("-", "").toLowerCase().slice(0, 32);
 const changed = (change, key) => change.steps.some((step) => step.key === key);
 const DRAFT_TASK = /^task-[a-z0-9]{8,24}$/;
-const draftKey = (project, task) => `desk.first-task.v1:${project}:${task}`;
-
-// The history entry carries only the task and confirmed project IDs. Typed
-// answers stay in this tab. There is deliberately no path from storage to a grant.
-function dropDraft() {
-  try {
-    const pointer = history.state?.deskTaskDraft;
-    if (!pointer) return;
-    const {deskTaskDraft, ...rest} = history.state;
-    history.replaceState(rest, "");
-    if (/^[0-9a-f]{32}$/.test(pointer.project) && DRAFT_TASK.test(pointer.task)) {
-      sessionStorage.removeItem(draftKey(pointer.project, pointer.task));
-    }
-  } catch (_error) { /* Storage is optional on restricted browser profiles. */ }
+const DRAFT_KEY = /^[0-9a-f]{32}$/;
+function pointer(project) {
+  const p = history.state?.deskTaskDraft;
+  return p?.project === project && DRAFT_KEY.test(p.key) ? p : null;
 }
-
-function readDraft(project) {
-  try {
-    const pointer = history.state?.deskTaskDraft;
-    if (!project || pointer?.project !== project || !DRAFT_TASK.test(pointer.task)) return null;
-    const held = JSON.parse(sessionStorage.getItem(draftKey(project, pointer.task)));
-    if (!held || !["title", "brief", "hint"].every((field) => typeof held[field] === "string")) return null;
-    return {...held, taskId: pointer.task};
-  } catch (_error) { return null; }
+function forgetPointer() {
+  if (!history.state?.deskTaskDraft) return;
+  const {deskTaskDraft, ...rest} = history.state;
+  history.replaceState(rest, "");
 }
-
 
 function typedAnswers(wizard) {
   const {title, brief, hint} = wizard.task;
@@ -53,21 +37,72 @@ function typedAnswers(wizard) {
 export function createWizardHost({mount, trigger, door, locale, nonce, onForeign, onState,
   onHash, onExit}) {
   let wizard = null, epoch = 0, timer = null, entrance = null, requested = null;
-  let project = null, lastDraft = null;
-  function saveDraft() {
-    if (!project || !wizard?.firstRunGuide) return;
-    if (wizard.run.pressed) { dropDraft(); return; }
-    const task = wizard.task.taskId;
-    try {
-      const value = JSON.stringify(typedAnswers(wizard));
-      if (value === lastDraft) return;
-      sessionStorage.setItem(draftKey(project, task), value);
-      if (history.state?.deskTaskDraft?.task !== task || history.state?.deskTaskDraft?.project !== project) {
-        history.replaceState({...history.state, deskTaskDraft: {project, task}}, "");
-      }
-      lastDraft = value;
-    } catch (_error) { dropDraft(); lastDraft = null; }
+  let project = null, editor = null, opening = false, unavailable = false;
+  const valid = (draft) => draft === editor && epoch === draft.epoch && context.project?.() === draft.project;
+  const draftCall = (draft, op, data) => door.submit("taskDraft", null,
+    {project: draft.project, op, ...data});
+  function discard(draft) {
+    if (draft?.key && !draft.busy && context.project?.() === draft.project) {
+      void draftCall(draft, "discard", {key: draft.key, base: draft.revision});
+    }
   }
+  function dropDraft() {
+    const draft = editor;
+    editor = null;
+    forgetPointer();
+    discard(draft);
+  }
+  async function flush(draft) {
+    if (draft.busy || !valid(draft) || draft.stopped || draft.want === draft.saved) return;
+    draft.busy = true;
+    draft.status = "saving";
+    refresh();
+    try {
+      if (!draft.key) {
+        const opened = await draftCall(draft, "open", {task: draft.task});
+        if (opened.status !== "accepted" || !DRAFT_KEY.test(opened.payload?.key)) throw new Error();
+        draft.key = opened.payload.key;
+        if (!valid(draft)) return;
+        history.replaceState({...history.state, deskTaskDraft: {project: draft.project, key: draft.key}}, "");
+      }
+      while (valid(draft) && draft.want !== draft.saved) {
+        const sent = draft.want;
+        const answer = await draftCall(draft, "save", {key: draft.key, base: draft.revision,
+          answers: JSON.parse(sent)});
+        if (answer.status !== "accepted" || answer.payload?.revision !== draft.revision + 1) {
+          draft.stopped = answer.code === "draft_conflict" || answer.code === "route_not_found";
+          throw new Error();
+        }
+        draft.revision = answer.payload.revision;
+        draft.saved = sent;
+      }
+      draft.status = "saved";
+    } catch (_error) {
+      draft.status = "memory_only";
+    } finally {
+      draft.busy = false;
+      if (valid(draft)) refresh();
+      else discard(draft);
+    }
+  }
+  function saveDraft() {
+    if (!wizard?.firstRunGuide) return;
+    if (wizard.run.pressed) { if (editor) dropDraft(); return; }
+    if (!editor) return;
+    const next = JSON.stringify(typedAnswers(wizard));
+    if (next === editor.want) return;
+    editor.want = next;
+    void flush(editor);
+  }
+  function warnOnUnload(event) {
+    if ((editor && editor.want !== editor.saved) || (!editor && wizard?.firstRunGuide
+      && !wizard.run.pressed && (wizard.task.brief || wizard.task.title || wizard.materials.items.length))) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  }
+  window.addEventListener("beforeunload", warnOnUnload);
+
   const live = (at) => at === epoch && wizard !== null;
   const refresh = () => onState();
 
@@ -76,7 +111,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     trigger.hidden = wizard !== null || context?.foreign() === true;
     trigger.disabled = context?.mode() === null || context?.applied() === false;
     if (wizard === null) mount.replaceChildren();
-    else mountWizard(mount, {locale: locale(), wizard, canRestore: project !== null && lastDraft !== null}, {onWizard: dispatch,
+    else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.status
+      ?? (unavailable ? "restore_failed" : "memory_only")}, {onWizard: dispatch,
       onWizardClose: close});
   }
 
@@ -97,7 +133,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   function close(outcomeValue) {
     const wasOpen = wizard !== null;
     if (wasOpen) dropDraft();
-    project = null; lastDraft = null;
+    project = null; unavailable = false;
     const finished = outcomeValue ?? null;
     epoch += 1;
     clearInterval(timer);
@@ -112,6 +148,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   function dispose() {
     close();
     epoch += 1;
+    window.removeEventListener("beforeunload", warnOnUnload);
     trigger.removeEventListener("click", openNew);
   }
 
@@ -172,11 +209,22 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const resume = resumeFrom(keys, starters);
     const start = openingFrom(keys, starters);
     const guide = resume === null && start.starterId === null;
-    let held = null, documents = [];
+    let held = null, documents = [], restoreNotice = null;
     if (guide) {
       try {
         project = context.project?.() || null;
-        held = restore ? readDraft(project) : null;
+        const p = restore && project && mode === "active" ? pointer(project) : null;
+        if (p) {
+          const answer = await draftCall(p, "read", {key: p.key});
+          if (at !== epoch || context.project?.() !== p.project) return;
+          if (answer.status === "accepted" && DRAFT_TASK.test(answer.payload?.task)
+              && Number.isSafeInteger(answer.payload.revision) && answer.payload.answers) {
+            held = {...answer.payload.answers, taskId: answer.payload.task};
+            editor = {project, epoch: at, task: held.taskId, key: p.key, revision: answer.payload.revision,
+              saved: JSON.stringify(answer.payload.answers), status: "saved"};
+          } else if (answer.code === "route_not_found") restoreNotice = "unavailable";
+          else unavailable = true;
+        }
         if (Array.isArray(held?.items) && held.items.some((row) => row?.kind === "project_doc")) {
           documents = (await door.readJson(path.documents()))?.documents ?? [];
         }
@@ -184,7 +232,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
         if (error instanceof Error && error.message === "project_mismatch") { onForeign(); return; }
       }
       if (at !== epoch) return;
-      if (!held) dropDraft();
+      if (!held && !unavailable) forgetPointer();
     }
     const nonceValue = token(nonce);
     if (held && tasks.some((row) => row.task_id === held.taskId)) { dropDraft(); held = null; }
@@ -199,6 +247,10 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
       const offered = cycleCards({...wizard, reads: {workflows: {status:"ok", payload:workflows}}});
       wizard = restoreAnswers(wizard, held, documents, offered);
     }
+    if (!editor && !unavailable && guide && project && mode === "active") {
+      editor = {project, epoch: at, task: taskId, key: null, revision: 0, status: restoreNotice ?? "empty"};
+    }
+    if (editor) editor.saved = editor.want = JSON.stringify(typedAnswers(wizard));
     entrance = keys.new === "task" ? "new" : "prepare";
     timer = setInterval(() => dispatch({type: "tick", now: new Date().toISOString()}), 1000);
     dispatch({type: "open"});
@@ -207,11 +259,12 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   }
 
   function openNew() {
-    if (wizard !== null || context.foreign() || context.mode() === null
+    if (opening || wizard !== null || context.foreign() || context.mode() === null
       || !context.applied()) return;
     onHash({new: "task"});
+    opening = true;
     void open({new: "task", starter: null}, {actor: context.actor(), mode: context.mode(),
-      tasks: context.tasks()}, false);
+      tasks: context.tasks()}, false).finally(() => { opening = false; });
   }
 
   let context = null;

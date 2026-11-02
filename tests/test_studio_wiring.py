@@ -179,7 +179,7 @@ DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
 #: published steps of an accepted result (spec 9.7), and `cyclePin` for the project's pinned
 #: cycle (spec 7.10; `POST /command/project/cycle/pin`): each one more name on the same door, the
 #: counts unchanged.
-WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
+WRITE_TARGETS = frozenset({"taskDraft", "draft", "revisions", "runs", "decisions",
                            "proposals", "actions", "artifacts", "tasks",
                            "automationPreview", "automationAuthorize", "automationControl",
                            "materials", "autoContinue", "seed", "flow", "cyclePin", "queue",

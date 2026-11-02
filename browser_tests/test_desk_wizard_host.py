@@ -225,20 +225,17 @@ def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Brow
     try:
         page = context.new_page()
         posts = []
-        page.on("request", lambda row: posts.append(urlsplit(row.url).path) if row.method == "POST" else None)
+        page.on("request", lambda row: posts.append(urlsplit(row.url).path) if row.method == "POST"
+                and not row.url.endswith("/project/task-draft") else None)
         page.goto(wizard_url + "#lang=en")
         page.locator("#deskNewTask").click()
         form = page.locator("#deskWizard")
         brief = form.locator('[data-focus="wizard:brief"]')
         brief.fill("Keep my first draft 🧭")
         form.locator('[data-focus="wizard:git:run_without_git"]').click()
-        entry, saved = page.evaluate("""() => {
-          const p = history.state?.deskTaskDraft;
-          return p ? [p, JSON.parse(sessionStorage.getItem('desk.first-task.v1:'+p.project+':'+p.task))] : [null,null];
-        }""")
-        assert entry and set(entry) == {"task", "project"}
-        assert saved["brief"] == "Keep my first draft 🧭"
-        assert {"authorization", "preview", "actor", "run", "token", "reads"}.isdisjoint(saved)
+        expect(form.locator('[data-draft="saved"]')).to_be_visible()
+        entry = page.evaluate("history.state.deskTaskDraft")
+        assert set(entry) == {"key", "project"} and len(entry["key"]) == 32
         page.reload()
         expect(brief).to_have_value("Keep my first draft 🧭")
         expect(form.locator('[data-focus="wizard:next"]')).to_be_enabled()
@@ -248,6 +245,7 @@ def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Brow
         form.locator('[data-focus="wizard:cycle:choose:desk-short"]').click()
         expect(form.locator('h3[data-card-id="desk-short"]')).to_be_visible()
         expect(form.locator('[data-focus="wizard:next"]')).to_be_enabled()
+        expect(form.locator('[data-draft="saved"]')).to_be_visible()
         count = len(posts)
         page.reload()
         expect(brief).to_have_value("Keep my first draft 🧭")
@@ -290,12 +288,44 @@ def test_copied_material_is_reread_and_only_the_owner_edit_is_saved(chromium: Br
         content = form.locator('[data-focus="wizard:card:m1:content"]')
         expect(content).to_have_value(raw)
         content.fill(raw + " Owner's edit.")
-        saved = page.evaluate("""() => {const p=history.state.deskTaskDraft;
-          return sessionStorage.getItem('desk.first-task.v1:'+p.project+':'+p.task);}""")
-        assert "Owner's edit" in saved and raw not in saved
+        expect(form.locator('[data-draft="saved"]')).to_be_visible()
+        assert set(page.evaluate("history.state.deskTaskDraft")) == {"key", "project"}
         page.reload()
         form.locator('[data-guide-details="optional"] summary').click()
         expect(content).to_have_value(raw + " Owner's edit.")
+    finally:
+        context.close()
+
+
+def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: Browser, wizard_url):
+    context = chromium.new_context()
+    try:
+        page = context.new_page()
+        held = []
+        def delay(route):
+            if route.request.post_data_json["op"] == "save":
+                held.append(route)
+            else:
+                route.continue_()
+        page.route("**/command/project/task-draft", delay)
+        page.goto(wizard_url + "#lang=en")
+        page.locator("#deskNewTask").dblclick()
+        form = page.locator("#deskWizard")
+        brief = form.locator('[data-focus="wizard:brief"]')
+        with page.expect_request(lambda row: row.url.endswith("/project/task-draft")
+                                 and row.post_data_json["op"] == "save"):
+            brief.fill("still editing")
+        expect(form.locator('[data-draft="saving"]')).to_be_visible()
+        assert not page.evaluate("window.dispatchEvent(new Event('beforeunload', {cancelable:true}))")
+        assert "still editing" not in page.evaluate("JSON.stringify(history.state) + location.href")
+        form.locator('[data-focus="wizard:close"]').click()
+        assert page.evaluate("!history.state?.deskTaskDraft")
+        with page.expect_response(lambda row: row.url.endswith("/project/task-draft")
+                                  and row.request.post_data_json["op"] == "discard") as discarded:
+            held[0].continue_()
+        assert discarded.value.status == 200
+        page.locator("#deskNewTask").click()
+        expect(brief).to_have_value("")
     finally:
         context.close()
 

@@ -72,6 +72,7 @@ from .http_transport import (
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
 from .project_claim import UNCLAIMED, ProjectIdentity
+from .project_task_draft import TaskDrafts
 from .auto_continue import AutoContinueStore
 from .project_cycle import ProjectCycleStore
 from .project_git import GitRead
@@ -193,6 +194,7 @@ class CommandApi:
         self._project = project
         # What this server is, and the claim a request may make on it (spec 4.5.1).
         self._identity = identity
+        self._task_drafts = TaskDrafts()
         # The reader of the project's git (spec 9.3), or None for a server that has none.
         self._project_git = project_git
         # The reader of the pinned gh (spec 9.3) that the push and the pull request use, or
@@ -264,7 +266,7 @@ class CommandApi:
                     _quota_get(target, pairs, raw_body)
                 return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
-            self._identity.check(pairs)
+            self._identity.check(pairs, required=route.name == "project_task_draft")
             return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())

@@ -682,8 +682,9 @@ export function mountWizard(mount, state, handlers) {
     head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step},
       wizard.guided ? guideBody(ctx) : draw(ctx)),
-    ...(wizard.firstRunGuide && !wizard.run.pressed && state.canRestore === false && wizard.task.brief
-      ? [element("p", {role: "status", text: ctx.t("wizard.guide.memory_only")})] : []),
+    ...(wizard.firstRunGuide && !wizard.run.pressed && state.draftStatus
+      && state.draftStatus !== "empty" ? [element("p", {role: "status", "data-draft": state.draftStatus,
+        text: ctx.t(`wizard.guide.${state.draftStatus}`)})] : []),
     ...(wizard.guided && wizard.run.pressed ? [] : [foot(ctx)]),
     ...(wizard.firstRunGuide && !wizard.run.pressed ? [action("wizard:mode",
       ctx.t(wizard.guided ? "wizard.guide.details" : "wizard.guide.short"),

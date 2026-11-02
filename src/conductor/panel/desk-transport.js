@@ -50,6 +50,7 @@ export const path = Object.freeze({
   // The write beside that read (spec 7.10): pin a published workflow as the project's cycle, or
   // unpin it with a null workflow. POST only.
   cyclePin: () => "/command/project/cycle/pin",
+  taskDraft: () => "/command/project/task-draft",
   quotas: () => "/command/quotas",
   workflows: () => "/command/workflows",
   workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
@@ -92,7 +93,7 @@ export const path = Object.freeze({
   queueWithdraw: (id) => `/command/queue/${encodeURIComponent(id)}/withdraw`,
 });
 // Closed mutation targets share the same CSRF and refusal door.
-const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
+const WRITE_TARGETS = Object.freeze(["taskDraft", "draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
   "autoContinue", "seed", "flow", "cyclePin", "queue", "queueOrder", "queueWithdraw",

@@ -66,6 +66,10 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 
 
 def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    if route.name == "project_task_draft":
+        if api._identity.mode != "active":
+            raise ApiRefusal.fixed("project_not_active")
+        return api._task_drafts.apply(api._identity.project_id, body)
     if route.name == "git_setup":
         from .git_setup import setup
         return setup(api, body)

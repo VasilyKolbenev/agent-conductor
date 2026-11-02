@@ -67,7 +67,7 @@ class ProjectIdentity:
         return {"project_id": self.project_id, "hub_origin": self.hub_origin,
                 "demo": self.demo, "mode": self.mode}
 
-    def check(self, pairs: Iterable[tuple[str, str]]) -> None:
+    def check(self, pairs: Iterable[tuple[str, str]], *, required: bool = False) -> None:
         """Hold a request's `X-Conduct-Project` claim to this server's project.
 
         Args:
@@ -78,7 +78,7 @@ class ProjectIdentity:
                 one value equal to `project_id`; a server without a project id equals nothing.
         """
         claims = [value for name, value in pairs if name.casefold() == HEADER.casefold()]
-        if not claims:
+        if not claims and not required:
             return
         if len(claims) == 1 and self.project_id is not None and claims[0] == self.project_id:
             return
