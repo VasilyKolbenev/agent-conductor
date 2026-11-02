@@ -39,6 +39,14 @@ to execute and check tasks through their subscriptions, and shows the subscripti
 of Claude Code, Codex and Grok. Grok and Kimi as executors, and DeepSeek, are marked "not
 yet supported" in V1 and form the next slice. The five harnesses remain the product goal.
 
+**Public alpha decision, 2026-11-02 (ALPHA-FOUR):** Finish first-run UX first. Before public
+distribution a new user must be able to connect their own Claude Code, Codex, Grok Build and
+Kimi Code subscriptions and obtain a real task result with each. Record the version, result
+and source of any quota readings per harness. Also complete the default Dalio cycle with
+Codex and Grok, its human gates and independent result check. A scripted adapter only proves
+local integration. DeepSeek remains in the product roadmap. The three-run concurrency target
+belongs to the second stage. The earlier acceptance steps below are retained as milestones.
+
 **Owner decision, 2026-10-30 (V1-GROK-ROLE):** Grok also takes one minimal role in the V1
 Dalio v6 run, to show it working: role-diagnostician, the single read-only `diagnose` step.
 Claude Code keeps the other steps and Codex stays the independent checker. If Grok's task
