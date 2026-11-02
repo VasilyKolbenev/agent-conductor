@@ -5,6 +5,16 @@
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
 If you only want to see the interface, start with the [account-free demo](../README.md#try-the-demo).
 
+If your project and subscriptions are already connected, open **Desk → New task**.
+
+1. **Result and project.** Describe the result you want, for example “Find why the
+   counter includes failed runs”. Choose where the task gets its files.
+2. **Team and cycle.** Use the standard Dalio cycle or choose your own. Check who
+   will do the work and who will verify it. Expand the role settings to change an assignment.
+3. **Review and start.** Read the action and time limits and where the cycle will
+   wait for you. Enter your name and press **Start** when the terms match your task.
+   At the final decision, open the result and the independent check before you accept.
+
 You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
 A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
 
