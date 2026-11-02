@@ -21,6 +21,7 @@ import time
 
 from playwright.sync_api import expect
 
+from browser_tests.desk_hold import until
 from browser_tests.hub_bench import (CSP, FakeHub, HubPage, hub,  # noqa: F401
                                      hub_page, lang, ready, say)
 from conductor.hub.assets import HUB_ASSETS
@@ -150,13 +151,14 @@ def test_scratch_add_sends_only_name_and_folder_and_selects_starter(hub_page, la
     ready(page)
     held = []
     def hold_old_read(route):
-        if not held:
+        if route.request.method == "GET" and not held:
             held.append(route)
         else:
             route.continue_()
     page.page.route("**/hub/projects", hold_old_read)
-    with page.page.expect_request(lambda req: req.url.endswith("/hub/projects")):
-        hub.push({"kind": "projects"})
+    hub.push({"kind": "projects"})
+    # The stream's initial frame can have started the held GET before push() returned.
+    until(page.page, "the old project-list GET is held", lambda: bool(held))
     hub.answer("/hub/projects", after)
     page.page.locator('[data-focus="add-project"]').click()
     page.page.locator('[data-focus="source-scratch"]').click()
@@ -167,6 +169,8 @@ def test_scratch_add_sends_only_name_and_folder_and_selects_starter(hub_page, la
     held[0].fulfill(status=200, content_type="application/json", body=json.dumps(before))
     assert hub.posts == [{"path": "/hub/projects",
         "body": {"source": "scratch", "folder": "fresh", "name": "Fresh project"}}]
+    expect(page.page.locator('#hubRail').get_by_role(
+        "button", name="Fresh project", exact=True)).to_be_visible()
     expect(page.page.locator("#hubDesk iframe")).to_have_attribute("src",
         re.compile(r"project=a{32}.*new=task.*starter=desk-starter-docs"))
     assert "project=" + "a" * 32 in page.page.evaluate("location.hash")

@@ -116,37 +116,25 @@ def test_the_workflow_screen_offers_the_project_workflow_and_the_bundled_starter
     assert picker.locator("option").all_inner_texts() == [
         "choose a workflow", f"{WORKFLOW_ID} — {WORKFLOW_TITLE}"]
     starters = page.locator("#workflowToolbar select[name='new-from']")
-    offered = starters.locator("option").all_inner_texts()
-    assert offered[0] == "start blank"
-    # This used to read `["start blank", "Dalio five-step cycle", "Dalio
-    # five-step cycle"]`, and it passed: it was pinning the defect. Both shipped
-    # starters carry that one title, so the picker offered a person two rows
-    # they could not choose between -- and they are not equivalent, which is the
-    # half that made it worth fixing rather than tolerating.
-    # Five shipped revisions, including both independent-checker starters, and no two
-    # rows a person cannot tell apart. Revision 5 is the standard and is offered first.
-    # Three more files ship since: the desk's ready cycles (spec 7.9), which follow the Dalio
-    # revisions in the order of their names.
-    assert len(offered[1:]) == len(set(offered[1:])) == 8, offered
-    assert offered[1] == "Стандартный цикл · revision 5 — ready to run"
-    assert offered[5] == "Стандартный цикл · revision 4 — ready to run"
-    assert all("Dalio five-step cycle · revision " in row for row in offered[2:5])
-    assert offered[6:] == ["Short · revision 1 — ready to run",
-                           "Standard · revision 1 — ready to run",
-                           "Starter documents · revision 1 — ready to run"]
-    ready = [row for row in offered[1:] if row.endswith("ready to run")]
-    caveated = [row for row in offered[1:] if row.endswith("see the note")]
-    # Seven run-ready starters, and still exactly one
-    # caveated: the caveat is DERIVED, so revision 3 inherits revision 2's fixed
-    # artifact chain rather than a sentence somebody remembered to copy.
-    assert len(ready) == 7 and len(caveated) == 1, offered
+    offered = starters.locator("option").evaluate_all(
+        "items => items.map(item => [item.value, item.label])")
+    assert offered == [
+        ["", "start blank"],
+        ["dalio-v6", "Стандартный цикл · revision 6 — ready to run"],
+        ["dalio-v1", "Dalio five-step cycle · revision 1 — see the note"],
+        ["dalio-v2", "Dalio five-step cycle · revision 2 — ready to run"],
+        ["dalio-v3", "Dalio five-step cycle · revision 3 — ready to run"],
+        ["dalio-v4", "Стандартный цикл · revision 4 — ready to run"],
+        ["dalio-v5", "Стандартный цикл · revision 5 — ready to run"],
+        ["desk-short", "Short · revision 1 — ready to run"],
+        ["desk-standard", "Standard · revision 1 — ready to run"],
+        ["desk-starter-docs", "Starter documents · revision 1 — ready to run"],
+    ]
     # The caveat itself is no longer IN the option -- its 191 characters were
     # the select's intrinsic width and the page's overflow (R08) -- but under
     # the control, for the starter chosen, and it is the DERIVED one, naming
     # the steps it read.
-    values = starters.locator("option").evaluate_all(
-        "items => items.map(item => item.value)")
-    starters.select_option(values[offered.index(caveated[0])])
+    starters.select_option("dalio-v1")
     said = page.locator("#workflowToolbar [data-starter-note]").inner_text()
     assert "4 review step(s)" in said and "name no result artifact" in said, said
     assert problems == []
