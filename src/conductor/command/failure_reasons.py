@@ -20,6 +20,7 @@ import re
 REASONS = (
     ("wrote past the capture bound", "its output was longer than the capture bound"),
     ("exceeded its timeout", "it exceeded its timeout"),
+    ("subscription login check timed out", "the subscription login check timed out before dispatch"),
     ("was never handed its whole instruction", "its instruction was not delivered whole"),
     ("left state this build does not declare in the login",
      "it left undeclared state in the pinned login directory"),

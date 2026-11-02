@@ -29,6 +29,7 @@ from conductor.command.adapters.process import (
     CommandSpecError, OwnershipError, ProcessOutcome, ProcessRunner)
 from conductor.command.adapters.process_profile import ProfileRefused
 from conductor.command.adapters.quota_connection import NativeQuotaDeferred
+from conductor.command.failure_reasons import reason_words
 
 from tests import _fakeclaude
 from tests.relay_roads import CLAUDE, CODEX, Site, digests
@@ -189,6 +190,7 @@ def test_a_timed_out_login_status_does_not_claim_a_missing_login_or_spawn_a_task
     assert receipt.outcome == "failed"
     assert receipt.detail == (
         "the Claude Code subscription login check timed out, so no task was spawned")
+    assert reason_words(receipt.detail) == "the subscription login check timed out before dispatch"
     assert not site.claimed(request) and site.tasks() == []
     assert site.leftovers() == [] and digests(site.login) == before and site.lease_is_free()
 
