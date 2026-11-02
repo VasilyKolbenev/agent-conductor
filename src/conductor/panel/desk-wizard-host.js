@@ -3,17 +3,14 @@
 // asks; this host only supplies the shared transport, page identity, address and clock. A closed
 // wizard has a new epoch, so a late read or write cannot reopen it or change another project.
 import {path} from "./desk-transport.js";
-import {cycleCards, initialWizard, openingFrom, resumeFrom, stepWizard} from "./desk-wizard-model.js";
+import {cycleCards, initialWizard, openingFrom, restoreAnswers, resumeFrom, stepWizard} from "./desk-wizard-model.js";
 import {wizardExit, wizardHash} from "./desk-wizard-run.js";
 import {mountWizard} from "./desk-wizard.js";
-import {MATERIAL_LIMITS, documentCard, isDocumentRow, textCard} from "./desk-wizard-materials.js";
-import {evolve} from "./desk-wizard-base.js";
 
 const outcome = (code) => ({status: "refused", code});
 const token = (nonce) => nonce().replaceAll("-", "").toLowerCase().slice(0, 32);
 const changed = (change, key) => change.steps.some((step) => step.key === key);
 const DRAFT_TASK = /^task-[a-z0-9]{8,24}$/;
-const DRAFT_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const draftKey = (project, task) => `desk.first-task.v1:${project}:${task}`;
 
 // The history entry carries only the task and confirmed project IDs. Typed
@@ -40,18 +37,6 @@ function readDraft(project) {
   } catch (_error) { return null; }
 }
 
-function draftMaterials(rows, documents) {
-  if (!Array.isArray(rows)) return [];
-  return rows.slice(0, MATERIAL_LIMITS.count).flatMap((row, i) => {
-    if (!row) return [];
-    const key = `m${i + 1}`;
-    if (["plan", "ideas", "scheme", "note"].includes(row.kind)) return [textCard(key, row)];
-    const doc = Array.isArray(documents) && documents.find((item) => isDocumentRow(item)
-      && item.doc_id === row.docId && item.git_oid === row.gitOid);
-    return doc ? [{...documentCard(key, doc), mode: row.mode === "copy" ? "copy" : "link",
-      edits: Array.isArray(row.edits) ? row.edits : []}] : [];
-  });
-}
 
 function typedAnswers(wizard) {
   const {title, brief, hint} = wizard.task;
@@ -64,30 +49,6 @@ function typedAnswers(wizard) {
     owner: wizard.roles.owner, instructions: wizard.roles.instructions};
 }
 
-function restoreAnswers(fresh, held, documents, offered) {
-  const items = draftMaterials(held.items, documents).map((row, at) => ({...row, key: `m${at + 1}`}));
-  const known = offered.find((row) => row.id === held.cycleId && row.kind !== "build");
-  const restored = {guided: held.guided !== false, titleEdited: held.titleEdited === true,
-    draftMaterialsMissing: Array.isArray(held.items) && items.length !== held.items.length,
-    task: {...fresh.task, title: held.title, brief: held.brief, hint: held.hint},
-    materials: {...fresh.materials, items, counter: items.length, withoutGit: held.withoutGit === true,
-      includeInstructions: typeof held.includeInstructions === "boolean" ? held.includeInstructions : null}};
-  if (!known) return evolve(fresh, restored);
-  restored.cycle = {...fresh.cycle, choice: {kind: known.kind, workflowId: known.workflowId},
-    chosenBy: "owner", generation: 1};
-  const entries = (value) => value && typeof value === "object" && !Array.isArray(value)
-    ? Object.entries(value).filter(([id]) => DRAFT_ID.test(id)) : [];
-  const owner = entries(held.owner).filter(([, id]) => typeof id === "string" && DRAFT_ID.test(id));
-  const instructions = [];
-  for (const [id, item] of entries(held.instructions)) {
-    if (!item || !["own", "task", "like"].includes(item.source) || typeof item.text !== "string") continue;
-    if (item.source === "like" && (typeof item.like !== "string" || !DRAFT_ID.test(item.like))) continue;
-    instructions.push([id, {source: item.source, like: item.source === "like" ? item.like : null,
-      text: item.text, back: item.back === "task" ? "task" : "own"}]);
-  }
-  restored.roles = {owner: Object.fromEntries(owner), instructions: Object.fromEntries(instructions)};
-  return evolve(fresh, restored);
-}
 
 export function createWizardHost({mount, trigger, door, locale, nonce, onForeign, onState,
   onHash, onExit}) {

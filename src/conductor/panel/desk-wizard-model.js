@@ -40,7 +40,7 @@ import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, GUIDE_STAGES, LIMITS, STEPS, briefDocument, evolve, frozen, guideStage,
-  inputChars, taskText, titleFromGoal, utf8Bytes} from "./desk-wizard-base.js";
+  inputChars, restoreAnswers, taskText, titleFromGoal, utf8Bytes} from "./desk-wizard-base.js";
 import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, editInstruction,
   hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
@@ -65,7 +65,7 @@ import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
-export {STEPS, BUILT_STEPS, GUIDE_STAGES, guideStage, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
+export {STEPS, BUILT_STEPS, GUIDE_STAGES, guideStage, restoreAnswers, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
   taskText, utf8Bytes,
   assignmentView, boundaryOf, hasProviders, instructionFields, previousAssignment,
