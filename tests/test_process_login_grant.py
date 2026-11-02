@@ -64,7 +64,7 @@ def login_world(tmp_path, *, name="claude-code"):
 def loans_of(w):
     """The attempt's loans: the project's providers list the login, and its lease names it."""
     return FolderLoans(w.store, w.store.native, hold_factory=AnyHold, environ=w.environ,
-                       login_homes=lambda: (w.leased,), leased_login=lambda: leased_fact(w.leased))
+                       login_homes=lambda: (login,), leased_login=lambda: leased_fact(w.leased))
 
 
 def _entries(sddl):
