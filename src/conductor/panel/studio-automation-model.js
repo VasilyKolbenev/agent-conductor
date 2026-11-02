@@ -110,38 +110,40 @@ export function projectAutomation(value, detail) {
   return copy(value);
 }
 
-//: The limits a person starts from, made to fit together and to fit the frozen plan. A step an
-//: independent checker judges reserves the checker's time as well (2x, as the server holds it); a
-//: step whose own failure road loops back to it is budgeted for that planned correction up front,
-//: so the preview shows every attempt it would authorize. A frozen timeout or attempt bound is never
-//: exceeded. Only a starting draft: nothing here authorizes or runs anything, and a person's own
-//: edits are kept by the flow, never recomputed over.
-export function automationDraft(detail) {
-  const definition = detail.graph?.definition || {};
-  const loops = new Map((definition.nodes || []).filter((node) => node.loop).map((node) => [node.node_id, node.loop]));
-  const rows = (definition.nodes || []).filter((node) => node.capability).map((node) => {
-    const timeout = Math.min(node.timeout_seconds || 300, 300);
-    const checked = Boolean(node.verifier_instance_id) && node.verifier_instance_id !== node.instance_id;
-    const correction = (definition.edges || []).find((edge) => edge.from_node === node.node_id
-      && edge.condition === "on_failed" && loops.get(edge.to_node)?.back_to === node.node_id);
-    const planned = correction ? loops.get(correction.to_node).bound : 1;
-    return {node_id: node.node_id, timeout, reserved: timeout * (checked ? 2 : 1),
-      attempts: Math.max(1, Math.min(planned, node.attempt_bound || planned))};
-  });
-  const total = rows.reduce((sum, row) => sum + row.reserved * row.attempts, 0);
-  return {actor: "", max_actions: String(Math.max(1, rows.reduce((sum, row) => sum + row.attempts, 0))),
-    max_action_seconds: String(Math.max(1, ...rows.map((row) => row.reserved))),
-    max_total_task_seconds: String(Math.max(1, total)),
-    duration_seconds: String(Math.min(86400, Math.max(3600, total))),
-    node_limits: rows.map((row) => ({node_id: row.node_id, timeout_seconds: String(row.timeout),
-      max_attempts: String(row.attempts)}))};
+const BOUNDS = ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"];
+
+// Blank until the server supplies values. Named rows let a person enter a custom
+// budget even if a recommendation could not be obtained.
+export function automationDraft(detail, terms = null, actor = "") {
+  const rows = terms?.node_limits ?? (detail.graph?.definition?.nodes ?? [])
+    .filter((node) => node.capability).map((node) => ({node_id: node.node_id}));
+  return {actor, custom: false, ...Object.fromEntries(BOUNDS.map((key) => [key, String(terms?.[key] ?? "")])),
+    node_limits: rows.map((row) => ({node_id: row.node_id, timeout_seconds: String(row.timeout_seconds ?? ""),
+      max_attempts: String(row.max_attempts ?? "")}))};
+}
+
+export function projectRecommendation(value, detail) {
+  if (!isPlainObject(value)) return null;
+  const {budget, ...core} = value;
+  const preview = projectAutomationPreview(core, detail);
+  if (!preview || !isPlainObject(budget) || typeof budget.exhausted !== "boolean"
+      || !isPlainObject(budget.worst) || !count(budget.worst.actions)) return null;
+  const spent = budget.spent;
+  if (spent !== null && !(object(spent, ["actions", "seconds", "attempts"]) && count(spent.actions)
+      && count(spent.seconds) && Array.isArray(spent.attempts) && spent.attempts.every((row) =>
+        object(row, ["step_id", "attempts"]) && isId(row.step_id) && count(row.attempts)))) return null;
+  const expected = Object.fromEntries([...BOUNDS, "node_limits"].map((key) => [key, preview.terms[key]]));
+  if (!isPlainObject(budget.terms_draft) || canonicalJson(expected) !== canonicalJson(budget.terms_draft)) return null;
+  return {preview, recommendation: {steps: preview.terms.node_limits.length, attempts: budget.worst.actions,
+    checked: detail.graph.definition.nodes.filter((node) => node.capability && node.verifier_instance_id).length,
+    spent, exhausted: budget.exhausted}};
 }
 export function previewRequest(draft) {
+  if (!draft.custom) return {};
   const integer = (text) => typeof text === "string" && /^[1-9][0-9]*$/.test(text) && positive(Number(text));
-  const names = ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"];
-  if (!names.every((key) => integer(draft[key])) || !draft.node_limits.every((row) =>
+  if (!BOUNDS.every((key) => integer(draft[key])) || !draft.node_limits.every((row) =>
     isId(row.node_id) && integer(row.timeout_seconds) && integer(row.max_attempts))) return null;
-  return {...Object.fromEntries(names.map((key) => [key, Number(draft[key])])), node_limits:
+  return {...Object.fromEntries(BOUNDS.map((key) => [key, Number(draft[key])])), node_limits:
     draft.node_limits.map((row) => ({node_id: row.node_id, timeout_seconds: Number(row.timeout_seconds), max_attempts: Number(row.max_attempts)}))};
 }
 

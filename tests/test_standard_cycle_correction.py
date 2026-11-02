@@ -354,7 +354,7 @@ def test_revision_four_had_no_correction_road(standard):
 
 
 def _studio_draft(definition):
-    """The preview body the Studio form starts from, computed by the shipped module itself."""
+    """The default preview request that the shipped Studio module sends."""
     import json
     from pathlib import Path
     import shutil
@@ -377,20 +377,21 @@ def test_the_studio_draft_is_a_preview_the_server_admits_and_the_old_defaults_we
     cycle = standard(["accept"])
     cycle.prepare()
     body = _studio_draft(cycle.graph.as_dict())
-    status, preview = cycle.post(f"/command/runs/{RUN}/automation/preview", {**body, "duration_seconds": 3600})
+    assert body == {}
+    status, preview = cycle.post(f"/command/runs/{RUN}/automation/preview", body)
     assert status == 200, preview
     limits = {row["node_id"]: row["max_attempts"] for row in preview["terms"]["node_limits"]}
-    assert limits["do"] == 2 and preview["terms"]["max_actions"] == 6
+    assert limits["do"] == 4 and preview["terms"]["max_actions"] == 8
     old = {"max_actions": 8, "max_action_seconds": 300, "max_total_task_seconds": 2400,
            "duration_seconds": 3600, "node_limits": [
                {"node_id": row["node_id"], "timeout_seconds": 300, "max_attempts": 1}
-               for row in body["node_limits"]]}
+               for row in preview["terms"]["node_limits"]]}
     status, refused = cycle.post(f"/command/runs/{RUN}/automation/preview", old)
     assert status == 422 and refused["error"]["code"] == "contract_invalid", refused
     # The door answers generically; this pins the reason: the admitted draft with ONE change -- a
     # per-action ceiling below `do` plus its checker -- is refused the same way.
     status, refused = cycle.post(f"/command/runs/{RUN}/automation/preview",
-                                 {**body, "duration_seconds": 3600, "max_action_seconds": 300})
+                                 {**preview["budget"]["terms_draft"], "max_action_seconds": 300})
     assert status == 422 and refused["error"]["code"] == "contract_invalid", refused
 
 

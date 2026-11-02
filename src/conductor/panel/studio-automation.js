@@ -28,19 +28,31 @@ function boundsForm(state, held, actions) {
   const form = element("form", {className: "studio-automation__bounds"});
   const {max_actions: actionsMax, max_action_seconds: actionSeconds,
     max_total_task_seconds: total, duration_seconds: duration} = held.draft;
-  form.append(element("p", {"data-budget-summary": "", text: word(state, "budget_summary",
-    {actions: actionsMax, seconds: actionSeconds, total, duration})}), note(word(state, "budget_basis")));
+  const custom = held.draft.custom, plan = held.recommendation;
+  const summary = custom || plan ? word(state, "budget_summary",
+    {actions: actionsMax, seconds: actionSeconds, total, duration}) : word(state, "budget_wait");
+  form.append(element("p", {"data-budget-summary": "", text: summary}));
+  if (custom) {
+    form.append(note(word(state, "budget_custom")), button(state, "use_plan", !held.pending && !held.request,
+      () => actions.preview("edit")));
+  } else if (plan) {
+    form.append(note(word(state, "plan_basis", {steps: String(plan.steps), attempts: String(plan.attempts),
+      checked: String(plan.checked)})));
+    if (plan.spent) form.append(note(word(state, "plan_spent",
+      {actions: String(plan.spent.actions), seconds: String(plan.spent.seconds)})));
+    if (plan.exhausted) form.append(note(word(state, "plan_exhausted")));
+  }
   const toggle = button(state, held.expanded ? "collapse_limits" : "edit_limits",
     !held.pending && !held.request, () => {
-      if (!held.expanded || form.reportValidity()) actions.toggleLimits();
+      if (!held.expanded || !custom || form.reportValidity()) actions.toggleLimits();
     });
   toggle.setAttribute("aria-expanded", String(Boolean(held.expanded)));
   toggle.dataset.focus = "automation:limits";
   form.append(toggle);
   if (held.expanded) appendLimitInputs(form, state, held, actions);
   const submit = button(state, "preview", !held.pending && !held.request && held.phase === "ready", () => {});
-  submit.type = "submit"; form.append(submit);
-  form.addEventListener("submit", (event) => { event.preventDefault(); if (form.reportValidity()) actions.preview(); });
+  submit.type = "submit"; submit.formNoValidate = !custom; form.append(submit);
+  form.addEventListener("submit", (event) => { event.preventDefault(); if (!custom || form.reportValidity()) actions.preview(); });
   return form;
 }
 function appendLimitInputs(form, state, held, actions) {
@@ -131,7 +143,8 @@ function review(state, held, actions) {
       element("pre", {text: JSON.stringify(preview.terms, null, 2)})]),
   ]);
   box.append(button(state, "authorize", held.phase === "ready" && Boolean(held.view?.owner_present)
-    && Boolean(held.draft.actor.trim()) && !held.pending && !held.request, actions.authorize));
+    && Boolean(held.draft.actor.trim()) && !held.pending && !held.request
+    && (held.draft.custom || !held.recommendation?.exhausted), actions.authorize));
   if (!held.draft.actor.trim()) box.append(note(word(state, "name_needed")));
   return box;
 }

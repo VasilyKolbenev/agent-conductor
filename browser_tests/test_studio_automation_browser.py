@@ -108,8 +108,11 @@ def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounde
         editor = box.locator('[data-focus="automation:run:duration_seconds"]')
         expect(editor).to_be_hidden()
         review = box.locator('[data-focus="automation:preview"]')
-        review.click()
+        with page.expect_response(lambda result: result.url.endswith("/automation/preview")) as default:
+            review.click()
+        assert default.value.request.post_data_json == {}
         expect(box.locator("[data-automation-preview]")).to_be_visible()
+        expect(box).to_contain_text("Time limits are reserves")
         box.get_by_role("button", name="Edit limits").click()
         editor.fill("0")
         box.get_by_role("button", name="Close limit settings").click()
@@ -126,6 +129,12 @@ def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounde
         with page.expect_response(lambda response: response.url.endswith("/automation/preview")) as result:
             review.click()
         assert result.value.json()["terms"]["duration_seconds"] == 7200
+        assert result.value.request.post_data_json["duration_seconds"] == 7200
+        with page.expect_response(lambda response: response.url.endswith("/automation/preview")) as reset:
+            box.get_by_role("button", name="Вернуть рекомендации сервера").click()
+        assert reset.value.request.post_data_json == {}
+        expect(box.locator("[data-automation-preview]")).to_have_count(0)
+        expect(box.locator("[data-budget-summary]")).to_contain_text(str(reset.value.json()["terms"]["duration_seconds"]))
         assert adapter.execute_calls == 0 and window.page_errors == []
         assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
     finally:
