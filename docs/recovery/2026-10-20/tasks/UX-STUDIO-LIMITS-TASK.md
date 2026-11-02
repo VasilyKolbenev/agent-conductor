@@ -1,0 +1,7 @@
+# UX-STUDIO-LIMITS — review a run without filling six budget fields
+
+Owner priority, 2026-11-02. Part of UX-FIRST-RUN. On the Runs screen a person can use the existing proposed limits, see their size and origin, enter their name, preview and explicitly grant. Keep one draft, one preview contract and one authorization door. Show four overall bounds before review. Put manual and per-step inputs under an accessible Edit limits button; the choice and values must survive ordinary redraws and language changes. Preserve invalid input for correction and prevent a misleading preview. A frozen run's limits and the actual reviewed terms remain authoritative.
+
+Design choice: keep disclosure on the same form and in the existing run-scoped flow. A separate simple form would need to reconcile two budgets. An HTML details alone loses open state when the view redraws after an edit. Use a keyboard-operable toggle and give the edited form a visible path back to the summarized limits. Distinguish plan-based limits from a prediction of paid quota.
+
+Witness: a served Chromium user at 375 px reviews defaults, opens the editor, edits one limit, returns to the summary and observes the changed value in the server's preview without an authorization or adapter call. Existing detailed workflow, refusal, and explicit approval witnesses must also pass. Local tests only. Separate from Desk wizard files and the publication fixture.
