@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import Browser, expect
 
+from browser_tests.desk_hold import close_context, until
 from conductor import ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.codex_cli import CODEX_PROFILE
@@ -155,7 +156,7 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         assert errors == []
         assert form.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
     finally:
-        context.close()
+        close_context(context)
 
 
 @pytest.mark.parametrize("wizard_url", ["pins"], indirect=True)
@@ -218,7 +219,7 @@ def test_owner_pinned_codex_and_default_grok_reach_the_frozen_grant_card(chromiu
         assert frozen["instance-role-checker"] == "gpt-6.1-sol"
         assert frozen["instance-role-diagnostician"] is None
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Browser, wizard_url):
@@ -266,7 +267,7 @@ def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Brow
         expect(brief).to_have_value("")
         assert len(posts) == count
     finally:
-        context.close()
+        close_context(context)
 
 
 def test_copied_material_is_reread_and_only_the_owner_edit_is_saved(chromium: Browser, wizard_url):
@@ -295,12 +296,11 @@ def test_copied_material_is_reread_and_only_the_owner_edit_is_saved(chromium: Br
         form.locator('[data-guide-details="optional"] summary').click()
         expect(content).to_have_value(raw + " Owner's edit.")
     finally:
-        context.close()
+        close_context(context)
 
 
 @pytest.mark.parametrize("committed", [False, True], ids=["before-request", "before-ack"])
 def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: Browser, wizard_url, committed):
-    from browser_tests.desk_hold import until
     context = chromium.new_context()
     try:
         page = context.new_page()
@@ -338,7 +338,7 @@ def test_unacknowledged_edit_is_marked_and_close_discards_a_late_save(chromium: 
         page.locator("#deskNewTask").click()
         expect(brief).to_have_value("")
     finally:
-        context.close()
+        close_context(context)
 
 
 def test_new_task_uses_real_git_task_seed_and_run_routes(chromium: Browser, wizard_url: str):
@@ -421,4 +421,4 @@ def test_new_task_uses_real_git_task_seed_and_run_routes(chromium: Browser, wiza
         assert ("GET", f'/command/runs/{address["run"]}') in asked
         assert errors == []
     finally:
-        context.close()
+        close_context(context)
