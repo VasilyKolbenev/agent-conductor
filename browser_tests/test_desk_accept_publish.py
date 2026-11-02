@@ -91,12 +91,22 @@ def published(tmp_path, accept_server) -> tuple[str, Rig]:
     return url, Rig(root, bare, remote, gh)
 
 
-def _into_the_branch(desk: _Desk) -> None:
-    """Preview, review and commit, as the person does; the push step shows when it is done."""
+def _commit_and_read_remotes(desk: _Desk) -> list[dict]:
+    """Commit, then observe the Git discovery response that determines the next controls."""
     desk.card.locator(PREVIEW).click()
     expect(desk.card).to_contain_text("new.txt")
     desk.card.locator(REVIEW).click()
-    desk.card.locator(COMMIT).click()
+    # Discovery runs real Git after the commit. Check the button against the observed remote.
+    with desk.page.expect_response(lambda r: r.request.method == "GET"
+                                   and urlsplit(r.url).path == "/command/project/git") as read:
+        desk.card.locator(COMMIT).click()
+    assert read.value.status == 200
+    return read.value.json()["git"]["remotes"]
+
+
+def _into_the_branch(desk: _Desk) -> None:
+    assert _commit_and_read_remotes(desk) == [
+        {"name": "origin", "github": "o/r", "url_has_credentials": False}]
     expect(desk.card.locator(PUSH["push.terms"])).to_be_enabled()
 
 
@@ -228,10 +238,8 @@ def test_a_remote_that_is_not_github_gets_the_terminal_command_and_no_step(
     url, root, _httpd = accept_server
     git("remote", "add", "gitlab", "https://gitlab.example/o/r.git", cwd=root)
     with _desk(chromium, url, language) as desk:
-        desk.card.locator(PREVIEW).click()
-        expect(desk.card).to_contain_text("new.txt")
-        desk.card.locator(REVIEW).click()
-        desk.card.locator(COMMIT).click()
+        assert _commit_and_read_remotes(desk) == [
+            {"name": "gitlab", "github": None, "url_has_credentials": False}]
         expect(desk.card.locator("pre")).to_have_text(f"git push gitlab {BRANCH}")
         expect(desk.card).to_contain_text(TERMINAL[language])
         expect(desk.card.locator(ANY_PUSH_BUTTON)).to_have_count(0)
