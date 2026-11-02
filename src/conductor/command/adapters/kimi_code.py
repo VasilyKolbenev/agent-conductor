@@ -152,7 +152,7 @@ KIMI_PROFILE = HarnessProfile(
     reviewed_version=REVIEWED_KIMI_VERSION,
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=KIMI_HOME_ENV,
-    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED),),
+    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED), ("KIMI_CODE_NO_AUTO_UPDATE", "1")),
     version_argv=VERSION_ARGV,
     home_id_kind="kimi-home",
     login_argv=("acp",), login_command=("login",),
@@ -219,7 +219,9 @@ class KimiCodeAdapter(ArtifactAwareTransport):
         return (*OUTPUT_FORMAT_ARGV, PROMPT_FLAG, task_text)
 
     def _env_allow(self) -> tuple[str, ...]:
-        return self._pin.env_allow
+        # A Windows child may treat a differently spelled name as the same variable.
+        owned = {self.profile.home_env, *(name for name, _ in self.profile.forced_env)}
+        return tuple(name for name in self._pin.env_allow if name.upper() not in owned)
 
     def _login(self):
         return self._pin.auth, self._pin.auth_home
@@ -228,9 +230,10 @@ class KimiCodeAdapter(ArtifactAwareTransport):
         blocked = super()._login_home_grants(home)
         if not _managed_profile(login_home.profile_document(home, "config.toml")):
             blocked += ("config.toml",)
-        selected = self._runner.capture_environment(self._env_allow())
-        if any(name.startswith("KIMI_") and name not in (KIMI_HOME_ENV, KIMI_TELEMETRY_ENV)
-               and selected.native_value(name) is not None for name in self._env_allow()):
+        allowed = self._env_allow()
+        selected = self._runner.capture_environment(allowed)
+        if any(name.upper().startswith("KIMI_") and selected.native_value(name) is not None
+               for name in allowed):
             blocked += ("environment",)
         return blocked
 

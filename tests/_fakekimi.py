@@ -126,6 +126,7 @@ def _record(argv: list[str]) -> None:
         "cwd": os.getcwd(),
         "kimi_home": os.environ.get("KIMI_CODE_HOME"),
         "telemetry_disabled": os.environ.get("KIMI_DISABLE_TELEMETRY"),
+        "updates_disabled": os.environ.get("KIMI_CODE_NO_AUTO_UPDATE") == "1",
         "env_names": sorted(os.environ),
         # Two booleans about the parent's probe, and never a value. See
         # `tests/_fakeenv.py` for why an exact name set was not the question.

@@ -390,6 +390,14 @@ def test_the_telemetry_switch_the_vendor_documents_is_sent_on_every_spawn(tmp_pa
     assert sent == {"1"}, f"TELEMETRY_NOT_DISABLED={sent}"
 
 
+def test_the_reviewed_binary_cannot_enable_updates_for_preflight_or_dispatch(tmp_path):
+    adapter, _root, log = a_harness(tmp_path, KIMI_CODE_NO_AUTO_UPDATE="0")
+    assert run_once(adapter, a_request()).outcome == "succeeded"
+    spawns = _fakekimi.spawns(log)
+    assert [row["argv"][0] for row in spawns] == ["--version", "--output-format"]
+    assert all(row["updates_disabled"] for row in spawns)
+
+
 def test_no_attempt_home_survives_a_completed_dispatch(tmp_path):
     """A real Kimi Code writes config, sessions, logs and OAuth credentials here.
 

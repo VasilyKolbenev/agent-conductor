@@ -66,7 +66,7 @@ def waiting(ready,**kwargs):
 
 
 def test_same_native_profile_owned_server_is_reaped_and_transients_removed(tmp_path):
-    adapter,runner,home=make(tmp_path);calls=[]
+    adapter,runner,home=make(tmp_path, {'Kimi_Code_No_Auto_Update': '0'});calls=[]
     def fetch(**kwargs):
         assert runner.live and kwargs['bearer']=='a'*43;calls.append(kwargs['path'])
         return AUTH if kwargs['path']=='/api/v1/auth' else USAGE
@@ -77,6 +77,9 @@ def test_same_native_profile_owned_server_is_reaped_and_transients_removed(tmp_p
     assert not (home/'server').exists() and not (home/'logs').exists()
     assert (home/'credentials'/'kimi-code.json').is_file() and adapter._login_seen==()
     assert all(spec.env['KIMI_CODE_HOME']==str(home) for spec in runner.specs)
+    assert [spec.argv[1] for spec in runner.specs] == ['--version', 'web']
+    assert [spec.env.get('KIMI_CODE_NO_AUTO_UPDATE') for spec in runner.specs] == ['1', '1']
+    assert all('Kimi_Code_No_Auto_Update' not in spec.env_allow for spec in runner.specs)
     assert b'synthetic-access-secret' in runner.specs[-1].sensitive_extra
     assert runner.specs[-1].argv[1:]==('web','--no-open','--host','127.0.0.1','--port','45678')
 
@@ -115,7 +118,8 @@ def test_a_signed_out_home_asks_for_a_login_instead_of_calling_the_source_unsupp
     assert runner.specs==[]
 
 
-@pytest.mark.parametrize('name',['KIMI_MODEL_NAME','KIMI_CODE_BASE_URL','KIMI_CODE_OAUTH_HOST'])
+@pytest.mark.parametrize('name',['KIMI_MODEL_NAME','KIMI_CODE_BASE_URL','KIMI_CODE_OAUTH_HOST',
+                                 'Kimi_Code_OAuth_Host'])
 def test_actual_environment_overrides_refuse_before_spawn(name,tmp_path):
     adapter,runner,_=make(tmp_path,{name:'synthetic'})
     with pytest.raises(NativeQuotaReadError,match='not_supported'):adapter.quota_connection().read(waiting,lambda **kw:USAGE,lambda:45678)
@@ -126,6 +130,7 @@ def test_native_acp_authenticate_is_readiness_only_and_requires_both_successes(t
     adapter,runner,_=make(tmp_path)
     class Request:timeout_seconds=10
     output=adapter._attempt_login_status(Request()).output
+    assert runner.specs[-1].env.get('KIMI_CODE_NO_AUTO_UPDATE') == '1'
     assert adapter._login_method_admitted(output)
     assert [json.loads(x)['method'] for x in runner.specs[-1].stdin_bytes.splitlines()]==['initialize','authenticate']
     assert not adapter._login_method_admitted(output.splitlines()[1])
