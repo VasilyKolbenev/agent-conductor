@@ -52,6 +52,7 @@ from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
 from conductor.command.operator_config import ProviderConfig
 from conductor.command.run_store import RunStore
 from tests import _fakeclaude
+from tests.conftest import registered_fake_processes  # noqa: F401 (registered CLI launch fixture)
 from tests._boundary_assumed import boundary_assumed  # noqa: F401
 from browser_tests.task_picker import create_task
 
@@ -445,7 +446,7 @@ def test_the_chosen_starters_note_is_drawn_whole_under_the_control(
         chromium: Browser, project: _Project) -> None:
     """The caveat left the option and not the screen.
 
-    Exactly one shipped starter carries a note and two are ready; the option
+    Exactly one shipped starter carries a note; the option
     says which is which in a few words, and the note under the control says
     the whole of it for the starter chosen -- the derived sentence naming the
     steps it read -- and changes with the choice.
@@ -458,7 +459,10 @@ def test_the_chosen_starters_note_is_drawn_whole_under_the_control(
             "items => items.map(item => item.value)")
         noted = [row for row in options if row.endswith("— see the note")]
         ready = [row for row in options if row.endswith("— ready to run")]
-        assert len(noted) == 1 and len(ready) == 7, options
+        assert [values[options.index(label)] for label in noted] == ["dalio-v1"], options
+        assert sorted(values[options.index(label)] for label in ready) == [
+            "dalio-v2", "dalio-v3", "dalio-v4", "dalio-v5", "dalio-v6",
+            "desk-short", "desk-standard", "desk-starter-docs"], options
         note = page.locator("#workflowToolbar [data-starter-note]")
         assert note.inner_text() == "A blank start is an empty drawing."
         select.select_option(values[options.index(noted[0])])

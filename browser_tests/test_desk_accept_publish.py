@@ -26,6 +26,7 @@ from playwright.sync_api import Browser, expect
 from browser_tests.test_desk_accept import (  # noqa: F401  (accept_server is a fixture)
     COMMIT, PREVIEW, REVIEW, _Desk, _desk, accept_server)
 from tests import _fakegh
+from tests.conftest import registered_fake_processes  # noqa: F401 (registered gh launch fixture)
 from tests.accept_remote import (
     BRANCH, GUARD, TIMED_OUT, URL, Remote, config_text, guard_of, refs_text, remote_oid,
     with_gh, words_of)
