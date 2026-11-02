@@ -6,6 +6,9 @@ from tests.desk_node import run_js
 
 def test_removed_wizard_address_and_reentrant_close_send_no_late_asks():
     answer = run_js("""
+const {getEventListeners} = await import("node:events");
+globalThis.window = new EventTarget();
+globalThis.history = {state: null};
 const mount = {replaceChildren() {}, querySelector() { return null; }};
 const trigger = {addEventListener() {}, removeEventListener() {}};
 const context = {actor: () => "owner", mode: () => "view", tasks: () => [],
@@ -38,7 +41,11 @@ second = h.createWizardHost({mount, trigger, door: eager, locale: () => "en",
 second.bind(context);
 await second.navigate(open, keys);
 const callback = second.state() === null && secondReads.length === 1;
-host.dispose(); second.dispose();
-console.log(JSON.stringify({fenced, callback}));
+const listeners = () => getEventListeners(window, "beforeunload").length;
+const active = listeners();
+host.dispose();
+const oneLeft = listeners();
+second.dispose();
+console.log(JSON.stringify({fenced, callback, listeners: [active, oneLeft, listeners()]}));
 """, {"h": "desk-wizard-host.js"})
-    assert answer == {"fenced": True, "callback": True}
+    assert answer == {"fenced": True, "callback": True, "listeners": [2, 1, 0]}
