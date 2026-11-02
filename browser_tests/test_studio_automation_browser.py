@@ -105,6 +105,7 @@ def test_first_grant_is_the_visible_next_step(chromium: Browser, bounded_project
             "data-automation-state", "unconfigured")
         expect(page.locator(".studio-runs__situation")).to_contain_text("Waiting for your permission")
         expect(page.locator("#studioBridge")).to_contain_text("Review the run limits to start")
+        expect(page.locator('#studioBridge [data-focus="bridge:run:run"]')).to_be_visible()
         page.get_by_role("button", name="Set up this run", exact=True).click()
         actor = box.get_by_role("textbox", name="Your name")
         expect(actor).to_be_focused()
