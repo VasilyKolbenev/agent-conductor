@@ -59,9 +59,12 @@ from __future__ import annotations
 import json
 import os
 import stat
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+from ...ownership_native import NativeHold
 from ..long_path import extended
+from .quota_connection import NativeQuotaReadError
 
 
 def entries(home: str) -> frozenset[str] | None:
@@ -592,6 +595,50 @@ def profile_document(home: str, name: str) -> dict | None:
         return tomllib.loads(target.read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeError):
         return None
+
+
+def _hold_quota_directory(path, holds):
+    try:
+        path.lstat()  # distinguish a missing directory from a refused native hold
+        holds.callback(NativeHold(path, directory=True).close)
+    except FileNotFoundError:
+        raise NativeQuotaReadError("not_authenticated") from None
+    except OSError:
+        raise NativeQuotaReadError("not_supported") from None
+
+
+@contextmanager
+def held_quota_credential(home, directory, select_name, check_document):
+    """Pin the login home before the provider selects a credential using its managed profile.
+
+    The selected leaf must be the only name in the nested directory. The file closes before the
+    CLI runs so its token can rotate while both directory identities remain pinned.
+    """
+    from .login_relay import Refused, _bare, read_leaf
+
+    if not _pinned(home) or not _bare(directory):
+        raise NativeQuotaReadError("not_supported")
+    root = Path(home)
+    with ExitStack() as holds:
+        _hold_quota_directory(root, holds)
+        name = select_name()
+        if not _bare(name):
+            raise NativeQuotaReadError("not_supported")
+        parent = root / directory
+        _hold_quota_directory(parent, holds)
+        try:
+            with os.scandir(parent) as entries:
+                if any(entry.name != name for entry in entries):
+                    raise NativeQuotaReadError("not_supported")
+            leaf = read_leaf(parent / name)
+        except OSError:
+            raise NativeQuotaReadError("not_supported") from None
+        if isinstance(leaf, Refused):
+            reason = "not_authenticated" if leaf.code == "leaf_absent" else "not_supported"
+            raise NativeQuotaReadError(reason)
+        check_document(leaf.doc)
+        del leaf
+        yield
 
 
 def nested_credentials(home: str, directory: str, names: tuple[str, ...]) -> tuple[bytes, ...]:

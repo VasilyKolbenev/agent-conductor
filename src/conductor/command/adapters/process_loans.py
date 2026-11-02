@@ -458,9 +458,9 @@ class FolderLoans:
         return real
 
     def _check_sources(self, homes, holds=None):
-        from .relay_kimi_acl import inspect_sources
+        from .relay_home import inspect_kimi_sources
         with ExitStack() as local:
-            found = inspect_sources(self.native, homes, holds or local, self.hold_factory)
+            found = inspect_kimi_sources(self.native, homes, holds or local, self.hold_factory)
             if self._source_ids is not None and found != self._source_ids:
                 raise _refused("a configured Kimi source changed before the relay grant")
             self._source_ids = found

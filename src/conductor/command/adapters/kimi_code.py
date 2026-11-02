@@ -66,13 +66,9 @@ the only credential road the vendor documents as reading the shell.
 """
 from __future__ import annotations
 
-from contextlib import ExitStack
 import hashlib
 import json
-import os
-from ...ownership_native import NativeHold
 from . import login_home
-from .login_relay import Refused, read_leaf
 from .jsonl_completion import decode_line
 from .quota_connection import NativeQuotaDeferred, NativeQuotaReader, NativeQuotaReadError
 from .subscription_quota import _Turn, _clean
@@ -378,36 +374,20 @@ def _managed_key(home):
     return _managed_profile(login_home.profile_document(home, "config.toml"))
 
 
-def _hold_quota_directory(path, holds):
-    """On Windows a non-delete-sharing directory handle also denies a rename."""
-    try:
-        path.lstat()  # distinguish an absent directory from a refused native hold
-        holds.callback(NativeHold(path, directory=True).close)
-    except FileNotFoundError:
-        raise NativeQuotaReadError("not_authenticated") from None
-    except OSError:
-        raise NativeQuotaReadError("not_supported") from None
-
-
-def _check_quota_credential(home, holds):
-    """The CLI can rotate its credential during quota; hold its directory, not the file."""
-    directory = Path(home) / "credentials"
+def _quota_credential_name(adapter, home):
+    blocked = adapter._login_home_grants(home)
+    if blocked == ("config.toml",) and login_home.profile_absent(home, "config.toml"):
+        raise NativeQuotaReadError("not_authenticated")
+    if blocked:
+        raise NativeQuotaReadError("not_supported")
     key = _managed_key(home)
     if key is None:
         raise NativeQuotaReadError("not_supported")
-    name = key.removeprefix("oauth/") + ".json"
-    _hold_quota_directory(directory, holds)
-    try:
-        with os.scandir(directory) as entries:
-            if any(entry.name != name for entry in entries):
-                raise NativeQuotaReadError("not_supported")
-        leaf = read_leaf(directory / name)
-    except OSError:
-        raise NativeQuotaReadError("not_supported") from None
-    if isinstance(leaf, Refused):
-        reason = "not_authenticated" if leaf.code == "leaf_absent" else "not_supported"
-        raise NativeQuotaReadError(reason)
-    fields = leaf.doc
+    return key.removeprefix("oauth/") + ".json"
+
+
+def _check_quota_credential(fields):
+    """Admit the pinned CLI's OAuth fields before any version or usage call."""
     strings = {"access_token", "refresh_token", "token_type", "scope"}
     times = {"expires_at", "expires_in"}
     if set(fields) - strings - times or any(type(fields[k]) is not str for k in strings & fields.keys()):
@@ -419,61 +399,59 @@ def _check_quota_credential(home, holds):
 
 
 def _read_local_usage(adapter, wait, fetch, choose_port):
-    with _Turn(adapter), ExitStack() as holds:
+    with _Turn(adapter):
         adapter._begin_road()
         try:
             home = adapter._signed_in_road()
             if not home:
                 raise NativeQuotaReadError("not_supported")
-            _hold_quota_directory(Path(home), holds)
-            blocked = adapter._login_home_grants(home)
-            if blocked == ("config.toml",) and login_home.profile_absent(home, "config.toml"):
-                # The vendor's own login writes config.toml, so its absence is a sign-in still owed,
-                # not an unsupported source (measured 23.09: a signed-out home read `not_supported`).
-                raise NativeQuotaReadError("not_authenticated")
-            if blocked:
-                raise NativeQuotaReadError("not_supported")
-            _check_quota_credential(home, holds)
-            if adapter._workspace.sweep_homes():
-                raise NativeQuotaReadError()
-            adapter._workspace.work_root()
-            version = adapter._attempt(VERSION_ARGV, WORK_DIR, timeout=10)
-            _clean(adapter, version)
-            if not adapter._version_matches(version.output):
-                raise NativeQuotaReadError("not_supported")
-            port = choose_port()
-            if type(port) is not int or not 1 <= port <= 65535:
-                raise NativeQuotaReadError()
-            result = []
-            def read(pid):
-                auth = []
-                def ready():
-                    bearer = login_home.native_server_token(home, "server.token")
-                    if bearer is None:
-                        return None
-                    try:
-                        value = fetch(port=port, path="/api/v1/auth", bearer=bearer, timeout=.25)
-                    except Exception:
-                        return None
-                    auth.append(value)
-                    return port, bearer
-                _, bearer = wait(ready, timeout=10)
-                value = auth[-1]
-                data = value.get("data") if type(value) is dict and type(value.get("code")) is int and value["code"] == 0 else None
-                if (type(data) is not dict or data.get("ready") is not True
-                        or type(data.get("providers_count")) is not int or data["providers_count"] != 1
-                        or data.get("managed_provider") != {
-                            "name": "managed:kimi-code", "status": "authenticated"}):
-                    raise NativeQuotaReadError("not_authenticated")
-                result.append(fetch(port=port, path="/api/v1/oauth/usage", bearer=bearer, timeout=10))
-            outcome = adapter._attempt(("web", "--no-open", "--host", "127.0.0.1", "--port", str(port)),
-                WORK_DIR, timeout=30, separate_stderr=True, server_read=read)
-            if (outcome.status != "stopped" or outcome.output_truncated or outcome.output_contains_env_value
-                    or adapter._login_echo or adapter._retained or adapter._login_residue or len(result) != 1):
-                raise NativeQuotaReadError()
-            return result[0]
+            with login_home.held_quota_credential(
+                    home, "credentials", lambda: _quota_credential_name(adapter, home),
+                    _check_quota_credential):
+                return _read_held_local_usage(adapter, home, wait, fetch, choose_port)
         finally:
             adapter._forget_login_sample()
+
+
+def _read_held_local_usage(adapter, home, wait, fetch, choose_port):
+    if adapter._workspace.sweep_homes():
+        raise NativeQuotaReadError()
+    adapter._workspace.work_root()
+    version = adapter._attempt(VERSION_ARGV, WORK_DIR, timeout=10)
+    _clean(adapter, version)
+    if not adapter._version_matches(version.output):
+        raise NativeQuotaReadError("not_supported")
+    port = choose_port()
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise NativeQuotaReadError()
+    result = []
+    def read(pid):
+        auth = []
+        def ready():
+            bearer = login_home.native_server_token(home, "server.token")
+            if bearer is None:
+                return None
+            try:
+                value = fetch(port=port, path="/api/v1/auth", bearer=bearer, timeout=.25)
+            except Exception:
+                return None
+            auth.append(value)
+            return port, bearer
+        _, bearer = wait(ready, timeout=10)
+        value = auth[-1]
+        data = value.get("data") if type(value) is dict and type(value.get("code")) is int and value["code"] == 0 else None
+        if (type(data) is not dict or data.get("ready") is not True
+                or type(data.get("providers_count")) is not int or data["providers_count"] != 1
+                or data.get("managed_provider") != {
+                    "name": "managed:kimi-code", "status": "authenticated"}):
+            raise NativeQuotaReadError("not_authenticated")
+        result.append(fetch(port=port, path="/api/v1/oauth/usage", bearer=bearer, timeout=10))
+    outcome = adapter._attempt(("web", "--no-open", "--host", "127.0.0.1", "--port", str(port)),
+        WORK_DIR, timeout=30, separate_stderr=True, server_read=read)
+    if (outcome.status != "stopped" or outcome.output_truncated or outcome.output_contains_env_value
+            or adapter._login_echo or adapter._retained or adapter._login_residue or len(result) != 1):
+        raise NativeQuotaReadError()
+    return result[0]
 
 
 def _local_usage(payload):
