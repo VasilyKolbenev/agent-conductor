@@ -184,8 +184,8 @@ def test_codex_native_startup_and_cleanup(case, tmp_path, verified_exe, request)
     login_before = digests(login) if signed_in else {}
     try:
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr(process_loans, "configured_login_homes",
-                          lambda _root: (login,) if signed_in else ())
+            sources = process_loans.ConfiguredLogins((login,) if signed_in else ())
+            patch.setattr(process_loans, "configured_login_sources", lambda _root: sources)
             patch.setattr(runner, "container_profile", profile)
             patch.setattr(runner, "run", run)
             with ownership.acquire_owner(root):

@@ -51,8 +51,9 @@ def test_the_login_folders_are_the_auth_homes_of_the_providers_the_project_holds
         tmp_path, monkeypatch):
     data = tmp_path / "conductor.v3"
     first, second = tmp_path / "logins" / "a", tmp_path / "logins" / "b"
-    rows = (SimpleNamespace(auth_home=str(first)), SimpleNamespace(auth_home=""),
-            SimpleNamespace(auth_home=str(second)))
+    rows = (SimpleNamespace(auth_home=str(first), protocol="claude-headless-v1"),
+            SimpleNamespace(auth_home=""),
+            SimpleNamespace(auth_home=str(second), protocol="kimi-code-headless-v1"))
     asked = []
 
     def load(path):
@@ -63,6 +64,16 @@ def test_the_login_folders_are_the_auth_homes_of_the_providers_the_project_holds
     found = process_loans.configured_login_homes(data)
     assert asked == [data / operator_config.PROVIDER_CONFIG_FILENAME]
     assert set(found) == {Path(os.path.realpath(first)), Path(os.path.realpath(second))}
+
+
+def test_kimi_acl_sources_keep_distinct_operator_spellings(tmp_path, monkeypatch):
+    upper, lower = tmp_path / "Store", tmp_path / "store"
+    rows = [SimpleNamespace(auth_home=str(home), protocol=protocol) for home, protocol in
+            [(upper, "kimi-code-headless-v1"), (lower, "kimi-code-headless-v1"),
+             (tmp_path / "flat", "claude-headless-v1")]]
+    monkeypatch.setattr(operator_config, "load_provider_configs", lambda path: rows)
+    sources = process_loans.configured_login_sources(tmp_path)
+    assert tuple(map(str, sources.kimi)) == (str(upper), str(lower))
 
 
 def test_a_provider_file_that_cannot_be_read_refuses_the_loan_it_cannot_vouch_for(
@@ -82,9 +93,9 @@ def test_a_loan_asks_the_providers_of_its_own_project_for_the_login_folders(
 
     def homes(data_root):
         asked.append(data_root)
-        return (w.folders["install"],)
+        return process_loans.ConfiguredLogins((w.folders["install"],))
 
-    monkeypatch.setattr(process_loans, "configured_login_homes", homes)
+    monkeypatch.setattr(process_loans, "configured_login_sources", homes)
     w.loans = FolderLoans(w.store, w.store.native, hold_factory=LoanHold, environ=w.environ)
     _refused(w, w.folders, "login folder")
     assert asked == [w.store.directory.parent]

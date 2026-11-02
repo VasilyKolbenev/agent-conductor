@@ -56,6 +56,7 @@ import os
 import re
 import stat
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
 from ... import ownership
@@ -63,6 +64,7 @@ from ...ownership_errors import OwnerRefused
 from ...ownership_native import NativeHold, identity
 from ...ownership_records import ACTIVE, HOME, LEGACY
 from ..work_layout import TASKS_DIR, work_parts
+from .deep_contracts import DeepProtocol
 from .process_acl import _CHILD_RWX_DELETE, _RWX, _RX
 from .process_boundary import LOGIN_SHAPE, WindowsContainer, login_home_named, login_loan_provided
 from .process_profile import ProfileRefused, _bytes, _plain, _replace, refusal_summary
@@ -208,7 +210,15 @@ def _system_places(environ) -> list[Path]:
     return [Path(os.path.realpath(environ[name])) for name in names if environ.get(name)]
 
 
-def configured_login_homes(data_root: Path) -> tuple[Path, ...]:
+@dataclass(frozen=True)
+class ConfiguredLogins:
+    """Canonical paths for overlap checks and the exact operator spellings of Kimi homes."""
+
+    paths: tuple[Path, ...]
+    kimi: tuple[Path, ...] = ()
+
+
+def configured_login_sources(data_root: Path) -> ConfiguredLogins:
     """The `auth_home` of every provider the project holds, in their real places.
 
     The project's own `providers.json` is where its attempts find their logins: the operator's
@@ -224,7 +234,15 @@ def configured_login_homes(data_root: Path) -> tuple[Path, ...]:
         rows = operator_config.load_provider_configs(path)
     except operator_config.OperatorConfigError as error:
         raise _refused("the login folders of the project cannot be established") from error
-    return tuple(Path(os.path.realpath(row.auth_home)) for row in rows if row.auth_home)
+    paths = tuple(Path(os.path.realpath(row.auth_home)) for row in rows if row.auth_home)
+    kimi = tuple(Path(row.auth_home) for row in rows if row.auth_home
+                 and row.protocol == DeepProtocol.KIMI_HEADLESS_V1.value)
+    return ConfiguredLogins(paths, kimi)
+
+
+def configured_login_homes(data_root: Path) -> tuple[Path, ...]:
+    """The canonical paths of all configured logins."""
+    return configured_login_sources(data_root).paths
 
 
 def _refuse_install(install: Path, root: Path, environ) -> None:
@@ -335,11 +353,13 @@ class FolderLoans:
         self.leased_login = leased_login  # a callable of no argument; None: the project's owner
         self.record, self.holds, self.paths = None, None, {}
         self.lease_retire = None  # retires the loan against the login lease the grant counts as
+        self._source_ids = None
+        self._source_homes = ()
 
-    def _logins(self) -> tuple[Path, ...]:
+    def _logins(self) -> ConfiguredLogins:
         if self.login_homes is None:
-            return configured_login_homes(self.directory.parent)
-        return tuple(Path(os.path.realpath(path)) for path in self.login_homes())
+            return configured_login_sources(self.directory.parent)
+        return ConfiguredLogins(tuple(Path(os.path.realpath(path)) for path in self.login_homes()))
 
     def _leased(self):
         """The login folder the calling thread's standing lease holds (`LeasedLogin`), or None."""
@@ -370,7 +390,7 @@ class FolderLoans:
                 raise _refused(f"the login home overlaps the {key} folder")
         self._refuse_hooks(login)
 
-    def _refuse_relay_home(self, spelled: Path, real: dict[str, Path], root: Path) -> None:
+    def _refuse_relay_home(self, spelled: Path, real: dict[str, Path], root: Path, logins) -> None:
         """A home outside the project is a relay home or nothing (`relay_home`).
 
         The runner has already refused an absolute home that lies in the project
@@ -383,7 +403,6 @@ class FolderLoans:
         profile exists.
         """
         from . import relay_home  # deferred: it reads this module's parsers
-        logins = self._logins()
         reason = relay_home.relay_home_shape(
             logins, root, tuple(self.profiles.root_identity), spelled, real["work"],
             real["install"])
@@ -398,8 +417,8 @@ class FolderLoans:
         if reason is not None:
             raise _refused(f"the relay home is refused: {reason}")
 
-    def targets(self, folders) -> dict[str, Path]:
-        """The folders of a loan, checked and in their real places; nothing is held or changed.
+    def targets(self, folders, *, source_holds=None) -> dict[str, Path]:
+        """The checked folders of a loan. At grant, source_holds pins the observed Kimi sources.
 
         Raises:
             ProfileRefused: `profile_acl_invalid` for a missing or foreign key, a folder that is not
@@ -423,18 +442,29 @@ class FolderLoans:
             if name in real and not (relay and name == "home"):
                 _refuse_attempt_folder(name, real[name], root)
         _refuse_install(real["install"], root, self.environ)
+        logins = self._logins()
+        self._check_sources(logins.kimi, source_holds)
         if relay:
-            self._refuse_relay_home(Path(folders["home"]), real, root)
+            self._refuse_relay_home(Path(folders["home"]), real, root, logins.paths)
         home, work = real.get("home"), real["work"]
         if home is not None and (_inside(home, work) or _inside(work, home)):
             raise _refused("the home and the work folder overlap")
         if "login" in real:
             self._refuse_login(real)
         product = [path for key, path in real.items() if key != "login"]
-        for login in self._logins():
+        for login in logins.paths:
             if any(_inside(path, login) or _inside(login, path) for path in product):
                 raise _refused("a loaned folder is a login folder, lies in one or holds one")
         return real
+
+    def _check_sources(self, homes, holds=None):
+        from .relay_kimi_acl import inspect_sources
+        with ExitStack() as local:
+            found = inspect_sources(self.native, homes, holds or local, self.hold_factory)
+            if self._source_ids is not None and found != self._source_ids:
+                raise _refused("a configured Kimi source changed before the relay grant")
+            self._source_ids = found
+            self._source_homes = homes
 
     def grant(self, profile_path, sid, mode, folders) -> Path:
         """Journal every folder's prior DACL and identity, then add the profile's entries.
@@ -442,11 +472,15 @@ class FolderLoans:
         Returns:
             The record's path. `restore()` returns the loan, also after a failure part way.
         """
+        with ExitStack() as source_holds:
+            return self._grant(profile_path, sid, mode, folders, source_holds)
+
+    def _grant(self, profile_path, sid, mode, folders, source_holds):
         profile = self.profiles._read(profile_path)
         if (profile["phase"] != "created" or profile["sid"] != sid
                 or mode not in {"dispatch", "review"}):
             raise _refused("ACL target is not a created owned profile")
-        real = self.targets(folders)
+        real = self.targets(folders, source_holds=source_holds)
         self.paths = real
         leased = self._login_lease(real)
         stack, holds, rows = self._observe(real, mode, leased)
@@ -460,12 +494,16 @@ class FolderLoans:
         path = self.directory / f"loan-{profile['attempt']}.json"
         _replace(path, record)  # every prior DACL durable before the first change, all or nothing
         self.record = path
+        if self._source_ids:
+            self._check_sources(self._source_homes)
         for key, hold in holds.items():
             self._change(hold, lambda now, rights=rows[key]["rights"]: loan_sddl(now, sid, rights))
         if "login" in real:
             self._refuse_hooks(real["login"])  # and again, now that the rights are handed down
         record["phase"] = "applied"
         _replace(self.record, record)
+        if self._source_ids:
+            self._check_sources(self._source_homes)
         return self.record
 
     def _login_lease(self, real):

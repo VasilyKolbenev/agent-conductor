@@ -75,7 +75,8 @@ def run_child(site: RelaySite, *, cut_short: bool = False) -> dict:
     runner, seen = ProcessRunner(site.root), {"exit_error": None}
     entry = write_ps1(site.install / "entry.ps1", child_script(site))
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(process_loans, "configured_login_homes", lambda data_root: (site.login,))
+        patch.setattr(process_loans, "configured_login_sources",
+                      lambda data_root: process_loans.ConfiguredLogins((site.login,)))
         if cut_short:
             def cut(self, record_path, **options):
                 raise CutShort("the exit of the boundary was cut short")

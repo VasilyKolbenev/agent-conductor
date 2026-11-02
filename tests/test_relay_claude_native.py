@@ -153,7 +153,8 @@ def _attempt(site: Site, seen: Observed) -> None:
 
     with pytest.MonkeyPatch.context() as patch:
         # the project's providers.json would name the login home; its reading has its own tests
-        patch.setattr(process_loans, "configured_login_homes", lambda data_root: (site.login,))
+        patch.setattr(process_loans, "configured_login_sources",
+                      lambda data_root: process_loans.ConfiguredLogins((site.login,)))
         patch.setattr(runner, "container_profile", profile)
         patch.setattr(runner, "run", run)
         with ownership.acquire_owner(site.root):

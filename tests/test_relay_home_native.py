@@ -190,7 +190,8 @@ def run_child(site: RelaySite, mode: str = "dispatch") -> dict:
     homes = (site.login,)
     with pytest.MonkeyPatch.context() as patch:
         # the project's providers.json would name the login home; its reading has its own tests
-        patch.setattr(process_loans, "configured_login_homes", lambda data_root: homes)
+        patch.setattr(process_loans, "configured_login_sources",
+                      lambda data_root: process_loans.ConfiguredLogins(homes))
         with ownership.acquire_owner(site.root):
             seen["before"] = {k: snapshot_of(p) for k, p in everywhere(site).items()}
             seen["identity"] = os.stat(site.home / ".credentials.json").st_ino
@@ -464,7 +465,8 @@ def test_a_leaf_with_an_all_packages_entry_is_read_by_a_child_though_its_home_is
               + "[Console]::Out.Write($o)")
     entry, runner = write_ps1(site.install / "entry.ps1", script), ProcessRunner(site.root)
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(process_loans, "configured_login_homes", lambda data_root: (site.login,))
+        patch.setattr(process_loans, "configured_login_sources",
+                      lambda data_root: process_loans.ConfiguredLogins((site.login,)))
         with ownership.acquire_owner(site.root):
             with runner.container_profile(internet_client=True, mode="dispatch",
                                           folders=site.folders) as (boundary, paths):
@@ -512,7 +514,8 @@ def refused_before_a_profile(site: RelaySite, reason: str, folders=None) -> None
     runner, before = ProcessRunner(site.root), {k: snapshot_of(p) for k, p in everywhere(
         site).items() if p.exists()}
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(process_loans, "configured_login_homes", lambda data_root: (site.login,))
+        patch.setattr(process_loans, "configured_login_sources",
+                      lambda data_root: process_loans.ConfiguredLogins((site.login,)))
         with ownership.acquire_owner(site.root):
             with pytest.raises(ProfileRefused, match="profile_acl_invalid: .*" + reason):
                 with runner.container_profile(
@@ -524,3 +527,175 @@ def refused_before_a_profile(site: RelaySite, reason: str, folders=None) -> None
     for key, path in everywhere(site).items():
         if path.exists():
             assert snapshot_of(path) == before[key], key
+
+
+@pytest.mark.parametrize("permissive", [False, True])
+@pytest.mark.parametrize("leaf_name", ["kimi-code.json", "kimi-code-env-0e4f99c69cc27850.json"])
+@pytest.mark.parametrize("relay", [True, False])
+@pytest.mark.parametrize("managed", [True, False])
+def test_claude_loan_checks_nested_kimi_source_before_grant(
+        tmp_path, permissive, leaf_name, relay, managed):
+    from conductor.command import operator_config
+    from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
+    from conductor.command.adapters.kimi_code import KIMI_PROTOCOL
+    from conductor.command.adapters.provider import ProviderConfig
+    from conductor.command.adapters.relay_home import ace_refusal
+    from tests import os_boundary_windows as ac
+    from tests.os_boundary_box import WITHOUT_CMDLETS, base_environment
+
+    site = RelaySite(tmp_path)
+    kimi = (site.logins if managed else tmp_path / "operator-selected") / "second-account"
+    leaf = kimi / "credentials" / leaf_name
+    leaf.parent.mkdir(parents=True)
+    leaf.write_bytes(b"synthetic Windows ACL witness")
+    unrelated = kimi / "other" / "ignored.txt"
+    unrelated.parent.mkdir()
+    unrelated.touch()
+    ac.grant(unrelated, "S-1-15-2-1", "R")
+    with ownership.acquire_owner(site.root):
+        path = operator_config.provider_config_path(site.root / "conductor.v3")
+        operator_config.save_provider_configs(path, [
+            ProviderConfig(label, str(site.install / "tool.exe"), protocol,
+                           auth="subscription", auth_home=str(home))
+            for label, protocol, home in [("first", CLAUDE_PROTOCOL, site.login),
+                                          ("second", KIMI_PROTOCOL, kimi)]], project_root=site.root)
+        assert set(process_loans.configured_login_homes(path.parent)) == {site.login, kimi}
+        for parent in (site.logins, kimi, leaf.parent):
+            assert ace_refusal(snapshot_of(parent)[0]) is None, "fixture parent grants a package"
+        if permissive:
+            ac.grant(leaf, "S-1-15-2-1", "R")
+        before = (snapshot_of(leaf), identity(leaf), leaf.stat().st_size)
+        assert bool(ace_refusal(before[0][0])) == permissive, "fixture leaf DACL is incorrect"
+        body = f"$s = [IO.File]::OpenRead({_q(leaf)}); $s.Dispose()"
+        script = WITHOUT_CMDLETS + "$o=''; " + _probe("open", body) + "[Console]::Out.Write($o)"
+        entry = write_ps1(site.install / "w4-open.ps1", script)
+        runner = ProcessRunner(site.root)
+        folders = site.folders if relay else AttemptFolders(
+            work="work/t1", home=None, install=str(site.install))
+        try:
+            with runner.container_profile(internet_client=True, mode="dispatch",
+                                          folders=folders) as (boundary, paths):
+                outcome = runner.run(CommandSpec(
+                    (str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+                     "Bypass", "-File", str(entry)), "work/t1",
+                    env=base_environment(paths["runtime"]), boundary=boundary, timeout_seconds=60))
+                actual = strict_text(outcome.output)
+        except ProfileRefused as error:
+            assert "the configured Kimi source has an entry for ALL APPLICATION PACKAGES" in str(
+                error)
+            journal = site.root / "conductor.v3" / "process-profiles"
+            assert not journal.exists() or not list(journal.iterdir())
+            actual = "refused before spawn"
+        assert (snapshot_of(leaf), identity(leaf), leaf.stat().st_size) == before
+        assert actual == ("refused before spawn" if permissive else f"open={DENIED};")
+
+
+def test_a_custom_kimi_login_not_created_yet_allows_a_sibling_loan(tmp_path):
+    from conductor.command import operator_config
+    from conductor.command.adapters.claude_code import CLAUDE_PROTOCOL
+    from conductor.command.adapters.kimi_code import KIMI_PROTOCOL
+    from conductor.command.adapters.provider import ProviderConfig
+
+    site = RelaySite(tmp_path)
+    missing = tmp_path / "uncreated" / "logins elsewhere" / "new account"
+    with ownership.acquire_owner(site.root):
+        path = operator_config.provider_config_path(site.root / "conductor.v3")
+        operator_config.save_provider_configs(path, [
+            ProviderConfig(label, str(site.install / "tool.exe"), protocol,
+                           auth="subscription", auth_home=str(home))
+            for label, protocol, home in [("first", CLAUDE_PROTOCOL, site.login),
+                                          ("second", KIMI_PROTOCOL, missing)]],
+            project_root=site.root)
+        with ProcessRunner(site.root).container_profile(
+                internet_client=False, mode="dispatch", folders=site.folders) as (boundary, paths):
+            assert boundary.sid and paths["home"] == site.home
+        assert not (tmp_path / "uncreated").exists()
+
+
+@pytest.mark.parametrize("replacement", ["new-file", "new-region", "junction", "hardlink"])
+def test_changed_kimi_source_is_refused_at_actual_grant(tmp_path, monkeypatch, replacement):
+    from conductor.command import operator_config
+    from conductor.command.adapters.kimi_code import KIMI_PROTOCOL
+    from conductor.command.adapters.process_profile import ProfileJournal
+    from conductor.command.adapters.provider import ProviderConfig
+    from tests._deep_tree import junction
+
+    site = RelaySite(tmp_path)
+    kimi = site.login
+    directory = kimi / "credentials"
+    directory.mkdir()
+    leaf = directory / "kimi-code.json"
+    leaf.touch()
+    external = tmp_path / "independent"
+    external.mkdir()
+    sentinel = external / "kimi-code.json"
+    sentinel.write_bytes(b"sentinel")
+    sid_before = snapshot_of(sentinel)
+    existing_id = identity(leaf)
+
+    real_create = ProfileJournal.create_profile
+
+    def replace_after_preflight(journal):
+        result = real_create(journal)
+        if replacement == "new-file":
+            leaf.rename(directory / "old")
+            leaf.touch()
+            assert identity(leaf) != existing_id
+        elif replacement == "new-region":
+            (directory / "kimi-code-env-0e4f99c69cc27850.json").touch()
+        elif replacement == "junction":
+            directory.rename(kimi / "old")
+            junction(directory, external)
+        else:
+            os.link(leaf, external / "other")
+        return result
+
+    monkeypatch.setattr(ProfileJournal, "create_profile", replace_after_preflight)
+    with ownership.acquire_owner(site.root):
+        path = operator_config.provider_config_path(site.root / "conductor.v3")
+        operator_config.save_provider_configs(path, [ProviderConfig(
+            "pinned", str(site.install / "tool.exe"), KIMI_PROTOCOL,
+            auth="subscription", auth_home=str(kimi))], project_root=site.root)
+        with pytest.raises(ProfileRefused, match="configured Kimi source"):
+            with ProcessRunner(site.root).container_profile(
+                    internet_client=False, mode="dispatch", folders=site.folders):
+                pytest.fail("runner handed the child a changed source")
+        assert snapshot_of(sentinel) == sid_before
+        assert not list((path.parent / "process-profiles").glob("loan-*.json"))
+
+
+def test_region_created_during_acl_change_refuses_the_child_and_returns_the_loan(
+        tmp_path, monkeypatch):
+    from conductor.command import operator_config
+    from conductor.command.adapters import _winlaunch
+    from conductor.command.adapters.kimi_code import KIMI_PROTOCOL
+    from conductor.command.adapters.provider import ProviderConfig
+    from tests import os_boundary_windows as ac
+
+    site = RelaySite(tmp_path)
+    kimi = site.logins / "independent-name"
+    sibling = kimi / "credentials" / "kimi-code-env-0e4f99c69cc27850.json"
+    sibling.parent.mkdir(parents=True)
+    (sibling.parent / "kimi-code.json").touch()
+    before = {key: snapshot_of(path) for key, path in site.locations().items()}
+    real_set = _winlaunch.acl_set
+
+    def appear(hold, sddl, *, protected):
+        real_set(hold, sddl, protected=protected)
+        if hold.path == site.home and not sibling.exists():
+            sibling.touch()
+            ac.grant(sibling, "S-1-15-2-1", "R")
+
+    monkeypatch.setattr(_winlaunch, "acl_set", appear)
+    with ownership.acquire_owner(site.root):
+        path = operator_config.provider_config_path(site.root / "conductor.v3")
+        operator_config.save_provider_configs(path, [ProviderConfig(
+            "pinned", str(site.install / "tool.exe"), KIMI_PROTOCOL,
+            auth="subscription", auth_home=str(kimi))], project_root=site.root)
+        with pytest.raises(ProfileRefused, match="configured Kimi source has an entry"):
+            with ProcessRunner(site.root).container_profile(
+                    internet_client=False, mode="dispatch", folders=site.folders):
+                pytest.fail("the process must not start after a grant-time ACL change")
+        assert sibling.exists(), "control must insert the second region while granting the home"
+        for key, target in site.locations().items():
+            assert same_acl(snapshot_of(target), before[key]), key

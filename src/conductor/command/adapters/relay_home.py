@@ -388,8 +388,8 @@ def _entries_refusal(native, hold_factory, home: Path) -> str | None:
     the folders above it refuse a listing (measured 23.10.2026: a child read a leaf of a login
     home that had its own entry for ALL APPLICATION PACKAGES, while the home and `logins` were
     closed to it). So the DACL of each entry counts, the credentials among them. Their names are
-    the vendor's and not this module's, so every entry is read, not a list of names; those below
-    the top are not credentials.
+    the vendor's, so this check reads the DACL of each top-level entry. FolderLoans also checks
+    the fixed credential leaves of each configured Kimi source (relay_kimi_acl).
     """
     try:
         with os.scandir(home) as scan:
