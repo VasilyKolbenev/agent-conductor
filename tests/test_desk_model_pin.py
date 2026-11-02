@@ -23,8 +23,9 @@ def test_roster_and_run_admission_follow_profile_and_skip_rejudging_a_standing_r
         "codex": True, "grok-build": False}
 
     def request(run, provider, model):
+        writer = {"instance_id": "writer", "provider_id": provider, "model": model}
         return a_run(run_id=run, workflow_id=None, revision=None, assignments={},
-                     participants=[{"instance_id": "writer", "provider_id": provider, "model": model}])
+                     participants=[writer])
 
     pin = request("selected", "codex", "gpt-6.1-sol")
     original = post(subject, "/command/runs", pin)
