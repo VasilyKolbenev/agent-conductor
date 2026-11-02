@@ -7,10 +7,12 @@
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-78914f)](LICENSE)
 
-**Give your coding agents a shared workflow, a separate checker, and clear points for your decisions.**
+**Bring your coding tools into one workflow and assign each a role.**
 
-December Command runs locally and brings your AI coding tools into one Studio.
-Create a task, choose a workflow, review what may run, and follow the work through execution and checking.
+December Command runs locally. You choose the CLI tools for your subscriptions, assign an
+implementer and a separate checker, and set limits on their work. For example, one participant
+can diagnose a bug, another can fix the code, and the checker can verify the result against
+your criteria. Start with Dalio's five steps or design your own workflow in Studio without code.
 You can confirm each action or authorize a bounded sequence with a limit on its work.
 Human decision steps still wait for you.
 
