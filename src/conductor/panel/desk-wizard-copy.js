@@ -19,6 +19,8 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.guide.instructions": ["Instructions for the team", "Инструкции для команды"],
   "wizard.guide.choose": ["Choose a different cycle", "Выбрать другой цикл"],
   "wizard.guide.named": ["Task: {title}", "Задача: {title}"],
+  "wizard.guide.missing_files": ["A material changed or could not be reread. Check the materials before continuing.", "Материал изменился или его не удалось перечитать. Проверьте материалы перед продолжением."],
+  "wizard.guide.memory_only": ["This browser cannot restore this draft. Keep the page open until you prepare the task.", "Этот черновик можно сохранить только в открытой странице. Оставьте её открытой до подготовки задачи."],
   "wizard.close": ["Close", "Закрыть"],
   "wizard.next": ["Next", "Далее"],
   "wizard.back": ["Back", "Назад"],

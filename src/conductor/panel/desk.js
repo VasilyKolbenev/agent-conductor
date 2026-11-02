@@ -71,7 +71,7 @@ let selectionRead = Promise.resolve(true);
 let panels = null;
 // The bound project comes from the first hash or claim; only the hash's own identity is written
 // back. Embedded origin and announced location belong to this page, never browser storage.
-let bound = null;
+let bound = null, verifiedProject = null;
 let hashProject = null;
 let lastWritten = readDeskHash("");
 let seen = "";
@@ -228,7 +228,7 @@ function addressOf(wizardKeys) {
 function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const address = addressOf(wizardKeys);
-  history.replaceState(null, "", address);
+  if (address !== location.hash) history.replaceState(history.state, "", address);
   seen = location.hash;
   lastWritten = readDeskHash(address);
   shown = where();
@@ -689,9 +689,9 @@ async function readClaim() {
 
 //: Bind an unnamed address to the claim; refuse a conflicting named address.
 function bindToClaim(address, claim) {
+  verifiedProject = projectOf(claim) || null;
   if (address.project !== null) return !claimNamesAnotherProject(bound, claim);
-  const named = projectOf(claim);
-  if (typeof named === "string") bound = named;
+  if (verifiedProject !== null) bound = verifiedProject;
   return true;
 }
 
@@ -782,7 +782,7 @@ function boot() {
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
-  wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
+  wizardHost.bind({actor: () => state.actor, mode: () => state.mode, project: () => verifiedProject,
     tasks: () => state.tasks.list, foreign: () => state.foreign, applied: toggles.applied});
   wizardHost.render();
   window.addEventListener("pagehide", stopStream);

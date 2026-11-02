@@ -35,7 +35,7 @@
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
   gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
-  textCard} from "./desk-wizard-materials.js";
+  applyTextEdits, textCard, textEdit} from "./desk-wizard-materials.js";
 import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
@@ -542,7 +542,10 @@ function answerDocument(state, ask, result) {
   if (!card) return state;
   const payload = result.payload;
   if (result.status === "accepted" && typeof payload?.content === "string") {
-    return replaceCard(state, card, {content: payload.content, fetched: true,
+    const applied = !card.edits?.length ? payload.content
+      : payload.git_oid === card.gitOid ? applyTextEdits(payload.content, card.edits) : null;
+    if (applied === null) return replaceCard(state, card, {content: "", blocked: "read_failed"}, "read_failed");
+    return replaceCard(state, card, {content: applied, fetched: true,
       gitOid: isOid(payload.git_oid) ? payload.git_oid : card.gitOid, blocked: null});
   }
   const reason = payload?.detail?.reason ?? result.code ?? result.status;
@@ -658,7 +661,9 @@ function editMaterial(state, event) {
   const card = cardOf(state, event.key);
   if (!card || typeof event.value !== "string" || !editable(card, event.field)
       || card[event.field] === event.value) return state;
-  return replaceCard(state, card, {[event.field]: event.value});
+  const editedCopy = card.kind === "project_doc" && card.fetched && event.field === "content";
+  const edits = editedCopy ? {edits: [...(card.edits ?? []), textEdit(card.content, event.value)]} : {};
+  return replaceCard(state, card, {[event.field]: event.value, ...edits});
 }
 
 function removeMaterial(state, event) {

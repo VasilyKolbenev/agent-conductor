@@ -595,7 +595,8 @@ function guideBody(ctx) {
     const [git, ...materials] = materialsBody(ctx);
     const gate = canAdvance(state);
     return [taskField(ctx, "brief", ctx.t("wizard.guide.goal")), element("p", {text: ctx.t("wizard.guide.source")}),
-      git, disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials],
+      git, ...(state.draftMaterialsMissing ? [element("p", {role: "status", text: ctx.t("wizard.guide.missing_files")})] : []),
+      disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials],
         gate.step === "materials" && ["material_incomplete", "materials_over_bytes"].includes(gate.reason))];
   }
   if (stage === "team") {
@@ -627,6 +628,8 @@ export function mountWizard(mount, state, handlers) {
     head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step},
       wizard.guided ? guideBody(ctx) : draw(ctx)),
+    ...(wizard.firstRunGuide && !wizard.run.pressed && state.canRestore === false && wizard.task.brief
+      ? [element("p", {role: "status", text: ctx.t("wizard.guide.memory_only")})] : []),
     ...(wizard.guided && wizard.run.pressed ? [] : [foot(ctx)]),
     ...(wizard.firstRunGuide && !wizard.run.pressed ? [action("wizard:mode",
       ctx.t(wizard.guided ? "wizard.guide.details" : "wizard.guide.short"),

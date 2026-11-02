@@ -83,6 +83,27 @@ export function textCard(key, event) {
     docId: null, gitOid: null, path: null, length: null, fetched: false, blocked: null};
 }
 
+// Record only the owner's edit to a copied document. The fetched project
+// text stays in memory and must be read again from its original git object.
+export function textEdit(before, after) {
+  let start = 0, end = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  while (end < before.length - start && end < after.length - start
+      && before[before.length - end - 1] === after[after.length - end - 1]) end++;
+  return {start, remove: before.length - start - end, insert: after.slice(start, after.length - end)};
+}
+
+export function applyTextEdits(content, edits) {
+  let value = content;
+  for (const edit of edits) {
+    if (!edit || !Number.isSafeInteger(edit.start) || !Number.isSafeInteger(edit.remove)
+        || edit.start < 0 || edit.remove < 0 || edit.start + edit.remove > value.length
+        || typeof edit.insert !== "string") return null;
+    value = value.slice(0, edit.start) + edit.insert + value.slice(edit.start + edit.remove);
+  }
+  return value;
+}
+
 export function isOid(value) {
   return typeof value === "string" && GIT_OID.test(value);
 }

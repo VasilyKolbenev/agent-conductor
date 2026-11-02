@@ -96,7 +96,7 @@ export function boundaryOf(state) {
 //: What is sent with the flow for diagnostics once the owner has reached the roles step, and
 //: still after they step back: the roles they see are the roles the server judges.
 export function bindingNow(state) {
-  const reached = state.cycle.boundKey !== "null" || (state.guided && state.step === "cycle")
+  const reached = state.cycle.boundKey !== "null" || (state.firstRunGuide && state.step === "cycle")
     || BUILT_STEPS.indexOf(state.step) >= BUILT_STEPS.indexOf("roles");
   return reached && state.cycle.choice !== null ? assignedTo(state) : null;
 }

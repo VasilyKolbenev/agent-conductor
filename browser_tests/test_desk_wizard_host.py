@@ -122,6 +122,86 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         context.close()
 
 
+def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Browser, wizard_url):
+    context = chromium.new_context()
+    try:
+        page = context.new_page()
+        posts = []
+        page.on("request", lambda row: posts.append(urlsplit(row.url).path) if row.method == "POST" else None)
+        page.goto(wizard_url + "#lang=en")
+        page.locator("#deskNewTask").click()
+        form = page.locator("#deskWizard")
+        brief = form.locator('[data-focus="wizard:brief"]')
+        brief.fill("Keep my first draft 🧭")
+        form.locator('[data-focus="wizard:git:run_without_git"]').click()
+        entry, saved = page.evaluate("""() => {
+          const p = history.state?.deskTaskDraft;
+          return p ? [p, JSON.parse(sessionStorage.getItem('desk.first-task.v1:'+p.project+':'+p.task))] : [null,null];
+        }""")
+        assert entry and set(entry) == {"task", "project"}
+        assert saved["brief"] == "Keep my first draft 🧭"
+        assert {"authorization", "preview", "actor", "run", "token", "reads"}.isdisjoint(saved)
+        page.reload()
+        expect(brief).to_have_value("Keep my first draft 🧭")
+        expect(form.locator('[data-focus="wizard:next"]')).to_be_enabled()
+        assert not posts
+        form.locator('[data-focus="wizard:next"]').click()
+        form.locator('[data-guide-details="choose"] summary').click()
+        form.locator('[data-focus="wizard:cycle:choose:desk-short"]').click()
+        expect(form.locator('h3[data-card-id="desk-short"]')).to_be_visible()
+        expect(form.locator('[data-focus="wizard:next"]')).to_be_enabled()
+        count = len(posts)
+        page.reload()
+        expect(brief).to_have_value("Keep my first draft 🧭")
+        assert len(posts) == count
+        form.locator('[data-focus="wizard:next"]').click()
+        expect(form.locator('h3[data-card-id="desk-short"]')).to_be_visible()
+        expect(form.locator('[data-focus="wizard:next"]')).to_be_enabled()
+        form.locator('[data-focus="wizard:back"]').click()
+        count = len(posts)
+        page.evaluate("() => history.replaceState({...history.state,deskTaskDraft:"
+                      "{...history.state.deskTaskDraft, project:'0'.repeat(32)}},'')")
+        page.reload()
+        expect(brief).to_have_value("")
+        brief.fill("Discard on close")
+        form.locator('[data-focus="wizard:close"]').click()
+        page.locator("#deskNewTask").click()
+        expect(brief).to_have_value("")
+        assert len(posts) == count
+    finally:
+        context.close()
+
+
+def test_copied_material_is_reread_and_only_the_owner_edit_is_saved(chromium: Browser, wizard_url):
+    context = chromium.new_context()
+    try:
+        page = context.new_page()
+        doc_id, oid = "d-" + "8" * 32, "7" * 40
+        raw = "A project document outside the draft cache."
+        row = {"doc_id": doc_id, "git_oid": oid, "path": "docs/readme.md", "length": len(raw)}
+        page.route("**/command/project/documents", lambda route: route.fulfill(json={"documents": [row]}))
+        page.route("**/command/project/documents/" + doc_id,
+                   lambda route: route.fulfill(json={"git_oid": oid, "content": raw}))
+        page.goto(wizard_url + "#lang=en")
+        page.locator("#deskNewTask").click()
+        form = page.locator("#deskWizard")
+        form.locator('[data-guide-details="optional"] summary').click()
+        form.locator('[data-focus="wizard:add:project_doc"]').click()
+        form.locator(f'[data-focus="wizard:picker:take:{doc_id}"]').click()
+        form.locator('[data-focus="wizard:card:m1:mode:copy"]').click()
+        content = form.locator('[data-focus="wizard:card:m1:content"]')
+        expect(content).to_have_value(raw)
+        content.fill(raw + " Owner's edit.")
+        saved = page.evaluate("""() => {const p=history.state.deskTaskDraft;
+          return sessionStorage.getItem('desk.first-task.v1:'+p.project+':'+p.task);}""")
+        assert "Owner's edit" in saved and raw not in saved
+        page.reload()
+        form.locator('[data-guide-details="optional"] summary').click()
+        expect(content).to_have_value(raw + " Owner's edit.")
+    finally:
+        context.close()
+
+
 def test_new_task_uses_real_git_task_seed_and_run_routes(chromium: Browser, wizard_url: str):
     context = chromium.new_context(viewport={"width": 1100, "height": 1300})
     try:
