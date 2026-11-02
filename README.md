@@ -100,19 +100,7 @@ December Command coordinates these applications; you keep their accounts and pay
 | Grok Build | Native subscription login | Native quota source |
 | DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
-These are the V1 integration targets, not a claim that all five have passed live acceptance.
-In this build a task runs only on Windows, inside the execution boundary. Claude Code and Codex
-are built to run it on their subscription login, without an API key: the task works on a copy of
-the access token (never the refresh token) in a relay folder, and the login itself stays in
-`%USERPROFILE%\DecemberCommand\logins\<id>`. No such task has run yet with the real vendors:
-Claude Code gave one real answer on such a copy outside the isolation, and the vendor's server
-refused both probes of the pinned Codex version. Grok Build and Kimi Code read their subscription
-for quotas only: a subscription login for them is not supported inside the boundary yet, so a task
-is refused before it starts. DeepSeek uses its API key. macOS and Linux refuse a task step before
-it starts ([details](docs/first-run-v1.en.md#where-tasks-run-in-this-build)).
-The candidate that the release notes describe was built before the isolation, so it runs a task on
-a subscription login without it. The build that has the subscription road inside the isolation is
-not published yet ([step 1](docs/first-run-v1.en.md#1-install-the-identified-build)).
+On the local Windows candidate, a real Claude Code Goal completed in isolation. Codex 0.164.0 also returned an artifact on a subscription Goal, although its content did not pass acceptance. Grok Build 1.0.5 supports read-only review. Its live diagnosis ended without a result. A live Kimi subscription task and the complete Codex–Grok Dalio cycle remain to be verified. For a trial, use an identified wheel and its checksum. [Live evidence and platform scope](docs/first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.

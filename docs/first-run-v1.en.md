@@ -32,28 +32,29 @@ The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this 
 <details open>
 <summary><strong>Windows · PowerShell</strong></summary>
 
-Open PowerShell from the Start menu, not from the terminal inside the Claude or Codex app: a window
-started by those apps keeps what it installs under `%LOCALAPPDATA%` in the app's own package folder,
-where your own window does not see it.
-
-Replace the first path with the actual wheel location. Run the blocks below in the same terminal so `$conduct` stays defined.
+On a fresh PC, first create an empty `%USERPROFILE%\DecemberCommand` folder. In Explorer, open its Properties → Security → Advanced. Disable inheritance and keep Full control for your account, SYSTEM and local Administrators only, applied to this folder, subfolders and files. Check these entries before putting programs or logins here. If the folder already contains an installation, check its existing permissions and build with the maintainer. Obtain the wheel and its SHA256 from the same identified release. Run the following in your own PowerShell, changing `$wheel` if the file is elsewhere.
 
 ```powershell
-$wheel = 'C:\Downloads\agent_conductor-0.1.0-py3-none-any.whl'
-Get-FileHash -Algorithm SHA256 -LiteralPath $wheel
-$install = Join-Path $env:LOCALAPPDATA 'DecemberCommand\app-v1'
+$env:PYTHONPATH = ''
+$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.0-py3-none-any.whl'
+$expected = Read-Host 'Candidate wheel SHA256'
+if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
+$source = Read-Host 'Source commit of this wheel (40 hex digits)'
+if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
+if ($LASTEXITCODE) { throw 'venv failed' }
 $python = Join-Path $install 'Scripts\python.exe'
 $conduct = Join-Path $install 'Scripts\conduct.exe'
-& $python -m pip install $wheel
+& $python -m pip install --no-index --no-deps $wheel
+if ($LASTEXITCODE) { throw 'wheel installation failed' }
 & $conduct --help
 ```
 
 If `py` is not installed, use the full path to a Python 3.11+ `python.exe` instead of `py -3`.
 
-This install folder is the general one. The maintainer's own check of the subscription road installs
-the build under the protected `%USERPROFILE%\DecemberCommand\product\<build id>`, beside the tools
-and logins of step 3; this tutorial does not change the folder above.
+Use this protected product directory for subscription tasks and its sibling `harnesses` directory for the pinned Windows binaries.
 
 </details>
 
@@ -79,12 +80,7 @@ conduct="$install_dir/bin/conduct"
 **You should see:** CLI help containing `ownership`, `providers`, and `up`.
 If they are missing, check the executable path and build before continuing.
 
-Use a build that has the subscription road for Claude Code and Codex. You tell it in step 3: the
-login question of `conduct providers` says that with `1` a task runs inside the execution boundary
-on a copy of the login. An older build does not say so. One made before the execution boundary (the
-build the release notes describe, of 25 September) runs a task on a subscription login without
-isolation; one made after the boundary and before this road refuses every such task. No published
-candidate has the subscription road yet: the maintainer will name the one that does.
+Check that the maintainer identifies the wheel, its hash and its supported operations together. The older build described by the September release notes predates this Windows isolation.
 
 ## 2. Create a fresh trial project
 
@@ -146,20 +142,17 @@ Run the interactive wizard, once for each needed connection:
 
 | Tool | Version pinned by this candidate | Supply to the wizard | Task road in V1 |
 | --- | --- | --- | --- |
-| Claude Code | 2.1.239 | Native executable under `%USERPROFILE%\DecemberCommand\harnesses\claude-code\2.1.239\`; subscription login in `%USERPROFILE%\DecemberCommand\logins\claude-code`, signed in with `CLAUDE_CONFIG_DIR` set to that folder. | The build runs a task on the subscription login inside the execution boundary, with no API key. Not yet run with the real vendor: one real answer came from a copy of a login outside the isolation, and no task has run inside it (see [what has been checked](#what-has-been-checked-with-the-real-vendor)). An API key (the name `ANTHROPIC_API_KEY` in `env_allow`) is an optional second road. |
-| Codex | 0.112.0 | Native executable under `%USERPROFILE%\DecemberCommand\harnesses\codex\0.112.0\`; subscription login in `%USERPROFILE%\DecemberCommand\logins\codex`, signed in with `CODEX_HOME` set to that folder. | The build runs a task on the subscription login inside the execution boundary, with no API key. No task has run on it with the real vendor yet: the vendor's server refused both probes of this version (on the model), so a task may end with `the process exited non-zero` (see [what has been checked](#what-has-been-checked-with-the-real-vendor)). An API key (the name `OPENAI_API_KEY` in `env_allow`) is an optional second road. |
-| Kimi Code | 0.38.0 | Native executable, subscription login (quotas are read), dedicated `KIMI_CODE_HOME` with managed OAuth login. | A subscription login for it is not supported inside the boundary yet: quotas are read, a task is refused before it starts. A task needs an API key: a variable name in `env_allow`. The product has not checked its API-key operation with the real vendor. |
-| Grok Build | 1.0.5 | Native executable, subscription login (quotas are read), dedicated `GROK_HOME` with native login. | A subscription login for it is not supported inside the boundary yet: quotas are read, a task is refused before it starts. A task needs an API key: a variable name in `env_allow`. The product has not checked its API-key operation with the real vendor. |
+| Claude Code | 2.1.239 | Native `claude.exe`; set `CLAUDE_CONFIG_DIR` to the dedicated login folder. | Windows subscription tasks; a live Goal completed. |
+| Codex | 0.164.0 | The native Windows x64 executable in the layout below; set `CODEX_HOME` to the dedicated login folder. | Windows subscription tasks; the recorded Goal used `gpt-6.1-sol`. |
+| Kimi Code | 0.38.0 | Native Kimi CLI; dedicated `KIMI_CODE_HOME` and subscription sign-in. | The current pin supports the subscription usage source. Its subscription task is refused before spawn in this build; no live task result is verified. |
+| Grok Build | 1.0.5 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. Authentication succeeded; the live diagnosis returned no verified result. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. | The same API-key mode. |
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
 
 ### Where to get the pinned builds
 
-The tool must stand in `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`. An ordinary
-install of the vendor's tool elsewhere in your profile is not accepted, and this build does not
-install the tool for you. In the alpha the maintainer hands over these folders together with the
-build. If you place them yourself:
+Install each pinned tool under `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`. Use the protected root from step 1. The wheel does not install the vendor tools. Use trusted release files matching the reviewed hashes.
 
 - **Claude Code 2.1.239.** Take `claude.exe` of that version from the release store that the
   vendor's own installer reads, and compare its sha256 with `platforms.win32-x64.checksum` in the
@@ -171,13 +164,10 @@ build. If you place them yourself:
   ```
 
   Place the file in `...\harnesses\claude-code\2.1.239\`.
-- **Codex 0.112.0.** The Windows build is a second version of the same npm package, not a package
-  of its own: the registry has no `@openai/codex-win32-x64`. Download from the npm registry the
-  tarballs of `@openai/codex@0.112.0` and `@openai/codex@0.112.0-win32-x64`, and compare each with
-  the `integrity` value the registry gives. Run no install script. Put the contents of the
-  `package` folder of the first tarball in `...\harnesses\codex\0.112.0\node_modules\@openai\codex`
-  and those of the second in `...\harnesses\codex\0.112.0\node_modules\@openai\codex-win32-x64`.
-  The executable is the `codex.exe` under `codex-win32-x64` that the sign-in lines below name.
+- **Codex 0.164.0, Windows x64.** Get `@openai/codex@0.164.0` and `@openai/codex@0.164.0-win32-x64` from the npm registry. Compare their SHA256 with the GitHub release assets before extraction. The main tarball is `afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30`; the Windows tarball is `4fbd23473a2fc223396cdd8490d3f658d368438134c12a3f1dac9d1e2041a65b`. Extract the contents of each `package/` into `...\harnesses\codex\0.164.0\node_modules\@openai\codex` and `...\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64` respectively. Keep the complete packages, including resources beside `vendor\x86_64-pc-windows-msvc\bin\codex.exe`. [Reviewed files and hashes](recovery/2026-10-20/tasks/H5-CODEX-COMPAT-A-INVENTORY.json).
+- **Grok Build 1.0.5, Windows x64.** Check the vendor's pinned `grok.exe` against SHA256 `4b924daa801663ea20e96382408b1f2b5ba39efad62c14d20d88618a9eb0be64` before copying it to `...\harnesses\grok-build\1.0.5\grok.exe`. [Reviewed binary](recovery/2026-10-20/tasks/H5-GROK-ACTIVATE-REPORT.md).
+
+Windows x64 downloads: [Codex main archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [Codex Windows archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [Grok binary](https://x.ai/cli/grok-1.0.5-windows-x86_64.exe). Use `Get-FileHash -Algorithm SHA256 -LiteralPath <downloaded-file>` and compare with the matching value above before extraction or execution.
 
 **Run the wizard while the server is stopped** (Ctrl+C in its window; the command refuses with
 `owner_busy` otherwise), then start `conduct up` again: providers are read once, at startup.
@@ -186,20 +176,7 @@ In the wizard the question about the login reads: `1` is the tool's own subscrip
 credential read from the environment. Under it the wizard prints a note (English only) that says
 what `1` does for this tool:
 
-- **Claude Code and Codex.** Choice `1` is the road without an API key: "On Windows, with 1 a task
-  runs inside the execution boundary on a copy of that login that has no refresh token; the login
-  folder itself is never given to a task." That sentence says what this build does with the login;
-  it does not say that the vendor's tool accepts it (see
-  [what has been checked with the real vendor](#what-has-been-checked-with-the-real-vendor)).
-  The wizard asks for the login folder. It must be named
-  `<something>\DecemberCommand\logins\<name>`; type it as a full path, for example
-  `C:\Users\you\DecemberCommand\logins\claude-code` (that is
-  `%USERPROFILE%\DecemberCommand\logins\<id>`, which the wizard prints with the tool's id). Any
-  other folder is refused on the spot and asked again: a row saved with another folder would have
-  every task refused before it starts.
-- **Kimi Code and Grok Build.** Choice `1` keeps any folder you name; the quotas are read, and
-  "every task is refused before it starts: a subscription login for this harness is not supported
-  inside the execution boundary yet". For tasks choose `2` and allow the variable name.
+Choose `1` for your subscription. For Claude Code, Codex and Grok Build, enter `%USERPROFILE%\DecemberCommand\logins\<id>` as an expanded full path. For example, enter the path returned by `Join-Path $env:USERPROFILE "DecemberCommand\logins\codex"`. The tool signs in there. During an admitted Windows task the isolated process receives a temporary copy without the refresh token. The Agents screen shows which roles you can assign. For Kimi, check the capability of your wheel and treat execution as pending until the live test passes.
 
 `env_allow` is the list of allowed environment variable names (never values).
 
@@ -246,8 +223,17 @@ $claude = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\claude-code\2.1.
 $login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\codex'
 New-Item -ItemType Directory -Force -Path $login | Out-Null
 $env:CODEX_HOME = $login
-$codex = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\codex\0.112.0\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\codex\codex.exe'
-& $codex -c cli_auth_credentials_store="file" login
+$codex = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe'
+& $codex --% -c cli_auth_credentials_store=\"file\" login
+```
+
+```powershell
+# Grok Build
+$login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\grok-build'
+New-Item -ItemType Directory -Force -Path $login | Out-Null
+$env:GROK_HOME = $login
+$grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.5\grok.exe'
+& $grok --no-auto-update login
 ```
 
 The wizard prints the two lines (the variable, then the sign-in) with the paths you gave it: copy
@@ -271,42 +257,7 @@ above: the variable name in `env_allow`, the value in the server's environment.
 
 ### Where tasks run in this build
 
-A task runs inside an execution boundary, and only from a login or a key this build can give it.
-
-- **Windows.** The boundary exists. The pinned build must be installed in a folder shaped
-  `...\harnesses\<name>\<version>\` (the owner's protected place is
-  `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`); otherwise the boundary cannot be
-  provided and the step is refused. There are two roads.
-  - **A subscription login of Claude Code or Codex**, with no API key. The login is kept in
-    `...\DecemberCommand\logins\<name>`. Before a task the product checks that the login is a
-    plain subscription login that outlasts the step, then copies its access token, **without the
-    refresh token**, into a fresh relay folder under `...\DecemberCommand\relay\` outside the
-    project. The task runs inside the boundary with that folder as the tool's home; the folder is
-    read back and removed when the attempt ends. The login folder itself is never given to a task,
-    and nothing is copied back into it. The version check, the login status and the quota request
-    (the vendor's RPC) still run **outside** the boundary on the login folder, so keep only
-    standard configuration in it. A task is refused before anything starts if the login folder is
-    named otherwise, the login is missing, an API key or a console plan, or too short-lived, or if
-    the environment carries a name that replaces the login. That the vendor's tool then works on
-    the copy has not been shown with the real vendor yet: see
-    [what has been checked with the real vendor](#what-has-been-checked-with-the-real-vendor).
-  - **An API key**, for any tool: the wizard allows the variable *name* (for example
-    `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`) and the value lives in the
-    environment of the server you start.
-- **A subscription login of Kimi Code or Grok Build.** It is not supported inside the boundary yet:
-  the step is refused before anything starts, and the subscription serves to read quotas. Reading
-  quotas is not a task, but it does launch the vendor's CLI: the version check and the quota
-  request run **outside** the boundary, with the real login directory of your dedicated profile.
-  The refusal reads like this:
-
-  | Where | What it says |
-  | --- | --- |
-  | Plan and API (the plan's door) | `step '…' demands sandbox route 'execution-boundary' that this build does not provide` |
-  | Desk wizard, the run step (`wizard.chain.boundary`) | "This step needs the isolation (execution boundary), and this computer cannot give it to the agent chosen, so nothing was started. A task runs in the isolation only on Windows and only from a build installed under `...\harnesses\<name>\<version>\`." |
-  | Desk wizard, when a chosen agent signs in by subscription and its task road is refused (`wizard.chain.boundary_login`) | the same, then: "The agent chosen signs in with a subscription, and a task on that login is refused before it starts: its login directory must be named `...\DecemberCommand\logins\<name>` (set it up with conduct providers while the server is stopped), and a subscription login for some harnesses is not supported inside the isolation yet. Choose another agent, or one that signs in with an API key." |
-  | The attempt's receipt (appears only if the transport is called around the doors; on the usual path the plan's door refuses the step earlier) | Kimi Code, Grok Build: `this <tool> connection signs in with a subscription, which is not supported inside the execution boundary for this harness yet, so no task was spawned`; the Runs screen reads it in the runtime's words: `a subscription login for this harness is not supported inside the execution boundary yet`. Claude Code, Codex: `the <tool> login is not ready for an isolated attempt: <reason>, so no task was spawned` (with `; sign in again with …` when only a new sign-in repairs it), or `the <tool> attempt could not start in isolation: <reason>, so no task was spawned`; the Runs screen never shows these sentences, it shows the runtime's words, `adapter reported failed: <words>` (for example `adapter reported failed: the pinned login expires before the attempt would end; sign in again`), and the table [If something is blocked](#if-something-is-blocked) is keyed on those words. The subscription is named as the reason only when it is the single missing reason; on macOS / Linux, for a build installed outside `harnesses\<name>\<version>` and for a login folder not named `DecemberCommand\logins\<name>` the receipt says the general thing: the boundary is not provided for this attempt. |
-  | Agents screen, the row of a tool this machine can start: the chip `boundary` or `refused` and the text next to the `subscription` chip | `boundary`: "Configured to use the vendor's own login, kept in its own directory. A task runs inside the execution boundary on a copy of that login that has no refresh token; the login directory itself is never given to the task." `refused`: "… A task on this login is refused before it starts. Possible reasons: a subscription login for this harness is not supported inside the execution boundary yet; its login directory is not named `...\DecemberCommand\logins\<name>`; or this machine cannot give the boundary (it needs Windows and a build installed under `...\harnesses\<name>\<version>`)." |
-  | `conduct providers` | the note under the login question and, for Claude Code and Codex, the refusal of a folder not named `<something>\DecemberCommand\logins\<name>` (see above) |
+On Windows the pinned executable, its login directory and the requested role must all be eligible. The Agents screen shows `boundary` when the execution boundary can be provided, or `refused` when it cannot. A version that cannot run has no such chip. Quota and sign-in checks run on the host using the dedicated login. An admitted subscription task runs in isolation on a temporary copy of its access token, without a refresh token or write-back. If the step is refused, check its role, executable, login directory and the reason shown in Runs.
 
 - **macOS and Linux.** The boundary is not provided on these systems. Installation, project
   creation, Studio, the workflow editor, decisions, and the Agents screen work, but every step that
@@ -315,18 +266,12 @@ A task runs inside an execution boundary, and only from a login or a key this bu
 
 ### What has been checked with the real vendor
 
-The subscription road of Claude Code and Codex is built and tested with fake tools and fake logins.
-With the real vendors:
+- **Claude Code 2.1.239.** A real subscription Goal ran inside AppContainer, produced `artifact-goal` and cleaned up. Identify then timed out. [Run report](recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
+- **Codex 0.164.0.** One Goal through Studio with `gpt-6.1-sol` exited 0 and wrote an artifact. Its content did not pass acceptance as the intended Goal. [Run report](recovery/2026-10-20/tasks/H5-CODEX-FIRST-GOAL-REPORT.md).
+- **Grok Build 1.0.5.** The authenticated quota check worked. A live read-only diagnosis on build `5d5e5f5` was admitted, exited 1 and returned no evidence or accepted result. Use Grok for read-only review; editing/dispatch and the independent checker are unavailable. [Activation](recovery/2026-10-20/tasks/H5-GROK-ACTIVATE-REPORT.md) · [Diagnostic evidence](recovery/2026-10-20/tasks/G6-WIRE-REPORT.md).
+- **Kimi Code 0.38.0.** A real subscription task and a verified result in December Command still need owner acceptance. Kimi Desktop alone does not supply the pinned CLI.
 
-- **Claude Code.** One real answer was obtained from the tool on a copy of a login that had no
-  refresh token, outside the isolation. A task inside the isolation, on the product's own copy, has
-  not been run yet; the first such run will be the first check, not a repeat of one.
-- **Codex.** No task has run on it with the real vendor. The vendor's server refused both probes of
-  the pinned version 0.112.0 (on the model), so a task may end with `the process exited non-zero`.
-  A newer version to pin is not chosen yet.
-
-The wizard's notes and the chips on the Agents screen say what this build does with the folder and
-the machine. None of them says that the vendor accepts the login.
+A complete independently checked Dalio cycle with Codex and Grok still needs a successful live acceptance run.
 
 ### DeepSeek: balance, key, and server restart
 
@@ -395,14 +340,7 @@ For what has actually passed live checks, consult the [candidate notes](release-
 
 Policy does not bypass human gates. Pause, revoke, and explicit resume are different actions.
 A rejected result can be corrected only within the plan and permission; an uncertain result is not silently retried as success.
-Steps 4–6 assume a task runs: on macOS / Linux, on a subscription login of Kimi Code or Grok Build,
-and on a Claude Code or Codex login kept outside `...\DecemberCommand\logins\<name>` such a step is
-refused before it starts (see [Where tasks run in this build](#where-tasks-run-in-this-build)).
-In the desk wizard the roles step offers the available tools; assign Claude Code or
-Codex on their subscription login, and the preparation step names the reason in the sentence above
-if a chosen tool cannot be given the boundary. If no tool is set up yet, that step says to run
-`conduct providers` or to edit the providers file: run the command with the server stopped (step 3)
-and do not edit the file by hand.
+To exercise a task, use Windows and choose an available harness with the capability needed by that step. Grok is eligible only for a read-only review. Choose Claude Code or Codex for a role that must edit files. If no eligible harness appears, stop the server and run `conduct providers` as in step 3.
 
 A task that ends with `unknown` is never repeated: do not run it again, and start no other
 attempt. Two signs say to stop the server (Ctrl+C) first:
@@ -432,7 +370,7 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | DSH has no data | Check that the permitted key name is configured and the server started with that environment variable. |
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
-| A step is refused: `demands sandbox route 'execution-boundary'`; in the desk wizard "This step needs the isolation (execution boundary)…" (`wizard.chain.boundary`, `wizard.chain.boundary_login`); in a receipt `this <tool> connection signs in with a subscription…` | This is the boundary refusing; nothing was started. On macOS / Linux this build does not run tasks. A subscription login of Kimi Code or Grok Build does not run tasks yet: use another agent or an API key (choice `2` in `conduct providers`). For Claude Code and Codex check that the login folder is named `...\DecemberCommand\logins\<name>` and the tool is installed under `...\harnesses\<name>\<version>\`. Details: [Where tasks run in this build](#where-tasks-run-in-this-build). |
+| A step is refused: `demands sandbox route 'execution-boundary'` | Check Windows, the pinned executable, the product login folder and whether this harness supports the role requested by the step. Read the reason in Runs. [Where tasks run](#where-tasks-run-in-this-build). |
 | The Runs screen says `adapter reported failed: the pinned login expires before the attempt would end; sign in again` (or `…: when the pinned login expires is not known; sign in again`) | The access token of the Claude Code or Codex login does not outlast the step's timeout by ten minutes, or its expiry cannot be read. Nothing was started. Sign in again with the two lines `conduct providers` prints (step 3: the variable that points at the login folder, then the tool's own sign-in), then retry. Signed in without the variable, the tool fills your own profile and the folder stays as it was. |
 | The Runs screen says `adapter reported failed: the pinned login has no credential file to copy`, `…'s credential file is damaged` (or `is not an ordinary file`, `is too large`, `is in a shape this build does not know`), `…holds no access token`, `…holds an API key, which is not a subscription`, `…is on the API-billing plan` or `…does not say which plan it is on` | Nothing was started. The login folder holds no plain subscription login this build can copy. No file or a damaged one: sign in again in that folder (step 3). An API key or a console plan: sign in in that folder with a subscription account; a task on an API key is the other road (choice `2` in `conduct providers`). Any other sentence about the pinned login or its relay (`the pinned login …`, `the account of the pinned login …`, `the login lease of the attempt does not name the pinned login`, and the like) names a fact of the login, of its folders or of the attempt's lease: nothing was started, and the words are what a bug report needs. After a sentence that begins `the pinned login`, sign in again in the folder first (step 3). |
 | The Runs screen says `adapter reported failed: the environment of the attempt replaces the pinned login or reroutes its traffic` | Nothing was started. The server's environment, or the names allowed for this provider, carries a name that replaces the login or reroutes its traffic (a token, a proxy, a base URL, certificates). Remove it: stop the server, run `conduct providers` again without it, and start the server from an environment that does not have it. |

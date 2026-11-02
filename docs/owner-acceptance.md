@@ -27,27 +27,16 @@ commands are identical on every platform.
 
 ## 1. Install a clean wheel
 
-Open PowerShell from the Start menu, not from the terminal inside the Claude or Codex app: a window
-started by those apps keeps what it installs under `%LOCALAPPDATA%` in the app's own package folder,
-where your own window does not see it.
+Open your own PowerShell and clear `$env:PYTHONPATH`. Install the identified wheel in a fresh protected product directory as in [first-run step 1](first-run-v1.en.md#1-install-the-identified-build). Keep this window open. The install block defines `$conduct`; Windows PowerShell accepts the `$CONDUCT` spelling below.
 
 ```powershell
-$ACC = Join-Path $env:LOCALAPPDATA "DecemberCommand\acceptance"
-New-Item -ItemType Directory -Path $ACC | Out-Null
-python -m venv "$ACC\venv"
-$env:PYTHONPATH = ""
-$PY = "$ACC\venv\Scripts\python.exe"
-$CONDUCT = "$ACC\venv\Scripts\conduct.exe"
-& $PY -m pip install <the release candidate>
 & $CONDUCT --help
 ```
 
 **You must see** the fifteen subcommands, including `init`, `ownership`, `providers`, `projects`, and `up`, and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
-`python` must be a real Python 3.11 or newer. If it is not found, or only opens the Microsoft
-Store, write the full path of a Python 3.11+ `python.exe` instead. If `$ACC` already exists from
-an earlier attempt, pick another folder name for this one.
+Use Python 3.11 or newer and retain the exact wheel SHA256 in your acceptance record.
 
 **Keep the project path short: not in the temp folder.** Step 4 has you choose a workflow
 identifier of 128 characters. Saving that draft writes
@@ -91,7 +80,9 @@ so in the second window set them again (with the folder names you chose in steps
 
 ```powershell
 $env:PYTHONPATH = ""
-$CONDUCT = Join-Path $env:LOCALAPPDATA "DecemberCommand\acceptance\venv\Scripts\conduct.exe"
+$source = Read-Host 'Source commit from window A (40 hex digits)'
+if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$CONDUCT = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv\Scripts\conduct.exe")
 $PROJ = Join-Path $env:USERPROFILE "DecemberTrial"
 & $CONDUCT up --dir $PROJ --port 7801
 ```
@@ -205,7 +196,7 @@ What you run is a COMMAND:
 
 Run it with the server stopped: first Ctrl+C in the server's window, as in step 16. While
 `conduct up` holds the project the command refuses with `owner_busy` before its first question.
-For Claude Code or Codex choose `1` at the login question and give the folder
+For Claude Code, Codex or Grok Build choose `1` at the login question and give the folder
 `%USERPROFILE%\DecemberCommand\logins\<id>` as a full path: the wizard refuses a folder named
 otherwise, and prints the two lines that sign in (the variable pointed at that folder, then the
 tool's own sign-in); run them in your own PowerShell, not in the wizard. The wizard does not
@@ -257,20 +248,8 @@ checks but record the real-execution steps as blocked, never passed. Facts of th
   a folder shaped `...\harnesses\<name>\<version>\` (the protected place is
   `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`); see the
   [first-run instructions](first-run-v1.en.md).
-- **Claude Code and Codex are built to run on their subscription login, with no API key.** The login
-  is kept in `%USERPROFILE%\DecemberCommand\logins\<id>` (the wizard refuses any other folder). You
-  sign in yourself, in your own PowerShell, with `CLAUDE_CONFIG_DIR` (`CODEX_HOME` for Codex)
-  pointed at that folder, using the two lines the wizard prints. The task works on a copy of the
-  access token without the refresh token; the login folder itself is never given to it. A login
-  whose access token does not outlast the step's timeout by ten minutes is refused before anything
-  starts, with a request to sign in again. Not yet checked with the real vendors: Claude Code gave
-  one real answer on such a copy outside the isolation and no task has run inside it, and the
-  vendor's server refused both probes of the pinned Codex 0.112.0 (on the model). Record a refusal
-  there as blocked, in the product's own words (`adapter reported failed: …` on the Runs screen),
-  never as passed.
-- Grok Build and Kimi Code read their subscription for quotas only: a subscription login for them is
-  not supported inside the boundary yet, so a step that must run a task is refused before anything
-  starts. DeepSeek, and any tool set up with an API key, run by the API-key road.
+- Record the harness, pinned version, model if selected, task role, outcome and evidence. Claude Code 2.1.239 completed one subscription Goal. Codex 0.164.0 produced a Goal artifact on `gpt-6.1-sol`; its content did not meet the acceptance criterion. Both ran inside the Windows boundary with an access-only copy of the dedicated login.
+- Grok Build 1.0.5 supports read-only review. Its authenticated quota check worked, but the live diagnosis exited 1 without a verified result. Editing/dispatch and the independent checker are unavailable. A live Kimi Code 0.38.0 task remains unverified. Record blocked or failed steps as observed. [First-run evidence](first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
 - The same refusal comes on every platform but Windows (the boundary exists only there).
 
 Record a refusal as blocked, in the product's own words. The plan's door words it *step '…' demands
