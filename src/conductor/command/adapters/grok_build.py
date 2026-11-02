@@ -475,7 +475,7 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
 
 def _grok_error_reason(message):
     """Only product-owned categories may leave this module."""
-    text = message.casefold().strip()
+    text = message.casefold().strip().removesuffix(".")
     if text.startswith("not signed in"):
         return "the harness reported that sign-in is required"
     if text.startswith(("couldn't start session", "couldn't initialize", "couldn't create session")):
@@ -486,9 +486,13 @@ def _grok_error_reason(message):
         return "the harness reported that a subscription is required for this task"
     if "model" in text and any(word in text for word in ("unsupported", "not supported", "not found")):
         return "the harness reported that the requested model is unavailable"
-    if any(word in text for word in ("permission denied", "forbidden", "unauthorized")):
+    if text == "max turns reached":
+        return "the harness reported that the turn limit was reached"
+    if (text == "grok build is not yet available for this account"
+            or any(word in text for word in ("permission denied", "forbidden", "unauthorized"))):
         return "the harness reported an access refusal"
-    if any(word in text for word in ("connection refused", "connection reset", "dns error")):
+    if (text == "connection closed unexpectedly"
+            or any(word in text for word in ("connection refused", "connection reset", "dns error"))):
         return "the harness reported a connection failure"
     return "the harness reported an unclassified service error"
 

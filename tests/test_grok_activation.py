@@ -79,6 +79,14 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
     ("api_key", "enabled-fixed-review", None),
     ("subscription", "enabled-fixed-review", None),
     ("subscription", "error-auth", "the harness reported that sign-in is required"),
+    pytest.param("subscription", "terminal-error:Connection closed unexpectedly",
+                 "the harness reported a connection failure", id="terminal-connection"),
+    pytest.param("subscription", "terminal-error:max turns reached",
+                 "the harness reported that the turn limit was reached", id="terminal-turn-limit"),
+    pytest.param("subscription", "terminal-error:Grok Build is not yet available for this account.",
+                 "the harness reported an access refusal", id="terminal-account"),
+    pytest.param("subscription", "terminal-error:sensitive-fixture mentions max turns reached",
+                 "the harness reported an unclassified service error", id="terminal-unknown"),
     ("subscription", "escaped-login", "the review contained sensitive output"),
     ("subscription", "invalid-success", "the review returned an invalid terminal response"),
     ("subscription", "truncated", "longer than the capture bound"),
@@ -134,6 +142,9 @@ def test_production_review_reads_the_task_file_and_cleans_its_home(
         assert not outputs
         (result,) = [row.value for row in records if row.kind == "action_result"]
         assert result.outcome == "failed" and reason in result.detail
+        if case.startswith("terminal-error:"):
+            assert result.detail == "adapter reported failed: " + reason
+            assert result.exit_code == 1 and not result.evidence_refs
         assert not any(word in result.detail for word in ("sensitive-fixture", "fake-access"))
         assert not Path(_fakegrok.prompt_spawns(log)[0]["grok_home"]).exists()
         return

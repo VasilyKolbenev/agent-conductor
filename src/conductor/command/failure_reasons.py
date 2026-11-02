@@ -33,6 +33,8 @@ REASONS = (
      "the harness reported that the requested model is unavailable"),
     ("the harness reported an access refusal", "the harness reported an access refusal"),
     ("the harness reported a connection failure", "the harness reported a connection failure"),
+    ("the harness reported that the turn limit was reached",
+     "the harness reported that the turn limit was reached"),
     ("the harness reported an unclassified service error", "the harness reported an unclassified service error"),
     ("the review contained sensitive output", "the review contained sensitive output"),
     ("the review returned an invalid terminal response",
