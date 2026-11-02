@@ -351,12 +351,15 @@ def test_a_step_the_boundary_cannot_carry_says_why_in_a_sentence_of_its_own(benc
     assert bench.problems == []
 
 
-@pytest.mark.parametrize("lang", LANGS)
-def test_a_step_whose_agent_is_a_refused_subscription_login_names_the_folder_of_the_login(
-        bench, lang):
-    """The same refusal over a roster whose agents all sign in by subscription and whose task road
-    is refused (`auth`, `task_road`): the sentence is the one about the login, which names the
-    folder the login must be kept in and the command that sets it up."""
+@pytest.mark.parametrize(("lang", "next_step"), [
+    pytest.param("ru", "Назначьте на эту роль подключённого участника, который поддерживает "
+                 "этот шаг по подписке.", id="ru"),
+    pytest.param("en", "Choose a configured harness that supports this step through your "
+                 "subscription.", id="en"),
+])
+def test_a_refused_subscription_step_directs_the_owner_to_a_compatible_harness(
+        bench, lang, next_step):
+    """When a subscription cannot run the step, Desk explains which harness to choose."""
     workflows = fixture("wizard", "workflows.json")
     roster = [{**row, "auth": "subscription", "task_road": "refused"}
               for row in workflows["providers"]]
@@ -373,5 +376,6 @@ def test_a_step_whose_agent_is_a_refused_subscription_login_names_the_folder_of_
     expect(bench.page.locator('[data-prepare="refused"]')).to_be_visible()
     refusal = bench.page.locator('[data-refusal-link="run"]')
     assert refusal.inner_text() == bench.say("wizard.chain.boundary_login")
-    assert "DecemberCommand" in refusal.inner_text()
+    assert next_step in refusal.inner_text()
+    assert server.world(bench)["runs_written"] == 0
     assert bench.problems == []

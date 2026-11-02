@@ -3,8 +3,8 @@
 These are the two scenarios lane L's contract (section 7) leaves to this lane, with no fake in the
 way: the desk's own modules, the real transport, a real server, a real temporary repository and
 the product's own Git reader. Each starts from a page with NO memory of the first call: the first
-life is made over the wire, then a new browser context opens the wizard on step 2 and the page has
-only what the git read says.
+life is made over the wire, then a new browser context opens the ordinary wizard. Its first stage
+shows the project source using only what the Git read says.
 
 1. A fresh page finishes a wait for a signature. The first confirm answers `signing_required` and
    the product stores the intent. The page reads `awaiting_signature`, shows the two commands from
@@ -283,16 +283,12 @@ def owner_is_named(page: Page, project: Real) -> None:
     expect(page.locator("#deskNewTask")).to_be_enabled()
 
 
-def wizard_at_materials(page: Page, project: Real) -> None:
-    """The person's own path: the desk, their name, the new task, the first step, 'Далее'."""
+def open_guided_task(page: Page, project: Real) -> None:
+    """An ordinary new task shows the project source alongside the goal on its first stage."""
     owner_is_named(page, project)
     page.locator("#deskNewTask").click()
     wizard = page.locator("#deskWizard [data-wizard]")
-    expect(wizard).to_have_attribute("data-wizard-current", "task")
-    page.locator('[data-focus="wizard:title"]').fill("Finish the first commit")
-    page.locator('[data-focus="wizard:brief"]').fill("Open the project.")
-    page.locator('[data-focus="wizard:next"]').click()
-    expect(wizard).to_have_attribute("data-wizard-current", "materials")
+    expect(wizard.locator('[data-guide-stage="result"]')).to_have_attribute("aria-current", "step")
 
 
 def starter_at_materials(page: Page, project: Real) -> None:
@@ -332,7 +328,7 @@ def the_owner_runs(project: Real, shown: dict[str, str]) -> str:
 def test_the_fixture_serves_a_page_whose_git_read_answers(chromium, real):
     page, faults, asked = fresh_page(chromium)
     try:
-        wizard_at_materials(page, real)
+        open_guided_task(page, real)
         expect(page.locator('[data-git-state="unborn"]')).to_have_count(1)
         expect(page.locator('[data-focus="wizard:git:first_commit"]')).to_be_enabled()
         assert faults == []
@@ -346,7 +342,7 @@ def test_a_desk_whose_transport_has_no_setup_target_draws_each_git_press_disable
     the real desk from drawing controls that have no door; no bench host can show it."""
     page, faults, asked = fresh_page(chromium, door=False)
     try:
-        wizard_at_materials(page, real)
+        open_guided_task(page, real)
         said = page.evaluate("""async () => (await import("/panel/studio-i18n.js")).message(
           "en", "wizard.first.why.door_missing", {})""")
         expect(page.locator('[data-git-state="unborn"]')).to_have_count(1)
@@ -373,7 +369,7 @@ def test_a_fresh_page_finishes_a_wait_for_a_signature(chromium, real, throwaway_
     assert status == 409 and refused["error"]["detail"]["reason"] == "signing_required"
     page, faults, asked = fresh_page(chromium)
     try:
-        wizard_at_materials(page, real)
+        open_guided_task(page, real)
         waiting = page.locator('[data-git-pending="awaiting_signature"]')
         expect(waiting).to_have_count(1)
         assert posts(asked) == [], "a page that loads and reads sends nothing"
@@ -406,7 +402,7 @@ def test_a_fresh_page_finishes_a_crash_after_the_branch_moved(chromium, real, mo
     assert facts["state"] == "repo" and facts["first_commit_pending"]["state"] == "unfinished"
     page, faults, asked = fresh_page(chromium)
     try:
-        wizard_at_materials(page, real)
+        open_guided_task(page, real)
         panel = page.locator('[data-git-pending="unfinished"]')
         expect(panel).to_have_count(1)
         assert page.locator('[data-git-term="by"]').inner_text() == "Confirmed by: Owner"
