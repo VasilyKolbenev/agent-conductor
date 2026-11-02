@@ -80,6 +80,16 @@ exercise is a test of V1's usefulness, not permission to start the V2 implementa
 
 ## Preserve for V2 — do not reopen before alpha
 
+- **Stage two: up to three concurrent runs per project** (owner decision, 2026-11-02).
+  A run is one execution of a cycle for a task. The three tasks may use the same
+  cycle template or different ones. Studio shows which runs are working, waiting
+  for a person, or queued, and why. A run waiting at a human gate releases its
+  execution slot; its decision, workspace, artifacts and authorization stay its own.
+  Shared subscription limits or workspace conflicts may reduce actual concurrency.
+  Acceptance: start four authorized, independent tasks. Observe three overlapping
+  executions and the fourth queued. When one reaches a gate or finishes, the fourth
+  can start. Resuming the waiting run respects the same ceiling; pausing one run
+  leaves the others working.
 - Additional harnesses, including the parked Qwen and GLM work; no new transport
   claim enters the alpha catalogue without its own reviewed real-install evidence.
 - **Experience Ledger / evidence-weighted Harness Graph.** Preserve project-owned
