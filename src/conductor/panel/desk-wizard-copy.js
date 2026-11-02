@@ -391,9 +391,9 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.quota.no_data": ["no data", "нет данных"],
   "wizard.quota.stale": ["stale", "устарело"],
   "wizard.quota.source_error": ["source unavailable", "источник недоступен"],
-  "wizard.providers.none": ["No harnesses are set up. Run `conduct providers`, or edit the "
-    + "providers file.", "Ни одного харнесса не настроено. Выполните `conduct providers` "
-    + "или правьте файл провайдеров."],
+  "wizard.providers.none": ["No harness is configured. Stop the project server and run `conduct providers --dir .` from "
+    + "the project folder to set up your subscription login.", "Ни один участник не подключён. Остановите сервер проекта "
+    + "и запустите в каталоге проекта `conduct providers --dir .`, чтобы настроить вход по своей подписке."],
   "wizard.providers.pending": ["The server has not yet said which harnesses this version offers, "
     + "so none can be assigned yet.", "Сервер пока не сообщил, какие харнессы предлагает эта "
     + "версия, поэтому назначить харнесс пока нельзя."],
@@ -457,21 +457,10 @@ export const WIZARD_COPY = Object.freeze({
     "Этому шагу нужна изоляция (execution boundary), а выбранному агенту этот компьютер её "
     + "дать не может, поэтому ничего не запускалось. Задача исполняется в изоляции только на "
     + "Windows и только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\."],
-  "wizard.chain.boundary_login": ["This step needs the isolation (execution boundary), and this "
-    + "computer cannot give it to the agent chosen, so nothing was started. A task runs in the "
-    + "isolation only on Windows and only from a build installed under "
-    + "...\\harnesses\\<name>\\<version>\\. The agent chosen signs in with a subscription, and a "
-    + "task on that login is refused before it starts: its login directory must be named "
-    + "...\\DecemberCommand\\logins\\<name> (set it up with conduct providers while the server is "
-    + "stopped), and a subscription login for some harnesses is not supported inside the "
-    + "isolation yet. Choose another agent, or one that signs in with an API key.",
-    "Этому шагу нужна изоляция (execution boundary), а выбранному агенту этот компьютер её "
-    + "дать не может, поэтому ничего не запускалось. Задача исполняется в изоляции только на "
-    + "Windows и только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\. "
-    + "Выбранный агент входит по подписке, и задача с этим входом отклоняется до запуска: "
-    + "каталог входа должен называться ...\\DecemberCommand\\logins\\<имя> (задайте его командой "
-    + "conduct providers при остановленном сервере), а вход по подписке для некоторых агентов в "
-    + "изоляции пока не поддержан. Выберите другого агента или агента со входом по API-ключу."],
+  "wizard.chain.boundary_login": ["Nothing started. The selected harness cannot run this step in isolation with its "
+    + "subscription login. Choose a configured harness that supports this step through your subscription.",
+    "Шаг не начался. Выбранный участник не может выполнить его в изоляции по подписке. "
+    + "Назначьте на эту роль подключённого участника, который поддерживает этот шаг по подписке."],
   "wizard.chain.conflict_run": ["A run with this number is already open with another "
     + "arrangement of the roles: they were changed after an answer was lost.",
     "Запуск с этим номером уже открыт с другой расстановкой: роли меняли после потерянного "

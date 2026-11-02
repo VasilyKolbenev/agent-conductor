@@ -1,13 +1,9 @@
 """Step 5 says why the isolation was refused by the pair (`auth`, `task_road`) of the agents chosen.
 
 The plan door refuses a step whose agent cannot be given the execution boundary with one closed
-word (`service_refused`, the route `execution-boundary`), whatever the cause. The wizard used to
-answer every such refusal with one sentence (an agent with an API key, on Windows, from a build in
-the install tree), which since I2b is wrong for a subscription login: Claude Code and Codex run a
-subscription task inside the boundary, from a login kept in `...\\DecemberCommand\\logins\\<name>`,
-and Grok Build and Kimi Code do not. The wizard names no harness, so the sentence is chosen by the
-facts of the rows it was served: when one of the agents chosen for a role signs in by subscription
-and its task road is refused, the sentence is about the login; otherwise it is the general one.
+word (`service_refused`, the route `execution-boundary`), whatever the cause. The wizard
+reads the selected providers' actual auth and task road. A refused subscription task should
+send the owner to a compatible harness. The generic refusal remains for other configurations.
 
 The model answers the cause (`boundaryOf`); the view draws the sentence of the language (a small
 stand-in DOM, the same the Agents screen is tested with).
@@ -57,16 +53,10 @@ GENERAL = {
           "Windows и только из сборки, установленной в ...\\harnesses\\<имя>\\<версия>\\.",
 }
 LOGIN = {
-    "en": GENERAL["en"] + " The agent chosen signs in with a subscription, and a task on that "
-          "login is refused before it starts: its login directory must be named "
-          "...\\DecemberCommand\\logins\\<name> (set it up with conduct providers while the server "
-          "is stopped), and a subscription login for some harnesses is not supported inside the "
-          "isolation yet. Choose another agent, or one that signs in with an API key.",
-    "ru": GENERAL["ru"] + " Выбранный агент входит по подписке, и задача с этим входом "
-          "отклоняется до запуска: каталог входа должен называться "
-          "...\\DecemberCommand\\logins\\<имя> (задайте его командой conduct providers при "
-          "остановленном сервере), а вход по подписке для некоторых агентов в изоляции пока не "
-          "поддержан. Выберите другого агента или агента со входом по API-ключу.",
+    "en": "Nothing started. The selected harness cannot run this step in isolation with its "
+          "subscription login. Choose a configured harness that supports this step through your subscription.",
+    "ru": "Шаг не начался. Выбранный участник не может выполнить его в изоляции по подписке. "
+          "Назначьте на эту роль подключённого участника, который поддерживает этот шаг по подписке.",
 }
 
 
