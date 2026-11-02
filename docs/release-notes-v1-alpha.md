@@ -1,6 +1,28 @@
-# December Command — V1 alpha, release notes (candidate draft, updated 25 September 2026)
+# December Command — V1 alpha, release notes (candidate draft, 2 November 2026)
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
+
+## Current Windows alpha work
+
+Desk now starts a task in three stages: describe the result and working folder,
+choose the team and cycle, then review the limits and human decisions. The default
+cycle is Dalio revision 6, with an independent check of the Do step. A new user can
+review the suggested limits and edit them before authorizing work. These paths
+have been exercised locally in Chromium in Russian and English, including at 375 px.
+
+| Harness | Evidence for the current subscription workflow |
+| --- | --- |
+| Claude Code 2.1.239 | Goal completed inside the Windows execution boundary on a subscription. Fresh-account acceptance is outstanding. |
+| Codex 0.164.0 | The subscription produced a Goal artifact. Its content still needs to pass the task's acceptance criteria. |
+| Grok Build 1.0.5 | A subscription launched a read-only diagnosis. The last live action failed without a result artifact. |
+| Kimi Code 0.38.0 | The original CLI started offline and accepted a synthetic access-only login locally. Live subscription execution is pending. |
+
+The public alpha still needs a checked Codex/Grok cycle, all four subscription
+paths, the final CI wheel and owner acceptance. The September evidence below is
+retained for its named builds. For current setup use the
+[first-run guide](first-run-v1.en.md).
+
+## September candidate archive
 
 **Status of this text.** Evidence snapshot for frozen-19, local code commit
 `d4d2580337a48b63c5898cc300dff2372eb48133`, reviewed on 25 September 2026.
@@ -25,7 +47,7 @@ one team of participants; every action is proposed, confirmed and verified as se
 decision is a receipt, never a click that vanishes. The distribution is `agent-conductor`, the CLI is `conduct`,
 the front door is the Workflow Studio at `http://127.0.0.1:7777/`.
 
-## What the candidate contains
+## What the September candidate contained
 
 - **Five harnesses** through one reviewed catalogue: Claude Code 2.1.239, Codex 0.112.0, Kimi Code 0.38.0,
   Grok Build 1.0.5 (subscription login in a dedicated native profile) and DeepSeek Harness 0.1.0-rc.7 (API key
