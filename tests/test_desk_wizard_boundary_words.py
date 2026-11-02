@@ -54,9 +54,11 @@ GENERAL = {
 }
 LOGIN = {
     "en": "Nothing started. The selected harness cannot run this step in isolation with its "
-          "subscription login. Choose a configured harness that supports this step through your subscription.",
+          "subscription login. Choose a configured harness that supports this step "
+          "through your subscription.",
     "ru": "Шаг не начался. Выбранный участник не может выполнить его в изоляции по подписке. "
-          "Назначьте на эту роль подключённого участника, который поддерживает этот шаг по подписке.",
+          "Назначьте на эту роль подключённого участника, который поддерживает этот шаг "
+          "по подписке.",
 }
 
 
