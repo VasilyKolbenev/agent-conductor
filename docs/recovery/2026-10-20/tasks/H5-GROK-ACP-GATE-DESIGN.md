@@ -22,3 +22,15 @@ If the field is absent, support remains unconfirmed. Authenticate errors, uninte
 data, timeouts, and secret echoes are inconclusive; do not log their payloads. The
 synthetic tests must detect a prompt on the wire, malformed or duplicate responses,
 spurious success and copying arbitrary remote messages or URLs into the report.
+
+Independent review found that an unavailable cached token can trigger interactive
+fallback even with headless=true. Pin [auth] preferred_method="oidc" in a newly
+created config.toml in the throwaway relay only. The pinned vendor blocks fallback
+in this mode. The project input directory is freshly created and empty. Check both
+the advertised default method and the cached method returned by auth/info. The
+three fixed requests are pipelined, so these checks validate the observation after
+emission. Discard verified optional settings/announcements/MCP notifications and
+read the gate from response 3 only. Unknown notifications leave the exchange
+unconfirmed. Store no account metadata or CLI output. Pinned vendor references:
+[config](https://github.com/xai-org/grok-build/blob/9fabade/crates/codegen/xai-grok-shell/src/agent/config.rs#L2376-L2398)
+and [fallback](https://github.com/xai-org/grok-build/blob/9fabade/crates/codegen/xai-grok-shell/src/agent/auth_method.rs#L417-L429).
