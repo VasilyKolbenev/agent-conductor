@@ -1,4 +1,5 @@
-Итог: Grok включён, полный core зелёный в двух кодировках, сборка установлена; G6 ждёт свежего входа.
+Итог: Grok включён в сборке `48a787c`. G6 завершился с exit 1. На 02.11 подготовлена
+проверка подписки из AppContainer по метаданным, для которой нужен свежий вход.
 
 # H5-GROK-ACTIVATE — evidence checkpoint
 
@@ -169,3 +170,50 @@ Next: inspect existing evidence and failure handling without another model call.
 UX findings to preserve: disabled grant when Your name is empty has no explanation;
 the top status said running/no human action while authorization_required; planned bounds
 prepared through API do not populate the browser's local form draft.
+
+## 2 November investigation on the installed Grok 1.0.5
+
+No new G6 action. The original attempt's relay directory is absent. In the 12-second window
+around the failure Windows returned no matching events from Application, Code Integrity,
+AppLocker EXE/DLL, Defender Operational, CAPI2 Operational or the selected Security event IDs.
+That observation cannot identify the failure. The installed review path separates stderr.
+On Windows _winlaunch.py gives that stream a NUL handle. The runtime translates a nonzero
+exit into a fixed reason. The historical receipt has no vendor error to recover.
+
+All controls below used the pinned binary in disposable review AppContainers without
+internetClient, real login files or API keys. Evidence is under Documents/Codex/work/grok-activation.
+
+- The real review flags produced distinct CLI markers for a whitespace-only prompt file and
+  a missing file. Both exited 1. An actual .txt made by task_file.place was readable by the
+  child. On a valid synthetic prompt without an account the CLI reached its sign-in check.
+- Native ACP initialize and auth/info returned cached_token for a synthetic access-only
+  record and for the same shape with a refresh token. With no record neither reply indicated
+  cached_token. This measures local recognition, not backend entitlement.
+- Offline headless with synthetic access-only credentials created session data and recorded
+  five retry_state events in one control. The helper initially lost its terminal receipt
+  during fixture cleanup (WinError 145 on a deep path). All three native journals were
+  retired. The fixture was removed. The corrected helper writes the receipt before cleanup
+  and uses extended Windows paths. In the completed repeat the no-account control produced
+  exit 1 and the access-only control with no network reached the 45-second test bound.
+- Diagnostic alternative: with stderr discarded, --output-format json on the same pinned
+  executable reported a structured error for the known no-account control on stdout.
+  Only a boolean category was saved. The product's normal review still uses plain output.
+  JSON is not a drop-in change: a review publishes stdout as text, while vendor JSON may
+  include other content. No product settings, billing accounts or task grants were changed.
+
+Witnesses: g6-offline-file-result.json, g6-offline-auth-result.json,
+g6-offline-headless-partial.json, g6-offline-headless-result.json, g6-offline-json-result.json.
+
+Prepared next observation: run-g6-boundary-billing.ps1 checks installed product 48a787c,
+the protected checker's digest and idle server state. The checker uses the product owner,
+login lease, readiness, relay ACL check, access-only copy and review container. One exchange
+is limited to initialize, _x.ai/auth/info and _x.ai/billing. Its only durable output is a
+small receipt with closed status, measured quota if supplied, source consistency and cleanup.
+The exclusive reservation prevents a repeat. It sends no session or prompt request.
+
+Offline controls for the same checker (g6-offline-billing-control.json): expired fake login
+stopped before spawn. A fresh synthetic record was recognised locally, remote billing refused
+without network, the original login digest was unchanged and the relay was removed. A protocol
+fixture with a real numeric zero preserved zero. The live account currently returns expiry_short
+on readiness. No live billing result or successful model task is claimed by these controls.
+Protected checker SHA-256 ccd8c47b3ca86bc80ac2e28b7048f4da387f0ef4e2e50432313d57bf6e22793a.
