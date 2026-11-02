@@ -174,7 +174,24 @@ def allowed_tools(argv: list[str]) -> set[str]:
 def _run_prompt(argv: list[str]) -> int:
     env = os.environ
     if env.get(EMIT_REVIEW):
-        sys.stdout.buffer.write(b"# Diagnosis\nThe fake review read the supplied candidate.\n")
+        message = "# Diagnosis\nThe fake review read the supplied candidate.\n"
+        case = env[EMIT_REVIEW]
+        if case == "error-auth":
+            print(json.dumps({"type": "error", "message": "Not signed in. sensitive-fixture"}))
+            return 1
+        if case == "escaped-login":
+            escaped = "".join("\\u%04x" % ord(ch) for ch in "fake-access-activation-1234")
+            print('{"text":"' + escaped + '","stopReason":"end_turn"}')
+            return 0
+        if case == "invalid-success":
+            print('{"type":"error","message":"sensitive-fixture"}')
+            return 0
+        if case == "truncated":
+            print(json.dumps({"text": "x" * 50000, "stopReason": "end_turn"}))
+            return 0
+        body = {"text": message, "thought": "private-fixture", "stopReason": "end_turn",
+                "sessionId": "private-session", "requestId": "private-request"}
+        sys.stdout.buffer.write(json.dumps(body).encode("utf-8"))
         sys.stdout.buffer.flush()
     may_write = "Write" in allowed_tools(argv)
     if env.get(WRITE_FILE) and may_write:

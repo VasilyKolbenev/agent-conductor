@@ -1,7 +1,8 @@
 """Grok Build, driven headlessly: one pinned binary, one prompt, one attempt.
 
 The active V1 task is read-only review over --prompt-file in a fresh attempt home, with an
-access-only subscription relay. Dispatch argv below is dormant test coverage; historical
+access-only subscription relay. Grok returns a JSON terminal response. Only its successful
+text may become the review artifact. Dispatch argv below is dormant test coverage; historical
 --single documentation describes the earlier transport, not the active task channel.
 
 Every vendor fact below was read from xAI's own published sources and is pinned
@@ -136,6 +137,7 @@ from __future__ import annotations
 from . import login_home, task_file
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
+from .jsonl_completion import decode_line
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
 from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS, GROK_RELAY
 from .relay_env import GROK_COMPAT_ENV, GROK_ROUTE_ENV
@@ -144,6 +146,7 @@ from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, 
 
 import json
 import re
+from dataclasses import dataclass
 from collections.abc import Callable
 from pathlib import Path
 from types import MappingProxyType
@@ -276,8 +279,14 @@ __all__ = [
     "GrokBuildAdapter", "GrokBuildError", "grok_pin",
 ]
 
-#: Every vendor fact above, gathered where the shared transport reads them.
-GROK_PROFILE = HarnessProfile(
+@dataclass(frozen=True)
+class GrokProfile(HarnessProfile):
+    """The reviewed response format is part of the provider facts and the grant digest."""
+
+    review_output_format: str = "json"
+
+
+GROK_PROFILE = GrokProfile(
     tool_noun="Grok Build", task_noun="Grok Build prompt",
     display_name=GROK_DISPLAY_NAME, vendor="xAI",
     docs_url="https://docs.x.ai/build/overview",
@@ -347,8 +356,40 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
                 "--prompt-file", task_file.path_in(home))
 
     def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
-        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, *REVIEW_PERMISSION_ARGV,
+        return (*NO_AUTO_UPDATE_ARGV, "--output-format", self.profile.review_output_format,
+                *REVIEW_PERMISSION_ARGV,
                 "--prompt-file", task_file.path_in(home))
+
+    def _review_response(self, request, outcome, relation):
+        receipt = self._observed(request, outcome)
+        if outcome.status != "completed" or outcome.output_truncated:
+            return b"", receipt
+        if self._review_attempt_carries(outcome):
+            return b"", self._receipt(request, "failed", None,
+                                      "the review contained sensitive output")
+        try:
+            doc = decode_line(outcome.output)
+            if outcome.exit_code != 0:
+                if doc.get("type") == "error" and isinstance(doc.get("message"), str):
+                    reason = _grok_error_reason(doc["message"])
+                    if reason:
+                        receipt = self._receipt(request, "failed", outcome.exit_code, reason)
+                return b"", receipt
+            if "type" in doc or "message" in doc or doc.get("stopReason") != "end_turn":
+                raise ValueError
+            text = doc.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError
+            content = text.encode("utf-8")
+            if any(value and value in content for value in self._sensitive_values(relation)):
+                return b"", self._receipt(request, "failed", None,
+                                          "the review contained sensitive output")
+            return content, receipt
+        except (ValueError, UnicodeError, RecursionError):
+            if outcome.exit_code == 0:
+                receipt = self._receipt(request, "failed", None,
+                                        "the review returned an invalid terminal response")
+            return b"", receipt
 
     def _task_stdin(self, task_text: str) -> bytes:
         return task_text.encode("utf-8")
@@ -437,6 +478,26 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
         return self._parsed_version(output) == self.profile.reviewed_version
 
 
+
+
+def _grok_error_reason(message):
+    """Only product-owned categories may leave this module."""
+    text = message.casefold().strip()
+    if text.startswith("not signed in"):
+        return "Grok reported that sign-in is required"
+    if text.startswith(("couldn't start session", "couldn't initialize", "couldn't create session")):
+        return "Grok reported a session startup failure"
+    if "rate limit" in text or "quota exceeded" in text or "too many requests" in text:
+        return "Grok reported a subscription usage limit"
+    if "subscription required" in text or "requires a subscription" in text:
+        return "Grok reported that a subscription is required for this task"
+    if "model" in text and any(word in text for word in ("unsupported", "not supported", "not found")):
+        return "Grok reported that the requested model is unavailable"
+    if any(word in text for word in ("permission denied", "forbidden", "unauthorized")):
+        return "Grok reported an access refusal"
+    if any(word in text for word in ("connection refused", "connection reset", "dns error")):
+        return "Grok reported a connection failure"
+    return "Grok reported an unclassified service error"
 
 
 def _native_quota(payload):

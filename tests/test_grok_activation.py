@@ -22,13 +22,13 @@ from tests.test_command_grok_transport import NOW, _Ids, a_harness, a_request, r
 SCOPE = "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828"
 REVIEW = "# Diagnosis\nThe fake review read the supplied candidate."
 SEED = "Candidate input: task-file-probe-7f62."
-EXPECTED_ARGV = ["--no-auto-update", "--output-format", "plain",
+EXPECTED_ARGV = ["--no-auto-update", "--output-format", "json",
                  "--allow", "Read", "--allow", "Grep", "--allow", "Glob",
                  "--deny", "Edit", "--deny", "Bash", "--deny", "WebFetch",
                  "--deny", "WebSearch", "--deny", "MCPTool", "--prompt-file"]
 
 
-def _site(tmp_path, auth):
+def _site(tmp_path, auth, case="enabled-fixed-review"):
     login = tmp_path / "DecemberCommand" / "logins" / "grok-build"
     login.mkdir(parents=True)
     original = {SCOPE: {"auth_mode": "oidc", "key": "fake-access-activation-1234",
@@ -44,7 +44,7 @@ def _site(tmp_path, auth):
     adapter, root, log = a_harness(
         tmp_path, root=root, production=True, auth=auth,
         auth_home=str(login) if auth == "subscription" else "",
-        FAKEGROK_REVIEW="enabled-fixed-review")
+        FAKEGROK_REVIEW=case)
     runner = confined(adapter, tmp_path / "scratch", auth_homes=(login,))
     return adapter, root, log, login, data, runner
 
@@ -73,11 +73,21 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
     assert GrokBuildAdapter.profile.output_limit == 49152
     assert GrokBuildAdapter.profile.login_relay is not None
     assert GrokBuildAdapter.profile.login_relay.kind == "g"
+    from dataclasses import asdict
+    assert asdict(GrokBuildAdapter.profile)["review_output_format"] == "json"
 
 
-@pytest.mark.parametrize("auth", ["api_key", "subscription"])
-def test_production_review_reads_the_task_file_and_cleans_its_home(tmp_path, monkeypatch, auth):
-    adapter, root, log, login, original, runner = _site(tmp_path, auth)
+@pytest.mark.parametrize("auth,case,reason", [
+    ("api_key", "enabled-fixed-review", None),
+    ("subscription", "enabled-fixed-review", None),
+    ("subscription", "error-auth", "Grok reported that sign-in is required"),
+    ("subscription", "escaped-login", "the review contained sensitive output"),
+    ("subscription", "invalid-success", "the review returned an invalid terminal response"),
+    ("subscription", "truncated", "longer than the capture bound"),
+])
+def test_production_review_reads_the_task_file_and_cleans_its_home(
+        tmp_path, monkeypatch, auth, case, reason):
+    adapter, root, log, login, original, runner = _site(tmp_path, auth, case)
     assert "review" in adapter.manifest.capabilities
     held = {}
     receipts = []
@@ -120,9 +130,16 @@ def test_production_review_reads_the_task_file_and_cleans_its_home(tmp_path, mon
             max_actions=1, max_action_seconds=60, max_confirmation_age_seconds=60)))
         records = store.read("run-grok").records
 
-    assert attempt.state is AttemptState.SUCCEEDED, receipts
     outputs = [row.value for row in records if row.kind == "artifact"
                and row.value.source_action_id is not None]
+    if reason is not None:
+        assert not outputs
+        (result,) = [row.value for row in records if row.kind == "action_result"]
+        assert result.outcome == "failed" and reason in result.detail
+        assert not any(word in result.detail for word in ("sensitive-fixture", "fake-access"))
+        assert not Path(_fakegrok.prompt_spawns(log)[0]["grok_home"]).exists()
+        return
+    assert attempt.state is AttemptState.SUCCEEDED, receipts
     assert len(outputs) == 1 and outputs[0].content == REVIEW + "\n"
     assert outputs[0].input_artifact_ids == ("seed-1",)
     (child,) = _fakegrok.prompt_spawns(log)

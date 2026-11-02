@@ -393,23 +393,23 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         relation = attempt_relation(request)
         self._attempts[relation] = evidence
         self._keep_login_values(relation)
+        if self._login_residue:
+            output, result = b"", self._residue_receipt(request, outcome)
+        else:
+            output, result = self._review_response(request, outcome, relation)
         self._review_attempts[relation] = _ReviewAttempt(
             input_artifact_ids=tuple(row.artifact_id for row in inputs),
             result_artifact_ref=args.result_artifact_ref,
-            output=outcome.output,
+            output=output,
             output_contains_env_value=self._review_attempt_carries(outcome),
             evidence=evidence)
         self._check_materials[relation] = (None, inputs, None)
-        # The same rule the dispatch road keeps, on the road where the child's
-        # own output becomes durable content: a review that left state nobody
-        # declared in a directory this build cannot clean has not met the
-        # promise it makes about that directory, and its output must not be
-        # published on the strength of a sentence appended to a success.
-        result = (self._residue_receipt(request, outcome) if self._login_residue
-                  else self._observed(request, outcome))
         if result.outcome != "succeeded":
             self._forget(request)
         return result
+
+    def _review_response(self, request, outcome, relation):
+        return outcome.output, self._observed(request, outcome)
 
     def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """Provider-owned read-only flags; the task remains absent by signature.
