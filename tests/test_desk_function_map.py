@@ -284,6 +284,7 @@ HANDLERS = {
     "disconnect": ("owed", "D1", "the pult: the stream's end"),
     "refresh": ("owed", "D1", "the pult: the grants"),
     "edit": ("owed", "D2", "the terms card of the wizard"),
+    "toggleLimits": ("owed", "D2", "the optional limit editor on the wizard's terms card"),
     "preview": ("owed", "D2", "the terms card of the wizard"),
     "authorize": ("owed", "D2", "the terms card of the wizard"),
     "control": ("owed", "D1", "the pult: «Освободить слот»"),
@@ -314,8 +315,8 @@ def handler_faults(old: list[str], desk: list[str], table=HANDLERS) -> list[str]
 
 def test_the_handlers_the_old_boot_module_had_are_each_kept_retired_or_owed_with_an_owner():
     old, desk = old_handlers(), desk_handlers()
-    assert len(old) == len(set(old)) == 49, (
-        "the boot module's 33 handlers, the 7 of its workflow writers and the 9 actions of automation")
+    assert len(old) == len(set(old)) == 50, (
+        "33 boot handlers, 7 workflow writers and 10 automation actions")
     assert "chooseTask" in desk and "onFlowEdit" not in desk
     assert handler_faults(old, desk) == []
 
