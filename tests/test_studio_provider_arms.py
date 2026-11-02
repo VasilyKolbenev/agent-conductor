@@ -93,6 +93,17 @@ def test_the_roster_projection_answers_every_odd_implementation_and_auth_with_a_
     assert answer["refused"] == [], f"the projection refused instead of dropping: {answer}"
     assert answer["rows"] > 9, "the corpus holds no odd value, so it proves nothing"
 
+def test_optional_model_capability_drops_only_the_malformed_offer():
+    body = _CORPUS + r"""
+    const modern = {...rowFor(1, "unproven", "api_key"), offered: true, task_channel: null};
+    const other = rowFor(2, "unproven", "api_key");
+    const ids = flag => m.projectProviders([{...modern, model_pin_supported: flag}, other])
+      .map(row => row.providerId);
+    console.log(JSON.stringify([ids(true), ids(false), ids(null), ids("true")]));
+    """
+    assert run_js(body, _MODULES) == [["p1", "p2"]] * 3 + [["p2"]]
+
+
 def test_the_third_arm_keeps_a_row_only_for_a_road_a_task_can_take():
     """`task_road` is judged in the same condition and by the same rule: a closed word or no row.
 

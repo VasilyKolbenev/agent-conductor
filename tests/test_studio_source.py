@@ -511,7 +511,9 @@ def test_the_arms_that_drop_a_row_are_counted_apart_from_the_ones_that_refuse():
     # || ... PROVIDER_AUTH` condition) where it used two statements. The same rows are
     # dropped and the arm is still a DROP; tests/test_studio_provider_arms.py runs the
     # module against the two statements it replaced.
-    assert source.count("continue;") == 13
+    # The optional model-pin capability distinguishes a non-object, a bad flag and
+    # an unknown row shape. Previously row type and keys shared one drop statement.
+    assert source.count("continue;") == 15
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is
