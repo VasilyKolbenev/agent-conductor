@@ -10,6 +10,8 @@ from playwright.sync_api import Browser, expect
 
 from conductor import ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
+from conductor.command.adapters.provider import ProviderConfig
+from conductor.command.policy_providers import ProviderAuthority
 from conductor.command.run_store import RunStore
 from tests.test_command_workflow_routes import contracts
 from tests.test_policy_runtime import PD
@@ -18,18 +20,27 @@ from tests.test_store import good_lane, write_project
 
 
 @pytest.fixture
-def wizard_url(tmp_path) -> Iterator[str]:
+def wizard_url(tmp_path, request) -> Iterator[str]:
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     ownership_transition.activate(root, legacy_writers_stopped=True)
     run_store = RunStore(root)
-    httpd = server.build(root, 0, registry=AdapterRegistry([
+    registry = AdapterRegistry([
         _StandardAdapter(run_store, adapter_id="claude-code"),
-        _StandardAdapter(run_store, adapter_id="codex")]))
-    httpd.command_api._providers = contracts()
+        _StandardAdapter(run_store, adapter_id="codex")])
+    httpd = server.build(root, 0, registry=registry)
+    declared = contracts()
+    httpd.command_api._providers = declared
     # Injected adapters have no operator pins. Keep the same explicit test-only
     # provider digest used by the real-server flow driver bench.
-    httpd.command_api._policy.provider_digest = lambda _config: PD
-    httpd.command_api._policy.provider_facts = None
+    if getattr(request, "param", False):
+        configs = [ProviderConfig("claude-code", "/test/claude", "fake-claude-jsonl-v1"),
+                   ProviderConfig("codex", "/test/codex", "fake-codex-jsonl-v1")]
+        authority = ProviderAuthority(configs, declared, registry)
+        httpd.command_api._policy.provider_digest = authority.digest
+        httpd.command_api._policy.provider_facts = authority.facts
+    else:
+        httpd.command_api._policy.provider_digest = lambda _config: PD
+        httpd.command_api._policy.provider_facts = None
     # This fixture substitutes test adapters for the production catalogue.
     # Membership is explicit; availability still comes from the real contracts
     # and task-channel facts only from the registered adapter classes.
@@ -47,6 +58,7 @@ def wizard_url(tmp_path) -> Iterator[str]:
 
 
 @pytest.mark.parametrize(("lang", "width"), [("ru", 375), ("en", 1100)])
+@pytest.mark.parametrize("wizard_url", [True, False], indirect=True, ids=["configured", "no-metadata"])
 def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browser, wizard_url, lang, width):
     context = chromium.new_context(viewport={"width": width, "height": 900})
     try:
@@ -101,6 +113,9 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
             raise AssertionError((refusals, form.inner_text())) from exc
         assert not any(path.endswith("/automation/authorize") for path in posts)
         assert sum(path.endswith("/automation/preview") for path in posts) == 1
+        expect(form.locator('[data-plan-step="do"]')).to_contain_text("claude-code")
+        expect(form.locator('[data-plan-step="do"] [data-checker]')).to_contain_text("codex")
+        expect(form.locator('[data-harness="codex"]')).to_be_visible()
         assert errors == []
         assert form.evaluate("el => el.scrollWidth <= el.clientWidth + 1")
     finally:

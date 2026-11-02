@@ -86,8 +86,11 @@ function stepRow(ctx, row) {
     ctx.t("wizard.launch.step_timeout", {time: timeText(ctx, row.timeout)}),
     ctx.t("wizard.launch.step_attempts", {count: String(row.attempts)}),
     ...(row.clamped ? [ctx.t("wizard.launch.step_clamped")] : [])];
-  return element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
+  const item = element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
     text: parts.join(" · ")});
+  if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
+    {name: row.checker ?? ctx.t("wizard.launch.step_no_harness")})}));
+  return item;
 }
 
 function stepsLine(ctx, facts) {
@@ -100,7 +103,7 @@ function harnessesLine(ctx, facts) {
     text: one.version === null ? one.name : ctx.t("wizard.launch.harness_version",
       {name: one.name, version: one.version})}));
   return line(facts, "harnesses", [element("h4", {text: ctx.t("wizard.launch.harnesses")}),
-    element("ul", {}, rows)]);
+    rows.length ? element("ul", {}, rows) : element("p", {text: ctx.t("wizard.launch.team_unavailable")})]);
 }
 
 function receiveRow(ctx, facts, name, label, digest) {

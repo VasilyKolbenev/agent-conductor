@@ -146,6 +146,17 @@ def test_the_card_is_the_servers_numbers_unchanged_for_the_standard_cycle():
         ("artifact-materials", "sha256:" + "0defaced" * 8)]
 
 
+def test_a_missing_run_read_cannot_supply_a_recipient_from_a_draft():
+    out = run_js(LAUNCH + """
+      const state = reviewed({clock: CLOCK});
+      const launch = {...state.launch, preview: {...state.launch.preview, provider_facts:null},
+        reads:{...state.launch.reads, run:{status:"failed", payload:null}}};
+      const card = wiz.launchFacts({...state, launch}).card;
+      show([card.steps.map(s => [s.harness,s.checker]),card.harnesses]);
+    """, DATA, modules=MODULES)
+    assert out == [[[None, None], [None, None]], []]
+
+
 def test_a_replacement_grants_card_says_what_was_spent_and_an_exhausted_one_says_so():
     out = run_js(LAUNCH + """
       const at = (payload) => {

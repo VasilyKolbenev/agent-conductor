@@ -579,11 +579,13 @@ function guideSteps(ctx) {
   const current = guideStage(ctx.wizard.step)[0];
   return element("ol", {className: "desk-wizard__steps", "aria-label": ctx.t("wizard.steps_label")},
     GUIDE_STAGES.map(([name], index) => element("li", {"data-guide-stage": name,
+      className: name === current ? "desk-wizard__current" : "",
       "aria-current": name === current ? "step" : null, text: `${index + 1}. ${ctx.t(`wizard.guide.${name}`)}`})));
 }
 
 function disclosure(ctx, key, children, opened = false) {
-  return element("details", {open: opened || ctx.expanded.has(key) ? "" : null, "data-guide-details": key}, [
+  return element("details", {className: "desk-wizard__options", open: opened || ctx.expanded.has(key) ? "" : null,
+    "data-guide-details": key}, [
     element("summary", {text: ctx.t(`wizard.guide.${key}`)}), ...children]);
 }
 

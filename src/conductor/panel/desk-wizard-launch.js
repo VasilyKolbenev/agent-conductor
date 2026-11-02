@@ -567,14 +567,23 @@ function warningsOf(budget) {
 
 //: The harness each step of the plan runs on: the plan's node, its instance, that instance's
 //: provider, and the provider's name from the facts the preview carries.
-function harnessByStep(launch) {
+function recipients(launch) {
   const plan = launch.reads.run !== null && launch.reads.run.status === "ok"
     ? launch.reads.run.payload : null;
   const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row.adapter]));
-  const names = new Map((launch.preview.provider_facts?.providers ?? []).map((row) => [
-    row.config.provider_id, row.contract.display_name]));
-  return new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id,
-    names.get(instances.get(node.instance_id)) ?? null]));
+  const providers = new Map((launch.preview.provider_facts?.providers ?? []).map((row) =>
+    [row.config.provider_id, {id: row.config.provider_id, name: row.contract.display_name,
+      version: row.contract.version ?? null}]));
+  function nameOf(instance) {
+    const id = instances.get(instance);
+    if (!id) return null;
+    if (!providers.has(id)) providers.set(id, {id, name: id, version: null});
+    return providers.get(id).name;
+  }
+  const byStep = new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id, {
+    harness: nameOf(node.instance_id), checked: Boolean(node.verifier_instance_id),
+    checker: nameOf(node.verifier_instance_id)}]));
+  return {byStep, providers: [...providers.values()]};
 }
 
 /**
@@ -583,9 +592,9 @@ function harnessByStep(launch) {
  */
 export function cardFacts(launch, around) {
   if (launch.preview === null) return null;
-  const {terms, budget, provider_facts: facts} = launch.preview;
+  const {terms, budget} = launch.preview;
   const clamped = new Map(budget.steps.map((row) => [row.step_id, row.clamped === true]));
-  const harness = harnessByStep(launch);
+  const {byStep, providers} = recipients(launch);
   return {actions: {max: terms.max_actions, of: budget.limits.max_actions},
     spent: budget.spent === null ? null : {actions: budget.spent.actions,
       seconds: budget.spent.seconds},
@@ -593,11 +602,11 @@ export function cardFacts(launch, around) {
     time: terms.max_total_task_seconds, window: terms.duration_seconds,
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
-      role: around.roles[row.node_id] ?? null, harness: harness.get(row.node_id) ?? null,
+      role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
+      checked: byStep.get(row.node_id)?.checked ?? false, checker: byStep.get(row.node_id)?.checker ?? null,
       timeout: row.timeout_seconds, attempts: row.max_attempts,
       clamped: clamped.get(row.node_id) === true})),
-    harnesses: (facts?.providers ?? []).map((row) => ({id: row.config.provider_id,
-      name: row.contract.display_name, version: row.contract.version ?? null})),
+    harnesses: providers,
     receives: {instructions: terms.instruction_bindings.map((row) => ({step: row.node_id,
       digest: row.content_digest})),
     inputs: terms.initial_input_bindings.map((row) => ({ref: row.artifact_ref,

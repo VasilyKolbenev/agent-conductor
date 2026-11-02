@@ -85,11 +85,10 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-wizard__steps li{flex:1 1 130px;min-width:0;padding:6px;background:var(--ground);
   border-radius:8px}
 .desk-wizard__steps small{display:block}
-.desk-wizard__steps [data-guide-stage][aria-current="step"]{font-weight:700;text-decoration:underline;text-underline-offset:4px}
-.desk-wizard [data-guide-details] summary{cursor:pointer;padding:10px 0;min-height:44px;box-sizing:border-box}
-.desk-wizard [data-guide-details][open] summary{margin-bottom:8px}
-.desk-wizard [data-guide-details]{min-width:0}
-.desk-wizard [data-card-id],.desk-wizard__reason{overflow-wrap:anywhere}
+.desk-wizard__current{font-weight:700;text-decoration:underline;text-underline-offset:4px}
+.desk-wizard__options summary{cursor:pointer;padding:10px 0;min-height:44px;box-sizing:border-box}
+.desk-wizard__options{min-width:0}
+.desk-wizard__card,.desk-wizard__reason{overflow-wrap:anywhere}
 .desk-wizard__body{display:grid;gap:14px;min-width:0}
 .desk-wizard__body label{display:grid;gap:6px;min-width:0}
 .desk-wizard input,.desk-wizard textarea,.desk-wizard select{width:100%;padding:8px;
