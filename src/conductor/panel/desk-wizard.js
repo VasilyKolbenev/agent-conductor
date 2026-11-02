@@ -430,7 +430,7 @@ function budgetView(ctx, facts) {
     line("data-budget-worst", ctx.t("wizard.budget.worst", {actions: String(worst.actions),
       time: timeText(ctx, worst.seconds)})),
     line("data-budget-limit", ctx.t("wizard.budget.limit",
-      {actions: String(limits.max_actions)}))])];
+      {actions: String(limits.max_actions)})), element("p", {text: ctx.t("wizard.budget.note")})])];
 }
 
 function addressText(ctx, at) {

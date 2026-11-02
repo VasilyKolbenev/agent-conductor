@@ -125,6 +125,11 @@ def test_first_task_reaches_a_reviewed_dalio_without_manual_ids(chromium: Browse
         assert not any("/command/project/git/" in path for path in posts)
         assert sum(path.endswith("/runs") for path in posts) == 1
         assert sum(path.endswith("/automation/preview") for path in posts) == 1
+        expect(form.locator('[data-guide-executors]')).to_contain_text("claude-code")
+        expect(form.locator('[data-guide-checkers]')).to_contain_text("codex")
+        expect(form.locator('[data-guide-time]')).to_contain_text("резерв" if lang == "ru" else "reserve", ignore_case=True)
+        expect(form.locator('[data-plan-step="do"]')).not_to_be_visible()
+        form.locator('[data-guide-details="terms"] summary').click()
         expect(form.locator('[data-plan-step="do"]')).to_contain_text("claude-code")
         expect(form.locator('[data-plan-step="do"] [data-checker]')).to_contain_text("codex")
         expect(form.locator('[data-harness="codex"]')).to_be_visible()

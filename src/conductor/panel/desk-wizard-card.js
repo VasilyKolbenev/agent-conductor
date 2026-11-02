@@ -51,18 +51,22 @@ function warningRow(ctx, one) {
     text: ctx.t(`wizard.launch.warn.${one.code}`, params)});
 }
 
-function actionsLine(ctx, facts) {
+function scenarios(ctx, card) {
+  const pass = (name, key, row) => element("p", {[name]: "", text: ctx.t(key,
+    {actions: String(row.actions), time: timeText(ctx, row.seconds)})});
+  return [pass("data-terms-clean", "wizard.budget.clean", card.clean),
+    pass("data-terms-worst", "wizard.budget.worst", card.worst)];
+}
+
+function actionsLine(ctx, facts, compact = false) {
   const {card} = facts, params = {max: String(card.actions.max), of: String(card.actions.of)};
   const text = card.spent === null ? ctx.t("wizard.launch.actions", params)
     : ctx.t("wizard.launch.actions_spent", {...params, spent: String(card.spent.actions)});
-  const pass = (name, key, row) => element("p", {[name]: "", text: ctx.t(key,
-    {actions: String(row.actions), time: timeText(ctx, row.seconds)})});
   const exhausted = card.exhausted ? [element("p", {role: "alert", "data-exhausted": "",
     text: ctx.t("wizard.launch.exhausted", {spent: String(card.spent?.actions ?? 0),
       of: String(card.actions.of)})})] : [];
   return line(facts, "actions", [element("p", {"data-terms-actions": "", text}),
-    pass("data-terms-clean", "wizard.budget.clean", card.clean),
-    pass("data-terms-worst", "wizard.budget.worst", card.worst),
+    ...(compact ? [] : scenarios(ctx, card)),
     ...card.warnings.map((one) => warningRow(ctx, one)), ...exhausted]);
 }
 
@@ -142,9 +146,30 @@ function ownerGates(ctx, gates) {
 }
 
 function termsCard(ctx, facts) {
+  if (ctx.wizard.guided) return [guideTerms(ctx, facts)];
   return [element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
     actionsLine(ctx, facts), timeLine(ctx, facts), windowLine(ctx, facts),
     ...ownerGates(ctx, facts.card.gates), stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)])];
+}
+
+function guideTerms(ctx, facts) {
+  const {card} = facts;
+  const names = (rows, key) => [...new Set(rows.map((row) => row[key] ?? ctx.t("wizard.launch.step_no_harness")))].join(", ");
+  const title = (key) => element("strong", {text: ctx.t(key)});
+  const team = element("p", {"data-guide-executors": ""}, [title("wizard.guide.executor"), " · ",
+    names(card.steps, "harness") || ctx.t("wizard.launch.step_no_harness")]);
+  const checkers = names(card.steps.filter((row) => row.checked), "checker");
+  const reviewers = element("p", {"data-guide-checkers": ""}, [title("wizard.guide.checker"), " · ",
+    checkers || ctx.t(card.gates === null ? "wizard.launch.step_no_harness" : "wizard.guide.no_checker")]);
+  const more = element("details", {className: "desk-wizard__options", "data-guide-details": "terms",
+    open: facts.changed.length || ctx.expanded.has("terms") ? "" : null}, [
+    element("summary", {text: ctx.t("wizard.guide.exact_terms")}), ...scenarios(ctx, card),
+    element("p", {text: ctx.t("wizard.budget.note")}), stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)]);
+  return element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
+    ...seedLine(ctx, card.receives.seed), team, reviewers, actionsLine(ctx, facts, true),
+    element("p", {"data-guide-time": "", text: ctx.t("wizard.guide.reserves",
+      {action: timeText(ctx, card.actionTime), total: timeText(ctx, card.time)})}),
+    windowLine(ctx, facts), ...ownerGates(ctx, card.gates), more]);
 }
 
 // -- what surrounds the card -------------------------------------------------------------

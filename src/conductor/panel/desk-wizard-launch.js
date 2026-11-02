@@ -609,7 +609,7 @@ export function cardFacts(launch, around) {
     spent: budget.spent === null ? null : {actions: budget.spent.actions,
       seconds: budget.spent.seconds},
     clean: {...budget.clean}, worst: {...budget.worst}, warnings: warningsOf(budget),
-    time: terms.max_total_task_seconds, window: terms.duration_seconds,
+    time: terms.max_total_task_seconds, actionTime: terms.max_action_seconds, window: terms.duration_seconds,
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
       role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
