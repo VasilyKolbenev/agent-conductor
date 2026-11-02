@@ -1,5 +1,5 @@
-Итог: Grok включён в сборке `48a787c`. G6 завершился с exit 1. На 02.11 подготовлена
-проверка подписки из AppContainer по метаданным, для которой нужен свежий вход.
+Итог: Grok включён в сборке `48a787c`. G6 завершился с exit 1. 02.11 та же сборка
+успешно прочитала квоту реального аккаунта из AppContainer на копии входа без refresh token.
 
 # H5-GROK-ACTIVATE — evidence checkpoint
 
@@ -217,3 +217,21 @@ without network, the original login digest was unchanged and the relay was remov
 fixture with a real numeric zero preserved zero. The live account currently returns expiry_short
 on readiness. No live billing result or successful model task is claimed by these controls.
 Protected checker SHA-256 ccd8c47b3ca86bc80ac2e28b7048f4da387f0ef4e2e50432313d57bf6e22793a.
+
+## Live billing result on 2 November at 10:20 MSK
+
+Owner completed a fresh Grok login. Readiness reported 359 minutes remaining.
+Protected preflight checked 62 files with zero problems and zero notes. The single
+metadata exchange completed with exit 0 and cached_login=true. Billing reported one
+window with used_percent=1.0. The receipt gives neither its period nor its reset time.
+There were zero model calls. The source credential digest was unchanged and the relay
+was removed. The project returned to closed, all six journal files were retired, and
+container-attempts was empty. The failed October G6 remains the only model attempt.
+
+Receipt: DecemberCommand/grok-live/g6-boundary-billing-once.result.json, SHA-256
+fe995256ef904851f127a40fb7da7cd1e9df8e92cba56efd630a454baba8462c.
+Preflight: work/grok-activation/preflight-boundary-billing-20261102T0717417888787Z.json.
+This proves current subscription metadata access inside the boundary. The October headless
+failure still has no established cause. Before authorizing a new diagnose, qualify its error
+reporting on the product road so an unsuccessful attempt can produce a useful fixed reason
+without retaining vendor text. Do not repeat the one-shot billing exchange.
