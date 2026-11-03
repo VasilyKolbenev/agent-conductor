@@ -138,7 +138,7 @@ from . import login_home, task_file
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
-from .deep_commands import GROK_SESSION_PHASE
+from .deep_commands import GROK_PROVIDER_ID, GROK_SESSION_PHASE
 from .grok_stream import STREAM_OUTPUT_LIMIT, decode_stream
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
 from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS, GROK_RELAY
@@ -166,7 +166,6 @@ from .headless_cli import (
 from .process import ProcessRunner
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
-GROK_PROVIDER_ID = "grok-build"
 #: The exact published version this build was reviewed against: the latest
 #: stable release, 2026-08-15. A preflight reading anything else refuses.
 REVIEWED_GROK_VERSION = "1.0.5"
@@ -339,7 +338,7 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
             raise GrokBuildError(
                 "this adapter requires a single-executable pin of its own")
         self._pin = pin
-        self.grok_diagnostic = GROK_SESSION_PHASE if (
+        self.review_diagnostic_version = GROK_SESSION_PHASE if (
             pin.auth == "subscription" and adapter_id == GROK_PROVIDER_ID) else None
         super().__init__(
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)

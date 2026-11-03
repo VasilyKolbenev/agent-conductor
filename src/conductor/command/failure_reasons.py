@@ -18,12 +18,12 @@ import re
 
 #: (fragment a built-in transport writes, the runtime's own words for it). First match wins.
 REASONS = (
-    ("the Grok diagnostic reported an opened session before the error",
-     "the Grok diagnostic reported an opened session before the error"),
-    ("the Grok diagnostic reported no session ID before the error",
-     "the Grok diagnostic reported no session ID before the error"),
-    ("the Grok diagnostic stream did not establish a result",
-     "the Grok diagnostic stream did not establish a result"),
+    ("diagnostic reported an opened session before the error",
+     "the diagnostic reported an opened session before the error"),
+    ("diagnostic reported no session ID before the error",
+     "the diagnostic reported no session ID before the error"),
+    ("diagnostic stream did not establish a result",
+     "the diagnostic stream did not establish a result"),
     ("wrote past the capture bound", "its output was longer than the capture bound"),
     ("exceeded its timeout", "it exceeded its timeout"),
     ("subscription login check timed out", "the subscription login check timed out before dispatch"),

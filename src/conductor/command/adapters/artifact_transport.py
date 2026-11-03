@@ -321,7 +321,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         args = self._review_args(payload)
         mode = request.arguments.get("grok_diagnostic", OMITTED)
         if args.grok_diagnostic != mode or (
-                mode is not OMITTED and mode != getattr(self, "grok_diagnostic", None)):
+                mode is not OMITTED and mode != getattr(self, "review_diagnostic_version", None)):
             raise self.error("review diagnostic does not match the authorized request and provider")
         return args
 

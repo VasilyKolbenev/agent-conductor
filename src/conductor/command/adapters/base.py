@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from inspect import getattr_static
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -28,7 +27,8 @@ from ..contracts import (
 )
 from ..dispatch import validate_dispatch_arguments
 from ..execution_boundary import boundary_provided
-from .attempt_scope import AttemptScopeError, registered_attempt_scope
+from .attempt_scope import AttemptScopeError, instance_declarations, registered_attempt_scope
+from .deep_commands import REVIEW_DIAGNOSTICS
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
@@ -444,7 +444,7 @@ class AdapterRegistry:
         self._argument_schemas: dict[str, Mapping[str, str]] = {}
         self._independent_seams: dict[str, Mapping[str, Any]] = {}
         self._attempt_scopes = {}
-        self._grok_diagnostic = None
+        self._review_diagnostics: dict[str, str] = {}
         for adapter in adapters:
             self.register(adapter)
 
@@ -480,15 +480,15 @@ class AdapterRegistry:
             scope = registered_attempt_scope(adapter)
         except AttemptScopeError as error:
             raise AdapterContractError(str(error)) from None
+        version = instance_declarations(adapter).get("review_diagnostic_version")
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
         self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
         self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
         self._attempt_scopes[reviewed.adapter_id] = scope
-        if reviewed.adapter_id == "grok-build":
-            version = getattr_static(adapter, "grok_diagnostic", None)
-            self._grok_diagnostic = version if type(version) is str else None
+        if type(version) is str and REVIEW_DIAGNOSTICS.get(reviewed.adapter_id) == version:
+            self._review_diagnostics[reviewed.adapter_id] = version
 
     def attempt_scope(self, adapter_id: str):
         """Return the registered value; no discovery or effect is performed."""
@@ -757,9 +757,10 @@ class AdapterRegistry:
             raise UnsupportedCapability(
                 f"adapter {safe!r} does not declare capability {capability!r}")
         if isinstance(arguments, Mapping) and "grok_diagnostic" in arguments and (
-                safe != "grok-build" or capability != "review" or not self._grok_diagnostic
-                or arguments["grok_diagnostic"] != self._grok_diagnostic):
-            raise AdapterContractError("session diagnostics require a Grok subscription review")
+                capability != "review" or safe not in self._review_diagnostics
+                or arguments["grok_diagnostic"] != self._review_diagnostics[safe]):
+            raise AdapterContractError(
+                "this provider does not support the requested review diagnostic")
         if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
         if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":

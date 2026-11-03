@@ -3,7 +3,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from threading import RLock
 
-from .adapters.deep_commands import GROK_SESSION_PHASE
+from .adapters.deep_commands import review_preview_fields
 from .authorization_history import (journal_prefix_digest, validate_authorization_history)
 from .authorization_inputs import bind_inputs, executable_nodes
 from .authorization_terms import closed_fields, positive_integer
@@ -86,11 +86,9 @@ def build_preview(recovered, body, *, budget, provider_digest, registry, clock, 
     preview = {"terms": terms, "preview_digest": _content_digest(terms), "previewed_at": now,
                "provider_facts": facts,
                "valid_until": later(now, min(300, budget.max_confirmation_age_seconds))}
-    diagnostic_steps = [node.node_id for node in executable_nodes(definition)
-                        if node.capability == "review"
-                        and node.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE]
-    if diagnostic_steps:
-        preview["grok_diagnostic_steps"] = diagnostic_steps
+    reviews = ((node.node_id, node.arguments) for node in executable_nodes(definition)
+               if node.capability == "review")
+    preview.update(review_preview_fields(reviews))
     return preview
 
 

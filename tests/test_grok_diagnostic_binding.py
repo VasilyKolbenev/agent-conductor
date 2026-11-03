@@ -41,18 +41,23 @@ def test_api_key_registry_refuses_before_work_or_provider_spawn(tmp_path):
     adapter, log, _authority = _harness(tmp_path)
     registry = AdapterRegistry([adapter])
     registry.validate_arguments("grok-build", "review", ARGS)
-    with pytest.raises(AdapterContractError, match="Grok subscription"):
+    with pytest.raises(AdapterContractError, match="requested review diagnostic"):
         registry.validate_arguments("grok-build", "review", {**ARGS, **MODE})
     with pytest.raises(GrokBuildError, match="authorized request and provider"):
         adapter.prepare(a_request(capability="review", arguments={**ARGS, **MODE}))
     assert not log.exists()
 
 
-def test_unrelated_provider_cannot_opt_in():
+def test_unrelated_provider_cannot_opt_in(tmp_path):
+    grok, _root, log, _login, _bytes, _runner = _site(
+        tmp_path, "subscription", "enabled-fixed-review")
     other = ScriptedAdapter(capabilities=("review",))
-    registry = AdapterRegistry([other])
-    with pytest.raises(AdapterContractError, match="Grok subscription"):
+    other.review_diagnostic_version = MODE["grok_diagnostic"]
+    registry = AdapterRegistry([grok, other])
+    registry.validate_arguments("grok-build", "review", {**ARGS, **MODE})
+    with pytest.raises(AdapterContractError, match="requested review diagnostic"):
         registry.validate_arguments("claude-code", "review", {**ARGS, **MODE})
+    assert not log.exists()
     assert (other.prepare_calls, other.execute_calls) == (0, 0)
 
 

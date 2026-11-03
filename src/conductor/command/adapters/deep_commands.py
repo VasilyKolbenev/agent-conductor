@@ -52,7 +52,10 @@ OUTPUT_LIMIT_BYTES = MappingProxyType({"small": 4 * 1024, "normal": 16 * 1024})
 #: no byte count is a word the schema would admit and the spawn could not honour.
 OUTPUT_LIMIT_PROFILES = frozenset(OUTPUT_LIMIT_BYTES)
 REVIEW_PROFILES = frozenset({"quality", "security", "spec"})
+GROK_PROVIDER_ID = "grok-build"
 GROK_SESSION_PHASE = "session-phase-v1"
+#: A registration can restrict a known wire capability, but cannot claim another provider's wire.
+REVIEW_DIAGNOSTICS = MappingProxyType({GROK_PROVIDER_ID: GROK_SESSION_PHASE})
 #: UNREACHABLE IN THIS RELEASE, and said here rather than discovered later.
 #:
 #: This and the three below belong to the `evidence`, `stop`, `retry` and
@@ -73,6 +76,13 @@ REQUESTED_EVIDENCE_KINDS = frozenset({"result", "diff", "tests", "status"})
 STOP_REASONS = frozenset({"user", "timeout", "switch"})
 RETRY_REASONS = frozenset({
     "failed", "unknown", "verification_failed", "user"})
+
+
+def review_preview_fields(reviews):
+    """Project optional display fields from already validated (step ID, arguments) pairs."""
+    marked = [step_id for step_id, args in reviews
+              if args.get("grok_diagnostic") == GROK_SESSION_PHASE]
+    return {"grok_diagnostic_steps": marked} if marked else {}
 
 
 class _StrictArguments:
