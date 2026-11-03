@@ -92,6 +92,8 @@ function stepRow(ctx, row) {
     ...(row.clamped ? [ctx.t("wizard.launch.step_clamped")] : [])];
   const item = element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
     text: parts.join(" · ")});
+  if (row.grokDiagnostic) item.append(element("p", {
+    text: ctx.t("automation.grok_session_diagnostic", {step: row.step})}));
   if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
     {name: recipientName(ctx, row, "checker")})}));
   return item;
@@ -160,6 +162,7 @@ function termsCard(ctx, facts) {
 
 function guideTerms(ctx, facts) {
   const {card} = facts;
+  const diagnostics = card.steps.some((row) => row.grokDiagnostic);
   const names = (rows, key) => [...new Set(rows.map((row) => recipientName(ctx, row, key)))].join(", ");
   const title = (key) => element("strong", {text: ctx.t(key)});
   const team = element("p", {"data-guide-executors": ""}, [title("wizard.guide.executor"), " · ",
@@ -170,12 +173,15 @@ function guideTerms(ctx, facts) {
   const more = element("details", {className: "desk-wizard__options", "data-guide-details": "terms",
     open: facts.changed.length || ctx.expanded.has("terms") ? "" : null}, [
     element("summary", {text: ctx.t("wizard.guide.exact_terms")}), ...scenarios(ctx, card),
-    element("p", {text: ctx.t("wizard.budget.note")}), stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)]);
+    element("p", {text: ctx.t("wizard.budget.note")}),
+    ...(diagnostics ? [] : [stepsLine(ctx, facts)]),
+    harnessesLine(ctx, facts), receivesLine(ctx, facts)]);
   return element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
     ...seedLine(ctx, card.receives.seed), team, reviewers, actionsLine(ctx, facts, true),
     element("p", {"data-guide-time": "", text: ctx.t("wizard.guide.reserves",
       {action: timeText(ctx, card.actionTime), total: timeText(ctx, card.time)})}),
-    windowLine(ctx, facts), ...ownerGates(ctx, card.gates), more]);
+    windowLine(ctx, facts), ...ownerGates(ctx, card.gates),
+    ...(diagnostics ? [stepsLine(ctx, facts)] : []), more]);
 }
 
 // -- what surrounds the card -------------------------------------------------------------

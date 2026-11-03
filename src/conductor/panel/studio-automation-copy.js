@@ -36,6 +36,9 @@ export const AUTOMATION_COPY = Object.freeze({
   "automation.retry": ["Retry the same request", "Повторить тот же запрос"],
   "automation.refresh": ["Refresh automation status", "Обновить состояние автоматического запуска"],
   "automation.bounds": ["Reviewed limits", "Просмотренные ограничения"],
+  "automation.grok_session_diagnostic": [
+    "This permission covers Grok session diagnostics for step {step} (streaming-messages-json).",
+    "Разрешение включает диагностику сессии Grok на шаге «{step}» (streaming-messages-json)."],
   "automation.edit_limits": ["Edit limits", "Изменить лимиты"],
   "automation.collapse_limits": ["Close limit settings", "Свернуть настройки лимитов"],
   "automation.budget_summary": ["Action limit: {actions}. Up to {seconds} s per action and {total} s in total. Permission lasts {duration} s.", "Действий до {actions}. На действие до {seconds} с, на все действия до {total} с. Разрешение действует {duration} с."],

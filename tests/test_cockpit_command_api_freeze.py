@@ -238,7 +238,7 @@ EXPECTED_ARGUMENT_SCHEMAS = {
         "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"),
     "review": (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose", "work_scope"),
+        "review_profile", "step_purpose", "work_scope", "grok_diagnostic"),
     "evidence": ("target_action_id", "kinds"),
     "stop": ("target_attempt_id", "reason"),
     "retry": ("prior_action_id", "reason"),

@@ -547,7 +547,7 @@ Its canonical config digest is
 The browser never supplies an executable, argv, shell text, cwd, environment
 value, PID, or filesystem destination. It submits one declared capability and
 the endpoint validates `arguments` against this closed registry before calling
-the service. Every listed key is required and no other key is accepted:
+the service. The registry lists all accepted keys for each capability.
 
 <!-- CANONICAL:argument_schemas -->
 ```json
@@ -555,7 +555,7 @@ the service. Every listed key is required and no other key is accepted:
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
     "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"],
   "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
-    "review_profile", "step_purpose", "work_scope"],
+    "review_profile", "step_purpose", "work_scope", "grok_diagnostic"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -565,10 +565,14 @@ the service. Every listed key is required and no other key is accepted:
 
 This registry is derived from the six exact public types in
 `DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
-including exact JSON-list fields and closed enum values. It is the field SET,
-not the required set: `result_artifact_ref`, `step_purpose`,
-`instruction_digest` and `work_scope` are OMITTABLE, so a payload written before
-any of them existed still reads and no frozen revision moves.
+including exact JSON-list fields and closed enum values. The optional fields are
+`result_artifact_ref`, `step_purpose`, `instruction_digest`, `work_scope` and
+`grok_diagnostic`. Earlier frozen revisions retain their original representation.
+
+On a subscription Grok review, `grok_diagnostic: "session-phase-v1"` requests
+session evidence from the CLI's bounded message stream. The grant preview names
+the affected steps in `grok_diagnostic_steps`. The default review uses its
+existing terminal format.
 
 `work_scope` names the TASK a run is bound to, and so which directory a step's
 work lives in: `work/_tasks/<work_scope>/<work_item_id>` for a task's run, and

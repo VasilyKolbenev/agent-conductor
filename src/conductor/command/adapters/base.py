@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from inspect import getattr_static
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -443,6 +444,7 @@ class AdapterRegistry:
         self._argument_schemas: dict[str, Mapping[str, str]] = {}
         self._independent_seams: dict[str, Mapping[str, Any]] = {}
         self._attempt_scopes = {}
+        self._grok_diagnostic = None
         for adapter in adapters:
             self.register(adapter)
 
@@ -484,6 +486,9 @@ class AdapterRegistry:
         self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
         self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
         self._attempt_scopes[reviewed.adapter_id] = scope
+        if reviewed.adapter_id == "grok-build":
+            version = getattr_static(adapter, "grok_diagnostic", None)
+            self._grok_diagnostic = version if type(version) is str else None
 
     def attempt_scope(self, adapter_id: str):
         """Return the registered value; no discovery or effect is performed."""
@@ -751,6 +756,10 @@ class AdapterRegistry:
         if not manifest.supports(capability):
             raise UnsupportedCapability(
                 f"adapter {safe!r} does not declare capability {capability!r}")
+        if isinstance(arguments, Mapping) and "grok_diagnostic" in arguments and (
+                safe != "grok-build" or capability != "review" or not self._grok_diagnostic
+                or arguments["grok_diagnostic"] != self._grok_diagnostic):
+            raise AdapterContractError("session diagnostics require a Grok subscription review")
         if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
         if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":

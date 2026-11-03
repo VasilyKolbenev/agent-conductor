@@ -49,6 +49,35 @@ def _site(tmp_path, auth, case="enabled-fixed-review"):
     return adapter, root, log, login, data, runner
 
 
+def _confirmed_review(adapter, root, *, run_id="run-grok", diagnostic=False):
+    config = {"cycle": {"id": "grok-review", "phases": ["diagnose"]},
+              "instances": [{"id": "reviewer", "adapter": "grok-build"}]}
+    arguments = {"work_item_id": "work-001", "target_artifact_refs": ["candidate"],
+                 "result_artifact_ref": "diagnosis", "review_profile": "quality"}
+    if diagnostic:
+        arguments["grok_diagnostic"] = "session-phase-v1"
+    digest = snapshot_digest(config)
+    with ownership.acquire_owner(root):
+        store = RunStore(root)
+        store.create_run(RunEnvelope(run_id=run_id, cycle_id="grok-review", created_at=NOW,
+                                    config_digest=digest, mode="confirm"), config)
+        store.append(ArtifactDocument(artifact_id="seed-1", artifact_ref="candidate",
+            run_id=run_id, created_at=NOW, media_type="text/markdown", content=SEED))
+        proposal = ActionProposal(proposal_id="proposal-review", run_id=run_id,
+            attempt_id="attempt-review", instance_id="reviewer", capability="review",
+            arguments=arguments, scope=("work",), proposed_by="lane", proposed_at=NOW,
+            timeout_seconds=60, rationale="diagnose the candidate", config_digest=digest,
+            input_binding="proposal-v1")
+        store.append(proposal)
+        runtime = ControlRuntime(store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())
+        confirmation = Confirmation(confirmation_id="confirmation-review", run_id=run_id,
+            proposal_id=proposal.proposal_id, preview_digest=proposal.preview_digest,
+            capability="review", scope=("work",), config_digest=digest,
+            confirmed_by="test-owner", confirmed_at=NOW)
+        return runtime.execute(runtime.authorize(confirmation, budget=Budget(
+            max_actions=1, max_action_seconds=60, max_confirmation_age_seconds=60)))
+
+
 @pytest.mark.parametrize("auth", ["api_key", "subscription"])
 def test_production_dispatch_is_refused_before_preflight_or_claim(tmp_path, auth):
     adapter, root, log, _login, _data, runner = _site(tmp_path, auth)
@@ -153,30 +182,8 @@ def test_production_review_reads_the_task_file_and_cleans_its_home(
         held.update({path.name: path.read_bytes() for path in home.iterdir() if path.is_file()})
 
     runner.hooks["run"] = inspect_task
-    config = {"cycle": {"id": "grok-review", "phases": ["diagnose"]},
-              "instances": [{"id": "reviewer", "adapter": "grok-build"}]}
-    digest = snapshot_digest(config)
-    with ownership.acquire_owner(root):
-        store = RunStore(root)
-        store.create_run(RunEnvelope(run_id="run-grok", cycle_id="grok-review", created_at=NOW,
-                                    config_digest=digest, mode="confirm"), config)
-        store.append(ArtifactDocument(artifact_id="seed-1", artifact_ref="candidate",
-            run_id="run-grok", created_at=NOW, media_type="text/markdown", content=SEED))
-        proposal = ActionProposal(proposal_id="proposal-review", run_id="run-grok",
-            attempt_id="attempt-review", instance_id="reviewer", capability="review",
-            arguments={"work_item_id": "work-001", "target_artifact_refs": ["candidate"],
-                       "result_artifact_ref": "diagnosis", "review_profile": "quality"},
-            scope=("work",), proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
-            rationale="diagnose the candidate", config_digest=digest, input_binding="proposal-v1")
-        store.append(proposal)
-        runtime = ControlRuntime(store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())
-        confirmation = Confirmation(confirmation_id="confirmation-review", run_id="run-grok",
-            proposal_id=proposal.proposal_id, preview_digest=proposal.preview_digest,
-            capability="review", scope=("work",), config_digest=digest,
-            confirmed_by="test-owner", confirmed_at=NOW)
-        attempt = runtime.execute(runtime.authorize(confirmation, budget=Budget(
-            max_actions=1, max_action_seconds=60, max_confirmation_age_seconds=60)))
-        records = store.read("run-grok").records
+    attempt = _confirmed_review(adapter, root)
+    records = RunStore(root).read("run-grok").records
 
     outputs = [row.value for row in records if row.kind == "artifact"
                and row.value.source_action_id is not None]
@@ -216,3 +223,60 @@ def test_production_review_reads_the_task_file_and_cleans_its_home(
         assert home.name.startswith("g-") and home != login
     else:
         assert child["home_report"]["files"] == ["conduct-task.txt"]
+
+
+def _diagnostic_run(tmp_path, case):
+    adapter, root, log, login, original, runner = _site(tmp_path, "subscription", case)
+    attempt = _confirmed_review(adapter, root, diagnostic=True)
+    replay = RunStore(root)
+    records = replay.read("run-grok").records
+    (result,) = [row.value for row in records if row.kind == "action_result"]
+    outputs = [row.value for row in records if row.kind == "artifact"
+               and row.value.source_action_id is not None]
+    children = _fakegrok.prompt_spawns(log)
+    assert len(children) == 1, "a confirmed diagnostic review must launch exactly one prompt"
+    (child,) = children
+    home = Path(child["grok_home"])
+    assert child["argv"] == [*EXPECTED_ARGV[:2], "streaming-messages-json", *EXPECTED_ARGV[3:],
+                             str(home / "conduct-task.txt")]
+    assert [entry.mode for entry in runner.entries] == ["review"]
+    assert not home.exists() and (login / "auth.json").read_bytes() == original
+    journal = (replay.run_path("run-grok") / "records.jsonl").read_bytes()
+    assert b"wire-private" not in journal
+    assert b"fake-access-activation-1234" not in journal
+    return adapter, root, log, attempt, result, outputs
+
+
+def test_one_diagnostic_review_persists_all_assistant_text_and_keeps_next_review_default(tmp_path):
+    adapter, root, log, attempt, result, outputs = _diagnostic_run(tmp_path, "stream-full")
+    assert attempt.state is AttemptState.SUCCEEDED
+    assert result.outcome == "succeeded"
+    (document,) = outputs
+    expected = "  Первая строка.\n\n\tСледующая строка.  \n".encode("utf-8")
+    assert document.content.encode("utf-8") == expected
+    assert document.source_action_id == result.action_id
+    assert document.artifact_ref == "diagnosis" and document.input_artifact_ids == ("seed-1",)
+
+    ordinary = _confirmed_review(adapter, root, run_id="run-ordinary")
+    assert ordinary.state is AttemptState.SUCCEEDED
+    (ordinary_doc,) = [row.value for row in RunStore(root).read("run-ordinary").records
+                       if row.kind == "artifact" and row.value.source_action_id is not None]
+    assert ordinary_doc.content == REVIEW + "\n"
+    _marked, unmarked = _fakegrok.prompt_spawns(log)
+    assert unmarked["argv"][:-1] == EXPECTED_ARGV
+
+
+@pytest.mark.parametrize("case,reason", [
+    ("stream-after-open", "the Grok diagnostic reported an opened session before the error"),
+    ("stream-before-open", "the Grok diagnostic reported no session ID before the error"),
+    ("stream-mismatch", "the Grok diagnostic stream did not establish a result"),
+    ("stream-no-terminal", "the Grok diagnostic stream did not establish a result"),
+    ("stream-oversize", "its output was longer than the capture bound"),
+    ("stream-secret", "the review contained sensitive output"),
+])
+def test_failed_diagnostic_preserves_only_the_fixed_reason(tmp_path, case, reason):
+    _, _, _, attempt, result, outputs = _diagnostic_run(tmp_path, case)
+    assert attempt.state is AttemptState.FAILED
+    assert result.outcome == "failed"
+    assert result.detail == "adapter reported failed: " + reason
+    assert not outputs and not result.evidence_refs

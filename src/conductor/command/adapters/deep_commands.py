@@ -52,6 +52,7 @@ OUTPUT_LIMIT_BYTES = MappingProxyType({"small": 4 * 1024, "normal": 16 * 1024})
 #: no byte count is a word the schema would admit and the spawn could not honour.
 OUTPUT_LIMIT_PROFILES = frozenset(OUTPUT_LIMIT_BYTES)
 REVIEW_PROFILES = frozenset({"quality", "security", "spec"})
+GROK_SESSION_PHASE = "session-phase-v1"
 #: UNREACHABLE IN THIS RELEASE, and said here rather than discovered later.
 #:
 #: This and the three below belong to the `evidence`, `stop`, `retry` and
@@ -215,10 +216,12 @@ class DeepReviewArgs(_StrictArguments):
     #: The run's task, exactly as on `DeepDispatchArgs`: a review stands in the
     #: same directory the work it reviews was written to.
     work_scope: "str | _Omitted" = OMITTED
+    grok_diagnostic: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose", "work_scope"})
-    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref", "step_purpose", "work_scope"})
+        "review_profile", "step_purpose", "work_scope", "grok_diagnostic"})
+    _OPTIONAL_FIELDS = frozenset({
+        "result_artifact_ref", "step_purpose", "work_scope", "grok_diagnostic"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -232,6 +235,8 @@ class DeepReviewArgs(_StrictArguments):
         object.__setattr__(self, "review_profile", _enum(
             "review_profile", self.review_profile,
             REVIEW_PROFILES))
+        if self.grok_diagnostic is not OMITTED:
+            _enum("grok_diagnostic", self.grok_diagnostic, frozenset({GROK_SESSION_PHASE}))
         settle_step_purpose(self)
         _settle_work_scope(self)
 

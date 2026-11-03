@@ -148,11 +148,20 @@ function validFacts(facts) {
  * shape of 7.8.
  */
 export function projectPreview(payload, runId) {
-  const good = keysAre(payload, PREVIEW_KEYS) && validTerms(payload.terms, runId)
+  const marked = payload?.grok_diagnostic_steps;
+  const keys = marked === undefined ? PREVIEW_KEYS : [...PREVIEW_KEYS, "grok_diagnostic_steps"];
+  const good = keysAre(payload, keys) && validTerms(payload.terms, runId)
     && validBudget(payload.budget) && validFacts(payload.provider_facts)
     && DIGEST.test(payload.preview_digest) && epochSeconds(payload.previewed_at) !== null
     && epochSeconds(payload.valid_until) !== null;
-  return good ? structuredClone(payload) : null;
+  if (!good) return null;
+  if (marked !== undefined) {
+    if (!Array.isArray(marked) || !marked.length || !marked.every(isActor)
+        || new Set(marked).size !== marked.length) return null;
+    const planned = payload.terms.node_limits.map((row) => row.node_id);
+    if (stable(planned.filter((id) => marked.includes(id))) !== stable(marked)) return null;
+  }
+  return structuredClone(payload);
 }
 
 //: The lines of the card whose terms changed between two previews, in the order the card draws
@@ -160,6 +169,8 @@ export function projectPreview(payload, runId) {
 function changedLines(before, after) {
   const hit = new Set(Object.keys(LINE_OF).filter(
     (name) => stable(before.terms[name]) !== stable(after.terms[name])).map((n) => LINE_OF[n]));
+  if (stable(before.grok_diagnostic_steps ?? []) !== stable(after.grok_diagnostic_steps ?? []))
+    hit.add("steps");
   return CARD_LINES.filter((line) => hit.has(line));
 }
 
@@ -568,8 +579,10 @@ function warningsOf(budget) {
 //: The harness each step of the plan runs on: the plan's node, its instance, that instance's
 //: provider, and the provider's name from the facts the preview carries.
 function recipients(launch) {
-  const plan = launch.reads.run !== null && launch.reads.run.status === "ok"
+  const read = launch.reads.run !== null && launch.reads.run.status === "ok"
     ? launch.reads.run.payload : null;
+  const matches = read?.graph?.definition_digest === launch.preview.terms.graph_digest;
+  const plan = launch.preview.grok_diagnostic_steps && !matches ? null : read;
   const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row]));
   const providers = new Map((launch.preview.provider_facts?.providers ?? []).map((row) =>
     [row.config.provider_id, {id: row.config.provider_id, name: row.contract.display_name,
@@ -613,6 +626,7 @@ export function cardFacts(launch, around) {
     time: terms.max_total_task_seconds, actionTime: terms.max_action_seconds, window: terms.duration_seconds,
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
+      grokDiagnostic: launch.preview.grok_diagnostic_steps?.includes(row.node_id) === true,
       role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
       model: byStep.get(row.node_id)?.model ?? null, checked: byStep.get(row.node_id)?.checked ?? false,
       checker: byStep.get(row.node_id)?.checker ?? null, checkerModel: byStep.get(row.node_id)?.checkerModel ?? null,

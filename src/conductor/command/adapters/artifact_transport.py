@@ -60,13 +60,8 @@ class _CorrectionRefused(RuntimeError):
 class _ReviewAttempt:
     """What one review leaves for its verification, and nothing more.
 
-    This record holds input IDS. A separate, short-lived material cache retains
-    the exact documents for a plan-named checker; both are released on every
-    verification road. A checker never resolves those inputs a second time.
-
-    The OUTPUT stays, because it is the product: the review's own text becomes
-    the durable artifact. It is the one thing here that must survive the spawn,
-    and it is discarded on every road out of `verify`.
+    Input IDs bind the artifact to its sources. A separate cache retains the
+    exact documents for a plan-named checker until verification ends.
     """
 
     input_artifact_ids: tuple[str, ...]
@@ -159,7 +154,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             return super().prepare(request)
         if not self.review_enabled:
             return super().prepare(request)
-        args = self._review_args(request.arguments)
+        args = self._doer_review_args(request, request.arguments)
         self._workspace.admit_work_dir(args.work_item_id, args.task_scope)
         return PreparedAction(
             adapter_id=self.manifest.adapter_id, request=request,
@@ -201,7 +196,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             return result
         if not self.review_enabled:
             return super().execute(prepared)
-        args = self._review_args(prepared.adapter_payload)
+        args = self._doer_review_args(prepared.request, prepared.adapter_payload)
         unroutable = self._unroutable(prepared.request, prepared.model)
         if unroutable is not None:
             return unroutable
@@ -322,6 +317,14 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             raise self.error(
                 "review arguments do not match the closed deep review schema") from None
 
+    def _doer_review_args(self, request, payload):
+        args = self._review_args(payload)
+        mode = request.arguments.get("grok_diagnostic", OMITTED)
+        if args.grok_diagnostic != mode or (
+                mode is not OMITTED and mode != getattr(self, "grok_diagnostic", None)):
+            raise self.error("review diagnostic does not match the authorized request and provider")
+        return args
+
     def _review(
             self, request: ActionRequest, args: DeepReviewArgs,
             model: str | None = None) -> ActionResultReceipt:
@@ -376,14 +379,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             model: str | None = None) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
-        # stdout becomes durable artifact content, so stderr is separate:
-        # vendor diagnostics must not be published as part of the review.
-        # Separated stderr is discarded, never read here; a CLI may echo
-        # credentials there. The output_contains_env_value gate therefore
-        # scans stdout alone, which is the whole publishable content and
-        # the whole of what the redaction gate has to cover.
+        # Only stdout can become an artifact. Vendor stderr may contain credentials.
         outcome = self._attempt(
-            self._review_argv, work_route(args.work_item_id, args.task_scope),
+            self._review_command(request), work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=payload, separate_stderr=True,
             model=model, mode="review",
             claim=self._claim_of(request))
@@ -407,6 +405,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         if result.outcome != "succeeded":
             self._forget(request)
         return result
+
+    def _review_command(self, request):
+        return self._review_argv
 
     def _review_response(self, request, outcome, relation):
         return outcome.output, self._observed(request, outcome)

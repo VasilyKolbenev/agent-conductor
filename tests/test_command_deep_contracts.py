@@ -317,7 +317,7 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
             "work_scope"},
         "review": {
             "work_item_id", "target_artifact_refs", "result_artifact_ref",
-            "review_profile", "step_purpose", "work_scope"},
+            "review_profile", "step_purpose", "work_scope", "grok_diagnostic"},
         "evidence": {"target_action_id", "kinds"},
         "stop": {"target_attempt_id", "reason"},
         "retry": {"prior_action_id", "reason"},

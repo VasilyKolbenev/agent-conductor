@@ -138,6 +138,8 @@ from . import login_home, task_file
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
+from .deep_commands import GROK_SESSION_PHASE
+from .grok_stream import STREAM_OUTPUT_LIMIT, decode_stream
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
 from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS, GROK_RELAY
 from .relay_env import GROK_COMPAT_ENV, GROK_ROUTE_ENV
@@ -219,7 +221,7 @@ REVIEW_PERMISSION_ARGV = ("--allow", "Read", "--allow", "Grep", "--allow", "Glob
                           "--deny", "WebSearch", "--deny", "MCPTool")
 VERSION_ARGV = ("--version",)
 #: Capture ceiling for either spawn; the pump drains past it and drops the rest.
-GROK_OUTPUT_LIMIT = 48 * 1024
+GROK_OUTPUT_LIMIT = STREAM_OUTPUT_LIMIT
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -337,6 +339,8 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
             raise GrokBuildError(
                 "this adapter requires a single-executable pin of its own")
         self._pin = pin
+        self.grok_diagnostic = GROK_SESSION_PHASE if (
+            pin.auth == "subscription" and adapter_id == GROK_PROVIDER_ID) else None
         super().__init__(
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)
 
@@ -350,7 +354,16 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
                 "--prompt-file", task_file.path_in(home))
 
     def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
-        return (*NO_AUTO_UPDATE_ARGV, "--output-format", self.review_output_format,
+        return self._review_format_argv(home, self.review_output_format)
+
+    def _review_command(self, request):
+        if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE:
+            return lambda home, model: self._review_format_argv(home, "streaming-messages-json")
+        return self._review_argv
+
+    @staticmethod
+    def _review_format_argv(home, output_format):
+        return (*NO_AUTO_UPDATE_ARGV, "--output-format", output_format,
                 *REVIEW_PERMISSION_ARGV,
                 "--prompt-file", task_file.path_in(home))
 
@@ -361,6 +374,14 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
         if self._review_attempt_carries(outcome):
             return b"", self._receipt(request, "failed", None,
                                       "the review contained sensitive output")
+        if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE:
+            content, reason = decode_stream(outcome.output, outcome.exit_code)
+            if reason is not None:
+                return b"", self._receipt(request, "failed", outcome.exit_code or None, reason)
+            if any(value and value in content for value in self._sensitive_values(relation)):
+                return b"", self._receipt(request, "failed", None,
+                                          "the review contained sensitive output")
+            return content, receipt
         try:
             doc = decode_line(outcome.output)
             if outcome.exit_code != 0:

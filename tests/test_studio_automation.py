@@ -46,6 +46,35 @@ def wire(root):
             "paused": automation_view(f.policy, "run"), "body": body}
 
 
+def test_diagnostic_steps_match_the_reviewed_grant(tmp_path):
+    from tests.desk_wizard_node import fixture
+    payload = wire(tmp_path)
+    payload["desk"] = fixture("wizard", "preview_standard.json")
+    result = js("""
+      const detail = p.read;
+      const node = detail.graph.definition.nodes.find(n => n.capability);
+      node.capability = "review";
+      node.arguments.grok_diagnostic = "session-phase-v1";
+      const accepted = (project, packet, id) => [
+        [id], [], [id, id], ["absent"], null, id
+      ].map(ids => Boolean(project({...packet, grok_diagnostic_steps: ids})));
+      const packet = {...p.desk, grok_diagnostic_steps: ["analyst"]};
+      const stale = {graph: {definition_digest: "stale", definition: {nodes: [
+        {node_id: "analyst", instance_id: "obsolete"}
+      ]}}, config: {instances: [{id: "obsolete", adapter: "wrong-recipient"}]}};
+      const card = run => desk.cardFacts({preview: packet, reads: {run}}, {roles: {}});
+      console.log(JSON.stringify([
+        accepted(v => desk.projectPreview(v, p.desk.terms.run_id), p.desk, "analyst"),
+        accepted(v => model.projectAutomationPreview(v, detail), p.preview, node.node_id),
+        Boolean(model.projectAutomationPreview(p.preview, detail)),
+        ...[null, {status: "failed"}, {status: "ok", payload: stale}].map(read =>
+          card(read).steps.map(n => [n.step, n.grokDiagnostic, n.harness]))
+      ]));
+    """, payload)
+    assert result[:3] == [[True, False, False, False, False, False]] * 2 + [False]
+    assert result[3:] == [[["analyst", True, None], ["do", False, None]]] * 3
+
+
 def test_actual_marked_run_preview_and_paused_authority_are_admitted_without_mutating_frozen_config(tmp_path):
     result = js("""
       const before=JSON.stringify(p.read);

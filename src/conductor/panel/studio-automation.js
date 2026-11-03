@@ -71,7 +71,8 @@ function participant(state, detail, id, duty) {
   return note(word(state, duty, {instance: found.id, adapter: found.adapter,
     model: found.model || word(state, "unpinned")}));
 }
-function reviewedWork(state, terms) {
+function reviewedWork(state, preview) {
+  const {terms} = preview;
   const detail = state.runs.detail, box = element("section", {}, [element("h4", {text: word(state, "bounds")})]);
   for (const name of ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"])
     box.append(note(`${word(state, name)}: ${terms[name]}`));
@@ -81,6 +82,9 @@ function reviewedWork(state, terms) {
       participant(state, detail, node.instance_id, "performs"),
       participant(state, detail, node.verifier_instance_id, "verifies"),
       note(`${word(state, "timeout_seconds")}: ${limit.timeout_seconds} · ${word(state, "max_attempts")}: ${limit.max_attempts}`));
+    if (preview.grok_diagnostic_steps?.includes(node.node_id)) {
+      box.append(note(word(state, "grok_session_diagnostic", {step: node.node_id})));
+    }
     if (node.arguments?.work_item_id) box.append(note(`work/${node.arguments.work_item_id}`));
   }
   return box;
@@ -136,7 +140,7 @@ function review(state, held, actions) {
   const preview = held.preview;
   const box = element("section", {className: "studio-automation__review", "data-automation-preview": "true"}, [
     note(word(state, "valid_until", {at: preview.valid_until})),
-    reviewedWork(state, preview.terms), providerFacts(state, preview.provider_facts),
+    reviewedWork(state, preview), providerFacts(state, preview.provider_facts),
     documents(state, preview.terms), roads(state),
     note(word(state, "limit_note")), note(word(state, "stop_note")), note(word(state, "workspace")),
     element("details", {}, [element("summary", {text: word(state, "technical")}),

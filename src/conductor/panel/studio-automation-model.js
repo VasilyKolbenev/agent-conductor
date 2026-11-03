@@ -70,12 +70,22 @@ export function projectGrantRefusal(answer) {
   return {notice: "slot_busy", holder: isId(holder) ? holder : null};
 }
 export function projectAutomationPreview(value, detail) {
-  if (!automationEligible(detail) || !object(value, ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"])
+  const marked = value?.grok_diagnostic_steps;
+  const keys = ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"];
+  if (marked !== undefined) keys.push("grok_diagnostic_steps");
+  if (!automationEligible(detail) || !object(value, keys)
       || !validProviderFacts(value.provider_facts, detail)
       || !object(value.terms, [...TERMS, "duration_seconds"]) || !validTerms(value.terms, detail)
       || !positive(value.terms.duration_seconds) || value.terms.duration_seconds > 86400
       || !isDigest(value.preview_digest) || !isInstant(value.previewed_at) || !isInstant(value.valid_until)
       || compareInstants(value.previewed_at, value.valid_until) >= 0) return null;
+  const planned = (detail.graph?.definition?.nodes ?? []).filter((node) =>
+    node.capability === "review" && node.arguments?.grok_diagnostic === "session-phase-v1");
+  if (planned.length || marked !== undefined) {
+    if (!planned.length || !Array.isArray(marked) || planned.length !== marked.length
+        || detail.graph.definition_digest !== value.terms.graph_digest
+        || !planned.every((node, i) => node.node_id === marked[i])) return null;
+  }
   return copy(value);
 }
 function validGrant(grant, detail) {
