@@ -65,10 +65,11 @@ def error(answer):
     return answer.status, answer.payload["error"]["code"], answer.payload["error"]["detail"]
 
 
-def test_the_table_names_the_two_rows_after_the_cycle_pin():
+def test_the_table_names_task_draft_and_both_auto_continue_rows_after_the_cycle_pin():
     rows = list(COMMAND_ROUTES)
     at = rows.index(("POST", "/command/project/cycle/pin"))
-    assert rows[at + 1:at + 3] == [("GET", PATH), ("POST", PATH)]
+    assert rows[at + 1:at + 4] == [
+        ("POST", "/command/project/task-draft"), ("GET", PATH), ("POST", PATH)]
 
 
 def test_the_path_names_one_route_for_both_verbs_and_the_other_verbs_are_refused():
