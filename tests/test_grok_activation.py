@@ -268,6 +268,8 @@ def test_one_diagnostic_review_persists_all_assistant_text_and_keeps_next_review
 
 @pytest.mark.parametrize("case,reason", [
     ("stream-after-open", "the diagnostic reported an opened session before the error"),
+    ("stream-access", "the diagnostic reported an opened session before the error"
+                      " | the harness reported an access refusal"),
     ("stream-before-open", "the diagnostic reported no session ID before the error"),
     ("stream-mismatch", "the diagnostic stream did not establish a result"),
     ("stream-no-terminal", "the diagnostic stream did not establish a result"),

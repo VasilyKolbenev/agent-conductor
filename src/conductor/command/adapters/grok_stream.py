@@ -6,6 +6,8 @@ frame's text. It can be empty after a tool-only frame.
 """
 from __future__ import annotations
 
+import re
+
 from .jsonl_completion import decode_line
 
 STREAM_OUTPUT_LIMIT = 48 * 1024
@@ -43,7 +45,9 @@ def decode_stream(output: bytes, exit_code: int | None) -> tuple[bytes, str | No
                 frames.append(text)
         if exit_code != 0:
             if _is_error(terminal):
-                return b"", _OPEN if session else _NO_ID
+                phase = _OPEN if session else _NO_ID
+                cause = _terminal_cause(terminal)
+                return b"", phase if cause is None else f"{phase} | {cause}"
             return b"", _INVALID
         if (terminal.get("subtype") != "success" or terminal.get("is_error") is not False
                 or terminal.get("stop_reason") != "end_turn" or "errors" in terminal
@@ -66,6 +70,51 @@ def _is_error(terminal: dict) -> bool:
         return stop in (None, "max_tokens", "refusal", "cancelled")
     return (terminal.get("subtype") == "error_max_turns"
             and stop in ("end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"))
+
+
+def _terminal_cause(terminal):
+    if terminal["subtype"] == "error_max_turns":
+        return "the harness reported that the turn limit was reached"
+    if terminal["stop_reason"] == "max_tokens":
+        return "the harness reported an output token limit"
+    if terminal["stop_reason"] == "refusal":
+        return "the harness reported a turn refusal"
+    if terminal["stop_reason"] == "cancelled":
+        return "the harness reported that the turn was cancelled"
+    causes = {_message_cause(item) for item in terminal["errors"]}
+    return next(iter(causes)) if len(causes) == 1 else None
+
+
+def _message_cause(message: str) -> str | None:
+    """Recognize a vendor signature at the beginning of the error, never quote its details."""
+    text = message.strip().casefold()
+    inner = text.removeprefix("internal error: ")
+    wrapped = inner != text
+    text = inner
+    http = re.match(r"^http(?:/\d(?:\.\d)?)?\s+(\d{3})(?=$|[\s:])", text)
+    status = http[1] if http else None
+    if status in ("401", "403") or text.startswith(("permission denied:", "unauthorized:")) or (
+            text.rstrip(".") in ("permission denied", "forbidden", "unauthorized",
+                                 "grok build is not yet available for this account")):
+        return "the harness reported an access refusal"
+    if status == "429" or text.startswith(("rate limit exceeded", "too many requests")):
+        return "the harness reported a subscription usage limit"
+    if status and status.startswith("5"):
+        return "the harness reported a server-side error"
+    if text.startswith(("unsupported content block in prompt:",
+                        "invalid params: unsupported content block in prompt:")):
+        return "the harness rejected a prompt content block"
+    if text == "connection closed unexpectedly":
+        return "the harness reported that its local prompt channel closed"
+    if text.startswith(("connection refused", "connection reset", "dns error:")):
+        return "the harness reported a connection failure"
+    if text.startswith(("subscription required", "this task requires a subscription")):
+        return "the harness reported that a subscription is required for this task"
+    if text.startswith("not signed in"):
+        return "the harness reported that sign-in is required"
+    if wrapped or text == "internal error":
+        return "the harness reported an internal error"
+    return None
 
 
 def _frame_text(row: dict) -> str | None:

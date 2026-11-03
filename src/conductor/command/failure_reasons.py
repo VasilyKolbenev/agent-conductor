@@ -18,6 +18,13 @@ import re
 
 #: (fragment a built-in transport writes, the runtime's own words for it). First match wins.
 REASONS = (
+    ("the harness reported an internal error", "the harness reported an internal error"),
+    ("the harness reported a server-side error", "the harness reported a server-side error"),
+    ("the harness rejected a prompt content block", "the harness rejected a prompt content block"),
+    ("the harness reported an output token limit", "the harness reported an output token limit"),
+    ("the harness reported a turn refusal", "the harness reported a turn refusal"),
+    ("the harness reported that the turn was cancelled",
+     "the harness reported that the turn was cancelled"),
     ("diagnostic reported an opened session before the error",
      "the diagnostic reported an opened session before the error"),
     ("diagnostic reported no session ID before the error",
@@ -193,5 +200,13 @@ def reason_words(sentence: object) -> str | None:
     """
     if type(sentence) is not str:
         return None
+    head, separator, tail = sentence.partition(" | ")
+    if separator:
+        phase = next((words for fragment, words in REASONS if
+                      words.startswith("the diagnostic reported") and head.endswith(fragment)), None)
+        if phase:
+            cause = next((words for _, words in REASONS
+                          if words.startswith("the harness ") and words == tail), None)
+            return f"{phase} | {cause}" if cause else phase
     found = next((words for fragment, words in REASONS if fragment in sentence), None)
     return found if found is not None else lease_words(sentence)

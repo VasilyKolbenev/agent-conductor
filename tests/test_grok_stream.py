@@ -62,13 +62,38 @@ def test_reports_only_the_session_evidence_on_a_complete_error(session, expected
     assert decode_stream(output, 1) == expected
 
 
-@pytest.mark.parametrize(("subtype", "stop_reason"), [
-    ("error_during_execution", None), ("error_during_execution", "max_tokens"),
-    ("error_max_turns", "cancelled"),
+@pytest.mark.parametrize(("errors", "cause"), [
+    (["HTTP 403 Forbidden: private"], "the harness reported an access refusal"),
+    (["Internal error: HTTP 403 Forbidden: private"], "the harness reported an access refusal"),
+    (["Internal error: unrecognized private detail"], "the harness reported an internal error"),
+    (["HTTP 429: private"], "the harness reported a subscription usage limit"),
+    (["Connection closed unexpectedly"],
+     "the harness reported that its local prompt channel closed"),
+    (["Grok Build is not yet available for this account."],
+     "the harness reported an access refusal"),
+    (["HTTP 503: private"], "the harness reported a server-side error"),
+    (["Invalid params: unsupported content block in prompt: Audio(private)"],
+     "the harness rejected a prompt content block"),
+    (["quoted output: HTTP 403 Forbidden"], None),
+    (["HTTP 4030 unknown"], None),
+    (["HTTP 403", "HTTP 429"], None),
 ])
-def test_an_error_after_assistant_output_discards_the_partial_artifact(subtype, stop_reason):
+def test_recognized_post_open_cause_is_fixed_and_never_copies_error_text(errors, cause):
+    expected = OPEN[1] + " | " + cause if cause else OPEN[1]
+    assert decode_stream(wire(INIT, {**ERROR, "errors": errors}), 1) == (b"", expected)
+
+
+@pytest.mark.parametrize(("subtype", "stop_reason", "cause"), [
+    ("error_during_execution", None, None),
+    ("error_during_execution", "max_tokens", "the harness reported an output token limit"),
+    ("error_during_execution", "refusal", "the harness reported a turn refusal"),
+    ("error_during_execution", "cancelled", "the harness reported that the turn was cancelled"),
+    ("error_max_turns", "cancelled", "the harness reported that the turn limit was reached"),
+])
+def test_an_error_after_assistant_output_discards_the_partial_artifact(subtype, stop_reason, cause):
     end = {**ERROR, "subtype": subtype, "stop_reason": stop_reason}
-    assert decode_stream(wire(INIT, assistant(TEXT), end), 1) == OPEN
+    expected = OPEN[1] + " | " + cause if cause else OPEN[1]
+    assert decode_stream(wire(INIT, assistant(TEXT), end), 1) == (b"", expected)
 
 
 @pytest.mark.parametrize(("rows", "code"), [

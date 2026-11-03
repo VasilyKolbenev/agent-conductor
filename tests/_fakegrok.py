@@ -181,11 +181,12 @@ def _stream_review(case: str) -> int:
 
     emit({"type": "system", "subtype": "init", "cwd": "wire-private-cwd",
           "apiKeySource": "oauth", "model": "wire-private-model"})
-    if case in {"stream-after-open", "stream-before-open", "stream-mismatch"}:
+    if case in {"stream-after-open", "stream-before-open", "stream-mismatch", "stream-access"}:
         terminal_session = "wire-private-other" if case == "stream-mismatch" else session
         emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
               "session_id": terminal_session, "stop_reason": None,
-              "errors": ["wire-private-provider-error"]})
+              "errors": ["permission denied: wire-private-provider-error" if case == "stream-access"
+                         else "wire-private-provider-error"]})
         return 1
 
     def assistant(blocks, stop):
