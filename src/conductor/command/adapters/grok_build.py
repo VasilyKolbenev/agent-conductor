@@ -473,13 +473,32 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
 
 
 
+# These are emitter signatures. An unwrapped ACP error can quote the same text.
+_STARTUP_REASONS = {
+    "Couldn't start session": "the harness reported an embedded agent startup failure",
+    "Couldn't initialize": "the harness reported an agent initialization failure",
+    "Couldn't create session": "the harness reported a task session opening failure",
+}
+
+
 def _grok_error_reason(doc):
     """Only product-owned categories may leave this module."""
-    text = doc["message"].casefold().strip().removesuffix(".")
+    message = doc["message"]
+    text = message.casefold().strip().removesuffix(".")
+    prefix, _, detail = message.partition(": ")
+    phase = _STARTUP_REASONS.get(prefix) if detail.strip() else None
+    normalized_prefix = text.partition(":")[0]
+    if phase is None and any(label.casefold() == normalized_prefix for label in _STARTUP_REASONS):
+        phase = "the harness reported a session startup failure"
+    elif message == "Connection closed unexpectedly":
+        phase = "the harness reported that its local prompt channel closed"
+    if phase is not None:
+        # Prompt errors can carry spending fields along with arbitrary text.
+        if "usage" in doc or "usage_is_incomplete" in doc:
+            return _unclassified_grok_error(doc)
+        return phase
     if text.startswith("not signed in"):
         return "the harness reported that sign-in is required"
-    if text.startswith(("couldn't start session", "couldn't initialize", "couldn't create session")):
-        return "the harness reported a session startup failure"
     if "rate limit" in text or "quota exceeded" in text or "too many requests" in text:
         return "the harness reported a subscription usage limit"
     if "subscription required" in text or "requires a subscription" in text:
@@ -494,6 +513,10 @@ def _grok_error_reason(doc):
     if (text == "connection closed unexpectedly"
             or any(word in text for word in ("connection refused", "connection reset", "dns error"))):
         return "the harness reported a connection failure"
+    return _unclassified_grok_error(doc)
+
+
+def _unclassified_grok_error(doc):
     usage = doc.get("usage")
     total = usage.get("total_tokens") if isinstance(usage, dict) else None
     if type(total) is int and total > 0:
