@@ -155,7 +155,7 @@ Run the interactive wizard, once for each needed connection:
 | Claude Code | 2.1.239 | Native `claude.exe`; set `CLAUDE_CONFIG_DIR` to the dedicated login folder. | Windows subscription tasks; a live Goal completed. |
 | Codex | 0.164.0 | The native Windows x64 executable in the layout below; set `CODEX_HOME` to the dedicated login folder. | Windows subscription tasks; the recorded Goal used `gpt-6.1-sol`. |
 | Kimi Code | 0.38.0 | Native Kimi CLI; dedicated `KIMI_CODE_HOME` and subscription sign-in. | The current pin supports the subscription usage source. Its subscription task is refused before spawn in this build; no live task result is verified. |
-| Grok Build | 1.0.5 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. Authentication succeeded; the live diagnosis returned no verified result. |
+| Grok Build | 1.0.13 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. Subscription diagnosis on this pin awaits a live result. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. | The same API-key mode. |
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
@@ -175,9 +175,9 @@ Install each pinned tool under `%USERPROFILE%\DecemberCommand\harnesses\<name>\<
 
   Place the file in `...\harnesses\claude-code\2.1.239\`.
 - **Codex 0.164.0, Windows x64.** Get `@openai/codex@0.164.0` and `@openai/codex@0.164.0-win32-x64` from the npm registry. Compare their SHA256 with the GitHub release assets before extraction. The main tarball is `afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30`; the Windows tarball is `4fbd23473a2fc223396cdd8490d3f658d368438134c12a3f1dac9d1e2041a65b`. Extract the contents of each `package/` into `...\harnesses\codex\0.164.0\node_modules\@openai\codex` and `...\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64` respectively. Keep the complete packages, including resources beside `vendor\x86_64-pc-windows-msvc\bin\codex.exe`. [Reviewed files and hashes](recovery/2026-10-20/tasks/H5-CODEX-COMPAT-A-INVENTORY.json).
-- **Grok Build 1.0.5, Windows x64.** Check the vendor's pinned `grok.exe` against SHA256 `4b924daa801663ea20e96382408b1f2b5ba39efad62c14d20d88618a9eb0be64` before copying it to `...\harnesses\grok-build\1.0.5\grok.exe`. [Reviewed binary](recovery/2026-10-20/tasks/H5-GROK-ACTIVATE-REPORT.md).
+- **Grok Build 1.0.13, Windows x64.** Check the vendor's pinned `grok.exe` against SHA256 `bf43dc75f5478a106eab1e86d422c963e4dbe9666cf14dab363733d27bf1e672` before copying it to `...\harnesses\grok-build\1.0.13\grok.exe`. [WinGet manifest](https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/x/xAI/GrokBuild/1.0.13/xAI.GrokBuild.installer.yaml).
 
-Windows x64 downloads: [Codex main archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [Codex Windows archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [Grok binary](https://x.ai/cli/grok-1.0.5-windows-x86_64.exe). Use `Get-FileHash -Algorithm SHA256 -LiteralPath <downloaded-file>` and compare with the matching value above before extraction or execution.
+Windows x64 downloads: [Codex main archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [Codex Windows archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [Grok binary](https://x.ai/cli/grok-1.0.13-windows-x86_64.exe). Use `Get-FileHash -Algorithm SHA256 -LiteralPath <downloaded-file>` and compare with the matching value above before extraction or execution.
 
 **Run the wizard while the server is stopped** (Ctrl+C in its window; the command refuses with
 `owner_busy` otherwise), then start `conduct up` again: providers are read once, at startup.
@@ -242,7 +242,7 @@ $codex = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\codex\0.164.0\nod
 $login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\grok-build'
 New-Item -ItemType Directory -Force -Path $login | Out-Null
 $env:GROK_HOME = $login
-$grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.5\grok.exe'
+$grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.13\grok.exe'
 & $grok --no-auto-update login
 ```
 

@@ -153,7 +153,7 @@ mkdir "$project"
 | Claude Code | 2.1.239 | `claude.exe`, переменная `CLAUDE_CONFIG_DIR` указывает на отдельную папку входа. | Задачи по подписке на Windows. Живой Goal завершился. |
 | Codex | 0.164.0 | Штатный исполняемый файл Windows x64 по схеме ниже; `CODEX_HOME` указывает на отдельную папку входа. | Задачи по подписке на Windows. Для проверенного запуска Goal использовалась модель `gpt-6.1-sol`. |
 | Kimi Code | 0.38.0 | Штатный CLI, отдельный `KIMI_CODE_HOME` и вход по подписке. | Для подписки есть источник сведений об использовании. Эта сборка отклоняет подписочную задачу до запуска процесса; живой результат не подтверждён. |
-| Grok Build | 1.0.5 | Штатный `grok.exe`, отдельный `GROK_HOME` и вход по подписке. | Шаг review только для чтения на Windows. Вход подтвердился, проверенного результата живой диагностики пока нет. |
+| Grok Build | 1.0.13 | Штатный `grok.exe`, отдельный `GROK_HOME` и вход по подписке. | Шаг review только для чтения на Windows. Живая диагностика по подписке на этой версии ещё не подтверждена. |
 | DeepSeek Harness | 0.1.0-rc.7 | Исполняемый файл Node **и** entrypoint-скрипт DSH; режим API-ключа; разрешённое имя `DEEPSEEK_API_KEY`. | Тот же режим API-ключа. |
 
 Настройка подключения не означает, что задача исполнится: см. [Где задачи исполняются в этой сборке](#где-задачи-исполняются-в-этой-сборке).
@@ -173,9 +173,9 @@ mkdir "$project"
 
   Положите файл в `...\harnesses\claude-code\2.1.239\`.
 - **Codex 0.164.0, Windows x64.** Возьмите из реестра npm пакеты `@openai/codex@0.164.0` и `@openai/codex@0.164.0-win32-x64`. Перед распаковкой сравните их SHA256 с файлами GitHub-релиза. Основной архив — `afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30`, архив Windows — `4fbd23473a2fc223396cdd8490d3f658d368438134c12a3f1dac9d1e2041a65b`. Разложите содержимое `package/` каждого архива в `...\harnesses\codex\0.164.0\node_modules\@openai\codex` и `...\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64` соответственно. Сохраните целиком оба пакета, включая ресурсы рядом с `vendor\x86_64-pc-windows-msvc\bin\codex.exe`. [Опись файлов и хешей](recovery/2026-10-20/tasks/H5-CODEX-COMPAT-A-INVENTORY.json).
-- **Grok Build 1.0.5, Windows x64.** Сверьте `grok.exe` из выпуска вендора с SHA256 `4b924daa801663ea20e96382408b1f2b5ba39efad62c14d20d88618a9eb0be64`, затем положите файл в `...\harnesses\grok-build\1.0.5\grok.exe`. [Отчёт о проверке](recovery/2026-10-20/tasks/H5-GROK-ACTIVATE-REPORT.md).
+- **Grok Build 1.0.13, Windows x64.** Сверьте `grok.exe` из выпуска вендора с SHA256 `bf43dc75f5478a106eab1e86d422c963e4dbe9666cf14dab363733d27bf1e672`, затем положите файл в `...\harnesses\grok-build\1.0.13\grok.exe`. [Манифест WinGet](https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/x/xAI/GrokBuild/1.0.13/xAI.GrokBuild.installer.yaml).
 
-Файлы для Windows x64: [основной архив Codex](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [архив Codex для Windows](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [исполняемый файл Grok](https://x.ai/cli/grok-1.0.5-windows-x86_64.exe). Перед распаковкой или запуском вычислите `Get-FileHash -Algorithm SHA256 -LiteralPath <путь-к-файлу>` и сравните с хешем этого файла выше.
+Файлы для Windows x64: [основной архив Codex](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [архив Codex для Windows](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [исполняемый файл Grok](https://x.ai/cli/grok-1.0.13-windows-x86_64.exe). Перед распаковкой или запуском вычислите `Get-FileHash -Algorithm SHA256 -LiteralPath <путь-к-файлу>` и сравните с хешем этого файла выше.
 
 **Запускайте мастер при остановленном сервере** (Ctrl+C в его окне; иначе команда откажет с
 `owner_busy`), затем снова запустите `conduct up`: провайдеры читаются один раз, при старте.
@@ -240,7 +240,7 @@ $codex = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\codex\0.164.0\nod
 $login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\grok-build'
 New-Item -ItemType Directory -Force -Path $login | Out-Null
 $env:GROK_HOME = $login
-$grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.5\grok.exe'
+$grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.13\grok.exe'
 & $grok --no-auto-update login
 ```
 
