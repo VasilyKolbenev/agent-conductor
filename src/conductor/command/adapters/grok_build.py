@@ -75,8 +75,8 @@ citation is re-checkable only if the words it said are written down.
   preflight standing between an operator's pin and a real prompt. **A form the
   crate can build is not a form the program prints**, and only the second is
   this preflight's subject.
-- **The reviewed version is 1.0.5**, the latest stable release of 2026-08-15
-  (x.ai/build/changelog).
+- The current Windows pin prints ``grok 1.0.13 (5e9a58528b76)``. The older
+  1.0.5 release described below returned HTTP 426 on the subscription service.
 - **The home** relocates with ``GROK_HOME``: "Override config directory
   (default: ``~/.grok``)".
 - **Four switches** are documented, and all four are turned off here:
@@ -111,15 +111,15 @@ opt-in real smoke against a real install is what would show a switch not taking.
 **The channel is parsed and then discarded.** ``channel_label()`` is quoted
 above, so its spelling is a citation rather than the guess an earlier draft of
 this docstring called it. What remains a RULING rather than a fact is that only
-the semver decides: ``1.0.5 [alpha]`` is accepted as the reviewed version,
+the semver decides: a reviewed semver with the alpha suffix is accepted,
 because the owner's rule for this provider is that the commit and the channel
 never become the version. If an alpha build should instead be refused as a
 different build line, that is a change of admission policy and belongs in review,
 not in a quiet edit here.
 
-**The pinned commit is one patch AHEAD of the reviewed version.**
+**Source history for the original version parser.**
 ``crates/codegen/xai-grok-pager-bin/Cargo.toml`` reads ``version = "1.0.6"`` at
-PINNED_COMMIT, while the reviewed release is 1.0.5. Every fact above is a fact
+PINNED_COMMIT, while the originally reviewed release was 1.0.5. Every fact above is a fact
 about the printed FORM, which that tree pins exactly; none of them is the version
 number itself, which comes from the published changelog. Said out loud because a
 module whose method is "pin the exact bytes" owes a reader the version those
@@ -168,7 +168,7 @@ from .process import ProcessRunner
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
 #: The exact published version this build was reviewed against: the latest
 #: stable release, 2026-08-15. A preflight reading anything else refuses.
-REVIEWED_GROK_VERSION = "1.0.5"
+REVIEWED_GROK_VERSION = "1.0.13"
 #: The protocol token an operator pins to select this adapter.
 GROK_PROTOCOL = DeepProtocol.GROK_HEADLESS_V1.value
 #: Experimental is said in the one field the Cockpit projection carries.
@@ -592,7 +592,8 @@ _RPC_INIT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
              b'{"protocolVersion":1,"clientCapabilities":{},'
              b'"clientInfo":{"name":"conduct-quota","version":"1"}}}\n')
 _RPC_INFO = b'{"jsonrpc":"2.0","id":2,"method":"_x.ai/auth/info","params":{}}\n'
-_RPC_NOTIFICATIONS = ("_x.ai/mcp/servers_updated",)
+_RPC_NOTIFICATIONS = ("_x.ai/mcp/servers_updated", "_x.ai/settings/update",
+                      "_x.ai/announcements/update")
 GROK_AUTH_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO, (1, 2),
     ("_meta", "defaultAuthMethodId"), "cached_token", _RPC_NOTIFICATIONS)
 GROK_QUOTA_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO+

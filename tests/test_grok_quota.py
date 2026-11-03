@@ -32,7 +32,7 @@ class NativeRunner(ProcessRunner):
         self.specs=[]; self.method='cached_token'; self.bad=False
     def run(self,spec):
         self.specs.append(spec)
-        if spec.argv[-1]=='--version': output=b'grok 1.0.5 (19d42e3) [stable]'
+        if spec.argv[-1]=='--version': output=b'grok 1.0.13 (19d42e3) [stable]'
         else:
             output=b'private-upstream-error' if self.bad else transcript(self.method,billing=spec.stdin_completion_id==3)
             home=Path(spec.env['GROK_HOME']); (home/'logs').mkdir(exist_ok=True)
@@ -137,6 +137,16 @@ def test_only_calibrated_metadata_notification_is_tolerated():
         GROK_QUOTA_RPC.decode(transcript().replace(b'_x.ai/mcp/servers_updated',b'_x.ai/unknown'))
     with pytest.raises(NativeQuotaReadError):
         GROK_QUOTA_RPC.decode(transcript()+transcript())
+
+
+def test_1013_startup_notices_preserve_auth_and_billing():
+    for rpc, billing in ((GROK_AUTH_RPC, False), (GROK_QUOTA_RPC, True)):
+        raw = transcript(billing=billing)
+        notices = [json.dumps({"jsonrpc": "2.0", "method": method, "params": {}}).encode()
+                   for method in ("_x.ai/settings/update", "_x.ai/announcements/update")]
+        assert rpc.decode(b"\n".join([*notices, raw])) == rpc.decode(raw)
+        with pytest.raises(NativeQuotaReadError):
+            rpc.decode(b"\n".join([notices[0].replace(b'"params"', b'"id":4,"params"'), raw]))
 
 
 def test_api_key_road_does_not_attempt_subscription_metadata(tmp_path):
