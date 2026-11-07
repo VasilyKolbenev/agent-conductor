@@ -22,6 +22,8 @@
 .desk-run .studio-fact{display:flex;flex-wrap:wrap;gap:6px 12px;margin:3px 0;min-width:0}
 .desk-run .studio-fact__v,.desk-run .studio-document-text{overflow-wrap:anywhere}
 .desk-run .studio-document-text{white-space:pre-wrap}
+.desk-decision-card .studio-gate-material,.desk-run .studio-gate-material{
+  font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
 .desk-run .studio-positions,.desk-run .studio-artifacts,.desk-run .studio-timeline{
   display:grid;gap:10px;padding-left:22px;min-width:0}
 .desk-run .studio-row,.desk-run .studio-position,.desk-run .studio-artifact{

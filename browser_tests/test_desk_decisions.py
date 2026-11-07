@@ -13,6 +13,48 @@ from tests.test_store import good_lane, write_project
 PROJECT = "a" * 32
 
 
+def test_open_review_document_wraps_inside_the_narrow_pult(tmp_path, chromium, monkeypatch):
+    from conductor.command.task_contracts import TaskRecord
+    from conductor.command.task_store import TaskStore
+    from tests import desk_progress_seed as seed
+
+    root = _world(tmp_path)
+    task, run = "task-review", "run-review"
+    TaskStore(root).create_task(TaskRecord(task, task, task, seed.CREATED))
+    config = {"cycle": {"id": "default-orbit"}, "task": {"id": task, "work_scope": task},
+              "instances": [{"id": seed.DOER, "adapter": "claude-code"},
+                            {"id": seed.CHECKER, "adapter": "codex-cli"}]}
+    store = RunStore(root)
+    digest = snapshot_digest(config)
+    store.create_run(a_run(run_id=run, mode="confirm", config_digest=digest,
+                           created_at=seed.CREATED), config)
+    store.append(seed._definition(run))
+    journal = seed.Journal(store, run, digest, 100)
+    journal.brief()
+    content = "Проверить счётчик, исходы и ограничения. " * 20 + "\n" + "x" * 256
+    monkeypatch.setattr(seed, "PLAN", content)
+    journal.analyse()
+    with identified_server(root, PROJECT) as origin:
+        context = chromium.new_context(viewport={"width": 375, "height": 900})
+        page = context.new_page()
+        try:
+            page.goto(f"{origin}/panel/desk.html#project={PROJECT}&task={task}&run={run}&lang=ru")
+            card = page.locator("#deskPult [data-desk-decision]")
+            document = card.locator("details[data-gate-artifact]")
+            document.locator("summary").click()
+            expect(document.locator("pre")).to_have_text(content, use_inner_text=False)
+            widths = page.evaluate("""() => {
+              const card = document.querySelector('#deskPult [data-desk-decision]');
+              const pre = card.querySelector('details[open] pre');
+              return {right: pre.getBoundingClientRect().right, card: card.getBoundingClientRect().right,
+                scroll: pre.scrollWidth, visible: pre.clientWidth, viewport: innerWidth};
+            }""")
+            assert widths["right"] <= min(widths["card"], widths["viewport"]) + 1, widths
+            assert widths["scroll"] <= widths["visible"] + 1, widths
+        finally:
+            context.close()
+
+
 def _world(tmp_path):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     _seed(root)
