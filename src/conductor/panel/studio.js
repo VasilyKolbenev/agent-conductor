@@ -124,6 +124,10 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
     if (next === state) return;
+    if (demo && event.type === "task-spent" && next.tasks.draft !== state.tasks.draft) {
+      const finished = byId("studioTasks").querySelector("details[data-task-create]");
+      if (finished) finished.open = false;
+    }
     state = next;
     history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
     if (redraw) render();
@@ -463,7 +467,11 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     draft: () => state.decisions.draft, isId, refreshRun, write});
   const tasks = taskFlow({state: () => state, read: readJson, write, dispatch,
     clearRun, loadRuns, refreshRun, runSelection: () => runNavigation,
-    isDemo: () => demo});
+    isDemo: () => demo, focusDecisions: () => {
+      const panel = byId("screenDecisions");
+      panel.focus({preventScroll: true});
+      panel.scrollIntoView({block: "start"});
+    }});
   const automation = automationFlow({changed: render, selected: () => chosenRun,
     ready: () => streamOpen && state.runs.phase === "ready" && state.runs.detail?.run.run_id === chosenRun,
     read: (id, stop) => readJson(path.automation(id), stop), stop: () => new AbortController(),

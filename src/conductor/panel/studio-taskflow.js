@@ -132,6 +132,7 @@ class TaskFlow {
         if (asked !== this.selection || navigation !== this.door.runSelection()
             || !untouched(typed, this.door.state())) return;
         this.door.dispatch({type: "screen", screen: "decisions"});
+        this.door.focusDecisions();
         this.door.refreshRun(runId);
       });
     } finally {

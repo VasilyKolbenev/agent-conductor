@@ -38,6 +38,7 @@ def test_fresh_task_to_its_own_receipt(chromium, tmp_path, lang, width, title, b
         page.locator('[data-focus="task-create"]').click()
         ready = page.get_by_role("button", name=begin, exact=True)
         expect(ready).to_be_enabled()
+        expect(page.locator("details[data-task-create] input")).to_be_hidden()
         expect(page.locator("#bodyOverview")).to_contain_text(title)
         expect(page.locator("#bodyOverview")).not_to_contain_text("demo-run-001")
         task_id = parse_qs(urlsplit(page.url).fragment)["task"][0]
@@ -50,6 +51,8 @@ def test_fresh_task_to_its_own_receipt(chromium, tmp_path, lang, width, title, b
         expect(decision).to_be_visible()
         expect(decision).to_contain_text("A ✓ · B ✗ · C ✓")
         expect(decision).to_contain_text("2 / 3")
+        if width == 375:
+            expect(decision.get_by_text("A ✓ · B ✗ · C ✓", exact=False).last).to_be_in_viewport()
         run_id = parse_qs(urlsplit(page.url).fragment)["run"][0]
         store = RunStore(root)
         before = store.read(run_id)
