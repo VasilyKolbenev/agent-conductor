@@ -88,6 +88,37 @@ exercise is a test of V1's usefulness, not permission to start the V2 implementa
 
 ## Preserve for V2 — do not reopen before alpha
 
+### One entry point for subscription harnesses («единая розетка»)
+
+Owner direction, 2026-11-07. A user brings subscriptions to complete vendor
+harnesses. Each keeps its own tools and execution loop. December Command connects
+their roles, workspaces, handoffs, budgets and results in one workflow. The
+catalogue shows what each installed harness has actually demonstrated, including
+account access, supported roles and quota windows. A reading the vendor does not
+provide is displayed as unknown.
+
+The conversational launcher starts with the task in the user's own words. It asks
+only for missing details and drafts an editable Dalio cycle or a user-defined
+no-code cycle. It proposes participants, a separate checker, time and action
+limits suited to the task, and shows where a person will make a decision. The
+user can revise those choices in conversation or in Studio. Both views use the
+same plan and the same preview. Execution begins with explicit bounded permission.
+
+Acceptance example: on a clean installation, a colleague connects their own
+subscriptions and asks to fix a counter that counts failed runs as successes.
+They can see why Grok is assigned diagnosis, what Codex may edit, who checks the
+change and the limits of the first action. After the run they can find the change,
+test result, checker verdict and their decision together, then reuse the cycle on
+a second task. Measure time to an accepted result, human interventions and vendor
+quota readings where available. Reuse on a second task is a separate product signal.
+
+The immediate rehearsal is the full Codex and Grok Dalio cycle. A three-harness
+rehearsal with Kimi Code follows confirmed subscription access and a verified task
+on that harness. Previous Claude Code rehearsal evidence remains attached to its
+specific version and steps. **Arachnid** is the owner's proposed product name.
+
+### Other V2 commitments
+
 - **Stage two: up to three concurrent runs per project** (owner decision, 2026-11-02).
   A run is one execution of a cycle for a task. The three tasks may use the same
   cycle template or different ones. Studio shows which runs are working, waiting
