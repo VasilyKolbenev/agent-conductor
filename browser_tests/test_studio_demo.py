@@ -702,6 +702,8 @@ def test_the_demo_run_is_named_by_its_task_and_its_header_offers_what_it_needs(f
     main.click()
     decisions = page.locator("#screenDecisions")
     expect(decisions).to_contain_text(demo_scenario.WAITING_GATE)
+    gate = decisions.locator(f'[data-focus-key="decision:{demo_scenario.RUN_ID}/{demo_scenario.WAITING_GATE}"]')
+    expect(gate).to_have_attribute("aria-pressed", "true")
     assert demo_scenario.RUN_ID in decisions.inner_text()
     assert problems == []
 

@@ -151,7 +151,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     mountInspector(mounts.inspector, presentation, handlers);
     mountRuns(mounts.bodyRuns, presentation, handlers);
     mountBridge(mounts.bridge, presentation, handlers);
-    mountAutomation(mounts.bodyRuns, presentation, held, automation);
+    mountAutomation(mounts.bodyRuns, presentation, held, automation, handlers.showDecisions);
     mountDecisions(mounts.bodyDecisions, presentation, handlers);
     mountAgents(mounts.bodyAgents, presentation, handlers);
     restoreTyped(shell, typed);
@@ -512,7 +512,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     selectRun: (runId) => refreshRun(runId, true),
     refreshRuns: () => loadRuns(),
     showDecisions: (runId) => {
-      dispatch({type: "screen", screen: "decisions"});
+      dispatch({type: "screen", screen: "decisions", pendingRun: runId});
       if (isId(runId)) refreshRun(runId, true);
     },
     chooseStep: step.chooseStep,

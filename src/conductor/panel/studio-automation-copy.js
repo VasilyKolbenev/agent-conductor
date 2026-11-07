@@ -19,6 +19,8 @@ export const AUTOMATION_COPY = Object.freeze({
   "automation.env_names": ["Permitted environment names", "Разрешённые имена переменных окружения"],
   "automation.provider_details": ["Exact provider configuration and limits", "Точная конфигурация и ограничения участников"],
   "automation.title": ["Bounded automatic run", "Ограниченный автоматический запуск"],
+  "automation.decision_waiting": ["This run is waiting for your decision. Review the step before allowing further work.", "Этот запуск ждёт вашего решения. Проверьте шаг, прежде чем разрешать дальнейшую работу."],
+  "automation.open_decision": ["Review pending decision", "Перейти к решению"],
   "automation.explain": ["Review explicit limits, then authorize routine work. Human gates still wait for your answer.", "Проверьте ограничения и разрешите обычные шаги. Человеческие проверки по-прежнему ждут вашего решения."],
   "automation.actor": ["Your name", "Ваше имя"],
   "automation.name_needed": ["Enter your name in the field above to enable authorization.", "Введите имя в поле «Ваше имя» выше, чтобы разрешить запуск."],

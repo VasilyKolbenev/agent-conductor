@@ -110,9 +110,21 @@ export const AGENTS_COPY = Object.freeze({
     "Роли участника"
   ],
   "agents.receipt_title": [
-    "The receipt this decision wrote",
-    "Квитанция этого решения"
+    "Decision recorded",
+    "Решение записано"
   ],
+  "agents.action_approve": ["Approve", "Одобрить"],
+  "agents.action_reject": ["Reject", "Отклонить"],
+  "agents.action_request_changes": ["Request changes", "Запросить доработку"],
+  "agents.action_waive": ["Waive this check", "Пропустить проверку"],
+  "agents.recorded_approve": ["Approved", "Одобрено"],
+  "agents.recorded_reject": ["Rejected", "Отклонено"],
+  "agents.recorded_request_changes": ["Changes requested", "Запрошена доработка"],
+  "agents.recorded_waive": ["Check waived", "Проверка пропущена"],
+  "agents.change_answer": ["Change recorded decision", "Изменить решение"],
+  "agents.receipt_details": ["Receipt details", "Подробности квитанции"],
+  "agents.step_details": ["Step details", "Подробности шага"],
+  "agents.read_result": ["Read the result of “{title}”", "Прочитать результат шага «{title}»"],
   "agents.choose_answer": [
     "Choose one of the four answers.",
     "Выберите один из четырёх ответов."

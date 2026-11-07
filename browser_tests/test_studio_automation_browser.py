@@ -95,6 +95,36 @@ def prepare(page, project):
     return box
 
 
+def test_pending_decision_from_permission_panel_on_narrow_screen(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        page.locator('[data-focus="preference-language"]').select_option("ru")
+        box = page.locator('[data-automation="run"]')
+        box.get_by_role("button", name="Перейти к решению").click(timeout=4000)
+        form = page.locator("#bodyDecisions .studio-decide")
+        expect(form).to_be_visible()
+        expect(form.get_by_label("Кто решил")).to_have_value("")
+        expect(form.get_by_role("radio", name="Одобрить", exact=False)).to_be_checked()
+        expect(form.get_by_role("button", name="Записать решение")).to_be_disabled()
+        assert form.evaluate("(f) => f.getBoundingClientRect().right <= innerWidth")
+        assert window.writes("/automation/authorize") == window.writes("/decisions") == 0
+        actor = form.get_by_label("Кто решил")
+        actor.fill("owner")
+        expect(actor).to_be_focused()
+        expect(form.get_by_role("button", name="Записать решение")).to_be_enabled()
+        form.get_by_role("button", name="Записать решение").click()
+        receipt = page.locator("#bodyDecisions .studio-decisions__detail")
+        expect(receipt).to_contain_text("receipt-answer-0-owner")
+        expect(receipt.get_by_role("heading", name="Решение записано")).to_be_visible()
+        assert window.writes("/decisions") == 1 and window.writes("/automation/authorize") == 0
+        assert adapter.execute_calls == 0
+    finally:
+        page.context.close()
+
+
 def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounded_project):
     project, adapter = bounded_project
     page, window = _open(chromium, project)

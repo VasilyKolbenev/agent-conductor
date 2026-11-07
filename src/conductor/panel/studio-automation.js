@@ -170,10 +170,14 @@ function status(state, held, actions) {
   }
   return box;
 }
-export function mountAutomation(mount, state, held, actions) {
+export function mountAutomation(mount, state, held, actions, showDecisions) {
   if (!automationEligible(state.runs.detail) || !held.draft || held.runId !== state.runs.selectedId) return;
+  const awaiting = state.connection === "open" && state.decisions.phase === "ready"
+    && state.decisions.list.some((row) => row.run_id === held.runId && row.needs_answer);
   const box = element("section", {className: "studio-section studio-automation", "data-automation": held.runId}, [
-    element("h3", {text: word(state, "title")}), note(word(state, "explain")), input(state, held, actions, "actor"),
+    element("h3", {text: word(state, "title")}), note(word(state, awaiting ? "decision_waiting" : "explain")),
+    ...(awaiting ? [button(state, "open_decision", true, () => showDecisions(held.runId))] : []),
+    input(state, held, actions, "actor"),
     button(state, "refresh", state.connection === "open" && !held.pending, actions.refresh),
   ]);
   if (["loading", "failed", "disconnected"].includes(held.phase)) box.append(note(word(state, held.phase)));

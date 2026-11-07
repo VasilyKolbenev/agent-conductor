@@ -132,7 +132,7 @@ export function decisionWriters(door) {
     door.write("decisions", asked, body, () => {
       if (asked !== door.chosenRun()) return;
       door.dispatch({type: "status", notice: DECIDED});
-      door.dispatch({type: "decision-chosen", key: null});
+      door.dispatch({type: "decision-chosen", key: null, recordedKey: `${asked}/${row.gate_id}`});
       door.refreshRun(asked);
     }, (result) => {
       // The one refusal a decision can meet that this window acts on rather

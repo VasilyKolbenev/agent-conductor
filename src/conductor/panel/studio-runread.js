@@ -241,9 +241,19 @@ export function endingOf(detail, schedule) {
   };
 }
 
-//: Every gate this run's plan names, and where it stands. Read off the plan and
-//: the projection the run read already carries; nothing here is stored twice
-//: and no step is invented that the plan does not hold.
+function gateDocuments(detail, planned, titles) {
+  const records = rows(detail.records);
+  return rows(planned.opened_by).flatMap((id) => {
+    const step = records.findLast((r) => r.record_type === "action_request" && r.record?.node_id === id)?.record;
+    if (step?.capability !== "review") return [];
+    const result = records.find((r) => r.record_type === "action_result" && r.record?.action_id === step.action_id)?.record;
+    if (result?.outcome !== "succeeded" || !rows(result.evidence_refs).length) return [];
+    return records.filter((r) => r.record_type === "artifact" && r.record?.source_action_id === step.action_id
+      && r.record.artifact_ref === step.arguments?.result_artifact_ref && typeof r.record.content === "string")
+      .map(({record}) => ({id: record.artifact_id, title: titles.get(id) || id, content: record.content}));
+  });
+}
+
 export function decisionRows(detail) {
   const graph = isObject(detail) ? detail.graph : null;
   const definition = isObject(graph) ? graph.definition : null;
@@ -257,16 +267,20 @@ export function decisionRows(detail) {
     .map((node) => [node.node_id, node.title]));
   const receipts = receiptsOf(detail);
   const ending = endingOf(detail, schedule);
+  const pending = rows(graph.situation?.checked).find((row) => row.reason === "gate_decision");
   const found = [];
   for (const node of rows(definition.nodes).filter(isObject)) {
     if (typeof node.gate_id !== "string") continue;
     const standing = position.get(node.node_id);
     const planned = scheduleRow(schedule, node.node_id);
+    const needsAnswer = !ending.ended && typeof standing?.decision === "string" && standing.decision !== "unknown" && (planned?.answerable === "first"
+      || (planned?.answerable === "supersede" && rows(pending?.sources).includes(node.node_id)));
     const answered = receiptsFor(detail, run.run_id, node.gate_id);
     found.push(Object.freeze({
       run_id: run.run_id, gate_id: node.gate_id, node_id: node.node_id,
       title: node.title, mode: run.mode,
       ...drawnFacts(node, titles, planned),
+      needs_answer: needsAnswer, documents: needsAnswer ? gateDocuments(detail, planned, titles) : [],
       decision: standing && typeof standing.decision === "string"
         ? standing.decision : "unknown",
       // What the plan says about THIS gate, and what already answers it.

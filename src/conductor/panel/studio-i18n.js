@@ -133,7 +133,7 @@ const TEXT = {
   "shell.workflow": ["A workflow names roles and steps. It never names a provider, a model or a run — a run binds those when it starts.", "Процесс задаёт роли и шаги. Провайдеры и модели связываются с ними при создании запуска."],
   "shell.runs": ["About runs", "О запусках"],
   "shell.verification": ["A process that exits 0 has finished, which is not the same as having been verified. Both words are shown.", "Код выхода 0 означает завершение процесса. Проверка результата — отдельный факт. Здесь показаны оба."],
-  "shell.decisions": ["A decision is a durable receipt. This screen says why one is needed, what each choice causes, and what it unblocks.", "Решение сохраняется в журнале. Здесь видно, зачем оно нужно, что означает каждый выбор и какие шаги он открывает."],
+  "shell.decisions": ["Review the step and record your decision.", "Проверьте шаг и запишите своё решение."],
   "shell.agents": ["A participant binds one instance to one configured provider. Providers are operator-written and read at startup.", "Каждый участник связан с одним настроенным провайдером. Настройки провайдеров задаются оператором и читаются при запуске."],
   "connection.open": ["Connected. Live changes reach this window.", "Подключено. Изменения поступают в это окно."],
   "connection.connecting": ["Connecting to this project's live stream.", "Подключение к событиям проекта."],

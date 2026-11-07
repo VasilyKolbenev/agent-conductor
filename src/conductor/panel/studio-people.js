@@ -269,7 +269,8 @@ function focusKey(mount) {
 function restoreFocus(mount, key) {
   if (!key) return;
   const successor = mount.querySelector(`[data-focus-key="${key}"]`);
-  if (successor) successor.focus();
+  // Studio's outer focus helper also restores the caret for fields committed on input.
+  if (successor && successor.dataset.focusValue !== "state") successor.focus({preventScroll: true});
 }
 
 // -- Decisions ----------------------------------------------------------------
@@ -285,23 +286,13 @@ function draftKey(draft) {
   return typeof draft.key === "string" ? draft.key : null;
 }
 
-//: Why a person is being asked. The run's authority ladder says what may
-//: happen without one; the gate says this step asks for one by name.
 function whyAsked(row, state) {
-  const carried = [note(L(state, "agents.gate_explainer"))];
-  // The workflow author's own words about this step, when they wrote any. It
-  // is stated as theirs rather than as this build's: everything else on this
-  // screen is a fact the product derived, and an unattributed sentence beside
-  // those would read as one more of them.
-  if (typeof row.purpose === "string" && row.purpose) {
-    carried.push(localizedFact(state, "agents.workflow_says", row.purpose));
-  }
-  if (typeof row.mode === "string") {
-    carried.push(localizedFact(state, "agents.authority", row.mode));
-  }
-  return carried;
+  return typeof row.purpose === "string" && row.purpose
+    ? [localizedFact(state, "agents.workflow_says", row.purpose)] : [];
 }
 
+//: Why a person is being asked. The run's authority ladder says what may
+//: happen without one; the gate says this step asks for one by name.
 //: Where this answer sends the run, off the server's own schedule.
 //
 // The condition is shown when the road carries one, because otherwise this
@@ -323,17 +314,25 @@ function whatItUnblocks(row, state) {
     ])));
 }
 
-function receiptBlock(receipt, state) {
-  return section(L(state, "agents.receipt_title"), [
-    note(L(state, "agents.immutable")),
-    localizedFact(state, "agents.receipt", receipt.receipt_id),
-    localizedFact(state, "agents.answer", receipt.action),
-    localizedFact(state, "agents.causes", DECISION_ACTIONS[receipt.action]),
+function disclosure(key, label, children, opened, attributes = {}) {
+  const box = element("details", {"data-decision-details": key, ...attributes},
+    [element("summary", {text: label}), ...children]);
+  box.open = opened.has(key);
+  return box;
+}
+function openDetails(mount) {
+  return new Set([...mount.querySelectorAll("details[open][data-decision-details]")].map((box) => box.dataset.decisionDetails));
+}
+function receiptBlock(receipt, state, title, opened) {
+  return section(L(state, title), [
+    localizedFact(state, "agents.answer", L(state, `agents.recorded_${receipt.action}`)),
     localizedFact(state, "agents.actor", receipt.actor),
     localizedFact(state, "agents.decided_at", receipt.decided_at),
-    localizedFact(state, "agents.reason", receipt.reason),
-    localizedFact(state, "agents.supersedes", receipt.supersedes),
-    localizedFact(state, "agents.configuration", receipt.config_digest),
+    ...(receipt.reason ? [localizedFact(state, "agents.reason", receipt.reason)] : []),
+    disclosure(receipt.receipt_id, L(state, "agents.receipt_details"), [note(L(state, "agents.immutable")),
+      localizedFact(state, "agents.receipt", receipt.receipt_id),
+      ...(receipt.supersedes ? [localizedFact(state, "agents.supersedes", receipt.supersedes)] : []),
+      localizedFact(state, "agents.configuration", receipt.config_digest)], opened),
   ]);
 }
 
@@ -341,7 +340,7 @@ function decisionButton(row, draft, handlers, state) {
   const key = decisionKey(row);
   const button = element("button", {
     "aria-pressed": key === draftKey(draft) ? "true" : "false",
-    className: "studio-decision", "data-focus-key": `decision:${key}`,
+    className: "studio-btn studio-decision", "data-focus-key": `decision:${key}`,
     type: "button",
   }, [element("span", {className: "studio-decision__t", text: show(row.title, state)}), " ",
     element("span", {className: "studio-mono studio-decision__id", text: key}), " ",
@@ -387,26 +386,25 @@ function choiceControl(action, draft, edit, state) {
   else control.addEventListener("change", () => edit({action}));
   return element("label", {className: "studio-choice"}, [
     control,
-    element("span", {className: "studio-choice__a", text: action}), " ",
+    element("span", {className: "studio-choice__a", text: L(state, `agents.action_${action}`)}), " ",
     element("span", {className: "studio-choice__m",
       text: L(state, `agents.decision_${action}`)}), " ",
-    element("span", {className: "studio-choice__c",
-      text: L(state, "agents.causes_state", {decision: DECISION_ACTIONS[action]})}),
+    ...(Object.hasOwn(state, "decisionActor") ? [element("span", {className: "studio-choice__c",
+      text: L(state, "agents.causes_state", {decision: DECISION_ACTIONS[action]})})] : []),
   ]);
 }
 
 function textControl(name, key, draft, edit, label, attributes) {
   const control = element("input", Object.assign({
-    autocomplete: "off", "data-focus-key": `field:${name}`, name,
+    autocomplete: "off", "data-focus-key": `field:${name}`, "data-focus-value": "state", name,
     spellcheck: "false", type: "text",
   }, attributes));
   control.value = draft[key] === undefined || draft[key] === null
     ? "" : String(draft[key]);
   if (edit === null) control.disabled = true;
   else {
-    control.addEventListener("change", () => {
-      edit({[key]: control.value});
-    });
+    control.addEventListener("input", (event) => { if (!event.isComposing) edit({[key]: control.value}); });
+    control.addEventListener("compositionend", () => edit({[key]: control.value}));
   }
   return element("label", {className: "studio-field"}, [
     element("span", {text: label}), control,
@@ -463,7 +461,7 @@ function decisionForm(row, draft, handlers, live, state) {
       {maxlength: String(REASON_LIMIT)}));
   const stops = whyNotSubmittable(draft, state);
   const button = element("button", {
-    "data-focus-key": "action:submitDecision",
+    className: "studio-btn", "data-focus-key": "action:submitDecision",
     text: L(state, "agents.record_decision"), type: "submit",
   });
   button.disabled = stops !== null || submit === null || !live
@@ -543,35 +541,41 @@ function whyNotYet(row, state) {
   return note(L(state, "agents.unreachable"));
 }
 
-function decisionDetail(row, draft, handlers, live, state) {
+function decisionDetail(row, draft, handlers, live, state, opened, receiptTitle = "agents.receipt_title") {
   const receipt = object(row.receipt);
   const body = [
     element("h3", {text: show(row.title, state)}),
-    localizedFact(state, "agents.step", row.node_id), localizedFact(state, "agents.gate", row.gate_id),
-    localizedFact(state, "agents.run", row.run_id),
-    chip(GATE_CHANNEL[row.decision] || "none", L(state, "agents.gate_state", {decision: show(row.decision, state)})),
+    ...(receipt === null ? [] : [receiptBlock(receipt, state, receiptTitle, opened)]),
     ...whyAsked(row, state),
-    section(L(state, "agents.unblocks"),
-      [whatItUnblocks(row, state)]),
+    ...rows(row.documents).map((doc) => disclosure(`${decisionKey(row)}/${doc.id}`,
+      L(state, "agents.read_result", {title: doc.title}), [element("pre", {className: "studio-gate-material", text: doc.content})],
+      opened, {"data-gate-artifact": doc.id})),
+    ...(rows(row.unblocks).length || row.state === null
+      ? [section(L(state, "agents.unblocks"), [whatItUnblocks(row, state)])] : []),
   ];
   if (offersAnAnswer(row)) {
-    body.push(state.decisionListOnly
-      ? note(L(state, "desk.decision.answer_in_pult"))
-      : decisionForm(row, draft, handlers, live, state));
+    if (state.decisionListOnly) body.push(note(L(state, "desk.decision.answer_in_pult")));
+    else {
+      const form = decisionForm(row, draft, handlers, live, state);
+      body.push(receipt && row.state === "settled" && !Object.hasOwn(state, "decisionActor")
+        ? disclosure(`change/${decisionKey(row)}`, L(state, "agents.change_answer"), [form], opened) : form);
+    }
   } else {
     body.push(whyNotYet(row, state));
   }
-  if (receipt !== null) body.push(receiptBlock(receipt, state));
-  else if (row.decision !== "idle") {
+  if (receipt === null && row.decision !== "idle") {
     body.push(note(L(state, "agents.receipt_missing")));
   }
+  body.push(disclosure(decisionKey(row), L(state, "agents.step_details"),
+    [localizedFact(state, "agents.run", row.run_id), localizedFact(state, "agents.step", row.node_id),
+      localizedFact(state, "agents.gate", row.gate_id), localizedFact(state, "agents.authority", row.mode)], opened));
   return element("div", {className: "studio-decisions__detail",
     "data-subject": `decision:${decisionKey(row)}`}, body);
 }
 
 function decisionList(decisions, draft, handlers, state) {
   const list = rows(decisions.list);
-  const body = [banner(decisions.phase, state)];
+  const body = decisions.phase === "ready" && list.length ? [] : [banner(decisions.phase, state)];
   if (!list.length) {
     body.push(note(L(state, "agents.no_decisions")));
     return element("nav", {className: "studio-decisions__list",
@@ -611,13 +615,11 @@ export function mountDecisions(mount, state, handlers) {
   const chosen = rows(decisions.list)
     .find((row) => decisionKey(row) === draftKey(draft)) || null;
   mount.replaceChildren(element("div", {className: "studio-decisions"}, [
-    element("p", {className: "studio-lede", text:
-      L(state, "agents.decisions_lede")}),
     decisionList(decisions, draft, handlers, state),
     chosen === null
       ? element("div", {className: "studio-decisions__detail"},
         [note(L(state, "agents.choose_gate"))])
-      : decisionDetail(chosen, draft, handlers, live, state),
+      : decisionDetail(chosen, draft, handlers, live, state, openDetails(mount)),
   ]));
   restoreFocus(mount, key);
 }
@@ -630,10 +632,12 @@ export function mountDecisionCard(mount, state, handlers) {
   const list = rows(decisions.list);
   const row = list.find((item) => decisionKey(item) === draftKey(draft));
   if (!row) { mount.replaceChildren(); return; }
+  const heading = row.ended ? (row.receipt ? "agents.receipt_title" : "agents.decisions")
+    : "desk.decision.heading";
   mount.replaceChildren(element("section", {className: "desk-decision-card",
     "data-desk-decision": ""}, [
-    element("h2", {text: L(state, "desk.decision.heading")}),
-    decisionDetail(row, draft, handlers, state.connection === "open", state),
+    element("h2", {text: L(state, heading)}),
+    decisionDetail(row, draft, handlers, state.connection === "open", state, openDetails(mount), "agents.receipt"),
   ]));
 }
 

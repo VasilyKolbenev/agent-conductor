@@ -28,7 +28,7 @@ is kept as the guard that holds its fix closed:
 """
 from __future__ import annotations
 
-from playwright.sync_api import Browser, Page
+from playwright.sync_api import Browser, Page, expect
 
 from browser_tests.test_studio_lifecycle import (  # noqa: F401
     CONFIRM_GATE,
@@ -142,6 +142,24 @@ def test_the_timeline_is_the_journal_in_order_and_names_every_record_kind(
             "step: effect_lease", "step: execution_observed",
             "step: action_result"]
         assert window.problems == []
+    finally:
+        page.context.close()
+
+
+def test_late_receipt_does_not_clear_another_decision_draft_offscreen(chromium: Browser, project: _Project):
+    page, _ = _open(chromium, project)
+    try:
+        draft = page.evaluate("""async () => {
+          const {EMPTY, reduce} = await import('/panel/studio-store.js');
+          const state = [
+            {type: 'decision-chosen', key: 'run/second'},
+            {type: 'decision-edit', patch: {actor: 'qa', reason: 'Keep this draft'}},
+            {type: 'screen', screen: 'agents'},
+            {type: 'decision-chosen', key: null, recordedKey: 'run/first'},
+          ].reduce(reduce, EMPTY);
+          return state.decisions.draft;
+        }""")
+        assert (draft["key"], draft["actor"], draft["reason"]) == ("run/second", "qa", "Keep this draft")
     finally:
         page.context.close()
 
@@ -281,6 +299,41 @@ def test_the_run_screen_names_the_workflow_revision_the_run_froze(
 
 # -- 2. a decision is a durable receipt --------------------------------------
 
+def test_pending_gate_shows_the_result_from_its_predecessor(chromium: Browser, project: _Project):
+    from conductor.command.artifacts import ArtifactDocument
+    from conductor.command.run_store import RunStore, snapshot_digest
+    from tests.desk_progress_seed import CHECKER, CREATED, DOER, Journal, _definition
+    from tests.test_command_graph_projection import a_run
+
+    store, run = RunStore(project.root), "plan-review"
+    config = {"cycle": {"id": "default-orbit"}, "instances": [
+        {"id": DOER, "adapter": "claude-code"}, {"id": CHECKER, "adapter": "codex-cli"}]}
+    digest = snapshot_digest(config)
+    store.create_run(a_run(run_id=run, mode="confirm", config_digest=digest), config)
+    store.append(_definition(run))
+    journal = Journal(store, run, digest, 100)
+    journal.brief()
+    journal.analyse()
+    # Same reference but no source action. It is not the result the gate is reviewing.
+    store.append(ArtifactDocument(artifact_id="another-plan", artifact_ref="artifact-plan",
+        run_id=run, created_at=CREATED, media_type="text/plain", content="Unrelated later draft"))
+    page, window = _open(chromium, project)
+    try:
+        page.locator("#navRuns").click()
+        page.locator(f'[data-focus-key="run:{run}"]').click()
+        page.locator('#studioPrimary [data-run-action="decide"]').click()
+        material = page.locator("#bodyDecisions details[data-gate-artifact]")
+        expect(material).to_have_count(1)
+        material.locator("summary").click()
+        expect(material.locator("pre")).to_contain_text("Put <b>bold</b> in the footer")
+        assert not material.locator("b").count()
+        page.locator('[data-focus="preference-language"]').select_option("ru")
+        expect(material.locator("pre")).to_be_visible()
+        expect(page.locator("#bodyDecisions")).not_to_contain_text("Unrelated later draft")
+        assert window.writes("/decisions") == 0
+    finally:
+        page.context.close()
+
 
 def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
         chromium: Browser, project: _Project) -> None:
@@ -295,7 +348,14 @@ def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
     try:
         assert project.receipts() == []
         _read_the_run(page)
-        _choose_the_gates_decision(page)
+        page.locator('[data-focus-key="action:showDecisions"]').click()
+        gate = page.locator(f'[data-focus-key="decision:{RUN_ID}/{CONFIRM_GATE}"]')
+        page.wait_for_selector('#screenDecisions:not([hidden]) .studio-decisions__detail')
+        # Both the confirm and the result gate are answerable in this seeded run.
+        expect(page.locator("#bodyDecisions .studio-decide")).to_have_count(0)
+        gate.click()
+        expect(gate).to_have_attribute("aria-pressed", "true")
+        assert window.writes("/decisions") == 0
         page.locator('[data-focus-key="field:actor"]').fill(DECIDER)
         page.locator('[data-focus-key="field:actor"]').press("Tab")
         submit = page.locator('[data-focus-key="action:submitDecision"]')
@@ -318,14 +378,12 @@ def test_recording_a_decision_writes_a_receipt_this_window_then_reads_back(
         # The answer landed, so the gate is no longer waiting for one.
         assert "gate satisfied" in page.locator(
             f'[data-focus-key="decision:{RUN_ID}/{CONFIRM_GATE}"]').inner_text()
-        # The read cleared the draft with the rest of the run's facts, so the
-        # receipt is read by choosing the gate again -- which is the product
-        # behaving as designed and not a second write.
-        page.locator(
-            f'[data-focus-key="decision:{RUN_ID}/{CONFIRM_GATE}"]').click()
+        # The answer is visible after the server read without choosing the gate again.
+        expect(gate).to_have_attribute("aria-pressed", "true")
+        page.get_by_text("Receipt details", exact=True).click()
         detail = page.locator(".studio-decisions__detail").inner_text()
         assert receipts[0].receipt_id in detail
-        assert "satisfied" in detail
+        assert "Approved" in detail
         assert "A decision is immutable" in detail
         assert DECIDER in detail
         assert window.writes("/decisions") == 1
