@@ -39,6 +39,19 @@ export function saveRefusal(held, state) {
 }
 
 function primaryAction(state, handlers) {
+  if (state.demoTask && state.screen === "overview") {
+    const review = element("button", {className: "studio-btn", type: "button",
+      "data-focus": "demo-review", text: localize(state, "demo.review")});
+    review.disabled = state.connection !== "open" || state.tasks.phase !== "ready";
+    review.addEventListener("click", () => handlers.openDemoReview(state.demoTask.task_id));
+    return review;
+  }
+  if (state.demo && state.screen === "overview" && !state.tasks.selectedId) {
+    const start = element("button", {className: "studio-btn", type: "button",
+      "data-focus": "demo-start", text: localize(state, "demo.start")});
+    start.addEventListener("click", handlers.showTaskForm);
+    return start;
+  }
   // A chosen run's main action is the one its own read calls for; with no run chosen, the list is read again.
   const detail = state.runs.detail;
   if (state.screen === "runs" && detail?.run?.run_id && detail.run.run_id === state.runs.selectedId) {

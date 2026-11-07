@@ -682,8 +682,10 @@ function phaseMoved(state, screen, event) {
 function pendingDecision(draft, list, prefer = false) {
   if (draft.key && (!prefer || draft.actor || draft.reason || draft.action !== "approve")) return draft;
   const unanswered = list.filter((row) => row.needs_answer);
-  if (unanswered.length !== 1) return draft;
-  const [row] = unanswered, key = `${row.run_id}/${row.gate_id}`;
+  const row = unanswered.length === 1 ? unanswered[0]
+    : list.length === 1 && list[0].receipt && list[0].ended ? list[0] : null;
+  if (!row) return draft;
+  const key = `${row.run_id}/${row.gate_id}`;
   return draft.key === key ? draft : Object.freeze({...NO_DRAFT, key});
 }
 function screenMoved(state, event) {

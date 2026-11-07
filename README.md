@@ -62,8 +62,11 @@ python3 -m venv .venv
 </details>
 
 Open the address printed in the terminal, normally `http://127.0.0.1:7777/`.
-You should see Studio with a sample workflow and run. Try **Runs**, **Decisions**,
-the **Trace / Orbit** views, and the language and theme switches. Stop the server with **Ctrl+C**.
+In Studio choose **Start the exercise**, enter “Count the passing checks”, then **Create task**.
+Choose **Review sample result**. Checks A and C passed and B failed. Compare the reported count
+with the check marks, choose your answer, enter your name (for example, `anna`) and click
+**Record this decision**. Refresh to see the answer and author on the same task.
+Stop the server with **Ctrl+C**.
 If the port is busy, add `--port 8080` to the demo command.
 
 The demo uses a temporary copy of sample data. It needs no provider login and starts no paid model task.

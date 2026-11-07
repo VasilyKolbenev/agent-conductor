@@ -427,7 +427,10 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         this module is, so no request target can select the document served.
         """
         panel = importlib.resources.files("conductor") / "panel" / ENTRY_PAGE
-        self._send_body(200, "text/html; charset=utf-8", panel.read_bytes())
+        page = panel.read_bytes()
+        if self.server.project_identity and self.server.project_identity.demo:
+            page = page.replace(b'<html lang="en">', b'<html lang="en" data-demo>', 1)
+        self._send_body(200, "text/html; charset=utf-8", page)
 
     def _serve_panel_asset(self, target: str) -> None:
         content_type, name = PANEL_ASSETS[target]

@@ -265,6 +265,8 @@ def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
         ".dataset.state !== 'empty'")
 
     said = page.locator("#screenDecisions").inner_text()
+    expect(page.locator("#screenDecisions")).to_contain_text("D-1")
+    expect(page.locator("#screenDecisions")).to_contain_text("D-2")
     assert demo_scenario.WAITING_GATE in said, said
     assert demo_scenario.ANSWERED_GATE in said, said
     # Both gates, each carrying its own state: one a person has answered and

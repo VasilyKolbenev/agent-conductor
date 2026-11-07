@@ -320,6 +320,10 @@ function latestRunCard(state, handlers) {
  * `mount` is #bodyOverview; `state` is frozen; `handlers` own navigation.
  */
 export function mountOverview(mount, state, handlers) {
+  if (state.demoTask) {
+    mount.replaceChildren(card(state.demoTask.title, [note(localize(state, "demo.ready"))]));
+    return;
+  }
   const sections = [
     ["latest", latestRunCard(state, handlers)],
     ["attention", needsYouCard(state, handlers)],

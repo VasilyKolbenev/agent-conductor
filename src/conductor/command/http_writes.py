@@ -579,7 +579,7 @@ def _open_run(api: CommandApi, body: Mapping[str, Any]) -> _Reply:
         api._store, api._templates, body, tasks=api._tasks,
         clock=api._clock, ids=api._ids, reachable=api._reachable(),
         judge_plan=api._judge_plan, publish=api._publish_run,
-        hold_route=api._hold_route, registry=api._registry)
+        hold_route=api._hold_route, registry=api._registry, demo=api._identity.demo)
 
 
 def _judge_plan(

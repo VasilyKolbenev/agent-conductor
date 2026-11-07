@@ -51,7 +51,7 @@ from .store_errors import RecordConflict, StoreError
 #: By MODULE, because `task_routes` imports this module back for `run_ids`;
 #: the name is looked up when `open_run` runs, never while either module is
 #: half built.
-from . import task_routes
+from . import demo_review, task_routes
 from .task_contracts import TaskBinding, frozen_config_task
 from .task_store import CorruptTask
 from .template_store import RouteNotOwned
@@ -377,9 +377,9 @@ def refused_with(refused: DraftRefused) -> Answer:
         "diagnostics": [dict(row) for row in refused.diagnostics]}
 
 
-def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
+def _admitted_run_input(store: RunStore, body, hold_route, *, demo: bool) -> RunInput:
     """Check missing Windows identities before route metadata or staging."""
-    asked = parse_run(body)
+    asked = parse_run(body, demo=demo)
     if not store.run_path(asked.run_id).is_dir():
         store.admit_run_creation(asked.run_id)
     hold_route(asked.run_id)
@@ -389,7 +389,7 @@ def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
 def open_run(
         store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
         *, tasks: "TaskStore", clock, ids, reachable, judge_plan, publish,
-        hold_route, registry) -> Answer:
+        hold_route, registry, demo: bool = False) -> Answer:
     """Open one run, and give it its plan in the same call.
 
     The standing run is looked for FIRST, before the task store, the clock,
@@ -409,7 +409,7 @@ def open_run(
     unrepresentable; re-reading a durable source between the gate and the
     write is the defect it was written for.
     """
-    asked = _admitted_run_input(store, body, hold_route)
+    asked = _admitted_run_input(store, body, hold_route, demo=demo)
     standing = _standing_run(store, asked.run_id)
     snapshot = _frozen_snapshot(asked, tasks, standing)
     checked = None if standing is not None else _judged_revision(
@@ -487,11 +487,14 @@ def _judged_revision(templates, asked, snapshot, reachable, judge_plan, registry
     gate and the write, which is exactly the defect this shape makes
     unrepresentable.
     """
-    _providers_are_configured(asked, reachable)
+    if asked.participants:
+        _providers_are_configured(asked, reachable)
     _check_new_model_pins(asked, registry)
     if asked.workflow_id is None:
         return None
     checked = _workflow_revision(templates, asked)
+    if not asked.participants and checked.as_dict() != demo_review.template().as_dict():
+        raise ApiRefusal.fixed("contract_invalid")
     probe = materialize(
         checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
         run_id=asked.run_id, created_at=_PROBE_AT)

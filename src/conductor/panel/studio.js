@@ -28,12 +28,12 @@ import {workflowWriters} from "./studio-workflowwrite.js";
 import {automationFlow} from "./studio-automation-flow.js";
 import {mountAutomation} from "./studio-automation.js";
 import {mountBridge} from "./studio-bridge.js";
-import {mountTasks} from "./studio-tasks.js";
+import {mountTasks, practiceTask} from "./studio-tasks.js";
 import {studioMounts} from "./studio-mounts.js";
 import {mountShell, wireScreenKeys} from "./studio-shell.js";
 import {preferences, preferenceHash} from "./studio-preferences.js";
 import {quotaFlow} from "./studio-quotaflow.js";
-import {navigation, navigationHash, taskFlow} from "./studio-taskflow.js";
+import {DEMO_REVIEW, navigation, navigationHash, taskFlow} from "./studio-taskflow.js";
 //: What a Human's press on a step control MEANS. The wire stays HERE: that
 //: module is handed this one's `write` and reaches no socket of its own.
 import {decisionWriters, documentWriters, stepWriters}
@@ -82,6 +82,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   });
 
   let state = EMPTY;
+  const demo = document.documentElement.hasAttribute("data-demo");
   let streamOpen = false;
   // Which write is the current one. A dropped stream retires the write in
   // flight along with the session that authorized it.
@@ -141,7 +142,8 @@ const noticeHas = (notice, key) => Array.isArray(notice)
       && detail.graph.situation?.state === "not_required" && held.view?.owner_present
       && held.view.state === "unconfigured" && held.view.reason_code === "authorization_required"
       && Boolean(held.view.next_node_id);
-    const presentation = {...state, locale: appearance.value.locale, needsRunPermission};
+    const demoTask = demo ? practiceTask(state) : null;
+    const presentation = {...state, locale: appearance.value.locale, needsRunPermission, demo, demoTask};
     mountShell(mounts, presentation, handlers);
     mountTasks(byId("studioTasks"), presentation, handlers);
     mountOverview(mounts.bodyOverview, presentation, handlers);
@@ -402,10 +404,12 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   //: printed it would leave a person looking at a review of a document that no
   //: longer exists, with no control that does anything but fail again.
   async function write(target, subject, body, carry, recover = null) {
-    const ready = RUN_SCOPED.includes(target)
-      ? streamOpen : state.workflows.writeReady;
+    const demoReview = demo && target === "runs" && body.workflow_id === DEMO_REVIEW;
+    const scoped = demoReview || RUN_SCOPED.includes(target);
+    const ready = scoped ? streamOpen : state.workflows.writeReady;
+    const channel = demoReview ? "tasks" : target;
     if (!ready) {
-      say(target, "refused", STREAM_DOWN);
+      say(channel, "refused", STREAM_DOWN);
       if (recover) recover({status: "refused", code: LATE});
       return;
     }
@@ -415,16 +419,16 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     // through the session it was authorized under (`submit`). The counter is
     // the workflow doors' rule -- one workflow write at a time -- and over
     // both it retired alpha's refusal the moment omega's write began.
-    const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;
+    const mine = scoped ? null : ++writeGeneration;
     // A run-scoped refusal is spoken only where it was asked: a person who has
     // since chosen another task or run is not told about a run they left.
     const asked = mine === null && target !== "tasks" ? subject : null;
-    say(target, "submitting", WRITING);
+    say(channel, "submitting", WRITING);
     const result = await submit(target, subject, body);
     if (mine !== null && mine !== writeGeneration) return;
     if (result.status !== "accepted") {
       const refusal = refusalOf(result);
-      if (asked === null || asked === chosenRun) say(target, refusal.phase, refusal.notice);
+      if (asked === null || asked === chosenRun) say(channel, refusal.phase, refusal.notice);
       else if (noticeHas(state.notice, WRITING.key) && !Object.entries(state.runs.writes).some(([key, word]) =>
         key.startsWith(`${chosenRun}/`) && word === "writing")) dispatch({type: "status", notice: ""});
       if (recover) recover(result);
@@ -458,7 +462,8 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   const decisions = decisionWriters({chosenRun: () => chosenRun, dispatch,
     draft: () => state.decisions.draft, isId, refreshRun, write});
   const tasks = taskFlow({state: () => state, read: readJson, write, dispatch,
-    clearRun, loadRuns, refreshRun, runSelection: () => runNavigation});
+    clearRun, loadRuns, refreshRun, runSelection: () => runNavigation,
+    isDemo: () => demo});
   const automation = automationFlow({changed: render, selected: () => chosenRun,
     ready: () => streamOpen && state.runs.phase === "ready" && state.runs.detail?.run.run_id === chosenRun,
     read: (id, stop) => readJson(path.automation(id), stop), stop: () => new AbortController(),
@@ -483,6 +488,11 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     },
     ...workflow, onOpenRun: tasks.openRun,
     chooseTask: tasks.chooseTask, createTask: tasks.createTask,
+    openDemoReview: tasks.openDemoReview,
+    showTaskForm: () => {
+      const form = byId("studioTasks").querySelector("details[data-task-create]");
+      if (form) { form.open = true; form.querySelector("input")?.focus(); }
+    },
     refreshTasks: tasks.refreshTasks,
     refreshQuotas: quotas.refreshQuotas,
     editTask: tasks.editTask,

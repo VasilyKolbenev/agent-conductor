@@ -43,6 +43,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from . import demo_review
 from .attempts import AttemptEvent, action_request_digest
 from .contracts import (
     ActionProposal,
@@ -150,6 +151,12 @@ def _publish(templates: TemplateStore) -> None:
     document["template_id"] = WORKFLOW_ID
     document["revision"] = REVISION
     document["title"] = "Release review"
+    result_gate = next(node for node in document["nodes"] if node.get("gate_id") == WAITING_GATE)
+    result_gate["purpose"] = (
+        "Sample smoke review: D-1 (slow checkout) and D-2 (missing gateway config) confirmed; "
+        "D-3 partially confirmed. Release is on hold. "
+        "Учебный отчёт: подтверждены D-1 (медленная оплата) и D-2 (нет настроек шлюза); "
+        "D-3 подтверждена частично. Выпуск приостановлен.")
     templates.save(type(template).from_dict(document))
 
 
@@ -282,6 +289,7 @@ def build(project_root: str | Path) -> Mapping[str, Any]:
         tasks.create_task(TaskRecord(
             task_id=task_id, title=title, work_scope=task_id, created_at=NOW))
     _publish(templates)
+    templates.save(demo_review.template())
     snapshot = _snapshot()
     store.create_run(
         RunEnvelope(run_id=RUN_ID, cycle_id=CYCLE_ID, created_at=NOW,

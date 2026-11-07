@@ -508,9 +508,11 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     scoped = set(_frozen_list(boot, "RUN_SCOPED"))
     assert scoped == RUN_SCOPED, sorted(scoped ^ RUN_SCOPED)
     assert scoped < set(_frozen_list(_code(TRANSPORT_MODULE), "WRITE_TARGETS"))
-    assert boot.count("RUN_SCOPED.includes(") == 3
-    assert ("const ready = RUN_SCOPED.includes(target)\n"
-            "      ? streamOpen : state.workflows.writeReady;") in boot, boot
+    assert boot.count("RUN_SCOPED.includes(") == 2
+    assert 'const demoReview = demo && target === "runs" && body.workflow_id === DEMO_REVIEW;' in boot
+    assert 'const demo = document.documentElement.hasAttribute("data-demo");' in boot
+    assert "const scoped = demoReview || RUN_SCOPED.includes(target);" in boot
+    assert "const ready = scoped ? streamOpen : state.workflows.writeReady;" in boot
     # And a run-scoped write is RETIRED by nothing but its own answer. The
     # workflow counter retires one workflow write with the next, which is
     # that door's rule; a run write's ownership is per run and step in
@@ -519,7 +521,7 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     # under. One counter over both retired alpha's refusal when omega's
     # write began, and the refusal that should have re-read the run said
     # nothing at all (the slice-3 review's F).
-    assert ("const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;"
+    assert ("const mine = scoped ? null : ++writeGeneration;"
             in boot), boot
     assert "if (mine !== null && mine !== writeGeneration) return;" in boot, boot
     assert boot.count("++writeGeneration") == 1, boot

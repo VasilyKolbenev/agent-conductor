@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from . import demo_review
 from .api_contracts import ApiRefusal, _closed, _contract, _json_array, parse_document
 from .contracts import ControlMode, RunEnvelope, _digest, _id
 from .graph_template import RunBinding
@@ -302,7 +303,7 @@ def _participant(row: object) -> Participant:
         model=model)
 
 
-def parse_run(body: object) -> RunInput:
+def parse_run(body: object, *, demo: bool = False) -> RunInput:
     """Validate exactly the eight caller-owned facts of one new run.
 
     ``mode`` comes from the closed :data:`CONTROL_MODES` vocabulary, so there is
@@ -326,7 +327,8 @@ def parse_run(body: object) -> RunInput:
     if not isinstance(mode, str) or mode not in CONTROL_MODES:
         raise ApiRefusal.fixed("contract_invalid")
     rows = _json_array(values, "participants")
-    if not rows or len(rows) > MAX_RUN_PARTICIPANTS:
+    if len(rows) > MAX_RUN_PARTICIPANTS or (
+            not rows and not (demo and demo_review.requested(values))):
         raise ApiRefusal.fixed("contract_invalid")
     participants = tuple(_participant(row) for row in rows)
     if len({row.instance_id for row in participants}) != len(participants):
