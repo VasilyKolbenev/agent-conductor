@@ -265,6 +265,8 @@ export const DESK_COPY = Object.freeze({
   "desk.scene.task_unreadable": ["This task cannot be read, so there is no run to show.",
     "Задача не читается, показывать нечего."],
   "desk.scene.subject": ["{task} · run {run}", "{task} · запуск {run}"],
+  "desk.scene.no_changed_files": ["Step “{step}” stopped. The participant made no file changes for the checker to verify.",
+    "Шаг «{step}» остановлен. Исполнитель не изменил файлы, поэтому проверяющему нечего проверять."],
   // -- the console: the name of the person at this page (spec 5.2, the actor) ---------------
   "desk.pult.actor": ["You: {name}", "Вы: {name}"],
   "desk.pult.actor_none": ["You: name not given", "Вы: имя не указано"],
