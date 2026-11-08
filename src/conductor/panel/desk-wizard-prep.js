@@ -333,7 +333,8 @@ function reconcile(run, input) {
   }
   const row = run.runId === null ? null : run.prep.runs.find((one) => one.run_id === run.runId);
   let next = {...run};
-  if (row && row.workflow_id === input.workflowId && Number.isSafeInteger(row.revision)) {
+  if (row && row.workflow_id === input.workflowId && Number.isSafeInteger(row.revision)
+      && (!input.flowBody?.inspect_revision || row.revision === input.flowBody.inspect_revision)) {
     next = {...next, revision: row.revision};
     done.add(flowSpec(input).key);
     done.add(runSpec(input, next).key);
@@ -389,6 +390,9 @@ function acceptedWrite(run, input, ask, payload) {
   const done = [...run.done, ask.job];
   if (ask.name === "prep_flow") {
     const revision = payload?.published?.revision;
+    if (input.flowBody?.inspect_revision && (!payload?.publishable || revision !== input.flowBody.inspect_revision)) {
+      return refusedAt(run, "flow", "contract_invalid", null);
+    }
     if (!Number.isSafeInteger(revision)) return unreadable(run, ask);
     return fixRun({...run, done, revision, flowCheck: false}, input);
   }

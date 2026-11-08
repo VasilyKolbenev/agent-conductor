@@ -92,8 +92,10 @@ export function taskTitleOfRun(reads, runId) {
   return run && typeof run.task_id === "string" ? titleOf(reads, run.task_id) : null;
 }
 
-function choiceOf(card) {
-  return {kind: card.kind, workflowId: card.workflowId};
+export function choiceOf(card, pinPublished = false) {
+  const revision = pinPublished && card.kind === "saved" && card.revision;
+  return {kind: card.kind, workflowId: card.workflowId,
+    ...(Number.isSafeInteger(revision) && revision > 0 ? {revision} : {})};
 }
 
 //: The title a readable row of the workflows list gives a cycle, or null. The id of a workflow is
@@ -125,14 +127,14 @@ export function preselect(reads, firstRunGuide = false) {
   const pinned = pinnedOf(reads.cycle_read);
   const byPin = pinned === null ? null : cardFor(pinned.workflow_id);
   if (byPin !== null) {
-    return {...base, choice: choiceOf(byPin), source: {kind: "pinned", by: pinned.set_by ?? null,
+    return {...base, choice: choiceOf(byPin, firstRunGuide), source: {kind: "pinned", by: pinned.set_by ?? null,
       at: pinned.set_at ?? null, task: null, taskTitle: null, workflowId: pinned.workflow_id,
       cycleTitle: null}};
   }
   const run = lastRun(reads);
   if (run === null) return {...base, choice: null, source: NO_SOURCE};
   const card = cardFor(run.workflow_id);
-  return {...base, choice: card === null ? null : choiceOf(card), source: {
+  return {...base, choice: card === null ? null : choiceOf(card, firstRunGuide), source: {
     kind: card === null ? "last_run_uncarded" : "last_run", by: null, at: run.created_at,
     task: run.task_id ?? null, taskTitle: titleOf(reads, run.task_id),
     workflowId: run.workflow_id,

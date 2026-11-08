@@ -58,7 +58,9 @@ export function restoreAnswers(fresh, held, documents, offered) {
     materials: {...fresh.materials, items, counter: items.length, withoutGit: held.withoutGit === true,
       includeInstructions: typeof held.includeInstructions === "boolean" ? held.includeInstructions : null}};
   if (!known) return evolve(fresh, restored);
-  restored.cycle = {...fresh.cycle, choice: {kind: known.kind, workflowId: known.workflowId},
+  const revision = held.cycleRevision ?? (fresh.firstRunGuide ? known.revision : null);
+  restored.cycle = {...fresh.cycle, choice: {kind: known.kind, workflowId: known.workflowId,
+    ...(known.kind === "saved" && Number.isSafeInteger(revision) && revision > 0 ? {revision} : {})},
     chosenBy: "owner", generation: 1};
   const entries = (value) => value && typeof value === "object" && !Array.isArray(value)
     ? Object.entries(value).filter(([id]) => DRAFT_ID.test(id)) : [];

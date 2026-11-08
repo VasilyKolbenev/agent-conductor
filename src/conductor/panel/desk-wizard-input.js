@@ -22,6 +22,10 @@ const MATERIALS_TITLE = Object.freeze({ru: "Материалы", en: "Materials"
 //: expectation is that fact, never a guess (spec 7.1).
 export function flowWriteRequest(state, {publish = null, binding = null} = {}) {
   const {choice, flow, flowFor, draft, generation} = state.cycle;
+  if (choice?.revision) {
+    return {id: `write:flow:${generation}`, name: "flow", door: "write", target: "flow",
+      subject: choice.workflowId, body: {inspect_revision: choice.revision, binding}};
+  }
   if (choice === null || draft === null || draft.for !== choice.workflowId) return null;
   const held = flow !== null && flowFor === choice.workflowId ? flow : null;
   const body = flowBody(choice, held, draft.digest, publish, binding);
@@ -31,6 +35,7 @@ export function flowWriteRequest(state, {publish = null, binding = null} = {}) {
 
 //: The flow write that publishes the next revision, or null while none is known to stand.
 function publishRequest(state) {
+  if (state.cycle.choice?.revision) return flowWriteRequest(state, {binding: assignedTo(state)});
   const flow = state.cycle.flow;
   const next = flow !== null && Number.isSafeInteger(flow.next_revision) ? flow.next_revision
     : null;
@@ -43,7 +48,7 @@ function publishRequest(state) {
 function withLikes(body, fields) {
   const likes = Object.fromEntries(fields.filter((field) => field.source === "like")
     .map((field) => [field.step_id, field.like]));
-  if (Object.keys(likes).length === 0 || !body.source.flow) return body;
+  if (Object.keys(likes).length === 0 || !body.source?.flow) return body;
   const steps = body.source.flow.steps.map((step) => (Object.hasOwn(likes, step.step_id)
     ? {...step, instruction_from: likes[step.step_id]} : step));
   return {...body, source: {flow: {...body.source.flow, steps}}};
@@ -100,7 +105,7 @@ export function runInput(state, lang) {
   return {taskId: state.task.taskId, title: state.task.title, taskWritten: state.task.written,
     starterId: state.mode.starterId, view: state.mode.view, lang, resumed: false,
     workflowId: state.cycle.choice?.workflowId ?? null, dispatch: fields.length > 0,
-    seed: seedFacts(state), flowBody: body, flowDoc: body?.source.flow ?? held?.flow ?? null,
+    seed: seedFacts(state), flowBody: body, flowDoc: body?.source?.flow ?? held?.flow ?? null,
     ...bindings(state),
     documents: [{ref: "artifact-brief", content: briefDocument(state, lang)}, ...own],
     materials: bodyOf(state.materials.items, lang)};

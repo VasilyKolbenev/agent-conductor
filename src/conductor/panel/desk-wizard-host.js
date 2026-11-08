@@ -30,6 +30,7 @@ function typedAnswers(wizard) {
       ? {kind: row.kind, docId: row.docId, gitOid: row.gitOid, mode: row.mode, edits: row.edits ?? []}
       : {kind: row.kind, title: row.title, content: row.content}),
     cycleId: wizard.cycle.choice?.workflowId ?? null,
+    ...(wizard.cycle.choice?.revision ? {cycleRevision: wizard.cycle.choice.revision} : {}),
     owner: wizard.roles.owner, instructions: wizard.roles.instructions, models: wizard.roles.models ?? {}};
 }
 

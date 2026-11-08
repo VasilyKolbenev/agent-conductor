@@ -36,7 +36,7 @@ import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
   gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
   applyTextEdits, textCard, textEdit} from "./desk-wizard-materials.js";
-import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
+import {WIZARD_STARTERS, cardsOf, choiceOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 import {BUILT_STEPS, GUIDE_STAGES, LIMITS, STEPS, briefDocument, evolve, frozen, guideStage,
@@ -311,9 +311,9 @@ function chooseCycle(state, event) {
   const card = cycleCards(state).find((one) => one.id === event.id && one.kind !== "build");
   if (!card) return state;
   const cycle = state.cycle;
-  const same = cycle.choice?.workflowId === card.workflowId;
-  return evolve(state, {cycle: {...restarted(cycle, !same), choice: {kind: card.kind,
-    workflowId: card.workflowId}, chosenBy: "owner"}});
+  const choice = choiceOf(card, state.firstRunGuide);
+  const same = cycle.choice?.workflowId === choice.workflowId && cycle.choice?.revision === choice.revision;
+  return evolve(state, {cycle: {...restarted(cycle, !same), choice, chosenBy: "owner"}});
 }
 
 // -- the steps and their gates ---------------------------------------------------------
@@ -455,9 +455,9 @@ function cycleAsks(state) {
   if (cycle.status === "conflict") {
     return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
   }
-  if (cycle.draft?.for !== id) return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
+  if (!cycle.choice.revision && cycle.draft?.for !== id) return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
   const binding = bindingNow(state);
-  if (cycle.choice.kind === "saved" && binding === null) return [];
+  if (cycle.choice.kind === "saved" && !cycle.choice.revision && binding === null) return [];
   const ask = flowWriteRequest(state, {publish: null, binding});
   if (ask === null) return [];
   const busy = state.asked.some((sent) => sent.startsWith("write:flow:") && sent !== ask.id
@@ -525,7 +525,9 @@ function landFlow(state, ask, result, wasWrite) {
     return evolve(state, {cycle: {...cycle, settled}});
   }
   const ready = cycle.choice.kind === "starter";
-  if (result.status === "accepted" && isFlowState(result.payload, ask.subject, ready)) {
+  const expected = ask.body?.inspect_revision;
+  if (result.status === "accepted" && isFlowState(result.payload, ask.subject, ready)
+      && (!expected || result.payload.published?.revision === expected)) {
     return landAccepted(state, ask, result.payload, wasWrite);
   }
   const code = result.status === "accepted" ? "answer_unreadable" : result.code ?? result.status;
