@@ -25,6 +25,7 @@ function providersOf(state) {
 //: `ready`, `none` (no harness is offered) or `pending` (the server has not said which are): the
 //: step says which of the last two it is and cannot be left.
 export function rosterStatus(state) {
+  if (state.reads.workflows?.status !== "ok" || !Array.isArray(state.reads.workflows.payload?.providers)) return "pending";
   return rosterState(providersOf(state));
 }
 

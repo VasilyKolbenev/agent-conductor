@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from multiprocessing import get_context
 from threading import Thread
 from urllib.parse import urlsplit
@@ -20,11 +21,12 @@ from tests.test_standard_cycle_checker import _StandardAdapter
 from tests.test_store import good_lane, write_project
 
 
-def serve_project(root, port, ready, stop):
-    names = ("claude-code", "codex")
+def serve_project(root, port, ready, stop, subscriptions):
+    names = () if subscriptions is False else ("claude-code", "codex")
     adapters = [_StandardAdapter(RunStore(root), adapter_id=name) for name in names]
     http = server.build(root, port, registry=AdapterRegistry(adapters))
-    http.command_api._providers = contracts(reachable=names, known=names)
+    declared = contracts(reachable=names, known=names)
+    http.command_api._providers = tuple(replace(row, auth="subscription") for row in declared) if subscriptions else declared
     http.command_api._offered_provider_ids = frozenset(names)
     http.command_api._policy.provider_digest = lambda _: PD
     http.command_api._policy.provider_facts = None
@@ -41,11 +43,11 @@ def serve_project(root, port, ready, stop):
 
 
 @contextmanager
-def active_project(root, port=0):
+def active_project(root, port=0, subscriptions=None):
     # A real restart ends the old process and its keep-alive HTTP connections.
     ctx = get_context("spawn")
     ready, stop = ctx.Queue(), ctx.Event()
-    worker = ctx.Process(target=serve_project, args=(root, port, ready, stop))
+    worker = ctx.Process(target=serve_project, args=(root, port, ready, stop, subscriptions))
     worker.start()
     try:
         yield ready.get(timeout=30)

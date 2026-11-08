@@ -42,7 +42,7 @@ function typedAnswers(wizard) {
 export function createWizardHost({mount, trigger, door, locale, nonce, onForeign, onState,
   onHash, onExit, advisorPanel = null}) {
   let wizard = null, epoch = 0, timer = null, entrance = null, requested = null;
-  let project = null, editor = null, opening = false, unavailable = false;
+  let project = null, editor = null, opening = false, unavailable = false, checkingRoster = null;
   const valid = (draft) => draft === editor && epoch === draft.epoch && context.project?.() === draft.project;
   const draftCall = (draft, op, data) => door.submit("taskDraft", null,
     {project: draft.project, op, ...data});
@@ -107,14 +107,41 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     } else if (editor.gitUnavailable && (state === "repo" || state === "unborn")) {
       // A running server never changes its Git-pin verdict. The newly started
       // server also has a fresh draft store. Save this tab's answers under a new key.
-      editor = {project: editor.project, task: editor.task, epoch, revision: 0, key: null,
-        status: "saving", saved: null, want: JSON.stringify(typedAnswers(wizard))};
-      forgetPointer();
-      void flush(editor);
+      saveInNewStore();
+    }
+  }
+  function saveInNewStore() {
+    editor = {project: editor.project, task: editor.task, epoch, revision: 0, key: null,
+      status: "saving", saved: null, want: JSON.stringify(typedAnswers(wizard))};
+    forgetPointer();
+    void flush(editor);
+  }
+  async function checkCurrentDraft(readable) {
+    const draft = editor;
+    if (!draft || !valid(draft) || wizard.run.pressed) return;
+    if (readable && !draft.key) { saveInNewStore(); return; }
+    const read = () => draftCall(draft, "read", {key: draft.key});
+    let reply = null;
+    // A process restart rotates the token as well as its transient store. This
+    // operation only checks whether the old draft still exists.
+    if (readable && draft.key) {
+      try {
+        reply = await read();
+        if (reply.status === "refused" && reply.code === "csrf_denied" && valid(draft)) reply = await read();
+      } catch (_error) { /* The copy on the server could not be confirmed. */ }
+    }
+    if (!valid(draft) || wizard.run.pressed) return;
+    draft.checking = false;
+    if (reply?.status === "refused" && reply.code === "route_not_found") saveInNewStore();
+    else {
+      if (reply?.status !== "accepted") draft.status = "memory_only";
+      else if (!draft.busy && !draft.stopped) draft.status = draft.want === draft.saved
+        && reply.payload?.revision === draft.revision ? "saved" : "memory_only";
+      refresh();
     }
   }
   function warnOnUnload(event) {
-    if ((editor && editor.want !== editor.saved) || (!editor && wizard?.firstRunGuide
+    if ((editor && (editor.checking || editor.status === "memory_only" || editor.want !== editor.saved)) || (!editor && wizard?.firstRunGuide
       && !wizard.run.pressed && (wizard.task.brief || wizard.task.title || wizard.materials.items.length))) {
       event.preventDefault();
       event.returnValue = "";
@@ -136,7 +163,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     trigger.hidden = wizard !== null || context?.foreign() === true;
     trigger.disabled = context?.mode() === null || context?.applied() === false;
     if (wizard === null) mount.replaceChildren();
-    else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.status
+    else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.checking ? "saving" : editor?.status
       ?? (unavailable ? "restore_failed" : "memory_only")}, {onWizard: dispatch,
       onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null,
       advisorPanel: context.project?.() && !context.foreign() ? (advisorPanel ?? advice.panel) : null, onQuestionDone: () => {
@@ -222,6 +249,10 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
       if (ask.name === "git" && result.status === "accepted" && live(at)) {
         gitSourceRead(result.payload?.git?.state);
       }
+      if (ask.name === "workflows" && checkingRoster === at) {
+        checkingRoster = null;
+        if (live(at)) void checkCurrentDraft(result.status === "accepted");
+      }
     }
   }
 
@@ -230,6 +261,10 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const at = epoch;
     const step = stepWizard(wizard, event);
     if (step.state === wizard) return;
+    if (event.type === "reread" && event.name === "workflows") {
+      checkingRoster = at;
+      if (editor) editor.checking = true;
+    }
     const focusQuestion = step.state.guided && step.state.step !== wizard.step
       && ["next", "back", "goto"].includes(event.type);
     wizard = step.state;

@@ -17,7 +17,7 @@
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
-import {action, choice, instantText, later, textField, timeText} from "./desk-wizard-draw.js";
+import {action, choice, instantText, later, participantSetup, textField, timeText} from "./desk-wizard-draw.js";
 import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
 import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
@@ -648,16 +648,17 @@ function guideRole(ctx, label, rows) {
 }
 
 function guideTeam(ctx, roster) {
-  if (roster !== "ready") return [element("p", {text: ctx.t(`wizard.providers.${roster}`)})];
+  const setup = participantSetup(ctx, roster);
+  if (roster !== "ready") return setup.length ? setup : [element("p", {text: ctx.t("wizard.providers.pending")})];
   const rows = assignmentView(ctx.wizard);
-  if (!rows.length) return [];
+  if (!rows.length) return setup;
   const dispatch = rows.filter((row) => row.needs.includes("dispatch"));
   const doers = dispatch.length ? dispatch : rows.filter((row) => row.steps.length);
   const checkers = rows.filter((row) => row.verifies.length);
   const diagnoses = rows.filter((row) => row.steps.includes("diagnose") && !doers.includes(row) && !checkers.includes(row));
   const shared = checkers.some((row) => row.provider && doers.some((other) => other.provider === row.provider));
   const missing = rows.find((row) => !row.provider);
-  return [element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers),
+  return [...setup, element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers),
     ...(diagnoses.length ? [guideRole(ctx, "diagnose", diagnoses)] : []), guideRole(ctx, "checker", checkers)]),
     ...(missing ? [element("section", {"data-ask-role": missing.role_id}, [
       element("h3", {text: ctx.t("wizard.ask.missing_role", {role: roleName(ctx, missing)})}),
