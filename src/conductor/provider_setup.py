@@ -320,7 +320,7 @@ def _quoted(value: str, windows: bool) -> str:
 
 def _login_lines(home: str, executable: str, hint,
                  windows: bool | None = None) -> list[str]:
-    """The exact two lines a person runs, in the shell they are running in.
+    """The shell assignments and vendor command a person runs in their own shell.
 
     It used to print `NAME=value` and a literal `<executable>`, which is neither
     a PowerShell assignment nor a command: the operator had already told this
@@ -330,17 +330,22 @@ def _login_lines(home: str, executable: str, hint,
     machine, so the platform it is running on IS the answer, and printing the
     other one would repeat the same defect in the other direction.
     """
+    from conductor.command.adapters.kimi_code import KIMI_HOME_ENV, KIMI_PIN_ENV
+
     windows = os.name == "nt" if windows is None else windows
+    assignments = [(hint[0], home)]
+    if hint[0] == KIMI_HOME_ENV:
+        assignments.append(KIMI_PIN_ENV)
     if windows:
         args = subprocess.list2cmdline(hint[1])
         # The native Windows argv quoting must reach the child intact when a login
         # flag has a literal quote (Codex's TOML string). Only code-owned flags follow --%.
         if '"' in args:
             args = "--% " + args
-        return [f"$env:{hint[0]} = {_quoted(home, True)}",
-                f"& {_quoted(executable, True)} {args}"]
-    return [f"export {hint[0]}={_quoted(home, False)}",
-            f"{_quoted(executable, False)} " + shlex.join(hint[1])]
+        lines = [f"$env:{name} = {_quoted(value, True)}" for name, value in assignments]
+        return [*lines, f"& {_quoted(executable, True)} {args}"]
+    lines = [f"export {name}={_quoted(value, False)}" for name, value in assignments]
+    return [*lines, f"{_quoted(executable, False)} " + shlex.join(hint[1])]
 
 
 #: What the login question says about tasks, by whether the harness has a relay
@@ -432,7 +437,7 @@ def _ask_login(ask: Callable[[str], str], provider_id: str, protocol: str,
         _say("  type 1 or 2.")
     home = _ask_login_home(ask, provider_id, relayed)
     _say("\n  Sign in yourself, once, in your own shell -- this build never "
-         "runs a login. Paste these two lines:")
+         "runs a login. Paste these commands:")
     for line in _login_lines(home, executable, hint):
         _say(f"    {line}")
     if relayed:

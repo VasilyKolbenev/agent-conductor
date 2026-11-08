@@ -116,6 +116,7 @@ KIMI_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAMES this adapter owns. Only names live in durable config;
 #: the home's VALUE is minted per attempt and never written to any config.
 KIMI_HOME_ENV = "KIMI_CODE_HOME"
+KIMI_PIN_ENV = ("KIMI_CODE_NO_AUTO_UPDATE", "1")
 KIMI_TELEMETRY_ENV = "KIMI_DISABLE_TELEMETRY"
 #: The vendor documents ``1`` as the value that turns telemetry off.
 TELEMETRY_DISABLED = "1"
@@ -152,7 +153,7 @@ KIMI_PROFILE = HarnessProfile(
     reviewed_version=REVIEWED_KIMI_VERSION,
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=KIMI_HOME_ENV,
-    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED), ("KIMI_CODE_NO_AUTO_UPDATE", "1")),
+    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED), KIMI_PIN_ENV),
     version_argv=VERSION_ARGV,
     home_id_kind="kimi-home",
     login_argv=("acp",), login_command=("login",),

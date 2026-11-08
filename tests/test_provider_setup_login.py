@@ -297,6 +297,40 @@ def test_the_printed_command_is_for_the_shell_the_operator_is_in(monkeypatch):
         "export CLAUDE_CONFIG_DIR='/o'\\''brien'")
 
 
+def test_pasted_kimi_login_uses_the_dedicated_home_and_disables_updates(
+        project, tmp_path, capsys, monkeypatch):
+    executable, _ = pinned_files(tmp_path, "kimi-code")
+    home = tmp_path / "Kimi User's Login"
+    assert configure(project, menu_choice("kimi-code"), str(executable), "1", str(home), "",
+                     "y") == 0
+    windows = os.name == "nt"
+    def quote(path):
+        return "'" + str(path).replace("'", "''") + "'" if windows else shlex.quote(str(path))
+    marker = ("& " if windows else "") + quote(executable)
+    rows = [line.strip() for line in capsys.readouterr().err.splitlines()]
+    commands = [line for line in rows if line.startswith(("$env:", "export ", marker))]
+    # Replace only the pinned executable. The real shell applies the wizard's printed text.
+    probe = tmp_path / "owner_login.py"
+    probe.write_text("import os, sys, json\n"
+                     "print(json.dumps([sys.argv[1:], os.getenv('KIMI_CODE_HOME'), "
+                     "os.getenv('KIMI_CODE_NO_AUTO_UPDATE')]))\n", encoding="utf-8")
+    monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "other"))
+    monkeypatch.setenv("KIMI_CODE_NO_AUTO_UPDATE", "0")
+    replacement = ("& " if windows else "") + quote(sys.executable) + " " + quote(probe)
+    script = "\n".join(replacement + line[len(marker):] if line.startswith(marker) else line
+                       for line in commands)
+    shell = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"] if windows else [
+        "sh", "-c"]
+    call = subprocess.run([*shell, script], capture_output=True, timeout=15, check=True)
+    assert json.loads(call.stdout) == [["login"], str(home), "1"]
+
+
+def test_kimi_login_hint_for_a_posix_shell_keeps_the_pinned_setting():
+    assert _login_lines("/a b", "/c d/kimi", ("KIMI_CODE_HOME", ("login",)), False) == [
+        "export KIMI_CODE_HOME='/a b'", "export KIMI_CODE_NO_AUTO_UPDATE='1'",
+        "'/c d/kimi' login"]
+
+
 def test_a_subscription_row_refuses_an_api_billing_name_while_it_is_typed(
         project, tmp_path, capsys):
     """Refused at the question, not at the finished row: a dialogue that took
