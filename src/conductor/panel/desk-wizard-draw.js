@@ -45,7 +45,7 @@ export function later(ctx, id, key, label) {
 export function textField(ctx, spec) {
   const control = element(spec.multi ? "textarea" : "input", {"data-focus": spec.key,
     "data-focus-value": "state", name: spec.name, autocomplete: "off", spellcheck: "false",
-    type: spec.multi ? null : "text", rows: spec.multi ? "5" : null,
+    type: spec.multi ? null : "text", rows: spec.multi ? "5" : null, placeholder: spec.placeholder ?? null,
     disabled: spec.locked ? "" : null});
   control.value = spec.value;
   control.addEventListener("input", () => spec.onValue(control.value));

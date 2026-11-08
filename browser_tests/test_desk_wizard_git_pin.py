@@ -120,6 +120,7 @@ def test_pin_git_then_resume_the_source_in_the_open_form(chromium, tmp_path, mon
             form.locator('[data-guide-details="optional"] summary').click()
             expect(card.locator('textarea[name="content"]')).to_have_value(material)
             field("next").click()
+            expect(form.locator('[data-guide-stage="team"]')).to_have_attribute("aria-current", "step")
             field("next").click()
             field("prepare:go").click()
             expect(form.locator('[data-guide-executors]')).to_be_visible(timeout=15000)

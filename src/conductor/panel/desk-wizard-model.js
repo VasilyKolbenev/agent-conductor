@@ -81,7 +81,7 @@ export {canEditModels};
 export const REASONS = Object.freeze([
   "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
   "git_stops", "git_reading", "git_failed", "git_tool_unavailable", "git_unfinished", "starter_needs_git",
-  "materials_over_count",
+  "materials_over_count", "source_needed",
   "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
@@ -226,6 +226,8 @@ function materialsGate(state) {
   const git = gitReading(state);
   if (state.guided && git.state === "unavailable") return "git_tool_unavailable";
   if (git.stop !== null) return git.stop;
+  if (state.guided && !["repo", "not_active"].includes(git.state)
+      && !(git.state === "not_git" && state.materials.withoutGit)) return "source_needed";
   const estimate = materialsEstimate(state);
   if (estimate.overCount) return "materials_over_count";
   if (!state.materials.items.every(isComplete)) return "material_incomplete";
@@ -337,6 +339,7 @@ function gateOf(state, step) {
 }
 
 export function nextStep(state) {
+  if (state.guided && state.step === "task" && materialsGate(state)) return "materials";
   if (state.guided) return GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) + 1]?.[1] ?? null;
   return BUILT_STEPS[BUILT_STEPS.indexOf(state.step) + 1] ?? null;
 }
@@ -348,7 +351,10 @@ export function nextStep(state) {
 //: that fails again after it was left (a read lands late). It does not say whether a step
 //: follows: the last built step is complete and still has nowhere to go.
 export function canAdvance(state) {
-  const held = state.guided ? BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(guideStage(state.step)[2]) + 1)
+  const last = state.guided && state.step === "task" && nextStep(state) === "materials"
+    && !["reading", "unavailable", "unsupported", "not_repo_root"].includes(gitReading(state).state)
+    ? "task" : guideStage(state.step)?.[2];
+  const held = state.guided ? BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(last) + 1)
     : [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
   for (const step of held) {
     const reason = gateOf(state, step);
@@ -711,6 +717,7 @@ const HANDLERS = {
     ? moveTo(state, nextStep(state)) : state),
   back: (state) => {
     if (state.guided) {
+      if (state.step === "materials") return moveTo(state, "task");
       const previous = GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) - 1];
       return previous && !state.run.pressed ? moveTo(state, previous[1]) : state;
     }
