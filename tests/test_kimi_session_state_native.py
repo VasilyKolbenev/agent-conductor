@@ -1,0 +1,186 @@
+"""Optional networkless Kimi ACP session probes with synthetic credentials, before any prompt."""
+from contextlib import contextmanager, ExitStack
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+from zipfile import ZipFile
+
+import pytest
+
+from conductor import ownership
+from conductor.command.adapters.kimi_code import KIMI_AUTH_INPUT, KIMI_PROFILE
+from conductor.command.adapters.process import CommandSpec, ProcessRunner
+from conductor.command.adapters.process_loans import loan_sddl
+from conductor.command.adapters.relay_home import relay_root_sddl
+from conductor.command.long_path import extended
+from conductor.ownership_native import NativeHold, identity
+from tests.os_boundary_box import base_environment
+from tests.test_kimi_home_loan_native import ARCHIVE_SHA, configure, fixture_home, folders
+from tests.test_relay_home_native import RelaySite
+
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="requires Windows AppContainer")
+SHELL_FILES = {
+    "sh.exe": "e769a06bace817d96a4448f985ea2b48526c6cab042417229665f6b446e038dd",
+    "msys-2.0.dll": "a4f38fafec60affc988a0ccc9a51255b86469326ead9730ec7b1af87ce95579e",
+}
+EXE_SHA = "b7e658d06176284384d1e9eb627d11e5a26627b3964bf8787f197915d1484b1e"
+
+
+def sha(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+@pytest.fixture(scope="module")
+def native_files():
+    archive = os.environ.get("CONDUCT_TEST_KIMI_ARCHIVE")
+    shell = os.environ.get("CONDUCT_TEST_KIMI_SHELL")
+    if not archive or not shell:
+        pytest.skip("supply the 0.38.0 Windows archive and measured Git for Windows sh.exe")
+    archive, shell = Path(archive), Path(shell)
+    assert archive.is_absolute() and shell.is_absolute() and shell.name == "sh.exe"
+    assert sha(archive) == ARCHIVE_SHA
+    for name, digest in SHELL_FILES.items():
+        assert sha(shell.parent / name) == digest, name
+    return archive, shell.parent
+
+
+def install(site, archive, shell_dir):
+    exe = site.install / "kimi.exe"
+    with ZipFile(archive) as zipped:
+        assert zipped.namelist() == ["kimi.exe"]
+        with zipped.open("kimi.exe") as source, exe.open("xb") as target:
+            shutil.copyfileobj(source, target)
+    assert sha(exe) == EXE_SHA
+    shell = site.install / "shell"
+    shell.mkdir()
+    for name, digest in SHELL_FILES.items():
+        shutil.copyfile(shell_dir / name, shell / name)
+        assert sha(shell / name) == digest
+    return exe, shell / "sh.exe"
+
+
+def grant(path, sid, rights):
+    from conductor.command.adapters import _winlaunch as native
+
+    directory = path.is_dir()
+    handle = NativeHold(path, directory=directory, grants=True)
+    try:
+        _, _, owner = native.acl_snapshot(handle)
+        acl = relay_root_sddl(owner)
+        if rights == "create-file":
+            # Read and ADD_FILE on this directory; modify on new regular files only.
+            acl += f"(A;;0x1200ab;;;{sid})(A;OIIO;0x1301bf;;;{sid})"
+        elif directory:
+            acl = loan_sddl(acl, sid, rights)
+        else:
+            mask = "0x120089" if rights == "read" else "0x1301bf"
+            # Windows drops inheritance flags on regular file ACLs.
+            acl = f"O:{owner}D:P(A;;FA;;;SY)(A;;FA;;;{owner})(A;;{mask};;;{sid})"
+        native.acl_set(handle, acl, protected=True)
+        actual, protected, _ = native.acl_snapshot(handle)
+        assert protected and native.acl_equal(actual, acl)
+    finally:
+        handle.close()
+
+
+@contextmanager
+def state_home(runtime, source, sid):
+    """Test-only scratch. The staged original is read-only throughout the process."""
+    home = runtime / "session-state"
+    assert home.resolve().parent == runtime.resolve()
+    home.mkdir()
+    try:
+        grant(home, sid, "create-file")
+        with ExitStack() as held:
+            held.callback(NativeHold(home, directory=True).close)
+            creds = home / "credentials"
+            creds.mkdir()
+            grant(creds, sid, "read")
+            held.callback(NativeHold(creds, directory=True).close)
+            for rel in ("config.toml", "credentials/kimi-code.json"):
+                target = home / rel
+                target.touch(exist_ok=False)
+                grant(target, sid, "read")
+                target.write_bytes((source / rel).read_bytes())
+                held.callback(NativeHold(target).close)
+            for subdir in ("sessions", "logs"):
+                target = home / subdir
+                target.mkdir()
+                grant(target, sid, "modify")
+            for filename, data in (("workspaces.json", b"{}\n"),
+                                   ("device_id", b"12345678-1234-4123-8123-123456789abc")):
+                target = home / filename
+                target.write_bytes(data)
+                grant(target, sid, "modify")
+            yield home
+    finally:
+        assert home.resolve().parent == runtime.resolve()
+        shutil.rmtree(extended(home))
+
+
+@pytest.mark.parametrize("case", ["read-only", "shell-unconfigured", "session"])
+def test_native_session_before_a_prompt(tmp_path, native_files, case):
+    from conductor.command.adapters import _winlaunch as native
+
+    site = RelaySite(tmp_path, relay=False)
+    exe, shell = install(site, *native_files)
+    runner = ProcessRunner(site.root)
+    with fixture_home(site) as (source, anchor, token), ownership.acquire_owner(site.root):
+        configure(site, exe)
+        with runner.container_profile(mode="review", internet_client=False,
+                                      folders=folders(site, anchor)) as (boundary, paths):
+            assert not boundary.internet_client and identity(paths["home"]) == anchor.identity
+            sid, parent = boundary.sid, paths["parent"]
+            with ExitStack() as held:
+                home = (source if case == "read-only" else held.enter_context(
+                    state_home(paths["runtime"], source, sid)))
+                env = {**base_environment(paths["runtime"]), **dict(KIMI_PROFILE.forced_env),
+                       "KIMI_CODE_HOME": str(home)}
+                if case != "shell-unconfigured":
+                    env["KIMI_SHELL_PATH"] = str(shell)
+                else:
+                    # This opt-in control measures a host without another Git installation
+                    # at Kimi 0.38.0's built-in fallback locations. A host that supplies one
+                    # can still run the two other controls.
+                    defaults = [Path(base, "Git", part, "bash.exe")
+                                for base in ("C:/Program Files", "C:/Program Files (x86)")
+                                for part in ("bin", "usr/bin")]
+                    defaults.append(Path(env["LOCALAPPDATA"], "Programs/Git/bin/bash.exe"))
+                    defaults.extend(Path(p, "git.exe") for p in env["PATH"].split(os.pathsep))
+                    if any(p.is_file() for p in defaults):
+                        pytest.skip("the missing-shell control needs no host fallback Git Bash")
+                request = {"jsonrpc": "2.0", "id": 3, "method": "session/new",
+                           "params": {"cwd": str(site.root / "work/t1"), "mcpServers": []}}
+                frames = KIMI_AUTH_INPUT + json.dumps(request).encode() + b"\n"
+                assert [json.loads(line)["method"] for line in frames.splitlines()] == [
+                    "initialize", "authenticate", "session/new"]
+                inputs = {n: sha(source / n) for n in ("config.toml", "credentials/kimi-code.json")}
+                result = runner.run(CommandSpec(
+                    (str(exe), "acp"), "work/t1", env=env, boundary=boundary, timeout_seconds=30,
+                    output_limit=32768, stdin_bytes=frames, separate_stderr=True,
+                    stdin_completion_id=3, sensitive_extra=(b"synthetic-stage-access",)))
+                assert not result.output_truncated and not result.output_contains_env_value
+                assert result.status == "completed" and result.exit_code == 0
+                replies = [json.loads(line) for line in result.output.splitlines()]
+                by_id = {row["id"]: row for row in replies if "id" in row}
+                assert all(isinstance(by_id[n].get("result"), dict) for n in (1, 2))
+                if case == "session":
+                    issued = by_id[3]["result"]["sessionId"]
+                    assert isinstance(issued, str) and issued
+                    sessions = Path(extended(home / "sessions"))
+                    assert any(p.is_dir() and p.name in {issued, "session_" + issued}
+                               for p in sessions.glob("*/*"))
+                else:
+                    error = by_id[3]["error"]
+                    assert error["code"] == -32603
+                    phrase = ("permission denied" if case == "read-only" else
+                              "git bash was not found on this windows host")
+                    assert phrase in json.dumps(error).lower()
+                assert all(sha(home / n) == sha(source / n) == digest
+                           for n, digest in inputs.items())
+                assert (source / "credentials/kimi-code.json").read_bytes() == token
+        assert native.inspect_profile(sid) is None and not parent.exists()
+    assert not runner.active_tokens()
