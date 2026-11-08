@@ -36,7 +36,8 @@ def product_limits(budget: Any) -> dict[str, int]:
 
 
 def plan_budget(nodes: Iterable[Any], edges: Iterable[Any], limits: Mapping[str, int],
-                spent: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                spent: Mapping[str, Any] | None = None, *,
+                suggested_seconds: Mapping[str, int] | None = None) -> dict[str, Any]:
     """The `Budget` of spec 7.8 for these nodes and edges under these limits.
 
     Args:
@@ -45,11 +46,12 @@ def plan_budget(nodes: Iterable[Any], edges: Iterable[Any], limits: Mapping[str,
         limits: `max_actions`, `max_action_seconds` and `max_total_task_seconds`, from the route.
         spent: What the run already used, for the grant that replaces one (spec 6.4.4):
             `{"actions", "seconds", "attempts": [{"step_id", "attempts"}]}`. None for a fresh plan.
+        suggested_seconds: Optional per-working-step reserves, subject to all original ceilings.
     """
     known = [node for node in nodes]
     names = {node.node_id for node in known}
     roads = [edge for edge in edges if edge.from_node in names and edge.to_node in names]
-    rows = _step_rows(known, roads, limits)
+    rows = _step_rows(known, roads, limits, suggested_seconds)
     reached = _clean_pass(known, roads)
     clean = [row for row in rows if row["step_id"] in reached]
     humans = sum(1 for node in known if node.kind == "gate" and node.node_id in reached)
@@ -65,7 +67,8 @@ def plan_budget(nodes: Iterable[Any], edges: Iterable[Any], limits: Mapping[str,
     }
 
 
-def _step_rows(nodes: list[Any], edges: list[Any], limits: Mapping[str, int]) -> list[dict]:
+def _step_rows(nodes: list[Any], edges: list[Any], limits: Mapping[str, int],
+               suggested_seconds: Mapping[str, int] | None = None) -> list[dict]:
     """One row per step that carries out work: its attempts and the time it reserves."""
     frames = _attempt_frames(nodes, edges)
     rows = []
@@ -74,6 +77,11 @@ def _step_rows(nodes: list[Any], edges: list[Any], limits: Mapping[str, int]) ->
             continue
         checkers = 2 if _verifier(node) else 1
         wanted = node.timeout_seconds or DEFAULT_TIMEOUT_SECONDS
+        if suggested_seconds is not None:
+            suggested = suggested_seconds.get(node.node_id, wanted)
+            if type(suggested) is not int or suggested <= 0:
+                raise ValueError("suggested step seconds must be a positive integer")
+            wanted = min(wanted, suggested)
         held = min(wanted, limits["max_action_seconds"] // checkers)
         attempts = 1 + sum(bound - 1 for bound in frames.get(node.node_id, {}).values())
         if node.attempt_bound is not None:

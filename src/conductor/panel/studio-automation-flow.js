@@ -2,6 +2,7 @@
 // Human write callbacks and a serial read queue; no read can create authority.
 import {automationDraft, automationEligible, automationWriteReadBack, draftFromDesk, previewRequest, projectAutomation,
   projectAutomationPreview, projectGrantRefusal, projectRecommendation} from "./studio-automation-model.js";
+import {DEPTH} from "./studio-budget-guidance.js";
 
 class AutomationFlow {
   constructor(door) {
@@ -32,7 +33,7 @@ class AutomationFlow {
       const prior = this.held.get(id);
       const preset = id && bounds ? draftFromDesk(detail, bounds) : null;
       this.publish({runId: id, phase: "empty", view: null,
-        expanded: Boolean(preset), request: null, notice: "", ...prior, pending: false, preview: null, recommendation: null,
+        depth: "", expanded: Boolean(preset), request: null, notice: "", ...prior, pending: false, preview: null, recommendation: null,
         draft: prior?.draft?.custom ? prior.draft : preset ?? (id ? automationDraft(detail, null, prior?.draft?.actor) : null)}, false);
     }
     if (id && this.current()) return this.refresh();
@@ -92,6 +93,11 @@ class AutomationFlow {
   edit(name, text, nodeId = null, redraw = true) {
     if (!this.value.draft || this.value.pending || this.value.request) return;
     const draft = this.value.draft;
+    if (name === "budget_depth" && !draft.custom && !this.value.view?.authorization
+        && (text === "" || DEPTH.includes(text))) {
+      this.publish({depth: text, preview: null, recommendation: null});
+      return this.preview("edit");
+    }
     if (nodeId !== null) {
       if (!["timeout_seconds", "max_attempts"].includes(name)) return;
       this.publish({draft: {...draft, custom: true, suggestedInDesk: false, node_limits: draft.node_limits.map((row) =>
@@ -110,7 +116,10 @@ class AutomationFlow {
   async preview(intent = "review") {
     if (!this.current() || this.value.pending || this.value.request) return;
     const draft = this.value.draft;
-    const body = intent === "edit" ? {} : previewRequest(draft);
+    const suggesting = this.value.depth && !this.value.view?.authorization
+      && (intent === "edit" || !draft.custom);
+    const body = suggesting ? {recommendation: {depth: this.value.depth}} :
+      intent === "edit" ? {} : previewRequest(draft);
     if (!body) { this.publish({notice: "invalid"}); return; }
     const asked = ++this.operation, runId = this.value.runId;
     this.publish({pending: true, preview: null, notice: "previewing"});
@@ -121,9 +130,9 @@ class AutomationFlow {
     } catch (_error) { /* A failed transport supplies no reviewed terms. */ }
     if (asked !== this.operation || runId !== this.value.runId) return;
     const accepted = answer?.status === "accepted" && this.current();
-    if (!Object.keys(body).length) {
+    if (!Object.keys(body).length || suggesting) {
       const result = accepted ? projectRecommendation(answer.payload, this.detail) : null;
-      if (!result) {
+      if (!result || suggesting && result.recommendation.guidance?.depth !== this.value.depth) {
         this.publish({pending: false, ...this.withoutRecommendation(), notice: "recommendation_failed"});
         return;
       }

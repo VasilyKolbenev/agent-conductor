@@ -33,11 +33,12 @@ PERMITTED_IMPORTS = {
     "studio-feedback-copy.js": frozenset(),
     "studio-notice-copy.js": frozenset(),
     "studio-agents-copy.js": frozenset(),
-    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js'}),
+    'studio-budget-guidance.js': frozenset(),
+    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js'}),
     'studio-automation-providers.js': frozenset({'./studio-model.js'}),
-    'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
+    'studio-automation-flow.js': frozenset({'./studio-automation-model.js', './studio-budget-guidance.js'}),
     'studio-automation-copy.js': frozenset(set()),
-    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js'}),
+    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js', './studio-budget-guidance.js'}),
     'studio-workflowwrite.js': frozenset({'./studio-model.js', './studio-store.js', './command-projection.js'}),
     'studio-draft.js': frozenset({'./studio-model.js'}),
 
@@ -107,7 +108,7 @@ PERMITTED_IMPORTS = {
       "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
                                          "./desk-wizard-run.js", "./desk-wizard.js", "./desk-advice-panel.js",
-                                         "./desk-hash.js", "./studio-automation-model.js"}),
+                                         "./desk-hash.js", "./studio-budget-guidance.js"}),
     "desk-advice-run.js": frozenset({"./desk-transport.js", "./desk-wizard-cycle.js", "./desk-wizard-digest.js"}),
     "desk-advice-panel.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
         "./desk-wizard-team.js", "./desk-wizard-roles.js", "./desk-advice-run.js"}),
@@ -237,7 +238,7 @@ PERMITTED_IMPORTS = {
     #: allows. It draws what the model says through the shared controls, and never a store or a
     #: wire.
     "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
-                                      "./desk-wizard-model.js"}),
+                                      "./desk-wizard-model.js", "./studio-budget-guidance.js"}),
     #: The git block of step 2 drawn: connecting git, the first commit, the wait, the last answer.
     #: It draws what the model's facts say through the shared controls, and never a store or a
     #: wire.
@@ -275,7 +276,7 @@ PERMITTED_IMPORTS = {
     #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
     #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
     #: that gives a key its stable bytes.
-    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js", "./studio-budget-guidance.js"}),
     #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
     #: functions over the card's slice. It reaches the card's own module and nothing else.
     "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),

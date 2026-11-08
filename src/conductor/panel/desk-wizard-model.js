@@ -47,7 +47,7 @@ import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, canEd
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
 import {flowWriteRequest} from "./desk-wizard-input.js";
-import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
+import {cardActor, cardBudget, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
   cardSkipCancel, cardSkipConfirm, cardStart, cardTick,
   chainLinks, isPrepared, landCard, landRun, launchFacts, launchWanted, resumeEdit,
   resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
@@ -149,7 +149,7 @@ export function initialWizard(opening) {
   return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
     nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
     firstRunGuide: opening.firstRunGuide === true, guided: opening.firstRunGuide === true,
-    titleEdited: written,
+    titleEdited: written, budgetDepth: "balanced",
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
@@ -760,6 +760,7 @@ const HANDLERS = {
   "launch-start": cardStart,
   "launch-enqueue": cardEnqueue,
   "launch-refresh": cardRefresh,
+  "launch-budget": cardBudget,
   "launch-reread": cardReread,
   "launch-seen": cardSeen,
   "launch-info": cardInfo,

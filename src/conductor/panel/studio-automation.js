@@ -1,6 +1,7 @@
 "use strict";
 // A reviewed human permission is separate from per-action confirmation.
 import {element, field} from "./command-view.js";
+import {DEPTH, guidanceHeadline, guidanceText} from "./studio-budget-guidance.js";
 import {localize} from "./studio-i18n.js";
 import {automationEligible, previewRequest} from "./studio-automation-model.js";
 
@@ -29,6 +30,24 @@ function boundsForm(state, held, actions) {
   const {max_actions: actionsMax, max_action_seconds: actionSeconds,
     max_total_task_seconds: total, duration_seconds: duration} = held.draft;
   const custom = held.draft.custom, plan = held.recommendation;
+  const t = (key, params) => localize(state, key, params);
+  if (!custom && !held.view?.authorization) {
+    const choose = element("select", {"data-focus": "automation:budget_depth"});
+    choose.append(element("option", {value: "", text: t("wizard.budget.plan")}));
+    for (const depth of DEPTH) choose.append(element("option", {
+      value: depth, text: t(`wizard.budget.${depth}`)}));
+    choose.value = held.depth || "";
+    choose.disabled = Boolean(held.pending || held.request);
+    choose.addEventListener("change", () => actions.edit("budget_depth", choose.value));
+    form.append(field(t("wizard.budget.heading"), choose));
+  }
+  if (!custom && plan?.guidance) {
+    const time = (n) => t("wizard.time.s", {seconds: String(n)});
+    const lines = [guidanceHeadline(plan.guidance, t)];
+    if (held.expanded) lines.push(...guidanceText(plan.guidance, t, time));
+    const explanation = element("div", {"data-budget-guidance": plan.guidance.depth}, lines.map(note));
+    form.append(explanation);
+  }
   const summary = custom || plan ? word(state, "budget_summary",
     {actions: actionsMax, seconds: actionSeconds, total, duration}) : word(state, "budget_wait");
   form.append(element("p", {"data-budget-summary": "", text: summary}));

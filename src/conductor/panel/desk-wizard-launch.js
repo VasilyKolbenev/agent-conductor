@@ -17,6 +17,7 @@
 // «Пропустить вперёд» (`skip`, folded by `desk-wizard-skip.js`), and the counters that make every
 // ask's id (`previews`, `seq`, `attempts`, `presses`).
 import {stableJson as stable} from "./desk-wizard-digest.js";
+import {DEPTH, validRecommendation} from "./studio-budget-guidance.js";
 
 export const MAX_REPEATS = 6;
 const COUNTDOWN_CAP = 300;
@@ -89,7 +90,7 @@ export function initialLaunch(actor) {
 
 //: The explanations the card can open behind an ⓘ: the time it reserves, and the short digest of
 //: each input and each instruction (named by the reference or the step it belongs to).
-const INFO = /^(?:time|input:[a-z0-9-]{1,64}|instruction:[A-Za-z0-9._-]{1,128})$/;
+const INFO = /^(?:time|budget|input:[a-z0-9-]{1,64}|instruction:[A-Za-z0-9._-]{1,128})$/;
 
 /**
  * Open or close one explanation behind an ⓘ. Which are open is the model's, not the page's, so a
@@ -152,11 +153,15 @@ export function projectPreview(payload, runId) {
   const keys = [...PREVIEW_KEYS];
   if (marked !== undefined) keys.push("grok_diagnostic_steps");
   if (payload?.patch_steps !== undefined) keys.push("patch_steps");
+  if (payload?.recommendation !== undefined) keys.push("recommendation");
   const good = keysAre(payload, keys) && validTerms(payload.terms, runId)
     && validBudget(payload.budget) && validFacts(payload.provider_facts)
     && DIGEST.test(payload.preview_digest) && epochSeconds(payload.previewed_at) !== null
     && epochSeconds(payload.valid_until) !== null;
   if (!good) return null;
+  if (payload.recommendation !== undefined && !validRecommendation(payload.recommendation, payload.terms)) {
+    return null;
+  }
   for (const steps of [marked, payload.patch_steps]) {
     if (steps === undefined) continue;
     if (!Array.isArray(steps) || !steps.length || !steps.every(isActor)
@@ -265,6 +270,9 @@ function heldBy(launch) {
   if (unreadUnknown(launch)) return "lost_unread";
   if (launch.phase !== "review" || launch.skip !== null) return "busy";
   if (launch.preview.budget.exhausted) return "exhausted";
+  if (launch.depth && (launch.refreshWanted || launch.preview.recommendation?.depth !== launch.depth)) {
+    return "busy";
+  }
   if (!launch.seen) return "card_changed";
   return isActor(launch.actor) ? null : "actor_invalid";
 }
@@ -342,8 +350,11 @@ export function launchAsks(launch, ctx) {
   if (launch.phase === "starting") asks.push(writeAsk(launch, ctx, "start"));
   if (launch.phase === "enqueuing") asks.push(writeAsk(launch, ctx, "enqueue"));
   if (previewDue(launch)) {
+    const depth = launch.reads.automation?.payload?.authorization ? null
+      : launch.depth ?? launch.preview.recommendation?.depth;
     asks.push({id: `write:launch:preview:${launch.previews}`, name: "launch_preview",
-      door: "write", target: "automationPreview", subject: ctx.runId, body: {}});
+      door: "write", target: "automationPreview", subject: ctx.runId,
+      body: depth ? {recommendation: {depth}} : {}});
   }
   if (launch.prep?.status === "reading") {
     asks.push({id: `read:launch:prep:${launch.seq}`, name: "launch_prep", door: "read",
@@ -376,6 +387,15 @@ export function refreshLaunch(launch) {
   }
   return {...launch, refreshWanted: true, repeatFailed: false, repeats: 0, error: null};
 }
+
+export function changeDepth(launch, depth) {
+  if (launch.phase !== "review" || launch.skip !== null || !launch.preview?.recommendation
+      || !isBudgetDepth(depth) || depth === (launch.depth ?? launch.preview.recommendation.depth)
+      || launch.reads.automation?.payload?.authorization) return launch;
+  return {...refreshLaunch(launch), depth};
+}
+
+export const isBudgetDepth = (value) => DEPTH.includes(value);
 
 /**
  * Read the queue, the automation and the holder's automation again: on the card, and also when a
@@ -478,13 +498,20 @@ const WRITING = Object.freeze(["starting", "enqueuing", "unknown"]);
 //: answer that comes late changes nothing but its count: the id of the next preview ask is made
 //: from it, and the model hands an id out once. A dialog that is still open is for a card that
 //: another digest replaces, and closes with it.
-function landPreview(launch, ctx, result) {
+function landPreview(launch, ctx, result, ask) {
   const pressing = launch.skip !== null && launch.skip.phase === "running";
   if (pressing || WRITING.includes(launch.phase)) {
     return {...launch, previews: launch.previews + 1};
   }
-  const base = {...launch, previews: launch.previews + 1, refreshWanted: false};
+  const depth = launch.reads.automation?.payload?.authorization ? null : launch.depth;
+  const base = {...launch, depth, previews: launch.previews + 1, refreshWanted: false};
   if (result.status === "accepted") {
+    if (depth && ask.body?.recommendation?.depth !== depth) {
+      return {...base, refreshWanted: true};
+    }
+    if (ask.body?.recommendation && result.payload?.recommendation?.depth !== ask.body.recommendation.depth) {
+      return {...base, repeatFailed: true, error: "schema_mismatch"};
+    }
     const owned = launch.refreshWanted;
     return takePreview({...base, repeatFailed: false}, result.payload, ctx.runId, !owned);
   }
@@ -559,7 +586,7 @@ function landWrite(launch, ctx, ask, result) {
 export function landLaunch(launch, ctx, ask, result) {
   if (launch.settled.includes(ask.id)) return launch;
   const marked = {...launch, settled: [...launch.settled, ask.id]};
-  if (ask.name === "launch_preview") return landPreview(marked, ctx, result);
+  if (ask.name === "launch_preview") return landPreview(marked, ctx, result, ask);
   if (ask.name === "launch_prep") return landPrep(marked, ctx, result);
   if (ask.name === "launch_authorize" || ask.name === "launch_enqueue") {
     return landWrite(marked, ctx, ask, result);

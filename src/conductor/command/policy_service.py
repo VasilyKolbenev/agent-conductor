@@ -3,6 +3,7 @@ from collections.abc import Mapping
 
 from .api_refusals import ApiRefusal
 from .authorization_terms import closed_fields
+from .budget_guidance import recommendation
 from .authorization_history import validate_authorization_history
 from .contract_values import ContractError, _content_digest, _id
 from .contracts import ActionRequest, ActionResultReceipt
@@ -35,22 +36,30 @@ class PolicyService:
         self.seeds = None  # what the driver asks before a run's first action (spec 9.1.4)
 
     def preview(self, run_id, body):
-        """A candidate for the run: the caller's five fields, or, for `{}`, the server's own draft.
+        """A candidate from explicit limits, the plan ceilings, or optional task-aware guidance.
 
         An empty body asks the server for the terms it would offer (spec 6.4.4): they come from
         the run's plan and the answer carries the `Budget` behind them, which is neither part of
-        the terms nor of their digest and is not kept in the cache.
+        the terms nor of their digest and is not kept in the cache. A recommendation adds an
+        explanation of a fresh run's editable limits under the same frozen plan.
         """
         with self.store.transaction():
             recovered = self.store.read(run_id)
-            drafted = None
+            budget = advice = None
             if isinstance(body, Mapping) and not body:
-                drafted = drafted_preview(recovered.records, product_limits(self.budget))
-                body = drafted[0]
+                body, budget = drafted_preview(recovered.records, product_limits(self.budget))
+            elif isinstance(body, Mapping) and set(body) == {"recommendation"}:
+                snapshot = self.provider_digest(recovered.config)
+                body, budget, advice = recommendation(self.store, recovered, product_limits(self.budget),
+                                                      body["recommendation"], snapshot)
             result = build_preview(recovered, body, budget=self.budget,
                 provider_digest=self.provider_digest, registry=self.registry, clock=self.clock, provider_facts=self.provider_facts)
+            if advice is not None and result["terms"]["provider_config_digest"] != snapshot:
+                raise ContractError("provider facts changed while recommending limits")
             self.previews.put(self.session, run_id, result)
-            return result if drafted is None else {**result, "budget": drafted[1]}
+            if budget is None:
+                return result
+            return {**result, "budget": budget, **({"recommendation": advice} if advice else {})}
 
     def authorize(self, run_id, body):
         body = closed_fields(body, AUTHORIZE_FIELDS, "automation authorize")

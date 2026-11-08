@@ -54,6 +54,7 @@ MODEL = PANEL / "studio-model.js"
 #: the packaged directory in both directions.
 MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-docs-copy.js", "studio-runs-copy.js", "studio-runform-copy.js", "studio-view-copy.js", "studio-workflow-detail-copy.js", "studio-workflow-copy.js", "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js", "studio-agents-copy.js", 'studio-automation-model.js', 'studio-automation-providers.js', 'studio-automation-flow.js', 'studio-automation-copy.js', 'studio-automation.js', 'studio-workflowwrite.js', 'studio-draft.js',
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
+           "studio-budget-guidance.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-canvas-edges.js", "studio-canvas-flow.js",

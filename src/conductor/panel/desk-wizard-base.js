@@ -53,6 +53,7 @@ export function restoreAnswers(fresh, held, documents, offered) {
   const items = draftMaterials(held.items, documents).map((row, at) => ({...row, key: `m${at + 1}`}));
   const known = offered.find((row) => row.id === held.cycleId && row.kind !== "build");
   const restored = {guided: held.guided !== false, titleEdited: held.titleEdited === true,
+    budgetDepth: ["quick", "thorough"].includes(held.budgetDepth) ? held.budgetDepth : "balanced",
     draftMaterialsMissing: Array.isArray(held.items) && items.length !== held.items.length,
     task: {...fresh.task, title: held.title, brief: held.brief, hint: held.hint},
     materials: {...fresh.materials, items, counter: items.length, withoutGit: held.withoutGit === true,
