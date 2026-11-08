@@ -10,10 +10,11 @@ repeat.
 What a machine gives is not a number to assert: CPU seconds a scheduler grants in 1 s, the memory
 and handles of a Node version, a `tasklist` a sandbox may refuse. The counters' conversion is
 checked on given values; a real process only for the shape of its profile line; a table only
-when the test itself finds that `tasklist` lists, else the note `unavailable (...)` is the answer.
+when the diagnostic's OS call returns rows, else its own failure is the expected note.
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -66,19 +67,24 @@ def argv_of(node: str) -> list[str]:
     return [node, "--input-type=module"]
 
 
-def tasklist_lists_processes() -> tuple[bool, str]:
-    """Does `tasklist` list processes where this runs, asked without `node_run`'s help?
+def observe_tasklist(monkeypatch):
+    """Observe the actual OS query used in the notes without making another one."""
+    run = subprocess.run
+    samples = []
 
-    The second value says what was seen, for a failure message.
-    """
-    try:
-        done = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
-                              encoding="oem", errors="replace", stdin=subprocess.DEVNULL,
-                              timeout=15, check=False)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return False, f"{type(exc).__name__}: {exc}"
-    rows = [line for line in done.stdout.splitlines() if line.startswith('"')]
-    return bool(rows), f"rc {done.returncode}, {len(rows)} rows"
+    def observed(argv, *args, **kwargs):
+        if argv != ["tasklist", "/FO", "CSV", "/NH"]:
+            return run(argv, *args, **kwargs)
+        try:
+            result = run(argv, *args, **kwargs)
+        except (OSError, subprocess.SubprocessError) as exc:
+            samples.append(exc)
+            raise
+        samples.append(result)
+        return result
+
+    monkeypatch.setattr(subprocess, "run", observed)
+    return samples
 
 
 def timed_out(node: str, source: str, timeout: float = 1.0) -> subprocess.TimeoutExpired:
@@ -185,7 +191,8 @@ def test_a_timeout_is_subprocess_runs_own_after_the_same_deadline_and_one_spawn(
     assert 0.95 <= waited <= 1.5
 
 
-def test_the_notes_carry_what_a_red_ci_log_needs(node):
+def test_the_notes_carry_what_a_red_ci_log_needs(node, monkeypatch):
+    samples = observe_tasklist(monkeypatch) if WINDOWS else []
     exc = timed_out(node, r'process.stdout.write("partial-out\n"); '
                           r'process.stderr.write("partial-err\n"); ' + HANG)
     image = re.escape(os.path.basename(node))
@@ -216,13 +223,22 @@ def test_the_notes_carry_what_a_red_ci_log_needs(node):
             r"^after kill: returncode 1; pipes closed in \d+\.\d{3} s$",
             rf"^{image} --version after the kill: 'v\d+\.\d+\.\d+' rc 0 in \d+\.\d{{3}} s$",
         ]
-        # Whether the OS lists processes is asked here, apart from `node_run`: a sandbox may
-        # refuse `tasklist` (rc 1, nothing listed). Then the note says so and there is no table.
-        listed, tasklist = tasklist_lists_processes()
-        wanted += [
-            r"^background suspects: .+$",
-            rf"^processes now: \d+; {image} alive: [1-9]\d* \[.+\]$",
-        ] if listed else [r"^process table: unavailable \(\w+: "]
+        sample, = samples
+        if isinstance(sample, BaseException):
+            listed = False
+            tasklist = f"{type(sample).__name__}: {sample}"
+        else:
+            rows = [r for r in csv.reader(sample.stdout.splitlines()) if len(r) >= 5]
+            listed = bool(rows)
+            tasklist = f"RuntimeError: tasklist listed nothing (rc {sample.returncode})"
+            if listed:
+                found = sum(row[0].lower() == os.path.basename(node).lower() for row in rows)
+                assert found > 0, "the timed-out Node is still alive during the process query"
+                tasklist = f"rc {sample.returncode}, {len(rows)} rows, {found} Node"
+                wanted += [r"^background suspects: .+$",
+                           rf"^processes now: {len(rows)}; {image} alive: {found} \[.+\]$"]
+        if not listed:
+            wanted.append(rf"^process table: unavailable \({re.escape(tasklist)}\)$")
     text = notes_of(exc)
     missing = [pattern for pattern in wanted if not re.search(pattern, text, re.M | re.I)]
     assert not missing, f"{missing}\ntasklist here: {tasklist}\n--- the notes ---\n{text}"
@@ -232,7 +248,7 @@ def test_the_notes_carry_what_a_red_ci_log_needs(node):
     assert exc.stdout == "partial-out\n" and exc.stderr == "partial-err\n"
 
 
-@pytest.mark.parametrize("denied", ["lists_nothing", "not_found"])
+@pytest.mark.parametrize("denied", ["lists_nothing", "not_found", "timeout"])
 def test_a_tasklist_that_gives_nothing_is_one_unavailable_note_and_no_table(
         monkeypatch, denied):
     """What a sandbox does to `tasklist` (rc 1, nothing on stdout), or a system that has none:
@@ -244,6 +260,8 @@ def test_a_tasklist_that_gives_nothing_is_one_unavailable_note_and_no_table(
         asked.append(argv)
         if denied == "not_found":
             raise FileNotFoundError(2, "No such file or directory", "tasklist")
+        if denied == "timeout":
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
         return subprocess.CompletedProcess(argv, 1, "", "")
 
     monkeypatch.setattr(subprocess, "run", tasklist)
@@ -251,11 +269,11 @@ def test_a_tasklist_that_gives_nothing_is_one_unavailable_note_and_no_table(
     node_run._fact(notes, "process table",
                    lambda: node_run._table_notes(types.SimpleNamespace(pid=1), "node.exe"))
     assert asked == [["tasklist", "/FO", "CSV", "/NH"]]
-    assert notes == [
-        "process table: unavailable (RuntimeError: tasklist listed nothing (rc 1))"
-        if denied == "lists_nothing" else
-        "process table: unavailable (FileNotFoundError: [Errno 2] No such file or directory: "
-        "'tasklist')"]
+    argv = ["tasklist", "/FO", "CSV", "/NH"]
+    reason = {"lists_nothing": "RuntimeError: tasklist listed nothing (rc 1)",
+              "not_found": "FileNotFoundError: [Errno 2] No such file or directory: 'tasklist'",
+              "timeout": f"TimeoutExpired: Command '{argv}' timed out after 5.0 seconds"}[denied]
+    assert notes == [f"process table: unavailable ({reason})"]
 
 
 @pytest.mark.parametrize("table", ["listed", "no_ps"])
