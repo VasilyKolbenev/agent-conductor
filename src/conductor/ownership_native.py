@@ -131,8 +131,13 @@ if os.name == "nt":
                 return stream.read(limit + 1)
 
         def rename(self, destination):
+            from .command.long_path import extended
             self.check()
-            encoded = str(destination).encode("utf-16-le")
+            encoded = os.fspath(destination).encode("utf-16-le")
+            # Preserve ordinary short-name and relative-name semantics. MAX_PATH includes NUL.
+            if len(encoded) >= 2 * 260 and os.path.isabs(destination):
+                destination = extended(destination)
+                encoded = destination.encode("utf-16-le")
 
             class Rename(ctypes.Structure):
                 _fields_ = [("replace", ctypes.c_ubyte), ("root", wintypes.HANDLE),
