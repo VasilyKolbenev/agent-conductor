@@ -97,6 +97,10 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
       showAnswer(value, req);
     } catch (error) {
       if (valid(at, req)) setError(error);
+      else if (op === "grant" && error.message === "preview_changed" && at === generation && open) {
+        stage = {phase: "withdrawn"};
+        refresh();
+      }
     } finally {
       if (valid(at, req)) refresh();
     }
@@ -168,7 +172,7 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
     if (Date.parse(stage.preview.valid_until) <= Date.now()) {
       return [sent, element("p", {text: t("expired")}), button("prepare", t("prepare"), () => void update("prepare"))];
     }
-    const exhausted = quota.known && quota.remaining <= 0;
+    const exhausted = quota.kind === "percent" && quota.remaining <= 0;
     return [element("p", {text: request.provider+" · "+(request.model || t("default_model"))}), sent,
       ...(exhausted ? [element("p", {role: "status", text: t("exhausted")})] : []),
       field("actor", t("actor"), owner, (value) => { owner = value; refresh(); }, 128),
@@ -188,9 +192,11 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
     if (phase === "preview") return previewCard(t, quota);
     if (phase === "result") return resultCard(t);
     if (phase === "busy" || phase === "running") {
-      return [element("p", {role: "status", text: t(phase === "running" ? "working" : "preparing")})];
+      const key = phase === "busy" ? "preparing" : stage.waiting ? "waiting" : "working";
+      return [element("p", {role: "status", text: t(key)})];
     }
     const notes = [];
+    if (!current && stage?.phase === "withdrawn") notes.push(element("p", {role:"status", text:t("withdrawn")}));
     if (!current) notes.push(element("p", {role: "status", text: t("changed")}));
     if (phase === "error") {
       notes.push(element("p", {role: "alert", text: t(stage.key)}));
@@ -218,7 +224,9 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
     box.append(...setupFields(w, list, selected, t));
     if (!selected) return box;
     const quota = quotaOf(w.reads.quotas?.payload, selected.provider_id);
-    box.append(element("p", {text: t("left")+" · "+(quota.known ? quota.remaining+"%" : t("unknown"))}),
+    const remainder = quota.kind === "percent" ? quota.remaining+"%"
+      : t(quota.kind === "balance" ? "balance" : "unknown");
+    box.append(element("p", {text: t("left")+" · "+remainder}),
       element("p", {text: t("cost")}), ...stageCard(t, quota, !request || identity(w)?.id === request.id));
     if (request) {
       const hash = new URLSearchParams({screen: "runs", task: request.id, run: request.id, lang: locale()});

@@ -19,7 +19,8 @@ from tests.test_store import write_project, good_lane
 
 @pytest.mark.parametrize(("lang", "width", "case"), [
     ("ru", 375, "accept"), ("en", 1280, "accept"), ("ru", 375, "invalid"),
-    ("en", 1280, "edited"), ("ru", 375, "before_grant")])
+    ("en", 1280, "edited"), ("ru", 375, "before_grant"),
+    ("ru", 375, "balance"), ("en", 1280, "zero")])
 def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         tmp_path, chromium, monkeypatch, lang, width, case):
     root = write_project(tmp_path / "project", lanes={"test": good_lane()})
@@ -63,6 +64,13 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         refusals = []
         page.on("response", lambda res: refusals.append((res.url, res.status, res.json()))
                 if res.status >= 400 and "/command/" in res.url else None)
+        if case in ("balance", "zero"):
+            reading = {"binding_ids": ["codex"], "state": "observed", "freshness": "current",
+                       "is_available": True, "balances": [{"currency": "USD", "total_balance": "4.20"}],
+                       "windows": []}
+            if case == "zero":
+                reading["windows"] = [{"remaining_percent": 0, "freshness": "current"}]
+            page.route("**/command/quotas", lambda route: route.fulfill(json={"snapshots": [reading]}))
         page.goto(f"http://127.0.0.1:{http.server_port}/panel/desk.html#new=task&lang={lang}")
         brief = page.locator('[data-focus="wizard:brief"]')
         brief.fill("COUNT_CASE_42: count successful rows")
@@ -80,6 +88,17 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         store = RunStore(root)
         assert not any(r.kind in {"run_authorization", "action_request"} for r in store.read(run_id).records)
         panel.locator("[data-advice-actor]").fill("reviewer-test")
+        if case == "balance":
+            expect(panel).not_to_contain_text("null%")
+            expect(panel).to_contain_text("процент неизвестен")
+            expect(grant).to_be_enabled()
+            assert not calls
+            return
+        if case == "zero":
+            expect(panel).to_contain_text("0%")
+            expect(grant).to_be_disabled()
+            assert not calls
+            return
         if case == "before_grant":
             pending = []
             page.route(f"**/command/runs/{run_id}/automation", lambda route: pending.append(route))
@@ -89,6 +108,7 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
             expect(panel).to_contain_text("Черновик изменился")
             with page.expect_response(lambda res: res.url.endswith("/automation")):
                 pending[0].continue_()
+            expect(panel).to_contain_text("Прежний запрос не был разрешён.")
             assert not any(r.kind == "run_authorization" for r in store.read(run_id).records)
             assert not grant.is_visible() and not calls
             return
@@ -100,6 +120,10 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         if case == "edited":
             brief.fill("A different task in this same draft")
             allow_reply.set()
+            page.wait_for_function("""async (id) => {
+                const detail = await (await fetch("/command/runs/" + id)).json();
+                return detail.records.some(row => row.record_type === "action_result");
+            }""", arg=run_id, timeout=18000)
             expect(panel).to_contain_text("The draft changed")
             assert not apply.is_visible()
             expect(brief).to_have_value("A different task in this same draft")

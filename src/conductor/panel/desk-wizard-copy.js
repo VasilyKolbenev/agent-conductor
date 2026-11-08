@@ -7,6 +7,9 @@
 export const WIZARD_COPY = Object.freeze({
   "advice.quick": ["Quick","Быстрая"],
   "advice.exhausted": ["This harness reports no remaining subscription quota.","По данным харнесса, лимит подписки исчерпан."],
+  "advice.balance": ["Balance reported; percentage unknown","Есть баланс, процент неизвестен"],
+  "advice.withdrawn": ["The previous request was not authorized.", "Прежний запрос не был разрешён."],
+  "advice.waiting": ["Permission recorded. Waiting for the review to start.", "Разрешение записано. Ожидаем начала проверки."],
   "advice.new_question": ["Edit the question to request a new review.", "Чтобы запросить новый совет, измените вопрос."],
   "advice.diagnostics": ["Error details","Подробности ошибки"],
   "advice.default_model": ["Harness default model","Модель по умолчанию"],

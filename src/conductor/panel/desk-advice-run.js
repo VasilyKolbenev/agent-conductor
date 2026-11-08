@@ -95,9 +95,11 @@ export async function observeAdvice(door, request) {
     return {phase: "result", content: outputs[0].content};
   }
   if (state.authorization || actions.length || rows(run, "run_authorization").length) {
-    requireFact(!["stalled", "complete"].includes(run.graph?.schedule?.run_state)
-      && !["stalled", "expired", "revoked", "paused", "restart_required", "complete"].includes(state.state), "advice_stopped");
-    return {phase: "running"};
+    if (!actions.length && ["expired","revoked","complete"].includes(state.state)) {
+      throw new Error("advice_stopped");
+    }
+    // A recorded grant can precede driver attachment. In-flight work can also outlive admission.
+    return {phase: "running", waiting: !actions.length && state.state !== "running"};
   }
   return {phase: "ready"};
 }
