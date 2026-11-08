@@ -473,7 +473,10 @@ function decisionForm(row, draft, handlers, live, state) {
   // no amount of typing here answers.
   if (!live) form.append(note(L(state, "agents.stream_down")));
   if (state.decisionWriteBlocked) form.append(note(L(state, state.decisionWriteBlocked)));
-  if (stops !== null && stops !== "agents.actor_hint") form.append(note(L(state, stops, {action: draft.action})));
+  if (stops !== null && stops !== "agents.actor_hint") {
+    const params = stops === "agents.reason_required" ? {action: draft.action} : undefined;
+    form.append(note(L(state, stops, params)));
+  }
   if (submit === null) {
     form.append(note(L(state, "agents.submit_missing")));
   } else {
