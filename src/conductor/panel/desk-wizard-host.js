@@ -155,7 +155,15 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
 
   const live = (at) => at === epoch && wizard !== null;
   const refresh = () => onState();
-  const advice = createAdvicePanel({door, refresh, dispatch, draft: () => wizard, locale,
+  function writeAdvice(target, subject, body) {
+    if (!wizard || context.foreign() || context.mode() !== "active"
+        || !["flow", "tasks", "runs", "artifacts", "automationPreview", "automationAuthorize", "decisions"].includes(target)) {
+      return Promise.resolve(outcome("advice_unavailable"));
+    }
+    return door.submit(target, subject, body);
+  }
+  const advice = createAdvicePanel({door: {readJson: (url) => door.readJson(url), write: writeAdvice},
+    refresh, dispatch, draft: () => wizard, locale,
     actor: () => context?.actor()});
 
   function render() {

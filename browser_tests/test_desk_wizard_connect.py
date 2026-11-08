@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import expect
 
+from browser_tests.desk_hold import close_context
 from browser_tests.test_desk_wizard_git_pin import active_project
 from browser_tests.test_desk_wizard_host import wizard_url  # noqa: F401
 from conductor import ownership_transition
@@ -93,7 +94,7 @@ def test_return_from_participant_setup_reloads_the_real_roster_without_losing_an
             assert any(path.endswith("/automation/preview") for path in posts)
             assert not any(path.endswith("/automation/authorize") for path in posts)
     finally:
-        context.close()
+        close_context(context)
 
 
 @pytest.mark.parametrize("wizard_url", [True], indirect=True)
@@ -124,4 +125,4 @@ def test_a_failed_roster_read_stays_unknown_and_an_api_only_team_can_still_conti
         optional.locator("summary").click()
         expect(optional.get_by_role("link")).to_be_visible()
     finally:
-        page.context.close()
+        close_context(page.context)

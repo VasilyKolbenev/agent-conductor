@@ -4,7 +4,7 @@ import {localize} from "./studio-i18n.js";
 import {cycleCards} from "./desk-wizard-model.js";
 import {assignmentView} from "./desk-wizard-team.js";
 import {quotaOf} from "./desk-wizard-roles.js";
-import {grantAdvice, observeAdvice, prepareAdvice, requestFor, suggestionFrom} from "./desk-advice-run.js";
+import {grantAdvice, observeAdvice, prepareAdvice, recordAdviceChoice, requestFor, suggestionFrom} from "./desk-advice-run.js";
 
 const words = (lang, key) => localize({locale: lang}, "advice."+key);
 
@@ -78,8 +78,10 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
     stage = {phase: "error", key, code};
   }
   function showAnswer(value, req) {
-    stage = value.phase === "result"
-      ? {...value, suggestion: suggestionFrom(value.content, JSON.parse(req.content))} : value;
+    if (value.phase !== "result") { stage = value; return; }
+    if (value.choice === "reject") { stage = {phase: "declined"}; return; }
+    if (!owner.trim() && typeof value.actor === "string") owner = value.actor;
+    stage = {...value, suggestion: suggestionFrom(value.content, JSON.parse(req.content))};
   }
   async function update(op) {
     const req = identity(draft());
@@ -123,11 +125,22 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
     set();
     refresh();
   }
-  function apply() {
+  async function decide(action) {
     const w = draft();
     if (!w || !request || identity(w)?.id !== request.id || !stage?.suggestion) return;
-    const proposal = stage.suggestion;
+    const {suggestion: proposal, content} = stage, at = generation, req = request;
+    stage = {phase: "busy"};
+    refresh();
+    try {
+      await recordAdviceChoice(door, req, content, owner.trim(), action,
+        action === "reject" ? words(locale(),"decline") : "", () => valid(at, req));
+    } catch (error) {
+      if (valid(at, req)) { setError(error); refresh(); }
+      return;
+    }
+    if (!valid(at, req)) return;
     reset();
+    if (action === "reject") { stage = {phase: "declined"}; refresh(); return; }
     stage = {phase: "applied"};
     dispatch({type: "edit-hint", value: proposal.criterion});
     if (proposal.cycle_id && proposal.cycle_id !== w.cycle.choice?.workflowId)
@@ -180,12 +193,16 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
   }
   function resultCard(t) {
     const proposal = stage.suggestion;
+    const canSign = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(owner.trim());
     return [element("strong", {text: t("criterion")}), element("p", {text: proposal.criterion}),
       ...(proposal.question ? [element("p", {text: proposal.question})] : []),
       ...(proposal.cycle_id ? [element("p", {text: t("cycle")+" · "+proposal.cycle_id})] : []),
       ...(proposal.depth ? [element("p", {text: t("depth")+" · "+t(proposal.depth)})] : []),
       ...Object.entries(proposal.roles).map(([role, id]) => element("p", {text: role+" · "+id})),
-      button("apply", t("apply"), apply)];
+      field("actor", t("sign"), owner, (value) => { owner = value; refresh(); }, 128),
+      ...(!canSign ? [element("p", {text: t("sign_hint")})] : []),
+      button("apply", t("apply"), () => void decide("approve"), !canSign),
+      button("decline", t("decline"), () => void decide("reject"), !canSign)];
   }
   function stageCard(t, quota, current) {
     const phase = current ? stage?.phase : null;
@@ -207,6 +224,7 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
         element("code", {text: stage.code})]));
     }
     if (phase === "applied") notes.push(element("p", {role: "status", text: t("applied")}));
+    if (phase === "declined") notes.push(element("p", {role: "status", text: t("declined")}));
     return [...notes, button("prepare", t("prepare"), () => void update("prepare"))];
   }
   function panel(w) {

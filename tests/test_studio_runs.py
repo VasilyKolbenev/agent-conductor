@@ -124,7 +124,7 @@ ALLOWED_IMPORTS = {
     STEP_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js",
                           "./studio-rundocs.js", "./studio-isolation.js"}),
-    PEOPLE_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./studio-runwords.js",
+    PEOPLE_FILE: frozenset({"./studio-participants.js", "./studio-i18n.js", "./command-view.js", "./studio-runwords.js",
                             "./studio-quotas.js"}),
     DOCS_FILE: frozenset({"./studio-i18n.js", "./command-view.js", "./command-projection.js",
                           "./studio-runwords.js", "./studio-runread.js"}),

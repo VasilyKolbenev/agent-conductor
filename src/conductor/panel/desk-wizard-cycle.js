@@ -27,7 +27,7 @@ function rowsOf(read, key) {
 //: The project's saved cycles: published, readable, and not the product's own (`desk-*`).
 function savedRows(reads, firstRunGuide) {
   return rowsOf(reads.workflows, "workflows").filter((row) => typeof row.workflow_id === "string"
-    && !row.workflow_id.startsWith("desk-") && (Number.isSafeInteger(row.latest_revision)
+    && !row.workflow_id.startsWith("desk-") && row.workflow_id !== ADVICE_WORKFLOW && (Number.isSafeInteger(row.latest_revision)
       || firstRunGuide && row.workflow_id === "dalio-v6" && row.has_draft === true)
     && row.unreadable !== true);
 }
@@ -73,7 +73,7 @@ export function cardsOf(reads, starterId, firstRunGuide = false) {
 
 //: The project's last run: its newest readable run that has a workflow, whether or not that
 //: workflow is a card. An older run never stands in for it (spec 7.10).
-export const ADVICE_WORKFLOW = "desk-launch-advice";
+export const ADVICE_WORKFLOW = "launch-advice-v1";
 function lastRun(reads) {
   const usable = rowsOf(reads.runs, "runs").filter((run) => run.unreadable !== true
     && typeof run.workflow_id === "string" && run.workflow_id !== ADVICE_WORKFLOW

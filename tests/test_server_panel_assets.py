@@ -189,6 +189,7 @@ ASSETS = {
     "/panel/desk-wizard-card.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-git-view.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-copy.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-advice-copy.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-shape.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-loops.js": "text/javascript; charset=utf-8",

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
+from browser_tests.desk_hold import close_context
 
 from conductor import ownership, ownership_transition, server
 from conductor.command import operator_config
@@ -172,10 +173,12 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         records = store.read(run_id).records
         assert sum(r.kind == "run_authorization" for r in records) == 1
         assert sum(r.kind == "action_request" for r in records) == 1
+        assert [(r.value.gate_id, r.value.action, r.value.actor) for r in records if r.kind == "decision"] == [
+            ("advice-result", "approve", "reviewer-test")]
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     finally:
         allow_reply.set()
-        context.close()
+        close_context(context)
         http.shutdown()
         worker.join(timeout=5)
         http.server_close()

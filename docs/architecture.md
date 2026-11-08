@@ -75,6 +75,8 @@ The workspace checks path containment and scopes result reads and changes. These
 
 ## A small map for contributors
 
+The Desk drafting assistant prepares one bounded review over the shared transport. The panel applies only a confirmed suggestion to the current draft. [Advice panel](../src/conductor/panel/desk-advice-panel.js) · [Review run](../src/conductor/panel/desk-advice-run.js).
+
 Paths below are relative to the repository. Start with the row that owns the behavior you want to change.
 
 | Change | Source to read first |
