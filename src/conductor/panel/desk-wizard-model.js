@@ -80,7 +80,7 @@ export {canEditModels};
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
 export const REASONS = Object.freeze([
   "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
-  "git_stops", "git_reading", "git_failed", "git_unfinished", "starter_needs_git",
+  "git_stops", "git_reading", "git_failed", "git_tool_unavailable", "git_unfinished", "starter_needs_git",
   "materials_over_count",
   "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
@@ -223,8 +223,9 @@ export function closeNeedsWarning(state) {
 }
 
 function materialsGate(state) {
-  const stop = gitReading(state).stop;
-  if (stop !== null) return stop;
+  const git = gitReading(state);
+  if (state.guided && git.state === "unavailable") return "git_tool_unavailable";
+  if (git.stop !== null) return git.stop;
   const estimate = materialsEstimate(state);
   if (estimate.overCount) return "materials_over_count";
   if (!state.materials.items.every(isComplete)) return "material_incomplete";

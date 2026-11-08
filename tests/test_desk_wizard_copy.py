@@ -44,7 +44,8 @@ SPEC_WORDS = {
     "wizard.exit.run_without_git": "Запустить без git", "wizard.role.unassigned": "назначьте",
     "wizard.git.unborn": "В репозитории нет ни одного коммита",
     "wizard.git.unsafe_directory": "git не доверяет этой папке (другой владелец)",
-    "wizard.git.unavailable": "git не закреплён",
+    "wizard.git.unavailable": "В папке проекта есть .git. Чтобы прочитать исходные файлы, "
+                              "настройте Git для December Command.",
     "wizard.prepare": "Подготовить запуск", "wizard.prepare.continue": "Продолжить подготовку",
     "wizard.resume.retype": "Текст этих полей не был записан до перезагрузки — введите его заново",
     "wizard.chain.adopt": "Продолжить с записанной расстановкой",
