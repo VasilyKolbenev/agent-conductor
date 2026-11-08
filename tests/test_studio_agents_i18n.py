@@ -9,10 +9,13 @@ import pytest
 PANEL = Path(__file__).resolve().parents[1] / "src/conductor/panel"
 DOM = """
 class E {
-  constructor(tag) {this.tag=tag;this.children=[];this.attrs={};this.events={};this.value='';}
+  constructor(tag) {this.tag=tag;this.children=[];this.attrs={};this.dataset={};this.events={};this.value='';}
   set textContent(value) {this.children=[String(value)];}
   get textContent() {return this.children.map(x=>typeof x==='string'?x:x.textContent).join(' ');}
-  setAttribute(k,v) {this.attrs[k]=String(v);}
+  setAttribute(k,v) {
+    this.attrs[k]=String(v);
+    if(k.startsWith('data-')) this.dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=String(v);
+  }
   getAttribute(k) {return this.attrs[k]??null;}
   append(...children) {this.children.push(...children);}
   replaceChildren(...children) {this.children=[...children];}
@@ -24,7 +27,6 @@ class E {
     return all(this).filter(x=>x.tag==="details" && x.open &&
       x.getAttribute("data-decision-details")!==null);
   }
-  get dataset() {return {decisionDetails:this.getAttribute("data-decision-details")};}
 }
 globalThis.document={activeElement:null,body:new E('body'),createElement:t=>new E(t)};
 const all=node=>[node,...node.children.filter(x=>typeof x!=='string').flatMap(all)];
