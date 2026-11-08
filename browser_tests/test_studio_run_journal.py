@@ -164,6 +164,42 @@ def test_late_receipt_does_not_clear_another_decision_draft_offscreen(chromium: 
         page.context.close()
 
 
+def test_delayed_unreached_gate_keeps_input_at_the_other_gate(chromium: Browser, project: _Project):
+    from browser_tests.test_studio_decision_doors import _refuse_once
+
+    reach_the_confirm_gate(project.root, config_digest=DIGEST)
+    page, _ = _open(chromium, project)
+    path = f"**/command/runs/{RUN_ID}/decisions"
+    held = []
+    try:
+        _read_the_run(page)
+        _choose_the_gates_decision(page)
+        page.route(path, lambda route: held.append(route))
+        actor = page.locator('[data-focus-key="field:actor"]')
+        reason = page.locator('[data-focus-key="field:reason"]')
+        actor.fill(DECIDER)
+        actor.press("Tab")
+        with page.expect_request(lambda req: req.url.endswith(f"/{RUN_ID}/decisions")):
+            page.locator('[data-focus-key="action:submitDecision"]').click()
+        other = page.locator('[data-focus-key^="decision:"][aria-pressed="false"]')
+        expect(other).to_have_count(1)
+        other.click()
+        actor.fill("next-owner")
+        actor.press("Tab")
+        reason.fill("Unsaved at the other gate")
+        reason.press("Tab")
+        assert len(held) == 1
+        with page.expect_response(lambda res: res.url.endswith(f"/command/runs/{RUN_ID}")):
+            _refuse_once(held[0])
+        expect(page.locator("#studioStatus")).to_contain_text("has not been reached")
+        expect(actor).to_have_value("next-owner")
+        expect(reason).to_have_value("Unsaved at the other gate")
+        assert project.receipts() == []
+    finally:
+        page.unroute(path)
+        page.context.close()
+
+
 def test_the_run_detail_never_shows_the_outcome_word_without_its_sentence(
         chromium: Browser, project: _Project) -> None:
     """Exit 0 is a fact about a process, and the detail refuses to confuse them.

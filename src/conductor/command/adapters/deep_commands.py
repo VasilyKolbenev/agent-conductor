@@ -33,6 +33,7 @@ DEEP_WORKING_DIRECTORY = "work"
 DEEP_OUTPUT_PROFILE = "bounded-jsonl-v1"
 DEEP_OUTPUT_LIMIT = 16 * 1024
 PATCH_PROFILE = "implement-patch-v1"
+PATCH_DISPATCH_PROFILES = MappingProxyType({"codex": PATCH_PROFILE})
 DISPATCH_PROFILES = frozenset({"implement", "review", PATCH_PROFILE})
 #: What each output-limit profile MEANS, in bytes a child may write.
 #:

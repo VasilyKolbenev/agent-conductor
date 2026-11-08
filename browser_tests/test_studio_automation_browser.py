@@ -122,7 +122,7 @@ def test_pending_decision_from_permission_panel_on_narrow_screen(chromium: Brows
         assert window.writes("/decisions") == 1 and window.writes("/automation/authorize") == 0
         assert adapter.execute_calls == 0
     finally:
-        page.context.close()
+        close_context(page.context)
 
 
 def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounded_project):

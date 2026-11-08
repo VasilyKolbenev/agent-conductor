@@ -28,7 +28,7 @@ from ..contracts import (
 from ..dispatch import validate_dispatch_arguments
 from ..execution_boundary import boundary_provided
 from .attempt_scope import AttemptScopeError, instance_declarations, registered_attempt_scope
-from .deep_commands import PATCH_PROFILE, REVIEW_DIAGNOSTICS
+from .deep_commands import PATCH_DISPATCH_PROFILES, PATCH_PROFILE, REVIEW_DIAGNOSTICS
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
@@ -481,9 +481,10 @@ class AdapterRegistry:
             scope = registered_attempt_scope(adapter)
         except AttemptScopeError as error:
             raise AdapterContractError(str(error)) from None
-        version = instance_declarations(adapter).get("review_diagnostic_version")
-        if (reviewed.adapter_id == "codex"
-                and instance_declarations(adapter).get("patch_dispatch_version") == PATCH_PROFILE):
+        declarations = instance_declarations(adapter)
+        version = declarations.get("review_diagnostic_version")
+        patch = declarations.get("patch_dispatch_version")
+        if type(patch) is str and PATCH_DISPATCH_PROFILES.get(reviewed.adapter_id) == patch:
             self._patch_adapters.add(reviewed.adapter_id)
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter

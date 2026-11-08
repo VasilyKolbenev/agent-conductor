@@ -258,6 +258,8 @@ HANDLERS = {
     "onChooseWorkflow": ("owed", "D1", "the picker of «Схема»"),
     "onOpenRun": ("owed", "D1", "«Запуск подробно»"),
     "createTask": ("owed", "D1", "the wizard's «Задача» step"),
+    "showTaskForm": ("host", "desk-wizard-host.js", 'trigger.addEventListener("click", openNew)'),
+    "openDemoReview": ("owed", "D1", "open the selected task's demo review and show its decision"),
     "refreshTasks": ("owed", "D1", "the «↻» of the rail"),
     "refreshQuotas": ("owed", "D1", "limits in the pult"),
     "editTask": ("owed", "D1", "the wizard's «Задача» step"),
@@ -315,10 +317,20 @@ def handler_faults(old: list[str], desk: list[str], table=HANDLERS) -> list[str]
 
 def test_the_handlers_the_old_boot_module_had_are_each_kept_retired_or_owed_with_an_owner():
     old, desk = old_handlers(), desk_handlers()
-    assert len(old) == len(set(old)) == 50, (
-        "33 boot handlers, 7 workflow writers and 10 automation actions")
+    assert len(old) == len(set(old)) == 52, (
+        "35 boot handlers, 7 workflow writers and 10 automation actions")
     assert "chooseTask" in desk and "onFlowEdit" not in desk
     assert handler_faults(old, desk) == []
+
+
+def test_demo_form_is_on_the_desk_and_the_practice_run_is_still_owed_by_d1():
+    assert HANDLERS["showTaskForm"] == (
+        "host", "desk-wizard-host.js", 'trigger.addEventListener("click", openNew)')
+    assert 'trigger: byId("deskNewTask")' in read_file("desk.js")
+    assert 'open({new: "task"' in read_file("desk-wizard-host.js")
+    assert HANDLERS["openDemoReview"][:2] == ("owed", "D1")
+    assert "demo-counter-review" in read_file("studio-taskflow.js")
+    assert not any("demo-counter-review" in (read_file(name) or "") for name in desk_closure())
 
 
 def test_the_dictionary_of_retired_handlers_is_the_specs_and_is_closed():
