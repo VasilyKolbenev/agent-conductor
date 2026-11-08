@@ -270,8 +270,12 @@ export const AGENTS_COPY = Object.freeze({
     "Решение неизменно. Исправление создаёт новую квитанцию, заменяющую прежнюю; обе остаются в журнале."
   ],
   "agents.actor_hint": [
-    "Type who is deciding, as a plain id: letters, digits, dot, underscore or hyphen, up to 128 characters.",
-    "Укажите идентификатор автора решения: латинские буквы, цифры, точка, подчёркивание или дефис; не более 128 символов."
+    "For example, colleague-demo. Start with a letter (A–Z, a–z) or digit (0–9). After that, dots, hyphens and underscores are also allowed. Up to 128 characters.",
+    "Например, colleague-demo. Начните с латинской буквы (A–Z, a–z) или цифры (0–9). Дальше можно также ставить точки, дефисы и подчёркивания. До 128 знаков."
+  ],
+  "agents.console_actor": [
+    "Set your name in Your console, for example colleague-demo.",
+    "Укажите имя в разделе «Ваш пульт», например colleague-demo."
   ],
   "agents.approval_required": [
     "This gate requires explicit human approval, so it cannot be waived. Approve it, reject it, or ask for changes.",

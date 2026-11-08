@@ -353,7 +353,7 @@ function decisionButton(row, draft, handlers, state) {
   return button;
 }
 
-//: What stops this draft being submitted, in the user's words, or null. The
+//: The message for what stops this draft being submitted, or null. The
 //: rules are the receipt contract's own, asked here first so a control refuses
 //: before the wire does rather than after.
 function whyNotSubmittable(draft, state) {
@@ -365,13 +365,13 @@ function whyNotSubmittable(draft, state) {
   const reason = typeof draft.reason === "string" ? draft.reason : "";
   if (typeof action !== "string"
       || !Object.prototype.hasOwnProperty.call(DECISION_ACTIONS, action)) {
-    return L(state, "agents.choose_answer");
+    return "agents.choose_answer";
   }
   if (!ID_RE.test(actor)) {
-    return L(state, "agents.actor_hint");
+    return Object.hasOwn(state, "decisionActor") ? "agents.console_actor" : "agents.actor_hint";
   }
   if (REASON_REQUIRED.includes(action) && !reason.trim()) {
-    return L(state, "agents.reason_required", {action});
+    return "agents.reason_required";
   }
   return null;
 }
@@ -451,11 +451,12 @@ function decisionForm(row, draft, handlers, live, state) {
   const edit = handlerOf(handlers, "editDecision");
   const submit = handlerOf(handlers, "submitDecision");
   const form = element("form", {className: "studio-decide"});
+  const hint = L(state, "agents.actor_hint");
   form.append(answerChoices(row, draft, edit, state),
     ...(Object.hasOwn(state, "decisionActor")
       ? [localizedFact(state, "agents.actor", state.decisionActor)]
       : [textControl("actor", "actor", draft, edit, L(state, "agents.actor"),
-        {maxlength: "128", pattern: ID_PATTERN, required: ""})]),
+        {maxlength: "128", pattern: ID_PATTERN, required: "", "aria-description": hint}), note(hint)]),
     textControl("reason", "reason", draft, edit,
       L(state, "agents.reason_limit", {limit: String(REASON_LIMIT)}),
       {maxlength: String(REASON_LIMIT)}));
@@ -472,7 +473,7 @@ function decisionForm(row, draft, handlers, live, state) {
   // no amount of typing here answers.
   if (!live) form.append(note(L(state, "agents.stream_down")));
   if (state.decisionWriteBlocked) form.append(note(L(state, state.decisionWriteBlocked)));
-  if (stops !== null) form.append(note(stops));
+  if (stops !== null && stops !== "agents.actor_hint") form.append(note(L(state, stops, {action: draft.action})));
   if (submit === null) {
     form.append(note(L(state, "agents.submit_missing")));
   } else {
