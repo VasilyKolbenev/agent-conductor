@@ -108,9 +108,9 @@ def test_edit_desk_bounds_before_authorizing_the_reviewed_terms(chromium, wizard
         grants = [row["record"] for row in rows if row["record_type"] == "run_authorization"]
         assert len(grants) == 1 and grants[0]["max_actions"] == changed
         limits.get_by_role("link", name="Вернуться в Desk" if lang == "ru" else "Return to Desk").click()
+        expect(page.locator(f'#deskScene [data-deck-run="{run}"]')).to_be_visible()
         expect(page.locator("#deskWizard")).to_be_hidden()
         assert parse_qs(urlsplit(page.url).fragment)["run"] == [run]
-        expect(page.locator(f'#deskScene [data-deck-run="{run}"]')).to_be_visible()
         assert posts.count(run_path + "/automation/authorize") == 1
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         assert errors == []
