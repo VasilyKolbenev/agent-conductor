@@ -63,6 +63,21 @@ def test_unrecorded_partial_tree_is_preserved_and_never_called_retired(tmp_path)
     assert not deleted and read(profile)["phase"] == "created"
 
 
+def test_retiring_a_profile_must_establish_that_its_attempt_is_absent(tmp_path, monkeypatch):
+    store, mappings, deleted = journal(tmp_path)
+    profile, sid = store.create_profile()
+    attempt = store.directory.parent / "container-attempts" / read(profile)["attempt"]
+    original = os.lstat
+    def unreadable(path, *args, **kwargs):
+        if path == attempt:
+            raise PermissionError("injected access denial")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(os, "lstat", unreadable)
+    with pytest.raises(ProfileRefused, match="cannot establish"):
+        store.retire(profile)
+    assert sid in mappings and not deleted and read(profile)["phase"] == "created"
+
+
 def test_cleanup_resumes_after_deleting_one_confirmed_directory(tmp_path, monkeypatch):
     store, acl, record, paths, _ = applied(tmp_path, monkeypatch)
     target = acl.holds[1]["kimi_sessions"]

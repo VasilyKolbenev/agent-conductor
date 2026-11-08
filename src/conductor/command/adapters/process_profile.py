@@ -68,6 +68,17 @@ def _bytes(value: dict) -> bytes:
                        ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
 
 
+def _present(path: Path) -> bool:
+    """An access error is not evidence of removal."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ProfileRefused("profile_acl_unproven", "cannot establish attempt presence") from error
+    return True
+
+
 def _write_new(path: Path, value: dict) -> None:
     with open(path, "xb") as out:
         out.write(_bytes(value))
@@ -193,7 +204,7 @@ class ProfileJournal:
         # If allocation stopped before the ACL record, there is no verified identity for the
         # fresh folders. Do not adopt them by name or silently mark this profile retired.
         attempt = self.directory.parent / "container-attempts" / value["attempt"]
-        if os.path.lexists(attempt):
+        if _present(attempt):
             raise ProfileRefused("profile_acl_unproven", "the attempt tree has not been retired")
         if self.derive(value["moniker"]) != value["sid"]:
             raise ProfileRefused("profile_ambiguous", "derived profile SID changed")
