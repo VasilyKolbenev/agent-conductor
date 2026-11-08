@@ -245,6 +245,7 @@ CAPPED = (
     "tests/test_kimi_stage_probe_native.py",
     "tests/test_kimi_home_loan.py",
     "tests/test_kimi_home_loan_native.py",
+    "tests/test_kimi_session_state_native.py",
     "tests/test_desk_model_pin.py",
 )
 
