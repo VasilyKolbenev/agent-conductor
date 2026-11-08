@@ -410,10 +410,19 @@ function cycleCard(ctx, card) {
 }
 
 function cardItems(ctx) {
-  return cycleCards(ctx.wizard).map((card) => (card.kind === "build"
-    ? element("li", {className: "desk-wizard__card", "data-card-id": "build"},
-      [later(ctx, "build_own", "wizard:cycle:build", ctx.t("wizard.cycle.build"))])
-    : cycleCard(ctx, card)));
+  return cycleCards(ctx.wizard).map(card => {
+    if (card.kind !== "build") return cycleCard(ctx, card);
+    const body = ctx.wizard.mode.view ? [element("p", {text: ctx.t("wizard.cycle.active_needed")})]
+      : [element("a", {"data-focus": "wizard:cycle:build", href: `/#screen=workflow&lang=${ctx.lang}`,
+        target: "_blank", rel: "noopener", text: ctx.t("wizard.cycle.build")}),
+      element("small", {text: ctx.t("wizard.cycle.return")})];
+    if (ctx.wizard.guided && ctx.wizard.reads.workflows && preselection(ctx.wizard.reads).workflowsUnread) {
+      body.push(element("p", {role: "status", text: ctx.t("wizard.cycle.workflows_unread")}));
+    }
+    body.push(action("wizard:cycle:refresh-catalog", ctx.t("wizard.cycle.refresh"),
+      () => ctx.send({type: "reread", name: "workflows"})));
+    return element("li", {className: "desk-wizard__card desk-wizard__custom-cycle", "data-card-id": "build"}, body);
+  });
 }
 
 //: What the server said about the cycle chosen, or that its answer is not in yet. A lost answer

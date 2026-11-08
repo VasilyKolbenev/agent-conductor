@@ -34,7 +34,7 @@ SPEC_WORDS = {
     "wizard.add.plan": "＋ План", "wizard.add.ideas": "＋ Идеи", "wizard.add.note": "＋ Заметка",
     "wizard.add.scheme": "＋ Схема", "wizard.add.starter_docs": "Из стартовых документов",
     "wizard.instr.switch": "Передавать агентам инструкции этого проекта",
-    "wizard.close.keep": "Оставить черновик", "wizard.cycle.build": "＋ Собрать свой",
+    "wizard.close.keep": "Оставить черновик", "wizard.cycle.build": "Создать свой цикл",
     "wizard.cycle.make_project": "Сделать циклом проекта", "wizard.cycle.pinned": "цикл проекта",
     "wizard.cycle.unpin": "Открепить",
     "wizard.step.task": "Задача", "wizard.step.materials": "Материалы",
