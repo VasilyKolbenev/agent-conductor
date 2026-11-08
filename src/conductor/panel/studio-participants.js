@@ -368,6 +368,18 @@ export function checkedPatchResult(state, detail, request) {
   ]);
 }
 
+export function checkedGateResults(state, row) {
+  const detail = state.runs?.detail;
+  if (state.connection !== "open" || state.runs?.phase !== "ready" || detail?.run?.run_id !== row.run_id) return [];
+  const gate = rows(detail.graph?.schedule?.nodes).find(node => node.node_id === row.node_id);
+  return rows(gate?.opened_by).flatMap(id => {
+    const request = rows(detail.records).findLast(entry => entry.record_type === "action_request"
+      && entry.record?.node_id === id)?.record;
+    const checked = checkedPatchResult(state, detail, request);
+    return checked ? [checked] : [];
+  });
+}
+
 function outputRead(state, detail, node) {
   const records = rows(detail.records);
   const requests = records.filter((row) => row.record_type === "action_request"

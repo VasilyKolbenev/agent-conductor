@@ -15,7 +15,7 @@ export const PHASE_SENTENCES = Object.freeze({
 });
 const PHASE_ORDER = ["failed", "refused", "loading", "stale", "empty", "ready"];
 const PRIMARY = Object.freeze({
-  overview: ["onScreen", "workflow"], workflow: ["onSaveDraft", null],
+  workflow: ["onSaveDraft", null],
   runs: ["onRefreshRuns", null], decisions: ["onRefreshRun", null],
   agents: ["onRefreshAgents", null],
 });
@@ -52,12 +52,22 @@ function primaryAction(state, handlers) {
     start.addEventListener("click", handlers.showTaskForm);
     return start;
   }
+  if (!Object.hasOwn(PRIMARY, state.screen)) {
+    const waiting = state.connection === "open" && state.runs.phase === "ready"
+      ? state.runs.list.filter((row) => row.human_state === "required"
+        && (!state.tasks.selectedId || row.task_id === state.tasks.selectedId)) : [];
+    if (waiting.length !== 1) return ownTaskLink(state, true);
+    const open = element("button", {type: "button", className: "studio-btn",
+      "data-focus": "overview:pending-run", text: localize(state, "entry.pending")});
+    open.addEventListener("click", () => handlers.onSelectRun(waiting[0].run_id));
+    return open;
+  }
   // A chosen run's main action is the one its own read calls for; with no run chosen, the list is read again.
   const detail = state.runs.detail;
   if (state.screen === "runs" && detail?.run?.run_id && detail.run.run_id === state.runs.selectedId) {
     return runPrimary(state, handlers, detail);
   }
-  const screen = Object.hasOwn(PRIMARY, state.screen) ? state.screen : "overview";
+  const screen = state.screen;
   const [name, argument] = PRIMARY[screen];
   const call = handlers[name];
   // The Workflow toolbar draws its own Save beside this one, so here the main button keeps a
@@ -75,6 +85,11 @@ function primaryAction(state, handlers) {
   return control;
 }
 
+function ownTaskLink(state, primary) {
+  return element("a", {className: primary ? "studio-btn studio-task-link" : "studio-elsewhere studio-task-link",
+    "data-focus": "overview:own-task", href: state.ownTaskUrl || null, text: localize(state, "entry.own")});
+}
+
 function tab(node, state, handlers) {
   const screen = node.getAttribute("data-screen"), current = screen === state.screen;
   node.textContent = localize(state, `nav.${screen}`);
@@ -88,13 +103,18 @@ function tab(node, state, handlers) {
 
 export function mountShell(mounts, state, handlers) {
   mounts.main.dataset.screen = state.screen;
+  mounts.main.classList.toggle("studio-main--first-task", state.screen === "overview" && Boolean(state.firstTask));
   const workflow = state.workflows.list.find((row) => row.workflow_id === state.workflows.selectedId);
   mounts.project.textContent = state.project.name !== null ? state.project.name
     : workflow ? (workflow.title || workflow.workflow_id) : localize(state, "app.name");
   const connection = ["open", "connecting"].includes(state.connection) ? state.connection : "closed";
   mounts.connection.textContent = localize(state, `connection.${connection}`);
   mounts.connection.setAttribute("data-connection", state.connection);
-  mounts.primary.replaceChildren(primaryAction(state, handlers));
+  const action = primaryAction(state, handlers);
+  mounts.primary.replaceChildren(action);
+  if (state.screen === "overview" && action.getAttribute("data-focus") !== "overview:own-task") {
+    mounts.primary.append(ownTaskLink(state, false));
+  }
   for (const node of mounts.tabs) tab(node, state, handlers);
   for (const [screen, node] of Object.entries(mounts.screens)) {
     const phase = screenPhase(state, screen);

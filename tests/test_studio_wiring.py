@@ -135,7 +135,7 @@ PERMITTED = {
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
         "./studio-people.js", "./studio-focus.js", "./studio-tasks.js",
         "./studio-taskflow.js", "./studio-mounts.js", "./studio-quotaflow.js",
-        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js"}),
+        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js", "./desk-hash.js"}),
     #: What a press MEANS, and the whole of what it may reach: the two
     #: fragments' own sentences and keys, nothing else.
     "studio-runwrite.js": frozenset({"./studio-runstep.js",

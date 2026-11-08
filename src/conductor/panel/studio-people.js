@@ -18,6 +18,7 @@
 import {localize as L} from "./studio-i18n.js";
 import {element} from "./command-view.js";
 import {quotaSection} from "./studio-quotas.js";
+import {checkedGateResults} from "./studio-participants.js";
 //: The AND-join sentence, from the module that declares it. The Runs screen
 //: says it about a step that is not offered and this screen says it about a
 //: gate that cannot be answered yet; a second copy here would be a second
@@ -547,9 +548,12 @@ function whyNotYet(row, state) {
 
 function decisionDetail(row, draft, handlers, live, state, opened, receiptTitle = "agents.receipt_title") {
   const receipt = object(row.receipt);
+  const checked = state.decisionListOnly || Object.hasOwn(state, "decisionActor") ? [] : checkedGateResults(state, row);
   const body = [
-    element("h3", {text: show(row.title, state)}),
+    element("h3", {text: show(row.title, state), tabindex: "-1",
+      "data-focus-key": `decision-title:${decisionKey(row)}`}),
     ...(receipt === null ? [] : [receiptBlock(receipt, state, receiptTitle, opened)]),
+    ...(checked.length ? [section(L(state, "entry.checked"), checked)] : []),
     ...whyAsked(row, state),
     ...rows(row.documents).map((doc) => disclosure(`${decisionKey(row)}/${doc.id}`,
       L(state, "agents.read_result", {title: doc.title}), [element("pre", {className: "studio-gate-material", text: doc.content})],

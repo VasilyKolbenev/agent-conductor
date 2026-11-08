@@ -38,7 +38,7 @@ export function mountTasks(mount, state, handlers) {
   refresh.addEventListener("click", handlers.refreshTasks);
   const disclosure = creation(state, handlers, expanded);
   const practice = [];
-  if (state.demo && !held.selectedId) {
+  if (state.demo && state.screen === "overview" && !held.selectedId) {
     practice.push(element("p", {"data-demo-intro": "", text: localize(state, "demo.intro")}));
   }
   const notice = noticeText(state, held.notice) || (selected?.unreadable

@@ -106,7 +106,8 @@ PERMITTED_IMPORTS = {
       "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
       "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
-                                         "./desk-wizard-run.js", "./desk-wizard.js", "./desk-advice-panel.js"}),
+                                         "./desk-wizard-run.js", "./desk-wizard.js", "./desk-advice-panel.js",
+                                         "./desk-hash.js", "./studio-automation-model.js"}),
     "desk-advice-run.js": frozenset({"./desk-transport.js", "./desk-wizard-cycle.js", "./desk-wizard-digest.js"}),
     "desk-advice-panel.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
         "./desk-wizard-team.js", "./desk-wizard-roles.js", "./desk-advice-run.js"}),
@@ -505,7 +506,7 @@ PERMITTED_IMPORTS = {
     #: alone -- never to `studio-runs.js`, which would put two screens in one
     #: ring.
     "studio-people.js": frozenset({"./command-view.js", "./studio-i18n.js",
-                                   "./studio-quotas.js",
+                                   "./studio-quotas.js", "./studio-participants.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),
