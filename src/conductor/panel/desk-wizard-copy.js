@@ -679,7 +679,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.launch.why.actor_invalid": ["Your name is not valid", "Имя не подходит"],
   "wizard.launch.why.project_not_active": ["Start is only for an active project",
     "Запуск — только у активного проекта"],
-  "wizard.launch.why.owner_required": ["The project has no owner", "Нет владельца проекта"],
+  "wizard.launch.why.owner_required": ["The execution owner is unavailable", "Владелец исполнения недоступен"],
   "wizard.launch.why.server_stopping": ["The project is stopping", "Проект останавливается"],
   "wizard.launch.why.other": ["The queue says: {code}", "Очередь сообщает: {code}"],
   "wizard.launch.note.slot_busy": ["the slot was just taken by {holder}",

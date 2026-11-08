@@ -87,9 +87,9 @@
         "entries": []},
       "mode": "active",
       "text": {
-        "en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+        "en": ["Project queue", "Now: the slot is unavailable: the execution owner is unavailable",
                "Nothing is queued."],
-        "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+        "ru": ["Очередь проекта", "Сейчас: слот недоступен: владелец исполнения недоступен",
                "В очереди ничего нет."]
       }
     }

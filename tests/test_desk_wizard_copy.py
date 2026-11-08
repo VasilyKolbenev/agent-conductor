@@ -59,7 +59,7 @@ SPEC_WORDS = {
     "wizard.launch.time_info": "Проверяемый шаг резервирует время дважды — исполнителю и "
                                "проверяющему.",
     "wizard.launch.why.project_not_active": "Запуск — только у активного проекта",
-    "wizard.launch.why.owner_required": "Нет владельца проекта",
+    "wizard.launch.why.owner_required": "Владелец исполнения недоступен",
     "wizard.launch.why.server_stopping": "Проект останавливается",
     "wizard.launch.seed_request": "копия HEAD на момент старта; засев сделает активный проект",
     "wizard.launch.result_queued_view": "В очереди · начнётся после активации проекта",

@@ -250,13 +250,24 @@ def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, 
     page, window = _open(chromium, project)
     try:
         box = prepare(page, project)
-        for action, expected in (("authorize", "waiting"), ("pause", "paused")):
-            box.locator(f'[data-focus="automation:{action}"]').click()
-            expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", expected)
+        box.locator('[data-focus="automation:authorize"]').click()
+        expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "waiting")
+        owner = require_owner(project.root)
+        with monkeypatch.context() as patch:
+            patch.setattr(owner, "_uncertain", True)
+            slot = page.request.get(f"{project.url}command/queue").json()["slot"]
+            assert slot == {"state": "unavailable", "reason_code": "owner_required", "run_id": "run"}
+            desk = page.context.new_page()
+            desk.goto(f"{project.url}panel/desk.html#lang={language}")
+            wording = ("владелец исполнения недоступен" if language == "ru"
+                       else "the execution owner is unavailable")
+            expect(desk.locator("#deskPult .desk-queue__now")).to_contain_text(wording)
+            desk.close()
+        box.locator('[data-focus="automation:pause"]').click()
+        expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "paused")
         expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
         store = RunStore(project.root)
         before = store.read("run").records
-        owner = require_owner(project.root)
         if language == "ru":
             page.locator('[data-focus="preference-language"]').select_option("ru")
         with monkeypatch.context() as patch:

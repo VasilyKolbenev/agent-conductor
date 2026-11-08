@@ -301,7 +301,7 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     assert by_id["deskPult"]["children"] == 6
     assert by_id["deskPult"]["text"] == (
         "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
-        "the project has no ownerNothing is queued."
+        "the execution owner is unavailableNothing is queued."
         "Harness limitsLimits are not current while disconnected.No data"
         "Accept into projectChoose a run first.")
     assert by_id["deskRail"]["children"] == 2

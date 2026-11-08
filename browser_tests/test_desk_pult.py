@@ -53,9 +53,9 @@ HEAD = {"en": "Your console", "ru": "Ваш пульт"}
 #: The block the console draws from the queue the test server reads: it has no owner, so its slot
 #: is unavailable for that reason, and nothing is queued. A desk reads the queue whatever mode the
 #: claim names.
-EMPTY_QUEUE = {"en": ["Project queue", "Now: the slot is unavailable: the project has no owner",
+EMPTY_QUEUE = {"en": ["Project queue", "Now: the slot is unavailable: the execution owner is unavailable",
                       "Nothing is queued."],
-               "ru": ["Очередь проекта", "Сейчас: слот недоступен: у проекта нет владельца",
+               "ru": ["Очередь проекта", "Сейчас: слот недоступен: владелец исполнения недоступен",
                       "В очереди ничего нет."]}
 CHANGE = '#deskPult [data-focus-key="pult:actor-change"]'
 NAME = '#deskPult [data-focus-key="pult:actor-name"]'
