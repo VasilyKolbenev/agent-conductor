@@ -177,16 +177,17 @@ function review(state, held, actions) {
   return box;
 }
 function status(state, held, actions) {
+  const recovery = held.view.reason_code === "recovery_required";
   const view = held.view, box = element("section", {"data-automation-state": view.state}, [
-    element("h4", {text: word(state, view.state)}), note(word(state, view.reason_code)),
+    element("h4", {text: word(state, recovery ? "recovery_title" : view.state)}), note(word(state, view.reason_code)),
     note(word(state, "actions_left", {spent: String(view.spent_actions), remaining: String(view.remaining_actions)})),
     note(word(state, "time_left", {spent: String(view.spent_task_seconds), remaining: String(view.remaining_task_seconds)})),
   ]);
   if (view.expires_at) box.append(note(word(state, "expires", {at: view.expires_at})));
   if (view.active_action_id) box.append(note(word(state, "current_action", {id: view.active_action_id})));
   if (view.next_node_id) box.append(note(word(state, "next_node", {id: view.next_node_id})));
-  if (!view.owner_present) box.append(note(word(state, "owner_absent")));
-  if (view.authorization && !["revoked", "expired", "complete"].includes(view.state)) {
+  if (!view.owner_present && !recovery) box.append(note(word(state, "owner_absent")));
+  if (!recovery && view.authorization && !["revoked", "expired", "complete"].includes(view.state)) {
     const ready = held.phase === "ready" && view.owner_present && !held.pending && !held.request && held.draft.actor.trim();
     const action = ["paused", "restart_required", "stalled"].includes(view.state) ? "resume" : "pause";
     box.append(button(state, action, ready, () => actions.control(action)),
@@ -196,7 +197,8 @@ function status(state, held, actions) {
 }
 export function mountAutomation(mount, state, held, actions, showDecisions, deskReturn = null) {
   if (!automationEligible(state.runs.detail) || !held.draft || held.runId !== state.runs.selectedId) return;
-  const awaiting = state.connection === "open" && state.decisions.phase === "ready"
+  const recovery = held.view?.reason_code === "recovery_required";
+  const awaiting = !recovery && state.connection === "open" && state.decisions.phase === "ready"
     && state.decisions.list.some((row) => row.run_id === held.runId && row.needs_answer);
   const box = element("section", {className: "studio-section studio-automation", "data-automation": held.runId}, [
     element("h3", {text: word(state, "title")}), note(word(state, awaiting ? "decision_waiting" : "explain")),
@@ -206,6 +208,12 @@ export function mountAutomation(mount, state, held, actions, showDecisions, desk
     button(state, "refresh", state.connection === "open" && !held.pending, actions.refresh),
   ]);
   if (["loading", "failed", "disconnected"].includes(held.phase)) box.append(note(word(state, held.phase)));
+  const deck = mount.querySelector(".studio-deck");
+  if (deck) deck.after(box); else mount.append(box);
+  if (recovery) {
+    box.append(status(state, held, actions));
+    return;
+  }
   const grantRefusal = ["slot_busy", "preview_stale"].includes(held.notice);
   if (held.notice && !grantRefusal) box.append(element("p", {"data-automation-notice": held.notice, text: word(state, held.notice)}));
   if (held.view) box.append(status(state, held, actions));
@@ -219,6 +227,4 @@ export function mountAutomation(mount, state, held, actions, showDecisions, desk
       text: word(state, "open_holder", {id: held.holder})}));
     box.append(feedback);
   }
-  const deck = mount.querySelector(".studio-deck");
-  if (deck) deck.after(box); else mount.append(box);
 }

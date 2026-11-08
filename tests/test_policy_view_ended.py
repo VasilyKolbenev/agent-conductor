@@ -20,7 +20,7 @@ import pytest
 from conductor.command import policy_view
 from tests.test_policy_runtime import approve, pause, setup
 from tests.test_policy_view_expired import AFTER, revoke
-from tests.test_policy_view_reasons import Holding, Idle, no_owner
+from tests.test_policy_view_reasons import Holding, Idle, no_owner, recovery_needed
 
 
 class Word:
@@ -56,6 +56,10 @@ def ownerless(f, grant):
     f.policy.owner_check = no_owner
 
 
+def uncertain_owner(f, grant):
+    f.policy.owner_check = recovery_needed
+
+
 def paused(f, grant):
     pause(f, grant)
 
@@ -68,7 +72,7 @@ def expired(f, grant):
     f.ticks[0] = AFTER
 
 
-SITUATIONS = [holding_a_stall, holding_ready, holding_nothing, viewing, ownerless, paused,
+SITUATIONS = [holding_a_stall, holding_ready, holding_nothing, viewing, ownerless, uncertain_owner, paused,
               revoked, expired]
 
 

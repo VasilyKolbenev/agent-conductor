@@ -10,7 +10,7 @@ import {canonicalJson} from "./command-projection.js";
 export const AUTOMATION_STATES = Object.freeze(["unconfigured", "ready", "running", "waiting",
   "paused", "revoked", "expired", "complete", "stalled", "restart_required"]);
 export const AUTOMATION_REASONS = Object.freeze(["authorization_required", "plan_ended", "paused", "revoked",
-  "expired", "owner_required", "explicit_resume_required", "ambiguous_actions", "action_in_flight",
+  "expired", "owner_required", "recovery_required", "explicit_resume_required", "ambiguous_actions", "action_in_flight",
   "unknown_action", "feedback_required", "admission_refused", "stalled", "plan_stalled", "plan_waiting", "ready",
   "project_not_active", "seed_blocked"]);
 const TERMS = ["run_id", "contract", "config_digest", "graph_digest", "provider_config_digest",
