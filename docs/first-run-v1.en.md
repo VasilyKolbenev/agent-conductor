@@ -15,6 +15,9 @@ If your project and subscriptions are already connected, open **Desk → New tas
    wait for you. Enter your name and press **Start** when the terms match your task.
    At the final decision, open the result and the independent check before you accept.
 
+For a published cycle, the wizard shows the selected revision. If a teammate continues
+editing that workflow, your task keeps the displayed version, including after a reload.
+
 You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
 A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
 

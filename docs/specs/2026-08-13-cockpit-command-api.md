@@ -1199,6 +1199,12 @@ the latest revision answers 200 and creates nothing. Both verbs are on one path,
 and no other frozen route changes. The shapes are in the desk redesign
 specification, section 7.1.
 
+A caller preparing an existing cycle can POST `{"inspect_revision":1,"binding":null}`
+to the same flow path. This reads the numbered immutable revision and returns its
+flow, diagnostics, budget and revision number. Supplying a role-to-provider binding
+also checks those participants. This form accepts only those two fields. Viewing
+the revision does not create a draft, revision, run or authorization.
+
 Three more routes serve the desk's preparation and its project cycle, each with
 one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
 task, its runs and what each still lacks before it may start (its stage, the
