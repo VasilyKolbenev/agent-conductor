@@ -57,6 +57,8 @@ DESK_ASSETS = {
     "/panel/desk-run.css": ("text/css; charset=utf-8", "desk-run.css"),
     "/panel/desk.js": ("text/javascript; charset=utf-8", "desk.js"),
     "/panel/desk-wizard-host.js": ("text/javascript; charset=utf-8", "desk-wizard-host.js"),
+    "/panel/desk-advice-panel.js": ("text/javascript; charset=utf-8", "desk-advice-panel.js"),
+    "/panel/desk-advice-run.js": ("text/javascript; charset=utf-8", "desk-advice-run.js"),
     # The wire doors the Studio's boot module and, later, the desk share.
     "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
     "/panel/desk-stream.js": ("text/javascript; charset=utf-8", "desk-stream.js"),

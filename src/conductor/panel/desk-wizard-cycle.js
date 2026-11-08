@@ -73,9 +73,11 @@ export function cardsOf(reads, starterId, firstRunGuide = false) {
 
 //: The project's last run: its newest readable run that has a workflow, whether or not that
 //: workflow is a card. An older run never stands in for it (spec 7.10).
+export const ADVICE_WORKFLOW = "desk-launch-advice";
 function lastRun(reads) {
   const usable = rowsOf(reads.runs, "runs").filter((run) => run.unreadable !== true
-    && typeof run.workflow_id === "string" && typeof run.created_at === "string");
+    && typeof run.workflow_id === "string" && run.workflow_id !== ADVICE_WORKFLOW
+    && typeof run.created_at === "string");
   return usable.reduce((best, run) => (best === null || run.created_at > best.created_at
     ? run : best), null);
 }

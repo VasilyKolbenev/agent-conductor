@@ -8,6 +8,7 @@ import {limitFields} from "./studio-automation-model.js";
 import {cycleCards, initialWizard, openingFrom, restoreAnswers, resumeFrom, stepWizard} from "./desk-wizard-model.js";
 import {wizardExit, wizardHash} from "./desk-wizard-run.js";
 import {mountWizard} from "./desk-wizard.js";
+import {createAdvicePanel} from "./desk-advice-panel.js";
 
 const outcome = (code) => ({status: "refused", code});
 const token = (nonce) => nonce().replaceAll("-", "").toLowerCase().slice(0, 32);
@@ -126,6 +127,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
 
   const live = (at) => at === epoch && wizard !== null;
   const refresh = () => onState();
+  const advice = createAdvicePanel({door, refresh, dispatch, draft: () => wizard, locale,
+    actor: () => context?.actor()});
 
   function render() {
     mount.hidden = wizard === null;
@@ -134,7 +137,8 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     if (wizard === null) mount.replaceChildren();
     else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.status
       ?? (unavailable ? "restore_failed" : "memory_only")}, {onWizard: dispatch,
-      onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null});
+      onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null,
+      advisorPanel: context.project?.() && !context.foreign() ? advice.panel : null});
   }
 
   function hash(override) {
@@ -152,6 +156,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   }
 
   function close(outcomeValue) {
+    advice.close();
     const wasOpen = wizard !== null;
     if (wasOpen) dropDraft();
     project = null; unavailable = false;
@@ -296,7 +301,10 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     }
     if (editor) editor.saved = editor.want = JSON.stringify(typedAnswers(wizard));
     entrance = keys.new === "task" ? "new" : "prepare";
-    timer = setInterval(() => dispatch({type: "tick", now: new Date().toISOString()}), 1000);
+    timer = setInterval(() => {
+      dispatch({type: "tick", now: new Date().toISOString()});
+      void advice.tick();
+    }, 1000);
     dispatch({type: "open"});
     queueMicrotask(() => (mount.querySelector(wizard?.guided ? '[data-focus="wizard:brief"]'
       : '[data-focus="wizard:title"]') ?? mount.querySelector('[data-focus="wizard:close"]'))?.focus());

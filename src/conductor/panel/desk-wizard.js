@@ -40,7 +40,7 @@ function context(state, handlers, mount) {
       .map((node) => node.dataset.guideDetails)),
     t: (key, params) => localize(state, key, params),
     send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome),
-    editLimits: handlers.onEditLimits};
+    editLimits: handlers.onEditLimits, advisorPanel: handlers.advisorPanel};
 }
 
 // -- the frame ---------------------------------------------------------------------------
@@ -656,7 +656,8 @@ function guideBody(ctx) {
   if (stage === "result") {
     const [git, ...materials] = materialsBody(ctx);
     const gate = canAdvance(state);
-    return [taskField(ctx, "brief", ctx.t("wizard.guide.goal")), element("p", {text: ctx.t("wizard.guide.source")}),
+    const advice = ctx.advisorPanel?.(state);
+    return [taskField(ctx, "brief", ctx.t("wizard.guide.goal")), ...(advice ? [advice] : []), element("p", {text: ctx.t("wizard.guide.source")}),
       git, ...(state.draftMaterialsMissing ? [element("p", {role: "status", text: ctx.t("wizard.guide.missing_files")})] : []),
       disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials],
         gate.step === "materials" && ["material_incomplete", "materials_over_bytes"].includes(gate.reason))];

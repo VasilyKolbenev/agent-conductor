@@ -90,6 +90,15 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-wizard__options{min-width:0}
 .desk-wizard__card,.desk-wizard__reason{overflow-wrap:anywhere}
 .desk-wizard__body{display:grid;gap:14px;min-width:0}
+.desk-advice__open{justify-self:start}
+.desk-advice{display:grid;gap:.8rem;min-width:0;padding:1rem;
+  border-radius:12px;overflow-wrap:anywhere}
+.desk-advice__close{justify-self:end}
+.desk-advice__action{justify-self:start;font-weight:650}
+.desk-advice p,.desk-advice strong{margin:0;max-width:65ch}
+.desk-advice details{min-width:0}
+.desk-advice summary{cursor:pointer;min-height:44px;display:flex;align-items:center}
+.desk-advice a{justify-self:start;display:inline-flex;align-items:center;min-height:44px}
 .desk-wizard__body label{display:grid;gap:6px;min-width:0}
 .desk-wizard input,.desk-wizard textarea,.desk-wizard select{width:100%;padding:8px;
   font:inherit;background:var(--ground)}
