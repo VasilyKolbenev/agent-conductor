@@ -1,4 +1,4 @@
-# December Command — V1 alpha, release notes (candidate draft, 2 November 2026)
+# December Command — V1 alpha, release notes (candidate draft, 8 November 2026)
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 
@@ -13,9 +13,11 @@ have been exercised locally in Chromium in Russian and English, including at 375
 | Harness | Evidence for the current subscription workflow |
 | --- | --- |
 | Claude Code 2.1.239 | Goal completed inside the Windows execution boundary on a subscription. Fresh-account acceptance is outstanding. |
-| Codex 0.164.0 | The subscription produced a Goal artifact. Its content still needs to pass the task's acceptance criteria. |
-| Grok Build 1.0.5 | A subscription launched a read-only diagnosis. The last live action failed without a result artifact. |
-| Kimi Code 0.38.0 | The original CLI started offline and accepted a synthetic access-only login locally. Live subscription execution is pending. |
+| Codex 0.164.0 | Goal, Identify and Design completed on subscription in the shared cycle. The 7 November Do ended without changes. The new patch route passed an offline check. |
+| Grok Build 1.0.13 | A subscription diagnosis passed the G6 rehearsal gate; Diagnose in the shared cycle also returned a result. The role is read-only review. |
+| Kimi Code 0.38.0 | The native CLI accepted synthetic credentials offline. An account quota reading remains unverified. Subscription tasks are refused before spawn. |
+
+[Shared cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
 
 The public alpha still needs a checked Codex/Grok cycle, all four subscription
 paths, the final CI wheel and owner acceptance. The September evidence below is

@@ -155,7 +155,7 @@ Run the interactive wizard, once for each needed connection:
 | Claude Code | 2.1.239 | Native `claude.exe`; set `CLAUDE_CONFIG_DIR` to the dedicated login folder. | Windows subscription tasks; a live Goal completed. |
 | Codex | 0.164.0 | The native Windows x64 executable in the layout below; set `CODEX_HOME` to the dedicated login folder. | Windows subscription tasks; the recorded Goal used `gpt-6.1-sol`. |
 | Kimi Code | 0.38.0 | Native Kimi CLI; dedicated `KIMI_CODE_HOME` and subscription sign-in. | The current pin supports the subscription usage source. Its subscription task is refused before spawn in this build; no live task result is verified. |
-| Grok Build | 1.0.13 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. Subscription diagnosis on this pin awaits a live result. |
+| Grok Build | 1.0.13 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. A live subscription diagnosis completed and passed the rehearsal gate. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. | The same API-key mode. |
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
@@ -176,6 +176,7 @@ Install each pinned tool under `%USERPROFILE%\DecemberCommand\harnesses\<name>\<
   Place the file in `...\harnesses\claude-code\2.1.239\`.
 - **Codex 0.164.0, Windows x64.** Get `@openai/codex@0.164.0` and `@openai/codex@0.164.0-win32-x64` from the npm registry. Compare their SHA256 with the GitHub release assets before extraction. The main tarball is `afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30`; the Windows tarball is `4fbd23473a2fc223396cdd8490d3f658d368438134c12a3f1dac9d1e2041a65b`. Extract the contents of each `package/` into `...\harnesses\codex\0.164.0\node_modules\@openai\codex` and `...\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64` respectively. Keep the complete packages, including resources beside `vendor\x86_64-pc-windows-msvc\bin\codex.exe`. [Reviewed files and hashes](recovery/2026-10-20/tasks/H5-CODEX-COMPAT-A-INVENTORY.json).
 - **Grok Build 1.0.13, Windows x64.** Check the vendor's pinned `grok.exe` against SHA256 `bf43dc75f5478a106eab1e86d422c963e4dbe9666cf14dab363733d27bf1e672` before copying it to `...\harnesses\grok-build\1.0.13\grok.exe`. [WinGet manifest](https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/x/xAI/GrokBuild/1.0.13/xAI.GrokBuild.installer.yaml).
+- **Kimi Code 0.38.0, Windows x64.** For subscription quota reads, download `kimi-code-win32-x64.zip` from the CLI release. Verify the archive SHA-256, `80e4de3f2bd7c33ba10cfe3c2282492b0758fae9887537f4ff79ec2022957004`. Extract `kimi.exe` and check its SHA-256, `b7e658d06176284384d1e9eb627d11e5a26627b3964bf8787f197915d1484b1e`. Supply `...\harnesses\kimi-code\0.38.0\kimi.exe` to the wizard. [MoonshotAI release](https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai%2Fkimi-code%400.38.0).
 
 Windows x64 downloads: [Codex main archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0.tgz), [Codex Windows archive](https://registry.npmjs.org/@openai/codex/-/codex-0.164.0-win32-x64.tgz), [Grok binary](https://x.ai/cli/grok-1.0.13-windows-x86_64.exe). Use `Get-FileHash -Algorithm SHA256 -LiteralPath <downloaded-file>` and compare with the matching value above before extraction or execution.
 
@@ -214,10 +215,9 @@ The wizard checks paths; the native call checks the pinned version. A newer rele
 The DSH desktop application is not a substitute for the CLI entrypoint in this configuration.
 
 For a subscription, use a dedicated login folder of the product, never your own profile of the tool.
-The wizard prints two lines for you to run **in your own PowerShell**; it does not sign in for you.
-The first points the tool at the login folder, the second is the tool's own sign-in. The wizard
-does not create the login folder, and Codex stops with an error when its home folder does not
-exist, so create the folder before the two lines (the `New-Item` line of each block below):
+Create the login folder with `New-Item` and run the wizard's commands **in a separate PowerShell window**.
+They set the login directory and call the vendor's sign-in command. For Kimi, one additional line
+disables CLI updates in that window. For example:
 
 ```powershell
 # Claude Code
@@ -246,8 +246,17 @@ $grok = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\grok-build\1.0.13\
 & $grok --no-auto-update login
 ```
 
-The wizard prints the two lines (the variable, then the sign-in) with the paths you gave it: copy
-its lines, not these examples. It does not print the line that creates the folder.
+```powershell
+# Kimi Code — subscription sign-in for available quota readings
+$login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\kimi-code'
+New-Item -ItemType Directory -Force -Path $login | Out-Null
+$env:KIMI_CODE_HOME = $login
+$env:KIMI_CODE_NO_AUTO_UPDATE = '1'
+$kimi = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\kimi-code\0.38.0\kimi.exe'
+& $kimi login
+```
+
+Run the commands with the paths your wizard printed.
 Complete the sign-in in the browser with your subscription account. Without the variable the tool
 signs in to your own profile, and the product's folder stays empty. A working login does not need
 to be repeated, but its access token has a limited life: before every task the product requires it
@@ -277,9 +286,9 @@ On Windows the pinned executable, its login directory and the requested role mus
 ### What has been checked with the real vendor
 
 - **Claude Code 2.1.239.** A real subscription Goal ran inside AppContainer, produced `artifact-goal` and cleaned up. Identify then timed out. [Run report](recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
-- **Codex 0.164.0.** One Goal through Studio with `gpt-6.1-sol` exited 0 and wrote an artifact. Its content did not pass acceptance as the intended Goal. [Run report](recovery/2026-10-20/tasks/H5-CODEX-FIRST-GOAL-REPORT.md).
-- **Grok Build 1.0.5.** The authenticated quota check worked. A live read-only diagnosis on build `5d5e5f5` was admitted, exited 1 and returned no evidence or accepted result. Use Grok for read-only review; editing/dispatch and the independent checker are unavailable. [Activation](recovery/2026-10-20/tasks/H5-GROK-ACTIVATE-REPORT.md) · [Diagnostic evidence](recovery/2026-10-20/tasks/G6-WIRE-REPORT.md).
-- **Kimi Code 0.38.0.** A real subscription task and a verified result in December Command still need owner acceptance. Kimi Desktop alone does not supply the pinned CLI.
+- **Codex 0.164.0.** In the shared cycle `gpt-6.1-sol` completed Goal, Identify and Design on subscription. Do ended without changes on 7 November. The new patch route has been checked separately with fixed model replies. [Live cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
+- **Grok Build 1.0.13.** The live G6 diagnosis on subscription passed its rehearsal gate. In the shared cycle Grok identified the faulty code and missing test. Its role is read-only review. A quota response can omit usage percentages. [G6 report](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Live cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md).
+- **Kimi Code 0.38.0.** The native CLI accepted synthetic credentials offline in isolation. Quota reads from a real account still need verification. The product refuses subscription tasks before spawn while isolation of writable CLI state is under development. [Native check](recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Execution boundary](recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
 
 A complete independently checked Dalio cycle with Codex and Grok still needs a successful live acceptance run.
 
