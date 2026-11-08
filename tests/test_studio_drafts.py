@@ -126,7 +126,7 @@ def test_a_read_the_projection_refuses_keeps_both_drafts():
 
 def test_decision_spend_and_refusal_are_visible_before_the_refresh():
     result = run_js("""
-        const capture = (answer, otherGate=false) => {
+        const capture = (answer, switchTo=null) => {
           const {reduce,EMPTY} = store;
           const row = {run_id:"run", gate_id:"gate", answers:0};
           let state = [{type:"run-chosen",runId:"run"},{type:"screen",screen:"decisions"},
@@ -146,24 +146,28 @@ def test_decision_spend_and_refusal_are_visible_before_the_refresh():
             refreshRun: id => reads.push([id,state.decisions.draft])
           });
           writer.submitDecision(row);
-          if (otherGate) {
-            dispatch({type:"decision-chosen",key:"run/other"});
+          if (switchTo) {
+            if (switchTo==="otherRun") dispatch({type:"run-chosen",runId:"another"});
+            dispatch({type:"decision-chosen",key:switchTo==="otherRun" ? "another/other" : "run/other"});
             dispatch({type:"decision-edit",patch:{actor:"bob",reason:"not sent"}});
           }
           respond();
           return [sent,reads,state.decisions.draft];
         };
         console.log(JSON.stringify([capture("accept"),capture("gate_unreached"),
-            capture("conflict"),capture("accept",true),capture("gate_unreached",true)]));
+            capture("conflict"),capture("accept","otherGate"),capture("gate_unreached","otherGate"),
+            capture("gate_unreached","otherRun")]));
     """, {"writers": "studio-runwrite.js", "store": "studio-store.js"})
     sent = ["decisions", "run", "vasily", "request_changes", "why"]
     empty = {"key": None, "action": "approve", "actor": "", "reason": ""}
     accepted = {**empty, "key": "run/gate"}
     typed = {"key": "run/gate", "action": "request_changes", "actor": "vasily", "reason": "why"}
     other = {**empty, "key": "run/other", "actor": "bob", "reason": "not sent"}
+    another_run = {**other, "key": "another/other"}
     assert result == [
         [sent, [["run", accepted]], accepted], [sent, [["run", empty]], empty],
         [sent, [], typed], [sent, [["run", other]], other], [sent, [["run", other]], other],
+        [sent, [], another_run],
     ]
 
 

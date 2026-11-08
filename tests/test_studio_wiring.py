@@ -567,31 +567,8 @@ def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
             in writer), writer
 
 
-def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
-    """The one decision refusal this window acts on rather than only reports.
-
-    Its recovery is `draft_conflict`'s shape for `draft_conflict`'s reason: the
-    screen is offering an answer for a gate the server says the run has not
-    reached, so what is on screen is out of date and the READ is what makes it
-    current. A recovery that only wrote a sentence would leave the same stale
-    form under the same person, still offering the same refused answer.
-
-    The callback BODY is pinned, not merely the code it matches on: replacing
-    the re-read with a status dispatch left every substring here intact. It is
-    two statements now rather than one -- the draft is spent before the read,
-    because a landed read of the same run no longer clears one -- and the
-    re-read is still the last word.
-    """
-    writer = _code(RUNWRITE)
-    recover = re.search(
-        r'if \(result\.code !== "gate_unreached" \|\| asked !== door\.chosenRun\(\)\)'
-        r" return;\n(.*?)\n    \}\);", writer, re.DOTALL)
-    assert recover is not None, "the gate_unreached recovery is gone"
-    assert recover.group(1).split("\n") == [
-        '      door.dispatch({type: "decision-chosen", key: null});',
-        "      door.refreshRun(asked);"], recover.group(1)
-    # The road left the boot module at its line cap; the boot module hands it
-    # the door and looks nothing up itself.
+def test_the_boot_module_delegates_decision_receipts_and_refusal_recovery():
+    """The writer's callbacks and draft/read ordering are exercised in test_studio_drafts."""
     boot = _code(BOOT)
     assert "submitDecision: decisions.submitDecision," in boot
     assert "gate_unreached" not in boot and "receipt_id" not in boot
