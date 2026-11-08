@@ -55,7 +55,7 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
             assert allow_reply.wait(15)
         if case == "invalid":
             return reply(b'{"criterion":"take control","question":null,"cycle_id":null,"roles":{},"authorize":true}')
-        return reply(b'{"criterion":"Only successful rows count","question":"Should empty input return zero?","cycle_id":null,"roles":{}}')
+        return reply(b'{"criterion":"Only successful rows count","question":"Should empty input return zero?","cycle_id":null,"roles":{},"depth":"quick"}')
     runner.run = answer
     context = chromium.new_context(viewport={"width": width, "height": 840})
     try:
@@ -135,7 +135,10 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         expect(apply).to_be_visible()
         expect(panel).to_contain_text("Only successful rows count")
         expect(brief).to_have_value("COUNT_CASE_42: count successful rows")
-        apply.click()
+        with page.expect_response(lambda res: res.url.endswith("/project/task-draft")
+                                  and (res.request.post_data_json or {}).get("answers", {}).get("budgetDepth") == "quick") as saved:
+            apply.click()
+        assert saved.value.status in (200, 201)
         expect(brief).to_have_value("COUNT_CASE_42: count successful rows")
         hint = page.locator('[data-focus="wizard:hint"]')
         if not hint.is_visible():

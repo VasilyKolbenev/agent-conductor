@@ -206,6 +206,7 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
   function panel(w) {
     if (!w.task.brief.trim() || w.mode.view || w.run.pressed || w.task.written) return null;
     const t = (key) => words(locale(), key);
+    if (!open && !subscribed(w).length) return null;
     if (!open) return button("open", t("open"), () => {
       open = true; owner = actor() ?? ""; refresh();
     });
