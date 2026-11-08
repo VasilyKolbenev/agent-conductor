@@ -467,3 +467,24 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
   .desk-sum__task-what{grid-column:2}
   .desk-sum__person{grid-template-columns:minmax(0,1fr)}
 }
+
+/* The question and its answers share the ordinary task draft. */
+.desk-ask{max-width:48rem;margin-inline:auto}
+.desk-ask .desk-ask__steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.desk-ask__steps li{min-width:0;padding:6px 8px;font-size:.87rem}
+.desk-ask__goal .desk-wizard__field{gap:12px}
+.desk-ask__goal span{font:650 clamp(1.3rem,3vw,1.85rem)/1.2 var(--display)}
+.desk-ask__goal textarea{line-height:1.5;min-height:6rem;padding:12px}
+.desk-ask .desk-wizard__foot{justify-content:flex-start;gap:10px}
+.desk-ask .desk-wizard__foot button{min-height:44px}
+.desk-ask .desk-ask__primary{color:var(--on-ion);background:var(--ion);font-weight:700}
+.desk-ask__mode{justify-self:start;text-decoration:underline;text-underline-offset:3px}
+.desk-ask__answer{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+.desk-ask__answer-text{flex:1 1 14rem;min-width:0}
+.desk-ask__answer strong,.desk-ask__role h4{font-size:.84rem;margin:0}
+.desk-ask__answer p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.desk-ask__answer button{max-width:100%;min-height:44px}
+.desk-ask__team{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:16px}
+.desk-ask__role,.desk-ask__person{min-width:0;display:grid;gap:4px;align-content:start}
+.desk-ask__person p,.desk-ask__person small{margin:0;overflow-wrap:anywhere}
+.desk-ask__person strong{font-size:1rem;overflow-wrap:anywhere}

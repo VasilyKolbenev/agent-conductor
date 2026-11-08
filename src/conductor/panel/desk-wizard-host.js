@@ -38,7 +38,7 @@ function typedAnswers(wizard) {
 
 
 export function createWizardHost({mount, trigger, door, locale, nonce, onForeign, onState,
-  onHash, onExit}) {
+  onHash, onExit, advisorPanel = null}) {
   let wizard = null, epoch = 0, timer = null, entrance = null, requested = null;
   let project = null, editor = null, opening = false, unavailable = false;
   const valid = (draft) => draft === editor && epoch === draft.epoch && context.project?.() === draft.project;
@@ -134,7 +134,11 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     if (wizard === null) mount.replaceChildren();
     else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.status
       ?? (unavailable ? "restore_failed" : "memory_only")}, {onWizard: dispatch,
-      onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null});
+      onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null,
+      advisorPanel, onQuestionDone: () => {
+        render();
+        mount.querySelector('[data-guide-details^="reply-"] textarea, [data-focus="wizard:next"]')?.focus();
+      }});
   }
 
   function hash(override) {
@@ -221,12 +225,18 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const at = epoch;
     const step = stepWizard(wizard, event);
     if (step.state === wizard) return;
+    const focusQuestion = step.state.guided && step.state.step !== wizard.step
+      && ["next", "back", "goto"].includes(event.type);
     wizard = step.state;
     onHash(hash());
     if (!live(at) || wizard !== step.state) return;
     if (event.type !== "tick") saveDraft();
     refresh();
     if (!live(at) || wizard !== step.state) return;
+    if (focusQuestion) {
+      const prompt = wizard.step === "task" ? '[data-focus="wizard:brief"]' : "[data-ask-prompt]";
+      mount.querySelector(prompt)?.focus();
+    }
     const exit = wizardExit(wizard);
     if (exit !== null) {
       close({taskId: wizard.task.taskId, ...exit});

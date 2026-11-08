@@ -24,6 +24,7 @@ def test_edit_desk_bounds_before_authorizing_the_reviewed_terms(chromium, wizard
             return form.locator(f'[data-focus="wizard:{key}"]')
 
         field("brief").fill("Review the counter and its tests.")
+        field("next").click()
         field("git:run_without_git").click()
         field("next").click()
         field("next").click()

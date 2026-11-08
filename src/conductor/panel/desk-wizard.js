@@ -40,7 +40,7 @@ function context(state, handlers, mount) {
       .map((node) => node.dataset.guideDetails)),
     t: (key, params) => localize(state, key, params),
     send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome),
-    editLimits: handlers.onEditLimits};
+    editLimits: handlers.onEditLimits, advisorPanel: handlers.advisorPanel, redraw: handlers.onQuestionDone};
 }
 
 // -- the frame ---------------------------------------------------------------------------
@@ -91,12 +91,14 @@ function foot(ctx) {
   const why = gate.ok ? "" : gateWords(ctx, gate);
   const back = wizard.step === BUILT_STEPS[0] ? []
     : [action("wizard:back", ctx.t("wizard.back"), () => ctx.send({type: "back"}))];
-  const primary = following === null ? []
-    : [action("wizard:next", ctx.t("wizard.next"), () => ctx.send({type: "next"}),
-      gate.ok ? null : why)];
+  const label = ctx.t(wizard.guided ? "wizard.ask.next" : "wizard.next");
+  const next = action("wizard:next", label, () => ctx.send({type: "next"}), !wizard.guided && !gate.ok ? why : null);
+  if (wizard.guided && gate.ok) next.className = "desk-ask__primary";
+  if (wizard.guided && !gate.ok) { next.disabled = true; next.setAttribute("aria-describedby", "deskAskWhy"); }
+  const quiet = wizard.guided && wizard.step === "task" && !wizard.task.brief.trim() && !wizard.titleEdited;
   return element("footer", {className: "desk-wizard__foot"}, [
-    ...back, ...primary, element("p", {className: "desk-wizard__reason", "data-wizard-reason": "",
-      "aria-live": "polite", text: why})]);
+    ...back, ...(following === null ? [] : [next]), element("p", {id: "deskAskWhy", className: "desk-wizard__reason", hidden: wizard.guided && (quiet || !why) ? "" : null,
+      "data-wizard-reason": "", "aria-live": "polite", text: quiet ? "" : why})]);
 }
 
 //: The warning shown while the owner has asked to close with materials that are not saved, or
@@ -120,6 +122,7 @@ function taskField(ctx, field, label = null) {
   const locked = field === "title" && ctx.wizard.task.written;
   return textField(ctx, {key: `wizard:${field}`, name: field, multi: field !== "title", locked,
     label: label || ctx.t(`wizard.task.${field}`), value: ctx.wizard.task[field],
+    placeholder: ctx.wizard.guided && field === "brief" ? ctx.t("wizard.ask.goal_example") : null,
     onValue: (value) => ctx.send({type: `edit-${field}`, value}),
     extra: locked ? [element("small", {text: ctx.t("wizard.task.title_locked")})] : []});
 }
@@ -610,10 +613,10 @@ const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, role
 
 function guideSteps(ctx) {
   const current = guideStage(ctx.wizard.step)[0];
-  return element("ol", {className: "desk-wizard__steps", "aria-label": ctx.t("wizard.steps_label")},
+  return element("ol", {className: "desk-wizard__steps desk-ask__steps", "aria-label": ctx.t("wizard.steps_label")},
     GUIDE_STAGES.map(([name], index) => element("li", {"data-guide-stage": name,
       className: name === current ? "desk-wizard__current" : "",
-      "aria-current": name === current ? "step" : null, text: `${index + 1}. ${ctx.t(`wizard.guide.${name}`)}`})));
+      "aria-current": name === current ? "step" : null, text: `${index + 1}. ${ctx.t(`wizard.ask.stage_${name}`)}`})));
 }
 
 function disclosure(ctx, key, children, opened = false) {
@@ -626,14 +629,17 @@ function guideRole(ctx, label, rows) {
   const people = new Map();
   for (const row of rows) {
     const offer = row.offers.find((one) => one.id === row.provider);
-    if (offer) people.set(offer.id, `${offer.name} · ${quotaText(ctx, offer.quota)}`);
-    else people.set(null, ctx.t("wizard.guide.missing_role"));
+    if (!offer || people.has(offer.id)) continue;
+    const why = row.by !== "suggestion" ? ctx.t(`wizard.role.by_${row.by}`)
+      : ctx.t(row.notes.includes("independent_pick") ? "wizard.ask.role_independent"
+        : offer.quota.known ? "wizard.ask.role_quota" : "wizard.ask.role_fit");
+    people.set(offer.id, element("div", {className: "desk-ask__person"}, [
+      element("strong", {text: offer.name}), element("p", {"data-assignment-reason": "", text: why}),
+      element("small", {text: quotaText(ctx, offer.quota)})]));
   }
-  const group = element("section", {"data-guide-role": label}, [
-    element("h4", {text: ctx.t(`wizard.guide.${label}`)}),
-    ...[...people.values()].map((text) => element("p", {text})),
-  ]);
-  if (!people.size && label === "checker") group.append(element("p", {text: ctx.t("wizard.guide.no_checker")}));
+  const group = element("section", {className: "desk-ask__role", "data-guide-role": label},
+    [element("h4", {text: ctx.t(`wizard.guide.${label}`)}), ...people.values()]);
+  if (!rows.length && label === "checker") group.append(element("p", {text: ctx.t("wizard.guide.no_checker")}));
   return group;
 }
 
@@ -645,21 +651,70 @@ function guideTeam(ctx, roster) {
   const doers = dispatch.length ? dispatch : rows.filter((row) => row.steps.length);
   const checkers = rows.filter((row) => row.verifies.length);
   const shared = checkers.some((row) => row.provider && doers.some((other) => other.provider === row.provider));
-  return [guideRole(ctx, "executor", doers), guideRole(ctx, "checker", checkers),
+  const missing = rows.find((row) => !row.provider);
+  return [element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers), guideRole(ctx, "checker", checkers)]),
+    ...(missing ? [element("section", {"data-ask-role": missing.role_id}, [
+      element("h3", {text: ctx.t("wizard.ask.missing_role", {role: roleName(ctx, missing)})}),
+      element("ul", {className: "desk-wizard__roles"}, [roleRow(ctx, missing)])])] : []),
     ...(shared ? [element("p", {text: ctx.t("wizard.guide.shared")})] : []),
     disclosure(ctx, "assignments", [element("ul", {className: "desk-wizard__roles"},
-      rows.map((row) => roleRow(ctx, row)))], rows.some((row) => !row.provider))];
+      rows.filter((row) => row !== missing).map((row) => roleRow(ctx, row)))])];
+}
+
+function guideAnswer(ctx, name, text, step) {
+  const edit = action(`wizard:ask:edit-${name}`, ctx.t("wizard.ask.edit"), () => ctx.send({type: "goto", step}));
+  edit.setAttribute("aria-label", ctx.t(`wizard.ask.edit_${name}`));
+  return element("section", {className: "desk-ask__answer", "data-answer": name,
+    "data-git-state": name === "files" ? gitReading(ctx.wizard).state : null}, [
+    element("div", {className: "desk-ask__answer-text"}, [element("strong", {text: ctx.t(`wizard.ask.${name}`)}), element("p", {text})]),
+    edit]);
+}
+
+function sourceAnswer(ctx) {
+  const git = gitReading(ctx.wizard);
+  if (git.state === "not_git" && ctx.wizard.materials.withoutGit) return ctx.t("wizard.ask.empty");
+  if (!["repo", "not_active"].includes(git.state)) return null;
+  const dirty = git.params.dirty;
+  return gitSentence(ctx, git) + (dirty > 0 ? ". " + ctx.t("wizard.git.dirty", {count: String(dirty)}) : "");
+}
+
+function guideInstructions(ctx, fields, reason) {
+  if (!fields.length) return [];
+  const replyKey = (field) => `reply-${ctx.wizard.cycle.generation}-${field.step_id}`;
+  const sticky = fields.find((field) => ctx.expanded.has(replyKey(field)));
+  const active = sticky || (reason === "instruction_empty" && fields.find((field) => field.required && !field.text.trim()));
+  const other = fields.filter((field) => field !== active);
+  const controls = other.length ? [disclosure(ctx, "instructions", other.map((field) => instructionView(ctx, field)))] : [];
+  if (!active) return controls;
+  const box = element("details", {open: "", "data-guide-details": replyKey(active),
+    className: "desk-wizard__options"}, [
+    element("summary", {text: ctx.t("wizard.ask.instruction", {step: active.title || active.step_id})}),
+    instructionView(ctx, active)]);
+  box.append(action(`wizard:ask:keep:${active.step_id}`, ctx.t("wizard.ask.keep"), () => {
+    box.open = false;
+    ctx.redraw?.();
+  }, active.text.trim() ? null : ctx.t("wizard.reason.instruction_empty")));
+  return [box, ...controls];
 }
 
 function guideBody(ctx) {
   const state = ctx.wizard, [stage] = guideStage(state.step);
   if (stage === "result") {
     const [git, ...materials] = materialsBody(ctx);
-    const gate = canAdvance(state);
-    return [taskField(ctx, "brief", ctx.t("wizard.guide.goal")), element("p", {text: ctx.t("wizard.guide.source")}),
-      git, ...(state.draftMaterialsMissing ? [element("p", {role: "status", text: ctx.t("wizard.guide.missing_files")})] : []),
-      disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials],
-        gate.step === "materials" && ["material_incomplete", "materials_over_bytes"].includes(gate.reason))];
+    const materialIssue = ["material_incomplete", "materials_over_bytes"].includes(canAdvance(state).reason);
+    const options = disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials], materialIssue);
+    const missing = state.draftMaterialsMissing ? [element("p", {role: "status", text: ctx.t("wizard.guide.missing_files")})] : [];
+    if (state.step === "materials") return [guideAnswer(ctx, "goal", state.task.brief, "task"),
+      ...(sourceAnswer(ctx) ? [] : [element("h3", {"data-ask-prompt": "", tabindex: "-1", text: ctx.t("wizard.ask.files_question")})]),
+      git, ...missing, options];
+    const advisor = ctx.advisorPanel?.(state, ctx.send);
+    const known = state.task.brief.trim() && sourceAnswer(ctx);
+    const reading = gitReading(state);
+    const repair = reading.pending || ["unavailable", "unsafe_directory", "not_repo_root", "unsupported"].includes(reading.state);
+    return [element("div", {className: "desk-ask__goal"}, [taskField(ctx, "brief", ctx.t("wizard.ask.goal_prompt"))]),
+      ...(advisor ? [advisor] : []), ...(repair ? [git] : []),
+      ...(known && !repair ? [guideAnswer(ctx, "files", known, "materials")] : []), ...missing,
+      options];
   }
   if (stage === "team") {
     const chosen = cycleCards(state).find((card) => card.workflowId === state.cycle.choice?.workflowId);
@@ -667,14 +722,18 @@ function guideBody(ctx) {
     const fields = instructionFields(state, ctx.lang);
     const checks = diagnosticsView(ctx, facts);
     const warningsOnly = facts.diagnostics.length && facts.diagnostics.every((row) => row.severity === "warning");
-    return [...(chosen ? [element("h3", {text: cardName(ctx, chosen), "data-card-id": chosen.id, "data-chosen": "true"})] : []),
+    const source = sourceLine(ctx), budget = budgetView(ctx, facts);
+    return [guideAnswer(ctx, "goal", state.task.brief, "task"),
+      ...(sourceAnswer(ctx) ? [guideAnswer(ctx, "files", sourceAnswer(ctx), "materials")] : []),
+      ...(chosen ? [element("h3", {text: cardName(ctx, chosen), tabindex: "-1", "data-ask-prompt": "", "data-card-id": chosen.id, "data-chosen": "true"}),
+        element("div", {"data-cycle-reason": ""}, source.length ? source : [element("p", {text: ctx.t(
+          chosen.id === "dalio-v6" && state.cycle.chosenBy === "suggested" ? "wizard.ask.cycle_default" : "wizard.ask.cycle_chosen")})])] : []),
       ...(state.cycle.choice?.revision ? [element("p", {text: ctx.t("wizard.cycle.selected_revision",
         {number: String(state.cycle.choice.revision)})})] : []),
-      ...sourceLine(ctx), ...unreadNote(ctx),
+      ...(!chosen ? source : []), ...unreadNote(ctx),
       disclosure(ctx, "choose", [element("ul", {className: "desk-wizard__cards"}, cardItems(ctx))], !chosen),
-      ...guideTeam(ctx, roster), ...(fields.length ? [disclosure(ctx, "instructions",
-        fields.map((field) => instructionView(ctx, field)), canAdvance(state).reason === "instruction_empty")] : []),
-      ...flowStatus(ctx, facts), ...budgetView(ctx, facts),
+      ...guideTeam(ctx, roster), ...guideInstructions(ctx, fields, canAdvance(state).reason),
+      ...flowStatus(ctx, facts), ...(budget.length ? [disclosure(ctx, "estimate", budget)] : []),
       ...(warningsOnly ? [disclosure(ctx, "checks", checks)] : checks)];
   }
   return [element("p", {text: ctx.t("wizard.guide.named", {title: state.task.title})}),
@@ -687,16 +746,18 @@ export function mountWizard(mount, state, handlers) {
   }
   const ctx = context(state, handlers, mount), wizard = ctx.wizard;
   const draw = Object.hasOwn(BODIES, wizard.step) ? BODIES[wizard.step] : () => [];
-  mount.replaceChildren(element("section", {className: "desk-wizard", "data-wizard": "",
+  const mode = action("wizard:mode", ctx.t(wizard.guided ? "wizard.ask.fields" : "wizard.ask.questions"),
+    () => ctx.send({type: "guide-mode"}));
+  mode.className = "desk-ask__mode";
+  mount.replaceChildren(element("section", {className: wizard.guided ? "desk-wizard desk-ask" : "desk-wizard", "data-wizard": "",
     "data-wizard-current": wizard.step, "data-mode": modeOf(wizard)}, [
     head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step},
       wizard.guided ? guideBody(ctx) : draw(ctx)),
-    ...(wizard.firstRunGuide && !wizard.run.pressed && state.draftStatus
+    ...(wizard.firstRunGuide && !wizard.run.pressed && (wizard.task.brief || wizard.titleEdited || wizard.materials.items.length
+      || state.draftStatus !== "saved" && state.draftStatus !== "saving") && state.draftStatus
       && state.draftStatus !== "empty" ? [element("p", {role: "status", "data-draft": state.draftStatus,
         text: ctx.t(`wizard.guide.${state.draftStatus}`)})] : []),
     ...(wizard.guided && wizard.run.pressed ? [] : [foot(ctx)]),
-    ...(wizard.firstRunGuide && !wizard.run.pressed ? [action("wizard:mode",
-      ctx.t(wizard.guided ? "wizard.guide.details" : "wizard.guide.short"),
-      () => ctx.send({type: "guide-mode"}))] : []), ...closing(ctx)]));
+    ...(wizard.firstRunGuide && !wizard.run.pressed ? [mode] : []), ...closing(ctx)]));
 }
