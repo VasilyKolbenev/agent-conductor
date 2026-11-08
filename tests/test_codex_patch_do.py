@@ -16,6 +16,20 @@ def test_patch_profile_round_trips_and_keeps_older_arguments_distinct():
     assert DeepDispatchArgs.from_dict(old).as_dict() == old
 
 
+def test_another_registered_adapter_cannot_claim_the_codex_patch_method():
+    from conductor.command.adapters import AdapterRegistry
+    from conductor.command.adapters.base import AdapterContractError
+    from tests.test_command_runtime_execute import ScriptedAdapter
+
+    adapter = ScriptedAdapter(capabilities=("dispatch",))
+    adapter.patch_dispatch_version = PROFILE
+    registry = AdapterRegistry([adapter])
+    args = DeepDispatchArgs("item", "brief", PROFILE, [], "normal", work_scope="one")
+    with pytest.raises(AdapterContractError, match="does not support the requested patch profile"):
+        registry.validate_arguments(adapter.manifest.adapter_id, "dispatch", args.as_dict())
+    assert adapter.prepare_calls == adapter.execute_calls == 0
+
+
 def test_stage_names_replace_only_validated_headers(tmp_path):
     from conductor.command.adapters.codex_patch import parse_patch
 
