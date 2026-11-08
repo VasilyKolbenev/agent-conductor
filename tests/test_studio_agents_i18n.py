@@ -19,6 +19,12 @@ class E {
   addEventListener(k,v) {this.events[k]=v;}
   contains() {return false;}
   querySelector() {return null;}
+  querySelectorAll(selector) {
+    if(selector!=="details[open][data-decision-details]") throw Error(selector);
+    return all(this).filter(x=>x.tag==="details" && x.open &&
+      x.getAttribute("data-decision-details")!==null);
+  }
+  get dataset() {return {decisionDetails:this.getAttribute("data-decision-details")};}
 }
 globalThis.document={activeElement:null,body:new E('body'),createElement:t=>new E(t)};
 const all=node=>[node,...node.children.filter(x=>typeof x!=='string').flatMap(all)];
@@ -227,14 +233,19 @@ def test_decision_locale_retains_human_input_and_callback_identity(locale, title
       const draft={key:'run/gate',action:'request_changes',actor:'human',reason:'<b> Keep my input'};
       const state={locale:LOCALE,connection:'open',decisions:{phase:'ready',list:[row],draft}};
       const before=JSON.stringify(state), mount=new E('main');let submitted=null;
-      people.mountDecisions(mount,state,{editDecision:()=>{},submitDecision:value=>submitted=value,selectDecision:()=>{}});
+      const handlers={editDecision:()=>{},submitDecision:value=>submitted=value,selectDecision:()=>{}};
+      people.mountDecisions(mount,state,handlers);
+      all(mount).find(x=>x.dataset.decisionDetails==='run/gate').open=true;
+      people.mountDecisions(mount,state,handlers);
       const form=all(mount).find(x=>x.tag==='form');form.events.submit({preventDefault(){}});
       console.log(JSON.stringify({text:mount.textContent,inputs:all(mount).filter(x=>x.tag==='input').map(x=>x.value),
+        open:mount.querySelectorAll('details[open][data-decision-details]').map(x=>x.dataset.decisionDetails),
         unchanged:JSON.stringify(state)===before,identity:submitted===row}));
     """.replace("LOCALE", json.dumps(locale)))
     assert title in result["text"] and "old-receipt" in result["text"]
     assert "<b> Keep my input" in result["inputs"] and "human" in result["inputs"]
     assert result["unchanged"] and result["identity"]
+    assert result["open"] == ["run/gate"]
 
 
 @pytest.mark.parametrize("locale,title", [("ru", "Отказ до запуска шага"), ("en", "Stopped before the step runs")])
