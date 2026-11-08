@@ -620,14 +620,11 @@ def test_a_render_keeps_the_keyboard_on_the_same_overview_action_in_both_languag
 
 #: The workflow chosen through the toolbar's own control while the keyboard rests on the
 #: Overview's workflow card: the pass redraws that card in its chosen state.
-_CHOOSE_UNDER_FOCUS = """(workflow) => {
-  const held = document.querySelector('#bodyOverview .studio-overview__context button');
+_CHOOSE_UNDER_FOCUS = """(held, workflow) => {
   held.focus();
   const pick = document.querySelector("#workflowToolbar select[name='workflow']");
   pick.value = workflow;
   pick.dispatchEvent(new Event("change", {bubbles: true}));
-  const now = document.activeElement;
-  return {replaced: !held.isConnected, key: now.getAttribute("data-focus"), words: now.textContent};
 }"""
 
 
@@ -639,9 +636,15 @@ def test_the_chosen_workflow_and_its_blocking_rows_keep_their_keys_through_a_ren
     page, problems = front_door
     context = "#bodyOverview .studio-overview__context button"
     expect(page.locator(context)).to_have_text("Choose a workflow")
-    after = page.evaluate(_CHOOSE_UNDER_FOCUS, demo_scenario.WORKFLOW_ID)
-    assert after == {"replaced": True, "key": "overview:workflow",
-                     "words": "Edit this workflow"}, after
+    workflow = demo_scenario.WORKFLOW_ID
+    option = page.locator(f'#workflowToolbar select[name="workflow"] option[value="{workflow}"]')
+    expect(option).to_have_count(1)
+    original = page.locator(context).element_handle()
+    original.evaluate(_CHOOSE_UNDER_FOCUS, workflow)
+    expect(page.locator(context)).to_have_text("Edit this workflow")
+    expect(page.locator(context)).to_be_focused()
+    expect(page.locator(context)).to_have_attribute("data-focus", "overview:workflow")
+    assert original.evaluate("held => !held.isConnected")
     blocked = page.locator("#bodyOverview .studio-overview__blocked button")
     expect(blocked.first).to_have_text("Open it")
     keys = blocked.evaluate_all("rows => rows.map((row) => row.getAttribute('data-focus'))")
