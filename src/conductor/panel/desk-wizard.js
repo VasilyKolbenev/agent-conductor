@@ -376,7 +376,8 @@ function cardName(ctx, card) {
 }
 
 function cycleCard(ctx, card) {
-  const chosen = ctx.wizard.cycle.choice?.workflowId === card.workflowId;
+  const current = ctx.wizard.cycle.choice;
+  const chosen = current?.workflowId === card.workflowId && (!current.revision || current.revision === card.revision);
   const small = (text) => element("small", {text});
   const notes = [];
   if (card.pinned) notes.push(small(ctx.t("wizard.cycle.pinned")));
@@ -538,6 +539,7 @@ function fieldLabel(ctx, field) {
 
 //: The "as step X" chooser, offered only where the model says it may be.
 function likePicker(ctx, field) {
+  if (ctx.wizard.cycle.choice?.revision) return [];
   if (field.likeChoices.length === 0 && field.source !== "like") return [];
   const pick = element("select", {"data-focus": `wizard:instr:${field.step_id}:like`,
     "aria-label": ctx.t("wizard.instr.like")}, [
@@ -660,6 +662,8 @@ function guideBody(ctx) {
     const checks = diagnosticsView(ctx, facts);
     const warningsOnly = facts.diagnostics.length && facts.diagnostics.every((row) => row.severity === "warning");
     return [...(chosen ? [element("h3", {text: cardName(ctx, chosen), "data-card-id": chosen.id, "data-chosen": "true"})] : []),
+      ...(state.cycle.choice?.revision ? [element("p", {text: ctx.t("wizard.cycle.selected_revision",
+        {number: String(state.cycle.choice.revision)})})] : []),
       ...sourceLine(ctx), ...unreadNote(ctx),
       disclosure(ctx, "choose", [element("ul", {className: "desk-wizard__cards"}, cardItems(ctx))], !chosen),
       ...guideTeam(ctx, roster), ...(fields.length ? [disclosure(ctx, "instructions",

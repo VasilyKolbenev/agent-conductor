@@ -34,8 +34,13 @@ def matches(value, pattern):
 
 
 def validate_answers(answers):
-    fields(answers, "title brief hint titleEdited guided withoutGit includeInstructions "
-           "items cycleId owner instructions models")
+    keys = ("title brief hint titleEdited guided withoutGit includeInstructions "
+            "items cycleId owner instructions models")
+    pinned = isinstance(answers, dict) and "cycleRevision" in answers
+    fields(answers, keys + (" cycleRevision" if pinned else ""))
+    if pinned:
+        require(answers["cycleId"] is not None and type(answers["cycleRevision"]) is int
+                and 0 < answers["cycleRevision"] <= 2**53 - 1)
     for key in ("title", "brief", "hint"):
         require(isinstance(answers[key], str))
     for key in ("titleEdited", "guided", "withoutGit"):

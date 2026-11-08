@@ -34,6 +34,17 @@ def answers(text="Сверить отчёт 🧭"):
                 models={"role-checker": {"provider": "codex", "text": "gpt-6.1-sol"}})
 
 
+def test_selected_workflow_revision_round_trips_without_accepting_an_invalid_number(tmp_path):
+    subject, _, _ = installation(tmp_path)
+    key = call(subject, "open", task=TASK).payload["key"]
+    pinned = {**answers(), "cycleRevision": 1}
+    assert call(subject, "save", key=key, base=0, answers=pinned).status == 200
+    for change in ({"cycleRevision": False}, {"cycleRevision": 0}, {"cycleRevision": 2**53},
+                   {"cycleId": None}):
+        assert call(subject, "save", key=key, base=1, answers={**pinned, **change}).status == 422
+    assert call(subject, "read", key=key).payload["answers"] == pinned
+
+
 def test_editable_draft_is_scoped_without_creating_any_run_task_or_events(tmp_path):
     subject, store, events = installation(tmp_path)
     before = store.read("run-001").records

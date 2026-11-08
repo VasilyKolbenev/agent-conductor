@@ -221,6 +221,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.cycle.unpublished": ["not published in this project yet",
     "в проекте пока не опубликован"],
   "wizard.cycle.revision": ["revision {number}", "ревизия {number}"],
+  "wizard.cycle.selected_revision": ["Selected revision {number}", "Выбрана ревизия {number}"],
   "wizard.cycle.locked": ["The starter cycle is fixed: there is nothing to choose.",
     "Стартовый цикл зафиксирован: выбирать нечего."],
   "wizard.cycle.make_project": ["Make it the project cycle", "Сделать циклом проекта"],

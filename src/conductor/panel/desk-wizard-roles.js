@@ -246,8 +246,10 @@ export function assignmentFrom(revisionNodes, planNodes, instances) {
 
 // -- the instruction fields --------------------------------------------------------------
 
-function entryOf(step, entries, dalio) {
-  if (Object.hasOwn(entries, step.step_id)) return entries[step.step_id];
+function entryOf(step, entries, dalio, pinned) {
+  const selected = entries[step.step_id];
+  if (Object.hasOwn(entries, step.step_id)
+      && (!pinned || (!step.instruction_from && selected.source !== "like"))) return selected;
   if (typeof step.instruction_from === "string") {
     return {source: "like", like: step.instruction_from, text: ""};
   }
@@ -260,9 +262,9 @@ function entryOf(step, entries, dalio) {
 //: empty; "like step X" is offered only where the wizard may write the flow (a cycle the product
 //: does not own), only to a step with no "like" of its own, and never to one others already
 //: follow (spec 6.2.4).
-export function fieldsOf(flow, entries, taskText, owned, dalio = false) {
+export function fieldsOf(flow, entries, taskText, owned, dalio = false, pinned = false) {
   const steps = dispatchSteps(flow);
-  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries, dalio)]));
+  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries, dalio, pinned)]));
   return steps.map((step) => {
     const entry = held.get(step.step_id);
     const sharedWith = steps.filter((one) => held.get(one.step_id).source === "like"

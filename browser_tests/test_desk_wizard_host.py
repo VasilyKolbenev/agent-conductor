@@ -222,6 +222,60 @@ def test_owner_pinned_codex_and_default_grok_reach_the_frozen_grant_card(chromiu
         close_context(page.context)
 
 
+@pytest.mark.parametrize("wizard_url", ["pins"], indirect=True)
+def test_saved_cycle_runs_the_selected_revision_and_preserves_the_workflow_draft(
+        chromium: Browser, wizard_url, tmp_path):
+    from conductor.command.graph_template import load_template
+    from conductor.command.template_store import TemplateStore
+    from conductor.command.workflow_draft import WorkflowDraft, publish_candidate
+
+    templates = TemplateStore(tmp_path)
+    key = "colleague-dalio"
+    row = load_template("dalio-v6").as_dict()
+    document = {k: v for k, v in row.items() if k not in ("template_id", "revision")}
+    document.update(title="Reviewed Dalio", execution_contract="bounded-run-v1")
+    templates.save(publish_candidate(document, workflow_id=key, revision=1))
+    draft = {**document, "title": "Unfinished change",
+             "nodes": [n for n in document["nodes"] if n["node_id"] != "do"]}
+    templates.save_draft(WorkflowDraft(key, "2026-11-08T08:00:00Z", draft))
+    original = templates.draft_path(key).read_bytes()
+    page = chromium.new_page(viewport={"width": 375, "height": 900})
+    try:
+        page.goto(wizard_url + "#lang=en")
+        page.locator("#deskNewTask").click()
+        form = page.locator("#deskWizard")
+        field = lambda key: form.locator(f'[data-focus="wizard:{key}"]')
+        field("brief").fill("Fix the mixed success counter.")
+        field("git:run_without_git").click()
+        field("next").click()
+        form.locator('[data-guide-details="choose"] summary').click()
+        field("cycle:choose:" + key).click()
+        form.locator('[data-guide-details="assignments"] summary').click()
+        expect(field("role:role-implementer")).to_be_visible()
+        field("role:role-diagnostician").select_option("grok-build")
+        field("role:role-checker").select_option("codex")
+        field("instr:do:text").fill("Implement the checked fix.")
+        expect(form.locator('[data-draft="saved"]')).to_be_visible()
+        assert templates.draft_path(key).read_bytes() == original
+        # A different maintainer publishes a later revision while this tab is open.
+        templates.save(publish_candidate({**document, "title": "Revised tomorrow"},
+                                         workflow_id=key, revision=2))
+        page.reload()
+        field("next").click()
+        expect(form.get_by_text("Selected revision 1", exact=True)).to_be_visible()
+        field("next").click()
+        with page.expect_request(lambda req: req.method == "POST"
+                                 and req.url.endswith("/command/runs")) as sent:
+            field("prepare:go").click()
+        planned = sent.value.post_data_json
+        assert planned["workflow_id"] == key and planned["revision"] == 1
+        expect(form.locator('[data-guide-checkers]')).to_contain_text("codex")
+        assert templates.revisions(key) == (1, 2)
+        assert templates.draft_path(key).read_bytes() == original
+    finally:
+        close_context(page.context)
+
+
 def test_unsubmitted_answers_survive_reload_only_in_their_project(chromium: Browser, wizard_url):
     context = chromium.new_context()
     try:

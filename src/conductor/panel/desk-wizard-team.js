@@ -140,7 +140,7 @@ export function syncBinding(state) {
 export function instructionFields(state, lang) {
   const flow = heldFlow(state);
   if (flow === null) return [];
-  const owned = state.cycle.choice.kind !== "starter";
+  const owned = state.cycle.choice.kind !== "starter" && !state.cycle.choice.revision;
   const given = assignedTo(state) ?? {};
   const roster = rosterOf(providersOf(state));
   const argvFor = (field) => {
@@ -148,7 +148,8 @@ export function instructionFields(state, lang) {
     return row?.channel === "argv" && field.source !== "like"
       ? argvFit(field.text, inputChars(state)) : null;
   };
-  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned, isDalio(state))
+  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned, isDalio(state),
+    Boolean(state.cycle.choice.revision))
     .map((field) => ({...field, argv: argvFor(field)}));
 }
 
@@ -249,6 +250,7 @@ export function ownInstruction(state, event) {
 
 //: "As step X", or back from it: only to a step the field offers, and back to what it was.
 export function likeInstruction(state, event) {
+  if (state.cycle.choice?.revision) return state;
   const field = fieldFor(state, event.step_id);
   if (!field) return state;
   const held = state.roles.instructions[event.step_id];

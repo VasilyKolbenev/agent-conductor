@@ -57,6 +57,31 @@ def revisions_on_disk(templates, workflow_id=WORKFLOW_ID):
     return list(templates.revisions(workflow_id))
 
 
+def test_inspecting_a_revision_reads_only_that_version_and_validates_roles(tmp_path):
+    subject, _store, templates, _events = api(tmp_path)
+    assert write(subject, good(), publish=1).status == 201
+    assert write(subject, better(), publish=2).status == 201
+    assert write(subject, broken()).status == 201
+    before = templates.draft_path(WORKFLOW_ID).read_bytes()
+    check = {"inspect_revision": 1, "binding": None}
+    result = post(subject, flow_path(), check)
+    assert result.status == 200 and result.payload["publishable"]
+    assert result.payload["flow"] == good() and result.payload["latest_revision"] == 2
+    assert result.payload["published"] == {"revision": 1, "created": False}
+    role = good()["steps"][0]["role_id"]
+    refused = post(subject, flow_path(), {**check, "binding": {role: "absent-provider"}})
+    assert refused.status == 200 and refused.payload["publishable"]
+    assert any(row["code"] == "role_unassigned" for row in refused.payload["diagnostics"])
+    for field, val in [("publish_revision", 3), ("source", {"flow": better()}),
+                       ("inspect_revision", False), ("binding", []), ("expected_absent", True)]:
+        assert post(subject, flow_path(), {**check, field: val}).status == 422
+    missing = post(subject, flow_path(), {**check, "inspect_revision": 9})
+    assert missing.status == 409 and code_of(missing) == "service_refused"
+    assert missing.payload["error"]["detail"] == {"template_id": WORKFLOW_ID, "revision": 9}
+    assert revisions_on_disk(templates) == [1, 2]
+    assert templates.draft_path(WORKFLOW_ID).read_bytes() == before
+
+
 def test_get_flow_of_an_unknown_workflow_answers_source_none(tmp_path):
     subject, *_ = api(tmp_path)
     answer = get(subject, flow_path())
