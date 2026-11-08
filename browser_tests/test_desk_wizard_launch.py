@@ -535,6 +535,13 @@ def test_the_owners_name_is_held_to_the_id_grammar_and_survives_the_redraws_of_t
         bench, lang):
     to_card(bench, lang)
     field = bench.control("wizard:launch:actor")
+    hint = bench.page.get_by_text("colleague-demo", exact=False)
+    expect(hint).to_be_visible()
+    expect(hint).to_contain_text("A–Z")
+    field.fill("коллега-демо")
+    expect(field).to_have_value("коллега-демо")
+    expect(bench.control(START)).to_be_disabled()
+    expect(hint).to_be_visible()
     field.fill("bad name")
     assert bench.control(START).is_disabled()
     assert why(bench, START) == bench.say("wizard.launch.why.actor_invalid")

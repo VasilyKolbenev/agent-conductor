@@ -1,6 +1,7 @@
 """The Desk's always-visible gate card writes a task-bound decision on the real server."""
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import Browser, expect
 
 from browser_tests.desk_identity import identified_server
@@ -61,23 +62,31 @@ def _world(tmp_path):
     return root
 
 
+@pytest.mark.parametrize(("lang", "width"), [("ru", 375), ("en", 1400)])
 def test_current_gate_in_pult_records_a_receipt_without_opening_the_run_panel(
-        tmp_path, chromium: Browser):
+        tmp_path, chromium: Browser, lang, width):
     root = _world(tmp_path)
     with identified_server(root, PROJECT) as origin:
-        context = chromium.new_context(viewport={"width": 1400, "height": 1000})
+        context = chromium.new_context(viewport={"width": width, "height": 1000})
         page = context.new_page()
         errors: list[str] = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         try:
             page.goto(f"{origin}/panel/desk.html#project={PROJECT}&task=task-fix"
-                      "&run=run-fix-new&lang=en")
+                      f"&run=run-fix-new&lang={lang}")
             card = page.locator("#deskPult [data-desk-decision]")
             expect(card).to_be_visible()
             expect(page.locator("#deskRun")).to_be_hidden()
             expect(card).to_contain_text("Human Gate")
+            expect(card).to_contain_text("colleague-demo")
             page.locator('[data-focus-key="pult:actor-change"]').click()
-            page.locator('[data-focus-key="pult:actor-name"]').fill("desk-owner")
+            name = page.locator('[data-focus-key="pult:actor-name"]')
+            expect(name).to_have_attribute("placeholder", "colleague-demo")
+            name.fill("коллега-демо")
+            page.locator('[data-focus-key="pult:actor-save"]').click()
+            expect(name).to_have_value("коллега-демо")
+            expect(page.locator("#deskActorHint")).to_contain_text("Латинские" if lang == "ru" else "Latin")
+            name.fill("desk-owner")
             page.locator('[data-focus-key="pult:actor-save"]').click()
             expect(card).to_contain_text("desk-owner")
             button = card.locator('[data-focus-key="action:submitDecision"]')

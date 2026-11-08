@@ -49,7 +49,7 @@ function actorRow(view, handlers) {
 //: field the person emptied stays empty, and a redraw that rebuilds the form never takes the
 //: words back, whether the field had the keyboard or not.
 function actorForm(view, handlers) {
-  const input = element("input", {type: "text", name: "actor", maxlength: "128",
+  const input = element("input", {type: "text", name: "actor", maxlength: "128", placeholder: "colleague-demo",
     autocomplete: "off", spellcheck: "false", "data-focus-key": "pult:actor-name",
     "aria-describedby": "deskActorHint"});
   input.value = view.draft ?? view.actor ?? "";

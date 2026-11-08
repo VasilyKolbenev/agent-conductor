@@ -61,15 +61,27 @@ def test_fresh_task_to_its_own_receipt(chromium, tmp_path, lang, width, title, b
         assert [r.kind for r in before.records] == ["graph_definition"]
         button = page.get_by_role("button", name=submit, exact=True)
         expect(button).to_be_disabled()
-        page.locator('[data-focus-key="field:actor"]').fill("demo-colleague")
-        button.click()
-        expect(decision).to_contain_text("demo-colleague")
+        name = page.locator('[data-focus-key="field:actor"]')
+        hint = decision.get_by_text("colleague-demo", exact=False)
+        expect(hint).to_be_visible()
+        expect(hint).to_contain_text("A–Z")
+        name.fill("коллега-демо")
+        expect(button).to_be_disabled()
+        expect(name).to_have_value("коллега-демо")
+        expect(hint).to_be_visible()
+        assert not any(path.endswith("/decisions") for path in writes)
+        name.fill("colleague-demo")
+        expect(button).to_be_enabled()
+        with page.expect_response(lambda response: response.url.endswith("/decisions")) as sent:
+            button.click()
+        assert sent.value.status == 201
+        expect(decision.get_by_text("colleague-demo", exact=True)).to_be_visible()
         page.reload()
         # The sole saved answer remains visible without selecting the gate a second time.
-        expect(decision).to_contain_text("demo-colleague")
+        expect(decision.get_by_text("colleague-demo", exact=True)).to_be_visible()
         after = store.read(run_id)
         receipts = [r.value for r in after.records if r.kind == "decision"]
-        assert [(r.action, r.actor) for r in receipts] == [("approve", "demo-colleague")]
+        assert [(r.action, r.actor) for r in receipts] == [("approve", "colleague-demo")]
         assert not any(r.kind.startswith("action_") for r in after.records)
         assert writes.count("/command/tasks") == writes.count("/command/runs") == 1
         assert sum(path.endswith("/decisions") for path in writes) == 1

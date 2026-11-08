@@ -232,7 +232,7 @@ function actorField(ctx, facts) {
     label: ctx.t("wizard.launch.actor"), value: facts.actor,
     locked: facts.result !== null || facts.skip !== null,
     onValue: (value) => ctx.send({type: "actor-edit", value}),
-    extra: [element("small", {text: ctx.t("wizard.launch.actor_hint")})]});
+    extra: [element("small", {text: ctx.t("wizard.launch.actor_hint") + " " + ctx.t("agents.actor_hint")})]});
 }
 
 // -- what may be pressed -----------------------------------------------------------------

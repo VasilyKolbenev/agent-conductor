@@ -267,6 +267,7 @@ def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_kee
     page, window = _open(chromium, project)
     try:
         box = prepare(page, project)
+        box.locator('[data-focus="automation:run:actor"]').fill("коллега-демо")
         posted = []
         def lose_reply(route):
             posted.append(route.request.post_data_json)
@@ -279,9 +280,10 @@ def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_kee
         assert len(posted) == 1
         grants = [row.value for row in RunStore(project.root).read("run").records if row.kind == "run_authorization"]
         assert len(grants) == 1 and grants[0].authorization_id == posted[0]["authorization_id"]
+        assert grants[0].authorized_by == posted[0]["authorized_by"] == "коллега-демо"
         page.locator('[data-focus="preference-language"]').select_option("ru")
         expect(box.locator('[data-focus="automation:pause"]')).to_have_text("Пауза после текущего действия")
-        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("owner")
+        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("коллега-демо")
         assert adapter.execute_calls == 0 and window.page_errors == []
     finally:
         close_context(page.context)
