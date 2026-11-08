@@ -15,6 +15,10 @@ If your project and subscriptions are already connected, open **Desk → New tas
    wait for you. Enter your name and press **Start** when the terms match your task.
    At the final decision, open the result and the independent check before you accept.
 
+For a Codex patch step, select **Open the result**. When the checker recorded a snapshot,
+its name appears next to the files added, modified or deleted since the task was seeded.
+The list describes the task copy at the time of verification.
+
 For a published cycle, the wizard shows the selected revision. If a teammate continues
 editing that workflow, your task keeps the displayed version, including after a reload.
 

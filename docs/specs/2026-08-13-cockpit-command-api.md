@@ -1840,6 +1840,15 @@ compute or store a gate "pass" flag; the UI reads the projection.
 
 ### 6.1 `GET /command/runs/<run_id>` — replay one run read-only
 
+A successful, independently checked `implement-patch-v1` dispatch with an archived
+snapshot may also include `checked_changes`. The action ID, attempt ID, verifier ID
+and manifest digest bind this projection to its receipt. `total` counts all files
+changed against the seed; `files` contains the first 32 canonical relative paths and
+their `added`, `modified`, or `deleted` state. An unreadable or damaged sealed
+manifest yields a null total and an empty list. Unseeded, unverified, historical
+and later pending dispatches without such a seal omit the field. The read checks
+the archived manifest digest and does not open blobs, working files or Git.
+
 The UI reads run state and history here (history/replay, C/UI-1; Human Gate,
 C/HG-1). Maps to `RunStore.read`, which validates and replays without editing a
 durable byte. Response `200` binds field by field to `RecoveredRun`: `run` is a
@@ -1847,7 +1856,7 @@ durable byte. Response `200` binds field by field to `RecoveredRun`: `run` is a
 is the append-ordered journal each wrapped exactly as the store wraps it
 (`{ "record_type": <kind>, "record": <contract as_dict> }`), and `warnings` is
 the replay warning list. A fifth key, `graph`, is described in 6.1.1 and is the
-only part of this response that is not a durable record verbatim. A missing run
+projection over durable records. A missing run
 is currently `store_error` (500), because
 the planning-base store has no typed not-found branch and the endpoint may not
 infer one from prose. The record kinds and their contracts are the closed v2 vocabulary:
