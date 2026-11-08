@@ -1,5 +1,7 @@
 "use strict";
 export const PARTICIPANT_COPY = Object.freeze({
+  "participants.files_verified": ["{checker} verified the file changes.", "Изменения в файлах проверил {checker}."],
+  "participants.work_copy": ["Task copy in the project folder", "Копия задачи в папке проекта"],
   "participants.m1": [
     "not stated",
     "не указано"
