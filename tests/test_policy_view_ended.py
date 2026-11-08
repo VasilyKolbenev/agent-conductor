@@ -72,8 +72,8 @@ def expired(f, grant):
     f.ticks[0] = AFTER
 
 
-SITUATIONS = [holding_a_stall, holding_ready, holding_nothing, viewing, ownerless, uncertain_owner, paused,
-              revoked, expired]
+SITUATIONS = [holding_a_stall, holding_ready, holding_nothing, viewing, ownerless,
+              uncertain_owner, paused, revoked, expired]
 
 
 @pytest.mark.parametrize("situation", SITUATIONS, ids=lambda one: one.__name__)
