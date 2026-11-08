@@ -478,6 +478,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-ask .desk-wizard__foot{justify-content:flex-start;gap:10px}
 .desk-ask .desk-wizard__foot button{min-height:44px}
 .desk-ask .desk-ask__primary{color:var(--on-ion);background:var(--ion);font-weight:700}
+.desk-ask__saved summary{width:fit-content;cursor:pointer;font-size:.88rem;min-height:44px;padding:10px 0;box-sizing:border-box}
+.desk-ask .desk-ask__blocked{cursor:not-allowed;border-width:1px;border-style:dashed}
 .desk-ask__mode{justify-self:start;text-decoration:underline;text-underline-offset:3px}
 .desk-ask__answer{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
 .desk-ask__answer-text{flex:1 1 14rem;min-width:0}

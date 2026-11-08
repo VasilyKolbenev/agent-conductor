@@ -48,6 +48,10 @@ def test_one_sentence_to_review_keeps_each_answer_and_explains_suggestions(chrom
         expect(form.locator("[data-cycle-reason]")).to_be_visible()
         expect(form.locator('[data-guide-role="checker"] [data-assignment-reason]').first).to_be_visible()
         expect(form.locator('[data-guide-role="executor"] [data-assignment-reason]').first).to_be_visible()
+        expect(form.locator('[data-guide-role="diagnose"] [data-assignment-reason]')).to_contain_text(
+            "прочитать материалы" if lang == "ru" else "read task materials")
+        expect(form.locator('[data-guide-role="executor"] [data-assignment-reason]')).to_contain_text(
+            "в рабочей папке" if lang == "ru" else "working folder")
         expect(form.locator('[data-answer="goal"]')).to_contain_text(revised)
         form.locator('[data-guide-details="assignments"] summary').click()
         pick = key("role:role-checker")

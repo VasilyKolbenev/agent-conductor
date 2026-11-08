@@ -94,7 +94,9 @@ function foot(ctx) {
   const label = ctx.t(wizard.guided ? "wizard.ask.next" : "wizard.next");
   const next = action("wizard:next", label, () => ctx.send({type: "next"}), !wizard.guided && !gate.ok ? why : null);
   if (wizard.guided && gate.ok) next.className = "desk-ask__primary";
-  if (wizard.guided && !gate.ok) { next.disabled = true; next.setAttribute("aria-describedby", "deskAskWhy"); }
+  if (wizard.guided && !gate.ok) {
+    next.disabled = true; next.className = "desk-ask__blocked"; next.setAttribute("aria-describedby", "deskAskWhy");
+  }
   const quiet = wizard.guided && wizard.step === "task" && !wizard.task.brief.trim() && !wizard.titleEdited;
   return element("footer", {className: "desk-wizard__foot"}, [
     ...back, ...(following === null ? [] : [next]), element("p", {id: "deskAskWhy", className: "desk-wizard__reason", hidden: wizard.guided && (quiet || !why) ? "" : null,
@@ -630,9 +632,11 @@ function guideRole(ctx, label, rows) {
   for (const row of rows) {
     const offer = row.offers.find((one) => one.id === row.provider);
     if (!offer || people.has(offer.id)) continue;
-    const why = row.by !== "suggestion" ? ctx.t(`wizard.role.by_${row.by}`)
-      : ctx.t(row.notes.includes("independent_pick") ? "wizard.ask.role_independent"
-        : offer.quota.known ? "wizard.ask.role_quota" : "wizard.ask.role_fit");
+    const duty = row.verifies.length ? "verify" : row.steps.includes("diagnose") && row.needs.includes("review")
+      ? "diagnose" : row.needs.includes("dispatch") ? "dispatch" : row.needs.includes("review") ? "review" : "observe";
+    const basis = row.by !== "suggestion" ? ctx.t(`wizard.role.by_${row.by}`)
+      : row.notes.includes("independent_pick") ? ctx.t("wizard.ask.role_independent") : "";
+    const why = ctx.t(`wizard.ask.duty_${duty}`) + (basis ? " " + basis : "");
     people.set(offer.id, element("div", {className: "desk-ask__person"}, [
       element("strong", {text: offer.name}), element("p", {"data-assignment-reason": "", text: why}),
       element("small", {text: quotaText(ctx, offer.quota)})]));
@@ -650,9 +654,11 @@ function guideTeam(ctx, roster) {
   const dispatch = rows.filter((row) => row.needs.includes("dispatch"));
   const doers = dispatch.length ? dispatch : rows.filter((row) => row.steps.length);
   const checkers = rows.filter((row) => row.verifies.length);
+  const diagnoses = rows.filter((row) => row.steps.includes("diagnose") && !doers.includes(row) && !checkers.includes(row));
   const shared = checkers.some((row) => row.provider && doers.some((other) => other.provider === row.provider));
   const missing = rows.find((row) => !row.provider);
-  return [element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers), guideRole(ctx, "checker", checkers)]),
+  return [element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers),
+    ...(diagnoses.length ? [guideRole(ctx, "diagnose", diagnoses)] : []), guideRole(ctx, "checker", checkers)]),
     ...(missing ? [element("section", {"data-ask-role": missing.role_id}, [
       element("h3", {text: ctx.t("wizard.ask.missing_role", {role: roleName(ctx, missing)})}),
       element("ul", {className: "desk-wizard__roles"}, [roleRow(ctx, missing)])])] : []),
@@ -710,7 +716,9 @@ function guideBody(ctx) {
     const advisor = ctx.advisorPanel?.(state, ctx.send);
     const known = state.task.brief.trim() && sourceAnswer(ctx);
     const reading = gitReading(state);
-    const repair = reading.pending || ["unavailable", "unsafe_directory", "not_repo_root", "unsupported"].includes(reading.state);
+    const first = firstFacts(state);
+    const repair = first.phase === "busy" || first.result || reading.pending ||
+      ["unavailable", "unborn", "unsafe_directory", "not_repo_root", "unsupported"].includes(reading.state);
     return [element("div", {className: "desk-ask__goal"}, [taskField(ctx, "brief", ctx.t("wizard.ask.goal_prompt"))]),
       ...(advisor ? [advisor] : []), ...(repair ? [git] : []),
       ...(known && !repair ? [guideAnswer(ctx, "files", known, "materials")] : []), ...missing,
@@ -754,10 +762,15 @@ export function mountWizard(mount, state, handlers) {
     head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
     element("div", {className: "desk-wizard__body", "data-body": wizard.step},
       wizard.guided ? guideBody(ctx) : draw(ctx)),
+    ...(wizard.guided && !wizard.run.pressed ? [foot(ctx)] : []),
     ...(wizard.firstRunGuide && !wizard.run.pressed && (wizard.task.brief || wizard.titleEdited || wizard.materials.items.length
       || state.draftStatus !== "saved" && state.draftStatus !== "saving") && state.draftStatus
-      && state.draftStatus !== "empty" ? [element("p", {role: "status", "data-draft": state.draftStatus,
-        text: ctx.t(`wizard.guide.${state.draftStatus}`)})] : []),
-    ...(wizard.guided && wizard.run.pressed ? [] : [foot(ctx)]),
+      && state.draftStatus !== "empty" ? [state.draftStatus === "saved" && wizard.guided
+        ? element("details", {className: "desk-ask__saved", "data-draft": "saved", "data-guide-details": "saved",
+          open: ctx.expanded.has("saved") ? "" : null}, [element("summary", {text: ctx.t("wizard.ask.saved")}),
+          element("p", {text: ctx.t("wizard.guide.saved")})])
+        : element("p", {role: "status", "data-draft": state.draftStatus,
+          text: ctx.t(`wizard.guide.${state.draftStatus}`)})] : []),
+    ...(wizard.guided ? [] : [foot(ctx)]),
     ...(wizard.firstRunGuide && !wizard.run.pressed ? [mode] : []), ...closing(ctx)]));
 }
