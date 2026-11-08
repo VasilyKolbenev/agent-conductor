@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from conductor.command.policy_view import automation_view
+from conductor.command.runtime_values import ProjectRecoveryRequired
 from tests.test_policy_runtime import approve, pause, setup
 
 
@@ -40,6 +41,39 @@ def read(f):
 
 def no_owner():
     raise RuntimeError("no live owner")
+
+
+def recovery_needed():
+    raise ProjectRecoveryRequired("a live project owner is required for bounded execution")
+
+
+def test_ungranted_expired_and_revoked_runs_keep_their_state_during_recovery(tmp_path):
+    from tests.test_policy_view_expired import AFTER, revoke
+
+    f = setup(tmp_path)
+    check = f.policy.owner_check
+    f.policy.owner_check = recovery_needed
+    assert read(f) == ("unconfigured", "authorization_required")
+    f.policy.owner_check = check
+    grant, _ = approve(f)
+    f.policy.owner_check = recovery_needed
+    assert read(f) == ("restart_required", "recovery_required")
+    f.ticks[0] = AFTER
+    assert read(f) == ("expired", "expired")
+    f.ticks[0] = grant.authorized_at
+    f.policy.owner_check = check
+    revoke(f, grant)
+    f.policy.owner_check = recovery_needed
+    assert read(f) == ("revoked", "revoked")
+
+
+def test_an_untyped_error_naming_recovery_cannot_claim_the_project_needs_it(tmp_path):
+    f = setup(tmp_path)
+    approve(f)
+    def ambiguous():
+        raise RuntimeError("recovery_required")
+    f.policy.owner_check = ambiguous
+    assert read(f) == ("restart_required", "owner_required")
 
 
 def test_a_process_with_an_owner_and_no_driver_reads_restart_required_project_not_active(tmp_path):

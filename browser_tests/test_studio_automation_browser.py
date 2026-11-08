@@ -16,6 +16,8 @@ from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
 from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.task_contracts import TaskRecord
+from conductor.command.task_store import TaskStore
 from tests.test_policy_runtime import ARGS, DeepScripted, NOW, PD
 from tests.test_store import good_lane, write_project
 from browser_tests.desk_hold import close_context
@@ -44,6 +46,9 @@ def bounded_project(tmp_path, request):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     config = {"cycle": {"id": "cycle"}, "instances": [{"id": "doer", "adapter": "claude-code"}],
               "workflow": {"id": "custom", "revision": 1}, "automation_contract": "bounded-run-v1"}
+    if getattr(request, "param", False) == "recovery":
+        TaskStore(root).create_task(TaskRecord("sample", "Review sample", "sample", NOW))
+        config["task"] = {"id": "sample", "work_scope": "sample"}
     store = RunStore(root)
     store.create_run(RunEnvelope("run", "cycle", NOW, snapshot_digest(config), mode="policy"), config)
     store.append(GraphDefinition("plan", "run", NOW, execution_contract="bounded-run-v1", nodes=(
@@ -232,6 +237,56 @@ def test_first_grant_is_the_visible_next_step(chromium: Browser, bounded_project
         expect(grant).to_be_enabled()
         assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
         assert adapter.execute_calls == 0 and window.page_errors == []
+    finally:
+        close_context(page.context)
+
+
+@pytest.mark.parametrize("language", ("en", "ru"))
+@pytest.mark.parametrize("bounded_project", ["recovery"], indirect=True)
+def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, language, monkeypatch):
+    from conductor.ownership import require_owner
+
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        box = prepare(page, project)
+        for action, expected in (("authorize", "waiting"), ("pause", "paused")):
+            box.locator(f'[data-focus="automation:{action}"]').click()
+            expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", expected)
+        expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
+        store = RunStore(project.root)
+        before = store.read("run").records
+        owner = require_owner(project.root)
+        if language == "ru":
+            page.locator('[data-focus="preference-language"]').select_option("ru")
+        with monkeypatch.context() as patch:
+            patch.setattr(owner, "_uncertain", True)
+            with page.expect_response(lambda row: row.request.method == "GET" and
+                                      row.url.endswith("/command/runs/run/automation")) as read:
+                box.locator('[data-focus="automation:refresh"]').click()
+            response = read.value.json()
+            assert (response["state"], response["reason_code"], response["owner_present"]) == (
+                "restart_required", "recovery_required", False)
+            status = box.locator("[data-automation-state]")
+            expect(status).to_contain_text("conduct ownership status --dir .")
+            expect(status).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
+            expect(box.locator('[data-focus="automation:resume"]')).to_have_count(0)
+            expect(box.locator('[data-focus="automation:retry"]')).to_have_count(0)
+            desk = page.context.new_page()
+            desk.goto(f"{project.url}panel/desk.html#lang={language}")
+            row = desk.locator('[data-task-id="sample"] .desk-task__state')
+            expect(row).to_contain_text("conduct ownership status --dir .")
+            expect(row).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
+            desk.close()
+            assert store.read("run").records == before
+        with page.expect_response(lambda row: row.request.method == "GET" and
+                                  row.url.endswith("/command/runs/run/automation")) as healthy:
+            box.locator('[data-focus="automation:refresh"]').click()
+        response = healthy.value.json()
+        assert (response["state"], response["reason_code"], response["owner_present"]) == ("paused", "paused", True)
+        expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
+        assert store.read("run").records == before
+        assert adapter.execute_calls == 0 and not window.page_errors
     finally:
         close_context(page.context)
 

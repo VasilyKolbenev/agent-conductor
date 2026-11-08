@@ -54,6 +54,7 @@ ENGLISH = {
     "state_unknown": "State unknown", "running": "Running",
     "checkpoint_inactive": "At a checkpoint · the run belongs to the active project",
     "checkpoint": "At a checkpoint · needs to be continued", "owner_missing": "No project owner",
+    "recovery_needed": "Last attempt unconfirmed. Check conduct ownership status --dir . and follow the project recovery procedure.",
     "stalled": "Run stalled", "expired": "Permission expired", "paused": "Paused",
     "revoked": "Permission revoked", "outcome_succeeded": "Succeeded",
     "outcome_verification_failed": "Verification failed", "outcome_failed": "Failed",

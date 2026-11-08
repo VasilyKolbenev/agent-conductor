@@ -53,6 +53,9 @@ CASES = {
         {"task": TASK, "run": a_run(unreadable=True)}, status("run_unreadable")),
     "rule 4: a human is required": (
         {"task": TASK, "run": a_run(human_state="required")}, status("waiting_you")),
+    "confirmed recovery takes precedence over an open attempt or gate": (
+        {"task": TASK, "run": a_run(open_actions=1, human_state="required"),
+         "automation": automation("restart_required", "recovery_required")}, status("recovery_needed")),
     "rule 5: a queue record wants confirmation": (
         {"task": TASK, "run": a_run(), "entry": entry("confirmation_required")},
         status("queue_confirmation")),
@@ -167,7 +170,7 @@ CASES = {
 SPEC_KEYS = (
     "task_unreadable", "not_started", "run_unreadable", "waiting_you", "queue_confirmation",
     "queue_blocked", "queued", "queued_inactive", "state_unknown", "running",
-    "checkpoint_inactive", "checkpoint", "owner_missing", "stalled", "expired", "paused",
+    "checkpoint_inactive", "checkpoint", "owner_missing", "recovery_needed", "stalled", "expired", "paused",
     "revoked", "outcome_succeeded", "outcome_verification_failed", "outcome_failed",
     "outcome_unknown", "outcome_rejected", "outcome_cancelled", "ended", "no_outcome")
 #: The Russian words spec 5.2.1 gives for its keys, verbatim.
@@ -182,6 +185,7 @@ SPEC_RUSSIAN = {
     "checkpoint_inactive": "На контрольной точке · запуск — у активного проекта",
     "checkpoint": "На контрольной точке · нужно продолжить",
     "owner_missing": "Нет владельца проекта", "stalled": "Запуск остановился",
+    "recovery_needed": "Исход последней попытки не подтверждён. Проверьте conduct ownership status --dir . и следуйте процедуре восстановления проекта.",
     "expired": "Разрешение истекло", "paused": "На паузе", "revoked": "Разрешение отозвано",
     "outcome_succeeded": "Успешно", "outcome_verification_failed": "Проверка не пройдена",
     "outcome_failed": "Ошибка", "outcome_unknown": "Исход неизвестен",
