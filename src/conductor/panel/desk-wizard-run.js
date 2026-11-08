@@ -23,7 +23,8 @@ import {EXITS, adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initia
 
 //: The plain facts the chain is built from, in the language the owner pressed the button in.
 export function chainInput(state, lang = state.run.lang) {
-  return state.run.resume === null ? {...runInput(state, lang), budgetDepth: state.guided ? state.budgetDepth : null}
+  return state.run.resume === null ? {...runInput(state, lang),
+    budgetDepth: state.guided || state.budgetChosen ? state.budgetDepth : null}
     : resumeInput(state, lang);
 }
 
@@ -234,10 +235,11 @@ export const cardRefresh = (state) => withLaunch(state, refreshLaunch(state.laun
 export function cardBudget(state, event) {
   if (!isBudgetDepth(event.depth)) return state;
   if (state.launch.phase === "idle" && !state.run.pressed && state.run.resume === null) {
-    return event.depth === state.budgetDepth ? state : evolve(state, {budgetDepth: event.depth});
+    return event.depth === state.budgetDepth && state.budgetChosen ? state :
+      evolve(state, {budgetDepth: event.depth, budgetChosen: true});
   }
   const launch = changeDepth(state.launch, event.depth);
-  return launch === state.launch ? state : evolve(state, {launch, budgetDepth: event.depth});
+  return launch === state.launch ? state : evolve(state, {launch, budgetDepth: event.depth, budgetChosen: true});
 }
 export const cardReread = (state) => withLaunch(state, rereadLaunch(state.launch));
 export const cardSeen = (state) => withLaunch(state, seenLaunch(state.launch));

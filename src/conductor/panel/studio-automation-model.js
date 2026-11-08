@@ -1,6 +1,6 @@
 "use strict";
-import {BOUNDS, limitFields, validRecommendation} from "./studio-budget-guidance.js";
-export {limitFields};
+import {BOUNDS, DEPTH, limitFields, validRecommendation} from "./studio-budget-guidance.js";
+export {DEPTH, limitFields};
 // Closed presentation boundary. The server owns admission, time and execution.
 import {exactKeys, isDigest, isId, isInstant, isPlainObject} from "./studio-model.js";
 import {compareInstants} from "./studio-taskruns.js";

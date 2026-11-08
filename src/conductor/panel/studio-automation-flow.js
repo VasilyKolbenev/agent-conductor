@@ -1,8 +1,7 @@
 "use strict";
 // Human write callbacks and a serial read queue; no read can create authority.
-import {automationDraft, automationEligible, automationWriteReadBack, draftFromDesk, previewRequest, projectAutomation,
+import {DEPTH, automationDraft, automationEligible, automationWriteReadBack, draftFromDesk, previewRequest, projectAutomation,
   projectAutomationPreview, projectGrantRefusal, projectRecommendation} from "./studio-automation-model.js";
-import {DEPTH} from "./studio-budget-guidance.js";
 
 class AutomationFlow {
   constructor(door) {

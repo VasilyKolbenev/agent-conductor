@@ -54,6 +54,7 @@ export function restoreAnswers(fresh, held, documents, offered) {
   const known = offered.find((row) => row.id === held.cycleId && row.kind !== "build");
   const restored = {guided: held.guided !== false, titleEdited: held.titleEdited === true,
     budgetDepth: ["quick", "thorough"].includes(held.budgetDepth) ? held.budgetDepth : "balanced",
+    budgetChosen: ["quick", "balanced", "thorough"].includes(held.budgetDepth),
     draftMaterialsMissing: Array.isArray(held.items) && items.length !== held.items.length,
     task: {...fresh.task, title: held.title, brief: held.brief, hint: held.hint},
     materials: {...fresh.materials, items, counter: items.length, withoutGit: held.withoutGit === true,

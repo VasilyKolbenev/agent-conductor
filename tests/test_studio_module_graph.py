@@ -36,7 +36,7 @@ PERMITTED_IMPORTS = {
     'studio-budget-guidance.js': frozenset(),
     'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js'}),
     'studio-automation-providers.js': frozenset({'./studio-model.js'}),
-    'studio-automation-flow.js': frozenset({'./studio-automation-model.js', './studio-budget-guidance.js'}),
+    'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
     'studio-automation-copy.js': frozenset(set()),
     'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js', './studio-budget-guidance.js'}),
     'studio-workflowwrite.js': frozenset({'./studio-model.js', './studio-store.js', './command-projection.js'}),
