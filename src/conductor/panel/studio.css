@@ -259,8 +259,11 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 .studio-primary .studio-elsewhere{flex:none;font-size:13px}
 .studio-primary .studio-btn.studio-task-link{text-decoration:none}
 .studio-main--first-task .studio-workspace{order:-1}
-.studio-entry{max-width:64ch;padding:20px}
-.studio-entry h3{font-size:20px;line-height:1.25;letter-spacing:normal;text-transform:none}
+.studio-entry{max-width:64ch;padding:clamp(20px,4vw,36px);display:grid;gap:14px}
+.studio-entry h3{font-size:clamp(23px,3vw,32px);line-height:1.15;letter-spacing:-.02em;text-transform:none}
+.studio-entry .studio-hint{font-size:15px;max-width:49ch}
+.studio-entry .studio-primary{margin:4px 0 0}
+.studio-task-bar--first{margin-top:4px}
 
 /* ── the workflow screen ──────────────────────────────────────────────── */
 .studio-toolbar{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:flex-end;

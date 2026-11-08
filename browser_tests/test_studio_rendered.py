@@ -560,7 +560,8 @@ def test_the_classic_surfaces_are_reachable_from_every_screen_of_the_studio(
     page, problems = studio
     link = page.locator("header .studio-elsewhere")
     assert link.get_attribute("href") == "/panel/index.html"
-    said = link.inner_text()
+    assert link.inner_text() == "Project map and history"
+    said = link.get_attribute("aria-label")
     for word in ("Map", "findings", "feed", "handoffs"):
         assert word in said, said
     for _screen, tab, _container, _state in SCREENS:

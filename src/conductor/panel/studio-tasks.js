@@ -21,6 +21,11 @@ export function practiceTask(state) {
 export function mountTasks(mount, state, handlers) {
   const held = state.tasks, selected = selectedTask(state);
   const expanded = mount.querySelector("details[data-task-create]")?.open || false;
+  if (state.firstTask && state.screen === "overview" && !held.notice && !held.outcomes.length) {
+    mount.replaceChildren(element("div", {className: "studio-task-bar studio-task-bar--first"},
+      [creation(state, handlers, expanded)]));
+    return;
+  }
   const pick = element("select", {"aria-label": localize(state, "task.label"), "data-focus": "task-picker"}, [
     element("option", {value: "", text: localize(state, "task.all")})]);
   for (const row of held.list) {
@@ -76,7 +81,8 @@ function creation(state, handlers, expanded) {
     if (!create.disabled && form.reportValidity()) handlers.createTask();
   });
   const disclosure = element("details", {"data-task-create": ""}, [element("summary", {
-    text: localize(state, "task.new"), "data-focus": "task-new"}), form]);
+    text: localize(state, state.firstTask && state.screen === "overview" ? "entry.record_only" : "task.new"),
+    "data-focus": "task-new"}), form]);
   disclosure.open = expanded;
   return disclosure;
 }

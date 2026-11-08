@@ -85,7 +85,7 @@ function primaryAction(state, handlers) {
   return control;
 }
 
-function ownTaskLink(state, primary) {
+export function ownTaskLink(state, primary) {
   return element("a", {className: primary ? "studio-btn studio-task-link" : "studio-elsewhere studio-task-link",
     "data-focus": "overview:own-task", href: state.ownTaskUrl || null, text: localize(state, "entry.own")});
 }
@@ -110,10 +110,15 @@ export function mountShell(mounts, state, handlers) {
   const connection = ["open", "connecting"].includes(state.connection) ? state.connection : "closed";
   mounts.connection.textContent = localize(state, `connection.${connection}`);
   mounts.connection.setAttribute("data-connection", state.connection);
-  const action = primaryAction(state, handlers);
-  mounts.primary.replaceChildren(action);
-  if (state.screen === "overview" && action.getAttribute("data-focus") !== "overview:own-task") {
-    mounts.primary.append(ownTaskLink(state, false));
+  const firstOverview = state.screen === "overview" && state.firstTask;
+  mounts.primary.hidden = Boolean(firstOverview);
+  if (firstOverview) mounts.primary.replaceChildren();
+  else {
+    const action = primaryAction(state, handlers);
+    mounts.primary.replaceChildren(action);
+    if (state.screen === "overview" && action.getAttribute("data-focus") !== "overview:own-task") {
+      mounts.primary.append(ownTaskLink(state, false));
+    }
   }
   for (const node of mounts.tabs) tab(node, state, handlers);
   for (const [screen, node] of Object.entries(mounts.screens)) {
@@ -121,6 +126,7 @@ export function mountShell(mounts, state, handlers) {
     node.setAttribute("data-state", phase);
     node.hidden = screen !== state.screen;
     mounts.states[screen].textContent = localize(state, `phase.${phase}`);
+    mounts.states[screen].hidden = screen === "overview" && firstOverview && phase === "ready";
   }
   for (const node of mounts.translatedText) node.textContent = localize(state, node.dataset.i18n);
   for (const node of mounts.translatedLabels) node.setAttribute("aria-label", localize(state, node.dataset.i18nLabel));

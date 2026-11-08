@@ -13,7 +13,7 @@
 import {element, field} from "./command-view.js";
 import {RESULT_OUTCOMES} from "./studio-model.js";
 import {reachable, runForm} from "./studio-runform.js";
-import {saveRefusal} from "./studio-shell.js";
+import {ownTaskLink, saveRefusal} from "./studio-shell.js";
 import {localize, noticeText} from "./studio-i18n.js";
 import {newestRun} from "./studio-taskruns.js";
 
@@ -328,6 +328,8 @@ export function mountOverview(mount, state, handlers) {
     mount.classList.remove("studio-overview");
     const first = card(localize(state, "entry.first"), [note(localize(state, "entry.next"))]);
     first.classList.add("studio-entry");
+    if (state.screen === "overview") first.append(element("div", {className: "studio-primary"},
+      [ownTaskLink(state, true)]));
     mount.replaceChildren(first);
     return;
   }

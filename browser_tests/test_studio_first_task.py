@@ -34,6 +34,14 @@ def test_a_first_visit_offers_the_own_task_wizard(chromium, tmp_path, practice, 
             expect(page.get_by_role("button", name="Начать упражнение" if lang == "ru"
                                     else "Start the exercise")).to_be_in_viewport()
         else:
+            expect(page.locator("#bodyOverview .studio-entry").get_by_role("link")).to_have_count(1)
+            expect(page.locator("#studioTasks [data-focus='task-picker']")).to_have_count(0)
+            manual = page.locator("#studioTasks details[data-task-create]")
+            expect(manual.locator("summary")).to_have_text(
+                "Создать запись без запуска" if lang == "ru" else "Create a task record only")
+            manual.locator("summary").click()
+            expect(manual.locator('input[name="task-title"]')).to_be_visible()
+            manual.locator("summary").click()
             expect(page.locator("#bodyOverview")).to_contain_text(
                 "Какой результат вам нужен?" if lang == "ru" else "What would you like to get done?")
             expect(page.locator(".studio-overview__blocked")).to_have_count(0)
