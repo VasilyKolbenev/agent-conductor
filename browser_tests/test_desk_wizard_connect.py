@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 import pytest
 from playwright.sync_api import expect
 
+from browser_tests.desk_hold import until
 from browser_tests.test_desk_wizard_git_pin import active_project
 from browser_tests.test_desk_wizard_host import wizard_url  # noqa: F401
 from conductor import ownership_transition
@@ -64,7 +65,11 @@ def test_return_from_participant_setup_reloads_the_real_roster_without_losing_an
             held = {}
             def hold_check(route):
                 if route.request.post_data_json["op"] == "read" and not held:
-                    held["route"], held["response"] = route, route.fetch()
+                    response = route.fetch()
+                    if response.status == 403 and response.json()["error"]["code"] == "csrf_denied":
+                        route.fulfill(response=response)
+                    else:
+                        held["route"], held["response"] = route, response
                 else:
                     route.continue_()
             page.route("**/command/project/task-draft", hold_check)
@@ -77,6 +82,7 @@ def test_return_from_participant_setup_reloads_the_real_roster_without_losing_an
             expect(setup).to_have_count(0)
             expect(form.locator('[data-draft="saving"]')).to_be_visible()
             assert page.evaluate("""() => !window.dispatchEvent(new Event("beforeunload", {cancelable: true}))""")
+            until(page, "restarted server answered the read of the old draft", lambda: "response" in held)
             assert held["response"].status == 404
             held["route"].fulfill(response=held["response"])
             page.wait_for_function("old => history.state?.deskTaskDraft?.key && history.state.deskTaskDraft.key !== old", arg=old_key)
