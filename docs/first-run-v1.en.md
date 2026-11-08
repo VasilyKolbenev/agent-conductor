@@ -5,18 +5,28 @@
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
 If you only want to see the interface, start with the [account-free demo](../README.md#try-the-demo).
 
-If your project and subscriptions are already connected, open **Desk → New task**.
+In an empty project, start with the question about your intended result on the Studio
+home screen. In an existing project, open **Desk → New task**. You can answer one
+question at a time or switch to the form. Both edit the same draft.
 
 1. **Result and project.** Describe the result you want, for example “Find why the
    counter includes failed runs”. Choose where the task gets its files.
-2. **Team and cycle.** Use the standard Dalio cycle or choose your own. Check who
-   will do the work and who will verify it. Expand the role settings to change an assignment.
+2. **Team and cycle.** Keep Dalio, select a published cycle, or create your own in the
+   cycle editor. Publish it and return to the task with your goal and materials intact.
+   Check who does the work and who verifies the result. If a participant is missing,
+   open its setup, then return and refresh the participant list.
 3. **Review and start.** Read the action and time limits and where the cycle will
    wait for you. Enter your name and press **Start** when the terms match your task.
    For different bounds, select **Edit limits in Studio**. Change the numbers,
    select **Review bounded run** and check the new terms. You can authorize in
    Studio or select **Return to Desk** to leave the run without permission.
    At the final decision, open the result and the independent check before you accept.
+
+Choose the depth of work. Desk suggests time bounds from the steps, materials and
+available task history. You can edit the numbers before granting permission. When
+a subscription reviewer is available, **Discuss with a harness** requests one separately
+authorized review of up to 180 seconds. Read the answer and choose whether to apply it
+to the draft. Starting the main task requires its own permission.
 
 For a Codex patch step, select **Open the result**. When the checker recorded a snapshot,
 its name appears next to the files added, modified or deleted since the task was seeded.

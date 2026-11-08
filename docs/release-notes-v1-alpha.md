@@ -4,6 +4,12 @@ Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 
 ## Current Windows alpha work
 
+An empty project offers one way to start describing a task. Desk asks one question at
+a time. You can connect a missing participant or publish your own cycle and return to
+the same draft and materials. Depth of work informs the proposed time bounds. A connected
+subscription harness can review the draft under a separate permission. At acceptance,
+the colleague can see which files the independent checker actually verified for that step.
+
 Desk now starts a task in three stages: describe the result and working folder,
 choose the team and cycle, then review the limits and human decisions. The default
 cycle is Dalio revision 6, with an independent check of the Do step. Select **Edit
