@@ -65,7 +65,7 @@ import {stepControls} from "./studio-runstep.js";
 //: step's proposal bound: the other write on this screen, in its own file for
 //: the step control's reason.
 import {boundSources, documentSection} from "./studio-rundocs.js";
-import {participantDeck, participantSelection, releaseParticipants,
+import {checkedPatchResult, participantDeck, participantSelection, releaseParticipants,
   restoreParticipantScroll} from "./studio-participants.js";
 import {runHeading} from "./studio-runhead.js";
 
@@ -522,7 +522,8 @@ function evidenceItem(state, record) {
   ]);
 }
 
-function outcomeSection(state, records) {
+function outcomeSection(state, detail) {
+  const records = rows(detail.records);
   const results = records.filter((row) => row.record_type === "action_result");
   const evidence = records.filter((row) => row.record_type === "evidence");
   const body = [];
@@ -530,6 +531,10 @@ function outcomeSection(state, records) {
     body.push(note(localize(state, "runs.copy_104")));
   } else {
     const last = object(results[results.length - 1].record) || {};
+    const source = records.find(row => row.record_type === "action_request"
+      && row.record?.action_id === last.action_id && row.record?.attempt_id === last.attempt_id);
+    const patch = checkedPatchResult(state, detail, source?.record);
+    if (patch) body.push(patch);
     body.push(fact(state, localize(state, "runs.copy_105"), last.outcome),
       chip(OUTCOME_CHANNEL[last.outcome] || "none", show(state, last.outcome)),
       fact(state, localize(state, "runs.copy_106"), last.exit_code),
@@ -537,13 +542,16 @@ function outcomeSection(state, records) {
       fact(state, localize(state, "runs.copy_108"), last.action_id));
     body.push(...alsoSay(state, last.outcome));
   }
+  const receipt = element("div", {"data-last-outcome": "", tabindex: "-1",
+    "data-focus-key": `outcome:${detail.run.run_id}`}, body);
+  const content = [receipt];
   if (!evidence.length) {
-    body.push(note(localize(state, "runs.copy_109")));
+    content.push(note(localize(state, "runs.copy_109")));
   } else {
-    body.push(element("ul", {className: "studio-evidences"},
+    content.push(element("ul", {className: "studio-evidences"},
       evidence.map((row) => evidenceItem(state, object(row.record) || {}))));
   }
-  return section(localize(state, "runs.copy_110"), body);
+  return section(localize(state, "runs.copy_110"), content);
 }
 
 function artifactSection(state, records) {
@@ -557,7 +565,8 @@ function artifactSection(state, records) {
     const source = records.filter((item) => item.record_type === "action_result")
       .map((item) => object(item.record) || {})
       .filter((item) => item.action_id === record.source_action_id).at(-1);
-    list.append(element("li", {className: "studio-artifact"}, [
+    list.append(element("li", {className: "studio-artifact", tabindex: "-1",
+      "data-output-action": record.source_action_id ?? null}, [
       element("span", {className: "studio-mono", text: show(state, record.artifact_id)}),
       fact(state, localize(state, "runs.copy_113"), record.artifact_ref),
       fact(state, localize(state, "runs.copy_114"), record.media_type),
@@ -685,7 +694,7 @@ function detailColumn(runs, state, handlers, participant) {
     planSection(state, detail),
     positionSection(detail, state, handlers),
     ...(state.readOnly ? [] : [documentSection(detail, state, handlers)]),
-    outcomeSection(state, records),
+    outcomeSection(state, detail),
     artifactSection(state, records),
     timelineSection(state, records),
   ]);

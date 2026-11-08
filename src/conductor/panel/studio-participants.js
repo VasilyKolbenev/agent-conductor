@@ -10,7 +10,7 @@ import {participantBadge, traceView} from "./studio-trace.js";
 import {localize} from "./studio-i18n.js";
 import {latestDocument, attemptInFlight} from "./studio-runread.js";
 import {inputRefs} from "./studio-rundocs.js";
-import {CAPABILITY_FIELDS} from "./command-projection.js";
+import {CAPABILITY_FIELDS, isId, projectTaskBinding} from "./command-projection.js";
 import {VERIFICATION_FAILED_NOTE, RECORD_KINDS} from "./studio-runwords.js";
 
 const observers = new WeakMap();
@@ -324,10 +324,38 @@ function inputRead(state, detail, node) {
   ])];
 }
 
+export function checkedPatchResult(state, detail, request) {
+  const args = request?.arguments;
+  if (request?.capability !== "dispatch" || args?.profile !== "implement-patch-v1"
+      || !isId(request.action_id) || !isId(request.attempt_id)) return null;
+  const task = projectTaskBinding(detail);
+  if (task.state !== "bound" || args.work_scope !== task.workScope || !isId(args.work_item_id)) return null;
+  const node = rows(detail.graph?.definition?.nodes).find(n => n.node_id === request.node_id);
+  if (node?.arguments?.profile !== args.profile || node.instance_id !== request.instance_id
+      || !node.verifier_instance_id || node.instance_id === node.verifier_instance_id) return null;
+  const records = rows(detail.records);
+  const result = records.find(r => r.record_type === "action_result"
+    && r.record?.action_id === request.action_id && r.record?.attempt_id === request.attempt_id)?.record;
+  if (result?.outcome !== "succeeded") return null;
+  const verified = records.some(r => r.record_type === "evidence" && r.record?.kind === "verification"
+    && r.record.verification === "verified" && r.record.verifier_instance_id === node.verifier_instance_id
+    && r.record.uri === `verification/${request.action_id}`
+    && rows(result.evidence_refs).includes(r.record.evidence_id));
+  if (!verified) return null;
+  return element("div", {"data-patch-result": request.action_id}, [
+    element("p", {text: localize(state, "participants.files_verified", {checker: node.verifier_instance_id})}),
+    element("p", {}, [document.createTextNode(localize(state, "participants.work_copy") + " · "),
+      element("code", {text: `work/_tasks/${task.workScope}/${args.work_item_id}`})]),
+  ]);
+}
+
 function outputRead(state, detail, node) {
   const records = rows(detail.records);
-  const sources = new Set(records.filter((row) => row.record_type === "action_request"
-    && row.record?.node_id === node.node_id).map((row) => row.record.action_id));
+  const requests = records.filter((row) => row.record_type === "action_request"
+    && row.record?.node_id === node.node_id);
+  const patch = checkedPatchResult(state, detail, requests.at(-1)?.record);
+  if (patch) return [patch];
+  const sources = new Set(requests.map((row) => row.record.action_id));
   const docs = records.filter((row) => row.record_type === "artifact"
     && typeof row.record?.source_action_id === "string"
     && sources.has(row.record.source_action_id)).map((row) => row.record);

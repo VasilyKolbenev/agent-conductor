@@ -29,7 +29,8 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path):
     context = chromium.new_context(viewport={"width": 1280, "height": 850})
     try:
         page = context.new_page()
-        page.goto(f"http://127.0.0.1:{srv.server_port}/#screen=runs&task=one&run=run&lang=ru")
+        base = f"http://127.0.0.1:{srv.server_port}"
+        page.goto(f"{base}/#screen=runs&task=one&run=run&lang=ru")
         panel = page.locator('[data-automation="run"]')
         expect(panel.locator("[data-automation-state]")).to_have_attribute(
             "data-automation-state", "unconfigured")
@@ -55,6 +56,26 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path):
         assert [r.value.verifier_instance_id for r in records
                 if r.kind == "evidence"] == ["checker"]
         assert (work / "count.py").read_bytes() == ACTUAL
+        writes = []
+        page.on("request", lambda req: writes.append(req.method) if req.method == "POST" else None)
+        views = [("ru", 1280, "Открыть результат"), ("en", 375, "Open the result")]
+        for lang, width, label in views:
+            page.set_viewport_size({"width": width, "height": 850})
+            page.goto(f"{base}/#screen=runs&task=one&run=run&lang={lang}")
+            opening = page.get_by_role("button", name=label, exact=True)
+            opening.focus()
+            opening.press("Enter")
+            result = page.locator("[data-last-outcome]")
+            expect(result).to_be_focused()
+            listing = result.locator("[data-patch-result]")
+            expect(listing).to_be_in_viewport()
+            expect(listing).to_contain_text("checker")
+            expect(listing).to_contain_text("work/_tasks/one/item")
+            page.goto(f"{base}/panel/desk.html#task=one&run=run&lang={lang}")
+            desk_result = page.locator("[data-deck-run='run'] [data-patch-result]").first
+            expect(desk_result).to_contain_text("work/_tasks/one/item")
+            expect(desk_result).to_contain_text("checker")
+        assert not writes
     finally:
         context.close()
         srv.shutdown()
