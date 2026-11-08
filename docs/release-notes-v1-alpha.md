@@ -19,13 +19,13 @@ and survives later edits to the working folder. The demo uses recorded test resp
 | Harness | Evidence for the current subscription workflow |
 | --- | --- |
 | Claude Code 2.1.239 | Goal completed inside the Windows execution boundary on a subscription. Fresh-account acceptance is outstanding. |
-| Codex 0.164.0 | Goal, Identify and Design completed on subscription in the shared cycle. The 7 November Do ended without changes. The new patch route passed an offline check. |
+| Codex 0.164.0 | Goal, Identify, Design and Do succeeded in the live Dalio cycle. A separate checker verified the snapshot of both changed files. |
 | Grok Build 1.0.13 | A subscription diagnosis passed the G6 rehearsal gate; Diagnose in the shared cycle also returned a result. The role is read-only review. |
 | Kimi Code 0.38.0 | The native CLI opened a session with a synthetic login in a networkless Windows AppContainer. A real account quota reading and a subscription task remain outstanding. |
 
-[Shared cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
+[Accepted Codex and Grok cycle](recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
 
-The public alpha still needs a checked Codex/Grok cycle, all four subscription
+The public alpha still needs clean-install acceptance of all four subscription
 paths, the final CI wheel and owner acceptance. The September evidence below is
 retained for its named builds. For current setup use the
 [first-run guide](first-run-v1.en.md).
