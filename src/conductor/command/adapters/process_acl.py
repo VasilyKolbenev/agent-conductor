@@ -22,7 +22,7 @@ from ...boot_witness import BootRefused
 from ...ownership_native import NativeHold, identity
 from ..long_path import extended
 from .process_boundary import WindowsContainer
-from .process_profile import ProfileRefused, _bytes, _plain, _replace, _write_new
+from .process_profile import ProfileRefused, _bytes, _plain, _present, _replace, _write_new
 
 
 _ACL_NAME = re.compile(r"acl-([0-9a-f]{32})\.json\Z")
@@ -30,6 +30,11 @@ _ACL_PREP = re.compile(r"acl-[0-9a-f]{32}\.prepared-(?:0|[1-9][0-9]*)\.json\Z")
 _ACL_TEMP = re.compile(r"\.acl-[0-9a-f]{32}\.json\.[0-9a-f]{16}\.tmp\Z")
 _KEYS = ("parent", "work", "runtime", "login")
 _FOLDER_KEYS = ("parent", "runtime")  # an attempt on loaned folders (process_loans)
+_KIMI_CHILDREN = {"kimi_sessions": "sessions", "kimi_logs": "logs",
+                  "kimi_credentials": "credentials"}
+_KIMI_KEYS = (*_FOLDER_KEYS, "kimi_state", *_KIMI_CHILDREN)
+_STATE_FILES = frozenset({"config.toml", "device_id", "workspaces.json", "migrations-effort.json",
+                          "session_index.jsonl"})
 _COMMAND = "ownership recover-containers"
 _RX = 0x1200A9
 _RWX = 0x1201BF  # read + create/write/traverse, no DELETE or DELETE_CHILD
@@ -38,9 +43,18 @@ _LIMIT = 5000
 
 
 def _grant(owner_sid, profile_sid, *, mode, leaf):
-    if mode not in {"dispatch", "review"} or leaf not in {"parent", "work", "runtime", "login"}:
+    if (mode not in {"dispatch", "review"} or leaf not in (*_KEYS, *_KIMI_KEYS)
+            or leaf.startswith("kimi_") and mode != "review"):
         raise ProfileRefused("profile_acl_invalid", "unknown ACL mode or leaf")
     base = f"O:{owner_sid}D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;{owner_sid})"
+    if leaf == "kimi_state":
+        # Traverse and create regular files only. A new file cannot execute or change its ACL.
+        return base + f"(A;;0x1200ab;;;{profile_sid})(A;OIIO;0x13019f;;;{profile_sid})"
+    if leaf == "kimi_credentials":
+        return base + f"(A;;0x1200a9;;;{profile_sid})"
+    if leaf in ("kimi_sessions", "kimi_logs"):
+        return (base + f"(A;;0x1201bf;;;{profile_sid})(A;CIIO;0x1301bf;;;{profile_sid})"
+                + f"(A;OIIO;0x13019f;;;{profile_sid})")
     if leaf == "parent":
         return base
     if leaf == "login" or (mode == "review" and leaf == "work"):
@@ -126,21 +140,26 @@ class AttemptAclJournal:
 
     def _paths(self, attempt):
         parent = self.base / attempt
+        state = parent / "kimi-state"
         return {"parent": parent, "work": parent / "work", "runtime": parent / "runtime",
-                "login": parent / "login"}
+                "login": parent / "login", "kimi_state": state,
+                **{key: state / name for key, name in _KIMI_CHILDREN.items()}}
 
     def _paths_of(self, record):
         """The owned paths a record names: all four, or the two of an attempt on loaned folders."""
         return {key: path for key, path in self._paths(record["attempt"]).items()
                 if key in record["paths"]}
 
-    def prepare(self, profile_path, sid, mode, *, folders=False):
+    def prepare(self, profile_path, sid, mode, *, folders=False, kimi_state=False):
         """Make, hold, journal and grant the fresh folders of one attempt.
 
         Args:
             folders: True when the work folder, the home and the install folder are loans
                 (`process_loans`): only the parent and the runtime folder are made.
+            kimi_state: Record the state root and its fixed children in an offline staged review.
         """
+        if type(kimi_state) is not bool or kimi_state and (mode != "review" or not folders):
+            raise ProfileRefused("profile_acl_invalid", "Kimi state requires a staged review")
         profile = self.profiles._read(profile_path)
         if (profile["phase"] != "created" or profile["sid"] != sid
                 or mode not in {"dispatch", "review"}):
@@ -152,8 +171,8 @@ class AttemptAclJournal:
         except FileExistsError:
             pass
         _plain(self.base, True)
-        paths = {key: path for key, path in self._paths(profile["attempt"]).items()
-                 if key in (_FOLDER_KEYS if folders else _KEYS)}
+        keys = _KIMI_KEYS if kimi_state else _FOLDER_KEYS if folders else _KEYS
+        paths = {key: path for key, path in self._paths(profile["attempt"]).items() if key in keys}
         for path in paths.values():
             path.mkdir()  # exclusive: no adoption of a foreign or stale name
             _plain(path, True)
@@ -208,12 +227,15 @@ class AttemptAclJournal:
                 or row["owner_nonce"] != self.profiles.owner_nonce
                 or row["root_identity"] != self.profiles.root_identity
                 or row["data_identity"] != self.profiles.data_identity
-                or type(row["phase"]) is not str or row["phase"] not in {"planned", "applied", "retired"}
+                or type(row["phase"]) is not str
+                or row["phase"] not in {"planned", "applied", "retiring", "retired"}
                 or type(row["mode"]) is not str or row["mode"] not in {"dispatch", "review"}
                 or type(row["profile_sid"]) is not str
                 or not boot_prepared.schema_fits(row["schema"], row["boot"])
                 or type(row["paths"]) is not dict
-                or set(row["paths"]) not in (set(_KEYS), set(_FOLDER_KEYS))):
+                or set(row["paths"]) not in (set(_KEYS), set(_FOLDER_KEYS), set(_KIMI_KEYS))
+                or ("kimi_state" in row["paths"] and row["mode"] != "review")
+                or (row["phase"] == "retiring" and "kimi_state" not in row["paths"])):
             raise ProfileRefused("profile_acl_invalid", "ACL record does not bind this owner")
         profile = self.profiles._read(self.directory / f"profile-{row['attempt']}.json")
         if (profile["sid"] != row["profile_sid"]
@@ -273,13 +295,19 @@ class AttemptAclJournal:
     def _retire_owned(self, record_path, record, chain):
         paths = self._paths_of(record)
         holds = self._verified_holds(record, paths, chain)
+        self._admit_contents(paths)
+        if "kimi_state" in paths and record["phase"] != "retiring":
+            if any(not _present(path) for path in paths.values()):
+                raise ProfileRefused("profile_acl_invalid", "state disappeared before retirement")
+            record["phase"] = "retiring"
+            _replace(record_path, record)
         self._empty_owned(paths)
         self._restore_acls(record, paths, holds)
         # Holds pin the four names without FILE_SHARE_DELETE through leaf removal.
-        for key in ("work", "runtime", "login"):
-            if key in paths and os.path.lexists(paths[key]):
+        for key in (*_KIMI_CHILDREN, "kimi_state", "work", "runtime", "login"):
+            if key in paths and _present(paths[key]):
                 holds[key].delete()
-        if os.path.lexists(paths["parent"]):
+        if _present(paths["parent"]):
             holds["parent"].delete()
         self.close()
         record["phase"] = "retired"
@@ -287,35 +315,55 @@ class AttemptAclJournal:
 
     def _verified_holds(self, record, paths, chain):
         if self.holds is None:
-            existing = {key: path for key, path in paths.items() if os.path.lexists(path)}
+            existing = {key: path for key, path in paths.items() if _present(path)}
             self.holds = self._hold_paths(existing)
         holds = self.holds[1]
         for key, path in paths.items():
-            if not os.path.lexists(path):
+            if not _present(path):
                 continue
             _plain(path, True)
             if (key not in holds or list(holds[key].identity) != record["paths"][key]["identity"]
                     or list(identity(path)) != record["paths"][key]["identity"]):
                 raise ProfileRefused("profile_acl_invalid", "owned attempt path identity changed")
-        present = [key for key, path in paths.items() if os.path.lexists(path)]
+        present = [key for key, path in paths.items() if _present(path)]
         if boot_prepared.appeared(chain, self._identities(record), present):
             raise ProfileRefused("profile_acl_invalid", "an owned object appeared after the "
                                  "restart was prepared")
         return holds
 
-    def _empty_owned(self, paths):
-        if os.path.lexists(paths["parent"]):
+    def _admit_contents(self, paths):
+        fixed = {extended(path) for path in paths.values()}
+        state = paths.get("kimi_state")
+        if _present(paths["parent"]):
             _walk_plain(paths["parent"])  # parent restore may propagate into every child
             with os.scandir(paths["parent"]) as children:
                 for entry in children:
-                    if entry.name not in {"work", "runtime", "login"}:
+                    if extended(entry.path) not in fixed:
                         raise ProfileRefused("profile_acl_invalid", "owned parent has an unexpected entry")
+        if state is not None and _present(state):
+            with os.scandir(extended(state)) as children:
+                for entry in children:
+                    if extended(entry.path) in fixed:
+                        continue
+                    if not entry.is_file(follow_symlinks=False) or entry.name not in _STATE_FILES:
+                        raise ProfileRefused("profile_acl_invalid", "unreviewed Kimi state entry")
+        credentials = paths.get("kimi_credentials")
+        if credentials is not None and _present(credentials):
+            from .relay_home import KIMI_CREDENTIAL_NAMES
+            with os.scandir(extended(credentials)) as children:
+                leaves = list(children)
+            if len(leaves) > 1 or any(e.name not in KIMI_CREDENTIAL_NAMES
+                                      or not e.is_file(follow_symlinks=False) for e in leaves):
+                raise ProfileRefused("profile_acl_invalid", "unreviewed Kimi credential entry")
+
+    def _empty_owned(self, paths):
+        fixed = {extended(path) for path in paths.values()}
         # Empty own descendants while the pinned leaf still blocks replacement.
-        for key in ("work", "runtime", "login"):
+        for key in ("work", "runtime", "login", "kimi_state"):
             path = paths.get(key)
-            if path is not None and os.path.lexists(path):
+            if path is not None and _present(path):
                 for child in reversed(_walk_plain(path)):
-                    if child == path:
+                    if extended(child) in fixed:
                         continue
                     found = os.lstat(child)
                     if getattr(found, "st_reparse_tag", 0) or stat.S_ISLNK(found.st_mode):
@@ -329,9 +377,9 @@ class AttemptAclJournal:
 
     def _restore_acls(self, record, paths, holds):
         # Parent inheritance is restored before each now-empty leaf's exact DACL.
-        for key in (key for key in _KEYS if key in paths):
+        for key in paths:
             path = paths[key]
-            if os.path.lexists(path):
+            if _present(path):
                 facts, hold = record["paths"][key], holds[key]
                 self.native.acl_set(hold, facts["before"], protected=facts["protected"])
                 restored, protected, owner_sid = self.native.acl_snapshot(hold)
@@ -391,7 +439,7 @@ class AttemptAclJournal:
 
     def _held_now(self, record, paths, files):
         """Hold the owned objects that exist and name the identity each one has."""
-        existing = {key: path for key, path in paths.items() if os.path.lexists(path)}
+        existing = {key: path for key, path in paths.items() if _present(path)}
         stack, holds = self._hold_paths(existing)
         files.callback(stack.close)
         for key, path in existing.items():

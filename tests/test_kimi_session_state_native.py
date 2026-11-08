@@ -12,8 +12,6 @@ import pytest
 from conductor import ownership
 from conductor.command.adapters.kimi_code import KIMI_AUTH_INPUT, KIMI_PROFILE
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
-from conductor.command.adapters.process_loans import loan_sddl
-from conductor.command.adapters.relay_home import relay_root_sddl
 from conductor.command.long_path import extended
 from conductor.ownership_native import NativeHold, identity
 from tests.os_boundary_box import base_environment
@@ -62,23 +60,14 @@ def install(site, archive, shell_dir):
     return exe, shell / "sh.exe"
 
 
-def grant(path, sid, rights):
+def grant_file(path, sid, rights):
     from conductor.command.adapters import _winlaunch as native
 
-    directory = path.is_dir()
-    handle = NativeHold(path, directory=directory, grants=True)
+    handle = NativeHold(path, grants=True)
     try:
         _, _, owner = native.acl_snapshot(handle)
-        acl = relay_root_sddl(owner)
-        if rights == "create-file":
-            # Read and ADD_FILE on this directory; modify on new regular files only.
-            acl += f"(A;;0x1200ab;;;{sid})(A;OIIO;0x1301bf;;;{sid})"
-        elif directory:
-            acl = loan_sddl(acl, sid, rights)
-        else:
-            mask = "0x120089" if rights == "read" else "0x1301bf"
-            # Windows drops inheritance flags on regular file ACLs.
-            acl = f"O:{owner}D:P(A;;FA;;;SY)(A;;FA;;;{owner})(A;;{mask};;;{sid})"
+        mask = "0x120089" if rights == "read" else "0x13019f"
+        acl = f"O:{owner}D:P(A;;FA;;;SY)(A;;FA;;;{owner})(A;;{mask};;;{sid})"
         native.acl_set(handle, acl, protected=True)
         actual, protected, _ = native.acl_snapshot(handle)
         assert protected and native.acl_equal(actual, acl)
@@ -87,38 +76,21 @@ def grant(path, sid, rights):
 
 
 @contextmanager
-def state_home(runtime, source, sid):
-    """Test-only scratch. The staged original is read-only throughout the process."""
-    home = runtime / "session-state"
-    assert home.resolve().parent == runtime.resolve()
-    home.mkdir()
-    try:
-        grant(home, sid, "create-file")
-        with ExitStack() as held:
-            held.callback(NativeHold(home, directory=True).close)
-            creds = home / "credentials"
-            creds.mkdir()
-            grant(creds, sid, "read")
-            held.callback(NativeHold(creds, directory=True).close)
-            for rel in ("config.toml", "credentials/kimi-code.json"):
-                target = home / rel
-                target.touch(exist_ok=False)
-                grant(target, sid, "read")
-                target.write_bytes((source / rel).read_bytes())
-                held.callback(NativeHold(target).close)
-            for subdir in ("sessions", "logs"):
-                target = home / subdir
-                target.mkdir()
-                grant(target, sid, "modify")
-            for filename, data in (("workspaces.json", b"{}\n"),
-                                   ("device_id", b"12345678-1234-4123-8123-123456789abc")):
-                target = home / filename
-                target.write_bytes(data)
-                grant(target, sid, "modify")
-            yield home
-    finally:
-        assert home.resolve().parent == runtime.resolve()
-        shutil.rmtree(extended(home))
+def state_home(home, source, sid):
+    """Seed only synthetic fixture files in the actual runner's journaled state."""
+    with ExitStack() as held:
+        for rel in ("config.toml", "credentials/kimi-code.json"):
+            target = home / rel
+            target.touch(exist_ok=False)
+            grant_file(target, sid, "read")
+            target.write_bytes((source / rel).read_bytes())
+            held.callback(NativeHold(target).close)
+        for filename, data in (("workspaces.json", b"{}\n"),
+                               ("device_id", b"12345678-1234-4123-8123-123456789abc")):
+            target = home / filename
+            target.write_bytes(data)
+            grant_file(target, sid, "modify")
+        yield home
 
 
 @pytest.mark.parametrize("case", ["read-only", "shell-unconfigured", "session"])
@@ -131,12 +103,13 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
     with fixture_home(site) as (source, anchor, token), ownership.acquire_owner(site.root):
         configure(site, exe)
         with runner.container_profile(mode="review", internet_client=False,
-                                      folders=folders(site, anchor)) as (boundary, paths):
+                                      folders=folders(site, anchor),
+                                      kimi_state=case != "read-only") as (boundary, paths):
             assert not boundary.internet_client and identity(paths["home"]) == anchor.identity
             sid, parent = boundary.sid, paths["parent"]
             with ExitStack() as held:
                 home = (source if case == "read-only" else held.enter_context(
-                    state_home(paths["runtime"], source, sid)))
+                    state_home(paths["kimi_state"], source, sid)))
                 env = {**base_environment(paths["runtime"]), **dict(KIMI_PROFILE.forced_env),
                        "KIMI_CODE_HOME": str(home)}
                 if case != "shell-unconfigured":

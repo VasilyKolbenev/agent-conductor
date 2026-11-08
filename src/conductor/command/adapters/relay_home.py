@@ -462,7 +462,7 @@ def relay_acl_refusal(native, auth_home, relay_home=None, *, hold_factory=Native
 
 # Kimi 0.38.0's two reviewed regions. The selected model, TOML and token bytes are irrelevant
 # to Windows access: a child can open either file by its literal name.
-_KIMI_CREDENTIAL_NAMES = ("kimi-code.json", "kimi-code-env-0e4f99c69cc27850.json")
+KIMI_CREDENTIAL_NAMES = ("kimi-code.json", "kimi-code-env-0e4f99c69cc27850.json")
 
 
 def _staged_names(path, allowed):
@@ -485,7 +485,7 @@ def hold_staged_home(native, root, stack, hold_factory):
             hold = hold_factory(root.path / name, directory=directory, grants=False)
             stack.callback(hold.close)
             held[name] = hold
-        leaves = _staged_names(held["credentials"].path, _KIMI_CREDENTIAL_NAMES)
+        leaves = _staged_names(held["credentials"].path, KIMI_CREDENTIAL_NAMES)
         if len(leaves) != 1:
             raise _refused("the staged home must contain one managed credential")
         name = leaves.pop()
@@ -503,7 +503,7 @@ def check_staged_home(native, held, sid=None):
     try:
         top_names = {"credentials", "config.toml"}
         if (_staged_names(held["."].path, top_names) != top_names
-                or _staged_names(held["credentials"].path, _KIMI_CREDENTIAL_NAMES)
+                or _staged_names(held["credentials"].path, KIMI_CREDENTIAL_NAMES)
                 != set(held) - {".", "credentials", "config.toml"}):
             raise _refused("the staged home changed its layout")
         for name, hold in held.items():
@@ -570,7 +570,7 @@ def _inspect_kimi_home(native, home, stack, hold_factory, facts):
     for path in (home, home / "credentials"):
         if not _inspect_kimi_component(native, path, True, stack, hold_factory, facts):
             return
-    for name in _KIMI_CREDENTIAL_NAMES:
+    for name in KIMI_CREDENTIAL_NAMES:
         _inspect_kimi_component(
             native, home / "credentials" / name, False, stack, hold_factory, facts)
 

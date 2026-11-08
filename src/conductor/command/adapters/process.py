@@ -481,7 +481,8 @@ class ProcessRunner:
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
 
-    def container_profile(self, *, internet_client: bool = False, mode=None, folders=None):
+    def container_profile(self, *, internet_client: bool = False, mode=None, folders=None,
+                          kimi_state=False):
         """One AppContainer profile for one attempt: a context manager (`process_profile`).
 
         `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
@@ -493,6 +494,8 @@ class ProcessRunner:
         (`CommandSpecError`), before the native helper is even imported, so no profile, journal
         record or grant exists for a project that never spawns. Off Windows the runner refuses
         too (`CommandSpecError`), before the native helper is imported, creating nothing.
+        `kimi_state` adds temporary state directories only for an offline Kimi staged review.
+        It does not copy a credential or authorize a provider task.
         """
         if not self._spawns_allowed:
             raise CommandSpecError(_VIEWING)
@@ -502,7 +505,8 @@ class ProcessRunner:
         loaned = None if folders is None else self._loaned(folders)
         return ProfileJournal.for_project(self._root, _winlaunch).container(
             internet_client=internet_client, mode=mode, active_tokens=self.active_tokens,
-            folders=loaned, readonly_home_identity=getattr(folders, "readonly_home_identity", None))
+            folders=loaned, readonly_home_identity=getattr(folders, "readonly_home_identity", None),
+            kimi_state=kimi_state)
 
     def _loaned(self, folders) -> dict[str, Path]:
         found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
