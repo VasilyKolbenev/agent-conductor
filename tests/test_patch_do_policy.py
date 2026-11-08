@@ -40,7 +40,7 @@ REGRESSION = (b"from count import count_succeeded\n\ndef test_mixed():\n"
               b"    assert count_succeeded(['ok', 'fail']) == 1\n")
 
 
-def run_state(root, adapter, *, checker="checker"):
+def run_state(root, adapter, *, checker="checker", item="item"):
     registry, counter = AdapterRegistry([adapter]), count()
     store = RunStore(root)
     ids = lambda kind: f"{kind}-{next(counter)}"
@@ -51,7 +51,7 @@ def run_state(root, adapter, *, checker="checker"):
                             for name in ("doer", "checker")]}
     store.create_run(RunEnvelope("run", "cycle", NOW, snapshot_digest(config), mode="policy"),
                      config)
-    args = {"work_item_id": "item", "instruction_ref": "brief", "profile": "implement-patch-v1",
+    args = {"work_item_id": item, "instruction_ref": "brief", "profile": "implement-patch-v1",
             "artifact_refs": [], "output_limit_profile": "normal", "work_scope": "one"}
     node = GraphNode("do", "task", "Do", instance_id="doer", capability="dispatch",
                      arguments=args, timeout_seconds=30, attempt_bound=1,
@@ -74,13 +74,13 @@ def reply(output, code=0):
                           stdin_state=STDIN_DELIVERED)
 
 
-def work_and_calls(site, patch, *, use_native=False, verdict=True):
+def work_and_calls(site, patch, *, use_native=False, verdict=True, item="item"):
     """Wrap the CLI boundary. The checker judges actual content in its received stdin."""
     from conductor.command.adapters.deep_commands import PATCH_PROFILE
 
     adapter = site.adapter
     assert adapter.patch_dispatch_version == PATCH_PROFILE
-    work = adapter._workspace.work_dir("item", "one")
+    work = adapter._workspace.work_dir(item, "one")
     (work / "count.py").write_bytes(SOURCE)
     calls = []
     runner = adapter._runner
@@ -109,14 +109,15 @@ def work_and_calls(site, patch, *, use_native=False, verdict=True):
             return reply(patch)
         assert "checker-model" in spec.argv
         calls.append("check")
-        files = [json.loads(line) for line in spec.stdin_bytes.decode().splitlines()
+        attempt, _, _ = spec.stdin_bytes.decode().partition("\nACCUMULATED RESULT\n")
+        files = [json.loads(line) for line in attempt.splitlines()
                  if line.startswith("{") and '"encoding"' in line]
         data = {row["path"]: row["content"].encode() for row in files}
-        assert HEADER not in patch and HEADER in data["_tasks/one/item/count.py"]
-        expected = {"_tasks/one/item/count.py": ACTUAL,
-                    "_tasks/one/item/test_count.py": REGRESSION}
+        prefix = f"_tasks/one/{item}/"
+        assert HEADER not in patch and HEADER in data[prefix + "count.py"]
+        expected = {prefix + "count.py": ACTUAL, prefix + "test_count.py": REGRESSION}
         assert data == expected
-        assert all((work / name.split("/item/")[1]).read_bytes() == value
+        assert all((work / name.removeprefix(prefix)).read_bytes() == value
                    for name, value in data.items())
         assert all(sha256(content).hexdigest().encode() in spec.stdin_bytes
                    for content in data.values())

@@ -324,6 +324,24 @@ function inputRead(state, detail, node) {
   ])];
 }
 
+function changedFileList(state, summary, request, proof) {
+  if (!proof.accept_manifest_digest) return [];
+  const unavailable = () => [note(localize(state, "participants.files_unavailable"))];
+  if (!summary || summary.action_id !== request.action_id || summary.attempt_id !== request.attempt_id
+      || summary.digest !== proof.accept_manifest_digest || summary.verifier !== proof.verifier_instance_id
+      || !Number.isInteger(summary.total) || summary.total < 0 || summary.total > 2000
+      || !Array.isArray(summary.files) || summary.files.length !== Math.min(summary.total, 32)) return unavailable();
+  const kinds = {added: "participants.added", modified: "participants.modified", deleted: "participants.deleted"};
+  const files = summary.files;
+  if (!files.every(f => f && typeof f.path === "string" && f.path.length > 0 && f.path.length <= 4096
+      && f.path.split("/").every(p => p && p !== "." && p !== "..") && !/[\\:\u0000-\u001f]/u.test(f.path)
+      && Object.hasOwn(kinds, f.state)) || new Set(files.map(f => f.path)).size !== files.length) return unavailable();
+  return [element("p", {text: localize(state, "participants.changed_count", {count: String(summary.total)})}),
+    element("ul", {}, files.map(f => element("li", {"data-checked-path": ""}, [
+      element("code", {text: f.path}), document.createTextNode(" · " + localize(state, kinds[f.state]))]))),
+    ...(summary.total > files.length ? [note(localize(state, "participants.first_paths", {count: String(files.length)}))] : [])];
+}
+
 export function checkedPatchResult(state, detail, request) {
   const args = request?.arguments;
   if (request?.capability !== "dispatch" || args?.profile !== "implement-patch-v1"
@@ -337,7 +355,7 @@ export function checkedPatchResult(state, detail, request) {
   const result = records.find(r => r.record_type === "action_result"
     && r.record?.action_id === request.action_id && r.record?.attempt_id === request.attempt_id)?.record;
   if (result?.outcome !== "succeeded") return null;
-  const verified = records.some(r => r.record_type === "evidence" && r.record?.kind === "verification"
+  const verified = records.find(r => r.record_type === "evidence" && r.record?.kind === "verification"
     && r.record.verification === "verified" && r.record.verifier_instance_id === node.verifier_instance_id
     && r.record.uri === `verification/${request.action_id}`
     && rows(result.evidence_refs).includes(r.record.evidence_id));
@@ -346,6 +364,7 @@ export function checkedPatchResult(state, detail, request) {
     element("p", {text: localize(state, "participants.files_verified", {checker: node.verifier_instance_id})}),
     element("p", {}, [document.createTextNode(localize(state, "participants.work_copy") + " · "),
       element("code", {text: `work/_tasks/${task.workScope}/${args.work_item_id}`})]),
+    ...changedFileList(state, detail.checked_changes, request, verified.record),
   ]);
 }
 

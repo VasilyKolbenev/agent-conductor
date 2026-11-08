@@ -153,6 +153,13 @@ def build_snapshot(base: Mapping[str, FileImage], current: Mapping[str, FileImag
 
 def read_manifest(payload: bytes, *, object_format: str) -> tuple[ManifestRow, ...]:
     """Read only canonical, closed rows; duplicate JSON keys cannot be canonical."""
+    if object_format not in {"sha1", "sha256"}:
+        raise SnapshotRefused("snapshot_damaged")
+    return read_manifest_index(payload, object_format=object_format)
+
+
+def read_manifest_index(payload: bytes, *, object_format=None) -> tuple[ManifestRow, ...]:
+    """Read canonical rows, inferring their common OID width for historical display."""
     if len(payload) > MAX_MANIFEST_BYTES:
         raise SnapshotRefused("result_too_large")
     try:
@@ -161,6 +168,8 @@ def read_manifest(payload: bytes, *, object_format: str) -> tuple[ManifestRow, .
                                           for row in values):
             raise ValueError("shape")
         rows = tuple(ManifestRow(**row) for row in values)
+        if object_format is None:
+            object_format = "sha256" if rows and len(rows[0].git_oid) == 64 else "sha1"
         _validate_rows(rows, object_format)
         if manifest_bytes(rows) != payload:
             raise ValueError("noncanonical")

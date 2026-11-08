@@ -73,5 +73,10 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     api._hold_route(route.run_id)
     recovered = api._store.read(route.run_id)
     if route.name == "run":
-        return 200, studio_routes.recovered_payload(recovered, api._tasks, computed_at=api._clock())
+        from .checked_changes import checked_changes
+        result = studio_routes.recovered_payload(recovered, api._tasks, computed_at=api._clock())
+        changes = checked_changes(api._store.project_root, recovered)
+        if changes is not None:
+            result["checked_changes"] = changes
+        return 200, result
     return 200, api._controls(recovered.config)

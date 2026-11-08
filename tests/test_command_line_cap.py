@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
     "src/conductor/command/adapters/codex_patch.py",
+    "src/conductor/command/checked_changes.py",
     "src/conductor/command/adapters/codex_patch_dispatch.py",
     "src/conductor/command/adapters/patch_publish.py",
     "tests/test_codex_patch_do.py",

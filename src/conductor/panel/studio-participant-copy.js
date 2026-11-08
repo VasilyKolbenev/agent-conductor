@@ -2,6 +2,12 @@
 export const PARTICIPANT_COPY = Object.freeze({
   "participants.files_verified": ["{checker} verified the file changes.", "Изменения в файлах проверил {checker}."],
   "participants.work_copy": ["Task copy in the project folder", "Копия задачи в папке проекта"],
+  "participants.changed_count": ["Files changed since the task started · {count}", "Изменения относительно исходной копии · {count}"],
+  "participants.added": ["added", "добавлен"],
+  "participants.modified": ["modified", "изменён"],
+  "participants.deleted": ["deleted", "удалён"],
+  "participants.first_paths": ["Showing the first {count} files.", "Показаны первые {count} файлов."],
+  "participants.files_unavailable": ["The checked file list is unavailable.", "Список проверенных файлов недоступен."],
   "participants.m1": [
     "not stated",
     "не указано"

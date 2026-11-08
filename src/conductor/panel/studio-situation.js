@@ -189,8 +189,11 @@ export function projectRunRead(payload) {
   const marker = isPlainObject(payload?.config) && Object.hasOwn(payload.config, "automation_contract");
   if (marker && (payload.config.automation_contract !== "bounded-run-v1" || payload.run?.mode !== "policy"
       || !isPlainObject(payload.config.workflow))) return null;
-  const legacy = marker ? {...payload, config: {...payload.config}} : payload;
+  const hasChanges = isPlainObject(payload) && Object.hasOwn(payload, "checked_changes");
+  const legacy = marker ? {...payload, config: {...payload.config}} : hasChanges ? {...payload} : payload;
   if (marker) delete legacy.config.automation_contract;
+  // This optional presentation is checked against the receipt when it is shown.
+  if (hasChanges) delete legacy.checked_changes;
   const definition = payload?.graph?.definition;
   if (isPlainObject(definition) && Object.hasOwn(definition, "execution_contract")
       && (definition.execution_contract !== "bounded-run-v1" || !marker)) return null;

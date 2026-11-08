@@ -1,10 +1,13 @@
 """The installed Studio's preview, grant and result are one offline application journey."""
 from threading import Thread
 
+import pytest
 from playwright.sync_api import expect
 
-from conductor import demo, ownership_transition, server
+from conductor import demo, ownership, ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
+from conductor.command.seed_record import write_seed
+from conductor.command.seed_stage import move_staged, stage_empty
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
 from tests.relay_roads import CODEX, Site
@@ -12,14 +15,21 @@ from tests.test_patch_do_policy import ACTUAL, PATCH, run_state, work_and_calls
 from tests.test_policy_runtime import NOW, PD
 
 
-def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path):
+@pytest.mark.parametrize("seeded", [False, True])
+def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, seeded):
     root = demo.materialize(tmp_path / "root")
     ownership_transition.activate(root, legacy_writers_stopped=True)
     site = Site(tmp_path, CODEX, root=root)
     with site.owned():
-        f = run_state(site.root, site.adapter)
+        item = "work-001" if seeded else "item"
+        f = run_state(site.root, site.adapter, item=item)
         TaskStore(site.root).create_task(TaskRecord("one", "Исправить счётчик", "one", NOW))
-        work, calls = work_and_calls(site, PATCH)
+        if seeded:
+            seed = stage_empty(root, task_id="one", work_scope="one", work_item_id=item,
+                               staged_at=NOW)
+            write_seed(root, seed)
+            move_staged(root, seed)
+        work, calls = work_and_calls(site, PATCH, item=item)
     srv = server.build(site.root, 0, registry=AdapterRegistry([site.adapter]))
     # An injected registry has no installed-provider descriptors.
     srv.command_api._policy.provider_digest = lambda _: PD
@@ -56,6 +66,12 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path):
         assert [r.value.verifier_instance_id for r in records
                 if r.kind == "evidence"] == ["checker"]
         assert (work / "count.py").read_bytes() == ACTUAL
+        if seeded:
+            (work / "count.py").unlink()
+            (work / "unreviewed.py").write_bytes(b"later edit")
+            packet = page.request.get(f"{base}/command/runs/run").json()
+            assert packet["checked_changes"]["files"] == [
+                {"path": "count.py", "state": "added"}, {"path": "test_count.py", "state": "added"}]
         writes = []
         page.on("request", lambda req: writes.append(req.method) if req.method == "POST" else None)
         views = [("ru", 1280, "Открыть результат"), ("en", 375, "Open the result")]
@@ -70,11 +86,33 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path):
             listing = result.locator("[data-patch-result]")
             expect(listing).to_be_in_viewport()
             expect(listing).to_contain_text("checker")
-            expect(listing).to_contain_text("work/_tasks/one/item")
+            expect(listing).to_contain_text("work/_tasks/one/" + item)
+            if seeded:
+                expect(listing.locator("[data-checked-path]")).to_have_count(2)
+                expect(listing).to_contain_text("test_count.py")
             page.goto(f"{base}/panel/desk.html#task=one&run=run&lang={lang}")
             desk_result = page.locator("[data-deck-run='run'] [data-patch-result]").first
-            expect(desk_result).to_contain_text("work/_tasks/one/item")
+            expect(desk_result).to_contain_text("work/_tasks/one/" + item)
+            if seeded:
+                expect(desk_result.locator("[data-checked-path]")).to_have_count(2)
             expect(desk_result).to_contain_text("checker")
+        if seeded:
+            digest = packet["checked_changes"]["digest"].removeprefix("sha256:")
+            manifest = ownership.data_root(root) / "accept/run/snapshots" / (digest + ".json")
+            original = manifest.read_bytes()
+            try:
+                manifest.write_bytes(b"[]")
+                response = page.request.get(f"{base}/command/runs/run")
+                assert response.ok
+                assert response.json()["checked_changes"] == {
+                    **packet["checked_changes"], "total": None, "files": []}
+                page.reload()
+                shown = page.locator("[data-deck-run='run'] [data-patch-result]").first
+                expect(shown).to_contain_text("The checked file list is unavailable.")
+            finally:
+                manifest.write_bytes(original)
+        else:
+            assert "checked_changes" not in page.request.get(f"{base}/command/runs/run").json()
         assert not writes
     finally:
         context.close()
