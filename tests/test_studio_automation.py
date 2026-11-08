@@ -75,6 +75,21 @@ def test_diagnostic_steps_match_the_reviewed_grant(tmp_path):
     assert result[3:] == [[["analyst", True, None], ["do", False, None]]] * 3
 
 
+def test_patch_preview_cannot_hide_or_invent_the_second_phase_in_studio(tmp_path):
+    result = js("""
+      const detail = p.read;
+      const node = detail.graph.definition.nodes.find(n => n.capability);
+      node.capability = "dispatch";
+      node.arguments.profile = "implement-patch-v1";
+      const allowed = packet => Boolean(model.projectAutomationPreview(packet, detail));
+      const reviewed = {...p.preview, patch_steps: [node.node_id]};
+      console.log(JSON.stringify([allowed(reviewed), allowed(p.preview),
+        allowed({...reviewed, patch_steps: ["other"]}),
+        allowed({...reviewed, terms: {...reviewed.terms, graph_digest: "stale"}})]));
+    """, wire(tmp_path))
+    assert result == [True, False, False, False]
+
+
 def test_actual_marked_run_preview_and_paused_authority_are_admitted_without_mutating_frozen_config(tmp_path):
     result = js("""
       const before=JSON.stringify(p.read);

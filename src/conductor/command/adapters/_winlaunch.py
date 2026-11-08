@@ -448,7 +448,8 @@ def launch(spec, cwd, env, payload, loan):
         info.attributes = ctypes.cast(attributes.buffer, ctypes.c_void_p)
         text = "".join(f"{key}={value}\0" for key, value in sorted(env.items(), key=lambda pair: pair[0].upper())) + "\0"
         environment = ctypes.create_unicode_buffer(text)
-        ok = _kernel.CreateProcessW(spec.argv[0], ctypes.create_unicode_buffer(subprocess.list2cmdline(spec.argv)),
+        command = ("apply_patch",) if spec.codex_patch_stdin else spec.argv
+        ok = _kernel.CreateProcessW(spec.argv[0], ctypes.create_unicode_buffer(subprocess.list2cmdline(command)),
             None, None, True, 0x80000 | 0x08000000 | 0x400 | 4,
             ctypes.cast(environment, ctypes.c_void_p), str(cwd), ctypes.byref(info), ctypes.byref(created))
         if not ok:

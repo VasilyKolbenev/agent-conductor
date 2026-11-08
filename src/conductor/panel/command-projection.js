@@ -22,7 +22,7 @@ const CONTROL_NAMES = new Set(
 export const CAPABILITY_FIELDS = Object.freeze({
   dispatch: Object.freeze([
     ["work_item_id", "id"], ["instruction_ref", "id"],
-    ["profile", "enum", ["implement", "review"]],
+    ["profile", "enum", ["implement", "review", "implement-patch-v1"]],
     ["artifact_refs", "artifact-ids"],
     ["output_limit_profile", "enum", ["small", "normal"]],
   ]),

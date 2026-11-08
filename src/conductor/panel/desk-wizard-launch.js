@@ -149,17 +149,20 @@ function validFacts(facts) {
  */
 export function projectPreview(payload, runId) {
   const marked = payload?.grok_diagnostic_steps;
-  const keys = marked === undefined ? PREVIEW_KEYS : [...PREVIEW_KEYS, "grok_diagnostic_steps"];
+  const keys = [...PREVIEW_KEYS];
+  if (marked !== undefined) keys.push("grok_diagnostic_steps");
+  if (payload?.patch_steps !== undefined) keys.push("patch_steps");
   const good = keysAre(payload, keys) && validTerms(payload.terms, runId)
     && validBudget(payload.budget) && validFacts(payload.provider_facts)
     && DIGEST.test(payload.preview_digest) && epochSeconds(payload.previewed_at) !== null
     && epochSeconds(payload.valid_until) !== null;
   if (!good) return null;
-  if (marked !== undefined) {
-    if (!Array.isArray(marked) || !marked.length || !marked.every(isActor)
-        || new Set(marked).size !== marked.length) return null;
+  for (const steps of [marked, payload.patch_steps]) {
+    if (steps === undefined) continue;
+    if (!Array.isArray(steps) || !steps.length || !steps.every(isActor)
+        || new Set(steps).size !== steps.length) return null;
     const planned = payload.terms.node_limits.map((row) => row.node_id);
-    if (stable(planned.filter((id) => marked.includes(id))) !== stable(marked)) return null;
+    if (stable(planned.filter((id) => steps.includes(id))) !== stable(steps)) return null;
   }
   return structuredClone(payload);
 }
@@ -169,7 +172,8 @@ export function projectPreview(payload, runId) {
 function changedLines(before, after) {
   const hit = new Set(Object.keys(LINE_OF).filter(
     (name) => stable(before.terms[name]) !== stable(after.terms[name])).map((n) => LINE_OF[n]));
-  if (stable(before.grok_diagnostic_steps ?? []) !== stable(after.grok_diagnostic_steps ?? []))
+  if (stable(before.grok_diagnostic_steps ?? []) !== stable(after.grok_diagnostic_steps ?? [])
+      || stable(before.patch_steps ?? []) !== stable(after.patch_steps ?? []))
     hit.add("steps");
   return CARD_LINES.filter((line) => hit.has(line));
 }
@@ -582,7 +586,7 @@ function recipients(launch) {
   const read = launch.reads.run !== null && launch.reads.run.status === "ok"
     ? launch.reads.run.payload : null;
   const matches = read?.graph?.definition_digest === launch.preview.terms.graph_digest;
-  const plan = launch.preview.grok_diagnostic_steps && !matches ? null : read;
+  const plan = (launch.preview.grok_diagnostic_steps || launch.preview.patch_steps) && !matches ? null : read;
   const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row]));
   const providers = new Map((launch.preview.provider_facts?.providers ?? []).map((row) =>
     [row.config.provider_id, {id: row.config.provider_id, name: row.contract.display_name,
@@ -627,6 +631,7 @@ export function cardFacts(launch, around) {
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
       grokDiagnostic: launch.preview.grok_diagnostic_steps?.includes(row.node_id) === true,
+      patch: launch.preview.patch_steps?.includes(row.node_id) === true,
       role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
       model: byStep.get(row.node_id)?.model ?? null, checked: byStep.get(row.node_id)?.checked ?? false,
       checker: byStep.get(row.node_id)?.checker ?? null, checkerModel: byStep.get(row.node_id)?.checkerModel ?? null,

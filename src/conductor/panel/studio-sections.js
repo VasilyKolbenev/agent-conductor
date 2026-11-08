@@ -472,6 +472,15 @@ export function executionSection(form) {
   ceilingField(box, form, localize(form.state || {}, "workflow.copy_79"), "attempt_bound");
   note(box, localize(form.state || {}, "workflow.copy_80"));
   outputBudget(box, form);
+  if (node.capability === "dispatch" && ["implement", "implement-patch-v1"].includes(node.arguments?.profile)) {
+    const method = element("select", {name: "dispatch-profile", "data-focus": "edit-dispatch-profile"}, [
+      option("implement", localize(form.state || {}, "automation.patch_direct")),
+      option("implement-patch-v1", localize(form.state || {}, "automation.patch_propose"))]);
+    method.value = node.arguments.profile;
+    method.addEventListener("change", () => commit(form, "arguments",
+      withArgument(node, "profile", method.value)));
+    box.append(field(localize(form.state || {}, "automation.patch_method"), editable(method, form)));
+  }
   box.append(element("h4", {text: localize(form.state || {}, "workflow.copy_81")}));
   routeAttachments(box, form);
   box.append(element("h4", {text: localize(form.state || {}, "workflow.copy_82")}));

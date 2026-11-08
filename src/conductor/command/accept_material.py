@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from .accept_capture import _base, _images, tree_digest
-from .accept_manifest import FileImage, ManifestRow, SnapshotRefused, _path, blob_oid, sha256
+from .accept_manifest import FileImage, ManifestRow, SnapshotRefused, blob_oid, sha256
+from .accept_manifest import result_path as _path
 from .accept_snapshot import read_snapshot
 from .acceptance_basis import STARTER_DOC_PATHS
 from .adapters.harness_workspace import HarnessWorkspace, WorkspaceNotContained

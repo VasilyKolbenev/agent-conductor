@@ -101,6 +101,18 @@ def test_grant_names_the_diagnostic_format_only_for_its_frozen_step(
     assert bench.problems == []
 
 
+@pytest.mark.parametrize("lang", LANGS)
+def test_patch_permission_is_visible_at_the_do_step_before_start(bench, lang):
+    preview = {**STANDARD, "patch_steps": ["do"]}
+    to_card(bench, lang, preview=preview)
+    text = "Этим же действием" if lang == "ru" else "This one action"
+    label = bench.page.locator("[data-terms]").get_by_text(text, exact=False)
+    expect(label).to_have_count(1)
+    expect(label).to_be_visible()
+    assert "do" in label.locator("..").inner_text().lower()
+    assert bench.problems == []
+
+
 def hm(bench, seconds):
     minutes = seconds // 60
     return bench.say("wizard.time.hm", hours=str(minutes // 60), minutes=str(minutes % 60))

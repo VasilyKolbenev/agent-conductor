@@ -225,9 +225,15 @@ class CommandSpec:
     # A finite RPC batch keeps stdin open until this stdout response arrives.
     stdin_completion_id: int | None = None
     boundary: WindowsContainer | None = field(default=None, repr=False)
+    # Fixed arg0 selects stdin mode in the pinned executable. No caller-chosen alias.
+    codex_patch_stdin: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "argv", _argv(self.argv))
+        if type(self.codex_patch_stdin) is not bool or self.codex_patch_stdin and (
+                not isinstance(self.boundary, WindowsContainer) or self.boundary.internet_client
+                or len(self.argv) != 1 or self.stdin_bytes is None or self.env_allow):
+            raise CommandSpecError("the patch helper requires one confined executable and stdin")
         if not isinstance(self.cwd, str) or not self.cwd:
             raise CommandSpecError("cwd must be a non-empty path string")
         object.__setattr__(self, "env_allow", _env_names(self.env_allow))

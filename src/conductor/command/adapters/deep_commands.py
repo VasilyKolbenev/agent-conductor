@@ -32,7 +32,8 @@ DEEP_PROTOCOL_FLAGS = MappingProxyType({
 DEEP_WORKING_DIRECTORY = "work"
 DEEP_OUTPUT_PROFILE = "bounded-jsonl-v1"
 DEEP_OUTPUT_LIMIT = 16 * 1024
-DISPATCH_PROFILES = frozenset({"implement", "review"})
+PATCH_PROFILE = "implement-patch-v1"
+DISPATCH_PROFILES = frozenset({"implement", "review", PATCH_PROFILE})
 #: What each output-limit profile MEANS, in bytes a child may write.
 #:
 #: The profile has been a validated word with no consequence: every dispatch

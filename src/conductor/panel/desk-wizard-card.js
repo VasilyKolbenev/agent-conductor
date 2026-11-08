@@ -94,6 +94,7 @@ function stepRow(ctx, row) {
     text: parts.join(" · ")});
   if (row.grokDiagnostic) item.append(element("p", {
     text: ctx.t("automation.grok_session_diagnostic", {step: row.step})}));
+  if (row.patch) item.append(element("p", {text: ctx.t("automation.patch_step")}));
   if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
     {name: recipientName(ctx, row, "checker")})}));
   return item;
@@ -162,7 +163,7 @@ function termsCard(ctx, facts) {
 
 function guideTerms(ctx, facts) {
   const {card} = facts;
-  const diagnostics = card.steps.some((row) => row.grokDiagnostic);
+  const diagnostics = card.steps.some((row) => row.grokDiagnostic || row.patch);
   const names = (rows, key) => [...new Set(rows.map((row) => recipientName(ctx, row, key)))].join(", ");
   const title = (key) => element("strong", {text: ctx.t(key)});
   const team = element("p", {"data-guide-executors": ""}, [title("wizard.guide.executor"), " · ",

@@ -1,6 +1,10 @@
 "use strict";
 // English/Russian interface copy only; user text and protocol IDs stay intact.
 export const AUTOMATION_COPY = Object.freeze({
+  "automation.patch_step": ["Codex proposes a patch in read-only mode. This one action also applies it to the task copy. The checker reads the changed files.", "Codex подготовит патч в режиме чтения. Этим же действием приложение применит его к копии задачи. Проверяющий получит изменённые файлы."],
+  "automation.patch_method": ["How Do edits files", "Как Do изменяет файлы"],
+  "automation.patch_direct": ["Edit directly", "Изменять напрямую"],
+  "automation.patch_propose": ["Propose and apply a patch (Codex subscription)", "Подготовить и применить патч (Codex по подписке)"],
   "automation.workflow_manual": ["Human-gated workflow", "Процесс с проверками человека"],
   "automation.workflow_bounded": ["Bounded automatic workflow", "Ограниченный автоматический процесс"],
   "automation.workflow_kind": ["Workflow execution", "Исполнение процесса"],

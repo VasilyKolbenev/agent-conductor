@@ -11,6 +11,13 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/adapters/codex_patch.py",
+    "src/conductor/command/adapters/codex_patch_dispatch.py",
+    "src/conductor/command/adapters/patch_publish.py",
+    "tests/test_codex_patch_do.py",
+    "tests/test_patch_do_policy.py",
+    "tests/test_patch_do_native.py",
+    "browser_tests/test_patch_do.py",
     "src/conductor/command/project_task_draft.py",
     "tests/test_project_task_draft.py",
     "tests/test_grok_activation.py",

@@ -85,6 +85,8 @@ function reviewedWork(state, preview) {
     if (preview.grok_diagnostic_steps?.includes(node.node_id)) {
       box.append(note(word(state, "grok_session_diagnostic", {step: node.node_id})));
     }
+    if (preview.patch_steps?.includes(node.node_id))
+      box.append(note(word(state, "patch_step")));
     if (node.arguments?.work_item_id) box.append(note(`work/${node.arguments.work_item_id}`));
   }
   return box;

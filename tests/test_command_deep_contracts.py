@@ -282,7 +282,7 @@ def test_all_deep_vocabularies_and_protocol_flags_are_exactly_pinned():
     assert EVIDENCE_KINDS == {"result", "diff", "tests", "status"}
     assert EVIDENCE_VERIFICATIONS == {
         "verified", "unavailable", "mismatch", "error"}
-    assert DISPATCH_PROFILES == {"implement", "review"}
+    assert DISPATCH_PROFILES == {"implement", "review", "implement-patch-v1"}
     assert OUTPUT_LIMIT_PROFILES == {"small", "normal"}
     assert REVIEW_PROFILES == {"quality", "security", "spec"}
     assert REQUESTED_EVIDENCE_KINDS == {"result", "diff", "tests", "status"}

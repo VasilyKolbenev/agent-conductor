@@ -28,7 +28,7 @@ from ..contracts import (
 from ..dispatch import validate_dispatch_arguments
 from ..execution_boundary import boundary_provided
 from .attempt_scope import AttemptScopeError, instance_declarations, registered_attempt_scope
-from .deep_commands import REVIEW_DIAGNOSTICS
+from .deep_commands import PATCH_PROFILE, REVIEW_DIAGNOSTICS
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
@@ -445,6 +445,7 @@ class AdapterRegistry:
         self._independent_seams: dict[str, Mapping[str, Any]] = {}
         self._attempt_scopes = {}
         self._review_diagnostics: dict[str, str] = {}
+        self._patch_adapters: set[str] = set()
         for adapter in adapters:
             self.register(adapter)
 
@@ -481,6 +482,9 @@ class AdapterRegistry:
         except AttemptScopeError as error:
             raise AdapterContractError(str(error)) from None
         version = instance_declarations(adapter).get("review_diagnostic_version")
+        if (reviewed.adapter_id == "codex"
+                and instance_declarations(adapter).get("patch_dispatch_version") == PATCH_PROFILE):
+            self._patch_adapters.add(reviewed.adapter_id)
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
@@ -761,6 +765,9 @@ class AdapterRegistry:
                 or arguments["grok_diagnostic"] != self._review_diagnostics[safe]):
             raise AdapterContractError(
                 "this provider does not support the requested review diagnostic")
+        if (isinstance(arguments, Mapping) and arguments.get("profile") == PATCH_PROFILE
+                and (safe not in self._patch_adapters or capability != "dispatch")):
+            raise AdapterContractError("this provider does not support the requested patch profile")
         if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
         if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":

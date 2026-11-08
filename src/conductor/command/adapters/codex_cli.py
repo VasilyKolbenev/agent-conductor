@@ -195,6 +195,7 @@ from __future__ import annotations
 
 from .codex_quota import QUOTA_POLICY, QUOTA_RPC, masked_reply, reply_metadata, service_for
 from .service_metadata import ServiceMetadata
+from .codex_patch_dispatch import PatchDispatch
 from .subscription_quota import native_subscription_connection
 
 import re
@@ -204,6 +205,7 @@ from types import MappingProxyType
 
 from .deep_adapters import _DeepAdapter
 from .deep_codecs import FakeCodexCodec
+from .deep_commands import PATCH_PROFILE
 from .deep_contracts import DeepProtocol
 from .codex_relay import AUTH_STORE_ARGV, CODEX_MCP_CREDENTIALS, CODEX_RELAY
 from .relay_env import CODEX_ACCESS_ONLY_ENV
@@ -521,7 +523,7 @@ def codex_pin(executable: str, env_allow: tuple[str, ...] = (), *,
         auth=auth, auth_home=auth_home)
 
 
-class CodexCliTransport(ServiceMetadata, ArtifactAwareTransport):
+class CodexCliTransport(ServiceMetadata, PatchDispatch, ArtifactAwareTransport):
     """Run one Codex CLI task per authorized action, and prove nothing more."""
 
     profile = CODEX_PROFILE
@@ -553,10 +555,8 @@ class CodexCliTransport(ServiceMetadata, ArtifactAwareTransport):
             raise CodexCliError(
                 "this adapter requires a single-executable pin of its own")
         self._pin = pin
-        #: What the LAST spawn's final message file turned out to be, in the
-        #: closed vocabulary above, or None before any spawn has been read. It is
-        #: re-established on every attempt, so a receipt built after a task spawn
-        #: is quoting that task's own file and never an earlier dispatch's.
+        self.patch_dispatch_version = PATCH_PROFILE if pin.auth == "subscription" else None
+        #: Reset by every spawn's own last-message file observation.
         self._answer: str | None = None
         super().__init__(
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)

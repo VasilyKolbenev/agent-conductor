@@ -6,7 +6,7 @@ import json
 import os
 import stat
 
-from .accept_manifest import SnapshotRefused, _path
+from .accept_manifest import SnapshotRefused, result_path as _path
 from .containment import first_directory_violation, portal_violation
 from .git_setup_facts import call, first_facts
 from .git_setup_modes import DIGEST_VERSION, core_filemode, effective_git_mode, paths_digest

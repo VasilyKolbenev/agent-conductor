@@ -100,7 +100,7 @@ from .base import (
     PreparedAction,
     UnsupportedCapability,
 )
-from .deep_commands import OUTPUT_LIMIT_BYTES, DeepDispatchArgs
+from .deep_commands import OUTPUT_LIMIT_BYTES, PATCH_PROFILE, DeepDispatchArgs
 from .harness_workspace import (
     WORK_DIR,
     HarnessWorkspace,
@@ -364,6 +364,10 @@ class HeadlessCliTransport(
             raise self.error("execute requires a validated PreparedAction")
         request = prepared.request
         args = self._dispatch_args(prepared.adapter_payload)
+        if PATCH_PROFILE in (args.profile, request.arguments.get("profile")) and (
+                not getattr(self, "patch_dispatch_version", None)
+                or args != self._dispatch_args(request.arguments)):
+            raise self.error("patch route differs from the authorized dispatch")
         unroutable = self._unroutable(request, prepared.model)
         if unroutable is not None:
             return unroutable
@@ -434,6 +438,19 @@ class HeadlessCliTransport(
         task_text = self._dispatch_task(request, args, instruction)
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
+        result = self._dispatch_process(request, args, work, before, task_text, model)
+        if isinstance(result, ActionResultReceipt):
+            return result
+        outcome, after = result
+        self._attempts[attempt_relation(request)] = _Attempt(
+            work_dir=work, before=before, after=after,
+            retained=bool(self._retained))
+        self._keep_login_values(attempt_relation(request))
+        if self._login_residue:
+            return self._residue_receipt(request, outcome)
+        return self._observed(request, outcome)
+
+    def _dispatch_process(self, request, args, work, before, task_text, model):
         argv, payload = self._task_command(task_text)
         if not self._task_fits_its_channel(argv, payload):
             return self._receipt(request, "failed", None,
@@ -446,18 +463,7 @@ class HeadlessCliTransport(
             output_limit=OUTPUT_LIMIT_BYTES[args.output_limit_profile],
             separate_stderr=self.dispatch_separate_stderr, mode="dispatch",
             claim=self._claim_of(request))
-        self._attempts[attempt_relation(request)] = _Attempt(
-            work_dir=work, before=before, after=self._evidence(),
-            retained=bool(self._retained))
-        self._keep_login_values(attempt_relation(request))
-        if self._login_residue:
-            # A task that ran and left state nobody declared in a directory this
-            # build cannot clean has not met the promise it makes about that
-            # directory. Reporting it as succeeded with a sentence appended
-            # would leave the run's own record saying the opposite of the
-            # sentence; the outcome is the answer, and this is not a success.
-            return self._residue_receipt(request, outcome)
-        return self._observed(request, outcome)
+        return outcome, self._evidence()
 
     def _task_fits_its_channel(self, argv: ArgvSource, payload: bytes | None) -> bool:
         """Whether the materialized task fits the channel that carries it, asked before the claim.

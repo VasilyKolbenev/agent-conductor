@@ -73,6 +73,7 @@ export function projectAutomationPreview(value, detail) {
   const marked = value?.grok_diagnostic_steps;
   const keys = ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"];
   if (marked !== undefined) keys.push("grok_diagnostic_steps");
+  if (value?.patch_steps !== undefined) keys.push("patch_steps");
   if (!automationEligible(detail) || !object(value, keys)
       || !validProviderFacts(value.provider_facts, detail)
       || !object(value.terms, [...TERMS, "duration_seconds"]) || !validTerms(value.terms, detail)
@@ -85,6 +86,13 @@ export function projectAutomationPreview(value, detail) {
     if (!planned.length || !Array.isArray(marked) || planned.length !== marked.length
         || detail.graph.definition_digest !== value.terms.graph_digest
         || !planned.every((node, i) => node.node_id === marked[i])) return null;
+  }
+  const patches = (detail.graph?.definition?.nodes ?? []).filter((node) =>
+    node.capability === "dispatch" && node.arguments?.profile === "implement-patch-v1");
+  if (patches.length || value.patch_steps !== undefined) {
+    if (!patches.length || !Array.isArray(value.patch_steps) || patches.length !== value.patch_steps.length
+        || detail.graph.definition_digest !== value.terms.graph_digest
+        || !patches.every((node, i) => node.node_id === value.patch_steps[i])) return null;
   }
   return copy(value);
 }
