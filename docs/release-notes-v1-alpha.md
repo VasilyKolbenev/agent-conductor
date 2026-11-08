@@ -10,12 +10,17 @@ cycle is Dalio revision 6, with an independent check of the Do step. A new user 
 review the suggested limits and edit them before authorizing work. These paths
 have been exercised locally in Chromium in Russian and English, including at 375 px.
 
+In the private offline demo, a colleague can open a completed Dalio run and see
+the two files examined by its checker. The list comes from the archived result
+and survives later edits to the working folder. The demo uses recorded test responses.
+[Result walkthrough](recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
+
 | Harness | Evidence for the current subscription workflow |
 | --- | --- |
 | Claude Code 2.1.239 | Goal completed inside the Windows execution boundary on a subscription. Fresh-account acceptance is outstanding. |
 | Codex 0.164.0 | Goal, Identify and Design completed on subscription in the shared cycle. The 7 November Do ended without changes. The new patch route passed an offline check. |
 | Grok Build 1.0.13 | A subscription diagnosis passed the G6 rehearsal gate; Diagnose in the shared cycle also returned a result. The role is read-only review. |
-| Kimi Code 0.38.0 | The native CLI accepted synthetic credentials offline. An account quota reading remains unverified. Subscription tasks are refused before spawn. |
+| Kimi Code 0.38.0 | The native CLI opened a session with a synthetic login in a networkless Windows AppContainer. A real account quota reading and a subscription task remain outstanding. |
 
 [Shared cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
 
