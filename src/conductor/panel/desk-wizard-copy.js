@@ -128,8 +128,6 @@ export const WIZARD_COPY = Object.freeze({
     + "open yet.", "Запуск без git появится позже: засев ещё не открыт."],
   "wizard.later.from_starter_docs": ["Taking the starter documents comes in a later step.",
     "Взять стартовые документы можно будет позже."],
-  "wizard.later.build_own": ["The cycle editor comes in a later step.",
-    "Редактор цикла появится позже."],
   "wizard.later.make_project_cycle": ["Pinning the project cycle comes in a later step: its door "
     + "is not open yet.", "Закрепление цикла проекта появится позже: его дверь ещё не открыта."],
   "wizard.later.unpin_project_cycle": ["Unpinning the project cycle comes in a later step: its "
@@ -222,7 +220,12 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.cycle.name_standard": ["Standard", "Стандартный"],
   "wizard.cycle.name_short": ["Short", "Короткий"],
   "wizard.cycle.name_starter_docs": ["Starter documents", "Стартовые документы"],
-  "wizard.cycle.build": ["＋ Build your own", "＋ Собрать свой"],
+  "wizard.cycle.build": ["Create your own cycle", "Создать свой цикл"],
+  "wizard.cycle.return": ["Publish the workflow in the new tab. Then return here and refresh the list.",
+    "Опубликуйте процесс в новой вкладке. Затем вернитесь сюда и обновите список."],
+  "wizard.cycle.refresh": ["Refresh published cycles", "Обновить опубликованные циклы"],
+  "wizard.cycle.active_needed": ["Open the active project to create a workflow.",
+    "Чтобы создать процесс, откройте активный проект."],
   "wizard.cycle.pinned": ["project cycle", "цикл проекта"],
   "wizard.cycle.unpublished": ["not published in this project yet",
     "в проекте пока не опубликован"],

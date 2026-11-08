@@ -89,6 +89,8 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-wizard__options summary{cursor:pointer;padding:10px 0;min-height:44px;box-sizing:border-box}
 .desk-wizard__options{min-width:0}
 .desk-wizard__card,.desk-wizard__reason{overflow-wrap:anywhere}
+.desk-wizard__card a{display:inline-flex;align-items:center;min-height:44px;color:inherit}
+.desk-wizard__custom-cycle{display:grid;justify-items:start;gap:4px}
 .desk-wizard__body{display:grid;gap:14px;min-width:0}
 .desk-wizard__body label{display:grid;gap:6px;min-width:0}
 .desk-wizard input,.desk-wizard textarea,.desk-wizard select{width:100%;padding:8px;

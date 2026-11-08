@@ -151,7 +151,7 @@ ROWS: tuple[Row, ...] = (
         (FLOW, _in("desk-flow-edits.js", "EDIT_TYPES"))),
     Row("5.6.3", "Диагностика: локальные и серверные проблемы", "«Схема»: «Что мешает публикации»",
         "on_desk", (FLOW, _in("desk-flow-diag.js", "diagnosticsView"))),
-    Row("5.6.3", "Быстрый линейный ввод", "wizard «Цикл» → «＋ Собрать свой»", "on_desk",
+    Row("5.6.3", "Быстрый линейный ввод", "«Схема» → «Быстрый цикл»", "on_desk",
         (_in("desk-quickcycle.js", "QUICK_KINDS"),)),
     Row("5.6.3", "«Открыть запуск»: run_id, cycle_id, режим, роль → харнесс, модель",
         "wizard: «Роли и указания»", "on_desk",
