@@ -56,7 +56,7 @@ export function participantSetup(ctx, roster) {
     (typeof row.auth !== "string" || typeof row.task_road !== "string" || typeof row.availability !== "string"));
   const optional = usable.length > 0, key = "participants_setup";
   const attributes = {"data-participant-setup": optional ? "optional" : "needed"};
-  const link = element("a", {href: "/#" + new URLSearchParams({screen: "agents", lang: ctx.lang}),
+  const link = element("a", {className: "desk-ask__setup-link", href: "/#" + new URLSearchParams({screen: "agents", lang: ctx.lang}),
     target: "_blank", rel: "noopener", text: ctx.t("wizard.connect.link")});
   const head = element(optional ? "summary" : "h3", {text: ctx.t(optional ? "wizard.connect.optional"
     : (unknown ? "wizard.connect.unknown" : "wizard.connect.missing"))});

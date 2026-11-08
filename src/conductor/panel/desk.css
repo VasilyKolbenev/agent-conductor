@@ -492,6 +492,7 @@ button{font:inherit;cursor:pointer;background:none;border:0;padding:0;color:inhe
 .desk-ask__saved summary{width:fit-content;cursor:pointer;font-size:.88rem;min-height:44px;padding:10px 0;box-sizing:border-box}
 .desk-ask .desk-ask__blocked{cursor:not-allowed;border-width:1px;border-style:dashed}
 .desk-ask__mode{justify-self:start;text-decoration:underline;text-underline-offset:3px}
+.desk-ask__setup-link{display:inline-flex;align-items:center;min-height:44px;color:var(--ion);text-underline-offset:3px}
 .desk-ask__answer{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
 .desk-ask__answer-text{flex:1 1 14rem;min-width:0}
 .desk-ask__answer strong,.desk-ask__role h4{font-size:.84rem;margin:0}
