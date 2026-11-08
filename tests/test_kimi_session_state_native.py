@@ -4,8 +4,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
-from zipfile import ZipFile
 
 import pytest
 
@@ -14,6 +12,7 @@ from conductor.command.adapters.kimi_code import KIMI_AUTH_INPUT, KIMI_PROFILE
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
 from conductor.command.long_path import extended
 from conductor.ownership_native import NativeHold, identity
+from scripts.kimi_windows_kit import stage, verified_bundle
 from tests.os_boundary_box import base_environment
 from tests.test_kimi_home_loan_native import ARCHIVE_SHA, configure, fixture_home, folders
 from tests.test_relay_home_native import RelaySite
@@ -46,18 +45,11 @@ def native_files():
 
 
 def install(site, archive, shell_dir):
-    exe = site.install / "kimi.exe"
-    with ZipFile(archive) as zipped:
-        assert zipped.namelist() == ["kimi.exe"]
-        with zipped.open("kimi.exe") as source, exe.open("xb") as target:
-            shutil.copyfileobj(source, target)
-    assert sha(exe) == EXE_SHA
-    shell = site.install / "shell"
-    shell.mkdir()
-    for name, digest in SHELL_FILES.items():
-        shutil.copyfile(shell_dir / name, shell / name)
-        assert sha(shell / name) == digest
-    return exe, shell / "sh.exe"
+    root = site.install / "kimi-kit"
+    receipt = stage(archive, shell_dir, root)
+    assert receipt["files"]["kimi.exe"]["sha256"] == EXE_SHA
+    assert {p: receipt["files"]["shell/" + p]["sha256"] for p in SHELL_FILES} == SHELL_FILES
+    return root
 
 
 def grant_file(path, sid, rights):
@@ -98,16 +90,18 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
     from conductor.command.adapters import _winlaunch as native
 
     site = RelaySite(tmp_path, relay=False)
-    exe, shell = install(site, *native_files)
+    kit = install(site, *native_files)
     runner = ProcessRunner(site.root)
     with fixture_home(site) as (source, anchor, token), ownership.acquire_owner(site.root):
-        configure(site, exe)
+        configure(site, kit / "kimi.exe")
         with runner.container_profile(mode="review", internet_client=False,
                                       folders=folders(site, anchor),
                                       kimi_state=case != "read-only") as (boundary, paths):
             assert not boundary.internet_client and identity(paths["home"]) == anchor.identity
             sid, parent = boundary.sid, paths["parent"]
             with ExitStack() as held:
+                receipt = held.enter_context(verified_bundle(kit))
+                exe, shell = Path(receipt["executable"]), Path(receipt["shell"])
                 home = (source if case == "read-only" else held.enter_context(
                     state_home(paths["kimi_state"], source, sid)))
                 env = {**base_environment(paths["runtime"]), **dict(KIMI_PROFILE.forced_env),
@@ -141,6 +135,10 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
                 by_id = {row["id"]: row for row in replies if "id" in row}
                 assert all(isinstance(by_id[n].get("result"), dict) for n in (1, 2))
                 if case == "session":
+                    error = json.dumps(by_id[3].get("error", {})).lower()
+                    assert "result" in by_id[3], [
+                        word for word in ("git bash was not found", "permission denied", "runtime",
+                                          "not found", "access denied") if word in error]
                     issued = by_id[3]["result"]["sessionId"]
                     assert isinstance(issued, str) and issued
                     sessions = Path(extended(home / "sessions"))
@@ -157,3 +155,36 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
                 assert (source / "credentials/kimi-code.json").read_bytes() == token
         assert native.inspect_profile(sid) is None and not parent.exists()
     assert not runner.active_tokens()
+
+
+@pytest.mark.skipif(os.environ.get("CONDUCT_TEST_KIMI_SHELL_EXEC") != "1",
+                    reason="opt-in acceptance of shell execution inside AppContainer")
+def test_native_shell_can_report_its_version(tmp_path, native_files):
+    """Exercise the shell itself; a positive ACP session does not execute a shell command."""
+    from conductor.command.adapters import _winlaunch as native
+    from conductor.command.adapters.process_boundary import AttemptFolders
+
+    site = RelaySite(tmp_path, relay=False)
+    kit = install(site, *native_files)
+    with ownership.acquire_owner(site.root):
+        runner = ProcessRunner(site.root)
+        configure(site, kit / "kimi.exe")
+        folders = AttemptFolders("work/t1", None, str(site.install))
+        profile = runner.container_profile(mode="review", internet_client=False, folders=folders)
+        with profile as pair:
+            boundary, paths = pair
+            assert not boundary.internet_client
+            env = base_environment(paths["runtime"])
+            env["HOME"] = str(paths["runtime"])
+            with verified_bundle(kit) as receipt:
+                result = runner.run(CommandSpec(
+                    (receipt["shell"], "--noprofile", "--norc", "--version"), "work/t1",
+                    env=env, boundary=boundary, timeout_seconds=12, output_limit=8192))
+            sid, parent = boundary.sid, paths["parent"]
+        assert native.inspect_profile(sid) is None and not parent.exists()
+        assert not runner.active_tokens()
+    assert result.status == "completed" and not result.output_truncated
+    output = result.output.lower()
+    known_msys_denial = (b"ntcreatedirectoryobject(" in output and b"0xc0000022" in output)
+    assert result.exit_code == 0 and b"gnu bash, version" in output, (
+        f"exit={result.exit_code}, MSYS named-object access denied={known_msys_denial}")
