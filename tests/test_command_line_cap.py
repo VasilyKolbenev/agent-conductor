@@ -251,6 +251,7 @@ CAPPED = (
     "tests/test_kimi_state_journal_native.py",
     "tests/test_kimi_windows_kit.py",
     "scripts/kimi_windows_kit.py",
+    "tests/test_kimi_read_role_policy.py",
     "tests/test_desk_model_pin.py",
 )
 

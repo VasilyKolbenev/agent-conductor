@@ -85,9 +85,17 @@ def state_home(home, source, sid):
         yield home
 
 
-@pytest.mark.parametrize("case", ["read-only", "shell-unconfigured", "session"])
-def test_native_session_before_a_prompt(tmp_path, native_files, case):
+READ_ROLE_POLICY = '\n[tools]\nenabled = ["Read"]\n'
+
+
+@pytest.mark.parametrize("case", [
+    "read-only", "shell-unconfigured", "session", "read-role", "read-role-no-shell"])
+def test_native_session_before_a_prompt(tmp_path, native_files, case, monkeypatch):
     from conductor.command.adapters import _winlaunch as native
+    from tests import test_kimi_home_loan_native as fixture
+
+    if case.startswith("read-role"):
+        monkeypatch.setattr(fixture, "CONFIG", fixture.CONFIG + READ_ROLE_POLICY)
 
     site = RelaySite(tmp_path, relay=False)
     kit = install(site, *native_files)
@@ -106,7 +114,7 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
                     state_home(paths["kimi_state"], source, sid)))
                 env = {**base_environment(paths["runtime"]), **dict(KIMI_PROFILE.forced_env),
                        "KIMI_CODE_HOME": str(home)}
-                if case != "shell-unconfigured":
+                if case not in {"shell-unconfigured", "read-role-no-shell"}:
                     env["KIMI_SHELL_PATH"] = str(shell)
                 else:
                     # This opt-in control measures a host without another Git installation
@@ -134,7 +142,7 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case):
                 replies = [json.loads(line) for line in result.output.splitlines()]
                 by_id = {row["id"]: row for row in replies if "id" in row}
                 assert all(isinstance(by_id[n].get("result"), dict) for n in (1, 2))
-                if case == "session":
+                if case in {"session", "read-role"}:
                     error = json.dumps(by_id[3].get("error", {})).lower()
                     assert "result" in by_id[3], [
                         word for word in ("git bash was not found", "permission denied", "runtime",
