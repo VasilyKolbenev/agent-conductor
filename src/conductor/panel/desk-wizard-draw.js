@@ -41,6 +41,32 @@ export function later(ctx, id, key, label) {
   return action(key, label, () => {}, ctx.t(`wizard.later.${reason}`));
 }
 
+/** A link to setup instructions and a new read from the same open task. */
+export function participantSetup(ctx, roster) {
+  const read = ctx.wizard.reads.workflows;
+  if (!read) return [];
+  const incoming = read.payload?.providers;
+  const rows = read.status === "ok" && Array.isArray(incoming)
+    && incoming.every(row => row && typeof row.provider_id === "string" && typeof row.offered === "boolean")
+    ? incoming : null;
+  const usable = (rows ?? []).filter(row => row.offered && row.availability === "available"
+    && ["boundary", "review_only"].includes(row.task_road));
+  if (usable.some(row => row.auth === "subscription")) return [];
+  const unknown = !rows || roster === "pending" || rows.some(row => row.offered &&
+    (typeof row.auth !== "string" || typeof row.task_road !== "string" || typeof row.availability !== "string"));
+  const optional = usable.length > 0, key = "participants_setup";
+  const attributes = {"data-participant-setup": optional ? "optional" : "needed"};
+  const link = element("a", {href: "/#" + new URLSearchParams({screen: "agents", lang: ctx.lang}),
+    target: "_blank", rel: "noopener", text: ctx.t("wizard.connect.link")});
+  const head = element(optional ? "summary" : "h3", {text: ctx.t(optional ? "wizard.connect.optional"
+    : (unknown ? "wizard.connect.unknown" : "wizard.connect.missing"))});
+  const body = [head, link, element("p", {text: ctx.t("wizard.connect.before")}),
+    element("code", {text: "conduct providers --dir ."}), element("p", {text: ctx.t("wizard.connect.after")}),
+    action("wizard:ask:participants", ctx.t("wizard.connect.refresh"), () => ctx.send({type: "reread", name: "workflows"}))];
+  return [optional ? element("details", {...attributes, className: "desk-wizard__options", "data-guide-details": key,
+    open: ctx.expanded.has(key) ? "" : null}, body) : element("section", attributes, body)];
+}
+
 //: A text field the model holds the words of: each input goes to the model as it is typed.
 export function textField(ctx, spec) {
   const control = element(spec.multi ? "textarea" : "input", {"data-focus": spec.key,

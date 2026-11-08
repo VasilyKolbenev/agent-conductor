@@ -63,7 +63,7 @@ DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-mode
                                      "./desk-wizard-git.js"}}
 #: What each drawing module hands the ones above it, and nothing else.
 DRAWN_EXPORTS = {RENDERER: ["mountWizard"],
-                 "desk-wizard-draw.js": ["action", "choice", "later", "textField", "instantText",
+                 "desk-wizard-draw.js": ["action", "choice", "later", "participantSetup", "textField", "instantText",
                                          "timeText"],
                  "desk-wizard-prepare-view.js": ["prepareBody"],
                  "desk-wizard-card.js": ["runBody"],
