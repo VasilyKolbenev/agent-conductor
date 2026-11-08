@@ -48,7 +48,7 @@ WHY = {
            "stalled": "the run needs attention",
            "plan_stalled": "the plan has no eligible next step",
            "seed_blocked": "the working folder could not be seeded",
-           "owner_required": "the project has no owner",
+           "owner_required": "the execution owner is unavailable",
            "server_stopping": "the server is stopping",
            "project_not_active": "the project is not active"},
     "ru": {"expired": "разрешение истекло",
@@ -59,7 +59,7 @@ WHY = {
            "stalled": "запуск требует внимания",
            "plan_stalled": "в плане нет допустимого шага",
            "seed_blocked": "рабочую папку не удалось засеять",
-           "owner_required": "у проекта нет владельца",
+           "owner_required": "владелец исполнения недоступен",
            "server_stopping": "сервер останавливается",
            "project_not_active": "проект не активен"}}
 ROWS = ([("free", None, None)]

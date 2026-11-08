@@ -73,7 +73,7 @@ export const DESK_PULT_COPY = Object.freeze({
     "в плане нет допустимого шага"],
   "desk_pult.why_seed_blocked": ["the working folder could not be seeded",
     "рабочую папку не удалось засеять"],
-  "desk_pult.why_owner_required": ["the project has no owner", "у проекта нет владельца"],
+  "desk_pult.why_owner_required": ["the execution owner is unavailable", "владелец исполнения недоступен"],
   "desk_pult.why_server_stopping": ["the server is stopping", "сервер останавливается"],
   "desk_pult.why_project_not_active": ["the project is not active", "проект не активен"],
 });
