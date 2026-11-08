@@ -12,9 +12,9 @@ from ..containment import portal_violation
 from ..long_path import extended
 from ..work_layout import work_parts
 from .deep_commands import OUTPUT_LIMIT_BYTES
-from .harness_attempt import AttemptFolders, RUNTIME_ENV, install_folder
+from .harness_attempt import AttemptFolders, install_folder
 from .harness_workspace import FILE_BUDGET, _read_work_file
-from .process import CommandSpec, STDIN_DELIVERED
+from .process import STDIN_DELIVERED
 
 MAX_FILES = 32
 MAX_PATCH = OUTPUT_LIMIT_BYTES["normal"]
@@ -115,10 +115,8 @@ def render_patch(transport, args, cwd, ops, originals, deadline):
                 target.write_bytes(image[1])
         sections = [op.for_stage(target) for op, target in zip(ops, targets, strict=True)]
         payload = "\n".join(("*** Begin Patch", *sections, "*** End Patch", "")).encode()
-        result = transport._runner.run(CommandSpec(
-            argv=(exe,), cwd=cwd, stdin_bytes=payload, boundary=boundary,
-            codex_patch_stdin=True, timeout_seconds=remaining(deadline), output_limit=MAX_PATCH,
-            env=dict.fromkeys(RUNTIME_ENV, str(scratch))))
+        result = transport._apply_codex_patch(
+            cwd, scratch, boundary, payload, timeout=remaining(deadline), output_limit=MAX_PATCH)
         if (result.status != "completed" or result.exit_code != 0
                 or result.stdin_state != STDIN_DELIVERED or result.output_truncated):
             raise PatchRefused("patch did not apply to the original contents")

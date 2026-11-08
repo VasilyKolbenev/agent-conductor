@@ -423,6 +423,14 @@ class AttemptLaunch:
         """
         return argv if type(argv) is tuple else argv(home, model)
 
+    def _apply_codex_patch(self, cwd, scratch, boundary, payload, *, timeout, output_limit):
+        """Run the pinned executable as the offline stdin patch helper, without a login."""
+        executable, = self._argv_prefix()
+        return self._runner.run(CommandSpec(
+            argv=(executable,), cwd=cwd, stdin_bytes=payload, boundary=boundary,
+            codex_patch_stdin=True, timeout_seconds=timeout, output_limit=output_limit,
+            env=dict.fromkeys(RUNTIME_ENV, str(scratch))))
+
     def _spawn(
             self, argv: ArgvSource, home: Path, cwd: str, *,
             timeout: int | float,

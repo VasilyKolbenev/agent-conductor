@@ -42,6 +42,14 @@ ALLOWED_SDK_IMPORTS = frozenset({
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({
     (2, "boundary_entry"), (2, "contracts"), (2, "dispatch"), (2, "execution_boundary"),
     (3, "ownership_errors")})
+# Patch publication has a narrow filesystem responsibility. Its three modules still
+# undergo the same call checks as value modules, including the ban on .run().
+PATCH_IMPORTS = {
+    "codex_patch.py": {"os", "stat", "time", "..accept_manifest", "..containment",
+                       "..long_path", "..work_layout"},
+    "codex_patch_dispatch.py": {"time"},
+    "patch_publish.py": {"os", "tempfile", "...atomic_replace", "..long_path"},
+}
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
 # package; it necessarily imports subprocess and calls Popen, so this value-core
 # import guard exempts it. Its safety is proven behaviourally by
@@ -327,9 +335,13 @@ def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_mo
                     continue  # a sibling of this package, walked by this same loop
                 if (node.level, node.module) in ALLOWED_SDK_RELATIVE_IMPORTS:
                     continue
-                imported.add("." * node.level + (node.module or ""))
-        assert imported <= ALLOWED_SDK_IMPORTS, (
-            f"{path.name} imports {sorted(imported - ALLOWED_SDK_IMPORTS)}")
+                prefix = "." * node.level
+                if node.module is None:
+                    imported.update(prefix + alias.name for alias in node.names)
+                else:
+                    imported.add(prefix + node.module)
+        allowed = ALLOWED_SDK_IMPORTS | PATCH_IMPORTS.get(path.name, set())
+        assert imported <= allowed, f"{path.name} imports {sorted(imported - allowed)}"
         attribute_calls = {
             node.func.attr
             for node in ast.walk(tree)
