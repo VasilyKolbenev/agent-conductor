@@ -15,21 +15,6 @@ class PublishUnknown(Exception):
     """The protected task tree could not be proved restored. Keep its action claimed."""
 
 
-def _replace_existing(staged, target):
-    if os.name != "nt":
-        os.replace(staged, target)
-        return
-    # ReplaceFile keeps the destination DACL on Windows. os.replace would install the
-    # temp file's inherited ACL, losing any file-specific restrictions in the work item.
-    import ctypes
-    from ctypes import wintypes
-    replace = ctypes.WinDLL("kernel32", use_last_error=True).ReplaceFileW
-    replace.argtypes = [wintypes.LPCWSTR] * 3 + [wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID]
-    replace.restype = wintypes.BOOL
-    if not replace(str(target), str(staged), None, 0, None, None):
-        raise ctypes.WinError(ctypes.get_last_error())
-
-
 def _change(workspace, args, name, expected, desired):
     path, seen = file_image(workspace, args, name)
     if seen != expected:
@@ -48,7 +33,7 @@ def _change(workspace, args, name, expected, desired):
         if expected is None:
             os.link(staged, target)  # atomic no-clobber publication
         else:
-            _replace_existing(staged, target)
+            atomic_replace.replace_existing(staged, target)
 
     atomic_replace.replace_bytes(path, desired[1], replace=install)
 

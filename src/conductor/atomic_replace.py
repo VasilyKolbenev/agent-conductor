@@ -61,6 +61,21 @@ def replace_bytes(
         stage.unlink(missing_ok=True)
 
 
+def replace_existing(staged: Path, target: Path) -> None:
+    """Swap an existing file while retaining its own Windows access permissions."""
+    if os.name != "nt":
+        os.replace(staged, target)
+        return
+    # os.replace installs the staged file's inherited DACL instead of preserving the target's.
+    import ctypes
+    from ctypes import wintypes
+    replace = ctypes.WinDLL("kernel32", use_last_error=True).ReplaceFileW
+    replace.argtypes = [wintypes.LPCWSTR] * 3 + [wintypes.DWORD, wintypes.LPVOID, wintypes.LPVOID]
+    replace.restype = wintypes.BOOL
+    if not replace(str(target), str(staged), None, 0, None, None):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
 def read_bytes(
         path: Path | str, *, read: Callable[[Path], bytes] | None = None,
         sleep: Callable[[float], object] | None = None) -> bytes:

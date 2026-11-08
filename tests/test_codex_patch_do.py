@@ -135,3 +135,31 @@ def test_a_hard_link_to_another_file_is_not_an_admissible_target(tmp_path):
         with pytest.raises(WorkspaceNotContained):
             file_image(ws, args, "linked.py")
         assert outside.read_bytes() == b"external"
+
+
+def test_swap_preserves_a_files_distinct_windows_dacl(tmp_path):
+    import os
+    import subprocess
+    if os.name != "nt":
+        pytest.skip("Windows DACL")
+    from conductor import atomic_replace
+    from conductor.command.adapters import _winlaunch
+    from conductor.ownership_native import NativeHold
+    from tests.test_process_loans_native import same_acl
+
+    def acl(path):
+        hold = NativeHold(path)
+        try:
+            return _winlaunch.acl_snapshot(hold)
+        finally:
+            hold.close()
+
+    file = tmp_path / "restricted.txt"
+    file.write_bytes(b"before")
+    subprocess.run(["icacls", str(file), "/inheritance:d"], capture_output=True, check=True)
+    prior = acl(file)
+    other = tmp_path / "stage"
+    other.write_bytes(b"after")
+    assert not same_acl(acl(other), prior)
+    atomic_replace.replace_existing(other, file)
+    assert file.read_bytes() == b"after" and same_acl(acl(file), prior)
