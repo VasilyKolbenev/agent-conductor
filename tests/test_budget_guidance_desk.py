@@ -20,7 +20,8 @@ def test_preparation_uses_the_edited_depth_and_blocks_the_previous_card_while_ch
           step_count:p.terms.node_limits.length, checker_steps:0, effect_steps:0, resources:0,
           input_bytes:80, history_samples:0, history:[], limited_steps:[]}};
       }
-      const simulation = drive(press(chosen), {preview:profileAnswer});
+      const advanced = {...chosen, guided: false};
+      const simulation = drive(press(advanced), {preview:profileAnswer});
       const first = simulation.log.find(a => a.name === "preview");
       const changed = wiz.stepWizard(simulation.state, {type:"launch-budget", depth:"quick"});
       const ask = changed.asks.find(x=>x.name==="launch_preview");

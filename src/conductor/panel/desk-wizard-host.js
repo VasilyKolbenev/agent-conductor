@@ -28,7 +28,7 @@ function forgetPointer() {
 function typedAnswers(wizard) {
   const {title, brief, hint} = wizard.task;
   return {title, brief, hint, titleEdited: wizard.titleEdited, guided: wizard.guided,
-    ...(wizard.budgetDepth && wizard.budgetDepth !== "balanced" ? {budgetDepth: wizard.budgetDepth} : {}),
+    ...(wizard.budgetChosen ? {budgetDepth: wizard.budgetDepth} : {}),
     withoutGit: wizard.materials.withoutGit, includeInstructions: wizard.materials.includeInstructions,
     items: wizard.materials.items.map((row) => row.kind === "project_doc"
       ? {kind: row.kind, docId: row.docId, gitOid: row.gitOid, mode: row.mode, edits: row.edits ?? []}

@@ -149,7 +149,7 @@ export function initialWizard(opening) {
   return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
     nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
     firstRunGuide: opening.firstRunGuide === true, guided: opening.firstRunGuide === true,
-    titleEdited: written, budgetDepth: "balanced",
+    titleEdited: written, budgetDepth: "balanced", budgetChosen: false,
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
