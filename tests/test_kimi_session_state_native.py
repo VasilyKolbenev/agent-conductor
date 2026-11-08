@@ -68,10 +68,12 @@ def grant_file(path, sid, rights):
 
 
 @contextmanager
-def state_home(home, source, sid):
+def state_home(home, source, sid, *, bound_config=False):
     """Seed only synthetic fixture files in the actual runner's journaled state."""
     with ExitStack() as held:
-        for rel in ("config.toml", "credentials/kimi-code.json"):
+        leaves = ("credentials/kimi-code.json",) if bound_config else (
+            "config.toml", "credentials/kimi-code.json")
+        for rel in leaves:
             target = home / rel
             target.touch(exist_ok=False)
             grant_file(target, sid, "read")
@@ -85,33 +87,35 @@ def state_home(home, source, sid):
         yield home
 
 
-READ_ROLE_POLICY = '\n[tools]\nenabled = ["Read"]\n'
-
-
 @pytest.mark.parametrize("case", [
     "read-only", "shell-unconfigured", "session", "read-role", "read-role-no-shell"])
 def test_native_session_before_a_prompt(tmp_path, native_files, case, monkeypatch):
     from conductor.command.adapters import _winlaunch as native
+    from conductor.command.adapters.kimi_read_config import read_role_config
     from tests import test_kimi_home_loan_native as fixture
 
+    marker = "acp-bound-config-17"
     if case.startswith("read-role"):
-        monkeypatch.setattr(fixture, "CONFIG", fixture.CONFIG + READ_ROLE_POLICY)
+        monkeypatch.setattr(fixture, "CONFIG", fixture.CONFIG.replace("kimi-test", marker))
 
     site = RelaySite(tmp_path, relay=False)
     kit = install(site, *native_files)
     runner = ProcessRunner(site.root)
     with fixture_home(site) as (source, anchor, token), ownership.acquire_owner(site.root):
         configure(site, kit / "kimi.exe")
+        role = (read_role_config((source / "config.toml").read_bytes())
+                if case.startswith("read-role") else None)
         with runner.container_profile(mode="review", internet_client=False,
                                       folders=folders(site, anchor),
-                                      kimi_state=case != "read-only") as (boundary, paths):
+                                      kimi_state=case != "read-only",
+                                      kimi_read_config=role) as (boundary, paths):
             assert not boundary.internet_client and identity(paths["home"]) == anchor.identity
             sid, parent = boundary.sid, paths["parent"]
             with ExitStack() as held:
                 receipt = held.enter_context(verified_bundle(kit))
                 exe, shell = Path(receipt["executable"]), Path(receipt["shell"])
                 home = (source if case == "read-only" else held.enter_context(
-                    state_home(paths["kimi_state"], source, sid)))
+                    state_home(paths["kimi_state"], source, sid, bound_config=role is not None)))
                 env = {**base_environment(paths["runtime"]), **dict(KIMI_PROFILE.forced_env),
                        "KIMI_CODE_HOME": str(home)}
                 if case not in {"shell-unconfigured", "read-role-no-shell"}:
@@ -149,6 +153,12 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case, monkeypatc
                                           "not found", "access denied") if word in error]
                     issued = by_id[3]["result"]["sessionId"]
                     assert isinstance(issued, str) and issued
+                    if role:
+                        # The ACP catalogue must echo the fixture alias from the generated profile.
+                        options = by_id[3]["result"]["configOptions"]
+                        catalogue = next(row for row in options if row["id"] == "model")
+                        assert catalogue["options"] == [
+                            {"value": "kimi-code/" + marker, "name": marker}]
                     sessions = Path(extended(home / "sessions"))
                     assert any(p.is_dir() and p.name in {issued, "session_" + issued}
                                for p in sessions.glob("*/*"))
@@ -158,8 +168,9 @@ def test_native_session_before_a_prompt(tmp_path, native_files, case, monkeypatc
                     phrase = ("permission denied" if case == "read-only" else
                               "git bash was not found on this windows host")
                     assert phrase in json.dumps(error).lower()
-                assert all(sha(home / n) == sha(source / n) == digest
-                           for n, digest in inputs.items())
+                assert all(sha(source / n) == digest for n, digest in inputs.items())
+                assert all(sha(home / n) == (role.config_sha256 if role and n == "config.toml"
+                           else digest) for n, digest in inputs.items())
                 assert (source / "credentials/kimi-code.json").read_bytes() == token
         assert native.inspect_profile(sid) is None and not parent.exists()
     assert not runner.active_tokens()

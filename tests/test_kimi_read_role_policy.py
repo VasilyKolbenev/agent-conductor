@@ -9,7 +9,9 @@ from zipfile import ZipFile
 
 import pytest
 
-from tests.test_kimi_session_state_native import EXE_SHA, READ_ROLE_POLICY, native_files
+from conductor.command.adapters.kimi_read_config import read_role_config
+from tests.test_kimi_quota import CONFIG
+from tests.test_kimi_session_state_native import EXE_SHA, native_files
 
 
 def region(binary, name):
@@ -48,7 +50,8 @@ function decisions(tools) {
     return Object.fromEntries(names.map(name => [name, guard({name, source: "builtin"}) ?? null]));
 }
 """
-    config = tomllib.loads(READ_ROLE_POLICY)["tools"]
+    generated = read_role_config(CONFIG.encode()).content.decode()
+    config = tomllib.loads(generated)["tools"]
     names = ["Read", "Bash", "Write", "Edit", "Agent", "select_tools"]
     js += ("const names = " + json.dumps(names) + ";\n"
            "console.log(JSON.stringify([decisions(" + json.dumps(config) + "), decisions({})]));")
