@@ -1,6 +1,6 @@
 "use strict";
 // Human write callbacks and a serial read queue; no read can create authority.
-import {automationDraft, automationEligible, automationWriteReadBack, previewRequest, projectAutomation,
+import {automationDraft, automationEligible, automationWriteReadBack, draftFromDesk, previewRequest, projectAutomation,
   projectAutomationPreview, projectGrantRefusal, projectRecommendation} from "./studio-automation-model.js";
 
 class AutomationFlow {
@@ -22,7 +22,7 @@ class AutomationFlow {
     this.epoch += 1; this.queued = false;
     if (this.stop) this.stop.abort();
   }
-  sync(detail) {
+  sync(detail, bounds = null) {
     const id = automationEligible(detail) ? detail.run.run_id : null;
     this.detail = detail;
     if (id !== this.value.runId) {
@@ -30,9 +30,10 @@ class AutomationFlow {
       if (this.value.runId) this.held.set(this.value.runId, {...this.value,
         pending: false, preview: null, notice: this.value.request ? "unknown" : this.value.notice});
       const prior = this.held.get(id);
+      const preset = id && bounds ? draftFromDesk(detail, bounds) : null;
       this.publish({runId: id, phase: "empty", view: null,
-        expanded: false, request: null, notice: "", ...prior, pending: false, preview: null, recommendation: null,
-        draft: prior?.draft?.custom ? prior.draft : id ? automationDraft(detail, null, prior?.draft?.actor) : null}, false);
+        expanded: Boolean(preset), request: null, notice: "", ...prior, pending: false, preview: null, recommendation: null,
+        draft: prior?.draft?.custom ? prior.draft : preset ?? (id ? automationDraft(detail, null, prior?.draft?.actor) : null)}, false);
     }
     if (id && this.current()) return this.refresh();
     this.door.changed();
@@ -93,10 +94,11 @@ class AutomationFlow {
     const draft = this.value.draft;
     if (nodeId !== null) {
       if (!["timeout_seconds", "max_attempts"].includes(name)) return;
-      this.publish({draft: {...draft, custom: true, node_limits: draft.node_limits.map((row) =>
+      this.publish({draft: {...draft, custom: true, suggestedInDesk: false, node_limits: draft.node_limits.map((row) =>
         row.node_id === nodeId ? {...row, [name]: text} : row)}, preview: null}, redraw);
     } else if (["actor", "max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"].includes(name)) {
-      this.publish({draft: {...draft, [name]: text, custom: draft.custom || name !== "actor"},
+      this.publish({draft: {...draft, [name]: text, custom: draft.custom || name !== "actor",
+        suggestedInDesk: name === "actor" && draft.suggestedInDesk === true},
         preview: name === "actor" ? this.value.preview : null}, redraw);
     }
   }

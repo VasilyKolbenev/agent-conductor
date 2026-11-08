@@ -13,6 +13,9 @@ If your project and subscriptions are already connected, open **Desk → New tas
    will do the work and who will verify it. Expand the role settings to change an assignment.
 3. **Review and start.** Read the action and time limits and where the cycle will
    wait for you. Enter your name and press **Start** when the terms match your task.
+   For different bounds, select **Edit limits in Studio**. Change the numbers,
+   select **Review bounded run** and check the new terms. You can authorize in
+   Studio or select **Return to Desk** to leave the run without permission.
    At the final decision, open the result and the independent check before you accept.
 
 For a Codex patch step, select **Open the result**. When the checker recorded a snapshot,

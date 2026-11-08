@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Iterator
+from dataclasses import replace
 from urllib.parse import urlsplit
 
 import pytest
@@ -43,10 +44,10 @@ def wizard_url(tmp_path, request) -> Iterator[str]:
     registry = AdapterRegistry(adapters)
     httpd = server.build(root, 0, registry=registry)
     declared = contracts(reachable=names, known=names)
-    httpd.command_api._providers = declared
     # Injected adapters have no operator pins. Keep the same explicit test-only
     # provider digest used by the real-server flow driver bench.
     if getattr(request, "param", False) is True:
+        declared = tuple(replace(row, auth="api_key") for row in declared)
         configs = [ProviderConfig("claude-code", "/test/claude", "fake-claude-jsonl-v1"),
                    ProviderConfig("codex", "/test/codex", "fake-codex-jsonl-v1")]
         authority = ProviderAuthority(configs, declared, registry)
@@ -55,6 +56,7 @@ def wizard_url(tmp_path, request) -> Iterator[str]:
     else:
         httpd.command_api._policy.provider_digest = lambda _config: PD
         httpd.command_api._policy.provider_facts = None
+    httpd.command_api._providers = declared
     # This fixture substitutes test adapters for the production catalogue.
     # Membership is explicit; availability still comes from the real contracts
     # and task-channel facts only from the registered adapter classes.

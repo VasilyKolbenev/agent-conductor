@@ -14,6 +14,7 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.guide.source": ["The task has its own working folder. Choose where its files come from.", "У задачи будет свой рабочий каталог. Выберите, откуда она возьмёт файлы."],
   "wizard.guide.details": ["Detailed wizard", "Подробный мастер"],
   "wizard.guide.short": ["Three-step guide", "Мастер в три шага"],
+  "wizard.guide.edit_limits": ["Edit limits in Studio", "Изменить лимиты в Studio"],
   "wizard.guide.optional": ["Title, success criteria and materials (optional)", "Название, критерии готовности и материалы (необязательно)"],
   "wizard.guide.dalio": ["Dalio cycle with a result check", "Цикл Далио с проверкой результата"],
   "wizard.guide.instructions": ["Instructions for the team", "Инструкции для команды"],

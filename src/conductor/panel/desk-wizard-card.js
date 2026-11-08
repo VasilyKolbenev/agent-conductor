@@ -181,7 +181,10 @@ function guideTerms(ctx, facts) {
     ...seedLine(ctx, card.receives.seed), team, reviewers, actionsLine(ctx, facts, true),
     element("p", {"data-guide-time": "", text: ctx.t("wizard.guide.reserves",
       {action: timeText(ctx, card.actionTime), total: timeText(ctx, card.time)})}),
-    windowLine(ctx, facts), ...ownerGates(ctx, card.gates),
+    windowLine(ctx, facts),
+    ...(ctx.editLimits && !facts.viewing && facts.phase === "review" && !facts.skip
+      ? [action("wizard:launch:edit-limits", ctx.t("wizard.guide.edit_limits"), ctx.editLimits)] : []),
+    ...ownerGates(ctx, card.gates),
     ...(diagnostics ? [stepsLine(ctx, facts)] : []), more]);
 }
 
