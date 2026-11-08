@@ -9,7 +9,9 @@ import sys
 import pytest
 
 from conductor import ownership
+from conductor.command.adapters.kimi_read_config import read_role_config
 from conductor.command.adapters.process import CommandSpec, ProcessRunner
+from conductor.command.adapters.process_profile import ProfileRefused
 from tests._boot_world import later_boot, measure
 from tests._ps1 import strict_text, write_ps1
 from tests.os_boundary_box import base_environment, WITHOUT_CMDLETS
@@ -30,8 +32,10 @@ def exercise(base, *, interrupt=False):
     runner = ProcessRunner(site.root)
     with fixture_home(site) as (stage, anchor, token), ownership.acquire_owner(site.root):
         configure(site, site.install / "entry.ps1")
+        role = read_role_config((stage / "config.toml").read_bytes()) if interrupt else None
         with runner.container_profile(mode="review", internet_client=False,
-                                      folders=folders(site, anchor), kimi_state=True) as entry:
+                                      folders=folders(site, anchor), kimi_state=True,
+                                      kimi_read_config=role) as entry:
             boundary, paths = entry
             assert not boundary.internet_client
             state, sessions = paths["kimi_state"], paths["kimi_sessions"]
@@ -90,6 +94,14 @@ def test_reopen_after_owner_death_keeps_state_until_a_proven_restart(tmp_path, m
     ownership_transition.recover(root)
     with ownership.acquire_owner(root):
         runner = ProcessRunner(root)
+        # A stale OS owner can replace bytes after the dead producer's holds close.
+        config = state / "config.toml"
+        original_config = config.read_bytes()
+        config.write_bytes(original_config.replace(b'["Read"]', b'["Bash"]'))
+        with pytest.raises(ProfileRefused, match="bound configuration changed"):
+            runner.recover_container_profiles()
+        assert state.exists() and b'["Bash"]' in config.read_bytes()
+        config.write_bytes(original_config)
         runner.recover_container_profiles()
         runner.recover_container_profiles()
         assert not state.parent.exists() and native.inspect_profile(proof["sid"]) is None

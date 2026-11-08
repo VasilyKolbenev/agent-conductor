@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import re
 import secrets
@@ -281,7 +281,8 @@ class ProfileJournal:
 
     @contextmanager
     def container(self, *, internet_client: bool = False, mode=None, active_tokens=None,
-                  folders=None, readonly_home_identity=None, kimi_state=False):
+                  folders=None, readonly_home_identity=None, kimi_state=False,
+                  kimi_read_config=None):
         """One AppContainer profile for one attempt, and what the attempt may stand on.
 
         Args:
@@ -296,6 +297,8 @@ class ProfileJournal:
         if (type(kimi_state) is not bool or kimi_state and (internet_client or mode != "review"
                 or folders is None or readonly_home_identity is None)):
             raise ProfileRefused("profile_acl_invalid", "Kimi state requires an offline staged home")
+        if kimi_read_config is not None and not kimi_state:
+            raise ProfileRefused("profile_acl_invalid", "Kimi read role requires staged state")
         loans = self._loans(mode, folders, readonly_home_identity)
         path, sid = self.create_profile()
         acl = None
@@ -307,13 +310,20 @@ class ProfileJournal:
                     raise ProfileRefused("profile_acl_invalid", "trusted ACL callbacks are absent")
                 from .process_acl import AttemptAclJournal
                 acl = AttemptAclJournal(self, self.native)
-                _, paths = acl.prepare(path, sid, mode, folders=loans is not None,
-                                       kimi_state=kimi_state)
+                record, paths = acl.prepare(path, sid, mode, folders=loans is not None,
+                                            kimi_state=kimi_state)
                 if loans is not None:
                     loans.grant(path, sid, mode, folders)
                     paths = {**paths, **loans.paths}
                 install = None if loans is None else str(paths["install"])
-                yield WindowsContainer(sid, internet_client=internet_client, install=install), paths
+                with ExitStack() as kept:
+                    if kimi_read_config is not None:
+                        from .kimi_read_config import bind_read_config
+                        binding = kept.enter_context(
+                            bind_read_config(paths, kimi_read_config, sid, self.native))
+                        acl.record_kimi_read_role(record, binding)
+                    boundary = WindowsContainer(sid, internet_client=internet_client, install=install)
+                    yield boundary, paths
         finally:
             try:
                 if active_tokens is not None and active_tokens():

@@ -220,7 +220,7 @@ class AttemptAclJournal:
         except (TypeError, ValueError) as error:
             raise ProfileRefused("profile_acl_invalid", "ACL record is malformed") from error
         if (type(row) is not dict or raw != canonical
-                or set(row) != {"schema", "attempt", "owner_nonce",
+                or set(row) - {"kimi_read_config"} != {"schema", "attempt", "owner_nonce",
                 "root_identity", "data_identity", "profile_sid", "mode", "boot", "phase", "paths"}
                 or type(row["schema"]) is not int or row["schema"] not in (1, 2)
                 or row["attempt"] != _ACL_NAME.fullmatch(path.name).group(1)
@@ -254,7 +254,22 @@ class AttemptAclJournal:
                     or type(facts["protected"]) is not bool
                     or type(facts["owner_sid"]) is not str):
                 raise ProfileRefused("profile_acl_invalid", f"ACL facts for {key} are malformed")
+        if "kimi_read_config" in row:
+            from .kimi_read_config import valid_binding
+            if ("kimi_state" not in row["paths"] or row["phase"] == "planned"
+                    or not valid_binding(row["kimi_read_config"])):
+                raise ProfileRefused("profile_acl_invalid", "malformed Kimi read-role binding")
         return row
+
+    def record_kimi_read_role(self, path, binding):
+        """Seal the file before yielding to a child or allowing a restart preparation."""
+        from .kimi_read_config import valid_binding
+        row = self._read(path)
+        if ("kimi_state" not in row["paths"] or row["phase"] != "applied"
+                or "kimi_read_config" in row or not valid_binding(binding)
+                or boot_prepared.names(self.directory, path.stem)):
+            raise ProfileRefused("profile_acl_invalid", "cannot bind the Kimi read profile")
+        _replace(path, {**row, "kimi_read_config": binding})
 
     def _facts(self, record):
         return boot_prepared.facts("acl-attempt", record["attempt"], record)
@@ -296,6 +311,10 @@ class AttemptAclJournal:
         paths = self._paths_of(record)
         holds = self._verified_holds(record, paths, chain)
         self._admit_contents(paths)
+        if "kimi_read_config" in record:
+            from .kimi_read_config import check_retiring_config
+            check_retiring_config(paths["kimi_state"], record["kimi_read_config"],
+                                  retiring=record["phase"] == "retiring")
         if "kimi_state" in paths and record["phase"] != "retiring":
             if any(not _present(path) for path in paths.values()):
                 raise ProfileRefused("profile_acl_invalid", "state disappeared before retirement")
