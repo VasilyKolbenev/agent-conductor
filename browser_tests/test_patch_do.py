@@ -57,8 +57,10 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, see
         with page.expect_response(lambda r: r.url.endswith("/automation/authorize")) as accepted:
             panel.locator('[data-focus="automation:authorize"]').click()
         assert accepted.value.ok
+        # Wait for the one action within the bound this test just reviewed and granted.
+        action_ms = 1000 * preview["terms"]["max_action_seconds"]
         expect(panel.locator("[data-automation-state]")).to_have_attribute(
-            "data-automation-state", "waiting" if gated else "complete", timeout=15000)
+            "data-automation-state", "waiting" if gated else "complete", timeout=action_ms)
         records = f.store.read("run").records
         assert calls == ["prepare", "apply", "check"]
         assert len([r for r in records if r.kind == "action_request"]) == 1
