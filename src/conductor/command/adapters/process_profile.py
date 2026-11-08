@@ -190,6 +190,11 @@ class ProfileJournal:
         value = self._read(path)
         if value["phase"] == "retired":
             return
+        # If allocation stopped before the ACL record, there is no verified identity for the
+        # fresh folders. Do not adopt them by name or silently mark this profile retired.
+        attempt = self.directory.parent / "container-attempts" / value["attempt"]
+        if os.path.lexists(attempt):
+            raise ProfileRefused("profile_acl_unproven", "the attempt tree has not been retired")
         if self.derive(value["moniker"]) != value["sid"]:
             raise ProfileRefused("profile_ambiguous", "derived profile SID changed")
         mapping = self.inspect(value["sid"])
@@ -265,7 +270,7 @@ class ProfileJournal:
 
     @contextmanager
     def container(self, *, internet_client: bool = False, mode=None, active_tokens=None,
-                  folders=None, readonly_home_identity=None):
+                  folders=None, readonly_home_identity=None, kimi_state=False):
         """One AppContainer profile for one attempt, and what the attempt may stand on.
 
         Args:
@@ -273,9 +278,13 @@ class ProfileJournal:
                 existing folders (`process_loans`), which are loaned instead of the fresh work and
                 login folders. The block then yields `parent`, `runtime` and these, in their real
                 places.
+            kimi_state: Add separately journaled, nonsecret state to an offline staged review.
         """
         if mode not in (None, "dispatch", "review"):
             raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
+        if (type(kimi_state) is not bool or kimi_state and (internet_client or mode != "review"
+                or folders is None or readonly_home_identity is None)):
+            raise ProfileRefused("profile_acl_invalid", "Kimi state requires an offline staged home")
         loans = self._loans(mode, folders, readonly_home_identity)
         path, sid = self.create_profile()
         acl = None
@@ -287,7 +296,8 @@ class ProfileJournal:
                     raise ProfileRefused("profile_acl_invalid", "trusted ACL callbacks are absent")
                 from .process_acl import AttemptAclJournal
                 acl = AttemptAclJournal(self, self.native)
-                _, paths = acl.prepare(path, sid, mode, folders=loans is not None)
+                _, paths = acl.prepare(path, sid, mode, folders=loans is not None,
+                                       kimi_state=kimi_state)
                 if loans is not None:
                     loans.grant(path, sid, mode, folders)
                     paths = {**paths, **loans.paths}
