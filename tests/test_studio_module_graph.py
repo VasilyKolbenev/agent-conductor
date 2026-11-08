@@ -33,11 +33,12 @@ PERMITTED_IMPORTS = {
     "studio-feedback-copy.js": frozenset(),
     "studio-notice-copy.js": frozenset(),
     "studio-agents-copy.js": frozenset(),
-    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js'}),
+    'studio-budget-guidance.js': frozenset(),
+    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js'}),
     'studio-automation-providers.js': frozenset({'./studio-model.js'}),
-    'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
+    'studio-automation-flow.js': frozenset({'./studio-automation-model.js', './studio-budget-guidance.js'}),
     'studio-automation-copy.js': frozenset(set()),
-    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js'}),
+    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js', './studio-budget-guidance.js'}),
     'studio-workflowwrite.js': frozenset({'./studio-model.js', './studio-store.js', './command-projection.js'}),
     'studio-draft.js': frozenset({'./studio-model.js'}),
 
@@ -106,7 +107,8 @@ PERMITTED_IMPORTS = {
       "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
       "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
-                                         "./desk-wizard-run.js", "./desk-wizard.js"}),
+                                         "./desk-wizard-run.js", "./desk-wizard.js",
+                                         "./desk-hash.js", "./studio-budget-guidance.js"}),
     #: What a press on the console's queue block means: a pure flow over the door it is handed and
     #: the queue's model. It names no route and no wire word, and imports no door itself.
     "desk-pult-flow.js": frozenset({"./desk-queue-model.js"}),
@@ -233,7 +235,7 @@ PERMITTED_IMPORTS = {
     #: allows. It draws what the model says through the shared controls, and never a store or a
     #: wire.
     "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
-                                      "./desk-wizard-model.js"}),
+                                      "./desk-wizard-model.js", "./studio-budget-guidance.js"}),
     #: The git block of step 2 drawn: connecting git, the first commit, the wait, the last answer.
     #: It draws what the model's facts say through the shared controls, and never a store or a
     #: wire.
@@ -271,7 +273,7 @@ PERMITTED_IMPORTS = {
     #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
     #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
     #: that gives a key its stable bytes.
-    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js", "./studio-budget-guidance.js"}),
     #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
     #: functions over the card's slice. It reaches the card's own module and nothing else.
     "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),

@@ -4,7 +4,7 @@
 // wizard has a new epoch, so a late read or write cannot reopen it or change another project.
 import {path} from "./desk-transport.js";
 import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
-import {limitFields} from "./studio-automation-model.js";
+import {limitFields} from "./studio-budget-guidance.js";
 import {cycleCards, initialWizard, openingFrom, restoreAnswers, resumeFrom, stepWizard} from "./desk-wizard-model.js";
 import {wizardExit, wizardHash} from "./desk-wizard-run.js";
 import {mountWizard} from "./desk-wizard.js";
@@ -27,6 +27,7 @@ function forgetPointer() {
 function typedAnswers(wizard) {
   const {title, brief, hint} = wizard.task;
   return {title, brief, hint, titleEdited: wizard.titleEdited, guided: wizard.guided,
+    ...(wizard.budgetDepth && wizard.budgetDepth !== "balanced" ? {budgetDepth: wizard.budgetDepth} : {}),
     withoutGit: wizard.materials.withoutGit, includeInstructions: wizard.materials.includeInstructions,
     items: wizard.materials.items.map((row) => row.kind === "project_doc"
       ? {kind: row.kind, docId: row.docId, gitOid: row.gitOid, mode: row.mode, edits: row.edits ?? []}

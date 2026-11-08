@@ -25,6 +25,7 @@ _STUDIO_FILES = (
     "studio-i18n.js", "studio-preferences.js", "studio-shell.js", "studio-runhead.js",
     "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
     "studio-automation.js", "studio-automation-model.js", "studio-automation-providers.js",
+    "studio-budget-guidance.js",
     "studio-workflow-copy.js",
     "studio-workflow-detail-copy.js",
     "studio-view-copy.js",

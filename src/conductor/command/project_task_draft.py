@@ -37,6 +37,9 @@ def validate_answers(answers):
     keys = ("title brief hint titleEdited guided withoutGit includeInstructions "
             "items cycleId owner instructions models")
     pinned = isinstance(answers, dict) and "cycleRevision" in answers
+    if isinstance(answers, dict) and "budgetDepth" in answers:
+        require(answers["budgetDepth"] in ("quick", "balanced", "thorough"))
+        keys += " budgetDepth"
     fields(answers, keys + (" cycleRevision" if pinned else ""))
     if pinned:
         require(answers["cycleId"] is not None and type(answers["cycleRevision"]) is int

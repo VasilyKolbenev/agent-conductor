@@ -8,6 +8,7 @@
 // desk at the slot to free, or at the flag block) goes through `ctx.leave`. The explanations behind
 // an ⓘ are open or closed in the model, so the redraw of a ticking clock keeps them as they are.
 import {element} from "./command-view.js";
+import {DEPTH, guidanceHeadline, guidanceText} from "./studio-budget-guidance.js";
 import {action, choice, instantText, textField, timeText} from "./desk-wizard-draw.js";
 import {LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, SKIP_STOPS, launchFacts, roleKind}
   from "./desk-wizard-model.js";
@@ -420,13 +421,37 @@ function resultBlock(ctx, facts) {
   return [element("p", {"data-launch-result": "queued", text}), ...flag];
 }
 
+/** The guided reserve stays editable until the owner grants the run. */
+function budgetOptions(ctx) {
+  const launch = ctx.wizard.launch, info = launch.preview?.recommendation;
+  if (!info || launch.phase !== "review" || launch.reads.automation?.payload?.authorization) return [];
+  const selected = launch.depth ?? info.depth;
+  const switches = DEPTH.map((depth) =>
+    choice(`wizard:budget:${depth}`, ctx.t(`wizard.budget.${depth}`), "radio", selected === depth,
+      () => ctx.send({type: "launch-budget", depth})));
+  const lines = [element("p", {text: guidanceHeadline(info, ctx.t)})];
+  const expanded = launch.infos.includes("budget");
+  const explain = action("wizard:budget:why", ctx.t("wizard.budget.why"),
+    () => ctx.send({type: "launch-info", name: "budget"}));
+  explain.setAttribute("aria-expanded", String(expanded));
+  lines.push(explain);
+  if (expanded) lines.push(...guidanceText(info, ctx.t, (n) => timeText(ctx, n))
+    .map((text) => element("p", {text})));
+  if (selected !== info.depth) lines.push(element("p", {role: "status",
+    text: ctx.t("wizard.budget.updating")}));
+  return [element("fieldset", {className: "desk-wizard__budget", "data-budget-guidance": info.depth}, [
+    element("legend", {text: ctx.t("wizard.budget.heading")}),
+    element("div", {role: "radiogroup", "aria-label": ctx.t("wizard.budget.heading")}, switches),
+    ...lines])];
+}
+
 /** The body of step 6. */
 export function runBody(ctx) {
   const facts = launchFacts(ctx.wizard), done = facts.result !== null;
   return [element("section", {className: "desk-wizard__launch", "data-launch": facts.phase,
     "data-viewing": facts.viewing ? "true" : "false"}, [
     element("h3", {text: ctx.t("wizard.launch.heading")}),
-    ...(facts.card === null ? [] : termsCard(ctx, facts)), ...errorLine(ctx, facts),
+    ...budgetOptions(ctx), ...(facts.card === null ? [] : termsCard(ctx, facts)), ...errorLine(ctx, facts),
     ...countdownBlock(ctx, facts), ...refreshButton(ctx, facts), ...changedBlock(ctx, facts),
     actorField(ctx, facts), ...progressLine(ctx, facts), ...answerLines(ctx, facts),
     ...(done ? resultBlock(ctx, facts) : facts.skip === null ? buttons(ctx, facts)

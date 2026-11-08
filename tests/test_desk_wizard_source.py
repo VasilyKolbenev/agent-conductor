@@ -30,7 +30,7 @@ PURE = {"desk-wizard-model.js": {"./studio-tasks-model.js", "./desk-wizard-mater
                                  "./desk-wizard-materials.js", "./desk-wizard-team.js",
                                  "./desk-wizard-prep.js"},
         "desk-wizard-prep.js": {"./desk-wizard-digest.js"},
-        "desk-wizard-launch.js": {"./desk-wizard-digest.js"},
+        "desk-wizard-launch.js": {"./desk-wizard-digest.js", "./studio-budget-guidance.js"},
         "desk-wizard-skip.js": {"./desk-wizard-launch.js"},
         "desk-wizard-run.js": {"./desk-wizard-base.js", "./desk-wizard-cycle.js",
                                "./desk-wizard-input.js", "./desk-wizard-launch.js",
@@ -58,7 +58,7 @@ DRAWN = {RENDERER: {"./command-view.js", "./studio-i18n.js", "./desk-wizard-mode
          "desk-wizard-prepare-view.js": {"./command-view.js", "./desk-wizard-draw.js",
                                          "./desk-wizard-model.js"},
          "desk-wizard-card.js": {"./command-view.js", "./desk-wizard-draw.js",
-                                 "./desk-wizard-model.js"},
+                                 "./desk-wizard-model.js", "./studio-budget-guidance.js"},
          "desk-wizard-git-view.js": {"./command-view.js", "./desk-wizard-draw.js",
                                      "./desk-wizard-git.js"}}
 #: What each drawing module hands the ones above it, and nothing else.

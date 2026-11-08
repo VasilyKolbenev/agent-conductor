@@ -1,4 +1,6 @@
 "use strict";
+import {BOUNDS, limitFields, validRecommendation} from "./studio-budget-guidance.js";
+export {limitFields};
 // Closed presentation boundary. The server owns admission, time and execution.
 import {exactKeys, isDigest, isId, isInstant, isPlainObject} from "./studio-model.js";
 import {compareInstants} from "./studio-taskruns.js";
@@ -128,12 +130,6 @@ export function projectAutomation(value, detail) {
   return copy(value);
 }
 
-const BOUNDS = ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"];
-
-export function limitFields(terms) {
-  return Object.fromEntries([...BOUNDS, "node_limits"].map((key) => [key, terms[key]]));
-}
-
 // A Desk suggestion is editable input, never a server preview or authorization.
 export function draftFromDesk(detail, bounds) {
   if (!object(bounds, [...BOUNDS, "node_limits"]) || !BOUNDS.every((key) => positive(bounds[key]))
@@ -156,7 +152,7 @@ export function automationDraft(detail, terms = null, actor = "") {
 
 export function projectRecommendation(value, detail) {
   if (!isPlainObject(value)) return null;
-  const {budget, ...core} = value;
+  const {budget, recommendation: guidance, ...core} = value;
   const preview = projectAutomationPreview(core, detail);
   if (!preview || !isPlainObject(budget) || typeof budget.exhausted !== "boolean"
       || !isPlainObject(budget.worst) || !count(budget.worst.actions)) return null;
@@ -165,10 +161,11 @@ export function projectRecommendation(value, detail) {
       && count(spent.seconds) && Array.isArray(spent.attempts) && spent.attempts.every((row) =>
         object(row, ["step_id", "attempts"]) && isId(row.step_id) && count(row.attempts)))) return null;
   const expected = limitFields(preview.terms);
+  if (guidance !== undefined && !validRecommendation(guidance, preview.terms)) return null;
   if (!isPlainObject(budget.terms_draft) || canonicalJson(expected) !== canonicalJson(budget.terms_draft)) return null;
   return {preview, recommendation: {steps: preview.terms.node_limits.length, attempts: budget.worst.actions,
     checked: detail.graph.definition.nodes.filter((node) => node.capability && node.verifier_instance_id).length,
-    spent, exhausted: budget.exhausted}};
+    spent, exhausted: budget.exhausted, ...(guidance ? {guidance} : {})}};
 }
 export function previewRequest(draft) {
   if (!draft.custom) return {};
