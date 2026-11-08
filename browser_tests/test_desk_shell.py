@@ -91,6 +91,8 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-copy.js": 200, "desk-flow-copy.js": 200,
     # The live new-task overlay: host, reducer, renderer and their pure step modules.
     "desk-wizard-host.js": 200, "desk-wizard.js": 200,
+    "desk-advice-panel.js": 200, "desk-advice-run.js": 200,
+    "desk-wizard-advice-copy.js": 200, "studio-budget-guidance.js": 200,
     "desk-wizard-model.js": 200, "desk-wizard-materials.js": 200,
     "desk-wizard-cycle.js": 200, "desk-wizard-roles.js": 200,
     "desk-wizard-base.js": 200, "desk-wizard-team.js": 200,
