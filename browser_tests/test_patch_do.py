@@ -1,4 +1,6 @@
 """The installed Studio's preview, grant and result are one offline application journey."""
+import os
+import subprocess
 from threading import Thread
 
 import pytest
@@ -10,9 +12,20 @@ from conductor.command.seed_record import write_seed
 from conductor.command.seed_stage import move_staged, stage_empty
 from conductor.command.task_contracts import TaskRecord
 from conductor.command.task_store import TaskStore
+from tests import _fakeexe
+from tests.fake_process_fixtures import registered_fake_processes
 from tests.relay_roads import CODEX, Site
 from tests.test_patch_do_policy import ACTUAL, PATCH, run_state, work_and_calls
 from tests.test_policy_runtime import NOW, PD
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows uses pinned Python fixture launchers")
+def test_the_offline_desk_rejects_a_changed_fixture_before_the_version_probe(tmp_path):
+    executable = _fakeexe.build(tmp_path / "fixture", "codex", "_fakecodex")
+    assert executable is not None
+    executable.write_bytes(b"not an executable")
+    with pytest.raises(ValueError, match="registered fake changed or disappeared"):
+        subprocess.run([str(executable), "--version"], check=False, capture_output=True)
 
 
 @pytest.mark.parametrize("seeded,gated", [(False, False), (True, False), (True, True)])
