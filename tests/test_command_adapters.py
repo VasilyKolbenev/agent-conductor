@@ -42,13 +42,14 @@ ALLOWED_SDK_IMPORTS = frozenset({
 ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({
     (2, "boundary_entry"), (2, "contracts"), (2, "dispatch"), (2, "execution_boundary"),
     (3, "ownership_errors")})
-# Patch publication has a narrow filesystem responsibility. Its three modules still
-# undergo the same call checks as value modules, including the ban on .run().
-PATCH_IMPORTS = {
+# Each named module keeps its own filesystem imports and the value-module call bans.
+FILE_IMPORTS = {
     "codex_patch.py": {"os", "stat", "time", "..accept_manifest", "..containment",
                        "..long_path", "..work_layout"},
     "codex_patch_dispatch.py": {"time"},
     "patch_publish.py": {"os", "tempfile", "...atomic_replace", "..long_path"},
+    # Held config bytes, fsync and identity, bounded TOML and context-managed Windows handles.
+    "kimi_read_config.py": {"contextlib", "os", "tomllib", "...ownership_native"},
 }
 # The owned-process runner (B/RUN-1) is the one reviewed execution door in the
 # package; it necessarily imports subprocess and calls Popen, so this value-core
@@ -340,7 +341,7 @@ def test_every_value_module_of_the_sdk_package_imports_only_the_allowed_value_mo
                     imported.update(prefix + alias.name for alias in node.names)
                 else:
                     imported.add(prefix + node.module)
-        allowed = ALLOWED_SDK_IMPORTS | PATCH_IMPORTS.get(path.name, set())
+        allowed = ALLOWED_SDK_IMPORTS | FILE_IMPORTS.get(path.name, set())
         assert imported <= allowed, f"{path.name} imports {sorted(imported - allowed)}"
         attribute_calls = {
             node.func.attr
