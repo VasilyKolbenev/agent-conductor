@@ -96,6 +96,19 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     editor.want = next;
     void flush(editor);
   }
+  function gitSourceRead(state) {
+    if (!editor || !valid(editor) || wizard.run.pressed) return;
+    if (state === "unavailable") {
+      editor.gitUnavailable = true;
+    } else if (editor.gitUnavailable && (state === "repo" || state === "unborn")) {
+      // A running server never changes its Git-pin verdict. The newly started
+      // server also has a fresh draft store. Save this tab's answers under a new key.
+      editor = {project: editor.project, task: editor.task, epoch, revision: 0, key: null,
+        status: "saving", saved: null, want: JSON.stringify(typedAnswers(wizard))};
+      forgetPointer();
+      void flush(editor);
+    }
+  }
   function warnOnUnload(event) {
     if ((editor && editor.want !== editor.saved) || (!editor && wizard?.firstRunGuide
       && !wizard.run.pressed && (wizard.task.brief || wizard.task.title || wizard.materials.items.length))) {
@@ -171,7 +184,12 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
       }
     }
     if (result.code === "project_mismatch") onForeign();
-    if (live(at)) dispatch({type: "answered", ask, result});
+    if (live(at)) {
+      dispatch({type: "answered", ask, result});
+      if (ask.name === "git" && result.status === "accepted" && live(at)) {
+        gitSourceRead(result.payload?.git?.state);
+      }
+    }
   }
 
   function dispatch(event) {

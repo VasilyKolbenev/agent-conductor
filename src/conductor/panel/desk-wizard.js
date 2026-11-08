@@ -182,6 +182,11 @@ function gitPanel(ctx) {
       text: ctx.t("wizard.git.dirty", {count: String(dirty)})}));
   }
   if (git.command !== null) parts.push(commandBlock(ctx, git.command));
+  if (git.state === "unavailable") {
+    parts.push(element("p", {text: ctx.t("wizard.git.after_pin")}),
+      action("wizard:git:reread", ctx.t("wizard.git.check_source"),
+        () => ctx.send({type: "reread", name: "git"})));
+  }
   parts.push(...firstName(ctx, facts));
   const exits = exitsShown(git, facts);
   if (exits.length > 0) {

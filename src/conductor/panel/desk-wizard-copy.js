@@ -91,7 +91,8 @@ export const WIZARD_COPY = Object.freeze({
     "Репозиторий отслеживает служебные папки продукта: {names}"],
   "wizard.git.unsafe_directory": ["git does not trust this folder (another owner)",
     "git не доверяет этой папке (другой владелец)"],
-  "wizard.git.unavailable": ["git is not pinned", "git не закреплён"],
+  "wizard.git.unavailable": ["This folder contains .git. Set up Git for December Command to read the project files.",
+    "В папке проекта есть .git. Чтобы прочитать исходные файлы, настройте Git для December Command."],
   "wizard.git.not_active": ["The project is open for viewing: git is read only for the active "
     + "project. The agents will get a copy of HEAD at the moment of the start",
     "Проект открыт на просмотр: git читает только активный проект. "
@@ -111,7 +112,11 @@ export const WIZARD_COPY = Object.freeze({
   "wizard.git.command_safe": ["Run this in a terminal in the project folder. The product never "
     + "writes safe.directory itself:", "Выполните в терминале в корне проекта. "
     + "Продукт сам safe.directory не пишет:"],
-  "wizard.git.command_pin": ["Pin git in the hub, or run:", "Закрепите git в hub или выполните:"],
+  "wizard.git.command_pin": ["In Hub, choose Git and click Pin. Or replace … below with the full path to your Git executable.",
+    "В Hub выберите Git и нажмите «Закрепить». Либо подставьте вместо … полный путь к исполняемому файлу Git."],
+  "wizard.git.after_pin": ["Keep this tab open. After pinning Git, restart this project on the same port and check the source again here.",
+    "Оставьте эту вкладку открытой. После закрепления Git перезапустите проект на том же порту и проверьте источник здесь."],
+  "wizard.git.check_source": ["Check source files again", "Проверить источник файлов"],
   "wizard.exit.first_commit": ["First commit", "Первый коммит"],
   "wizard.exit.connect_git": ["Connect git", "Подключить git"],
   "wizard.exit.run_without_git": ["Run without git", "Запустить без git"],
@@ -437,10 +442,10 @@ export const WIZARD_COPY = Object.freeze({
     "Указание не помещается в командную строку харнесса: выберите другой харнесс."],
   "wizard.reason.binding_pending": ["The server is checking the assignment…",
     "Сервер проверяет расстановку…"],
-  "wizard.reason.seed_needs_git": ["The agents work on a copy of the project's git repository, "
-    + "and this project has none the wizard can read: connect git or run without git (both "
-    + "come in a later step).", "Агенты работают над копией git-репозитория проекта, а "
-    + "здесь его нет: подключите git или запустите без git (обе кнопки появятся позже)."],
+  "wizard.reason.git_tool_unavailable": ["Set up Git at the file source before preparing a working copy.",
+    "Чтобы подготовить рабочую копию, настройте Git в разделе источника файлов."],
+  "wizard.reason.seed_needs_git": ["Return to the file source and choose where the task will get its files.",
+    "Вернитесь к источнику файлов и выберите, откуда задача возьмёт рабочие файлы."],
   // -- step 5: the chain «Подготовить запуск» and a reloaded page --------------------------
   "wizard.prepare.heading": ["Preparing the run", "Подготовка запуска"],
   "wizard.prepare.continue": ["Continue preparation", "Продолжить подготовку"],

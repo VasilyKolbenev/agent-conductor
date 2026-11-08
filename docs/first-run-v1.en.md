@@ -22,6 +22,11 @@ The list describes the task copy at the time of verification.
 For a published cycle, the wizard shows the selected revision. If a teammate continues
 editing that workflow, your task keeps the displayed version, including after a reload.
 
+If the wizard finds `.git` and asks you to set up Git, keep the tab open.
+Pin the installed Git in Hub, restart the project on the same port and click
+**Check source files again**. Once the commit appears, continue with the same task
+and materials. In a project without a repository, you can choose **Use an empty working folder**.
+
 You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
 A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
 

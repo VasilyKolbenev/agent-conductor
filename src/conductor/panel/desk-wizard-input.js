@@ -72,7 +72,8 @@ function seedFacts(state) {
       && state.materials.withoutGit === true) {
     return {blocked: null, source: "empty", commit: null, include};
   }
-  return {blocked: "seed_needs_git", source: null, commit: null, include};
+  const blocked = git?.state === "unavailable" ? "git_tool_unavailable" : "seed_needs_git";
+  return {blocked, source: null, commit: null, include};
 }
 
 //: The instance a role runs on is named for the role, so the same assignment is always the same
