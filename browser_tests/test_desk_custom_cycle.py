@@ -25,7 +25,16 @@ def test_publish_and_choose_a_personal_cycle_without_losing_the_task(
         desk.goto(f"{wizard_url}#new=task&lang={lang}")
         form = desk.locator("#deskWizard")
         goal = "Check this year's results\nKeep the original totals."
+        note = "Use the annual totals from both sheets."
         form.locator('[data-focus="wizard:brief"]').fill(goal)
+        form.locator('[data-focus="wizard:next"]').click()
+        expect(form.locator('[data-answer="goal"]')).to_contain_text(goal)
+        options = form.locator('[data-guide-details="optional"]')
+        options.locator("summary").click()
+        form.locator('[data-focus="wizard:add:plan"]').click()
+        material = options.locator('[data-card][data-kind="plan"]')
+        material.locator('input[name="title"]').fill("Annual report")
+        material.locator('textarea[name="content"]').fill(note)
         form.locator('[data-focus="wizard:git:run_without_git"]').click()
         form.locator('[data-focus="wizard:next"]').click()
         choose = form.locator('[data-guide-details="choose"]')
@@ -70,10 +79,15 @@ def test_publish_and_choose_a_personal_cycle_without_losing_the_task(
         expect(custom).to_have_attribute("data-chosen", "true")
         expect(custom.get_by_text("ревизия 1" if lang == "ru" else "revision 1",
                                   exact=True)).to_be_visible()
-        form.locator('[data-focus="wizard:back"]').click()
-        expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal)
+        form.locator('[data-focus="wizard:ask:edit-files"]').click()
         source = form.locator('[data-focus="wizard:git:run_without_git"]')
         expect(source).to_have_attribute("aria-checked", "true")
+        if not options.evaluate("item => item.open"):
+            options.locator("summary").click()
+        expect(material.locator('input[name="title"]')).to_have_value("Annual report")
+        expect(material.locator('textarea[name="content"]')).to_have_value(note)
+        form.locator('[data-focus="wizard:ask:edit-goal"]').click()
+        expect(form.locator('[data-focus="wizard:brief"]')).to_have_value(goal)
         assert all(path == "/command/project/task-draft" or path.startswith("/command/workflows/")
                    for path in posts), sorted(set(posts))
         base = wizard_url.partition("/panel/")[0]
