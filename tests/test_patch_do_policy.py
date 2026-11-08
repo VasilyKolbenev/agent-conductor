@@ -12,7 +12,7 @@ from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.process import ProcessOutcome, STDIN_DELIVERED
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import RunEnvelope
-from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
 from conductor.command.policy_service import PolicyService
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import Budget, ControlRuntime
@@ -40,7 +40,7 @@ REGRESSION = (b"from count import count_succeeded\n\ndef test_mixed():\n"
               b"    assert count_succeeded(['ok', 'fail']) == 1\n")
 
 
-def run_state(root, adapter, *, checker="checker", item="item"):
+def run_state(root, adapter, *, checker="checker", item="item", with_gates=False):
     registry, counter = AdapterRegistry([adapter]), count()
     store = RunStore(root)
     ids = lambda kind: f"{kind}-{next(counter)}"
@@ -56,7 +56,13 @@ def run_state(root, adapter, *, checker="checker", item="item"):
     node = GraphNode("do", "task", "Do", instance_id="doer", capability="dispatch",
                      arguments=args, timeout_seconds=30, attempt_bound=1,
                      verifier_instance_id=checker)
-    store.append(GraphDefinition("graph", "run", NOW, nodes=(node,), edges=(),
+    nodes = (node,)
+    edges = ()
+    if with_gates:
+        nodes += (GraphNode("accept", "gate", "Accept the patch", gate_id="accept"),
+                  GraphNode("next", "gate", "Next decision", gate_id="next"))
+        edges = (GraphEdge("do", "accept"), GraphEdge("accept", "next"))
+    store.append(GraphDefinition("graph", "run", NOW, nodes=nodes, edges=edges,
                                  execution_contract="bounded-run-v1"))
     store.append(ArtifactDocument("instruction", "brief", "run", NOW, "text/plain",
                                   "Count successes and cover a mixed input."))

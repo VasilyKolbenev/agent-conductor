@@ -159,7 +159,12 @@ const noticeHas = (notice, key) => Array.isArray(notice)
       && held.view.state === "unconfigured" && held.view.reason_code === "authorization_required"
       && Boolean(held.view.next_node_id);
     const demoTask = demo ? practiceTask(state) : null;
-    const presentation = {...state, locale: appearance.value.locale, needsRunPermission, demo, demoTask};
+    const firstTask = !demo && state.connection === "open" && state.tasks.phase === "ready"
+      && !state.tasks.selectedId && !state.tasks.list.length && state.runs.phase === "ready" && !state.runs.list.length
+      && state.workflows.phase === "ready" && !state.workflows.list.length && !state.workflows.selectedId;
+    const ownTaskUrl = "/panel/desk.html" + preferenceHash(deskHash({new: "task"}), appearance.value);
+    const presentation = {...state, locale: appearance.value.locale, needsRunPermission, demo, demoTask,
+      firstTask, ownTaskUrl};
     mountShell(mounts, presentation, handlers);
     mountTasks(byId("studioTasks"), presentation, handlers);
     mountOverview(mounts.bodyOverview, presentation, handlers);
@@ -561,7 +566,14 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     confirmStep: step.confirmStep,
     editDocument: docs.editDocument,
     publishDocument: docs.publishDocument,
-    selectDecision: (key) => dispatch({type: "decision-chosen", key}),
+    selectDecision: (key) => {
+      dispatch({type: "decision-chosen", key});
+      const title = mounts.bodyDecisions.querySelector(".studio-decisions__detail h3");
+      if (title?.dataset.focusKey === `decision-title:${key}` && window.matchMedia("(max-width:899px)").matches) {
+        title.focus({preventScroll: true});
+        title.scrollIntoView({block: "start"});
+      }
+    },
     editDecision: (patch) => dispatch({type: "decision-edit", patch}),
     submitDecision: decisions.submitDecision,
     refreshAgents: () => {

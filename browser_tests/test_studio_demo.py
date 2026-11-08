@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import threading
 from collections.abc import Iterator
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import Browser, Locator, Page, expect
@@ -579,7 +580,7 @@ _KEYBOARD_ACTIONS = (
     ("#bodyOverview .studio-overview__latest button", "action:onSelectRun"),
     ("#bodyOverview .studio-overview__attention button", "overview:decisions"),
     ("#bodyOverview .studio-overview__context button", "overview:workflow"),
-    ("#studioPrimary button", "action:onScreen"),
+    ("#studioPrimary button", "overview:pending-run"),
 )
 
 
@@ -611,7 +612,9 @@ def test_a_render_keeps_the_keyboard_on_the_same_overview_action_in_both_languag
     page.locator("#navOverview").click()
     page.evaluate(_RENDER_UNDER_FOCUS, [_KEYBOARD_ACTIONS[3][0], "en"])
     page.keyboard.press("Enter")
-    expect(page.locator("#screenWorkflow")).to_be_visible()
+    expect(page.locator("#screenRuns")).to_be_visible()
+    expect(page.locator("#studioPrimary [data-run-action=decide]")).to_be_visible()
+    assert parse_qs(urlsplit(page.url).fragment)["run"] == [demo_scenario.RUN_ID]
     assert problems == []
 
 

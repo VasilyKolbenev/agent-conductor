@@ -106,7 +106,8 @@ PERMITTED_IMPORTS = {
       "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
       "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
-                                         "./desk-wizard-run.js", "./desk-wizard.js"}),
+                                         "./desk-wizard-run.js", "./desk-wizard.js", "./desk-hash.js",
+                                         "./studio-automation-model.js"}),
     #: What a press on the console's queue block means: a pure flow over the door it is handed and
     #: the queue's model. It names no route and no wire word, and imports no door itself.
     "desk-pult-flow.js": frozenset({"./desk-queue-model.js"}),
@@ -502,7 +503,7 @@ PERMITTED_IMPORTS = {
     #: alone -- never to `studio-runs.js`, which would put two screens in one
     #: ring.
     "studio-people.js": frozenset({"./command-view.js", "./studio-i18n.js",
-                                   "./studio-quotas.js",
+                                   "./studio-quotas.js", "./studio-participants.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),

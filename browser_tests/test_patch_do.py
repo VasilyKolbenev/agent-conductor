@@ -15,14 +15,14 @@ from tests.test_patch_do_policy import ACTUAL, PATCH, run_state, work_and_calls
 from tests.test_policy_runtime import NOW, PD
 
 
-@pytest.mark.parametrize("seeded", [False, True])
-def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, seeded):
+@pytest.mark.parametrize("seeded,gated", [(False, False), (True, False), (True, True)])
+def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, seeded, gated):
     root = demo.materialize(tmp_path / "root")
     ownership_transition.activate(root, legacy_writers_stopped=True)
     site = Site(tmp_path, CODEX, root=root)
     with site.owned():
         item = "work-001" if seeded else "item"
-        f = run_state(site.root, site.adapter, item=item)
+        f = run_state(site.root, site.adapter, item=item, with_gates=gated)
         TaskStore(site.root).create_task(TaskRecord("one", "Исправить счётчик", "one", NOW))
         if seeded:
             seed = stage_empty(root, task_id="one", work_scope="one", work_item_id=item,
@@ -58,7 +58,7 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, see
             panel.locator('[data-focus="automation:authorize"]').click()
         assert accepted.value.ok
         expect(panel.locator("[data-automation-state]")).to_have_attribute(
-            "data-automation-state", "complete", timeout=15000)
+            "data-automation-state", "waiting" if gated else "complete", timeout=15000)
         records = f.store.read("run").records
         assert calls == ["prepare", "apply", "check"]
         assert len([r for r in records if r.kind == "action_request"]) == 1
@@ -74,6 +74,30 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, see
                 {"path": "count.py", "state": "added"}, {"path": "test_count.py", "state": "added"}]
         writes = []
         page.on("request", lambda req: writes.append(req.method) if req.method == "POST" else None)
+        if gated:
+            page.set_viewport_size({"width": 375, "height": 820})
+            page.locator('#studioPrimary [data-run-action="decide"]').click()
+            decisions = page.locator("#bodyDecisions")
+            decisions.locator('[data-focus-key="decision:run/accept"]').click()
+            checked = decisions.locator("[data-patch-result]")
+            expect(checked).to_contain_text("checker")
+            expect(checked.locator("[data-checked-path]")).to_have_count(2)
+            expect(checked.locator("[data-checked-path]").last).to_be_in_viewport()
+            expect(checked).to_contain_text("count.py")
+            expect(checked).not_to_contain_text("unreviewed.py")
+            expect(decisions.locator('[data-focus-key="field:actor"]')).to_be_visible()
+            decisions.locator('[data-focus-key="decision:run/next"]').click()
+            expect(decisions.locator("[data-patch-result]")).to_have_count(0)
+            assert not writes
+            decisions.locator('[data-focus-key="decision:run/accept"]').click()
+            decisions.locator('[data-focus-key="field:actor"]').fill("offline-owner")
+            decisions.get_by_role("button", name="Записать решение", exact=True).click()
+            expect(decisions.get_by_text("offline-owner", exact=True).first).to_be_visible()
+            receipts = [r.value for r in f.store.read("run").records if r.kind == "decision"]
+            assert [(r.gate_id, r.action, r.actor) for r in receipts] == [
+                ("accept", "approve", "offline-owner")]
+            assert writes == ["POST"]
+            return
         views = [("ru", 1280, "Открыть результат"), ("en", 375, "Open the result")]
         for lang, width, label in views:
             page.set_viewport_size({"width": width, "height": 850})

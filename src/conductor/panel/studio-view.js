@@ -324,6 +324,13 @@ export function mountOverview(mount, state, handlers) {
     mount.replaceChildren(card(state.demoTask.title, [note(localize(state, "demo.ready"))]));
     return;
   }
+  if (state.firstTask) {
+    mount.classList.remove("studio-overview");
+    const first = card(localize(state, "entry.first"), [note(localize(state, "entry.next"))]);
+    first.classList.add("studio-entry");
+    mount.replaceChildren(first);
+    return;
+  }
   const sections = [
     ["latest", latestRunCard(state, handlers)],
     ["attention", needsYouCard(state, handlers)],

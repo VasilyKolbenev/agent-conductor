@@ -123,7 +123,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
 }
 /* The one primary action of the screen now showing. Empty in the static
    document: which verb belongs here is a fact only a read can supply. */
-.studio-primary{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.studio-primary{margin-left:auto;display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap}
 
 /* ── the five screens ─────────────────────────────────────────────────── */
 /* Three carriers say which tab is current -- the underline, the heavier word
@@ -255,6 +255,12 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
                             padding:7px 16px}
 .studio-btn:hover,.studio-action:hover{border-color:var(--muted)}
 .studio-primary .studio-btn:hover{border-color:var(--accent)}
+.studio-task-link{display:inline-flex;align-items:center;min-height:44px}
+.studio-primary .studio-elsewhere{flex:none;font-size:13px}
+.studio-primary .studio-btn.studio-task-link{text-decoration:none}
+.studio-main--first-task .studio-workspace{order:-1}
+.studio-entry{max-width:64ch;padding:20px}
+.studio-entry h3{font-size:20px;line-height:1.25;letter-spacing:normal;text-transform:none}
 
 /* ── the workflow screen ──────────────────────────────────────────────── */
 .studio-toolbar{display:flex;gap:6px 8px;flex-wrap:wrap;align-items:flex-end;
