@@ -19,6 +19,7 @@
 // write ASKED FOR. Anything else is outcome-unknown, and never a guess.
 import {ERROR_LABELS, canonicalJson} from "./command-projection.js";
 import {LATE, createTransport, path} from "./desk-transport.js";
+import {deskHash} from "./desk-hash.js";
 import {mountCanvas} from "./studio-canvas.js";
 import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
@@ -102,11 +103,22 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   // because only a read showing that same thing confirms anything about it.
   let pendingCarry = null;
   const resume = navigation(location.hash);
+  const entry = history.state?.deskLimitEditor;
+  const desk = entry && typeof entry.project === "string" && /^[0-9a-f]{32}$/.test(entry.project) && resume.screen === "runs"
+    && resume.taskId && resume.runId && entry.task === resume.taskId && entry.run === resume.runId ? entry : null;
+  let focusDeskLimits = Boolean(desk);
+  const deskHistory = desk ? {deskLimitEditor: desk} : null;
+  if (desk) window.addEventListener("popstate", () => {
+    // The editor's entry was pushed by the Desk. On Back its URL changes
+    // before the browser replaces the Studio document.
+    if (location.pathname === "/panel/desk.html") location.reload();
+  });
+  const fromDesk = (detail) => desk && detail?.run?.run_id === desk.run && detail.config?.task?.id === desk.task;
   let readLocale = null;
   const appearance = preferences({root: document.documentElement,
     mount: byId("studioPreferences"), hash: location.hash, language: navigator.language,
     media: window.matchMedia("(prefers-color-scheme: dark)"), change: () => {
-      history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
+      history.replaceState(deskHistory, "", preferenceHash(navigationHash(state), appearance.value));
       render();
       if (readLocale !== appearance.value.locale) {
         readLocale = appearance.value.locale;
@@ -119,7 +131,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   window.addEventListener("pagehide", () => appearance.dispose());
   //: The doors to the wire live in the transport module; the language they ask
   //: in is this window's, read at each request.
-  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale);
+  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale, () => desk?.project ?? null);
 
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
@@ -129,7 +141,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
       if (finished) finished.open = false;
     }
     state = next;
-    history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
+    history.replaceState(deskHistory, "", preferenceHash(navigationHash(state), appearance.value));
     if (redraw) render();
   }
 
@@ -157,11 +169,21 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     mountInspector(mounts.inspector, presentation, handlers);
     mountRuns(mounts.bodyRuns, presentation, handlers);
     mountBridge(mounts.bridge, presentation, handlers);
-    mountAutomation(mounts.bodyRuns, presentation, held, automation, handlers.showDecisions);
+    const back = fromDesk(detail) ? "/panel/desk.html" + preferenceHash(deskHash({
+      project: desk.project, embed: desk.embed, task: desk.task, run: desk.run}), appearance.value) : null;
+    mountAutomation(mounts.bodyRuns, presentation, held, automation, handlers.showDecisions, back);
     mountDecisions(mounts.bodyDecisions, presentation, handlers);
     mountAgents(mounts.bodyAgents, presentation, handlers);
     restoreTyped(shell, typed);
     restoreFocus(shell, key);
+    if (focusDeskLimits && back && state.screen === "runs" && held.expanded && held.phase === "ready") {
+      const input = mounts.bodyRuns.querySelector('[data-focus="automation:run:max_actions"]');
+      if (input) {
+        focusDeskLimits = false;
+        input.focus();
+        input.scrollIntoView({block: "center"});
+      }
+    }
   }
 
   // -- reads ---------------------------------------------------------------
@@ -337,7 +359,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
         return;
       }
       dispatch({type: "run-loaded", read, controls});
-      automation.sync(state.runs.detail);
+      automation.sync(state.runs.detail, fromDesk(state.runs.detail) ? desk.bounds : null);
     } catch (error) {
       if (asked !== runEpoch && !stillNews(runId === chosenRun, stop)) return;
       const heard = unread(error);

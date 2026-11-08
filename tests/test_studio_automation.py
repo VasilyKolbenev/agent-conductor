@@ -46,6 +46,23 @@ def wire(root):
             "paused": automation_view(f.policy, "run"), "body": body}
 
 
+def test_desk_suggestions_are_only_numeric_inputs_for_matching_run_steps(tmp_path):
+    payload = wire(tmp_path)
+    projected = js("""
+      const terms = p.preview.terms, detail = p.read, bounds = model.limitFields(terms);
+      const suggested = model.draftFromDesk(detail, bounds);
+      const invalid = [null, {...bounds, digest: p.preview.preview_digest}, {...bounds, max_actions: 0},
+        {...bounds, node_limits: []},
+        {...bounds, node_limits: bounds.node_limits.map(row => ({...row, node_id: "other-step"}))}];
+      console.log(JSON.stringify({body: model.previewRequest(suggested), actor: suggested.actor,
+        invalid: invalid.map(one => model.draftFromDesk(detail, one))}));
+    """, payload)
+    assert projected["body"] == {key: payload["preview"]["terms"][key] for key in (
+        "max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds", "node_limits")}
+    assert projected["actor"] == ""
+    assert projected["invalid"] == [None] * 5
+
+
 def test_diagnostic_steps_match_the_reviewed_grant(tmp_path):
     from tests.desk_wizard_node import fixture
     payload = wire(tmp_path)

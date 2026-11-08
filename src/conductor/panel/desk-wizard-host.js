@@ -3,6 +3,8 @@
 // asks; this host only supplies the shared transport, page identity, address and clock. A closed
 // wizard has a new epoch, so a late read or write cannot reopen it or change another project.
 import {path} from "./desk-transport.js";
+import {deskHash, preferenceHash, readDeskHash, readPreferences} from "./desk-hash.js";
+import {limitFields} from "./studio-automation-model.js";
 import {cycleCards, initialWizard, openingFrom, restoreAnswers, resumeFrom, stepWizard} from "./desk-wizard-model.js";
 import {wizardExit, wizardHash} from "./desk-wizard-run.js";
 import {mountWizard} from "./desk-wizard.js";
@@ -117,6 +119,10 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     }
   }
   window.addEventListener("beforeunload", warnOnUnload);
+  function enterStudioOnForward() {
+    if (location.pathname === "/" && history.state?.deskLimitEditor) location.reload();
+  }
+  window.addEventListener("popstate", enterStudioOnForward);
 
   const live = (at) => at === epoch && wizard !== null;
   const refresh = () => onState();
@@ -128,7 +134,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     if (wizard === null) mount.replaceChildren();
     else mountWizard(mount, {locale: locale(), wizard, draftStatus: editor?.status
       ?? (unavailable ? "restore_failed" : "memory_only")}, {onWizard: dispatch,
-      onWizardClose: close});
+      onWizardClose: close, onEditLimits: context.project?.() && !context.foreign() ? editLimits : null});
   }
 
   function hash(override) {
@@ -164,7 +170,25 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     close();
     epoch += 1;
     window.removeEventListener("beforeunload", warnOnUnload);
+    window.removeEventListener("popstate", enterStudioOnForward);
     trigger.removeEventListener("click", openNew);
+  }
+
+  function editLimits() {
+    const terms = wizard?.launch.preview?.terms;
+    if (!terms || !context.project?.() || context.foreign() || wizard.launch.phase !== "review") return;
+    const task = wizard.task.taskId, run = wizard.run.runId;
+    const selection = {task, run, project: context.project(), embed: readDeskHash(location.hash).embed};
+    const appearance = {...readPreferences(location.hash, locale()), locale: locale()};
+    const back = preferenceHash(deskHash(selection), appearance);
+    const studio = preferenceHash(`#${new URLSearchParams({screen: "runs", task, run})}`, appearance);
+    // Leave the old grant card before navigating. Only editable numbers follow
+    // this tab; Studio must get a fresh server preview before it can grant them.
+    const draft = {...selection, bounds: limitFields(terms)};
+    close();
+    history.replaceState(null, "", back);
+    history.pushState({deskLimitEditor: draft}, "", "/" + studio);
+    location.reload();
   }
 
   async function perform(ask, at, expected) {

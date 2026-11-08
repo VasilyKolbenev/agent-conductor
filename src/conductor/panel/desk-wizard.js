@@ -39,7 +39,8 @@ function context(state, handlers, mount) {
     expanded: new Set([...mount.querySelectorAll("[data-guide-details][open]")]
       .map((node) => node.dataset.guideDetails)),
     t: (key, params) => localize(state, key, params),
-    send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome)};
+    send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome),
+    editLimits: handlers.onEditLimits};
 }
 
 // -- the frame ---------------------------------------------------------------------------

@@ -6,8 +6,9 @@ Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 
 Desk now starts a task in three stages: describe the result and working folder,
 choose the team and cycle, then review the limits and human decisions. The default
-cycle is Dalio revision 6, with an independent check of the Do step. A new user can
-review the suggested limits and edit them before authorizing work. These paths
+cycle is Dalio revision 6, with an independent check of the Do step. Select **Edit
+limits in Studio** to change the suggested values for that run. Review the new bounds
+before authorizing work. **Return to Desk** reopens the same run. These paths
 have been exercised locally in Chromium in Russian and English, including at 375 px.
 
 In the private offline demo, a colleague can open a completed Dalio run and see

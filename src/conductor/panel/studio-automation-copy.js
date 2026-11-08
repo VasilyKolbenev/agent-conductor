@@ -27,6 +27,8 @@ export const AUTOMATION_COPY = Object.freeze({
   "automation.open_decision": ["Review pending decision", "Перейти к решению"],
   "automation.explain": ["Review explicit limits, then authorize routine work. Human gates still wait for your answer.", "Проверьте ограничения и разрешите обычные шаги. Человеческие проверки по-прежнему ждут вашего решения."],
   "automation.actor": ["Your name", "Ваше имя"],
+  "automation.desk_return": ["Return to Desk", "Вернуться в Desk"],
+  "automation.desk_suggestion": ["These are the limits suggested in Desk. Review them or enter your own.", "Это пределы, предложенные в Desk. Проверьте их или введите свои."],
   "automation.name_needed": ["Enter your name in the field above to enable authorization.", "Введите имя в поле «Ваше имя» выше, чтобы разрешить запуск."],
   "automation.max_actions": ["Maximum actions for this run", "Максимум действий за весь запуск"],
   "automation.max_action_seconds": ["Maximum seconds per action", "Максимум секунд на действие"],

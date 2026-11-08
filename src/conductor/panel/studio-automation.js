@@ -2,7 +2,7 @@
 // A reviewed human permission is separate from per-action confirmation.
 import {element, field} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
-import {automationEligible} from "./studio-automation-model.js";
+import {automationEligible, previewRequest} from "./studio-automation-model.js";
 
 const note = (text) => element("p", {className: "studio-hint", text});
 const word = (state, key, params) => localize(state, `automation.${key}`, params);
@@ -33,7 +33,8 @@ function boundsForm(state, held, actions) {
     {actions: actionsMax, seconds: actionSeconds, total, duration}) : word(state, "budget_wait");
   form.append(element("p", {"data-budget-summary": "", text: summary}));
   if (custom) {
-    form.append(note(word(state, "budget_custom")), button(state, "use_plan", !held.pending && !held.request,
+    form.append(note(word(state, held.draft.suggestedInDesk ? "desk_suggestion" : "budget_custom")),
+      button(state, "use_plan", !held.pending && !held.request,
       () => actions.preview("edit")));
   } else if (plan) {
     form.append(note(word(state, "plan_basis", {steps: String(plan.steps), attempts: String(plan.attempts),
@@ -50,7 +51,9 @@ function boundsForm(state, held, actions) {
   toggle.dataset.focus = "automation:limits";
   form.append(toggle);
   if (held.expanded) appendLimitInputs(form, state, held, actions);
-  const submit = button(state, "preview", !held.pending && !held.request && held.phase === "ready", () => {});
+  const invalid = custom && previewRequest(held.draft) === null;
+  if (invalid) form.append(element("p", {role: "status", "data-invalid-bounds": "", text: word(state, "invalid")}));
+  const submit = button(state, "preview", !invalid && !held.pending && !held.request && held.phase === "ready", () => {});
   submit.type = "submit"; submit.formNoValidate = !custom; form.append(submit);
   form.addEventListener("submit", (event) => { event.preventDefault(); if (!custom || form.reportValidity()) actions.preview(); });
   return form;
@@ -172,7 +175,7 @@ function status(state, held, actions) {
   }
   return box;
 }
-export function mountAutomation(mount, state, held, actions, showDecisions) {
+export function mountAutomation(mount, state, held, actions, showDecisions, deskReturn = null) {
   if (!automationEligible(state.runs.detail) || !held.draft || held.runId !== state.runs.selectedId) return;
   const awaiting = state.connection === "open" && state.decisions.phase === "ready"
     && state.decisions.list.some((row) => row.run_id === held.runId && row.needs_answer);
@@ -180,6 +183,7 @@ export function mountAutomation(mount, state, held, actions, showDecisions) {
     element("h3", {text: word(state, "title")}), note(word(state, awaiting ? "decision_waiting" : "explain")),
     ...(awaiting ? [button(state, "open_decision", true, () => showDecisions(held.runId))] : []),
     input(state, held, actions, "actor"),
+    ...(deskReturn ? [element("a", {href: deskReturn, text: word(state, "desk_return")})] : []),
     button(state, "refresh", state.connection === "open" && !held.pending, actions.refresh),
   ]);
   if (["loading", "failed", "disconnected"].includes(held.phase)) box.append(note(word(state, held.phase)));
