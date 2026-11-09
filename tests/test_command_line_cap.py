@@ -11,6 +11,19 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/attempt_detail.py",
+    "src/conductor/command/attempt_base.py",
+    "src/conductor/command/attempt_test_evidence.py",
+    "src/conductor/utility_bridge.py",
+    "tests/test_attempt_detail.py",
+    "tests/test_attempt_projection.py",
+    "tests/test_attempt_base.py",
+    "tests/test_attempt_test_evidence.py",
+    "tests/test_utility_bridge.py",
+    "browser_tests/test_studio_atlas.py",
+    "src/conductor/command/project_utilities.py",
+    "tests/test_project_utilities.py",
+    "browser_tests/test_studio_utilities.py",
     "src/conductor/command/adapters/codex_patch.py",
     "src/conductor/command/checked_changes.py",
     "src/conductor/command/adapters/codex_patch_dispatch.py",

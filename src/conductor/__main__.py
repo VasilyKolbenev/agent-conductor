@@ -611,6 +611,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_demo)
 
     _add_tools(sub)
+    from .utility_bridge import add_parser as add_utility_bridge
+    add_utility_bridge(sub)
     _add_projects(sub)
     _add_hub(sub)
     return parser

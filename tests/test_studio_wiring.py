@@ -103,7 +103,7 @@ PERMITTED = {
     "studio-automation-flow.js": frozenset({"./studio-automation-model.js"}),
     "studio-workflowwrite.js": frozenset({"./studio-model.js", "./studio-store.js", "./command-projection.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-utilities-copy.js", "./studio-atlas-copy.js", "./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -133,7 +133,8 @@ PERMITTED = {
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
-        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js",
+        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js", "./studio-atlas.js",
+        "./studio-utilities.js",
         "./studio-taskflow.js", "./studio-mounts.js", "./studio-quotaflow.js",
         "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js", "./desk-hash.js"}),
     #: What a press MEANS, and the whole of what it may reach: the two
@@ -184,7 +185,7 @@ WRITE_TARGETS = frozenset({"taskDraft", "draft", "revisions", "runs", "decisions
                            "automationPreview", "automationAuthorize", "automationControl",
                            "materials", "autoContinue", "seed", "flow", "cyclePin", "queue",
                            "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit",
-                           "gitSetup", "acceptPush", "acceptPullRequest"})
+                           "gitSetup", "acceptPush", "acceptPullRequest", "utilities"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.

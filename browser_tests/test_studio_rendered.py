@@ -85,6 +85,9 @@ PHASES = ("empty", "loading", "ready", "stale", "refused", "failed",
 #: allowlist would only agree with itself, while a name the allowlist does not
 #: carry answers 404 and would be invisible in a test that read the markup.
 BOOT_ASSETS = {
+    "studio-atlas.css": 200, "studio-atlas.js": 200,
+    "studio-atlas-copy.js": 200, "studio-atlas-inspector.js": 200,
+    "studio-utilities.css": 200, "studio-utilities.js": 200, "studio-utilities-copy.js": 200,
     "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
     "studio-tasks-model.js": 200, "studio-tasks.js": 200, "studio-taskflow.js": 200,
     "studio-model.js": 200, "studio-view.js": 200,

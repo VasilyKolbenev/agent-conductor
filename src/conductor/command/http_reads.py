@@ -28,6 +28,9 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
         return 200, api._session.session_response(host)
     if route.name == "project":
         return project_claim.read_project(api._identity)
+    if route.name == "project_utilities":
+        from .project_utilities import list_utilities
+        return 200, list_utilities(api._store.project_root)
     if route.name == "project_git":
         return project_git_state.read_git(api)
     if route.name == "project_documents":
@@ -72,6 +75,10 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     assert route.run_id is not None
     api._hold_route(route.run_id)
     recovered = api._store.read(route.run_id)
+    if route.name == "attempt_detail":
+        from .attempt_detail import read_attempt
+        return 200, read_attempt(api._store.project_root, recovered, route.node_id,
+                                 route.action_id, git=api._project_git)
     if route.name == "run":
         from .checked_changes import checked_changes
         result = studio_routes.recovered_payload(recovered, api._tasks, computed_at=api._clock())

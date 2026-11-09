@@ -11,6 +11,8 @@ from __future__ import annotations
 #: two. A module that is packaged and missing here fails the packaged-resource
 #: partition test in tests/test_server_panel_assets.py.
 _STUDIO_FILES = (
+    "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js", "studio-atlas.css",
+    "studio-utilities.js", "studio-utilities-copy.js", "studio-utilities.css",
     "studio.css", "studio.js", "studio-model.js", "studio-layout.js", "studio-review.js",
     "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
     "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",

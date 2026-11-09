@@ -1,0 +1,31 @@
+#studioUtilities { width: min(800px, 94vw); max-height: 86dvh; padding: 0; overflow: auto;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; }
+#studioUtilities::backdrop { background: rgb(0 0 0 / 52%); }
+.utility-heading, #studioUtilities footer { display: flex; gap: 12px; align-items: center;
+  justify-content: space-between; padding: 10px 16px; }
+.utility-heading { border-bottom: 1px solid var(--line); }
+.utility-heading h2 { margin: 0; }
+.utility-layout { display: grid; grid-template-columns: minmax(155px, 28%) minmax(0, 1fr); }
+.utility-options { display: flex; flex-direction: column; gap: 4px; padding: 12px;
+  border-right: 1px solid var(--line); background: var(--sunk); }
+.utility-options h3 { font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+.utility-options button { text-align: left; overflow-wrap: anywhere; }
+.utility-options button[aria-pressed=true] { border-left: 3px solid var(--ion); }
+.utility-workspace { min-height: 215px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
+.utility-workspace h3, .utility-workspace h4 { margin: 8px 0; }
+.utility-workspace p { margin: 8px 0; }
+.utility-workspace code, .utility-workspace pre { display: block; margin: 6px 0;
+  padding: 7px 9px; background: var(--sunk); font: 12px/1.5 var(--mono);
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.utility-form, .utility-workspace label { display: grid; gap: 6px; }
+.utility-workspace label { margin: 9px 0; }
+.utility-workspace textarea, .utility-workspace input, .utility-workspace select {
+  width: 100%; max-width: 100%; box-sizing: border-box; }
+.utility-exchange { margin: 12px 0; padding: 8px 0; border-top: 1px solid var(--line); }
+.utility-mode, .utility-exchange small { color: var(--muted); }
+#studioUtilities footer { border-top: 1px solid var(--line); min-height: 42px; }
+@media(max-width: 620px) {
+  .utility-layout { display: block; }
+  .utility-options { flex-direction: row; flex-wrap: wrap; border: 0; }
+  .utility-options h3 { flex-basis: 100%; }
+}

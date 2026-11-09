@@ -53,6 +53,8 @@ from tests.test_store import good_lane, write_project
 #: the element helper the region modules draw with, and the catalogue (with its
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
+    "studio-atlas-copy.js": 200,
+    "studio-utilities-copy.js": 200,
     "desk.html": 200, "desk.css": 200, "desk-flow.css": 200, "desk-people.css": 200,
     "desk-run.css": 200,
     "desk.js": 200, "desk-transport.js": 200,

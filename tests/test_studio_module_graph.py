@@ -20,6 +20,12 @@ from tests.test_studio_source import BOOT, IMPORTS, MODULES, PANEL
 #: has not yet needed one of its permitted neighbours is not a fault; a module
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
+    "studio-atlas-copy.js": frozenset(),
+    "studio-utilities-copy.js": frozenset(),
+    "studio-utilities.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-atlas-inspector.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-atlas.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                  "./studio-scene-model.js", "./studio-atlas-inspector.js"}),
     "studio-runstep-copy.js": frozenset(),
     "studio-participant-copy.js": frozenset(),
     "studio-run-docs-copy.js": frozenset(),
@@ -47,7 +53,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-utilities-copy.js", "./studio-atlas-copy.js", "./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),

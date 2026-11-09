@@ -48,12 +48,16 @@ ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "studio.html"
 STYLE = PANEL / "studio.css"
+ATLAS_STYLE = PANEL / "studio-atlas.css"
+UTILITY_STYLE = PANEL / "studio-utilities.css"
 MODEL = PANEL / "studio-model.js"
 #: Every module of the Studio, spelled out so a new one cannot arrive without
 #: passing every guard below. The partition test underneath holds this list to
 #: the packaged directory in both directions.
 MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-docs-copy.js", "studio-runs-copy.js", "studio-runform-copy.js", "studio-view-copy.js", "studio-workflow-detail-copy.js", "studio-workflow-copy.js", "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js", "studio-agents-copy.js", 'studio-automation-model.js', 'studio-automation-providers.js', 'studio-automation-flow.js', 'studio-automation-copy.js', 'studio-automation.js', 'studio-workflowwrite.js', 'studio-draft.js',
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
+           "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js",
+           "studio-utilities.js", "studio-utilities-copy.js",
            "studio-budget-guidance.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
@@ -140,7 +144,7 @@ LINE_CAP = 800
 
 
 def _paths() -> tuple[Path, ...]:
-    return (HTML, STYLE) + tuple(PANEL / name for name in MODULES)
+    return (HTML, STYLE, ATLAS_STYLE, UTILITY_STYLE) + tuple(PANEL / name for name in MODULES)
 
 
 def test_the_contract_modules_resolve_inside_this_tree():
@@ -229,7 +233,9 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
     """
     everything = (_code(*(PANEL / name for name in MODULES))
                   + "\n" + HTML.read_text(encoding="utf-8")
-                  + "\n" + STYLE.read_text(encoding="utf-8")).lower()
+                  + "\n" + STYLE.read_text(encoding="utf-8")
+                  + "\n" + ATLAS_STYLE.read_text(encoding="utf-8")
+                  + "\n" + UTILITY_STYLE.read_text(encoding="utf-8")).lower()
     for forbidden in SEALED:
         assert forbidden not in everything, forbidden
     homes = (BOOT, TRANSPORT_MODULE)
@@ -244,15 +250,15 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
 
 
 def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
-    """One module, one stylesheet, no inline anything, no foreign origin.
+    """One module and its three packaged stylesheets, no inline code or foreign origin.
 
     Every reference is root-relative under /panel/: no scheme, no `//`, no
     traversal, so the served document reaches this origin's own packaged
     directory and nothing else. It cannot be document-relative -- the shell is
     served at `/` -- and the substitute is asserted rather than assumed.
 
-    The list is exact as well as constrained, so a third reference has to be
-    argued for here. Two of them are what this document LOADS; the third is
+    The list is exact as well as constrained, so any additional reference has to be
+    argued for here. Four of them are what this document LOADS; the fifth is
     where it SENDS a person, and that one is on the list because the Protocol
     v1 surfaces -- the map, the findings, the feed, the handoffs -- have not
     moved into this application and a route to them that only a `<noscript>`
@@ -263,7 +269,8 @@ def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     assert "<style" not in html
     assert not re.search(r"\son[a-z]+=", html), "an inline handler is a script"
     refs = re.findall(r'(?:href|src)="([^"]*)"', html)
-    assert refs == ["/panel/studio.css", "/panel/studio.js", "/panel/index.html"]
+    assert refs == ["/panel/studio.css", "/panel/studio-atlas.css", "/panel/studio-utilities.css",
+                    "/panel/studio.js", "/panel/index.html"]
     for ref in refs:
         assert ref.startswith("/panel/")
         assert "//" not in ref and ".." not in ref and ":" not in ref
@@ -272,6 +279,8 @@ def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     from conductor.server import PANEL_ASSETS
     assert set(refs) <= set(PANEL_ASSETS), sorted(set(refs) - set(PANEL_ASSETS))
     assert '<link rel="stylesheet" href="/panel/studio.css">' in html
+    assert '<link rel="stylesheet" href="/panel/studio-atlas.css">' in html
+    assert '<link rel="stylesheet" href="/panel/studio-utilities.css">' in html
     assert '<script src="/panel/studio.js" type="module"></script>' in html
 
 

@@ -24,7 +24,9 @@ import {mountCanvas} from "./studio-canvas.js";
 import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
 import {mountAgents, mountDecisions} from "./studio-people.js";
+import {utilityDrawer} from "./studio-utilities.js";
 import {mountRuns} from "./studio-runs.js";
+import {atlasScene} from "./studio-atlas.js";
 import {workflowWriters} from "./studio-workflowwrite.js";
 import {automationFlow} from "./studio-automation-flow.js";
 import {mountAutomation} from "./studio-automation.js";
@@ -132,6 +134,26 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   //: The doors to the wire live in the transport module; the language they ask
   //: in is this window's, read at each request.
   const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale, () => desk?.project ?? null);
+  let utilityProject = desk?.project ?? null;
+  const utilityDoor = createTransport(() => appearance.value.locale, () => utilityProject);
+  const utilities = utilityDrawer(byId("studioUtilities"), {
+    project: () => utilityDoor.readJson(path.project()), read: () => utilityDoor.readJson(path.utilities()),
+    bind: (id) => {
+      if (utilityProject && utilityProject !== id) return false;
+      utilityProject = id; return true;
+    },
+    post: (body) => utilityDoor.submit("utilities", null, body),
+    connected: () => streamOpen, locale: () => appearance.value.locale,
+    origin: "http://127.0.0.1:" + (location.port || "80"), newId: () => "x-" + crypto.randomUUID(),
+    copy: (text) => navigator.clipboard.writeText(text),
+    question: () => byId("studioAtlas")?.querySelector("[data-atlas-field]")?.value || "",
+  });
+  byId("utilityRuns").addEventListener("click", () => utilities.open(true));
+  byId("utilityAgents").addEventListener("click", () => utilities.open(false));
+  const atlas = atlasScene(byId("studioAtlas"), {
+    read: (run, node, action, stop) => readJson(path.atlasAttempt(run, node, action), stop),
+    stop: () => new AbortController(),
+  });
 
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
@@ -173,12 +195,14 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     mountCanvas(mounts.nodes, mounts.edges, presentation, handlers);
     mountInspector(mounts.inspector, presentation, handlers);
     mountRuns(mounts.bodyRuns, presentation, handlers);
+    atlas.sync(presentation);
     mountBridge(mounts.bridge, presentation, handlers);
     const back = fromDesk(detail) ? "/panel/desk.html" + preferenceHash(deskHash({
       project: desk.project, embed: desk.embed, task: desk.task, run: desk.run}), appearance.value) : null;
     mountAutomation(mounts.bodyRuns, presentation, held, automation, handlers.showDecisions, back);
     mountDecisions(mounts.bodyDecisions, presentation, handlers);
     mountAgents(mounts.bodyAgents, presentation, handlers);
+    utilities.sync();
     restoreTyped(shell, typed);
     restoreFocus(shell, key);
     if (focusDeskLimits && back && state.screen === "runs" && held.expanded && held.phase === "ready") {
@@ -638,6 +662,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     workflowEpoch += 1;
     runEpoch += 1;
     dropSession();
+    utilityDoor.dropSession();
     writeGeneration += 1;
     pendingCarry = null;
     quotas.disconnectQuotas();

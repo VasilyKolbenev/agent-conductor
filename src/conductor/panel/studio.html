@@ -22,6 +22,8 @@
      that nothing has been read yet -- never a blank area, and never a spinner
      with no exit. -->
 <link rel="stylesheet" href="/panel/studio.css">
+<link rel="stylesheet" href="/panel/studio-atlas.css">
+<link rel="stylesheet" href="/panel/studio-utilities.css">
 <script src="/panel/studio.js" type="module"></script>
 </head>
 <body>
@@ -122,6 +124,8 @@
         <p class="studio-hint" data-i18n="shell.verification">A process that exits 0 has finished, which is not
           the same as having been verified. Both words are shown.</p>
       </details></header>
+      <button id="utilityRuns" data-i18n="utility.open" type="button">Connect a harness</button>
+      <div id="studioAtlas" hidden></div>
       <div class="studio-body" id="bodyRuns"></div>
     </section>
 
@@ -140,12 +144,14 @@
       <p class="studio-state" id="stateAgents">Nothing has been read yet.</p>
       <p class="studio-hint" data-i18n="shell.agents">A participant binds one instance to one configured
         provider. Providers are operator-written and read at startup.</p>
+      <button id="utilityAgents" data-i18n="utility.open" type="button">Connect a harness</button>
       <div class="studio-body" id="bodyAgents"></div>
     </section>
 
     </div>
     <aside class="studio-bridge" id="studioBridge" hidden aria-label="Run controls and usage" data-i18n-label="bridge.region"></aside>
   </main>
+  <dialog id="studioUtilities" aria-labelledby="utilitiesTitle"></dialog>
 
   <!-- The one place a transient sentence is written. Persistent in the
        document rather than rebuilt with its text, for graph.html's reason: an

@@ -36,6 +36,13 @@ ASSETS = {
     # here: studio.html is what `GET /` answers with, and a document with two
     # routes is a document a reader can reach by two names.
     "/panel/studio.css": "text/css; charset=utf-8",
+    "/panel/studio-atlas.css": "text/css; charset=utf-8",
+    "/panel/studio-atlas.js": "text/javascript; charset=utf-8",
+    "/panel/studio-atlas-copy.js": "text/javascript; charset=utf-8",
+    "/panel/studio-atlas-inspector.js": "text/javascript; charset=utf-8",
+    "/panel/studio-utilities.css": "text/css; charset=utf-8",
+    "/panel/studio-utilities.js": "text/javascript; charset=utf-8",
+    "/panel/studio-utilities-copy.js": "text/javascript; charset=utf-8",
     "/panel/studio-model.js": "text/javascript; charset=utf-8",
     "/panel/studio-situation.js": "text/javascript; charset=utf-8",
     "/panel/studio-i18n.js": "text/javascript; charset=utf-8",

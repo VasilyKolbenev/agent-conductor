@@ -66,6 +66,11 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 
 
 def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    if route.name == "project_utilities":
+        from .project_utilities import apply
+        if api._identity.mode != "active":
+            raise ApiRefusal.fixed("project_not_active")
+        return apply(api._store.project_root, body)
     if route.name == "project_task_draft":
         if api._identity.mode != "active":
             raise ApiRefusal.fixed("project_not_active")
