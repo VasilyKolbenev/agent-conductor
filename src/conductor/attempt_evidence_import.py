@@ -63,6 +63,9 @@ def _git(scratch, pin_home):
     source_env.update(dict.fromkeys(("HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA"),
                                     str(scratch)))
     pinned = server_git.project_git_reader(scratch, source=source_env, folder=pin_home)
+    capability = pinned(["--no-lazy-fetch", "--version"], True)
+    if capability.exit_code != 0:
+        raise ValueError("Git archive import requires a working Git pin with --no-lazy-fetch")
 
     def read(args, *a, **kw):
         answer = pinned(["--no-lazy-fetch", "-c", "protocol.allow=never", *args], *a, **kw)
@@ -96,7 +99,8 @@ def _base(source, scratch, request, seed, snap, pin_home):
 def _report(path, scratch, request, seed, snap):
     path = path.absolute()
     # Include every parent in the no-portal read. Only explicitly named JSON is admitted.
-    if path.suffix.lower() != ".json":
+    if (path.suffix.lower() != ".json" or path.as_posix().startswith("//")
+            or attempt_detail._private_path(path.as_posix())):
         raise ValueError("the external report must be a local JSON file")
     raw = _read(Path(path.anchor), path, _LIMIT)
     report = json.loads(raw, object_pairs_hook=_unique)
@@ -105,6 +109,9 @@ def _report(path, scratch, request, seed, snap):
 
 
 def run(opts):
+    if any(path is not None and path.absolute().as_posix().startswith("//")
+           for path in (opts.source, opts.target, opts.pin_home)):
+        raise ValueError("local project directories and a local pin home are required")
     source = opts.source.resolve(strict=True)
     target = opts.target.resolve(strict=True)
     if (source == target or source in target.parents or target in source.parents

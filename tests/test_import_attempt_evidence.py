@@ -89,3 +89,60 @@ def test_import_rejects_overlapping_paths_and_wrong_node(closed_run, tmp_path):
         entry.run(entry.options(["--source", str(source), *args]))
     assert not list(source.iterdir())
     assert ownership.state(target)[1]["phase"] == "closed"
+
+
+def test_frozen_git_source_remains_untouched_even_if_current_branch_disagrees(tmp_path):
+    from types import SimpleNamespace
+    from conductor import attempt_evidence_import as entry, tool_pins
+    from conductor.command.accept_manifest import FileImage, build_snapshot
+    from conductor.command.attempt_base import read_attempt_base
+    from conductor.command.seed_record import SeedRecord
+    from tests.git_repo_helpers import GIT, commit, git, repository, snapshot
+
+    if GIT is None:
+        pytest.skip("git unavailable")
+    source = repository(tmp_path)
+    base = commit(source, {"count.py": b"old\n"})
+    tree = git("rev-parse", "HEAD^{tree}", cwd=source).stdout.decode().strip()
+    seed = SeedRecord("one", "one", "work-001", "git", base, tree, "sha1", None,
+                      1, 4, False, "staging", (), (), (), NOW)
+    commit(source, {"count.py": b"new HEAD\n"})
+    (source / "count.py").write_bytes(b"working tree is private")
+    pin = tmp_path / "pins"
+    pin.mkdir()
+    tool_pins.pin_tool("git", GIT, folder=pin)
+    safe = tmp_path / "archive"
+    safe.mkdir()
+    manifest = build_snapshot({"count.py": FileImage(b"old\n")},
+                              {"count.py": FileImage(b"after\n")}, object_format="sha1")
+    before = snapshot(source)
+    entry._base(source, safe, SimpleNamespace(run_id="run"), seed, manifest, pin)
+    assert snapshot(source) == before
+    assert read_attempt_base(safe, "run", seed, manifest.rows) == {"count.py": b"old\n"}
+
+
+def test_private_report_is_rejected_before_reading_the_named_file(tmp_path, monkeypatch):
+    from conductor import attempt_evidence_import as entry
+
+    def never_read(*_args):
+        pytest.fail("opened a private profile file")
+
+    monkeypatch.setattr(entry, "_read", never_read)
+    with pytest.raises(ValueError, match="local JSON file"):
+        entry._report(tmp_path / ".codex" / "auth.json", tmp_path, None, None, None)
+
+
+def test_old_git_is_refused_before_it_reads_the_original_repository(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from conductor import attempt_evidence_import as entry
+
+    calls = []
+
+    def pinned(args, *_, **_kwargs):
+        calls.append(args)
+        return SimpleNamespace(exit_code=129, output=b"unknown option: --no-lazy-fetch")
+
+    monkeypatch.setattr(entry.server_git, "project_git_reader", lambda *a, **kw: pinned)
+    with pytest.raises(ValueError, match="no-lazy-fetch"):
+        entry._git(tmp_path, None)
+    assert calls == [["--no-lazy-fetch", "--version"]]

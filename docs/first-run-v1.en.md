@@ -354,7 +354,8 @@ external test receipt, the operator can populate the closed copy. Use
 `python -m conductor.attempt_evidence_import --help` in the same installation.
 Supply `--source` (original repository), `--target` (separate project copy),
 `--run`, `--node`, `--action` and optionally `--report` (JSON). Use `--pin-home`
-for the directory containing the trusted Git pin. The importer binds the evidence
+for the directory containing the trusted Git pin. Recovering Git before-images
+requires support for `--no-lazy-fetch` so missing objects stay offline. The importer binds the evidence
 to the selected attempt and accesses the original repository read-only.
 
 These blocks restore the paths if you opened a new terminal after setting a key.
