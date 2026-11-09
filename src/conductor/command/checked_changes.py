@@ -1,4 +1,4 @@
-"""Bounded read-only projection of the latest independently verified Codex patch."""
+"""Bounded read-only projection of the latest independently verified implementation patch."""
 from .accept_manifest import SnapshotRefused
 from .accept_snapshot import read_snapshot_index
 from .adapters.deep_commands import PATCH_PROFILE

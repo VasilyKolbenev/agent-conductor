@@ -132,6 +132,16 @@ def test_selects_one_actual_request_and_keeps_the_atlas_conversation(
         expect(atlas.locator("[role=log]")).to_contain_text("action-first-1")
         atlas.locator('[data-atlas-tab="verdict"]').click()
         expect(inspector).to_contain_text("checker")
+        if width >= 1200:
+            field.focus()
+            page.set_viewport_size({"width": 375, "height": 850})
+            expect(inspector.get_by_role("heading", name="Do", exact=True)).to_be_focused()
+            expect(atlas.locator(".atlas-chat")).to_have_js_property("inert", True)
+            page.set_viewport_size({"width": width, "height": 850})
+            expect(atlas.locator(".atlas-chat")).to_have_js_property("inert", False)
+            expect(pick).to_have_value("action-first-1")
+            field.focus()
+            expect(field).to_be_focused()
         assert not writes and not errors, (writes, errors)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     finally:

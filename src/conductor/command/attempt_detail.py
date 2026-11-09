@@ -5,6 +5,7 @@ from .accept_capture import _included
 from .accept_manifest import SnapshotRefused
 from .accept_snapshot import read_snapshot, read_snapshot_index
 from .accept_terms import binary, patch
+from .adapters.agent_instructions import AGENT_INSTRUCTION_FOLDERS
 from .api_contracts import ApiRefusal
 from .checked_changes import MAX_SHOWN, patch_verifier
 from .contracts import ActionRequest, ActionResultReceipt
@@ -17,9 +18,9 @@ _FILE_LINES = 600
 _DIFF_BYTES = 128 * 1024
 _HASH = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _PRIVATE = frozenset({".ssh", ".aws", ".azure", ".gnupg", ".config", ".git-credentials",
-                      ".codex", ".grok", ".claude", ".npmrc", ".netrc", ".pypirc",
+                      ".npmrc", ".netrc", ".pypirc",
                       "auth.json", ".credentials.json", "credentials", "credentials.json",
-                      "id_rsa", "id_dsa", "id_ed25519", "id_ecdsa"})
+                      "id_rsa", "id_dsa", "id_ed25519", "id_ecdsa"}) | AGENT_INSTRUCTION_FOLDERS
 _SECRET = re.compile(
     rb"-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:sk-(?:proj-|ant-)?|gh[pousr]_|github_pat_)"
     rb"[a-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|(?:\bBearer[ \t]+[A-Za-z0-9._~-]{12,})|"

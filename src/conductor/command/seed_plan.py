@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import PurePath
 from typing import NamedTuple
 
-from .adapters.agent_instructions import AGENT_INSTRUCTION_NAMES
+from .adapters.agent_instructions import AGENT_INSTRUCTION_FOLDERS, AGENT_INSTRUCTION_NAMES
 from .adapters.process import STDIN_LIMIT
 from .api_refusals import SEED_REASONS
 from .path_admission import WindowsNameError, WindowsPathError, admit_file, admit_name
@@ -44,8 +44,6 @@ _LFS_LINES = (re.compile(rb"version https://git-lfs\.github\.com/spec/v1\Z"),
 _LFS_POINTER_MAX = 1024
 _INSTRUCTION_FILES = frozenset(name.casefold() for name in AGENT_INSTRUCTION_NAMES
                                if not name.endswith("/"))
-_INSTRUCTION_FOLDERS = frozenset(name.rstrip("/").casefold() for name in AGENT_INSTRUCTION_NAMES
-                                 if name.endswith("/"))
 
 
 class SeedRefusal(Exception):
@@ -201,7 +199,7 @@ def _fits(path: str, roots: tuple[PurePath, ...]) -> bool:
 
 def _is_instruction(path: str) -> bool:
     *folders, name = (part.casefold() for part in path.split("/"))
-    return name in _INSTRUCTION_FILES or any(part in _INSTRUCTION_FOLDERS for part in folders)
+    return name in _INSTRUCTION_FILES or any(part in AGENT_INSTRUCTION_FOLDERS for part in folders)
 
 
 def _collides(copy: list[TreeRow]) -> bool:

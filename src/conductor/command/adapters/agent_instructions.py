@@ -13,3 +13,6 @@ AGENT_INSTRUCTION_NAMES = (
     "AGENTS.md", "AGENT.md", "CLAUDE.md", "CLAUDE.local.md",
     ".claude/", ".codex/", ".grok/", ".kimi/", ".cursor/",
 )
+AGENT_INSTRUCTION_FOLDERS = frozenset(
+    name.rstrip("/").casefold() for name in AGENT_INSTRUCTION_NAMES if name.endswith("/")
+)

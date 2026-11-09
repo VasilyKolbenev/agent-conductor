@@ -165,11 +165,17 @@ export function atlasScene(root, door) {
     current.draft = ""; shell.input.value = "";
     drawLog(); drawInspector();
     shell.log.scrollTop = shell.log.scrollHeight;
-    if (action && matchMobile()) shell.heading.focus({preventScroll: true});
+    if (action && shell.chat.inert) shell.heading.focus({preventScroll: true});
   }
 
-  // The narrow sheet hides the chat for pointer input while its contents are open.
-  function matchMobile() { return window.matchMedia("(max-width: 700px)").matches; }
+  function syncSheet() {
+    if (!shell) return;
+    // The text on the sheet's close button is visible only in the sheet layout.
+    const open = !shell.panel.hidden && shell.closeLabel.getClientRects().length > 0;
+    const movesFocus = open && shell.chat.contains(document.activeElement);
+    shell.chat.inert = open;
+    if (movesFocus) shell.heading.focus({preventScroll: true});
+  }
 
   function createShell() {
     const header = element("header", {className: "atlas-header"}, [
@@ -198,14 +204,16 @@ export function atlasScene(root, door) {
         element("h3", {text: tr(view, "orbit")}), plane,
       ]), log, prompts, form]);
     const heading = element("h3", {tabindex: "-1", text: tr(view, "inspect")});
+    const closeLabel = element("span", {className: "atlas-sheet-close", text: tr(view, "close")});
+    const closeButton = button("×", {"aria-label": tr(view, "close"), "data-atlas-close": "",
+      "data-focus": "atlas:close"}, close);
+    closeButton.append(closeLabel);
     const body = element("div", {className: "atlas-inspector-body"});
     const panel = element("aside", {className: "atlas-inspector", "data-atlas-inspector": "",
       "aria-label": tr(view, "inspect"), hidden: ""}, [
-      element("header", {className: "atlas-inspector-head"}, [heading,
-        button("×", {"aria-label": tr(view, "close"), "data-atlas-close": "",
-          "data-focus": "atlas:close"}, close)]), body]);
+      element("header", {className: "atlas-inspector-head"}, [heading, closeButton]), body]);
     root.replaceChildren(chat, panel);
-    shell = {chat, plane, log, input, panel, heading, body};
+    shell = {chat, plane, log, input, panel, heading, closeLabel, body};
     drawLog();
   }
 
@@ -214,7 +222,7 @@ export function atlasScene(root, door) {
     const selected = step();
     shell.panel.hidden = !selected;
     root.classList.toggle("atlas-open", Boolean(selected));
-    shell.chat.inert = Boolean(selected) && matchMobile();
+    syncSheet();
     shell.body.replaceChildren();
     if (!selected) return;
     shell.heading.textContent = selected.title || selected.nodeId;
@@ -288,8 +296,6 @@ export function atlasScene(root, door) {
   root.addEventListener("keydown", event => {
     if (event.key === "Escape" && current?.step) { event.preventDefault(); close(); }
   });
-  window.matchMedia("(max-width: 700px)").addEventListener("change", () => {
-    if (shell) shell.chat.inert = Boolean(step()) && matchMobile();
-  });
+  window.addEventListener("resize", syncSheet);
   return {sync};
 }

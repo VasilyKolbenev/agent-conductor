@@ -55,6 +55,7 @@
 .atlas-form input { flex: 1; min-width: 0; }
 .atlas-inspector-head { padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .atlas-inspector-head h3 { flex: 1; overflow-wrap: anywhere; }
+.atlas-sheet-close { display: none; }
 .atlas-inspector-body { padding: 10px 12px; overflow: auto; max-height: 65vh; }
 .atlas-attempt { display: grid; gap: 3px; font-size: 12px; }
 .atlas-attempt select { min-width: 0; width: 100%; }
@@ -90,13 +91,10 @@
 }
 @media(max-width: 700px) {
   #studioAtlas.atlas-open { display: block; }
+  .atlas-sheet-close { display: inline; margin-inline-start: 5px; }
   .atlas-chat { padding: 12px; }
   .atlas-inspector:not([hidden]) { position: fixed; bottom: 0; left: 0; right: 0; z-index: 4;
     border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px var(--sunk); }
   .atlas-inspector-body { max-height: 55dvh; }
   .atlas-plane { min-height: 165px; }
-}
-@media(prefers-reduced-motion:no-preference) {
-  .atlas-inspector:not([hidden]) { animation: atlas-appear .16s ease-out; }
-  @keyframes atlas-appear { from { opacity: .3; transform: translateY(4px); } }
 }

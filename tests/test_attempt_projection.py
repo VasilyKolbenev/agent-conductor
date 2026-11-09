@@ -133,3 +133,22 @@ def test_sealed_content_outside_recorded_seed_scope_is_not_displayed(seeded):
     assert view["files"] == [] and view["files_total"] is None
     assert view["tests"]["status"] == "unavailable"
     assert "excluded instructions" not in str(view)
+
+
+def test_opted_in_agent_folders_hide_diff_and_test_source_but_regular_dot_dirs_work(tmp_path):
+    seed = an_empty_seed(task_id=TASK, work_scope=TASK, include_agent_instructions=True)
+    write_seed(tmp_path, SeedRecord.from_dict(seed))
+    folders = (".CoDeX", ".claude", ".GROK", ".kimi", ".cursor")
+    names = [f"nested/{folder}/test_settings.py" for folder in folders]
+    raw = b"def test_private():\n    assert 'private-folder-witness'\n"
+    rows = attempt(tmp_path, "folders", {**dict.fromkeys(names, raw),
+                                        ".github/checks.txt": b"allowed-dot-dir\n",
+                                        "AGENTS.md": b"included-marker\n"})
+    view = read_attempt(tmp_path, journal(*rows), "do", "act-folders")
+    files = {file["path"]: file for file in view["files"]}
+    for name in names:
+        assert files[name] == {"path": name, "state": "added", "diff_status": "withheld",
+                               "lines": []}
+    assert view["tests"]["cases"] == [] and "private-folder-witness" not in str(view)
+    assert "+allowed-dot-dir" in files[".github/checks.txt"]["lines"]
+    assert "+included-marker" in files["AGENTS.md"]["lines"]
