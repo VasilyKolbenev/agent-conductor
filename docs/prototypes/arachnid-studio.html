@@ -1,119 +1,94 @@
 <!doctype html>
-<html lang="ru">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Arachnid Studio · Макет рабочего места</title>
-<style>
-* { box-sizing: border-box }
-:root { color-scheme: dark; font: 15px/1.5 "Segoe UI",sans-serif; color: #e9eeed; background: #121716 }
-body { margin: 0 }
-header, nav, main, aside { min-width: 0 }
-header { height: 58px; display:flex; align-items:center; gap:14px; border-bottom:1px solid #34403c; padding:0 20px }
-header strong { font-size:20px; letter-spacing:-.04em }
-small, .muted { color:#a1afa9 }
-header small { margin-left:auto }
-button,input { font:inherit }
-button { color:inherit; background:#25312d; border:1px solid #44544c; border-radius:7px; padding:7px 12px; cursor:pointer }
-button:focus-visible,input:focus-visible { outline:2px solid #c3ee99; outline-offset:2px }
-#layout { display:grid; grid-template-columns: 218px minmax(0,1fr); min-height:calc(100dvh - 58px) }
-#layout.details { grid-template-columns:218px minmax(0,1fr) minmax(310px,42%) }
-nav,aside { background:#18201d; padding:20px 14px }
-nav { border-right:1px solid #34403c }
-nav button { width:100%; text-align:left; border:0; background:transparent; margin:2px 0 }
-nav button[aria-current=true] { background:#303c32; color:#d5efa9 }
-nav h2,aside h2 { font-size:13px; font-weight:600; color:#b2c1b7 }
-main { padding:clamp(16px,4vw,56px); display:flex; flex-direction:column; gap:12px }
-main h1 { margin:0; font-size:clamp(24px,3.4vw,42px); line-height:1.15; letter-spacing:-.04em }
-#messages { flex:1 }
-article { max-width:690px; margin:24px 0 }
-article p,aside p { margin:5px 0 12px; white-space:pre-line }
-article.mine { padding:12px 16px; border-radius:10px; background:#243029; margin-left:auto; max-width:560px }
-.tools { display:flex; gap:6px; flex-wrap:wrap }
-form { display:flex; gap:8px; margin-top:20px }
-input { min-width:0; flex:1; background:#1c2621; color:inherit; border:1px solid #596c60; border-radius:8px; padding:12px }
-form button { background:#c3e99d; border-color:#c3e99d; color:#172417 }
-aside { border-left:1px solid #34403c }
-aside > button { float:right }
-#start { border-top:1px solid #44544c; margin-bottom:12px }
-#layout { height:calc(100dvh - 58px) }
-main { min-height:0 }
-#messages, nav, aside { overflow-y:auto }
-.light { color-scheme:light; color:#202925; background:#f8faf8 }
-.light nav,.light aside { background:#eef1ed }
-.light button,.light input,.light article.mine { background:#e3eae2; color:#202925 }
-.light nav button[aria-current=true],.light form button { background:#cbe6b3 }
-.light small,.light .muted,.light nav h2,.light aside h2 { color:#485a50 }
-#plan { margin:20px 0; padding-left:24px }
-#menu { display:none }
-[hidden] { display:none !important }
-@media(max-width:760px) {
- header { padding:0 8px; gap:6px }
- header strong { font-size:17px }
- header button { padding:5px 7px; font-size:13px }
- header small { max-width:70px; line-height:1.1 }
- #layout, #layout.details { display:block }
- #menu { display:block }
- nav { display:none }
- nav.open { display:block }
- main { min-height:calc(100dvh - 58px) }
- aside { position:fixed; inset:58px 0 0; overflow:auto }
- header small { font-size:11px }
-}
-</style>
-<header><button id="menu" aria-controls="sessions" aria-expanded="false">Сессии</button><strong>Arachnid</strong><span>Studio</span><small>Макет · учебные данные</small><button id="theme">Светлая тема</button></header>
-<div id="layout">
-<nav id="sessions" aria-label="История"><h2>Сессии и задачи</h2><button id="start">Новая сессия</button></nav>
-<main><span class="muted">Оркестратор</span><h1 id="title"></h1><section id="messages" aria-live="polite"></section>
-<div class="tools"><button data-panel="План">План цикла</button><button data-panel="Grok">Открыть Grok</button><button data-panel="Codex">Открыть Codex</button><button data-panel="Лимиты">Лимиты</button><button data-panel="Память">Память</button></div>
-<form><input id="command" aria-label="Сообщение оркестратору" placeholder="Написать оркестратору…"><button>Отправить</button></form></main>
-<aside hidden aria-label="Детали по запросу"><button id="close">Закрыть</button><h2 id="panelTitle"></h2><p id="panelText"></p><ol id="plan" hidden><li>Цель</li><li>Определить проблему</li><li>Установить причину</li><li>Подготовить план</li><li>Исполнить и проверить</li></ol></aside></div>
-<script>
-const get = id => document.getElementById(id);
-const tasks = [
- {title:"Исправить счётчик", question:"Счётчик включает неудачные запуски. Найди причину и исправь.", answer:"Предлагаю цикл Далио. Grok проведёт диагностику. Codex подготовит правку, отдельный экземпляр Codex проверит изменённые файлы. Перед исполнением покажу план и границы.", memory:"Критерий этой задачи: считать только успешные запуски. Источник — первое сообщение оператора."},
- {title:"Проверить отчёт", question:"Проверь итог за неделю.", answer:"Проверка завершена. Итог по пяти запускам согласован. Решение сохранено в этой сессии.", memory:"В итог включаются принятые результаты за неделю. Источник — решение из сессии «Проверить отчёт»."}
-];
-let current=0, previousControl=null;
-const aside=document.querySelector("aside");
-function select(i) {
- current=i; hide(false); get("title").textContent=tasks[i]?.title||"С чем поработаем?";
- get("messages").replaceChildren();
- for(const [name,text] of (i<0?[]:[["Вы",tasks[i].question],["Оркестратор",tasks[i].answer]])) {
-   const article=document.createElement("article"), author=document.createElement("strong"), message=document.createElement("p");
-   if(name==="Вы") article.className="mine";
-   author.textContent=name; message.textContent=text; article.append(author,message); get("messages").append(article);
- }
- document.querySelectorAll("nav button").forEach((b,n)=>b.setAttribute("aria-current",String(n-1===i)));
- get("sessions").classList.remove("open"); get("menu").setAttribute("aria-expanded","false"); get("command").value="";
-}
-function hide(restore=true) {
- aside.hidden=true; get("layout").classList.remove("details"); if(restore && previousControl) previousControl.focus();
-}
-function panel(name, control) {
- const texts={
-   Grok:current===0?"Диагност · чтение файлов\n\nЗадача участника — выяснить, почему учитывается неудачный запуск.":current<0?"Подключённый инструмент · пока нет задачи.":"Назначение можно посмотреть в плане этой сессии.",
-   Codex:current===0?"Исполнитель · шаг Do\n\nОжидает плана и разрешения. Проверяющий увидит снимок фактических изменений.":current===1?"Проверяющий · результат принят.":"Подключённый инструмент · ждёт разрешённой работы.",
-   Лимиты:"Данные квот в макете не загружаются.\n\nCodex — нет показаний.\nGrok — нет показаний.",
-   Память:tasks[current]?.memory||"В новой сессии пока нет сохранённых решений.",
-   План:"Далио · цикл по умолчанию"
- };
- previousControl=control; get("panelTitle").textContent=name; get("panelText").textContent=texts[name]; get("plan").hidden=name!=="План"; aside.hidden=false;
- get("layout").classList.add("details"); get("close").focus();
-}
-function sessionButton(t,i){const b=document.createElement("button"); b.textContent=t.title; b.onclick=()=>select(i); get("sessions").append(b)}
-tasks.forEach(sessionButton);
-get("start").onclick=()=>{select(-1);get("command").focus()};
-get("theme").onclick=()=>{const light=document.documentElement.classList.toggle("light");get("theme").textContent=light?"Тёмная тема":"Светлая тема"};
-document.querySelectorAll("[data-panel]").forEach(b=>b.onclick=()=>panel(b.dataset.panel,b));
-get("close").onclick=()=>hide(); document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!aside.hidden) hide()});
-get("menu").onclick=()=>get("menu").setAttribute("aria-expanded",String(get("sessions").classList.toggle("open")));
-document.querySelector("form").onsubmit=e=>{
- e.preventDefault();const input=get("command"), text=input.value.trim().toLowerCase();
- const key=[["лимит","Лимиты"],["памят","Память"],["grok","Grok"],["codex","Codex"],["план","План"]].find(([prefix])=>text.startsWith(prefix)||text==="покажи "+prefix||text.startsWith("покажи "+prefix));
- if(key){panel(key[1],input);input.value="";return}
- if(current<0&&text){const goal=input.value.trim();const t={title:goal,question:goal,answer:"Для учебного примера предлагаю Далио. Открой план цикла или выбери участника справа.",memory:"Источник цели — ваше первое сообщение в этой сессии."}; tasks.push(t);sessionButton(t,tasks.length-1);select(tasks.length-1);return}
- input.setCustomValidity("В макете доступны команды «покажи лимиты», «память», «план», «Grok» и «Codex».");input.reportValidity();input.setCustomValidity("");
-};
-select(-1);
-</script>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Arachnid Studio — Атлас</title>
+  <link rel="stylesheet" href="atlas-studio.css">
+  <script defer src="atlas-evidence.js"></script>
+  <script defer src="atlas-studio.js"></script>
+</head>
+<body>
+<div id="workspace">
+  <nav id="sidebar" aria-label="Студия">
+    <div class="brand">
+      <svg class="brandmark" viewBox="0 0 40 40" aria-hidden="true" fill="none">
+        <g stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M20 5l8 11-8 17-8-17z M12 16h16 M20 5v28"/>
+          <path d="m12 16-5-4-4 3m10 4-7 1-3 7m12-4-6 5-1 8
+                   m20-20 5-4 4 3m-10 4 7 1 3 7m-12-4 6 5 1 8"/>
+        </g>
+      </svg>
+      <strong>Arachnid<span>Studio</span></strong>
+      <button id="navClose" class="icon-btn" aria-label="Закрыть сессии" data-icon="close"></button>
+    </div>
+    <button id="new" class="new"><i data-icon="plus"></i>Новая сессия</button>
+    <h2>Сессии</h2><div id="sessions"></div>
+    <h2>Участники записи</h2>
+    <button class="harness" data-tool="Codex"><i class="vendor codex" data-icon="terminal"></i>
+      <span>Codex<small>Исполнение и проверка</small></span></button>
+    <button class="harness" data-tool="Grok"><i class="vendor grok" data-icon="grok"></i>
+      <span>Grok<small>Диагностика</small></span></button>
+    <div class="nav-end">
+      <button class="nav-tool" data-tool="Лимиты"><i data-icon="meter"></i>Лимиты</button>
+      <button class="nav-tool" data-tool="Память"><i data-icon="memory"></i>Память сессии</button>
+      <div class="profile"><i class="avatar">В</i>
+        <span>Василий<small>Рабочее пространство</small></span>
+        <button id="theme" class="icon-btn" aria-label="Сменить тему" data-icon="sun"></button>
+      </div>
+    </div>
+  </nav>
+  <main id="chat">
+    <header class="topline">
+      <button id="menu" class="icon-btn" aria-label="Сессии" aria-controls="sidebar"
+              aria-expanded="false" data-icon="menu"></button>
+      <span data-icon="workspace"></span><span>Studio</span><i>/</i><strong id="crumb"></strong>
+    </header>
+    <div class="session-head"><div class="session-meta"><span class="pin-dot"></span>
+      <span id="contextLabel"></span></div>
+      <h1 id="title"></h1>
+    </div>
+    <div id="scroll"><div id="stream">
+      <div class="initial-brief" id="brief"><span>Вы</span><p></p></div>
+      <div class="speaker"><i class="atlas-icon" data-icon="atlas"></i>
+        <span>Атлас</span><label class="atlas-pick">
+          <select id="lead" aria-label="Ведущий харнесс Атласа">
+            <option>Codex</option><option>Grok</option>
+          </select></label>
+      </div>
+      <div id="intro"></div><div id="orbitHere"></div><div id="resultHere"></div>
+      <div id="messages" role="log" aria-label="Разговор с Атласом" aria-live="polite"></div>
+    </div></div>
+    <div class="compose-wrap">
+      <div id="quick" class="quick"></div>
+      <form id="send">
+        <input id="command" aria-label="Сообщение Атласу" placeholder="Написать Атласу…"
+               autocomplete="off">
+        <button class="send" aria-label="Отправить сообщение" data-icon="up"></button>
+      </form>
+      <div class="local-note"><span class="tiny-dot"></span>
+        Учебный чат · без вызовов моделей
+      </div>
+    </div>
+  </main>
+  <aside id="detail" aria-label="Детали сессии" hidden>
+    <header class="inspector-top"><span data-icon="sidebar"></span><span>Инспектор</span>
+      <button id="close" class="icon-btn" aria-label="Закрыть детали" data-icon="close"></button>
+    </header>
+    <div id="inspection"></div>
+  </aside>
+</div>
+<template id="orbital-plane">
+  <svg class="tracks" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-9 300 110)">
+      <ellipse class="outer" cx="300" cy="110" rx="264" ry="84"/>
+      <ellipse class="path" cx="300" cy="110" rx="220" ry="65"/>
+      <path class="selected-arc" pathLength="1" hidden/>
+      <ellipse class="inner" cx="300" cy="110" rx="167" ry="48"/>
+      <ellipse class="inner" cx="300" cy="110" rx="96" ry="30"/>
+    </g>
+  </svg>
+  <span class="core" aria-hidden="true"></span><span class="core-name">АТЛАС</span>
+</template>
+</body>
 </html>
