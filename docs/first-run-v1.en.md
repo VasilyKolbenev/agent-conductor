@@ -349,6 +349,14 @@ describe that action. Ask Atlas in the center which files changed or what the ch
 concluded. These answers use the recorded evidence. The Tests tab distinguishes the
 external execution summary from definitions found in the verified source files.
 
+If an older archive already has the Do snapshot but lacks the Git before-images or
+external test receipt, the operator can populate the closed copy. Use
+`python -m conductor.attempt_evidence_import --help` in the same installation.
+Supply `--source` (original repository), `--target` (separate project copy),
+`--run`, `--node`, `--action` and optionally `--report` (JSON). Use `--pin-home`
+for the directory containing the trusted Git pin. The importer binds the evidence
+to the selected attempt and accesses the original repository read-only.
+
 These blocks restore the paths if you opened a new terminal after setting a key.
 Use the installation and project locations you chose above if you changed the examples.
 
