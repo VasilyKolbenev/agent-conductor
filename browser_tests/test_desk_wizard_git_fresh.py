@@ -76,12 +76,6 @@ IDENTITY = (("user.name", "First Author"), ("user.email", "first@example.invalid
 #: The tree of no file at all, and the message the product gives an empty first commit.
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 EMPTY_MESSAGE = "Начало проекта (Conduct)"
-#: Lane D1's two lines in `desk-transport.js`: the text without the target, and with it.
-TARGET_LINES = (('  git: () => "/command/project/git",\n',
-                 '  git: () => "/command/project/git",\n'
-                 '  gitSetup: () => "/command/project/git/setup",\n'),
-                ('"acceptPreview", "acceptCommit"]);',
-                 '"acceptPreview", "acceptCommit", "gitSetup"]);'))
 #: Two animation frames: whatever a click started has been sent, and been reported, by then.
 QUIET = """() => new Promise((done) => requestAnimationFrame(
   () => requestAnimationFrame(done)))"""
@@ -221,13 +215,17 @@ def signing(project: Real, key: Path) -> None:
         git("config", name, value, cwd=project.root)
 
 
-def with_target(transport: str, present: bool) -> bytes:
-    """The transport with lane D1's two lines put in (`present`) or taken out, each exactly once."""
-    for without, with_ in TARGET_LINES:
-        before, after = (without, with_) if present else (with_, without)
-        assert transport.count(before) == 1, before
-        transport = transport.replace(before, after)
-    assert ("gitSetup" in transport) is present
+def without_git_setup(transport: str) -> bytes:
+    """Remove only this route and its write target, whatever targets follow it."""
+    route = '  gitSetup: () => "/command/project/git/setup",\n'
+    name = '"gitSetup"'
+    assert transport.count(route) == transport.count(name) == 1
+    transport = transport.replace(route, "")
+    # Remove one list entry with its separator, including when it is last.
+    entry = name + "," if name + "," in transport else ", " + name
+    assert transport.count(entry) == 1
+    transport = transport.replace(entry, "")
+    assert "gitSetup" not in transport
     return transport.encode("utf-8")
 
 
@@ -239,7 +237,7 @@ def modules(door: bool = True) -> dict[str, bytes]:
     switch = (PANEL / "desk-wizard-git.js").read_text(encoding="utf-8")
     assert "gitSetup" in transport, "the product's transport lost lane D1's setup target"
     assert switch.count(OPEN_SWITCH) == 1, "the product's confirm switch is not open"
-    return {} if door else {"desk-transport.js": with_target(transport, False)}
+    return {} if door else {"desk-transport.js": without_git_setup(transport)}
 
 
 def test_only_the_doorless_page_is_served_an_edited_module_and_only_its_transport():
