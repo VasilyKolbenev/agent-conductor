@@ -6,6 +6,7 @@ from time import monotonic
 
 from ..contracts import ActionRequest
 from .deep_commands import OUTPUT_LIMIT_BYTES, PATCH_PROFILE
+from .headless_values import attempt_relation
 from .process import STDIN_DELIVERED
 from .result_manifest import marked_policy
 
@@ -32,6 +33,7 @@ class PatchDispatch:
             return super()._dispatch_process(request, args, work, before, task_text, model)
         # Imported here because result path validation derives reserved names from the catalogue.
         from . import codex_patch as patch
+        from .codex_patch_sources import source_section
         from .patch_publish import PublishUnknown, publish
 
         if (not marked_policy(request) or not args.task_scope or not self._confine
@@ -40,10 +42,14 @@ class PatchDispatch:
             return self._receipt(request, "failed", None, "patch dispatch requires a scoped grant")
         deadline = monotonic() + request.timeout_seconds
         cwd = work.relative_to(self._workspace.root).as_posix()
-        payload = self._task_stdin(task_text + INSTRUCTION)
-        if not self._task_fits_its_channel(self._review_argv, payload):
-            return self._receipt(request, "failed", None, "patch instruction exceeds its bound")
         try:
+            relation = attempt_relation(request)
+            _, _, instruction = self._check_materials[relation]
+            sources = source_section(self._workspace, args, work, before, instruction,
+                                     lambda: (*self._sensitive_values(relation), *self._login_seen))
+            payload = self._task_stdin(task_text + sources + INSTRUCTION)
+            if not self._task_fits_its_channel(self._review_argv, payload):
+                raise patch.PatchRefused("patch instruction and sources exceed the task channel")
             outcome = self._attempt(
                 self._review_argv, cwd, mode="review", claim=self._claim_of(request), model=model,
                 stdin_bytes=payload, timeout=patch.remaining(deadline), separate_stderr=True,

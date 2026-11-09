@@ -46,6 +46,7 @@ const labels = {
   adviseScope: ["One read-only review of the supplied text. The Dalio cycle has its own authorization.",
     "Одна проверка переданного текста в режиме чтения. Для цикла Далио потребуется отдельное разрешение."],
   git: ["Base Git commit", "Исходный Git-коммит"],
+  sourcePaths: ["Task files to share with Codex during Do", "Файлы задачи для Codex на шаге Do"],
   answer: ["Reply in this chat to clarify the task.", "Ответьте в этом чате, чтобы уточнить задачу."],
   plan_busy: ["An operation is already in progress. Read its state before changing the task.",
     "Операция уже выполняется. Перечитайте её состояние, прежде чем менять задачу."],
@@ -182,7 +183,10 @@ function preview(ui, view, main) {
     action(ui, view, main ? "prepareMain" : "reviewAdvice", "renew"); return;
   }
   if (!main) advisorInput(ui, view);
-  else line(ui.body, copy(view, "git"), view.baseCommit || view.plan?.baseCommit);
+  else {
+    line(ui.body, copy(view, "git"), view.baseCommit || view.plan?.baseCommit);
+    if (view.sourcePaths?.length) line(ui.body, copy(view, "sourcePaths"), view.sourcePaths.join(", "));
+  }
   if (terms.run_id) line(ui.body, main ? copy(view, "openRun") : copy(view, "evidence"), terms.run_id);
   bounds(ui.body, view, terms);
   for (const row of terms.node_limits) line(ui.body, row.node_id, timing(view, row));

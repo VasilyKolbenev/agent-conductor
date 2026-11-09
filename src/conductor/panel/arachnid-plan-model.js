@@ -84,6 +84,21 @@ export function targetIds({advisorId, projectId}) {
   return {taskId, runId:taskId + "-r1", workflowId:"dalio-" + id};
 }
 
+// Only the operator's task can nominate files. The grant preview shows the list.
+function namedSources(brief) {
+  const names = new Map();
+  for (const match of brief.matchAll(/`([^`\r\n]+)`|"([^"\r\n]+)"|[^\s`"]+/gu)) {
+    const bare = match[0].replace(/^[([«“']+|[.,:;!?()[\]»”']+$/gu, "");
+    const name = (match[1] ?? match[2] ?? bare).replaceAll("\\", "/").replace(/^\.\//u, "");
+    const parts = name.split("/");
+    if (!parts.every(s => /^[\p{L}\p{N}_-][\p{L}\p{N}_. -]*$/u.test(s) && !/[. ]$/u.test(s))
+      || !/\.[\p{L}\p{N}_+-]+$/u.test(parts.at(-1)) || name.length > 4096) continue;
+    if (!names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+  }
+  need(names.size <= 32, "proposal_invalid");
+  return [...names.values()];
+}
+
 export function recordedDalio(request, catalog, baseCommit) {
   const {advisorId, projectId, proposal, brief, locale} = request;
   need(usableBrief(brief), "proposal_invalid");
@@ -92,13 +107,16 @@ export function recordedDalio(request, catalog, baseCommit) {
   const {roles, limits} = dalioOutline();
   const document = dalioDocument(catalog, locale);
   const {taskId, runId, workflowId} = targetIds(request);
+  const sourcePaths = namedSources(brief);
+  const instruction = locale === "ru"
+    ? "Подготовь ограниченную правку в рамках принятого плана и брифа. Изменяй только файлы задачи."
+    : "Prepare a bounded patch for the accepted plan and brief. Modify only files in the task.";
   const inputs = {"artifact-brief": brief + "\n\n" + proposal.criterion,
-    "instruction-plan": locale === "ru"
-      ? "Подготовь ограниченную правку в рамках принятого плана и брифа. Изменяй только файлы задачи."
-      : "Prepare a bounded patch for the accepted plan and brief. Modify only files in the task."};
+    "instruction-plan": instruction + (sourcePaths.length
+      ? "\n\nconduct.patch-sources.v1\n" + JSON.stringify(sourcePaths) : "")};
   const title = [...brief.trim().replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")].slice(0, 160).join("");
   return {projectId, advisorId, brief, proposal, locale, baseCommit, taskId, title, runId, workflowId,
-    roles, inputs, document, limits};
+    roles, inputs, document, limits, instruction, sourcePaths};
 }
 
 export function compileDalio(request, catalog, git) {

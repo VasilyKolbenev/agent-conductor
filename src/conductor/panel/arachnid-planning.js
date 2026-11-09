@@ -33,6 +33,7 @@ export function atlasPlanning(host, door) {
       actor: e.actor, lead: "codex", model, brief: a.brief || e.brief, plan,
       advicePreview: a.advicePreview, mainPreview: p?.preview, terms: p?.terms || limits,
       quota: a.quota, input: a.input, advisorId: a.runId, baseCommit: p?.baseCommit,
+      sourcePaths: p?.sourcePaths,
       authorization: e.authorization, runId: p?.runId || a.runId, issue: e.issue || a.issue};
     const signature = JSON.stringify(view);
     if (signature === e.signature) return;

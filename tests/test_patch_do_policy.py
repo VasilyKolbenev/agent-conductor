@@ -40,7 +40,8 @@ REGRESSION = (b"from count import count_succeeded\n\ndef test_mixed():\n"
               b"    assert count_succeeded(['ok', 'fail']) == 1\n")
 
 
-def run_state(root, adapter, *, checker="checker", item="item", with_gates=False):
+def run_state(root, adapter, *, checker="checker", item="item", with_gates=False, documents=(),
+              instruction="Count successes and cover a mixed input."):
     registry, counter = AdapterRegistry([adapter]), count()
     store = RunStore(root)
     ids = lambda kind: f"{kind}-{next(counter)}"
@@ -52,7 +53,8 @@ def run_state(root, adapter, *, checker="checker", item="item", with_gates=False
     store.create_run(RunEnvelope("run", "cycle", NOW, snapshot_digest(config), mode="policy"),
                      config)
     args = {"work_item_id": item, "instruction_ref": "brief", "profile": "implement-patch-v1",
-            "artifact_refs": [], "output_limit_profile": "normal", "work_scope": "one"}
+            "artifact_refs": [d.artifact_ref for d in documents], "output_limit_profile": "normal",
+            "work_scope": "one"}
     node = GraphNode("do", "task", "Do", instance_id="doer", capability="dispatch",
                      arguments=args, timeout_seconds=30, attempt_bound=1,
                      verifier_instance_id=checker)
@@ -64,8 +66,9 @@ def run_state(root, adapter, *, checker="checker", item="item", with_gates=False
         edges = (GraphEdge("do", "accept"), GraphEdge("accept", "next"))
     store.append(GraphDefinition("graph", "run", NOW, nodes=nodes, edges=edges,
                                  execution_contract="bounded-run-v1"))
-    store.append(ArtifactDocument("instruction", "brief", "run", NOW, "text/plain",
-                                  "Count successes and cover a mixed input."))
+    store.append(ArtifactDocument("instruction", "brief", "run", NOW, "text/plain", instruction))
+    for doc in documents:
+        store.append(doc)
     policy = PolicyService(store, registry, budget=Budget(4, 3600, 300), clock=lambda: NOW,
                            provider_digest=lambda _: PD,
                            owner_check=lambda: ownership.require_owner(root),
@@ -132,8 +135,8 @@ def work_and_calls(site, patch, *, use_native=False, verdict=True, item="item"):
     return work, calls
 
 
-def one_grant(site):
-    f = run_state(site.root, site.adapter)
+def one_grant(site, **kwargs):
+    f = run_state(site.root, site.adapter, **kwargs)
     driver, execution = attach_driver(f)
     try:
         terms = {"node_limits": [{"node_id": "do", "timeout_seconds": 30, "max_attempts": 1}],

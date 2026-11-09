@@ -1,11 +1,14 @@
 """A lost write is reconciled; only an explicit main confirmation may send a grant."""
+import json
+
 from conductor.command.workflow_draft import starters
 from tests.desk_wizard_node import run_js
 from tests.test_arachnid_advisor import ACCEPTED
 from tests.test_arachnid_plan import GIT, PROVIDERS
 
 
-MODULES = {"atlas": "arachnid-advisor.js", "plan": "arachnid-plan.js"}
+MODULES = {"atlas": "arachnid-advisor.js", "plan": "arachnid-plan.js",
+           "digest": "desk-wizard-digest.js"}
 PORT = """
 const req = {advisorId: restored.runId, projectId:project, proposal:restored.proposal,
   brief:args.text, actor:"owner", locale:"en"};
@@ -73,9 +76,28 @@ const main = {
 """
 
 
-def exercise(body):
+def exercise(body, *, brief="Repair the counter"):
     data = {"case": "ok", "catalog": {"starters": starters(), "providers": PROVIDERS}, "git": GIT}
-    return run_js(ACCEPTED + PORT + body, data, modules=MODULES)
+    setup = ACCEPTED.replace('text:"Repair the counter"', "text:" + json.dumps(brief))
+    return run_js(setup + PORT + body, data, modules=MODULES)
+
+
+def test_restore_of_an_older_instruction_keeps_its_original_source_scope():
+    out = exercise("""
+      const first=await plan.prepareDalio(main,req);
+      const instruction=target.records.find(r=>r.record.artifact_ref==="instruction-plan").record;
+      instruction.content=instruction.content.split("\\n\\nconduct.patch-sources.v1")[0];
+      instruction.artifact_id=digest.documentId(target.run.run_id,
+        "instruction-plan","text/plain",instruction.content);
+      let refused=null;
+      try{await plan.authorizeDalio(main,first,"owner");}catch(e){refused=e.message;}
+      const old=await plan.prepareDalio(main,req);
+      await plan.authorizeDalio(main,old,"owner");
+      const reopened=await plan.restoreDalio(main,req);
+      console.log(JSON.stringify({first:first.sourcePaths,refused,restored:reopened.sourcePaths}));
+    """, brief="Repair runstats/counts.py and tests/test_counts.py.")
+    assert out == {"first": ["runstats/counts.py", "tests/test_counts.py"],
+                   "refused": "input_conflict", "restored": []}
 
 
 def test_lost_responses_reconcile_drafts_seeds_inputs_and_grants_under_the_same_ids():

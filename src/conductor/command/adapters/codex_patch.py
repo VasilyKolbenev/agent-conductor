@@ -35,6 +35,13 @@ class Operation:
         return "\n".join((f"*** {self.kind} File: {path.as_posix()}", *self.body))
 
 
+def validate_path(name):
+    try:
+        result_path(name)
+    except SnapshotRefused:
+        raise PatchRefused("patch names an inadmissible task path") from None
+
+
 def parse_patch(raw: bytes) -> list[Operation]:
     if not raw or len(raw) > MAX_PATCH or b"\x00" in raw:
         raise PatchRefused("invalid patch size or content")
@@ -53,10 +60,7 @@ def parse_patch(raw: bytes) -> list[Operation]:
         if kind is None or len(ops) >= MAX_FILES:
             raise PatchRefused("unexpected patch operation")
         name = header[len(f"*** {kind} File: "):]
-        try:
-            result_path(name)
-        except SnapshotRefused:
-            raise PatchRefused("patch names an inadmissible task path") from None
+        validate_path(name)
         if name != name.strip() or name.casefold() in seen:
             raise PatchRefused("ambiguous patch path")
         seen.add(name.casefold())

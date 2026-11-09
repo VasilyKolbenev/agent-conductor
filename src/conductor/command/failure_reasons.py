@@ -132,6 +132,11 @@ REASONS = (
      "a subscription login for this harness is not supported inside the execution boundary yet"),
     ("version preflight, so no task was spawned", "the version preflight failed"),
     ("is not the reviewed", "the installed build is not the reviewed version"),
+    ("named patch source cannot be read safely", "a named patch source could not be read safely"),
+    ("named patch source cannot be sent as text", "a named patch source could not be sent as text"),
+    ("named patch source changed before preparation", "a named patch source changed before use"),
+    ("invalid patch source list", "the patch source list is invalid"),
+    ("sources exceed the task channel", "the patch sources exceed the bounded task channel"),
     ("exceeds the bounded task channel", "its task was larger than the bounded task channel"),
 )
 

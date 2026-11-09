@@ -57,11 +57,13 @@ def test_planner_renders_actual_limits_and_only_clicks_can_authorize(chromium, s
         expect(host.locator("[data-planner-action=authorizeMain]")).to_have_count(0)
         page.evaluate("""() => {
           card.phase = "main-preview"; card.runId = "dalio-one";
+          card.sourcePaths = ["runstats/counts.py", "tests/test_counts.py"];
           card.mainPreview = {...card.advicePreview,
             terms:{...card.advicePreview.terms, run_id:"dalio-one", max_actions:7}};
           redraw();
         }""")
         expect(host).to_contain_text("dalio-one")
+        expect(host).to_contain_text("runstats/counts.py, tests/test_counts.py")
         expect(host).to_contain_text("7")
         expect(actor).to_have_value("my-name")
         expect(actor).to_have_js_property("readOnly", True)

@@ -158,7 +158,7 @@ async function run(road, p) {
     automation_contract:"bounded-run-v1", workflow_id:p.workflowId, revision:1, ...bindings(p)}));
 }
 
-async function inputs(road, p, readOnly = false) {
+async function inputs(road, p, readOnly = false, restoreLegacy = false) {
   for (const [ref, content] of Object.entries(p.inputs)) {
     const id = documentId(p.runId, ref, "text/plain", content);
     async function present() {
@@ -167,6 +167,15 @@ async function inputs(road, p, readOnly = false) {
       const matches = records(detail, "artifact").filter(r => r.artifact_ref === ref);
       if (!matches.length) return false;
       const [file] = matches;
+      // Restore an older instruction exactly as recorded, including its lack of source inputs.
+      if (restoreLegacy && ref === "instruction-plan" && p.sourcePaths.length && matches.length === 1
+        && file.run_id === p.runId && !file.source_action_id && file.media_type === "text/plain"
+        && file.content === p.instruction
+        && file.artifact_id === documentId(p.runId, ref, "text/plain", p.instruction)) {
+        p.inputs[ref] = p.instruction;
+        p.sourcePaths = [];
+        return true;
+      }
       need(matches.length === 1 && file.run_id === p.runId && file.artifact_id === id
         && !file.source_action_id && file.media_type === "text/plain" && file.content === content, "input_conflict");
       return true;
@@ -216,7 +225,7 @@ export async function prepareDalio(door, request) {
   await seed(road, p);
   await run(road, p);
   const grant = await authorized(road, p, request.actor);
-  await inputs(road, p, Boolean(grant));
+  await inputs(road, p, Boolean(grant), true);
   let preview = null;
   if (!grant) {
     const detail = await road.read(path.run(p.runId));
@@ -236,7 +245,7 @@ function resultOf(p, actor, preview, grant) {
   const result = freeze(JSON.parse(JSON.stringify({phase:grant ? "authorized" : "preview", projectId:p.projectId,
     advisorId:p.advisorId, taskId:p.taskId, workflowId:p.workflowId, runId:p.runId, baseCommit:p.baseCommit,
     preview, terms:preview?.terms ?? null, limits:p.limits, roles:p.roles, proposal:p.proposal, brief:p.brief,
-    authorization:grant})));
+    sourcePaths:p.sourcePaths, authorization:grant})));
   held.set(result, {p, actor, attempted:Boolean(grant)});
   return result;
 }
@@ -257,7 +266,7 @@ export async function restoreDalio(door, request) {
   const revision = await road.read(path.revision(workflowId, 1));
   need(same(revision?.document, {...p.document, template_id:workflowId, revision:1}), "workflow_conflict");
   await seed(road, p, true);
-  await inputs(road, p, true);
+  await inputs(road, p, true, true);
   const grant = await authorized(road, p, request.actor);
   need(grant, "authorization_conflict");
   road.check();

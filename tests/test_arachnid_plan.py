@@ -69,3 +69,19 @@ def test_missing_source_and_ineligible_provider_do_not_compile():
     """, MODULE, inputs())
     assert codes == ["source_required", "provider_unavailable", "provider_unavailable",
                      "provider_unavailable", "starter_unavailable"]
+
+
+def test_only_paths_from_the_operators_task_enter_the_reviewed_do_instruction():
+    data = inputs()
+    task = ("Исправь runstats/counts.py: добавь тест в `tests/test_counts.py`. "
+            "Открой `тесты/мой тест.py`. Не используй ../foreign.py или C:\\outside.py.")
+    data["request"] = {**REQUEST, "brief": task,
+                       "proposal": {**REQUEST["proposal"], "criterion": "Read model-only.py"}}
+    result = run_js("""
+      const p = plan.compileDalio(d.request, d.catalog, d.git);
+      const instruction = p.inputs["instruction-plan"];
+      console.log(JSON.stringify({paths:p.sourcePaths,
+        bound:JSON.parse(instruction.split("conduct.patch-sources.v1\\n")[1])}));
+    """, MODULE, data)
+    expected = ["runstats/counts.py", "tests/test_counts.py", "тесты/мой тест.py"]
+    assert result == {"paths": expected, "bound": expected}
