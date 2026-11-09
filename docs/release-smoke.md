@@ -61,7 +61,7 @@ Expect exit 0, and this set of subcommands — no more, no fewer. Compare the se
 argparse wraps this usage line and prints the names in an order of its own:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub,projects} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,ownership,preview,integration-smoke,reconcile,providers,up,demo,tools,utility-bridge,projects,hub} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -560,6 +560,41 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   Ctrl+C there.
 
 ## Additional release gates — not filled by the twelve checks above
+
+### Round-trip a local text utility
+
+Use an empty throwaway project with an active Studio server and the installed wheel from
+step 1. Follow steps 2–3 of [owner acceptance](owner-acceptance.md) to create the project
+and start the server. Set `$origin` to the address it prints. This check sends `ping`
+to a local Python executable and reads its reply from Studio.
+
+```powershell
+$origin = 'http://127.0.0.1:7801'
+$route = "$origin/command/project/utilities"
+$headers = @{
+    Origin = $origin
+    'X-Conduct-CSRF' = (Invoke-RestMethod "$origin/command/session").csrf_token
+    'X-Conduct-Project' = (Invoke-RestMethod "$origin/command/project").project_id
+}
+function Send-SmokeUtility($packet) {
+    Invoke-RestMethod $route -Method Post -Headers $headers -ContentType 'application/json' `
+        -Body (ConvertTo-Json -InputObject $packet -Compress) | Out-Null
+}
+Send-SmokeUtility @{op='attach'; utility_id='smoke'; label='Local echo'; mode='stdio-v1'}
+Send-SmokeUtility @{op='send'; utility_id='smoke'; exchange_id='smoke-1'; text='ping'}
+$peer = "import json,sys; r=json.loads(sys.stdin.readline()); assert r['text']=='ping'; r['text']='pong'; print(json.dumps(r))"
+$arguments = ConvertTo-Json -InputObject @('-I', '-c', $peer) -Compress
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@($PY, $arguments) | & $PY -X utf8 -m conductor utility-bridge --server $origin --utility smoke --once
+if ($LASTEXITCODE -ne 0) { throw 'Utility bridge failed' }
+$reply = (Invoke-RestMethod $route).exchanges | Where-Object exchange_id -eq 'smoke-1'
+if ($reply.state -ne 'answered' -or $reply.reply -ne 'pong') { throw 'Unexpected utility reply' }
+```
+
+Expect `Reply recorded.` from `conduct utility-bridge`. Close the server with Ctrl+C in its
+window after checking the reply.
+
+### Candidate and provider checks
 
 - Record one exact candidate SHA for complete fast, complete Python 3.11 floor, browser normal
   and reverse, applicable mutation batteries, structural limits, frozen bytes and payload parity.

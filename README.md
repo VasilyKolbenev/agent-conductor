@@ -138,6 +138,7 @@ Use the executable inside your virtual environment if it is not activated.
 | `conduct providers` | Configure executable paths and allowed environment-variable names. |
 | `conduct ownership` | Activate, inspect, or explicitly recover project ownership. |
 | `conduct up` | Start local Studio for the project. |
+| `conduct utility-bridge` | Deliver an attached `stdio-v1` utility's pending text to a local executable and record its reply in Studio. |
 | `conduct prompt` | Print working instructions for an agent's reporting role. |
 | `conduct report` | Print the merged lane state as Markdown. |
 | `conduct preview` | Prepare a synthetic dispatch preview without executing it. |

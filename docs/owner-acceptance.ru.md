@@ -37,7 +37,7 @@ English version: [owner-acceptance.md](owner-acceptance.md).
 & $CONDUCT --help
 ```
 
-**Вы должны увидеть** пятнадцать подкоманд, среди них `init`, `ownership`, `providers`, `projects` и `up`,
+**Вы должны увидеть** шестнадцать подкоманд, среди них `init`, `ownership`, `providers`, `projects`, `up` и `utility-bridge`,
 и ни одного traceback. Ничего в `PYTHONPATH`: рабочее дерево исходников, подставленное туда, ответило бы
 на каждую команду ниже и ничего бы не доказало.
 

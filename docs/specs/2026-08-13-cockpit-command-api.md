@@ -219,6 +219,8 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "method": "POST", "path": "/command/project/task-draft",
     "mutation": true, "csrf": true
   },
+  {"method": "GET", "path": "/command/project/utilities", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/project/utilities", "mutation": true, "csrf": true},
   {
     "method": "GET", "path": "/command/project/auto-continue",
     "mutation": false, "csrf": false
@@ -236,6 +238,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/project/git/setup", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/runs/<run_id>/steps/<node_id>/actions/<action_id>", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/commit", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/push", "mutation": true, "csrf": true},
@@ -1376,6 +1379,24 @@ signature names only a branch of `refs/heads/` followed by letters, digits, `.`,
 other record is `damaged`. The person continues by repeating the first-commit confirmation with
 `mode` and `paths_digest` taken from `terms` and the actor who acts now; the server
 judges that repeat again, from the stored terms.
+
+`GET /command/runs/<run_id>/steps/<node_id>/actions/<action_id>` reads one selected
+request from the frozen run. The response identifies the run, node, action and
+attempt. It carries the recorded outcome, independent verifier and digest, displayable
+diff rows from the sealed manifest and seed tree, and any bound external test result.
+Missing evidence stays unavailable. Case definitions identify source locations;
+individual case outcomes require their own record. View mode reads archived objects.
+
+`GET /command/project/utilities` returns the project registrations and their text
+exchanges. An active project accepts a same-origin, project-bound, CSRF-checked POST.
+The closed operations are `attach`, `send`, `manual_reply`, `claim`, `finish` and
+`mark_unknown`. Modes are `manual` and `stdio-v1`. A new claim receives 201, an
+identical replay 200. Only the former starts a peer. The terminal bridge sends one
+UTF-8 JSON line containing `protocol` (`arachnid.utility.v1`), `utility_id`,
+`exchange_id` and `text`. The reply repeats the first three fields and supplies
+the answer in `text`. Each text is limited to 8192 UTF-8 bytes. A claimed exchange
+with an indeterminate result can be closed as unknown. Utility messages are separate
+from the run journal and do not issue workflow grants.
 
 `GET /command/runs/<run_id>/accept` reads the complete durable run inventory, frozen
 workflow revision, queue and current driver facts. It works in view mode without

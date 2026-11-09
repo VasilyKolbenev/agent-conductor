@@ -330,6 +330,25 @@ stop the server with Ctrl+C and start it again from an environment that contains
 
 ## 4. Open Studio
 
+In **Participants → Connect a harness**, choose Claude Code, Codex, Grok Build or
+Kimi Code to see the instructions for its CLI and dedicated sign-in. Available roles
+depend on the configured adapter. The Kimi option requires the Kimi Code CLI.
+
+**Custom utility** adds a named tool to this project. For a manual exchange, send
+text in Studio, copy it to the regular CLI and record the reply. For automatic
+exchange, select the compatible mode for a tool that implements
+`arachnid.utility.v1`. Run the displayed `conduct utility-bridge` command in a
+separate terminal and enter the absolute executable path and a JSON array of
+arguments. Sending a task in Studio delivers that text to the tool. Refresh the
+exchanges to read its reply. The project retains this conversation. Assign an
+executor or independent checker for a workflow step in the cycle configuration.
+
+In **Runs**, select the task and click **Do** on the Dalio orbit. When the step has
+several attempts, pick one in the right panel. **Changes**, **Tests** and **Verdict**
+describe that action. Ask Atlas in the center which files changed or what the checker
+concluded. These answers use the recorded evidence. The Tests tab distinguishes the
+external execution summary from definitions found in the verified source files.
+
 These blocks restore the paths if you opened a new terminal after setting a key.
 Use the installation and project locations you chose above if you changed the examples.
 

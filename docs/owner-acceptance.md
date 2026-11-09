@@ -33,7 +33,7 @@ Open your own PowerShell and clear `$env:PYTHONPATH`. Install the identified whe
 & $CONDUCT --help
 ```
 
-**You must see** the fifteen subcommands, including `init`, `ownership`, `providers`, `projects`, and `up`, and no traceback. Nothing on `PYTHONPATH`: an editable
+**You must see** the sixteen subcommands, including `init`, `ownership`, `providers`, `projects`, `up`, and `utility-bridge`, and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
 Use Python 3.11 or newer and retain the exact wheel SHA256 in your acceptance record.
