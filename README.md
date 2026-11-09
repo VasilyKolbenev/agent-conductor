@@ -89,7 +89,9 @@ The workflow decides the actual steps and return paths. The diagram shows the co
 A process finishing successfully is not the same as its work being verified.
 An uncertain result stays visible and requires resolution.
 
-Studio has five screens: **Overview, Workflow, Runs, Decisions, and Agents**.
+The project root opens Arachnid Studio. Choose a session on the left and a step
+on its orbit to inspect the recorded result alongside Atlas. **Workflow controls**
+opens **Overview, Workflow, Runs, Decisions, and Agents**.
 It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
 
 ## Bring your existing tools

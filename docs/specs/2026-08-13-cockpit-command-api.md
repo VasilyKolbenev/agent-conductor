@@ -221,6 +221,7 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   },
   {"method": "GET", "path": "/command/project/utilities", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/project/utilities", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project/utilities/registrations", "mutation": false, "csrf": false},
   {
     "method": "GET", "path": "/command/project/auto-continue",
     "mutation": false, "csrf": false
@@ -1386,6 +1387,11 @@ attempt. It carries the recorded outcome, independent verifier and digest, displ
 diff rows from the sealed manifest and seed tree, and any bound external test result.
 Missing evidence stays unavailable. Case definitions identify source locations.
 Individual case outcomes require their own record. View mode reads archived objects.
+
+`GET /command/project/utilities/registrations` returns `{"utilities": [...]}` on the project
+origin in active and view mode. Each published registration supplies only `utility_id`,
+`label` and `mode`. This read lists the registry and opens registration metadata. It
+does not enumerate exchange directories or read any request, claim, result or reply.
 
 `GET /command/project/utilities` returns the project registrations and their text
 exchanges. An active project accepts a same-origin, project-bound, CSRF-checked POST.

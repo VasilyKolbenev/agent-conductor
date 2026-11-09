@@ -110,12 +110,14 @@ serving ...\conduct-demo-rup_x8pc — Ctrl+C to stop
 The ids are the demo's own and will match what `conduct demo` prints; what must be there is the
 line, with a workflow, a revision, a run and a waiting gate named.
 
-## 5. The Studio, the panel and the state document answer
+## 5. Arachnid, the workflow editor and the state document answer
 
 ```powershell
 $r = Invoke-WebRequest -Uri "http://127.0.0.1:7801/" -UseBasicParsing
 "$($r.StatusCode) $($r.Headers['Content-Type']) $($r.RawContentLength) bytes"
 [regex]::Match($r.Content, '<title>[^<]*</title>').Value
+$editor = Invoke-WebRequest -Uri "http://127.0.0.1:7801/panel/studio.html" -UseBasicParsing
+[regex]::Match($editor.Content, '<title[^>]*>[^<]*</title>').Value
 $j = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/state.json" -UseBasicParsing).Content |
      ConvertFrom-Json
 "project=$($j.project) state=$($j.project_status.state) reason=$($j.project_status.reason)"
@@ -125,11 +127,10 @@ $handoff = Invoke-WebRequest -Uri "http://127.0.0.1:7801/handoff/claude.md" -Use
 ($handoff.Content -split "`n")[0]
 ```
 
-Expect `200 text/html; charset=utf-8` and a page with `December` in its `<title>` — a served
-page of only a few hundred bytes means the packaged panel did not make it into the wheel. `GET /`
-answers the Workflow Studio shell; the classic panel is at `/panel/index.html` and is the tens-of-
-kilobytes document. Expect the state document to describe the bundled scenario, which the README's
-quickstart sets out:
+Expect HTTP 200 and the title `Arachnid Studio` at `/`. The editor at `/panel/studio.html`
+must also return HTTP 200 and a title containing `Workflow Studio`. The classic panel lives at
+`/panel/index.html`. The state document should describe the bundled scenario from the README's
+quickstart.
 
 ```
 project=web-app state=blocked reason=human_decision
@@ -158,7 +159,7 @@ the second is what a machine on the same network can actually reach.
 
 ## 7. Nothing it serves asks anything of the network
 
-`/` serves the Workflow Studio, which is a shell that loads a directory of ES modules. Fetching
+`/` serves Arachnid, which loads its ES modules from `/panel/`. Fetching
 `/` would therefore scan a document with almost no code in it, and fetching a hand-typed list of
 module URLs would go stale the first time a module is added — a scan that silently misses a file
 is worse than no scan. So scan **the whole panel directory of the installed wheel**, which is
@@ -660,8 +661,8 @@ Named so that passing it is not read as more than it is.
 - **Anything in a browser.** Steps 5 to 7 check what the server sends. Nobody has looked at
   what a browser draws from it, and the live update is checked only as far as the page opening
   an `EventSource`. For the classic panel: open `/panel/index.html`, edit a lane file in the
-  printed fixture directory, and watch it move. For the Workflow Studio, which is what `/`
-  serves and where every write in this product is made, this procedure checks nothing at all —
+  printed fixture directory, and watch it move. Open `/` for Arachnid and `/panel/studio.html`
+  for the workflow editor. This HTTP check does not exercise those screens —
   no step here opens a screen, publishes a revision, confirms a gate or reads a receipt. That
   is `docs/owner-acceptance.md`, seventeen steps, done by a person.
 - **Every `/command/*` route.** The Studio's whole API — proposals, action requests, decisions,
