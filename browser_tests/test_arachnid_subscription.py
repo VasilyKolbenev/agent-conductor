@@ -92,6 +92,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
             page.locator("#command").fill("A different task")
             page.locator("#command").press("Enter")
             page.locator('[data-planner-action="refresh"]').click()
+            expect(page.locator("#planner")).to_have_attribute("data-planner-phase", "idle")
             expect(prepare).to_have_count(0)
             records = RunStore(root).read(first_url.split("advice=")[1].split("&")[0]).records
             assert not any(row.kind == "decision" for row in records)
