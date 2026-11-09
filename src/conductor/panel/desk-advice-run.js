@@ -65,7 +65,8 @@ export function requestFor(taskId, provider, model, input) {
 async function load(door, request) {
   const run = await door.readJson(path.run(request.id));
   const participant = {id: INSTANCE, adapter: request.provider, ...(request.model ? {model: request.model} : {})};
-  requireFact(run.config?.task?.id === request.id && run.config.task.work_scope === request.id
+  requireFact(run.run?.run_id === request.id && run.run.mode === "policy"
+    && run.config?.task?.id === request.id && run.config.task.work_scope === request.id
     && equal(run.config.workflow, {id: FLOW, revision: 1}) && equal(run.config.instances, [participant])
     && Array.isArray(run.records) && !run.warnings?.length, "run_conflict");
   const graph = rows(run, "graph_definition");
@@ -85,26 +86,58 @@ function checkedInput(run, request) {
     && !inputs[0].source_action_id;
 }
 
+function advisorGrant(run, request, actions) {
+  const grants = rows(run, "run_authorization");
+  if (!grants.length) {
+    requireFact(!actions.length, "run_conflict");
+    return null;
+  }
+  const grant = grants[0];
+  const life = Date.parse(grant.expires_at) - Date.parse(grant.authorized_at);
+  requireFact(grants.length === 1 && grant.run_id === request.id
+    && grant.authorization_id === "grant-" + request.id && grant.supersedes === null
+    && life > 0 && life <= 1000 * LIMITS.duration_seconds
+    && ["max_actions", "max_action_seconds", "max_total_task_seconds", "node_limits"]
+      .every(k => equal(grant[k], LIMITS[k]))
+    && actions.every(a => a.run_authorization_id === grant.authorization_id
+      && a.run_authorization_digest === grant.authorization_digest), "run_conflict");
+  return grant;
+}
+
 export async function observeAdvice(door, request) {
   // The durable journal is read last. A driver may finish while the status read is in flight.
   const state = await door.readJson(path.automation(request.id));
   const run = await load(door, request);
   requireFact(checkedInput(run, request), "run_conflict");
   const actions = rows(run, "action_request");
+  const grant = advisorGrant(run, request, actions);
   const results = rows(run, "action_result");
   if (results.length) {
     requireFact(actions.length === 1 && results.length === 1 && actions[0].node_id === STEP
-      && results[0].action_id === actions[0].action_id && results[0].outcome === "succeeded", "advice_unsuccessful");
+      && actions[0].run_id === request.id && actions[0].instance_id === INSTANCE
+      && ["run_id", "action_id", "attempt_id", "instance_id"].every(k => results[0][k] === actions[0][k]),
+    "run_conflict");
+    if (results[0].outcome !== "succeeded") {
+      // The relay itself supplies this fixed prefix. Do not render arbitrary CLI output.
+      const note = results[0].detail;
+      if (typeof note === "string" && note.startsWith("the Codex CLI login is not ready for an isolated attempt:")) {
+        throw new Error("advice_login_unavailable");
+      }
+      throw new Error("advice_unsuccessful");
+    }
     const outputs = rows(run, "artifact").filter((r) => r.artifact_ref === OUTPUT
       && r.source_action_id === actions[0].action_id);
     if (!outputs.length && state.state !== "complete") return {phase: "running"};
-    requireFact(outputs.length === 1, "advice_unsuccessful");
+    const inputId = documentId(request.id, INPUT, "text/plain", request.content);
+    requireFact(outputs.length === 1 && outputs[0].run_id === request.id
+      && outputs[0].media_type === "text/markdown" && equal(outputs[0].input_artifact_ids, [inputId]),
+    "advice_unsuccessful");
     const decisions = rows(run, "decision").filter((row) => row.gate_id === GATE);
     requireFact(decisions.length <= 1, "decision_conflict");
     return {phase: "result", content: outputs[0].content,
-      choice: decisions[0]?.action ?? null, actor: state.authorization?.authorized_by};
+      choice: decisions[0]?.action ?? null, actor: grant.authorized_by};
   }
-  if (state.authorization || actions.length || rows(run, "run_authorization").length) {
+  if (state.authorization || grant) {
     if (!actions.length && ["expired","revoked","complete"].includes(state.state)) {
       throw new Error("advice_stopped");
     }
