@@ -120,6 +120,7 @@ button{font:inherit;cursor:pointer;background:none;border:none;color:inherit}
    pushing the primary action, and therefore the run's inspector, down a row. */
 @media(min-width:900px){
   .studio-elsewhere{flex:1 1 240px;min-width:0}
+  #studioHome{flex:0 0 auto}
 }
 /* The one primary action of the screen now showing. Empty in the static
    document: which verb belongs here is a fact only a read can supply. */

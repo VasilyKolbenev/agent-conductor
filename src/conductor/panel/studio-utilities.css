@@ -35,3 +35,4 @@
   background: var(--panel); color: var(--ink); padding: .4em .8em;
 }
 #utilityRuns::before, #utilityAgents::before { content: "+"; color: var(--ion); font-size: 1.1em; }
+#utilityRuns { margin: 0; }
