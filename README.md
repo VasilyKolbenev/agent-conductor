@@ -92,6 +92,14 @@ An uncertain result stays visible and requires resolution.
 The project root opens Arachnid Studio. Choose a session on the left and a step
 on its orbit to inspect the recorded result alongside Atlas. **Workflow controls**
 opens **Overview, Workflow, Runs, Decisions, and Agents**.
+
+In an active project with Codex and Grok subscriptions connected, choose **New session**,
+select Codex as the Atlas lead and describe the change. Review the text and limit for
+one Codex planning request. Once Codex responds, accept its suggestion to preview the
+Grok and Codex roles, source Git commit and execution limits. **Authorize this Dalio run**
+grants separate execution authority. The operator still decides before Do and at the
+result gate.
+
 It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
 
 ## Bring your existing tools

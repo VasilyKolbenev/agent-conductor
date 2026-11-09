@@ -10,6 +10,7 @@ import {utilityDrawer} from "./studio-utilities.js";
 import {word} from "./arachnid-copy.js";
 import {harnesses, showHarnesses, showLimits, showMemory} from "./arachnid-panels.js";
 import {arachnidConversation} from "./arachnid-conversation.js";
+import {atlasPlanning} from "./arachnid-planning.js";
 
 const $ = id => document.getElementById(id);
 const fields = () => new URLSearchParams(location.hash.slice(1));
@@ -28,6 +29,7 @@ function boot() {
   let detailStop, catalogStop, opener, memberFilter, members = [], checking = false, again = false;
   const leads = new Map();
   const drafts = new Map();
+  const adviceRefs = new Map();
   let external = [], utilityEpoch = 0, reconnecting = false, linkEpoch = 0;
   const tr = key => word(locale, key);
   const transport = createTransport(() => locale, () => identity?.project_id ?? claimed());
@@ -40,7 +42,25 @@ function boot() {
     newId: () => "x-" + crypto.randomUUID(), question: () => $("command").value,
     copy: text => navigator.clipboard.writeText(text),
   });
+  const planning = atlasPlanning($("planner"), {
+    readJson: route => transport.readJson(route),
+    write: (target, subject, body) => transport.submit(target, subject, body),
+    valid: (projectId, sessionId, ref) => connected && listState === "ready" && !foreign()
+      && identity?.mode === "active" && identity.project_id === projectId
+      && current?.kind === "new" && key(current) === sessionId && leads.get(sessionId) === "codex"
+      && !fields().has("task") && !fields().has("session") && (fields().get("new") || "1") === current.id
+      && claimForAdvice(fields()) === ref && (!fields().has("advice") || ref !== null),
+    saveReference: ref => {
+      const params = fields();
+      if (ref) { params.set("advice", ref.runId); adviceRefs.set(key(current), ref.runId); }
+      else { params.delete("advice"); adviceRefs.delete(key(current)); }
+      params.set("new", current.id); params.set("project", identity.project_id);
+      history.replaceState(history.state, "", "#" + params);
+    },
+    openRun: (run, task) => { address({kind: "run", id: run, task}); refresh(); },
+  });
   const scene = arachnidConversation($("chat"), $("inspection"), {
+    planMessage: (sessionId, text) => planning.message(sessionId, text),
     stop: () => new AbortController(),
     readAttempt: (run, node, action, controller) =>
       transport.readJson(path.atlasAttempt(run, node, action), controller),
@@ -81,7 +101,8 @@ function boot() {
   }
   function address(row) {
     const params = fields();
-    for (const key of ["session", "task", "new"]) params.delete(key);
+    for (const key of ["session", "task", "new", "advice"]) params.delete(key);
+    if (row.kind === "new" && adviceRefs.has(key(row))) params.set("advice", adviceRefs.get(key(row)));
     if (identity?.project_id) params.set("project", identity.project_id);
     params.set(row.kind === "run" ? "session" : row.kind, row.id);
     history.pushState(null, "", "#" + params); navigate();
@@ -113,12 +134,25 @@ function boot() {
       || rows.find(row => !row.bad) || blank;
     const key = keys[0], id = q.get(key);
     if (keys.length !== 1 || q.getAll(key).length !== 1) return null;
-    if (key === "new") return drafts.get(id) || (id === "1" ? blank : null);
+    if (key === "new") {
+      if (drafts.has(id)) return drafts.get(id);
+      if (id === "1") return blank;
+      if (claimForAdvice(q) && /^[a-f0-9-]{36}$/.test(id)) {
+        const row = {kind: "new", id, title: "", time: ""};
+        drafts.set(id, row); return row;
+      }
+      return null;
+    }
     if (!isId(id)) return null;
     return rows.find(row => key === "session" ? row.kind === "run" && row.id === id
       : row.task === id) || null;
   }
   function key(row) { return row ? row.kind + "/" + row.id : "missing"; }
+  function claimForAdvice(q) {
+    return identity?.project_id && q.get("project") === identity.project_id
+      && q.getAll("advice").length === 1 && /^advice-[0-9a-f]{20}$/.test(q.get("advice"))
+      ? q.get("advice") : null;
+  }
   function switchTo(row) {
     if (key(current) !== key(row)) {
       ++detailEpoch; detailStop?.abort(); detail = null; detailState = "";
@@ -203,7 +237,11 @@ function boot() {
     if (focused) list.find(b => b.dataset.session === focused)?.focus({preventScroll: true});
   }
   function paintPeople() {
-    const selected = key(current), preferred = leads.get(selected);
+    const selected = key(current);
+    const subscribed = current?.kind === "new" && identity?.mode === "active" && providers.some(
+      p => p.providerId === "codex" && p.auth === "subscription" && p.availability === "available");
+    const preferred = leads.get(selected) || (current?.kind === "new"
+      && (subscribed || claimForAdvice(fields())) ? "codex" : null);
     members = harnesses(detail, providers, locale);
     const lead = members.find(m => m.id === preferred) || members[0];
     if (lead) leads.set(selected, lead.id);
@@ -216,7 +254,7 @@ function boot() {
           element("span", {className: "session-copy"}, [element("strong", {text: m.label}),
             element("small", {text: m.duty})])]);
       b.addEventListener("click", () => { leads.set(selected, m.id); $("lead").value = m.id;
-        openPanel("participants", b, m.id); });
+        paintPlanning(); openPanel("participants", b, m.id); });
       return b;
     });
     $("harnesses").replaceChildren(...rows);
@@ -260,13 +298,36 @@ function boot() {
     $("prepareTask").textContent = tr(current?.kind === "task" ? "resume" : "start");
     $("prepareTask").href = toolAddress("desk", current?.kind === "task" ? {task: current.task, prepare: "1"}
       : {new: "task"});
+    if (identity?.mode === "active" && current?.kind === "run" && detail) {
+      const source = planning.planningSession(detail, identity.project_id);
+      if (source) {
+        const q = fields();
+        for (const key of ["task", "session"]) q.delete(key);
+        q.set("project", identity.project_id); q.set("new", source.slice(4)); q.set("advice", current.id);
+        $("prepareTask").textContent = tr("returnToPlan");
+        $("prepareTask").href = "#" + q;
+        $("prepareTask").hidden = false;
+      }
+    }
     $("classic").href = toolAddress("studio", {screen: current?.kind === "run" ? "runs" : "overview",
       run: current?.kind === "run" ? current.id : null, task: current?.task});
     paintRail(rows); paintPeople();
     scene.sync({locale, sessionId: connected && listState === "ready" && current ? key(current) : null,
       runId: current?.kind === "run" ? current.id : null,
       detail, title, ready: connected && listState === "ready" && !detailState && !!current && !current.bad});
+    paintPlanning();
     paintPanel();
+  }
+  function paintPlanning() {
+    const enabled = identity?.project_id && identity.mode === "active" && !foreign()
+      && connected && listState === "ready" && current?.kind === "new"
+      && leads.get(key(current)) === "codex";
+    const ref = claimForAdvice(fields());
+    if (enabled && ref) adviceRefs.set(key(current), ref);
+    planning.sync(enabled ? {sessionId: key(current), projectId: identity.project_id,
+      locale, reference: ref} : null);
+    $("local").querySelector("span").textContent = tr(enabled ? "subscriptionPlan" : "local");
+    if (enabled) $("prepareTask").hidden = true;
   }
   async function readRun(row) {
     detailStop?.abort(); const stop = new AbortController(); detailStop = stop;
@@ -307,7 +368,7 @@ function boot() {
   function refuse() {
     retire(); ++identityEpoch; ++linkEpoch; transport.seal(); connected = false; stream = null;
     if ($("studioUtilities").open) $("studioUtilities").close();
-    drafts.clear(); leads.clear();
+    drafts.clear(); leads.clear(); adviceRefs.clear();
     identity = null; runs = []; providers = []; tasks = []; current = null;
     listState = "foreign"; paint(); utility.sync();
   }
@@ -364,7 +425,7 @@ function boot() {
     stream.onmessage = event => {
       let frame;
       try { frame = JSON.parse(event.data); } catch (_) { return; }
-      if (connected && ["state", "run"].includes(frame?.kind)) refresh();
+      if (connected && ["state", "run"].includes(frame?.kind)) { refresh(); planning.tick(); }
     };
   }
   async function onOpen() {
@@ -418,7 +479,9 @@ function boot() {
   $("limits").addEventListener("click", () => openPanel("limits", $("limits")));
   $("memory").addEventListener("click", () => openPanel("memory", $("memory")));
   $("lead").addEventListener("change", () => {
-    leads.set(key(current), $("lead").value); openPanel("participants", $("lead"), $("lead").value);
+    leads.set(key(current), $("lead").value); paint();
+    if (current?.kind !== "new" || identity?.mode !== "active")
+      openPanel("participants", $("lead"), $("lead").value);
   });
   $("attach").addEventListener("click", () => { navOpen(false); utility.open(true); });
   $("language").addEventListener("change", () => setPreference("lang", $("language").value));
