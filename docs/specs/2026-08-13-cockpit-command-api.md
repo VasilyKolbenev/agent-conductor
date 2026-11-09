@@ -1384,8 +1384,8 @@ judges that repeat again, from the stored terms.
 request from the frozen run. The response identifies the run, node, action and
 attempt. It carries the recorded outcome, independent verifier and digest, displayable
 diff rows from the sealed manifest and seed tree, and any bound external test result.
-Missing evidence stays unavailable. Case definitions identify source locations;
-individual case outcomes require their own record. View mode reads archived objects.
+Missing evidence stays unavailable. Case definitions identify source locations.
+Individual case outcomes require their own record. View mode reads archived objects.
 
 `GET /command/project/utilities` returns the project registrations and their text
 exchanges. An active project accepts a same-origin, project-bound, CSRF-checked POST.
