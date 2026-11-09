@@ -1,4 +1,5 @@
 """The installed Studio's preview, grant and result are one offline application journey."""
+import errno
 import os
 import subprocess
 from threading import Thread
@@ -19,13 +20,18 @@ from tests.test_patch_do_policy import ACTUAL, PATCH, run_state, work_and_calls
 from tests.test_policy_runtime import NOW, PD
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows uses pinned Python fixture launchers")
 def test_the_offline_desk_rejects_a_changed_fixture_before_the_version_probe(tmp_path):
     executable = _fakeexe.build(tmp_path / "fixture", "codex", "_fakecodex")
     assert executable is not None
     executable.write_bytes(b"not an executable")
-    with pytest.raises(ValueError, match="registered fake changed or disappeared"):
+    if os.name == "nt":
+        with pytest.raises(ValueError, match="registered fake changed or disappeared"):
+            subprocess.run([str(executable), "--version"], check=False, capture_output=True)
+        return
+    # POSIX runs the fixture directly. A damaged script must fail at exec, before the probe.
+    with pytest.raises(OSError) as refusal:
         subprocess.run([str(executable), "--version"], check=False, capture_output=True)
+    assert refusal.value.errno == errno.ENOEXEC
 
 
 @pytest.mark.parametrize("seeded,gated", [(False, False), (True, False), (True, True)])
