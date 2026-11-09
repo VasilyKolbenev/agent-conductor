@@ -281,7 +281,7 @@ def test_a_step_named_to_the_id_budget_does_not_stretch_the_runs_screen(
     page = context.new_page()
     window = _Window(page)
     try:
-        page.goto(bench.url, wait_until="load")
+        page.goto(bench.url + "panel/studio.html", wait_until="load")
         _settle(page)
         _read(page, LONG_RUN)
         assert FULL in _row(page, FULL)

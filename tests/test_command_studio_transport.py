@@ -68,6 +68,7 @@ def test_the_new_routes_are_derived_from_the_live_table(tmp_path):
         ("POST", "/command/project/task-draft"),
         ("GET", "/command/project/utilities"),
         ("POST", "/command/project/utilities"),
+        ("GET", "/command/project/utilities/registrations"),
         ("GET", "/command/project/auto-continue"),
         ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),

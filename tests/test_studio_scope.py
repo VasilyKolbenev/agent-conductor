@@ -325,6 +325,8 @@ def test_the_deadline_globals_are_reached_by_the_boot_and_transport_modules_alon
         reached = sorted(set(DEADLINE.findall(_scannable(_code(PANEL / name)))))
         if name in ("studio.js", "desk-transport.js", "desk-people-host.js"):
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
+        elif name == "arachnid.js":
+            assert reached == ["AbortController"]
         elif name == "desk-flow-host.js":
             assert reached == ["AbortController"]
         elif name == "desk-motion.js":

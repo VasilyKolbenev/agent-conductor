@@ -6,10 +6,7 @@ handler in `server.py` stays the one reader of these resources.
 """
 from __future__ import annotations
 
-#: Every packaged Studio file that is SERVED. `studio.html` is deliberately
-#: absent: `GET /` answers with it, and a second route would give one document
-#: two. A module that is packaged and missing here fails the packaged-resource
-#: partition test in tests/test_server_panel_assets.py.
+#: Every packaged Studio script and stylesheet that is served on the project origin.
 _STUDIO_FILES = (
     "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js", "studio-atlas.css",
     "studio-utilities.js", "studio-utilities-copy.js", "studio-utilities.css",
@@ -41,16 +38,17 @@ _STUDIO_FILES = (
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}
 
-#: The page `GET /` answers with: the Studio's shell, named by a literal here
-#: so no request target can select it. It is not a `PANEL_ASSETS` key.
-ENTRY_PAGE = "studio.html"
+#: The primary project document is served only at `/`.
+ENTRY_PAGE = "arachnid.html"
+_ARACHNID_FILES = (
+    "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js", "arachnid-panels.js",
+    "arachnid-copy.js", "arachnid.css",
+)
 
 #: The desk's own files, registered by the desk's lane and served from the first
 #: day. Written as literal rows -- route, content type, packaged name -- for the
 #: reason the Studio's names are literals below: nothing in a route comes from a
-#: request. `desk.html` is reachable here while `GET /` still answers
-#: `ENTRY_PAGE`; the entry page switches to it in the slice that removes the
-#: Studio's five tabs, and `hub` mounts this route both before and after. Every
+#: request. The hub mounts `/panel/desk.html` independently of the project entry. Every
 #: row must also be a key of `PANEL_ASSETS`, which splices this table in.
 DESK_ASSETS = {
     "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
@@ -184,9 +182,8 @@ PANEL_ASSETS = {
         "text/javascript; charset=utf-8", "graph-adapter.js"),
     "/panel/graph-default.js": (
         "text/javascript; charset=utf-8", "graph-default.js"),
-    # The Workflow Studio. Its shell is what `GET /` answers with, so — unlike
-    # graph.html — studio.html is NOT on this list: it is the panel route's own
-    # entry, and putting it here as well would give one document two routes.
+    # The Workflow Studio authoring surface keeps its own document.
+    "/panel/studio.html": ("text/html; charset=utf-8", "studio.html"),
     # Its stylesheet and its modules are ordinary allowlisted assets, and they
     # are BUILT from `_STUDIO_FILES` rather than written out twice each: the
     # route is `/panel/<name>` and the packaged file is `<name>`, which is a
@@ -196,7 +193,7 @@ PANEL_ASSETS = {
     # them comes from a request — so the allowlist is exactly as closed as it
     # was when it was typed out.
     **{f"/panel/{name}": (_STUDIO_TYPES[name.rsplit(".", 1)[1]], name)
-       for name in _STUDIO_FILES},
+       for name in (*_STUDIO_FILES, *_ARACHNID_FILES)},
     # The desk: its own registry, spliced in whole.
     **DESK_ASSETS,
     # The classic panel. It kept its file name when the Studio took the front

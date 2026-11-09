@@ -152,6 +152,7 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/project/task-draft"),
         ("GET", "/command/project/utilities"),
         ("POST", "/command/project/utilities"),
+        ("GET", "/command/project/utilities/registrations"),
         ("GET", "/command/project/auto-continue"),
         ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),

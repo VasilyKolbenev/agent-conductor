@@ -96,7 +96,7 @@ def _workflow_screen(chromium: Browser, served: _Project, width: int,
     context = chromium.new_context(viewport={"width": width, "height": height})
     page = context.new_page()
     window = _Window(page)
-    page.goto(served.url, wait_until="load")
+    page.goto(served.url + "panel/studio.html", wait_until="load")
     _settle(page)
     page.locator("#navWorkflow").click()
     page.wait_for_selector("#screenWorkflow:not([hidden])")

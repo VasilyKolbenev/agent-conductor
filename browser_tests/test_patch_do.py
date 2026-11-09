@@ -183,7 +183,7 @@ def test_select_patch_in_studio_and_publish_the_new_revision(chromium, tmp_path)
     context = chromium.new_context(viewport={"width": 1440, "height": 900})
     try:
         page = context.new_page()
-        page.goto(f"http://127.0.0.1:{srv.server_port}/#lang=ru")
+        page.goto(f"http://127.0.0.1:{srv.server_port}/panel/studio.html#lang=ru")
         page.locator("#navWorkflow").click()
         page.locator("#workflowToolbar select[name='workflow']").select_option("repair")
         page.locator('[data-node-id="do"]').click()

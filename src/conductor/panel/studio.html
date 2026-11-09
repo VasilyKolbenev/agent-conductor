@@ -4,18 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title id="studioTitle">December — Workflow Studio</title>
-<!-- The application shell. This document is what `GET /` answers with; the
-     classic panel keeps its own file name and is reached at /panel/index.html.
+<!-- The workflow editor is served at /panel/studio.html. Its header leads back
+     to Arachnid on this project's origin. All assets come from the absolute
+     allowlisted /panel/ path, which tests/test_studio_source.py checks.
 
-     Every asset below is named with a ROOT-RELATIVE path under /panel/, and
-     that is forced rather than chosen: this document is served at `/`, so a
-     document-relative "studio.css" would resolve to /studio.css, which is not
-     a route. The paths carry no scheme and no host, so the served copy still
-     reaches only this origin's own packaged directory -- which is the property
-     graph.html gets from being relative, kept here by the only spelling the
-     entry route leaves available. tests/test_studio_source.py holds it.
-
-     One script, one stylesheet, and no inline anything: a Content-Security
+     One script, three stylesheets, and no inline code: a Content-Security
      rule that forbids inline script is the shape this surface already has, and
      the structure below stands without either of them. With scripting off, or
      before /panel/studio.js has run, every screen still says in plain language
@@ -47,6 +40,7 @@
          same words in every state, and a link that only appeared once a read
          had landed would be missing on exactly the screens a person reaches
          when a read did not. -->
+    <a class="studio-elsewhere" id="studioHome" href="/">Arachnid</a>
     <a class="studio-elsewhere" data-i18n="shell.map" data-i18n-label="shell.classic"
       href="/panel/index.html" aria-label="Map, findings, feed and handoffs — classic panel">Project map and history</a>
     <div class="studio-preferences" id="studioPreferences" role="group"

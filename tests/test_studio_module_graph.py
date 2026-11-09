@@ -13,13 +13,27 @@ from __future__ import annotations
 
 import re
 
-from tests.test_studio_source import BOOT, IMPORTS, MODULES, PANEL
+from tests.test_studio_source import ARACHNID_MODULES, BOOT, IMPORTS, MODULES, PANEL
 
 #: What each module MAY import -- a permission table, not an obligation. The
 #: frontend contract's own column is spelled "May import", and a module that
 #: has not yet needed one of its permitted neighbours is not a fault; a module
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
+    "arachnid.js": frozenset({
+        "./command-view.js", "./desk-hash.js", "./desk-transport.js", "./studio-model.js",
+        "./studio-situation.js", "./studio-tasks-model.js", "./studio-taskruns.js", "./studio-utilities.js",
+        "./arachnid-copy.js", "./arachnid-panels.js", "./arachnid-conversation.js",
+    }),
+    "arachnid-conversation.js": frozenset({
+        "./command-view.js", "./studio-i18n.js", "./studio-scene-model.js",
+        "./studio-atlas-inspector.js", "./arachnid-orbit.js",
+    }),
+    "arachnid-orbit.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "arachnid-panels.js": frozenset({
+        "./command-view.js", "./arachnid-copy.js", "./studio-quotas.js", "./studio-quotas-model.js",
+    }),
+    "arachnid-copy.js": frozenset(),
     "studio-atlas-copy.js": frozenset(),
     "studio-utilities-copy.js": frozenset(),
     "studio-utilities.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
@@ -519,7 +533,7 @@ PERMITTED_IMPORTS = {
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),
     "studio.js": frozenset(
-        {f"./{name}" for name in MODULES if name != BOOT}
+        {f"./{name}" for name in MODULES if name != BOOT and name not in ARACHNID_MODULES}
         | {"./command-view.js", "./command-projection.js"}),
 }
 

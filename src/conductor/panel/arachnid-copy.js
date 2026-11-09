@@ -1,0 +1,40 @@
+"use strict";
+// Shell navigation labels. Task names, participant identities and evidence come from the project.
+const labels = {
+  sessions: ["Sessions", "Сессии"], newSession: ["New session", "Новая сессия"],
+  participants: ["Harnesses", "Харнессы"], attach: ["Connect a harness", "Подключить харнесс"],
+  limits: ["Limits", "Лимиты"], memory: ["Session memory", "Память сессии"],
+  classic: ["Workflow controls", "Управление процессами"], theme: ["Change theme", "Сменить тему"],
+  language: ["Language", "Язык"], workspace: ["Workspace", "Рабочая область"],
+  closeSessions: ["Close sessions", "Закрыть сессии"], openSessions: ["Open sessions", "Открыть сессии"],
+  atlas: ["Atlas", "Атлас"], lead: ["Atlas context harness", "Харнесс для контекста Атласа"],
+  you: ["You", "Вы"], conversation: ["Conversation with Atlas", "Разговор с Атласом"],
+  compose: ["Ask Atlas…", "Написать Атласу…"], send: ["Send message", "Отправить сообщение"],
+  details: ["Session details", "Детали сессии"], inspector: ["Inspector", "Инспектор"],
+  closeDetails: ["Close details", "Закрыть детали"],
+  local: ["Local answers from project records", "Локальные ответы по записям проекта"],
+  skipToChat: ["Go to conversation", "Перейти к разговору"],
+  loading: ["Reading project…", "Читаю проект…"], retry: ["Read again", "Прочитать снова"],
+  failed: ["Project records could not be read.", "Не удалось прочитать записи проекта."],
+  missing: ["Session not found in this project.", "Сессия не найдена в этом проекте."],
+  foreign: ["This address belongs to another project.", "Адрес принадлежит другому проекту."],
+  offline: ["Connection lost. Reconnecting…", "Связь с проектом прервана. Переподключение…"],
+  unreadable: ["Unreadable record", "Запись недоступна"], task: ["Task", "Задача"],
+  run: ["Run", "Запуск"], draft: ["Session draft", "Черновик сессии"],
+  start: ["Prepare task", "Подготовить задачу"], resume: ["Open task on Desk", "Открыть задачу на Desk"],
+  none: ["No saved sessions", "Сохранённых сессий пока нет"],
+  noHarness: ["No harness in this session", "В этой сессии пока нет харнессов"],
+  noHistory: ["No session records yet.", "В сессии пока нет записей."],
+  decisions: ["Recorded decisions", "Записанные решения"], actions: ["Step outcomes", "Результаты шагов"],
+  chat: ["Conversation in this tab", "Разговор в этой вкладке"],
+  noRoles: ["No participants recorded.", "Участники не записаны."],
+  projection: ["Project data unavailable", "Данные проекта недоступны"],
+  view: ["Read-only archive", "Архив для просмотра"],
+  quotaArchive: ["Archive · no shared snapshot", "Архив · общего снимка нет"],
+  taken: ["Shared snapshot", "Общий снимок"],
+  manualTool: ["Manual utility", "Ручная утилита"], protocolTool: ["Compatible utility", "Совместимая утилита"],
+  executor: ["Execution", "Исполнение"], checker: ["Verification", "Проверка"],
+};
+export function word(locale, key) {
+  return labels[key]?.[locale === "ru" ? 1 : 0] || key;
+}

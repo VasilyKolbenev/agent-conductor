@@ -201,6 +201,7 @@ EXPECTED_ROUTES = (
     ("POST", "/command/project/task-draft", True, True),
     ("GET", "/command/project/utilities", False, False),
     ("POST", "/command/project/utilities", True, True),
+    ("GET", "/command/project/utilities/registrations", False, False),
     ("GET", "/command/project/auto-continue", False, False),
     ("POST", "/command/project/auto-continue", True, True),
     ("GET", "/command/runs/<run_id>/automation", False, False),

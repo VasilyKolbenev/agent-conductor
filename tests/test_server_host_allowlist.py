@@ -50,7 +50,8 @@ LANE = json.dumps({
 #: no project byte, so their witness is the packaged document's own title tag;
 #: without it a 403 body could not be told apart from a served page.
 WITNESS = {
-    "/": b'<title id="studioTitle">',
+    "/": b"<title",
+    "/panel/studio.html": b'<title id="studioTitle">',
     "/panel/graph.html": b"<title>",
     "/state.json": MARKER.encode("ascii"),
     "/harnesses.json": b"claude-code",
@@ -128,12 +129,9 @@ def _assert_served(path: str, status: int, body: bytes, headers: dict) -> None:
     assert headers["Cache-Control"] == "no-store", path
     if path == "/":
         assert headers["Content-Type"] == "text/html; charset=utf-8"
-        # The front door is the Studio shell; the classic panel kept its file
-        # name and moved to /panel/index.html. Named here rather than read off
-        # the server, because this module's subject is which Host is answered,
-        # and a route that quietly served a different document would still be
-        # answering the right Host. Which document `GET /` owes is held on its
-        # own by tests/test_server_panel_assets.py.
+        assert body == _packaged("arachnid.html")
+    elif path == "/panel/studio.html":
+        assert headers["Content-Type"] == "text/html; charset=utf-8"
         assert body == _packaged("studio.html")
     elif path == "/panel/index.html":
         assert headers["Content-Type"] == "text/html; charset=utf-8"

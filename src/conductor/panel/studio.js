@@ -19,7 +19,7 @@
 // write ASKED FOR. Anything else is outcome-unknown, and never a guess.
 import {ERROR_LABELS, canonicalJson} from "./command-projection.js";
 import {LATE, createTransport, path} from "./desk-transport.js";
-import {deskHash} from "./desk-hash.js";
+import {deskHash, readDeskHash} from "./desk-hash.js";
 import {mountCanvas} from "./studio-canvas.js";
 import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
@@ -108,6 +108,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   const entry = history.state?.deskLimitEditor;
   const desk = entry && typeof entry.project === "string" && /^[0-9a-f]{32}$/.test(entry.project) && resume.screen === "runs"
     && resume.taskId && resume.runId && entry.task === resume.taskId && entry.run === resume.runId ? entry : null;
+  const projectClaim = desk?.project ?? readDeskHash(location.hash).project;
   let focusDeskLimits = Boolean(desk);
   const deskHistory = desk ? {deskLimitEditor: desk} : null;
   if (desk) window.addEventListener("popstate", () => {
@@ -120,7 +121,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   const appearance = preferences({root: document.documentElement,
     mount: byId("studioPreferences"), hash: location.hash, language: navigator.language,
     media: window.matchMedia("(prefers-color-scheme: dark)"), change: () => {
-      history.replaceState(deskHistory, "", preferenceHash(navigationHash(state), appearance.value));
+      syncAddress();
       render();
       if (readLocale !== appearance.value.locale) {
         readLocale = appearance.value.locale;
@@ -133,8 +134,8 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   window.addEventListener("pagehide", () => appearance.dispose());
   //: The doors to the wire live in the transport module; the language they ask
   //: in is this window's, read at each request.
-  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale, () => desk?.project ?? null);
-  let utilityProject = desk?.project ?? null;
+  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale, () => projectClaim);
+  let utilityProject = projectClaim;
   const utilityDoor = createTransport(() => appearance.value.locale, () => utilityProject);
   const utilities = utilityDrawer(byId("studioUtilities"), {
     project: () => utilityDoor.readJson(path.project()), read: () => utilityDoor.readJson(path.utilities()),
@@ -155,6 +156,19 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     stop: () => new AbortController(),
   });
 
+  function syncAddress() {
+    const editor = new URLSearchParams(navigationHash(state).slice(1));
+    const home = new URLSearchParams();
+    if (state.runs.selectedId) home.set("session", state.runs.selectedId);
+    else if (state.tasks.selectedId) home.set("task", state.tasks.selectedId);
+    if (projectClaim) {
+      editor.set("project", projectClaim);
+      home.set("project", projectClaim);
+    }
+    history.replaceState(deskHistory, "", preferenceHash(`#${editor}`, appearance.value));
+    byId("studioHome").href = "/" + preferenceHash(`#${home}`, appearance.value);
+  }
+
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
     if (next === state) return;
@@ -163,7 +177,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
       if (finished) finished.open = false;
     }
     state = next;
-    history.replaceState(deskHistory, "", preferenceHash(navigationHash(state), appearance.value));
+    syncAddress();
     if (redraw) render();
   }
 

@@ -31,6 +31,9 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     if route.name == "project_utilities":
         from .project_utilities import list_utilities
         return 200, list_utilities(api._store.project_root)
+    if route.name == "utility_registrations":
+        from .project_utilities import list_registrations
+        return 200, list_registrations(api._store.project_root)
     if route.name == "project_git":
         return project_git_state.read_git(api)
     if route.name == "project_documents":

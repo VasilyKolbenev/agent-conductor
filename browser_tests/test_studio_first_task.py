@@ -25,7 +25,7 @@ def test_a_first_visit_offers_the_own_task_wizard(chromium, tmp_path, practice, 
         page = context.new_page()
         writes = []
         page.on("request", lambda req: writes.append(req.url) if req.method == "POST" else None)
-        page.goto(f"http://127.0.0.1:{http.server_port}/#lang={lang}")
+        page.goto(f"http://127.0.0.1:{http.server_port}/panel/studio.html#lang={lang}")
         expect(page.locator("#screenOverview")).to_have_attribute("data-state", "ready")
         own = page.get_by_role("link", name="Поставить свою задачу" if lang == "ru" else "Start your own task")
         expect(own).to_have_count(1)
@@ -72,7 +72,7 @@ def test_an_unread_task_list_is_not_presented_as_a_first_project(chromium, tmp_p
     try:
         page = context.new_page()
         page.route("**/command/tasks", lambda route: route.fulfill(status=503, json={"error": "offline"}))
-        page.goto(f"http://127.0.0.1:{http.server_port}/#lang=ru")
+        page.goto(f"http://127.0.0.1:{http.server_port}/panel/studio.html#lang=ru")
         expect(page.locator("[data-task-notice]")).to_be_visible()
         expect(page.locator(".studio-entry")).to_have_count(0)
         expect(page.get_by_role("link", name="Поставить свою задачу")).to_be_in_viewport()

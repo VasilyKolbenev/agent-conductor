@@ -165,6 +165,15 @@ def _safe_store():
         raise ApiRefusal.fixed("store_error") from None
 
 
+def list_registrations(root):
+    """Read published utility metadata. The session rail has no need for exchange directories."""
+    root = Path(root)
+    with _safe_store(), _root_gate(root).lock:
+        folders = _folders(root, data_root(root) / "utilities")
+        rows = [_registration(root, folder) for folder in folders]
+    return {"utilities": [row for row in rows if row is not None]}
+
+
 def list_utilities(root):
     root = Path(root)
     utilities, exchanges = [], []

@@ -149,7 +149,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
   }
   window.addEventListener("beforeunload", warnOnUnload);
   function enterStudioOnForward() {
-    if (location.pathname === "/" && history.state?.deskLimitEditor) location.reload();
+    if (["/", "/panel/studio.html"].includes(location.pathname) && history.state?.deskLimitEditor) location.reload();
   }
   window.addEventListener("popstate", enterStudioOnForward);
 
@@ -231,7 +231,7 @@ export function createWizardHost({mount, trigger, door, locale, nonce, onForeign
     const draft = {...selection, bounds: limitFields(terms)};
     close();
     history.replaceState(null, "", back);
-    history.pushState({deskLimitEditor: draft}, "", "/" + studio);
+    history.pushState({deskLimitEditor: draft}, "", "/panel/studio.html" + studio);
     location.reload();
   }
 

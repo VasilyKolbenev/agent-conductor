@@ -68,9 +68,10 @@ def error(answer):
 def test_the_table_names_task_draft_utilities_and_auto_continue_rows_after_the_cycle_pin():
     rows = list(COMMAND_ROUTES)
     at = rows.index(("POST", "/command/project/cycle/pin"))
-    assert rows[at + 1:at + 6] == [
+    assert rows[at + 1:at + 7] == [
         ("POST", "/command/project/task-draft"),
         ("GET", "/command/project/utilities"), ("POST", "/command/project/utilities"),
+        ("GET", "/command/project/utilities/registrations"),
         ("GET", PATH), ("POST", PATH)]
 
 

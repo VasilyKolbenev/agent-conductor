@@ -1,6 +1,7 @@
 """Project utilities exchange only explicit operator text via the real command door."""
 import json
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Thread
 
 import pytest
@@ -12,6 +13,7 @@ from tests.test_server_command_http import _request
 from tests.test_store import write_project
 
 PATH = "/command/project/utilities"
+REGISTRATIONS = PATH + "/registrations"
 PROJECT = "a" * 32
 UTILITY = {"utility_id": "tool-a", "label": "Внешняя CLI", "mode": "manual"}
 REQUEST = {"utility_id": "tool-a", "exchange_id": "request-1", "text": "Прочитать текст"}
@@ -35,6 +37,52 @@ def listed(subject):
     result = subject.handle("GET", PATH, get_headers(), b"")
     assert result.status == 200, result.payload
     return result.payload
+
+
+def test_registrations_do_not_read_or_list_any_exchange(tmp_path, monkeypatch):
+    subject, _store, _events = installation(tmp_path)
+    assert call(subject, "attach", **UTILITY).status == 201
+    assert call(subject, "send", **REQUEST).status == 201
+    folder = ownership.data_root(tmp_path) / "utilities" / "tool-a"
+    request = folder / "request-1" / "request"
+    request.write_bytes(b"PRIVATE BROKEN EXCHANGE")
+    assert subject.handle("GET", PATH, get_headers()).status == 500
+    enumerate_children = Path.iterdir
+    open_file = Path.open
+
+    def enumerate_only_registry(path):
+        assert path != folder, "registrations enumerated the exchanges"
+        return enumerate_children(path)
+
+    def open_metadata_only(path, *args, **kwargs):
+        assert request.parent not in path.parents, "registrations opened an exchange"
+        return open_file(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "iterdir", enumerate_only_registry)
+    monkeypatch.setattr(Path, "open", open_metadata_only)
+    result = subject.handle("GET", REGISTRATIONS, get_headers())
+    assert result.status == 200 and result.payload == {"utilities": [UTILITY]}
+    assert subject.handle("POST", REGISTRATIONS, get_headers()).status == 405
+    wrong = (*get_headers(), ("X-Conduct-Project", "b" * 32))
+    assert subject.handle("GET", REGISTRATIONS, wrong).status == 409
+    assert subject.handle("GET", REGISTRATIONS, get_headers("foreign.test")).status == 403
+
+
+def test_registration_list_rejects_linked_metadata_and_omits_unpublished_rows(tmp_path):
+    subject, _store, _events = installation(tmp_path)
+    registry = ownership.data_root(tmp_path) / "utilities"
+    (registry / "pending").mkdir(parents=True)
+    assert subject.handle("GET", REGISTRATIONS, get_headers()).payload == {"utilities": []}
+    assert call(subject, "attach", **UTILITY).status == 201
+    metadata = registry / "tool-a" / "utility.json"
+    peer = tmp_path / "private"
+    peer.write_bytes(b"PRIVATE METADATA")
+    metadata.unlink()
+    metadata.hardlink_to(peer)
+    result = subject.handle("GET", REGISTRATIONS, get_headers())
+    assert result.status == 500 and result.payload["error"]["code"] == "store_error"
+    assert "PRIVATE METADATA" not in str(result.payload)
+    assert peer.read_bytes() == b"PRIVATE METADATA"
 
 
 def test_manual_exchange_persists_exact_text_separately_from_run_and_adapters(tmp_path):
@@ -185,6 +233,8 @@ def test_owned_loopback_server_persists_manual_reply_across_restart_into_view(tm
             status, saved, _ = _request(srv, "GET", PATH, headers=headers)
             assert status == 200 and saved == {"utilities": [UTILITY], "exchanges": [
                 {**REQUEST, "state": "answered", "reply": "literal answer"}]}
+            status, catalog, _ = _request(srv, "GET", REGISTRATIONS, headers=headers)
+            assert status == 200 and catalog == {"utilities": [UTILITY]}
         finally:
             srv.shutdown()
             srv.server_close()

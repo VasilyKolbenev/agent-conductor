@@ -199,7 +199,11 @@ export function utilityDrawer(dialog, door) {
   }
   dialog.addEventListener("close", () => { reading += 1; phase = "ready"; read = null; });
   return {
-    open(runs) { fromRuns = runs; dialog.showModal(); refresh(); },
+    open(runs, id = null) {
+      fromRuns = runs;
+      if (id !== null && validId(id)) selected = "saved:" + id;
+      dialog.showModal(); refresh();
+    },
     sync() {
       if (!dialog.open) return;
       if (door.connected() && !lastConnected) { refresh(); return; }

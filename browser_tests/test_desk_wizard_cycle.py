@@ -378,7 +378,7 @@ def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_with_its_
     assert bench.control("wizard:cycle:pin:desk-short").count() == 0, "not published yet"
     assert bench.control("wizard:cycle:pin:old-cycle").is_disabled()
     build = bench.control("wizard:cycle:build")
-    expect(build).to_have_attribute("href", f"/#screen=workflow&lang={lang}")
+    expect(build).to_have_attribute("href", f"/panel/studio.html#screen=workflow&lang={lang}")
     expect(build).to_have_attribute("target", "_blank")
     before = bench.wizard()
     pin.click(force=True)

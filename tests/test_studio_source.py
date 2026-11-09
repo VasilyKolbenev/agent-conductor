@@ -101,6 +101,12 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
+ARACHNID_MODULES = (
+    "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",
+    "arachnid-panels.js", "arachnid-copy.js",
+)
+MODULES += ARACHNID_MODULES
+ARACHNID_DOCUMENTS = (PANEL / "arachnid.html", PANEL / "arachnid.css")
 #: The one transport module: every `fetch(`, the one stream and the session
 #: token, moved out of the boot module so the desk can be built on the same
 #: doors. `graph.js` holds the same position in its window, and the sealed-API
@@ -144,7 +150,8 @@ LINE_CAP = 800
 
 
 def _paths() -> tuple[Path, ...]:
-    return (HTML, STYLE, ATLAS_STYLE, UTILITY_STYLE) + tuple(PANEL / name for name in MODULES)
+    sheets = (HTML, STYLE, ATLAS_STYLE, UTILITY_STYLE) + ARACHNID_DOCUMENTS
+    return sheets + tuple(PANEL / name for name in MODULES)
 
 
 def test_the_contract_modules_resolve_inside_this_tree():
@@ -153,6 +160,18 @@ def test_the_contract_modules_resolve_inside_this_tree():
                    provider):
         resolved = Path(module.__file__).resolve()
         assert ROOT in resolved.parents, f"resolved outside this tree: {resolved}"
+
+
+def test_arachnid_only_loads_packaged_code_and_uses_the_canonical_editor():
+    html = ARACHNID_DOCUMENTS[0].read_text(encoding="utf-8")
+    refs = re.findall(r'(?:href|src)="([^"]*)"', html)
+    assert '<script type="module" src="/panel/arachnid.js"></script>' in html
+    assert html.count("<script") == 1 and "<style" not in html
+    assert not re.search(r"\son[a-z]+=", html)
+    assert set(ref for ref in refs if not ref.startswith("#")) == {
+        "/panel/arachnid.css", "/panel/studio-utilities.css", "/panel/arachnid.js",
+        "/panel/studio.html", "/panel/desk.html",
+    }
 
 
 def test_the_comment_stripper_keeps_the_studio_code_and_drops_its_prose():
@@ -235,14 +254,15 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
                   + "\n" + HTML.read_text(encoding="utf-8")
                   + "\n" + STYLE.read_text(encoding="utf-8")
                   + "\n" + ATLAS_STYLE.read_text(encoding="utf-8")
-                  + "\n" + UTILITY_STYLE.read_text(encoding="utf-8")).lower()
+                  + "\n" + UTILITY_STYLE.read_text(encoding="utf-8")
+                  + "\n" + "\n".join(p.read_text(encoding="utf-8") for p in ARACHNID_DOCUMENTS)).lower()
     for forbidden in SEALED:
         assert forbidden not in everything, forbidden
-    homes = (BOOT, TRANSPORT_MODULE)
+    homes = (BOOT, "arachnid.js", TRANSPORT_MODULE)
     quiet = _code(*(PANEL / name for name in MODULES if name not in homes)).lower()
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
-    boot = _code(PANEL / BOOT).lower()
+    boot = _code(PANEL / BOOT, PANEL / "arachnid.js").lower()
     door = _code(PANEL / TRANSPORT_MODULE).lower()
     for forbidden in ("fetch(", "eventsource"):
         assert forbidden not in boot, forbidden
@@ -252,17 +272,8 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
 def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     """One module and its three packaged stylesheets, no inline code or foreign origin.
 
-    Every reference is root-relative under /panel/: no scheme, no `//`, no
-    traversal, so the served document reaches this origin's own packaged
-    directory and nothing else. It cannot be document-relative -- the shell is
-    served at `/` -- and the substitute is asserted rather than assumed.
-
-    The list is exact as well as constrained, so any additional reference has to be
-    argued for here. Four of them are what this document LOADS; the fifth is
-    where it SENDS a person, and that one is on the list because the Protocol
-    v1 surfaces -- the map, the findings, the feed, the handoffs -- have not
-    moved into this application and a route to them that only a `<noscript>`
-    block carried was not a route anybody could take.
+    This editor loads four packaged assets. Its two navigation links lead to Arachnid's
+    project root and the classic panel. All six references belong to this origin.
     """
     html = HTML.read_text(encoding="utf-8")
     assert html.count("<script") == 1
@@ -270,14 +281,14 @@ def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     assert not re.search(r"\son[a-z]+=", html), "an inline handler is a script"
     refs = re.findall(r'(?:href|src)="([^"]*)"', html)
     assert refs == ["/panel/studio.css", "/panel/studio-atlas.css", "/panel/studio-utilities.css",
-                    "/panel/studio.js", "/panel/index.html"]
+                    "/panel/studio.js", "/", "/panel/index.html"]
     for ref in refs:
-        assert ref.startswith("/panel/")
+        assert ref == "/" or ref.startswith("/panel/")
         assert "//" not in ref and ".." not in ref and ":" not in ref
     # And every one of them is a route this server actually serves, so the
     # shell cannot send a person at a 404.
     from conductor.server import PANEL_ASSETS
-    assert set(refs) <= set(PANEL_ASSETS), sorted(set(refs) - set(PANEL_ASSETS))
+    assert set(refs) <= set(PANEL_ASSETS) | {"/"}, sorted(set(refs) - set(PANEL_ASSETS) - {"/"})
     assert '<link rel="stylesheet" href="/panel/studio.css">' in html
     assert '<link rel="stylesheet" href="/panel/studio-atlas.css">' in html
     assert '<link rel="stylesheet" href="/panel/studio-utilities.css">' in html

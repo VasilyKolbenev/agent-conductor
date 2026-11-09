@@ -286,7 +286,7 @@ def _open(chromium: Browser, project: _Project, *,
         context.add_init_script(_STREAM_DOUBLE)
     page = context.new_page()
     window = _Window(page)
-    page.goto(project.url, wait_until="load")
+    page.goto(project.url + "panel/studio.html", wait_until="load")
     _settle(page)
     return page, window
 

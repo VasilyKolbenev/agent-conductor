@@ -98,7 +98,7 @@ def studio_url(tmp_path) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address[:2]
     try:
-        yield f"http://{host}:{port}/"
+        yield f"http://{host}:{port}/panel/studio.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)

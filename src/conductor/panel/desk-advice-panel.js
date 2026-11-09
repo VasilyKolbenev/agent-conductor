@@ -248,7 +248,7 @@ export function createAdvicePanel({door, refresh, draft, dispatch, locale, actor
       element("p", {text: t("cost")}), ...stageCard(t, quota, !request || identity(w)?.id === request.id));
     if (request) {
       const hash = new URLSearchParams({screen: "runs", task: request.id, run: request.id, lang: locale()});
-      box.append(element("a", {href: "/#"+hash, target: "_blank", rel: "noopener", text: t("inspect")}));
+      box.append(element("a", {href: "/panel/studio.html#" + hash, target: "_blank", rel: "noopener", text: t("inspect")}));
     }
     return box;
   }

@@ -47,6 +47,7 @@ export const path = Object.freeze({
   seed: (id) => `/command/tasks/${encodeURIComponent(id)}/seed`,
   project: () => "/command/project",
   utilities: () => "/command/project/utilities",
+  utilityRegistrations: () => "/command/project/utilities/registrations",
   git: () => "/command/project/git",
   gitSetup: () => "/command/project/git/setup",
   projectCycle: () => "/command/project/cycle",

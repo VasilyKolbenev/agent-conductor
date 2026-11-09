@@ -28,7 +28,7 @@ def test_fresh_task_to_its_own_receipt(chromium, tmp_path, lang, width, title, b
         writes = []
         page.on("request", lambda req: writes.append(urlsplit(req.url).path)
                 if req.method == "POST" else None)
-        page.goto(f"http://127.0.0.1:{httpd.server_port}/#lang={lang}")
+        page.goto(f"http://127.0.0.1:{httpd.server_port}/panel/studio.html#lang={lang}")
         expect(page.locator("#screenOverview")).to_have_attribute("data-state", "ready")
         expect(page.locator("[data-demo-intro]")).to_be_visible()
         page.get_by_role("button", name="Начать упражнение" if lang == "ru"

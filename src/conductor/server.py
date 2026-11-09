@@ -1,8 +1,8 @@
 """Loopback HTTP server for the Conduct panel: merge broker, routes, SSE.
 
 `build(root, port)` returns a `ThreadingHTTPServer` bound to 127.0.0.1 that
-serves the packaged Workflow Studio shell at `/` (the classic panel keeps its
-own file name and is served at `/panel/index.html`), the merged state at
+serves Arachnid at `/`, the Workflow Studio editor at `/panel/studio.html`,
+the classic panel at `/panel/index.html`, and the merged state at
 `/state.json`, the
 bundled harness registry at `/harnesses.json`, raw lane files at
 `/lane/<author>.json`, deterministic packets at `/handoff/<author>.md`, and a
@@ -273,9 +273,10 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         if not self._read_host_is_allowed():
             return
         if path == "/":
-            self._serve_panel()
+            self._serve_panel(ENTRY_PAGE, "text/html; charset=utf-8")
         elif self.path in PANEL_ASSETS:
-            self._serve_panel_asset(self.path)
+            content_type, name = PANEL_ASSETS[self.path]
+            self._serve_panel(name, content_type)
         elif path == "/state.json":
             self._serve_state()
         elif path == "/harnesses.json":
@@ -417,25 +418,14 @@ class Handler(KeptConnection, BaseHTTPRequestHandler):
         self._send_body(refusal.status, "application/json; charset=utf-8",
                         canonical_json(refusal.as_dict()).encode("utf-8"))
 
-    def _serve_panel(self) -> None:
-        """Answer `GET /` with the Workflow Studio's shell.
-
-        The front door is the Studio; the classic panel keeps its file name and
-        is reached at `/panel/index.html` from the asset allowlist. Nothing
-        about the classic panel's contents changed — only the route that gets
-        to it — and the name here is a literal, as every panel resource name in
-        this module is, so no request target can select the document served.
-        """
-        panel = importlib.resources.files("conductor") / "panel" / ENTRY_PAGE
-        page = panel.read_bytes()
-        if self.server.project_identity and self.server.project_identity.demo:
-            page = page.replace(b'<html lang="en">', b'<html lang="en" data-demo>', 1)
-        self._send_body(200, "text/html; charset=utf-8", page)
-
-    def _serve_panel_asset(self, target: str) -> None:
-        content_type, name = PANEL_ASSETS[target]
+    def _serve_panel(self, name: str, content_type: str) -> None:
+        """Serve a packaged entry or allowlisted asset, preserving the demo flag on both shells."""
         asset = importlib.resources.files("conductor") / "panel" / name
-        self._send_body(200, content_type, asset.read_bytes())
+        body = asset.read_bytes()
+        identity = self.server.project_identity
+        if name in {ENTRY_PAGE, "studio.html"} and identity and identity.demo:
+            body = body.replace(b'<html lang="en">', b'<html lang="en" data-demo>', 1)
+        self._send_body(200, content_type, body)
 
     def _serve_state(self) -> None:
         self._send_body(200, "application/json; charset=utf-8",

@@ -89,7 +89,7 @@ def test_one_boot_reuses_its_connections_instead_of_opening_one_per_request(
     context = chromium.new_context()
     page = context.new_page()
     try:
-        page.goto(url, wait_until="load")
+        page.goto(url + "panel/studio.html", wait_until="load")
         page.locator('#screenOverview[data-state="ready"]').wait_for(state="visible")
 
         answered = _Counted.requests

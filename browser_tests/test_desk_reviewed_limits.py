@@ -47,10 +47,15 @@ def test_edit_desk_bounds_before_authorizing_the_reviewed_terms(chromium, wizard
         total = limits.locator('[data-focus="automation:run:max_actions"]')
         expect(total).to_be_visible()
         expect(total).to_be_focused()
+        assert urlsplit(page.url).path == "/panel/studio.html"
         assert parse_qs(urlsplit(page.url).fragment)["task"] == [task]
         assert parse_qs(urlsplit(page.url).fragment)["run"] == [run]
         transfer = page.evaluate("history.state.deskLimitEditor")
         assert set(transfer) == {"project", "embed", "task", "run", "bounds"}
+        back_link = urlsplit(page.locator("#studioHome").get_attribute("href"))
+        assert back_link.path == "/"
+        home = parse_qs(back_link.fragment)
+        assert (home["session"], home["project"], home["lang"]) == ([run], [transfer["project"]], [lang])
         assert transfer["bounds"] == {key: terms[key] for key in (
             "max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds", "node_limits")}
         for name in ("max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"):

@@ -65,7 +65,7 @@ def test_the_studio_says_the_plan_ended_and_draws_no_control(chromium: Browser, 
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     try:
-        page.goto(ended, wait_until="load")
+        page.goto(ended + "panel/studio.html", wait_until="load")
         expect(page.locator("#studioConnection")).to_have_attribute("data-connection", "open")
         page.get_by_role("button", name="Read this run", exact=True).click()
         box = page.locator('[data-automation="run"]')

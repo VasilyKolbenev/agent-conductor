@@ -11,6 +11,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "browser_tests/test_arachnid_entry.py",
+    "browser_tests/test_arachnid_reconnect.py",
+    "browser_tests/test_arachnid_conversation.py",
     "src/conductor/command/attempt_detail.py",
     "src/conductor/command/attempt_base.py",
     "src/conductor/command/attempt_test_evidence.py",

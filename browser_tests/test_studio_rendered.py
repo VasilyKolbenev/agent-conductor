@@ -2,7 +2,7 @@
 
 Every gate the Studio has passed so far reads SOURCE TEXT. This module is the
 first that runs the thing: Chromium resolves the shipped module graph from the
-production entry route ``/``, the real ``server.build`` answers every request,
+authoring route ``/panel/studio.html``, the real ``server.build`` answers every request,
 and what is asserted is what a person would see -- rendered tabs, computed
 styles, the state word on each screen container and the sentence beside it.
 
@@ -85,6 +85,7 @@ PHASES = ("empty", "loading", "ready", "stale", "refused", "failed",
 #: allowlist would only agree with itself, while a name the allowlist does not
 #: carry answers 404 and would be invisible in a test that read the markup.
 BOOT_ASSETS = {
+    "studio.html": 200,
     "studio-atlas.css": 200, "studio-atlas.js": 200,
     "studio-atlas-copy.js": 200, "studio-atlas-inspector.js": 200,
     "studio-utilities.css": 200, "studio-utilities.js": 200, "studio-utilities-copy.js": 200,
@@ -149,7 +150,7 @@ BOOT_ASSETS = {
 
 @pytest.fixture(scope="session")
 def studio_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    """The Studio at its production entry route, over a real seeded server."""
+    """The workflow editor at its canonical document path, over a real seeded server."""
     root = write_project(tmp_path_factory.mktemp("studio-shell"),
                          lanes={"claude": good_lane()})
     TemplateStore(root).save(GraphTemplate.from_dict(PUBLISHED))
@@ -158,7 +159,7 @@ def studio_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address[:2]
     try:
-        yield f"http://{host}:{port}/"
+        yield f"http://{host}:{port}/panel/studio.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
@@ -279,8 +280,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
         chromium: Browser, studio_url: str) -> None:
     """Chromium resolves the shipped module graph and every file answers 200.
 
-    The entry route is ``/`` -- ``studio.html`` is deliberately NOT on the
-    asset allowlist -- and every asset it names is root-relative under
+    The authoring surface opens at ``/panel/studio.html``. Every asset it names is under
     ``/panel/``. This counts the responses rather than trusting the markup:
     a name the allowlist does not carry answers 404 and would be invisible in
     a test that only looked at what rendered.
@@ -562,7 +562,7 @@ def test_the_classic_surfaces_are_reachable_from_every_screen_of_the_studio(
     than on one, pointing at a route this server serves.
     """
     page, problems = studio
-    link = page.locator("header .studio-elsewhere")
+    link = page.locator('header a[href="/panel/index.html"]')
     assert link.get_attribute("href") == "/panel/index.html"
     assert link.inner_text() == "Project map and history"
     said = link.get_attribute("aria-label")
@@ -588,7 +588,7 @@ def test_the_classic_route_the_studio_offers_is_answered_by_the_server(
     renders nothing.
     """
     page, problems = studio
-    page.locator("header .studio-elsewhere").click()
+    page.locator('header a[href="/panel/index.html"]').click()
     page.wait_for_load_state("load")
     assert page.url.endswith("/panel/index.html")
     assert page.locator("h2", has_text="Map").count() >= 1

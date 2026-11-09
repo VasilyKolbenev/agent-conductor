@@ -413,7 +413,7 @@ function cardItems(ctx) {
   return cycleCards(ctx.wizard).map(card => {
     if (card.kind !== "build") return cycleCard(ctx, card);
     const body = ctx.wizard.mode.view ? [element("p", {text: ctx.t("wizard.cycle.active_needed")})]
-      : [element("a", {"data-focus": "wizard:cycle:build", href: `/#screen=workflow&lang=${ctx.lang}`,
+      : [element("a", {"data-focus": "wizard:cycle:build", href: `/panel/studio.html#screen=workflow&lang=${ctx.lang}`,
         target: "_blank", rel: "noopener", text: ctx.t("wizard.cycle.build")}),
       element("small", {text: ctx.t("wizard.cycle.return")})];
     if (ctx.wizard.guided && ctx.wizard.reads.workflows && preselection(ctx.wizard.reads).workflowsUnread) {
