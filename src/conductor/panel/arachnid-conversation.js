@@ -17,6 +17,15 @@ const topics = {
   diff: /измен|патч|разниц|diff|chang|patch/i,
 };
 const commandOf = (words, text) => Object.keys(words).find(name => words[name].test(text));
+const shortCommands = {
+  limits: /^(?:(?:покажи )?(?:лимиты|квоты|остаток)|(?:show )?(?:limits|quotas|usage))$/,
+  memory: /^(?:(?:покажи )?(?:память|историю|история)|(?:show )?(?:memory|history))$/,
+  participants: /^(?:(?:покажи )?(?:участники|участников|харнессы)|(?:show )?(?:participants|harnesses|team))$/,
+};
+function directPanel(message) {
+  const text = message.trim().toLowerCase().replace(/^\//, "").replace(/[.?!]+$/, "");
+  return Object.keys(shortCommands).find(name => shortCommands[name].test(text));
+}
 function button(text, onClick, cls = "") {
   const node = element("button", {type: "button", className: cls, text});
   node.addEventListener("click", onClick);
@@ -196,7 +205,9 @@ export function arachnidConversation(center, inspector, door) {
     if (!state || !message) return;
     state.messages.push({role: "user", text: message});
     state.draft = ""; fields.command.value = "";
-    const panel = commandOf(controls, message), topic = commandOf(topics, message);
+    const planning = model.sessionId?.startsWith("new/") && typeof door.planMessage === "function";
+    const panel = planning ? directPanel(message) : commandOf(controls, message);
+    const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
     if (panel) {
       close();
@@ -205,6 +216,7 @@ export function arachnidConversation(center, inspector, door) {
         participants: words("Session participants", "Участники сессии")}[panel];
       state.messages.push(reply); transcript(); door.command(panel); return;
     }
+    if (planning && door.planMessage(model.sessionId, message)) { transcript(); return; }
     if (topic) {
       const patches = scene?.steps.filter(patchStep) || [];
       const s = step() || (patches.length === 1 ? patches[0] : null);

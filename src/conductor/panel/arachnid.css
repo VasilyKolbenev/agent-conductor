@@ -242,6 +242,32 @@ button:disabled,select:disabled { opacity:.6; cursor:default }
   border:1px solid var(--edge); border-radius:7px; background:var(--active); font-weight:550 }
 .prepare-task:empty,.atlas-pick:has(select:empty) { display:none }
 .msg p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere }
+#planner:not([hidden]) { margin:14px 0; min-width:0; background:var(--card);
+  border:1px solid var(--edge); border-radius:12px; padding:14px 16px; overflow-wrap:anywhere }
+#planner h2 { font-size:16px; font-weight:600; margin:0 0 8px; letter-spacing:-.025em }
+.planner-body p,.planner-body blockquote { font-size:13px; margin:6px 0; color:var(--dim) }
+.planner-body blockquote { border-left:2px solid var(--edge); padding-inline-start:10px;
+  color:var(--text); white-space:pre-wrap }
+.planner-line { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr);
+  font-size:12px; gap:7px; margin:5px 0 }
+.planner-line span,.planner-steps small { color:var(--dim) }
+.planner-line strong { font-weight:500; overflow-wrap:anywhere }
+.planner-bounds,.planner-steps,.planner-exact { margin:9px 0; border-top:1px solid var(--line);
+  padding:8px 0 0 }
+.planner-steps { padding-inline-start:20px; font-size:12px }
+.planner-steps li { padding:3px 0 }
+.planner-steps li>span,.planner-steps small { display:block }
+.planner-exact summary { cursor:pointer; font-size:12px; color:var(--dim) }
+.planner-exact code,.planner-exact pre { display:block; white-space:pre-wrap;
+  overflow-wrap:anywhere; font:11px/1.5 Consolas,monospace }
+.planner-exact pre { max-height:220px; overflow:auto }
+.planner-actor { display:grid; gap:4px; margin:12px 0; font-size:12px }
+.planner-actor input { padding:7px 9px; color:var(--text); background:var(--well);
+  border:1px solid var(--edge); border-radius:6px }
+.planner-actions { display:flex; flex-wrap:wrap; gap:6px }
+.planner-actions button { min-height:36px; padding:6px 10px; background:var(--active);
+  color:var(--text); border:1px solid var(--edge); border-radius:6px; font-size:13px }
+.planner-actions button[data-planner-action^="authorize"] { background:var(--ink); color:var(--bg) }
 #messages,#resultHere,#orbitHere { min-width:0 }
 .compose-notes { display:flex; flex-wrap:wrap; justify-content:space-between; gap:2px 12px;
   align-items:baseline }
