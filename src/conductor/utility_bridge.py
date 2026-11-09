@@ -193,11 +193,3 @@ def command(args):
     except (ValueError, OSError, RuntimeError, EOFError, http.client.HTTPException) as exc:
         print(f"Utility bridge stopped: {exc}", file=sys.stderr)
         return 1
-
-
-def add_parser(sub):
-    parser = sub.add_parser("utility-bridge", help="exchange tasks with a local stdio-v1 utility")
-    parser.add_argument("--server", required=True, metavar="ORIGIN")
-    parser.add_argument("--utility", required=True, metavar="ID")
-    parser.add_argument("--once", action="store_true", help="poll once and exit")
-    parser.set_defaults(func=command)

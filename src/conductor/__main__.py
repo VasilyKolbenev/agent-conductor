@@ -555,6 +555,19 @@ def _add_hub(sub) -> None:
     parser.set_defaults(func=_cmd_hub)
 
 
+def _cmd_utility_bridge(args):
+    from conductor.utility_bridge import command
+    return command(args)
+
+
+def _add_utility_bridge(sub):
+    p = sub.add_parser("utility-bridge", help="exchange tasks with a local stdio-v1 utility")
+    p.add_argument("--server", required=True, metavar="ORIGIN")
+    p.add_argument("--utility", required=True, metavar="ID")
+    p.add_argument("--once", action="store_true", help="poll once and exit")
+    p.set_defaults(func=_cmd_utility_bridge)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -611,8 +624,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_demo)
 
     _add_tools(sub)
-    from .utility_bridge import add_parser as add_utility_bridge
-    add_utility_bridge(sub)
+    _add_utility_bridge(sub)
     _add_projects(sub)
     _add_hub(sub)
     return parser
