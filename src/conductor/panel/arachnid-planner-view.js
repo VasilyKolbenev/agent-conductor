@@ -17,7 +17,7 @@ const labels = {
   subscription: ["Subscription", "Подписка"],
   reviewAdvice: ["Review advisor request", "Посмотреть запрос советнику"],
   authorizeAdvice: ["Authorize one Codex review", "Разрешить один запрос к Codex"],
-  prepareMain: ["Prepare run preview", "Подготовить просмотр запуска"],
+  prepareMain: ["Accept plan and review run", "Принять план и посмотреть запуск"],
   authorizeMain: ["Authorize this Dalio run", "Разрешить этот запуск Далио"],
   refresh: ["Read current state", "Перечитать состояние"],
   openRun: ["Open run", "Открыть запуск"],
@@ -216,6 +216,7 @@ export function renderPlanner(host, view, handlers) {
   ui.title.textContent = copy(view, view.phase);
   ui.body.replaceChildren(); ui.actions.replaceChildren();
   ui.actor.hidden = true;
+  ui.input.readOnly = view.phase === "main-preview";
   ui.name.textContent = copy(view, "actor");
   const actor = typeof view.actor === "string" ? view.actor : "";
   if (ui.input.value !== actor) ui.input.value = actor;

@@ -63,6 +63,8 @@ def test_planner_renders_actual_limits_and_only_clicks_can_authorize(chromium, s
         }""")
         expect(host).to_contain_text("dalio-one")
         expect(host).to_contain_text("7")
+        expect(actor).to_have_value("my-name")
+        expect(actor).to_have_js_property("readOnly", True)
         host.locator("[data-planner-action=authorizeMain]").click()
         assert page.evaluate("events").count("authorizeMain") == 1
         page.evaluate("""() => {
