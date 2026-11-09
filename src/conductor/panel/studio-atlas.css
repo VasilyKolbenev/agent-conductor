@@ -67,7 +67,9 @@
 .atlas-diff, .atlas-assert { margin: 0; background: var(--sunk); padding: 8px;
   font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .atlas-diff { max-height: 290px; overflow: auto; }
-.atlas-diff code { font: inherit; }
+.atlas-diff code { display: block; font: inherit; white-space: pre-wrap; }
+.atlas-diff [data-line="add"] { background: color-mix(in srgb, var(--pass) 8%, transparent); }
+.atlas-diff [data-line="remove"] { background: color-mix(in srgb, var(--fail) 7%, transparent); }
 .atlas-diff [data-line="add"] { color: var(--pass); }
 .atlas-diff [data-line="remove"] { color: var(--fail); }
 .atlas-diff [data-line="range"] { color: var(--muted); }

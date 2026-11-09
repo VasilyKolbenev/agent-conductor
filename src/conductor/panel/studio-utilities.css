@@ -29,3 +29,9 @@
   .utility-options { flex-direction: row; flex-wrap: wrap; border: 0; }
   .utility-options h3 { flex-basis: 100%; }
 }
+#utilityRuns, #utilityAgents {
+  display: flex; width: fit-content; align-items: center; gap: .45em;
+  margin: 4px 0 8px auto; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--panel); color: var(--ink); padding: .4em .8em;
+}
+#utilityRuns::before, #utilityAgents::before { content: "+"; color: var(--ion); font-size: 1.1em; }
