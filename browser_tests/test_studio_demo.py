@@ -620,11 +620,14 @@ def test_a_render_keeps_the_keyboard_on_the_same_overview_action_in_both_languag
 
 #: The workflow chosen through the toolbar's own control while the keyboard rests on the
 #: Overview's workflow card: the pass redraws that card in its chosen state.
-_CHOOSE_UNDER_FOCUS = """(held, workflow) => {
+_CHOOSE_UNDER_FOCUS = """([selector, workflow]) => {
+  const held = document.querySelector(selector);
   held.focus();
+  if (document.activeElement !== held) throw Error("Workflow card did not take focus");
   const pick = document.querySelector("#workflowToolbar select[name='workflow']");
   pick.value = workflow;
   pick.dispatchEvent(new Event("change", {bubbles: true}));
+  return held;
 }"""
 
 
@@ -639,8 +642,9 @@ def test_the_chosen_workflow_and_its_blocking_rows_keep_their_keys_through_a_ren
     workflow = demo_scenario.WORKFLOW_ID
     option = page.locator(f'#workflowToolbar select[name="workflow"] option[value="{workflow}"]')
     expect(option).to_have_count(1)
-    original = page.locator(context).element_handle()
-    original.evaluate(_CHOOSE_UNDER_FOCUS, workflow)
+    # A live read can redraw the card between two Playwright calls. Find and focus
+    # the displayed card in one browser turn, retaining it to prove replacement.
+    original = page.evaluate_handle(_CHOOSE_UNDER_FOCUS, [context, workflow])
     expect(page.locator(context)).to_have_text("Edit this workflow")
     expect(page.locator(context)).to_be_focused()
     expect(page.locator(context)).to_have_attribute("data-focus", "overview:workflow")
