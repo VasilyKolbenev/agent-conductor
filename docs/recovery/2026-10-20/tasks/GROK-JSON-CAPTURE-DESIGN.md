@@ -1,4 +1,4 @@
-# GROK-JSON-CAPTURE: разделение границ, v1
+# GROK-JSON-CAPTURE: разделение границ, v2
 
 ## Факты и гипотезы
 
@@ -45,11 +45,15 @@ B. Инкрементальный collector отбрасывает thought/progr
   default None для прежнего поведения прочих harness. Grok возвращает wire
   для обычного JSON и прежние 49 152 для marked diagnostic stream.
 - Grok `_attempt` сохраняет прежние 49 152 для non-review и отсутствующего
-  явного лимита. Preflight/auth/quota/дормантный dispatch не получают большего
+  явного лимита; меньший asked сохраняется через min, а не поднимается до default.
+  Preflight/auth/quota/дормантный dispatch не получают большего
   бюджета. Нет mutable флагов на общем экземпляре адаптера.
 - Секреты, error/exit, stopReason, отсутствие полного EOF JSON, duplicate keys,
   workspace readonly, leases и cleanup проверяются прежней дорогой.
   Новый предел не применяется к историческому run задним числом.
+- Превышение decoded text имеет фиксированный detail
+  `the Grok review result exceeded the artifact byte limit`, явно допущенный
+  в `failure_reasons.py`; ledger не скрывает его за общей фразой failed.
 
 ## Итерации и свидетели
 
@@ -72,3 +76,13 @@ Fake доказывает продуктовую дорогу, не поведе
 Линза Доказательства: отдельный Codex (do_evidence).
 Opus недоступен; используется ранее согласованная замена ревью на Codex.
 Ревью v1 и подтверждённые находки фиксируются перед реализацией.
+
+## Независимое ревью v1
+
+S1 (Спека): non-review override обязан сохранять меньший asked; подтверждено,
+правило min добавлено выше. S2 (Доказательность): новая причина должна пройти
+санитайзер failure_reasons, иначе UI/ledger её потеряют; подтверждено, fixed
+detail добавлен. Блокеров варианта A нет. Линза Доказательства подтвердила
+ordinary JSON форму по документации внутри pinned PE без исполнения CLI,
+публичный шов runtime и различение wire 49 152 / 49 153 при одинаковом text.
+Изменённый wire cap автоматически меняет digest только Grok profile.
