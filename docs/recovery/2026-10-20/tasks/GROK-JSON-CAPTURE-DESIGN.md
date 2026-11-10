@@ -1,4 +1,4 @@
-# GROK-JSON-CAPTURE: разделение границ, v3
+# GROK-JSON-CAPTURE: разделение границ, v4
 
 ## Факты и гипотезы
 
@@ -44,7 +44,8 @@ B. Инкрементальный collector отбрасывает thought/progr
 - `_review_output_limit(request)` — чистый hook ArtifactAwareTransport,
   default None для прежнего поведения прочих harness. Grok возвращает wire
   для обычного JSON и прежние 49 152 для marked diagnostic stream.
-- Grok `_attempt` сохраняет прежние 49 152 для non-review и отсутствующего
+- Чистый Grok `_attempt_output_limit(asked, mode)` сохраняет прежние 49 152
+  для non-review и отсутствующего
   явного лимита; меньший asked сохраняется через min, а не поднимается до default.
   Preflight/auth/quota/дормантный dispatch не получают большего
   бюджета. Нет mutable флагов на общем экземпляре адаптера.
@@ -93,3 +94,22 @@ S3 (Спека/архитектура): generic failure_reasons не имеет 
 провайдера. Подтверждено штатным gate G: 1 failed / 1 passed на failure_reasons.
 Фиксированная причина выше сделана нейтральной. Allowlist и сам guard не меняются;
 в adapter/runtime/tests ожидается одна и та же нейтральная фраза.
+
+## Находки полного core и решение ведущего
+
+S4: штатный SDK guard запрещает прямой import command.artifacts в grok_build.
+S5: `_attempt` обязан принадлежать ServiceMetadata, иначе нарушается владение
+общим metadata circuit. Подтверждены полным core 9164bed, utf8-shard3:
+2 failed / 2892 passed / 91 skipped. Эти два guard не ослабляются.
+
+Корректировка A: ARTIFACT_CONTENT_LIMIT берётся через уже разрешённый durability
+seam artifact_transport, как существующий REVIEW_CAPABILITY. ServiceMetadata
+остаётся владельцем `_attempt`; до circuit/lease он вызывает чистый scalar hook
+`_attempt_output_limit(asked, mode)` с default identity. Только Grok определяет
+прежний выбор None/min для своего профиля. При None новый kwarg не добавляется.
+Metadata admission, маскирование, cleanup и полномочия не меняются.
+
+Альтернатива — общий hook в headless_spec/HeadlessCliTransport: касается всех
+launch roads, поэтому для этого исправления избыточна. Ведущий разрешил узкий
+следующий раунд по новым доказанным S4/S5 (§2.8 стандарта). Полный прогон 9164bed
+не превращается в зелёный после исправления другого SHA; его checkout неизменен.
