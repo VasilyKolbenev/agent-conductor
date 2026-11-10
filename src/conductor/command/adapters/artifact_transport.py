@@ -58,11 +58,7 @@ class _CorrectionRefused(RuntimeError):
 
 @dataclass(frozen=True)
 class _ReviewAttempt:
-    """What one review leaves for its verification, and nothing more.
-
-    Input IDs bind the artifact to its sources. A separate cache retains the
-    exact documents for a plan-named checker until verification ends.
-    """
+    """Review evidence with bound input IDs; checker documents live in a separate cache."""
 
     input_artifact_ids: tuple[str, ...]
     result_artifact_ref: str
@@ -379,12 +375,14 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             model: str | None = None) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
         before = self._workspace.digest_work_tree()
+        limit = self._review_output_limit(request)
         # Only stdout can become an artifact. Vendor stderr may contain credentials.
         outcome = self._attempt(
             self._review_command(request), work_route(args.work_item_id, args.task_scope),
             timeout=request.timeout_seconds, stdin_bytes=payload, separate_stderr=True,
             model=model, mode="review",
-            claim=self._claim_of(request))
+            claim=self._claim_of(request),
+            **({} if limit is None else {"output_limit": limit}))
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence(),
             retained=bool(self._retained))
@@ -409,16 +407,18 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
     def _review_command(self, request):
         return self._review_argv
 
+    def _review_output_limit(self, request):
+        """A provider may budget its wire envelope separately from its result document."""
+        return None
+
     def _review_response(self, request, outcome, relation):
         return outcome.output, self._observed(request, outcome)
 
     def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
         """Provider-owned read-only flags; the task remains absent by signature.
 
-        The same two arguments the dispatch builder takes, for the same reasons:
-        the minted home, because a vendor may be told to write into it, and the
-        routed model, because it is a value that must not become state on a
-        transport one adapter instance shares with every worker.
+        The minted home may receive vendor state; the model is passed per call,
+        never held as mutable state on an adapter shared by workers.
         """
         raise NotImplementedError
 

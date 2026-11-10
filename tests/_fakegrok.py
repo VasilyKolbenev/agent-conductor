@@ -215,11 +215,54 @@ def _stream_review(case: str) -> int:
     return 0
 
 
+def _json_budget(case: str) -> int:
+    """Emit one synthetic headless JSON document, including the vendor's optional thought."""
+    result = {"text": "  Да 🚀\n", "stopReason": "end_turn", "sessionId": "session-marker",
+              "requestId": "request-marker", "thought": "private-thought-marker"}
+    code = 0
+    stderr_bytes = 0
+    if case.startswith("wire-"):
+        size = int(case.removeprefix("wire-"))
+        result["thought"] += "x" * (size - len(json.dumps(result, ensure_ascii=True)) - 1)
+    elif case in ("text-at", "text-over"):
+        result["text"] = " " + "🚀" * 12287 + "\n\t " + ("x" if case == "text-over" else "")
+    elif case == "stderr":
+        stderr_bytes = sys.stderr.buffer.write(b"stderr-private-" * 48000)
+    else:
+        result["thought"] += "x" * 55000
+        if case == "secret-thought":
+            result["thought"] += "fake-access-activation-1234"
+        elif case == "secret-text":
+            result["text"] = "fake-access-activation-1234"
+        elif case == "error":
+            result = {"type": "error", "message": "Couldn't start session: " + result["thought"]}
+            code = 1
+        elif case == "stop":
+            result["stopReason"] = "max_tokens"
+    wire = json.dumps(result, ensure_ascii=True).encode("ascii") + b"\n"
+    if case == "duplicate":
+        wire = wire[:-2] + b',"text":"ignore-me"}\n'
+    elif case == "tail":
+        wire += b'{"type":"error","message":"late-fake-error"}\n'
+    elif case == "malformed":
+        wire = wire[:-2]
+    elif case == "secret-text":
+        token = b"fake-access-activation-1234"
+        wire = wire.replace(token, b"".join(b"\\u%04x" % c for c in token))
+    stdout_bytes = sys.stdout.buffer.write(wire)
+    sizes = {"stdout": stdout_bytes, "stderr": stderr_bytes}
+    count_file = Path(os.environ[SPAWN_LOG]).with_suffix(".sizes")
+    count_file.write_text(json.dumps(sizes), encoding="ascii")
+    return code
+
+
 def _run_prompt(argv: list[str]) -> int:
     env = os.environ
     if env.get(EMIT_REVIEW):
         message = "# Diagnosis\nThe fake review read the supplied candidate.\n"
         case = env[EMIT_REVIEW]
+        if case.startswith("budget-"):
+            return _json_budget(case.removeprefix("budget-"))
         if case.startswith("stream-") and "streaming-messages-json" in argv:
             return _stream_review(case)
         if case.startswith("terminal-json:"):

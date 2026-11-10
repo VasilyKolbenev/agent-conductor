@@ -32,6 +32,8 @@ REASONS = (
     ("diagnostic stream did not establish a result",
      "the diagnostic stream did not establish a result"),
     ("wrote past the capture bound", "its output was longer than the capture bound"),
+    ("the review result exceeded the artifact byte limit",
+     "the review result exceeded the artifact byte limit"),
     ("exceeded its timeout", "it exceeded its timeout"),
     ("subscription login check timed out", "the subscription login check timed out before dispatch"),
     ("was never handed its whole instruction", "its instruction was not delivered whole"),

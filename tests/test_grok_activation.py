@@ -99,7 +99,7 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
     assert GrokBuildAdapter.verify_for is None
     assert GrokBuildAdapter.verification_started is None
     assert GrokBuildAdapter.profile.task_channel == "file"
-    assert GrokBuildAdapter.profile.output_limit == 49152
+    assert GrokBuildAdapter.profile.output_limit == 557056
     assert GrokBuildAdapter.profile.login_relay is not None
     assert GrokBuildAdapter.profile.login_relay.kind == "g"
 
@@ -160,7 +160,7 @@ def test_production_grok_declares_review_file_relay_and_no_checker():
                  "the harness reported an unclassified service error", id="terminal-malformed"),
     ("subscription", "escaped-login", "the review contained sensitive output"),
     ("subscription", "invalid-success", "the review returned an invalid terminal response"),
-    ("subscription", "truncated", "longer than the capture bound"),
+    ("subscription", "truncated", "the review result exceeded the artifact byte limit"),
 ])
 def test_production_review_reads_the_task_file_and_cleans_its_home(
         tmp_path, monkeypatch, auth, case, reason):

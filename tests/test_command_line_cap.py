@@ -54,6 +54,8 @@ CAPPED = (
     "src/conductor/command/project_task_draft.py",
     "tests/test_project_task_draft.py",
     "tests/test_grok_activation.py",
+    "tests/test_grok_json_budget.py",
+    "tests/test_grok_json_authority.py",
     "src/conductor/command/adapters/grok_stream.py",
     "tests/test_grok_diagnostic_binding.py",
     "tests/test_grok_stream.py",

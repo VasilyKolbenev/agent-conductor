@@ -135,6 +135,7 @@ twice, and verification that reads only independent workspace evidence.
 from __future__ import annotations
 
 from . import login_home, task_file
+from ..artifacts import ARTIFACT_CONTENT_LIMIT
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
@@ -219,8 +220,11 @@ REVIEW_PERMISSION_ARGV = ("--allow", "Read", "--allow", "Grep", "--allow", "Glob
                           "--deny", "Edit", "--deny", "Bash", "--deny", "WebFetch",
                           "--deny", "WebSearch", "--deny", "MCPTool")
 VERSION_ARGV = ("--version",)
-#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
+#: Preserve the existing metadata and marked diagnostic stream budget.
 GROK_OUTPUT_LIMIT = STREAM_OUTPUT_LIMIT
+#: A JSON string may encode one UTF-8 byte as six ASCII bytes (\uXXXX).
+#: The separate 256 KiB metadata allowance is a code-owned budget, not a measured reply size.
+GROK_JSON_WIRE_LIMIT = 6 * ARTIFACT_CONTENT_LIMIT + 256 * 1024
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -297,7 +301,7 @@ GROK_PROFILE = HarnessProfile(
                    "models_cache.json", "worktrees.db"),
     login_expected=("auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md"),
     login_forbidden=("mcp_credentials.json", "mcp.json", "hooks", "plugins", "skills", "lsp.json"),
-    capability=DISPATCH_CAPABILITY, output_limit=GROK_OUTPUT_LIMIT,
+    capability=DISPATCH_CAPABILITY, output_limit=GROK_JSON_WIRE_LIMIT,
     task_channel=TASK_CHANNEL_FILE, login_relay=GROK_RELAY,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="grok-home")
@@ -360,6 +364,20 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
             return lambda home, model: self._review_format_argv(home, "streaming-messages-json")
         return self._review_argv
 
+    def _review_output_limit(self, request):
+        return (GROK_OUTPUT_LIMIT if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE
+                else GROK_JSON_WIRE_LIMIT)
+
+    def _attempt(self, argv, cwd, **options):
+        # Only an explicitly budgeted review may use the larger JSON wire ceiling.
+        asked = options.get("output_limit")
+        if asked is None:
+            asked = GROK_OUTPUT_LIMIT
+        if options.get("mode") != "review":
+            asked = min(asked, GROK_OUTPUT_LIMIT)
+        options["output_limit"] = asked
+        return super()._attempt(argv, cwd, **options)
+
     @staticmethod
     def _review_format_argv(home, output_format):
         return (*NO_AUTO_UPDATE_ARGV, "--output-format", output_format,
@@ -397,6 +415,9 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
             if any(value and value in content for value in self._sensitive_values(relation)):
                 return b"", self._receipt(request, "failed", None,
                                           "the review contained sensitive output")
+            if len(content) > ARTIFACT_CONTENT_LIMIT:
+                return b"", self._receipt(request, "failed", None,
+                    "the review result exceeded the artifact byte limit")
             return content, receipt
         except (ValueError, UnicodeError, RecursionError):
             if outcome.exit_code == 0:
