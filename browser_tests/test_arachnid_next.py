@@ -6,6 +6,7 @@ import pytest
 from playwright.sync_api import expect
 
 from browser_tests.desk_identity import identified_server
+from browser_tests.desk_hold import close_context
 from browser_tests.test_desk_decisions import PROJECT, _gate_pair, _world
 from browser_tests.test_studio_automation_browser import bounded_project  # noqa: F401
 from conductor.command.run_store import RunStore
@@ -26,7 +27,7 @@ def operator(chromium, origin, run, project=PROJECT):
         yield page, posted
         assert problems == []
     finally:
-        context.close()
+        close_context(context)
 
 
 def test_archive_offers_its_reviewed_do_inside_atlas(chromium, tmp_path):
