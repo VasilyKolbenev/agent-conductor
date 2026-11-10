@@ -12,7 +12,7 @@ from conductor.command import operator_config
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.run_store import RunStore
 from tests._fakeboundary import recording_runners
-from tests.fake_process_fixtures import registered_fake_processes  # noqa: F401 (registered Codex fixture)
+from tests.fake_process_fixtures import registered_fake_processes  # noqa: F401
 from tests.relay_credentials import codex_leaf, epoch_seconds, jwt, put
 from tests.test_command_codex_transport import _executable
 from tests.test_patch_do_policy import reply
