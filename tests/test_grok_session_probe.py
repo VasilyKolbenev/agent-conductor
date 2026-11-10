@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tomllib
 from dataclasses import replace
+from threading import current_thread
 
 import pytest
 
@@ -79,7 +80,8 @@ def test_ancestor_configuration_refuses_the_session(tmp_path):
         probe.check_session_directory(directory)
 
 
-def test_real_pipes_feed_session_only_after_auth_and_then_close(tmp_path, monkeypatch):
+@pytest.mark.parametrize("force_close", [False, True], ids=["ordinary", "close-before-return"])
+def test_real_pipes_feed_session_only_after_auth_and_then_close(tmp_path, monkeypatch, force_close):
     work = tmp_path / "work"
     work.mkdir()
     peer = """
@@ -99,8 +101,26 @@ assert not sys.stdin.readline()
 """
     # Exercise the pinned host's real pipe pump with a local synthetic peer on any OS.
     spawn = ProcessRunner._spawn
-    monkeypatch.setattr(ProcessRunner, "_spawn", lambda self, spec:
-                        spawn(self, replace(spec, boundary=None)))
+    observed_closes = []
+
+    def spawn_peer(self, spec):
+        owned = spawn(self, replace(spec, boundary=None))
+        if force_close:
+            pipe = owned.proc.stdin
+            write = pipe.write
+
+            def write_then_wait(data):
+                count = write(data)
+                # Only delay the session writer. The original feeder owns EOF after reply 4.
+                if count == len(data) and current_thread() is not owned._feeder:
+                    owned._feeder.join(timeout=5)
+                    observed_closes.append(owned._completion.complete and pipe.closed)
+                return count
+
+            monkeypatch.setattr(pipe, "write", write_then_wait)
+        return owned
+
+    monkeypatch.setattr(ProcessRunner, "_spawn", spawn_peer)
     runner = probe.SessionRunner(tmp_path)
     runner.exchange = probe.SessionExchange(work)
     policy = WindowsContainer("S-1-15-2-1-2-3-4-5-6-7")
@@ -110,5 +130,6 @@ assert not sys.stdin.readline()
     with pytest.raises(ValueError, match="offline"):
         runner.run(replace(spec, boundary=replace(policy, internet_client=True)))
     out = runner.run(spec)
+    assert observed_closes == ([True] if force_close else [])
     assert (out.exit_code, out.stdin_state) == (0, "delivered")
     assert runner.exchange.verdict(out.output) == "session_created"

@@ -112,7 +112,7 @@ class SessionExchange:
                 if not size:
                     raise OSError("incomplete session frame")
                 remaining = remaining[size:]
-            pipe.flush()
+            # The final raw write delivers the frame. Reply 4 can already have closed this pipe.
             self.sent = True
         return True
 
@@ -247,17 +247,20 @@ def inspect_once(root, dc, facts, *, session=False):
                         stdin_bytes=SESSION_INPUT if session else SERVICE.payload,
                         stdin_completion_id=4 if session else 3,
                         sensitive_extra=(*ready.secrets, *ticket.secrets), timeout_seconds=30)
-                    out = runner.run(confined_spec(spec, boundary, paths, plain=prefix, prefix=prefix))
+                    out = runner.run(confined_spec(
+                        spec, boundary, paths, plain=prefix, prefix=prefix))
                 facts.update(process=out.status, exit=out.exit_code, stdin=out.stdin_state)
                 if session:
-                    facts.update(auth=runner.exchange.auth, session_requests=int(runner.exchange.sent),
+                    facts.update(auth=runner.exchange.auth,
+                                 session_requests=int(runner.exchange.sent),
                                  session="capture_unconfirmed")
                     if not out.output_truncated and not out.output_contains_env_value:
                         facts["session"] = runner.exchange.verdict(out.output)
                     return
                 if not out.output_truncated and not out.output_contains_env_value:
                     facts.update(wire_facts(out.output))
-                if (out.status == "completed" and out.exit_code == 0 and out.stdin_state == "delivered"
+                if (out.status == "completed" and out.exit_code == 0
+                        and out.stdin_state == "delivered"
                         and not out.output_truncated and not out.output_contains_env_value):
                     facts["signal"] = signal(out.output)
                 else:
@@ -265,7 +268,8 @@ def inspect_once(root, dc, facts, *, session=False):
             finally:
                 facts["relay_removed"] = home is None or (
                     login_relay.discard(home, GROK_RELAY.files) and not home.exists())
-                after = login_relay.ready(login, GROK_RELAY, datetime.now(timezone.utc), timedelta())
+                after = login_relay.ready(
+                    login, GROK_RELAY, datetime.now(timezone.utc), timedelta())
                 facts["original_unchanged"] = (
                     isinstance(after, login_relay.Ready) and after.digest == ready.digest)
                 directory.rmdir()
