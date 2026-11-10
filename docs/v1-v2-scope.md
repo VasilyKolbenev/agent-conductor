@@ -17,6 +17,14 @@ The default workflow is Ray Dalio's five-step cycle: goals, identify problems, d
 design and do. Workflow Studio must also let users create and edit their own cycles
 without code; the default cycle is not the only supported topology.
 
+**Owner clarification, 2026-11-10:** The primary scenario is prolonged autonomous work
+on large, compound tasks by complete harnesses. A Dalio action contains a harness's own
+agent and tool loop; five workflow actions do not mean five internal model turns.
+The five-action / 600-second rehearsal does not set a universal product ceiling.
+Duration, workflow attempts, protocol envelopes and durable results need separate
+budgets, presented for approval with the task. Local capture tests do not establish
+long-duration execution, token renewal or recovery; those need their own real evidence.
+
 The product must show each configured harness's subscription usage, remaining allowance,
 and reset time for the windows the vendor actually reports, including daily, weekly and
 five-hour windows where applicable. Distinguish measured values, stale observations and
