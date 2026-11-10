@@ -13,6 +13,7 @@ from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.run_store import RunStore
 from conductor.tool_pins import pin_tool
 from tests._fakeboundary import recording_runners
+from tests.fake_process_fixtures import registered_fake_processes  # noqa: F401 (registered harness fixtures)
 from tests.git_repo_helpers import GIT, commit, git
 from tests.relay_credentials import codex_leaf, epoch_seconds, jwt, put
 from tests.test_command_codex_transport import _executable as codex_binary

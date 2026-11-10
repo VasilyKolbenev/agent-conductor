@@ -24,7 +24,7 @@ import pytest
 from playwright.sync_api import Browser, expect
 
 from browser_tests.test_desk_accept import (  # noqa: F401  (accept_server is a fixture)
-    COMMIT, PREVIEW, REVIEW, _Desk, _desk, accept_server)
+    COMMIT, PREVIEW, PREVIEW_PATH, REVIEW, _Desk, _desk, accept_server)
 from tests import _fakegh
 from tests.conftest import registered_fake_processes  # noqa: F401 (registered gh launch fixture)
 from tests.accept_remote import (
@@ -93,7 +93,11 @@ def published(tmp_path, accept_server) -> tuple[str, Rig]:
 
 def _commit_and_read_remotes(desk: _Desk) -> list[dict]:
     """Commit, then observe the Git discovery response that determines the next controls."""
-    desk.card.locator(PREVIEW).click()
+    with desk.page.expect_response(lambda r: r.request.method == "POST"
+                                   and urlsplit(r.url).path == PREVIEW_PATH) as preview:
+        desk.card.locator(PREVIEW).click()
+    assert preview.value.status == 200
+    assert preview.value.json()["accept"]["accept_digest"]
     expect(desk.card).to_contain_text("new.txt")
     desk.card.locator(REVIEW).click()
     # Discovery runs real Git after the commit. Check the button against the observed remote.
