@@ -12,6 +12,8 @@ import {harnesses, showHarnesses, showLimits, showMemory} from "./arachnid-panel
 import {arachnidConversation} from "./arachnid-conversation.js";
 import {atlasPlanning} from "./arachnid-planning.js";
 import {attachLayout} from "./arachnid-layout.js";
+import {attachPalette} from "./arachnid-palette.js";
+import {createNextAction} from "./arachnid-next.js";
 
 const $ = id => document.getElementById(id);
 const fields = () => new URLSearchParams(location.hash.slice(1));
@@ -71,6 +73,75 @@ function boot() {
     },
     command: name => openPanel(name, $("command")),
   });
+  const nextAction = createNextAction($("nextAction"), {
+    valid: validRun, stop: () => new AbortController(),
+    readAutomation: (run, stop) => transport.readJson(path.automation(run), stop),
+    submit: (target, run, body) => {
+      if (!["decisions", "automationPreview", "automationAuthorize"].includes(target)
+          || identity?.mode !== "active" || !validRun(identity?.project_id, run, current?.task))
+        return Promise.resolve({status: "refused", code: "project_mismatch"});
+      return transport.submit(target, run, body);
+    },
+    refreshRun: run => { if (current?.kind === "run" && current.id === run) readRun(current); },
+    id: kind => kind + "-" + crypto.randomUUID(),
+    openStep: node => scene.openStep(current?.id, node),
+  });
+  const palette = attachPalette($("palette"), {
+    catalog: paletteCatalog, choose: chooseCommand, locale: () => locale,
+    stop: () => new AbortController(), restore: restoreOpener,
+  });
+
+  function addressedSelection() {
+    const query = fields();
+    const focus = ["session", "task", "new"].filter(name => query.has(name));
+    if (focus.length > 1 || focus.some(name => query.getAll(name).length !== 1)) return null;
+    if (!focus.length) return current;
+    if (focus[0] === "new")
+      return current?.kind === "new" && current.id === query.get("new") ? current : null;
+    return requested(sessions());
+  }
+  function validRun(project, run, task) {
+    const selected = addressedSelection();
+    return connected && listState === "ready" && !detailState && !foreign()
+      && identity?.project_id === project && current?.kind === "run" && !current.bad
+      && selected?.kind === "run" && selected.id === run && selected.task === task
+      && current.id === run && current.task === task && detail?.run?.run_id === run
+      && detail?.config?.task?.id === task && detail?.task?.id === task;
+  }
+  function paletteCatalog() {
+    if (!identity || foreign() || !connected || listState !== "ready"
+        || key(addressedSelection()) !== key(current)) return [];
+    const scope = identity.project_id;
+    return [
+      ...sessions().filter(row => !row.bad).map(row => ({kind: "session", id: key(row), scope,
+        label: row.title || tr("newSession"), detail: row.id, keywords: [row.kind]})),
+      ...members.map(m => ({kind: "harness", id: m.id, scope, label: m.label,
+        detail: m.duty, keywords: [m.id]})),
+      ...external.map(row => ({kind: "utility", id: row.utility_id, scope, label: row.label,
+        detail: tr(row.mode === "manual" ? "manualTool" : "protocolTool"), keywords: []})),
+      ...scene.paletteSteps().map(s => ({kind: "step", id: s.nodeId, scope: s.runId,
+        label: s.title, detail: s.runId, keywords: [s.nodeId]})),
+      {kind: "limits", id: "limits", scope, label: tr("limits"), detail: "",
+        keywords: ["quota", "usage", "квота", "остаток"]},
+      {kind: "memory", id: "memory", scope: scope + "/" + key(current),
+        label: tr("memory"), detail: current?.title || "", keywords: ["history", "история"]},
+    ];
+  }
+  function chooseCommand(entry) {
+    const live = paletteCatalog().find(row => row.kind === entry.kind && row.id === entry.id
+      && row.scope === entry.scope);
+    if (!live) return false;
+    navOpen(false);
+    if (live.kind === "session") {
+      const row = sessions().find(row => key(row) === live.id && !row.bad);
+      if (!row) return false;
+      address(row); $("command").focus({preventScroll: true});
+    } else if (live.kind === "harness") openPanel("participants", $("paletteOpen"), live.id);
+    else if (live.kind === "utility") utility.open(true, live.id);
+    else if (live.kind === "step") return scene.openStep(live.scope, live.id);
+    else openPanel(live.kind, $("paletteOpen"));
+    return true;
+  }
 
   function claimed() { return readDeskHash(location.hash).project; }
   function foreign() {
@@ -270,6 +341,7 @@ function boot() {
       b.addEventListener("click", () => { navOpen(false); utility.open(true, row.utility_id); });
       return b;
     }));
+    palette.refresh();
   }
   async function readUtilities() {
     if (!identity || !connected || foreign()) return;
@@ -316,8 +388,14 @@ function boot() {
     scene.sync({locale, sessionId: connected && listState === "ready" && current ? key(current) : null,
       runId: current?.kind === "run" ? current.id : null,
       detail, title, ready: connected && listState === "ready" && !detailState && !!current && !current.bad});
+    nextAction.sync(identity && current?.kind === "run" ? {
+      projectId: identity.project_id, mode: identity.mode, locale, runId: current.id,
+      taskId: current.task, detail,
+      ready: validRun(identity.project_id, current.id, current.task),
+    } : null);
     paintPlanning();
     paintPanel();
+    palette.refresh();
   }
   function paintPlanning() {
     const enabled = identity?.project_id && identity.mode === "active" && !foreign()
@@ -476,10 +554,12 @@ function boot() {
     else { hideAside(); restoreOpener(opener); }
   });
   document.addEventListener("keydown", event => {
-    if (event.key !== "Escape" || $("studioUtilities").open) return;
+    if (event.defaultPrevented || event.key !== "Escape" || $("studioUtilities").open
+        || $("palette").open) return;
     if ($("workspace").classList.contains("nav-open")) { closeNav(); event.preventDefault(); }
     else if (side) { $("close").click(); event.preventDefault(); }
   });
+  $("paletteOpen").addEventListener("click", () => palette.open($("paletteOpen")));
   $("limits").addEventListener("click", () => openPanel("limits", $("limits")));
   $("memory").addEventListener("click", () => openPanel("memory", $("memory")));
   $("lead").addEventListener("change", () => {
@@ -504,7 +584,10 @@ function boot() {
   window.addEventListener("hashchange", navigate);
   window.addEventListener("resize", syncLayers);
   window.addEventListener("pagehide", event => {
-    if (!event.persisted) { retire(); scene.dispose(); layout.dispose(); transport.seal(); }
+    if (!event.persisted) {
+      retire(); nextAction.dispose(); palette.dispose(); scene.dispose(); layout.dispose();
+      transport.seal();
+    }
   });
   start();
 }

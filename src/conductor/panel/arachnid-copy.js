@@ -1,6 +1,15 @@
 "use strict";
 // Shell navigation labels. Task names, participant identities and evidence come from the project.
 const labels = {
+  paletteOpen: ["Commands", "Команды"],
+  paletteTitle: ["Find in workspace", "Поиск в рабочей области"],
+  paletteSearch: ["Search sessions, harnesses or steps…", "Найти сессию, харнесс или шаг…"],
+  paletteClose: ["Close search", "Закрыть поиск"], paletteResults: ["Results", "Результаты"],
+  paletteEmpty: ["No matches.", "Совпадений нет."], paletteSessions: ["Sessions", "Сессии"],
+  paletteHarnesses: ["Harnesses", "Харнессы"], paletteSteps: ["Cycle steps", "Шаги цикла"],
+  paletteWorkspace: ["Workspace", "Рабочая область"],
+  paletteChanged: ["Results changed. Choose a current result.",
+    "Список изменился. Выберите доступный результат."],
   sessions: ["Sessions", "Сессии"], newSession: ["New session", "Новая сессия"],
   participants: ["Harnesses", "Харнессы"], attach: ["Connect a harness", "Подключить харнесс"],
   limits: ["Limits", "Лимиты"], memory: ["Session memory", "Память сессии"],

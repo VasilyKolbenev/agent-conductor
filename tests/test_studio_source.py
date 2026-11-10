@@ -104,6 +104,7 @@ BOOT = "studio.js"
 ARACHNID_MODULES = (
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",
     "arachnid-panels.js", "arachnid-copy.js", "arachnid-layout.js",
+    "arachnid-next.js", "arachnid-next-view.js", "arachnid-palette.js",
     "arachnid-planning.js", "arachnid-advisor.js", "arachnid-plan.js",
     "arachnid-plan-model.js", "arachnid-planner-view.js",
 )

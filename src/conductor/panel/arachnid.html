@@ -69,6 +69,10 @@
       <button id="menu" class="icon-btn" type="button" aria-controls="sidebar" aria-expanded="false"
               aria-label="Open sessions" data-ar-aria="openSessions"><svg class="glyph" aria-hidden="true"><use href="#icon-menu"></use></svg></button>
       <svg class="glyph" aria-hidden="true"><use href="#icon-workspace"></use></svg><span>Studio</span><i aria-hidden="true">/</i><strong id="crumb"></strong>
+      <button id="paletteOpen" type="button" aria-haspopup="dialog" aria-controls="palette"
+              aria-keyshortcuts="Control+K Meta+K" data-ar-aria="paletteOpen">
+        <span data-ar-label="paletteOpen">Commands</span><kbd>Ctrl K</kbd>
+      </button>
     </header>
     <div class="session-head">
       <div class="session-meta"><span id="contextLabel"></span></div>
@@ -84,12 +88,14 @@
           <select id="lead" aria-label="Atlas context harness" data-ar-aria="lead"></select>
         </label>
       </div>
-      <div id="intro"></div><div id="orbitHere"></div><div id="resultHere"></div>
+      <div id="intro"></div><section id="nextAction" hidden></section>
+      <div id="orbitHere"></div><div id="resultHere"></div>
       <div id="messages" role="log" aria-label="Conversation with Atlas" data-ar-aria="conversation"
            aria-live="polite"></div>
       <section id="planner" hidden></section>
     </div></div>
     <div class="compose-wrap">
+      <div id="scopeHere"></div>
       <div id="quick" class="quick"></div>
       <form id="send">
         <input id="command" type="text" aria-label="Ask Atlas…" data-ar-aria="compose"
@@ -129,5 +135,17 @@
   <span class="core" aria-hidden="true"></span><span class="core-name" aria-hidden="true">ATLAS</span>
 </template>
 <dialog id="studioUtilities" aria-labelledby="utilitiesTitle"></dialog>
+<dialog id="palette" aria-labelledby="paletteTitle">
+  <header class="palette-head">
+    <h2 id="paletteTitle" data-ar-label="paletteTitle">Find in workspace</h2>
+    <button id="paletteClose" type="button" aria-label="Close commands"
+            data-ar-aria="paletteClose">×</button>
+  </header>
+  <input id="paletteInput" role="combobox" aria-controls="paletteResults"
+         aria-autocomplete="list" aria-expanded="true" aria-label="Search workspace"
+         data-ar-aria="paletteSearch" data-ar-placeholder="paletteSearch" autocomplete="off">
+  <div id="paletteResults" role="listbox" aria-label="Commands" data-ar-aria="paletteResults"></div>
+  <p id="paletteEmpty" data-ar-label="paletteEmpty" role="status" hidden></p>
+</dialog>
 </body>
 </html>

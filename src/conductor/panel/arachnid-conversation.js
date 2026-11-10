@@ -32,26 +32,61 @@ function button(text, onClick, cls = "") {
   return node;
 }
 function newSession() {
-  return {draft: "", messages: [], step: null, actions: new Map(), choices: new Map()};
+  return {draft: "", messages: [], scope: null, choices: new Map()};
 }
 
 export function arachnidConversation(center, inspector, door) {
-  const fields = Object.fromEntries(["intro", "orbitHere", "resultHere", "messages", "quick",
-    "send", "command"].map(id => [id, center.querySelector("#" + id)]));
+  const fields = Object.fromEntries(["intro", "orbitHere", "resultHere", "messages", "scopeHere",
+    "quick", "send", "command"].map(id => [id, center.querySelector("#" + id)]));
   const sessions = new Map(), events = door.stop();
   let model = null, state = null, scene = null, open = false, read = null, controller = null;
   let signature = null, generation = 0, paintedMessages = null, disposed = false;
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
-  const step = () => scene?.steps.find(row => row.nodeId === state?.step);
+  const step = () => scene?.steps.find(row => row.nodeId === state?.scope?.nodeId);
   function actions(s) {
     return rows(model.detail?.records).filter(row => row.record_type === "action_request"
       && row.record?.run_id === model.runId && row.record.node_id === s?.nodeId)
       .map(row => row.record);
   }
   function selected(s) {
-    const options = actions(s);
-    return options.find(a => a.action_id === state.actions.get(s?.nodeId)) || options.at(-1);
+    const scope = state?.scope;
+    if (!scope || scope.nodeId !== s?.nodeId) return null;
+    return actions(s).find(a => a.action_id === scope.actionId && a.attempt_id === scope.attemptId);
+  }
+  function pin(s, action, options) {
+    state.scope = {nodeId: s.nodeId, title: s.title || s.nodeId, actionId: action?.action_id,
+      attemptId: action?.attempt_id, number: action ? options.indexOf(action) + 1 : null};
+  }
+  function scopeName(scope) {
+    if (!scope) return tr("whole_cycle");
+    return scope.number ? scope.title + " · " + tr("attempt_number", {n: String(scope.number)})
+      : scope.title;
+  }
+  function drawScope() {
+    const host = fields.scopeHere;
+    if (!scene) { host.replaceChildren(); return; }
+    const focused = host.contains(document.activeElement);
+    const menu = element("select", {"data-atlas-scope": "", "aria-label": tr("chat_scope")});
+    menu.append(element("option", {value: "", text: tr("whole_cycle")}));
+    const scope = state.scope;
+    for (const s of scene.steps) {
+      const text = scope?.nodeId === s.nodeId ? scopeName(scope) : s.title || s.nodeId;
+      menu.append(element("option", {value: s.nodeId, text}));
+    }
+    if (scope && !step()) {
+      menu.append(element("option", {value: scope.nodeId, disabled: "", text: scopeName(scope)}));
+    }
+    menu.value = scope?.nodeId || "";
+    menu.disabled = !model.ready;
+    menu.addEventListener("change", () => {
+      if (menu.value) { openStep(model.runId, menu.value); return; }
+      close(); state.scope = null; revoke(); drawOrbit(); drawScope(); summary();
+      host.querySelector("select")?.focus({preventScroll: true});
+    });
+    host.replaceChildren(element("label", {className: "atlas-scope"}, [
+      element("span", {className: "atlas-scope-label", text: tr("chat_scope")}), menu]));
+    if (focused) menu.focus({preventScroll: true});
   }
   function held(action) {
     if (!state.choices.has(action.action_id)) state.choices.set(action.action_id,
@@ -65,8 +100,12 @@ export function arachnidConversation(center, inspector, door) {
     paintedMessages = content;
     fields.messages.replaceChildren(...state.messages.map(row => {
       const who = tr(row.role === "user" ? "you" : "title");
-      return element("div", {className: "msg " + row.role},
+      const msg = element("div", {className: "msg " + row.role},
         [element("b", {text: who}), element("p", {text: row.text})]);
+      if (row.origin) msg.append(element("small", {className: "atlas-origin",
+        title: [row.origin.nodeId, row.origin.actionId, row.origin.attemptId].join(" · "),
+        text: scopeName(row.origin)}));
+      return msg;
     }));
   }
   function settle(epoch, evidence) {
@@ -103,23 +142,39 @@ export function arachnidConversation(center, inspector, door) {
     });
   }
   function drawOrbit() {
-    if (scene) renderOrbit(fields.orbitHere, model, scene, open ? state.step : null,
+    if (scene) renderOrbit(fields.orbitHere, model, scene, state.scope?.nodeId,
       row => choose(row, true));
     else fields.orbitHere.replaceChildren();
   }
   function choose(s, focus = false) {
-    if (!s) return;
-    state.step = s.nodeId; open = true; door.inspect(true);
-    load(); drawOrbit(); drawInspector(); summary();
+    if (!s || !model.ready) return;
+    if (state.scope?.nodeId !== s.nodeId) {
+      const options = actions(s);
+      pin(s, options.at(-1), options);
+    }
+    open = true; door.inspect(true);
+    load(); drawOrbit(); drawScope(); drawInspector(); summary();
     if (focus) inspector.querySelector("h2")?.focus({preventScroll: true});
   }
   function close() {
     if (!open) return;
-    const last = state.step;
+    const last = state.scope?.nodeId;
     revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     drawOrbit(); summary();
-    [...fields.orbitHere.querySelectorAll("[data-step]")].find(n => n.dataset.step === last)
-      ?.focus({preventScroll: true});
+    const orbitNode = [...fields.orbitHere.querySelectorAll("[data-step]")]
+      .find(n => n.dataset.step === last);
+    (orbitNode || fields.scopeHere.querySelector("select") || fields.command)
+      .focus({preventScroll: true});
+  }
+  function paletteSteps() {
+    return !model?.ready || !scene ? [] : scene.steps.map(s =>
+      ({runId: model.runId, nodeId: s.nodeId, title: s.title || s.nodeId}));
+  }
+  function openStep(runId, nodeId) {
+    if (disposed || !model?.ready || !runId || model.runId !== runId) return false;
+    const s = scene?.steps.find(row => row.nodeId === nodeId);
+    if (!s) return false;
+    choose(s, true); return true;
   }
   function summary() {
     const host = fields.resultHere;
@@ -148,6 +203,34 @@ export function arachnidConversation(center, inspector, door) {
         .find(n => n.dataset.focus === focus.dataset.focus);
     restored?.focus({preventScroll: true});
   }
+  function evidenceSummary(e) {
+    const paths = e.files.slice(0, 2);
+    const files = e.files_total === null ? tr("no_files") : paths.length < e.files_total
+      ? tr("partial", {shown: String(paths.length), total: String(e.files_total)})
+      : tr("files", {n: String(e.files_total)});
+    const tests = e.tests, verdict = e.verdict;
+    const testReport = tests.status === "recorded" && tests.source === "external"
+      ? tr("test_total", Object.fromEntries(["total", "failures", "errors", "skipped"]
+        .map(k => [k, String(tests.summary[k])])))
+      : tr(tests.status === "unavailable" ? "test_broken" : "test_absent");
+    const table = element("dl");
+    for (const [key, value] of [
+      ["outcome", e.outcome ? localize(model, "scene.outcome_" + e.outcome) : tr("pending_result")],
+      ["files", files], ["tests", testReport],
+      ["checker", verdict ? verdict.instance_id + " · " + verdict.adapter_id : tr("not_recorded")],
+      ["verdict", tr(!verdict ? "no_verdict" : verdict.status === "unavailable"
+        ? "verifier_unavailable" : verdict.status)],
+    ]) {
+      const fact = element("dd", {"data-atlas-fact": key, text: value});
+      if (key === "files" && paths.length) {
+        fact.append(element("ul", {className: "atlas-summary-paths"},
+          paths.map(f => element("li", {text: f.path}))));
+      }
+      table.append(element("dt", {text: tr("fact_" + key)}), fact);
+    }
+    const heading = element("h3", {text: tr("attempt_summary")});
+    return element("section", {className: "atlas-attempt-summary"}, [heading, table]);
+  }
   function populateInspector() {
     const s = step();
     if (!open || !s) return;
@@ -159,32 +242,38 @@ export function arachnidConversation(center, inspector, door) {
       element("small", {className: "eyebrow", text: owner}),
       element("h2", {text: s.title || s.nodeId, tabindex: "-1"})]));
     inspector.replaceChildren(body);
+    const options = actions(s), a = selected(s);
     if (!patchStep(s)) {
       if (!model.ready) { body.append(element("p", {text: tr("offline")})); return; }
       const description = localize(model, "scene." + s.word);
       body.append(element("p", {className: "check-card", text: description}));
-      for (const a of actions(s)) {
-        const result = rows(model.detail?.records).find(r => r.record_type === "action_result"
-          && r.record?.action_id === a.action_id && r.record.attempt_id === a.attempt_id
-          && r.record.instance_id === a.instance_id)?.record;
-        const fact = [a.attempt_id, result?.outcome].filter(Boolean).join(" · ");
-        body.append(element("p", {text: fact}));
-      }
-      return;
+      if (!options.length && !state.scope?.actionId) return;
     }
-    const options = actions(s), a = selected(s);
-    if (!a) { body.append(element("p", {text: tr("no_attempt")})); return; }
+    if (!a) {
+      const note = state.scope?.actionId ? "attempt_missing" : "no_attempt";
+      body.append(element("p", {role: "status", text: tr(!model.ready ? "offline" : note)}));
+      if (!options.length) return;
+    }
     const select = element("select", {"data-atlas-attempt": "", "aria-label": tr("attempt")});
+    if (!a) select.append(element("option", {value: "", text: tr("pick_attempt"), disabled: ""}));
     options.forEach((item, i) => {
       const text = tr("attempt_name", {n: String(i + 1), total: String(options.length),
         id: item.action_id});
       select.append(element("option", {value: item.action_id, text}));
     });
-    select.value = a.action_id;
+    select.value = a?.action_id || "";
+    select.disabled = !model.ready;
     select.addEventListener("change", () => {
-      state.actions.set(s.nodeId, select.value); load(); drawInspector(); summary();
+      const next = options.find(option => option.action_id === select.value);
+      if (!model.ready || !next) return;
+      pin(s, next, options); load(); drawScope(); drawInspector(); summary();
       inspector.querySelector("select")?.focus({preventScroll: true});
     });
+    const context = element("div", {className: "atlas-attempt-context"}, [
+      element("label", {className: "atlas-attempt"},
+        [element("span", {text: tr("attempt")}), select])]);
+    body.append(context);
+    if (!a) return;
     const ids = element("dl");
     for (const [key, value] of [["run", a.run_id], ["step", a.node_id],
       ["action", a.action_id], ["attempt", a.attempt_id]]) {
@@ -194,11 +283,17 @@ export function arachnidConversation(center, inspector, door) {
     const details = element("details", {className: "atlas-attempt-ids"}, [
       element("summary", {"data-focus": "atlas:ids", text: tr("execution_ids")}), ids]);
     details.open = showIds;
-    body.append(element("div", {className: "atlas-attempt-context"}, [
-      element("label", {className: "atlas-attempt"},
-        [element("span", {text: tr("attempt")}), select]),
-      details]));
+    context.append(details);
+    if (!patchStep(s)) {
+      const result = rows(model.detail.records).find(r => r.record_type === "action_result"
+        && r.record?.run_id === a.run_id && r.record.action_id === a.action_id
+        && r.record.attempt_id === a.attempt_id && r.record.instance_id === a.instance_id)?.record;
+      body.append(element("p", {text: result ? localize(model, "scene.outcome_" + result.outcome)
+        : tr("pending_result")}));
+      return;
+    }
     if (model.ready && read?.phase === "ready") {
+      body.append(evidenceSummary(read.value));
       atlasInspector(body, model, read.value, held(a), (change, switchTab = false) => {
         const before = document.activeElement?.dataset.focus;
         Object.assign(held(a), change); drawInspector();
@@ -230,13 +325,13 @@ export function arachnidConversation(center, inspector, door) {
     }
     if (planning && door.planMessage(model.sessionId, message)) { transcript(); return; }
     if (topic) {
-      const patches = scene?.steps.filter(patchStep) || [];
-      const s = step() || (patches.length === 1 ? patches[0] : null);
+      const s = step();
       if (patchStep(s)) {
         const a = selected(s);
         if (a) held(a).tab = topic;
+        reply.origin = state.scope;
         choose(s);
-        if (!a) reply.text = tr("no_attempt");
+        if (!a) reply.text = tr(state.scope.actionId ? "attempt_missing" : "no_attempt");
         else if (read?.phase === "ready") reply.text = answerFor(model, topic, read.value);
         else if (read?.phase === "loading") Object.assign(reply,
           {text: tr("loading"), wait: generation, topic});
@@ -256,13 +351,15 @@ export function arachnidConversation(center, inspector, door) {
       : model.runId && !scene ? words("No cycle is available for this run.",
         "Для этого запуска пока нет схемы цикла.") : "";
     fields.quick.replaceChildren();
-    if (scene?.steps.some(patchStep)) {
-      const proof = tr("ask_tests");
-      fields.quick.append(button(proof, () => ask(proof)));
+    const patches = scene?.steps.filter(patchStep) || [];
+    const target = patchStep(step()) ? step() : patches.length === 1 ? patches[0] : null;
+    if (target && model.ready) {
+      const proof = tr("step_tests", {step: target.title || target.nodeId});
+      fields.quick.append(button(proof, () => { choose(target); ask(proof); }));
     }
     const limits = words("Limits", "Лимиты");
     fields.quick.append(button(limits, () => ask(limits)));
-    drawOrbit(); summary(); transcript();
+    drawScope(); drawOrbit(); summary(); transcript();
     if (open) drawInspector();
   }
   function sync(next) {
@@ -282,7 +379,7 @@ export function arachnidConversation(center, inspector, door) {
     scene = next.detail?.run?.run_id === next.runId && next.runId ? sceneOf(next.detail) : null;
     if (!state) {
       paintedMessages = null;
-      for (const key of ["intro", "orbitHere", "resultHere", "messages", "quick"])
+      for (const key of ["intro", "orbitHere", "resultHere", "messages", "scopeHere", "quick"])
         fields[key].replaceChildren();
       fields.command.value = ""; return;
     }
@@ -298,6 +395,8 @@ export function arachnidConversation(center, inspector, door) {
   fields.send.addEventListener("submit", e => {
     e.preventDefault(); ask(fields.command.value);
   }, {signal: events.signal});
-  return {sync, close, history: () => (state?.messages || []).map(({role, text}) => ({role, text})),
+  return {sync, close, paletteSteps, openStep,
+    history: () => (state?.messages || []).map(({role, text, origin}) =>
+      ({role, text: origin ? scopeName(origin) + " · " + text : text})),
     dispose() { disposed = true; revoke(); events.abort(); sessions.clear(); }};
 }
