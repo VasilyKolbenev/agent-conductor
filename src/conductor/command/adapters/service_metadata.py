@@ -76,8 +76,15 @@ class ServiceMetadata:
 
     # -- the circuit -----------------------------------------------------------
 
+    def _attempt_output_limit(self, asked, mode):
+        """A pure capture-budget hook; it neither admits metadata nor owns an attempt."""
+        return asked
+
     def _attempt(self, argv, cwd, **options):
         """Mark a native metadata exchange, known by its exact argv and stdin, for one spawn."""
+        limit = self._attempt_output_limit(options.get("output_limit"), options.get("mode"))
+        if limit is not None:
+            options["output_limit"] = limit
         self._service = self._service_for(argv, options.get("stdin_bytes"))
         self._service_metadata: dict[str, frozenset[bytes]] = {}
         self._service_values: tuple[bytes, ...] = ()

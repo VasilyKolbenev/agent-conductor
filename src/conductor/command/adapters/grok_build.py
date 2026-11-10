@@ -135,7 +135,6 @@ twice, and verification that reads only independent workspace evidence.
 from __future__ import annotations
 
 from . import login_home, task_file
-from ..artifacts import ARTIFACT_CONTENT_LIMIT
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
@@ -154,7 +153,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .deep_contracts import DeepProtocol
-from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
+from .artifact_transport import ARTIFACT_CONTENT_LIMIT, ArtifactAwareTransport, REVIEW_CAPABILITY
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
     TASK_CHANNEL_FILE,
@@ -368,15 +367,13 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
         return (GROK_OUTPUT_LIMIT if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE
                 else GROK_JSON_WIRE_LIMIT)
 
-    def _attempt(self, argv, cwd, **options):
+    def _attempt_output_limit(self, asked, mode):
         # Only an explicitly budgeted review may use the larger JSON wire ceiling.
-        asked = options.get("output_limit")
         if asked is None:
             asked = GROK_OUTPUT_LIMIT
-        if options.get("mode") != "review":
+        if mode != "review":
             asked = min(asked, GROK_OUTPUT_LIMIT)
-        options["output_limit"] = asked
-        return super()._attempt(argv, cwd, **options)
+        return asked
 
     @staticmethod
     def _review_format_argv(home, output_format):

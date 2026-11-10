@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..artifact_handoff import ArtifactHandoff, UnknownProposal
-from ..artifacts import ArtifactDocument
+from ..artifacts import ARTIFACT_CONTENT_LIMIT, ArtifactDocument
 from ..contracts import ActionRequest, ActionResultReceipt, _content_digest
 from ..run_store import RunStore
 from .base import AdapterManifest, AdapterVerification, PreparedAction, Published
