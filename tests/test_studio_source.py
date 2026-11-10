@@ -103,7 +103,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
 BOOT = "studio.js"
 ARACHNID_MODULES = (
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",
-    "arachnid-panels.js", "arachnid-copy.js",
+    "arachnid-panels.js", "arachnid-copy.js", "arachnid-layout.js",
     "arachnid-planning.js", "arachnid-advisor.js", "arachnid-plan.js",
     "arachnid-plan-model.js", "arachnid-planner-view.js",
 )
@@ -116,8 +116,9 @@ ARACHNID_DOCUMENTS = (PANEL / "arachnid.html", PANEL / "arachnid.css")
 TRANSPORT_MODULE = "desk-transport.js"
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
-#: Forbidden in every Studio file, markup included. Lowercased before the
-#: search, so a case fold cannot walk one past.
+#: Forbidden in every Studio file, markup included. The layout module alone may
+#: keep numeric panel widths in localStorage (UI-ASTRYX-STUDIO-DESIGN); all other
+#: entries remain forbidden there too. Lowercasing prevents a case-fold bypass.
 SEALED = ("innerhtml", "outerhtml", "insertadjacenthtml", "localstorage",
           "sessionstorage", "document.cookie", "console.", "eval(",
           "new function(", "import(", "importscripts", "xmlhttprequest",
@@ -259,7 +260,12 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
                   + "\n" + UTILITY_STYLE.read_text(encoding="utf-8")
                   + "\n" + "\n".join(p.read_text(encoding="utf-8") for p in ARACHNID_DOCUMENTS)).lower()
     for forbidden in SEALED:
-        assert forbidden not in everything, forbidden
+        if forbidden == "localstorage":
+            for path in _paths():
+                if path.name != "arachnid-layout.js":
+                    assert forbidden not in _code(path).lower(), (path.name, forbidden)
+        else:
+            assert forbidden not in everything, forbidden
     homes = (BOOT, "arachnid.js", TRANSPORT_MODULE)
     quiet = _code(*(PANEL / name for name in MODULES if name not in homes)).lower()
     for forbidden in TRANSPORT:

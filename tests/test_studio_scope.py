@@ -63,15 +63,16 @@ GLOBALS = frozenset({
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
     "await", "new", "else", "do", "of", "in", "case", "throw", "async",
 })
-# Native layout observation is needed by the two modules that draw against a
-# measured box: the orbit, and the participants strip that now sizes itself the
-# same way. Keep this narrower than GLOBALS: a name admitted here is admitted
+# Native layout observation follows measured boxes and shell state. Keep this
+# narrower than GLOBALS: a name admitted here is admitted
 # for the module that argued for it and for no other, so a third module
 # reaching for an observer has to come here and be written down. It is a name
 # per module, never a wildcard and never a module-wide forgiveness -- a typo
 # or any other foreign global is still reported in these modules too.
 # Browser witnesses exercise construction, redraw, resizing and teardown.
 MODULE_GLOBALS = {
+    # Numeric column preferences follow their box and the shell's open/closed state.
+    "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
     "studio-trace.js": frozenset({"ResizeObserver"}),
     "studio-orbit.js": frozenset({"ResizeObserver"}),
     "studio-participants.js": frozenset({"ResizeObserver"}),
@@ -185,11 +186,12 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
     One identical source, read as each module in turn: the two that argued for
     an observer reach it, every other module does not, and in the admitted
     modules a typo of the same name and an absent helper are both still
-    reported. The table itself is held to one name per module, so the next
-    entry cannot quietly be a wildcard or a module-wide forgiveness.
+    reported. The explicit table prevents wildcard or module-wide forgiveness;
+    only the panel layout may also observe the shell's class and language.
     """
     source = "function watch() { new ResizeObserver(() => 0); missingHelper(); }"
-    for observer in ("studio-orbit.js", "studio-participants.js", "studio-trace.js"):
+    for observer in ("studio-orbit.js", "studio-participants.js", "studio-trace.js",
+                     "arachnid-layout.js"):
         assert _unreachable(source, observer) == ["missingHelper"], observer
         assert _unreachable(source.replace("ResizeObserver", "ResizeObserverTypo"),
                             observer) == ["ResizeObserverTypo", "missingHelper"]
@@ -199,12 +201,18 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
         assert _unreachable(source, module) == [
             "ResizeObserver", "missingHelper"], module
     assert MODULE_GLOBALS == {
+        "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
         "studio-trace.js": frozenset({"ResizeObserver"}),
         "studio-orbit.js": frozenset({"ResizeObserver"}),
         "studio-participants.js": frozenset({"ResizeObserver"}),
         "desk-time.js": frozenset({"Intl"}),
         "desk-flow-host.js": frozenset({"AbortController"}),
         "desk-wizard-host.js": frozenset({"setInterval", "clearInterval", "queueMicrotask"})}, MODULE_GLOBALS
+    mutation = source.replace("ResizeObserver", "MutationObserver")
+    for module in MODULES:
+        expected = ["missingHelper"] if module == "arachnid-layout.js" else [
+            "MutationObserver", "missingHelper"]
+        assert _unreachable(mutation, module) == expected, module
     # And every admission is SPENT: a module listed here that never calls the
     # name it was admitted for is a forgiveness nobody argued for, which is the
     # one widening the rest of this test cannot see -- each of its claims holds

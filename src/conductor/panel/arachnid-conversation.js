@@ -151,6 +151,7 @@ export function arachnidConversation(center, inspector, door) {
   function populateInspector() {
     const s = step();
     if (!open || !s) return;
+    const showIds = inspector.querySelector(".atlas-attempt-ids")?.open === true;
     const body = element("section", {className: "inspect-body", "data-atlas-inspector": ""});
     const actor = scene.participants.find(p => p.instanceId === s.ownerId);
     const owner = [actor?.adapter, s.ownerId].filter(Boolean).join(" · ");
@@ -184,8 +185,19 @@ export function arachnidConversation(center, inspector, door) {
       state.actions.set(s.nodeId, select.value); load(); drawInspector(); summary();
       inspector.querySelector("select")?.focus({preventScroll: true});
     });
-    body.append(element("label", {className: "atlas-attempt"}, [
-      element("span", {text: tr("attempt")}), select]));
+    const ids = element("dl");
+    for (const [key, value] of [["run", a.run_id], ["step", a.node_id],
+      ["action", a.action_id], ["attempt", a.attempt_id]]) {
+      ids.append(element("dt", {text: tr(key)}),
+        element("dd", {}, [element("code", {text: value})]));
+    }
+    const details = element("details", {className: "atlas-attempt-ids"}, [
+      element("summary", {"data-focus": "atlas:ids", text: tr("execution_ids")}), ids]);
+    details.open = showIds;
+    body.append(element("div", {className: "atlas-attempt-context"}, [
+      element("label", {className: "atlas-attempt"},
+        [element("span", {text: tr("attempt")}), select]),
+      details]));
     if (model.ready && read?.phase === "ready") {
       atlasInspector(body, model, read.value, held(a), (change, switchTab = false) => {
         const before = document.activeElement?.dataset.focus;

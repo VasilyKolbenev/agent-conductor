@@ -14,6 +14,8 @@ const labels = {
   compose: ["Ask Atlas…", "Написать Атласу…"], send: ["Send message", "Отправить сообщение"],
   details: ["Session details", "Детали сессии"], inspector: ["Inspector", "Инспектор"],
   closeDetails: ["Close details", "Закрыть детали"],
+  resizeSessions: ["Resize sessions panel", "Изменить ширину сессий"],
+  resizeInspector: ["Resize inspector panel", "Изменить ширину инспектора"],
   local: ["Local answers from project records", "Локальные ответы по записям проекта"],
   skipToChat: ["Go to conversation", "Перейти к разговору"],
   loading: ["Reading project…", "Читаю проект…"], retry: ["Read again", "Прочитать снова"],

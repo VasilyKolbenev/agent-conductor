@@ -42,6 +42,7 @@ _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
 ENTRY_PAGE = "arachnid.html"
 _ARACHNID_FILES = (
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js", "arachnid-panels.js",
+    "arachnid-layout.js",
     "arachnid-copy.js", "arachnid.css", "arachnid-planning.js", "arachnid-advisor.js",
     "arachnid-plan.js", "arachnid-plan-model.js", "arachnid-planner-view.js",
 )

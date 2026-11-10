@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
     "/panel/arachnid.css": "text/css; charset=utf-8",
     "/panel/arachnid.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-layout.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-planning.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-advisor.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-plan.js": "text/javascript; charset=utf-8",

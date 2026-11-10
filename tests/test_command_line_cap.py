@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
     "browser_tests/test_arachnid_entry.py",
+    "browser_tests/test_arachnid_layout.py",
+    "src/conductor/panel/arachnid-layout.js",
     "browser_tests/test_arachnid_reconnect.py",
     "browser_tests/test_arachnid_conversation.py",
     "browser_tests/test_arachnid_subscription.py",

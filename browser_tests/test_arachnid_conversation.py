@@ -1,6 +1,7 @@
 """The main project page keeps Atlas and selects exact attempt evidence on the orbit."""
 from urllib.parse import urlsplit
 
+import pytest
 from playwright.sync_api import expect
 
 from browser_tests.desk_hold import close_context
@@ -9,6 +10,54 @@ from browser_tests.test_studio_atlas import atlas_url, evidence  # noqa: F401
 
 def select(page, value):
     page.evaluate("(value) => { location.hash = value; }", value)
+
+
+@pytest.mark.parametrize("lang,caption", [("en", "Execution IDs"), ("ru", "Идентификаторы")])
+def test_identity_tracks_the_attempt_across_tabs_and_resize(chromium, atlas_url, lang, caption):
+    context = chromium.new_context(viewport={"width": 1400, "height": 880})
+    page = context.new_page()
+    writes = []
+    page.on("request", lambda req: writes.append(req.method) if req.method != "GET" else None)
+
+    def respond(route):
+        action = urlsplit(route.request.url).path.split("/")[-1]
+        row = evidence(action)
+        if action == "action-first-1":
+            row["verdict"]["status"] = "mismatch"
+            row["manifest_digest"] = "sha256:" + "2" * 64
+        route.fulfill(json=row)
+
+    try:
+        page.route("**/steps/repair-counter/actions/*", respond)
+        page.goto(atlas_url + "/#session=first&lang=" + lang)
+        field = page.locator("#command")
+        field.fill("keep the draft while I inspect")
+        page.locator("#orbitHere [data-step=repair-counter]").click()
+        panel = page.locator("#inspection")
+        expect(panel.locator("[data-atlas-diff]")).to_contain_text("+new-action-first-2")
+        ids = panel.locator("details").filter(has=page.locator("summary", has_text=caption))
+        expect(ids.locator("summary")).to_be_visible()
+        ids.locator("summary").click()
+        expect(ids.locator("dd")).to_have_text(
+            ["first", "repair-counter", "action-first-2", "attempt-action-first-2"])
+
+        panel.locator("[data-atlas-attempt]").select_option("action-first-1")
+        values = ["first", "repair-counter", "action-first-1", "attempt-action-first-1"]
+        for tab, witness in (("diff", "+new-action-first-1"), ("tests", "test_action_first_1"),
+                             ("verdict", "sha256:" + "2" * 64)):
+            panel.locator("[data-atlas-tab=" + tab + "]").click()
+            expect(ids).to_have_js_property("open", True)
+            expect(ids.locator("dd")).to_have_text(values)
+            expect(panel.locator("[role=tabpanel]")).to_contain_text(witness)
+        field.focus()
+        page.set_viewport_size({"width": 1040, "height": 720})
+        expect(field).to_be_focused()
+        expect(field).to_have_value("keep the draft while I inspect")
+        expect(panel.locator("[role=tabpanel]")).to_contain_text("sha256:" + "2" * 64)
+        expect(ids.locator("dd")).to_have_text(values)
+        assert not writes, writes
+    finally:
+        close_context(context)
 
 
 def test_root_orbit_changes_attempt_keeps_chat_and_routes_limit_query(chromium, atlas_url):

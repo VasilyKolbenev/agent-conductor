@@ -11,6 +11,7 @@ import {word} from "./arachnid-copy.js";
 import {harnesses, showHarnesses, showLimits, showMemory} from "./arachnid-panels.js";
 import {arachnidConversation} from "./arachnid-conversation.js";
 import {atlasPlanning} from "./arachnid-planning.js";
+import {attachLayout} from "./arachnid-layout.js";
 
 const $ = id => document.getElementById(id);
 const fields = () => new URLSearchParams(location.hash.slice(1));
@@ -445,6 +446,9 @@ function boot() {
     reconnecting = false; connected = true; refresh(); readUtilities(); utility.sync();
   }
   preferences();
+  const layout = attachLayout($("workspace"), {
+    locale: () => locale, stop: () => new AbortController(),
+  });
   syncLayers();
   $("new").addEventListener("click", () => {
     const row = {kind: "new", id: crypto.randomUUID(), title: "", time: new Date().toISOString()};
@@ -500,7 +504,7 @@ function boot() {
   window.addEventListener("hashchange", navigate);
   window.addEventListener("resize", syncLayers);
   window.addEventListener("pagehide", event => {
-    if (!event.persisted) { retire(); scene.dispose(); transport.seal(); }
+    if (!event.persisted) { retire(); scene.dispose(); layout.dispose(); transport.seal(); }
   });
   start();
 }
