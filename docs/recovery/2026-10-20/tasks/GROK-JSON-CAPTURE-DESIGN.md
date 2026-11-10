@@ -1,4 +1,4 @@
-# GROK-JSON-CAPTURE: разделение границ, v2
+# GROK-JSON-CAPTURE: разделение границ, v3
 
 ## Факты и гипотезы
 
@@ -52,7 +52,7 @@ B. Инкрементальный collector отбрасывает thought/progr
   workspace readonly, leases и cleanup проверяются прежней дорогой.
   Новый предел не применяется к историческому run задним числом.
 - Превышение decoded text имеет фиксированный detail
-  `the Grok review result exceeded the artifact byte limit`, явно допущенный
+  `the review result exceeded the artifact byte limit`, явно допущенный
   в `failure_reasons.py`; ledger не скрывает его за общей фразой failed.
 
 ## Итерации и свидетели
@@ -86,3 +86,10 @@ detail добавлен. Блокеров варианта A нет. Линза 
 ordinary JSON форму по документации внутри pinned PE без исполнения CLI,
 публичный шов runtime и различение wire 49 152 / 49 153 при одинаковом text.
 Изменённый wire cap автоматически меняет digest только Grok profile.
+
+## Уточнение до коммита реализации
+
+S3 (Спека/архитектура): generic failure_reasons не имеет права знать бренд
+провайдера. Подтверждено штатным gate G: 1 failed / 1 passed на failure_reasons.
+Фиксированная причина выше сделана нейтральной. Allowlist и сам guard не меняются;
+в adapter/runtime/tests ожидается одна и та же нейтральная фраза.
