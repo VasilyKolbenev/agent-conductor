@@ -374,7 +374,15 @@ def test_a_fresh_page_finishes_a_wait_for_a_signature(chromium, real, throwaway_
         shown = typed_commands(page)
         assert set(shown) == {"commit", "update"}
         the_owner_runs(real, shown)
-        page.locator('[data-focus="wizard:git:continue"]').click()
+        # The signed Git transaction has the same request budget as call(). Check
+        # the browser rendering deadline after that transaction actually responds.
+        with page.expect_response(lambda r: r.url == real.base + SETUP
+                                  and r.request.method == "POST", timeout=60_000) as completed:
+            page.locator('[data-focus="wizard:git:continue"]').click()
+        response = completed.value
+        assert response.status == 201, response.status
+        receipt = response.json()["setup"]
+        assert receipt["mode"] == mode and receipt["signature"] == "present", receipt
         expect(page.locator('[data-git-result="done"]')).to_have_count(1)
         assert posts(asked) == [SETUP], "Check again is one request"
         assert "Signature present, not verified." in page.locator(
