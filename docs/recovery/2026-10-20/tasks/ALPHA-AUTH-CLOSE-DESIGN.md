@@ -102,3 +102,14 @@ Cap: устаревший комментарий _review_attempt_carries обн�
 base.py уже 816 строк в базе; допускается только точное сокращение комментария
 _GUARD_SEAMS с сохранением ссылки на открытый doer-residue долг, без изменения guard.
 Тесты не ужимать, cap не поднимать, целевые изменённые файлы остаются <=800 строк.
+
+## Адресные находки интеграции
+
+Q6 сохраняется только при existing named_proposal(request): file-only legacy
+transport без durable binding остаётся notchecked, без выдуманного факта и без
+перечитывания текущего login. Это не отключает frozen Q10 отказ. Новый реальный
+runtime positive обязан содержать оба Q6 actor proof. Сам writer по-прежнему
+закрыто проверяет request/actor/role/vendor и не принимает чужой запрос.
+Два fake adapter использовали независимые счётчики ids, что заняло evidence-4
+account record вместо последующего verification. Отдельный purpose namespace
+subscription-account-role-actor устраняет эту коллизию, не перехват/игнор ошибки.
