@@ -35,6 +35,10 @@ snapshot от 30.10, не восстановленный M1 от 23.10 и не l
 и test_claude_relay.py (временная plain-fields exception заменяется закрытой схемой).
 Q10 constructor-fixtures для обязательных полей _Attempt обновляет root либо
 исполнитель после сообщения точных имён; безопасных defaults в production не вводить.
+Root обновляет test_command_attempt_ownership.py (явный healthy snapshot) и
+test_relay_road_success.py (отделяет unverified account provenance от work evidence).
+Проверка Q10 охватывает также обычную self-verification без отдельного checker:
+тот же frozen отказ до любой записи verified evidence, не только publish/verify_for.
 
 Закрытие: отдельные code/tests и docs commits, точные результаты/ограничения,
 OPEN-DECISIONS/alpha plan/handoff. Если бюджет достигнут или отсутствует требуемое

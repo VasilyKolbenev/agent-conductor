@@ -113,3 +113,8 @@ runtime positive обязан содержать оба Q6 actor proof. Сам w
 Два fake adapter использовали независимые счётчики ids, что заняло evidence-4
 account record вместо последующего verification. Отдельный purpose namespace
 subscription-account-role-actor устраняет эту коллизию, не перехват/игнор ошибки.
+
+Независимое финальное ревью нашло ещё одну дверь: ordinary verify без независимого
+checker не вызывает publish. Общий frozen read-back guard обязателен также до
+_verify_dispatch/_verify_review/record_dispatch/record_review. Положительный и
+corrupt-credential публичные witnesses без checker проверяют эту дверь отдельно.
