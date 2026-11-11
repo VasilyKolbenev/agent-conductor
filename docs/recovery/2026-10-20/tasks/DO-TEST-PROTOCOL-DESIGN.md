@@ -1,4 +1,4 @@
-# DO-TEST-PROTOCOL — DESIGN v1
+# DO-TEST-PROTOCOL — DESIGN v2
 
 База `e009342`, TASK в этом коммите. Код продукта ещё не изменён.
 Причины подтверждены live-отказом и чтением source, не догадкой о лимитах.
@@ -13,7 +13,7 @@ B. Отдельный graph test-step между изменением и checker
 но меняет число действий и связь отдельного verifier с исходным Do. Для текущего
 контракта потребует больше изменений и новых правил планирования. Отложить.
 
-Выбор A предварителен до двух линз и доказательства доступности доверенного runner.
+Выбран A после source-линз; wiring блокируется до native witness доверенного runner.
 Нельзя скрыто считать имеющийся import внешних counters полноценным исполнением.
 
 ## Test plan и runner
@@ -79,3 +79,45 @@ Inspector отображает rejected, checker, findings, diff и тестов
 не повод поменять старый terminal run или автоматически повторить модельный вызов.
 Отдельный следующий срез: ограниченные correction loops, адаптивные бюджеты,
 renewal/resume и новые тексты основного UI. Далио остаётся доступным процессом.
+
+## Уточнения после линз S1/S2 и E1/E2
+
+S1: install admission принимает только harnesses/name/version. Не ослаблять его.
+Допускается полная побайтная копия уже установленного доверенного Python 3.12.14
+в такую отдельную папку. Без download/dependencies; оригинальные bytes/ACL неизменны.
+Native witness дополнительно проверяет stdlib origin, project unittest.py trap,
+запреты записи work/install, scratch positive и полное возвращение ACL/profiles.
+
+S2: TestPlan размещается перед последним conduct.patch-sources.v1, который
+по-прежнему завершает instruction. Новый conduct.test-plan.v1 содержит один JSON;
+дубли, trailing/malformed data отказывают до модели/патча. Поля закрыты:
+runner=python-unittest-v1, toolchain={install, entry, runtime_digest}, start,
+pattern, timeout_seconds. entry=python.exe, install — plain pinned harness dir,
+runtime_digest — полный ограниченный инвентарь. Plan берётся только из initial
+bound instruction и виден в preview с pin; runtime сверяется до и после теста.
+start — task-relative directory, pattern — basename glob без separators;
+timeout положительный и не превосходит остатка Do deadline. Отсутствие marker
+сохраняет legacy; malformed marker не считается его отсутствием.
+
+E1: Неизменяемый prepared seal под accept/run/actions/action хранит version,
+run/node/action/attempt/instance, grant id/digest, input ids, result manifest digest,
+seed base/object format, snapshot digest, полный workspace digest, переносимый
+subtree digest, report/policy/toolpin digests, checker instance/adapter.
+Digest seal добавляется в checker frame. После checker сохраняется отдельная
+неизменяемая outcome-связь: seal digest, status/reason/checker и hash typed findings.
+Inspector допускает rejected только при совпадении с реальным ActionResultReceipt
+и CorrectionFeedback (attempt, inputs, manifest, checker, findings digest).
+Отсутствие legacy seal — not_recorded; повреждённый — unavailable. Никакого backfill.
+
+E2: workspace digest и subtree digest имеют разную область и не подменяют друг друга.
+Снимок и test report связываются с одними post-patch bytes; whole tree/modes/pins
+сверяются вокруг test и checker. Reporter хранит argv/cwd/status/exit и bounded
+merged stdout+stderr (явно merged), counts и immutable binding. Подмена, ноль тестов,
+таймаут, truncation и незавершённый marker не дают passed и не повторяются.
+Обычные tests failed доступны checker для feedback; ACCEPT не может превратить
+failed tests в verified. Инфраструктурная ошибка не запускает checker модель.
+Существующая acceptance-дорога по-прежнему требует independently verified EvidenceRef.
+
+Новые чистые test policy/runner модули — адаптерный SDK; хранение seals — handoff.
+Published получает optional frozen test_report, отсутствующий у legacy.
+Нельзя публиковать raw output, содержащий секрет; действуют прежние semantic scans.
