@@ -86,3 +86,19 @@ do_rejected_inspector — новый helper account evidence, ArtifactHandoff и
 alpha_readiness_now — relay_env/claude_relay и новые Q8 tests. Общие модули не делят;
 root интегрирует CAPPED и module graph registrations, общие документы/коммиты.
 Конкретные названия helper/API согласовать сообщениями перед shared integration.
+
+## Измерение Q8 и уточнение до реализации схемы
+
+Helper выполнен один раз под штатной lease; profile-roster.json содержит только
+20 имён/типов и roster hash
+821849d871fb70d6aaeac3fc38220a23c9a2bb18b23d2da918a7d9b51f931231.
+ccOnboardingFlags — observed dict. Техническое решение Codex: известное поле явно
+не копируется, как и до правки (старый relay исключал все nested значения).
+Его содержимое не читается повторно, не переносится и не получает доверия.
+Остальные observed plain поля сохраняются с точными типами; unknown/type change
+отказ до copy. Schema/omit policy входят в relay digest. Live compatibility отдельно.
+
+Cap: устаревший комментарий _review_attempt_carries обновить вместе с Q10.
+base.py уже 816 строк в базе; допускается только точное сокращение комментария
+_GUARD_SEAMS с сохранением ссылки на открытый doer-residue долг, без изменения guard.
+Тесты не ужимать, cap не поднимать, целевые изменённые файлы остаются <=800 строк.
