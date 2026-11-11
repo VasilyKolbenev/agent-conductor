@@ -31,6 +31,10 @@ snapshot от 30.10, не восстановленный M1 от 23.10 и не l
 Не менять существующие frozen grant/journal байты или сбрасывать историю проверки.
 Устаревший permissive тест Q10 менять только вместе с доказанным новым контрактом,
 не ради зелёного. Новый файл src/tests регистрировать в CAPPED, cap не поднимать.
+Именованные дополнительные тесты Q8: test_relay_env.py (literal roster из 12 имён)
+и test_claude_relay.py (временная plain-fields exception заменяется закрытой схемой).
+Q10 constructor-fixtures для обязательных полей _Attempt обновляет root либо
+исполнитель после сообщения точных имён; безопасных defaults в production не вводить.
 
 Закрытие: отдельные code/tests и docs commits, точные результаты/ограничения,
 OPEN-DECISIONS/alpha plan/handoff. Если бюджет достигнут или отсутствует требуемое
