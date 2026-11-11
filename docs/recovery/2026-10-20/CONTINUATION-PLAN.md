@@ -1,5 +1,12 @@
 # December Command: продолжение после восстановления
 
+Последнее: ALPHA-CANDIDATE-CORE-REPORT.md. Полный Windows core exact6d4bf97 красный:
+20567 passed + 4 subtests, 19 failed, 441 skipped в каждой кодировке, 56/56 групп.
+CI не запускался. Первым исправить placement account-proof helper и старые
+fixtures/snapshots, затем новый candidate/core/CI; не ослаблять guards и не
+повторять тот же красный SHA без изменения причины. Source чистый, модели/циклы0,
+рабочая Studio 19956c8 и принятый ledger прежние. Стоп теперь12%, последний остаток16%.
+
 Последнее: RS1-CREDENTIAL-DEPTH-REPORT.md, код1147b86 плюс test-onlyf9df475.
 Остаток RS1 локально закрыт на реальных Python3.11.9/3.12.14, без моделей/цикла.
 Следующий шаг — единый release candidate, полный core/CI/installed road и новый

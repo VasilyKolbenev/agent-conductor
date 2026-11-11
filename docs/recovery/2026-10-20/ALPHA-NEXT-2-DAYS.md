@@ -2,7 +2,7 @@
 
 Срез 11.11.2026 после первого принятого counter-src-19956c8-r1.
 Это порядок оставшейся работы, не обещание даты выпуска и не отмена gate стандарта.
-Владелец выделил сегодня ещё 5 п.п.; новый стоп — 15% остатка.
+Владелец позднее изменил стоп на 12% остатка; последний замер — 16%.
 
 ## Уже доказано — не повторять
 
@@ -23,7 +23,11 @@ terminal complete и свободный слот. Отчёт DALIO-FIRST-COMPLET
    Итеративные обходы сохраняют все decoded значения; 200 targets+4subtests/codec,
    пять stdlib методов/codec на обеих версиях. Старые Q8 fixtures исправлены f9df475.
    См. RS1-CREDENTIAL-DEPTH-REPORT.md. Политика Q107742eaa сохраняет fail-closed.
-3. Зафиксировать один release candidate SHA. Полная матрица ci.yml на этом SHA,
+3. Первый кандидат 6d4bf97 проверен полностью: 20567 passed + 4 subtests,
+   19 failed, 441 skipped на кодировку; 56/56 групп. CI не запускался.
+   ALPHA-CANDIDATE-CORE-REPORT.md отделяет два source architecture defects от
+   17 fixture/snapshot failures. Исправить причины без waiver и ослабления защиты,
+   закрепить новый SHA. Затем полная матрица ci.yml на этом SHA,
    полный Windows core в обеих кодировках, installed road; wheel именно этого CI run,
    проверенный sha256. Старый зелёный core 385d035 не заменяет проверку нового кандидата.
 
