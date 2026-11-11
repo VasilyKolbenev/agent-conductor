@@ -62,7 +62,7 @@ class ArtifactHandoff:
         from .attempts import action_request_digest
         from .contracts import _content_digest, _id, frozen_config_bindings
         from .graph_causality import permitted_verifier
-        from .subscription_account import require_adapter_vendor, settled_proof
+        from .adapters.subscription_account import require_adapter_vendor, settled_proof
 
         safe = settled_proof(proof)
         if not isinstance(request, ActionRequest):

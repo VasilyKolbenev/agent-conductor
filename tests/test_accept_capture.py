@@ -12,6 +12,7 @@ from conductor.command.accept_snapshot import read_snapshot
 from conductor.command.adapters.base import AdapterVerification, Published, VerifierBinding
 from conductor.command.adapters.deep_commands import DeepDispatchArgs
 from conductor.command.adapters.harness_workspace import FILE_BUDGET, HarnessWorkspace
+from conductor.command.adapters.headless_login import LoginRoad
 from conductor.command.adapters.independent_check import CheckFrameError, build_frame
 from conductor.command.adapters.independent_transport import IndependentCheckTransport
 from conductor.command.adapters.process import ProcessOutcome
@@ -29,7 +30,7 @@ TASK, SCOPE = "task-one", "scope-one"
 PREFIX = f"_tasks/{SCOPE}/work-001/"
 
 
-class Checker(IndependentCheckTransport):
+class Checker(IndependentCheckTransport, LoginRoad):
     """Real shared check road; only the model boundary returns a deterministic verdict."""
     _retained, _login_residue = 0, False
     manifest = SimpleNamespace(adapter_id="checker")
@@ -40,9 +41,6 @@ class Checker(IndependentCheckTransport):
         self._handoff = ArtifactHandoff(store, clock=lambda: NOW, ids=lambda _kind: "proof-one")
         self.frames = []
         self.during_check = lambda: None
-
-    def _begin_road(self):
-        pass
 
     def _sensitive_values(self):
         return ()

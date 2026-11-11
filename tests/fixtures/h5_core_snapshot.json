@@ -113,6 +113,91 @@
               "CLAUDE.md"
             ],
             "login_relay": {
+              "account_omitted": [
+                "ccOnboardingFlags"
+              ],
+              "account_schema": [
+                [
+                  "accountCreatedAt",
+                  "str"
+                ],
+                [
+                  "accountUuid",
+                  "str"
+                ],
+                [
+                  "billingType",
+                  "str"
+                ],
+                [
+                  "ccOnboardingFlags",
+                  "dict"
+                ],
+                [
+                  "claudeCodeTrialDurationDays",
+                  "null"
+                ],
+                [
+                  "claudeCodeTrialEndsAt",
+                  "null"
+                ],
+                [
+                  "displayName",
+                  "str"
+                ],
+                [
+                  "emailAddress",
+                  "str"
+                ],
+                [
+                  "fullName",
+                  "str"
+                ],
+                [
+                  "hasExtraUsageEnabled",
+                  "bool"
+                ],
+                [
+                  "organizationName",
+                  "str"
+                ],
+                [
+                  "organizationRateLimitTier",
+                  "str"
+                ],
+                [
+                  "organizationRole",
+                  "str"
+                ],
+                [
+                  "organizationType",
+                  "str"
+                ],
+                [
+                  "organizationUuid",
+                  "str"
+                ],
+                [
+                  "profileFetchedAt",
+                  "int"
+                ],
+                [
+                  "seatTier",
+                  "null"
+                ],
+                [
+                  "subscriptionCreatedAt",
+                  "str"
+                ],
+                [
+                  "userRateLimitTier",
+                  "null"
+                ],
+                [
+                  "workspaceRole",
+                  "null"
+                ]
+              ],
               "credential": ".credentials.json",
               "files": [
                 ".credentials.json",
@@ -120,17 +205,29 @@
               ],
               "forbidden_env": [
                 "ALL_PROXY",
+                "ANTHROPIC_AWS_API_KEY",
                 "ANTHROPIC_BASE_URL",
+                "ANTHROPIC_CUSTOM_HEADERS",
+                "ANTHROPIC_FOUNDRY_API_KEY",
+                "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+                "ANTHROPIC_IDENTITY_TOKEN",
+                "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                "ANTHROPIC_UNIX_SOCKET",
                 "CLAUDE_CODE_ACCOUNT_UUID",
                 "CLAUDE_CODE_CUSTOM_OAUTH_URL",
                 "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+                "CLAUDE_CODE_HFI_BEARER_TOKEN",
+                "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
                 "CLAUDE_CODE_HOST_CREDS_FILE",
+                "CLAUDE_CODE_HOST_HTTP_PROXY_PORT",
+                "CLAUDE_CODE_HOST_SOCKS_PROXY_PORT",
                 "CLAUDE_CODE_OAUTH_CLIENT_ID",
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
                 "CLAUDE_CODE_OAUTH_SCOPES",
                 "CLAUDE_CODE_OAUTH_TOKEN",
                 "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
                 "CLAUDE_CODE_ORGANIZATION_UUID",
+                "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
                 "CLAUDE_CODE_USER_EMAIL",
                 "CLAUDE_SECURESTORAGE_CONFIG_DIR",
                 "HTTPS_PROXY",
@@ -307,6 +404,91 @@
               "CLAUDE.md"
             ],
             "login_relay": {
+              "account_omitted": [
+                "ccOnboardingFlags"
+              ],
+              "account_schema": [
+                [
+                  "accountCreatedAt",
+                  "str"
+                ],
+                [
+                  "accountUuid",
+                  "str"
+                ],
+                [
+                  "billingType",
+                  "str"
+                ],
+                [
+                  "ccOnboardingFlags",
+                  "dict"
+                ],
+                [
+                  "claudeCodeTrialDurationDays",
+                  "null"
+                ],
+                [
+                  "claudeCodeTrialEndsAt",
+                  "null"
+                ],
+                [
+                  "displayName",
+                  "str"
+                ],
+                [
+                  "emailAddress",
+                  "str"
+                ],
+                [
+                  "fullName",
+                  "str"
+                ],
+                [
+                  "hasExtraUsageEnabled",
+                  "bool"
+                ],
+                [
+                  "organizationName",
+                  "str"
+                ],
+                [
+                  "organizationRateLimitTier",
+                  "str"
+                ],
+                [
+                  "organizationRole",
+                  "str"
+                ],
+                [
+                  "organizationType",
+                  "str"
+                ],
+                [
+                  "organizationUuid",
+                  "str"
+                ],
+                [
+                  "profileFetchedAt",
+                  "int"
+                ],
+                [
+                  "seatTier",
+                  "null"
+                ],
+                [
+                  "subscriptionCreatedAt",
+                  "str"
+                ],
+                [
+                  "userRateLimitTier",
+                  "null"
+                ],
+                [
+                  "workspaceRole",
+                  "null"
+                ]
+              ],
               "credential": ".credentials.json",
               "files": [
                 ".credentials.json",
@@ -314,17 +496,29 @@
               ],
               "forbidden_env": [
                 "ALL_PROXY",
+                "ANTHROPIC_AWS_API_KEY",
                 "ANTHROPIC_BASE_URL",
+                "ANTHROPIC_CUSTOM_HEADERS",
+                "ANTHROPIC_FOUNDRY_API_KEY",
+                "ANTHROPIC_FOUNDRY_AUTH_TOKEN",
+                "ANTHROPIC_IDENTITY_TOKEN",
+                "ANTHROPIC_IDENTITY_TOKEN_FILE",
+                "ANTHROPIC_UNIX_SOCKET",
                 "CLAUDE_CODE_ACCOUNT_UUID",
                 "CLAUDE_CODE_CUSTOM_OAUTH_URL",
                 "CLAUDE_CODE_FORCE_WINDOWS_CREDMAN",
+                "CLAUDE_CODE_HFI_BEARER_TOKEN",
+                "CLAUDE_CODE_HOST_AUTH_ENV_VAR",
                 "CLAUDE_CODE_HOST_CREDS_FILE",
+                "CLAUDE_CODE_HOST_HTTP_PROXY_PORT",
+                "CLAUDE_CODE_HOST_SOCKS_PROXY_PORT",
                 "CLAUDE_CODE_OAUTH_CLIENT_ID",
                 "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
                 "CLAUDE_CODE_OAUTH_SCOPES",
                 "CLAUDE_CODE_OAUTH_TOKEN",
                 "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
                 "CLAUDE_CODE_ORGANIZATION_UUID",
+                "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
                 "CLAUDE_CODE_USER_EMAIL",
                 "CLAUDE_SECURESTORAGE_CONFIG_DIR",
                 "HTTPS_PROXY",

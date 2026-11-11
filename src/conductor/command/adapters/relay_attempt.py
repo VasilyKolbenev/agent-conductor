@@ -374,7 +374,7 @@ class RelayAttempt:
         ticket = login_relay.copy_in(auth_home, home, spec, ready.digest)
         if isinstance(ticket, login_relay.Refused):
             return NotStarted(ticket.code)
-        from ..subscription_account import make_proof, normalize_vendor
+        from .subscription_account import make_proof, normalize_vendor
         from types import MappingProxyType
         try:
             vendor = normalize_vendor(self.manifest.vendor)

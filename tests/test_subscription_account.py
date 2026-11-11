@@ -169,14 +169,14 @@ def test_a_known_adapter_cannot_record_another_vendors_proof(tmp_path):
     (None, None), ("one", "two"), ("", ""), ("x", None), ("\ud800", "\ud800"),
 ])
 def test_unavailable_account_is_explicitly_unknown(source, relay):
-    from conductor.command.subscription_account import make_proof, settled_proof
+    from conductor.command.adapters.subscription_account import make_proof, settled_proof
     assert settled_proof(make_proof("anthropic", source, relay)) == {
         "version": 1, "vendor": "anthropic", "source": "source_relay",
         "status": "unknown", "account_sha256": None}
 
 
 def test_factory_hashes_only_the_native_id_and_fixed_vendor():
-    from conductor.command.subscription_account import (
+    from conductor.command.adapters.subscription_account import (
         make_proof, normalize_vendor, settled_proof)
     proof = make_proof(normalize_vendor("Anthropic"), "account-local-Q6", "account-local-Q6")
     assert settled_proof(proof) == PROOF

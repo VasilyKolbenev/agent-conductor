@@ -18,6 +18,7 @@ from conductor.command.seed_stage import move_staged, stage_empty
 from tests.relay_roads import CODEX, Site
 from tests.test_command_http_api import PORT, TOKEN, get_headers, ids
 from tests.test_patch_do_policy import ACTUAL, PATCH, REGRESSION, one_grant, reply, work_and_calls
+from tests.test_patch_do_policy import assert_account_evidence
 from tests.test_policy_runtime import NOW
 
 
@@ -133,8 +134,13 @@ def test_seeded_success_exposes_its_verified_snapshot_and_keeps_anchor_unverifie
     assert body["files_total"] == 2 and body["tests"]["protocol"] == f.report
     evidence = [row.value for row in RunStore(f.site.root).read("run").records
                 if row.kind == "evidence"]
-    assert [(row.kind, row.verification) for row in evidence] == [
+    assert [row.kind for row in evidence] == [
+        "subscription_account_v1", "attempt_seal", "subscription_account_v1", "verification"]
+    assert_account_evidence(evidence, f.request)
+    acceptance = [row for row in evidence if row.kind != "subscription_account_v1"]
+    assert [(row.kind, row.verification) for row in acceptance] == [
         ("attempt_seal", "unverified"), ("verification", "verified")]
+    assert [row.verifier_instance_id for row in acceptance] == [None, "checker"]
 
 
 @pytest.mark.parametrize("field,value", [

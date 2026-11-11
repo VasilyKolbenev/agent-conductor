@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from conductor.command.adapters.independent_check import CheckFrame
+from conductor.command.adapters.headless_login import LoginRoad
 from conductor.command.adapters.independent_transport import IndependentCheckTransport
 from conductor.command.adapters.local_test_plan import digest
 from tests.test_local_test_plan import policy
@@ -20,7 +21,7 @@ class Answer:
     result_manifest: object = None
 
 
-class Checker(IndependentCheckTransport):
+class Checker(IndependentCheckTransport, LoginRoad):
     def __init__(self, tmp_path, mutate):
         self.events = []
         self.mutate = mutate
@@ -37,9 +38,6 @@ class Checker(IndependentCheckTransport):
         self._handoff = SimpleNamespace(finish_attempt=lambda *a: self.events.append("finish"))
         self._retained = self._login_residue = False
         self._verdict_argv = ("never-started-model",)
-
-    def _begin_road(self):
-        pass
 
     def _relay_start(self, mode):
         return None
@@ -95,6 +93,6 @@ def test_runtime_bytes_are_held_before_and_after_the_checker(tmp_path, mutate, e
         instruction_document={"content": text, "source_action_id": None}, result_manifest=None)
     request = SimpleNamespace(capability="dispatch", arguments={}, timeout_seconds=30,
                               run_id="run", action_id="action")
-    verifier = SimpleNamespace(model="fake-checker")
+    verifier = SimpleNamespace(instance_id="checker", model="fake-checker")
     answer = checker._check_owned(request, verifier, material)
     assert answer.detail == detail and checker.events == events

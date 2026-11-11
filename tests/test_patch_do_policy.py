@@ -159,6 +159,27 @@ def one_grant(site, **kwargs):
     return get, request
 
 
+def assert_account_evidence(evidence, request):
+    accounts = [row for row in evidence if row.kind == "subscription_account_v1"]
+    assert len(accounts) == 2
+    request_bytes = json.dumps(request.as_dict(), sort_keys=True, ensure_ascii=False,
+                               separators=(",", ":")).encode("utf-8")
+    request_digest = "sha256:" + sha256(request_bytes).hexdigest()
+    for row, role, actor in zip(accounts, ("doer", "checker"), ("doer", "checker")):
+        assert (row.run_id, row.created_by, row.verification, row.verifier_instance_id) == (
+            request.run_id, "codex", "unverified", None)
+        assert row.uri == (
+            f"subscription-account/{request.action_id}/{request.attempt_id}/{role}/{actor}")
+        assert dict(row.extra) == {
+            "binding": {"run_id": request.run_id, "action_id": request.action_id,
+                        "attempt_id": request.attempt_id, "instance_id": "doer",
+                        "actor_instance_id": actor, "adapter_id": "codex", "role": role},
+            "request_digest": request_digest,
+            "proof": {"version": 1, "vendor": "openai", "source": "source_relay",
+                      "status": "local_match", "account_sha256":
+                      "sha256:4eebedef3c736cc27d5dd2486167f10d3cd6bae47dfb846051bdee53b822735e"}}
+
+
 @pytest.mark.parametrize("case", [
     "accept", "reject", "foreign", "stale", "truncated", "patch_error", "concurrent"])
 def test_one_grant_checks_real_changed_bytes_and_never_replays(tmp_path, case, monkeypatch):
@@ -203,8 +224,19 @@ def test_one_grant_checks_real_changed_bytes_and_never_replays(tmp_path, case, m
             assert receipt.outcome == expected, receipt.detail
             assert calls == ["prepare", "apply", "check"]
             assert (work / "count.py").read_bytes() == ACTUAL
-        assert [r.verifier_instance_id for r in get("evidence")] == (
+        evidence = get("evidence")
+        expected_kinds = (["subscription_account_v1"] * 2
+                          if case in ("accept", "reject") else [])
+        if case == "accept":
+            expected_kinds.append("verification")
+        assert [row.kind for row in evidence] == expected_kinds
+        if case in ("accept", "reject"):
+            assert_account_evidence(evidence, request)
+        verification = [row for row in evidence if row.kind == "verification"]
+        assert [r.verifier_instance_id for r in verification] == (
             ["checker"] if case == "accept" else [])
+        assert [r.verification for r in verification] == (
+            ["verified"] if case == "accept" else [])
         before = calls.copy()
         assert site.adapter.execute(site.adapter.prepare(request)).outcome == "unknown"
         assert calls == before
