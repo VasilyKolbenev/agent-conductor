@@ -405,9 +405,9 @@ def test_a_nested_value_in_the_account_object_is_never_written_to_the_relay(tmp_
     home = real_home("claude", tmp_path)
     profile = json.loads((home / ".claude.json").read_text("utf-8"))
     profile["oauthAccount"].update({
-        "hasExtraUsageEnabled": True, "billingType": None,
-        "nested": {"deep": {"token": "fake-nested-value-must-not-travel"}},
-        "list": ["fake-listed-value-must-not-travel"]})
+        "hasExtraUsageEnabled": True, "billingType": "subscription",
+        "ccOnboardingFlags": {"deep": {"token": "fake-nested-value-must-not-travel"},
+                              "list": ["fake-listed-value-must-not-travel"]}})
     fake.put(home, ".claude.json", profile)
     relay = fake.relay_home(tmp_path)
 
@@ -415,9 +415,9 @@ def test_a_nested_value_in_the_account_object_is_never_written_to_the_relay(tmp_
 
     assert isinstance(ticket, Ticket), ticket
     account = json.loads((relay / ".claude.json").read_text("utf-8"))["oauthAccount"]
-    assert account["hasExtraUsageEnabled"] is True and account["billingType"] is None
+    assert account["hasExtraUsageEnabled"] is True and account["billingType"] == "subscription"
     assert account["accountUuid"] == fake.CLAUDE_ACCOUNT
-    assert "nested" not in account and "list" not in account
+    assert "ccOnboardingFlags" not in account
     assert b"must-not-travel" not in fake.all_bytes(relay)
 
 
@@ -576,7 +576,7 @@ def test_a_refresh_value_found_in_the_account_object_is_refused_and_not_copied(t
     """The profile is the vendor's file, and it is not trusted to be free of the secret."""
     home = real_home("claude", tmp_path)
     profile = json.loads((home / ".claude.json").read_text("utf-8"))
-    profile["oauthAccount"]["note"] = fake.CLAUDE_REFRESH
+    profile["oauthAccount"]["displayName"] = fake.CLAUDE_REFRESH
     fake.put(home, ".claude.json", profile)
     relay = fake.relay_home(tmp_path)
     digest = digest_of("claude", home)
