@@ -71,3 +71,9 @@ OS-причина не измерена, а подавление не доказ
 поймать transient unknown/last-reread и fail-closed never-progress. Existing real
 четыре interruption случая сохраняют точные identity/token/thread/beat assertions.
 Независимое чтение C1 до реализации; новый факт допускает этот дополнительный срез.
+
+C1.1 независимо подтверждён, GO: контракт int|None и atomic writer не менять.
+C1.2 принят: отдельно проверить transient None, valid growth без последнего
+reread, persistent None и stagnant/decreasing ints. Два последних обязаны дать
+именованный отказ о прогрессе в прежний deadline, не synthetic interruption.
+Root утвердил реализацию только observer/test seam; real retirement cases прежние.
