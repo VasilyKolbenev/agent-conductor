@@ -17,6 +17,9 @@ bounded fake JSON: parser принимает его, затем credential_value
 Q10 запрещает публикацию. Другие recursive readers исследовать, но не менять без RED.
 
 Разрешены login_home.py, новый tests/test_credential_depth.py, CAPPED root.
+Уточнение по подтверждённому natural RED: также codex_quota.py::_cells, без смены
+metadata admission. Для локального Python3.11 разрешён изолированный официальный
+PSF embed runtime после сравнения published sha256+MD5, без системной установки.
 Сначала DESIGN с вариантами и независимыми линзами, v2 до кода; тест old-code RED,
 target UTF-8/native CP1251, реальные доступные 3.11/3.12 свидетели и meaningful mutants
 в полной копии с import/restore SHA. Не скачивать/запускать сторонние инструменты
