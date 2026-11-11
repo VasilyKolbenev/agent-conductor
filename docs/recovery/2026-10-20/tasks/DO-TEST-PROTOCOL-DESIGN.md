@@ -1,4 +1,4 @@
-# DO-TEST-PROTOCOL — DESIGN v2
+# DO-TEST-PROTOCOL — DESIGN v3
 
 База `e009342`, TASK в этом коммите. Код продукта ещё не изменён.
 Причины подтверждены live-отказом и чтением source, не догадкой о лимитах.
@@ -121,3 +121,13 @@ failed tests в verified. Инфраструктурная ошибка не з�
 Новые чистые test policy/runner модули — адаптерный SDK; хранение seals — handoff.
 Published получает optional frozen test_report, отсутствующий у legacy.
 Нельзя публиковать raw output, содержащий секрет; действуют прежние semantic scans.
+
+## Уточнение E3 после ревью общей реализации
+
+E3: файловые seal/outcome сами не якорят полный accumulated snapshot в журнале.
+До checker handoff добавляет отдельный EvidenceRef kind=attempt_seal,
+verification=unverified, uri=attempt-seal/action, digest prepared seal и точные
+action/attempt/grant links. Это свидетельство сохранения, не проверка и не приёмка.
+Projection требует единственную такую запись до результата/feedback и сверяет digest.
+Подмена snapshot вместе с пересчётом файловых seal/outcome не меняет журнал и отказывает.
+Регрессия меняет mode или добавляет accumulated row при прежних current-file hashes.
