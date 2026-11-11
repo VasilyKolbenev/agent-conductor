@@ -6,7 +6,10 @@
 пять успешных task nodes, 3 native unittest passed, отдельный checker verified,
 обе human approvals, slot free. Продукт/CAPPED 19956c8, Studio на 7830.
 Сценарий/Do не повторять; сохранённые raw evidence использовать как fixture.
-Следующее — локальное исправление UI-NATIVE-SUMMARY-1, затем оставшиеся alpha gates,
+UI-NATIVE-SUMMARY-1 теперь локально исправлен (77b8104): 28 browser + 327 structure
+passed/codec, три мутанта пойманы; защищённый продукт пока прежний 19956c8.
+Следующее — pre-alpha security debts, затем единый candidate/CI/clean onboarding:
+ALPHA-NEXT-2-DAYS.md. Остальные alpha gates сохраняются,
 включая Kimi live subscription и собственные подключения новых пользователей.
 Один принятый Windows rehearsal не закрывает выпуск, четыре harness и автономные loops.
 Ниже сохранён исходный план восстановления и его исторические ограничения;
