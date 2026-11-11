@@ -14,7 +14,9 @@ UnicodeEncodeError в credential_values. Не читать настоящие lo
 Глубина 600 на текущем Python 3.12 не бросила: прежнее утверждение о deep crash
 не считать новым измерением; нужны отдельный различающий тест и точная граница вывода.
 
-Разрешены login_home.py и существующий tests/test_harness_login_leaks.py.
+Разрешены login_home.py и новый tests/test_credential_read.py: существующий
+test_harness_login_leaks.py уже 793 строки, его не ужимать ради cap.
+Root добавляет новый файл в CAPPED (tests/test_command_line_cap.py) вместе с кодом.
 Документы/решения/handoff правит root. Исполнитель не коммитит.
 Red старого кода, позитивный valid-neighbor witness, два режима кодировки,
 relevant caller tests, no-op/drop-bad-value/recursive mutants на полных копиях.
