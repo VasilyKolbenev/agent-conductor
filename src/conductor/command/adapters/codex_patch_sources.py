@@ -13,15 +13,16 @@ _HEADER = ("\n\nTASK SOURCE FILES\nCurrent contents for the following task-relat
 SOURCE_MARKER = "\n\nconduct.patch-sources.v1\n"
 
 
-def _names(instruction):
+def _names(instruction, marker=SOURCE_MARKER):
     if instruction is None or instruction.source_action_id is not None:
         return ()
-    from .local_test_plan import plan_for
-    plan_for(instruction)
-    if instruction.content.count(SOURCE_MARKER) > 1:
+    if marker == SOURCE_MARKER:
+        from .local_test_plan import plan_for
+        plan_for(instruction)
+    if instruction.content.count(marker) > 1:
         raise codex_patch.PatchRefused("invalid patch source list")
-    _, marker, encoded = instruction.content.partition(SOURCE_MARKER)
-    if not marker:
+    _, found, encoded = instruction.content.partition(marker)
+    if not found:
         return ()
     try:
         names = json.loads(encoded)
@@ -39,8 +40,9 @@ def _names(instruction):
     return names
 
 
-def source_section(workspace, args, work, before, instruction, sensitive_values):
-    names = _names(instruction)
+def source_section(workspace, args, work, before, instruction, sensitive_values,
+                   marker=SOURCE_MARKER):
+    names = _names(instruction, marker)
     if not names:
         return ""
     prefix = workspace.subtree(work)

@@ -347,12 +347,12 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         refused = self._homes_refusal(request, "review")
         if refused is not None:
             return refused
-        # The material is resolved BEFORE the version preflight, as on the
-        # dispatch road: a review whose inputs this run cannot hand it is
-        # refused before any process is spawned.
+        # Resolve every supplied material before any version or model process.
         try:
             inputs = self._inputs(request, args.target_artifact_refs)
             task = self._review_task(args, inputs)
+            from .review_sources import materialize
+            task, source_before = materialize(self, args, inputs, task)
             payload = self._task_stdin(task)
         except _ProposalUnknown as error:
             return self._receipt(
@@ -368,14 +368,17 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         refused = self._preflight(request) or self._preflight_residue(request)
         if refused is not None:
             return refused
-        return self._run_review(request, args, inputs, payload, model)
+        return self._run_review(request, args, inputs, payload, model, source_before=source_before)
 
     def _run_review(
             self, request: ActionRequest, args: DeepReviewArgs,
             inputs: tuple[ArtifactDocument, ...], payload: bytes,
-            model: str | None = None) -> ActionResultReceipt:
+            model: str | None = None, *, source_before=None) -> ActionResultReceipt:
         work = self._workspace.work_dir(args.work_item_id, args.task_scope)
-        before = self._workspace.digest_work_tree()
+        before = self._workspace.digest_work_tree() if source_before is None else source_before
+        if source_before is not None and self._workspace.digest_work_tree() != before:
+            return self._receipt(
+                request, "failed", None, "review source tree changed before execution")
         limit = self._review_output_limit(request)
         # Only stdout can become an artifact. Vendor stderr may contain credentials.
         outcome = self._attempt(
@@ -438,11 +441,8 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             inputs: tuple[ArtifactDocument, ...]) -> str:
         """Separate the plan's purpose, supplied material and newly created output.
 
-        The result reference names where the product publishes the reply, never
-        another required input. The purpose is labelled project-authored context
-        before the documents; the entire bounded frame still travels on stdin.
-        A step that names no purpose is asked to review its inputs, by the same
-        sentence, so the two frames still differ by the purpose clause alone.
+        The result reference is an output, not another required input. A labelled
+        project-authored purpose selects the work; its absence means review inputs.
         """
         task = (
             f"Analyze the supplied input materials for work item {args.work_item_id} "

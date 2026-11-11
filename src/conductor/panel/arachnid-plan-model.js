@@ -50,7 +50,7 @@ function admitProviders(catalog) {
   }
 }
 
-function dalioDocument(catalog, locale) {
+function dalioDocument(catalog, locale, reviewSources) {
   const starters = catalog.starters?.filter(s => s.starter_id === "dalio-v6" && s.revision === 6);
   const source = starters?.[0]?.document;
   need(starters?.length === 1 && source?.template_id === "template-dalio" && source.revision === 6
@@ -71,7 +71,14 @@ function dalioDocument(catalog, locale) {
       need(n.capability === "review" && Array.isArray(args.target_artifact_refs), "starter_unavailable");
       args.target_artifact_refs = [...new Set([...args.target_artifact_refs, "artifact-brief"])];
     }
-    return {...n, arguments: args, timeout_seconds: 600, attempt_bound: 1};
+    let purpose = n.purpose;
+    if (n.node_id === "diagnose" && reviewSources) {
+      args.target_artifact_refs = [...new Set([...args.target_artifact_refs, "source-context"])];
+      purpose = "Inspect the supplied task source code and explain the concrete cause of the "
+        + "reported defect. Distinguish existing inputs from future Do and checker results";
+    }
+    return {...n, ...(purpose === undefined ? {} : {purpose}), arguments: args,
+      timeout_seconds: 600, attempt_bound: 1};
   });
   return {schema_version: source.schema_version, title: locale === "ru" ? "Далио · Codex и Grok" : "Dalio · Codex and Grok",
     execution_contract: "bounded-run-v1", nodes, edges: source.edges};
@@ -99,28 +106,31 @@ function namedSources(brief) {
   return [...names.values()];
 }
 
-export function recordedDalio(request, catalog, baseCommit) {
+export function recordedDalio(request, catalog, baseCommit, {reviewSources = true} = {}) {
   const {advisorId, projectId, proposal, brief, locale} = request;
   need(usableBrief(brief), "proposal_invalid");
   verifyProposal(proposal);
   need(typeof baseCommit === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(baseCommit), "source_required");
+  need(typeof reviewSources === "boolean", "proposal_invalid");
   const {roles, limits} = dalioOutline();
-  const document = dalioDocument(catalog, locale);
   const {taskId, runId, workflowId} = targetIds(request);
   const sourcePaths = namedSources(brief);
+  const document = dalioDocument(catalog, locale, reviewSources && sourcePaths.length > 0);
   const instruction = locale === "ru"
     ? "Подготовь ограниченную правку в рамках принятого плана и брифа. Изменяй только файлы задачи."
     : "Prepare a bounded patch for the accepted plan and brief. Modify only files in the task.";
   const inputs = {"artifact-brief": brief + "\n\n" + proposal.criterion,
     "instruction-plan": instruction + (sourcePaths.length
       ? "\n\nconduct.patch-sources.v1\n" + JSON.stringify(sourcePaths) : "")};
+  if (reviewSources && sourcePaths.length) inputs["source-context"] =
+    "\n\nconduct.review-sources.v1\n" + JSON.stringify(sourcePaths);
   const title = [...brief.trim().replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")].slice(0, 160).join("");
   return {projectId, advisorId, brief, proposal, locale, baseCommit, taskId, title, runId, workflowId,
     roles, inputs, document, limits, instruction, sourcePaths};
 }
 
-export function compileDalio(request, catalog, git) {
+export function compileDalio(request, catalog, git, options) {
   need(git?.git?.state === "repo", "source_required");
   admitProviders(catalog);
-  return recordedDalio(request, catalog, git.git.head?.commit);
+  return recordedDalio(request, catalog, git.git.head?.commit, options);
 }

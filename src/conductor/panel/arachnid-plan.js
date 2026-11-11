@@ -88,6 +88,24 @@ async function workflow(road, p) {
   await ensure(published, () => road.write("revisions", p.workflowId, {reviewed_digest: digest, revision: 1}));
 }
 
+function reviewSourceMode(document) {
+  need(Array.isArray(document?.nodes), "workflow_conflict");
+  const nodes = document.nodes.filter(node => node.node_id === "diagnose");
+  need(nodes.length === 1 && Array.isArray(nodes[0].arguments?.target_artifact_refs),
+    "workflow_conflict");
+  return nodes[0].arguments.target_artifact_refs.includes("source-context");
+}
+
+async function frozenReviewMode(road, workflowId) {
+  const state = await road.read(path.workflow(workflowId));
+  need(Array.isArray(state?.revisions) && !state.unreadable_revisions?.length, "workflow_conflict");
+  if (state.revisions.length) {
+    need(same(state.revisions, [1]), "workflow_conflict");
+    return reviewSourceMode((await road.read(path.revision(workflowId, 1)))?.document);
+  }
+  return state.draft ? reviewSourceMode(state.draft.document) : true;
+}
+
 async function task(road, p) {
   await ensure(async () => {
     const facts = await road.read(path.tasks());
@@ -219,7 +237,10 @@ export async function prepareDalio(door, request) {
   const road = session(door, request.projectId);
   await road.owner();
   const locale = await approvedAdvice(road, request);
-  const p = compileDalio({...request,locale}, await road.read(path.workflows()), await road.read(path.git()));
+  const catalog = await road.read(path.workflows());
+  const reviewSources = await frozenReviewMode(road, targetIds(request).workflowId);
+  const p = compileDalio({...request,locale}, catalog,
+    await road.read(path.git()), {reviewSources});
   await workflow(road, p);
   await task(road, p);
   await seed(road, p);
@@ -262,8 +283,10 @@ export async function restoreDalio(door, request) {
   if (!state.authorization) return null;
   const locale = await approvedAdvice(road, request);
   const preparation = await road.read(path.preparation(taskId));
-  const p = recordedDalio({...request,locale}, await road.read(path.workflows()), preparation?.seed?.base_commit);
   const revision = await road.read(path.revision(workflowId, 1));
+  const reviewSources = reviewSourceMode(revision?.document);
+  const p = recordedDalio({...request,locale}, await road.read(path.workflows()),
+    preparation?.seed?.base_commit, {reviewSources});
   need(same(revision?.document, {...p.document, template_id:workflowId, revision:1}), "workflow_conflict");
   await seed(road, p, true);
   await inputs(road, p, true, true);

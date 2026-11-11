@@ -11,6 +11,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/command/adapters/review_sources.py",
+    "tests/test_review_source_context.py",
+    "tests/test_arachnid_review_sources.py",
     "tests/test_desk_test_preview.py",
     "browser_tests/test_local_test_preview.py",
     "tests/test_local_test_checker.py",
