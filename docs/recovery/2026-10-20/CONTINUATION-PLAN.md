@@ -1,5 +1,12 @@
 # December Command: продолжение после восстановления
 
+Актуально12.11: ALPHA-CORE-REPAIR-REPORT.md и HANDOFF-2026-11-12.md.
+d7334d6 локально56/56green:20587passed+4subtests/0failed/441skipped на mode.
+CI43106716036 запущен на exactSHA, но POSIX collection/installed root уже красные.
+Первым исправить ранние Windows imports и stale root provenance, затем остальные
+CI jobs/новыйcandidate; защиты/SHA checks сохранить. Стоп12%, последний остаток15%.
+Принятый цикл/Studio19956c8/ledger не повторять и не менять. Старые пункты ниже — история.
+
 Последнее: ALPHA-CANDIDATE-CORE-REPORT.md. Полный Windows core exact6d4bf97 красный:
 20567 passed + 4 subtests, 19 failed, 441 skipped в каждой кодировке, 56/56 групп.
 CI не запускался. Первым исправить placement account-proof helper и старые
