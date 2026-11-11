@@ -137,6 +137,20 @@ rehearsal with Kimi Code follows confirmed subscription access and a verified ta
 on that harness. Previous Claude Code rehearsal evidence remains attached to its
 specific version and steps. **Arachnid** is the owner's proposed product name.
 
+**Evidence update, 2026-11-11:** the bounded Windows Codex + Grok rehearsal
+`counter-src-19956c8-r1` is now accepted by the owner and terminal `complete`.
+Five task steps, a real patch, three native unittest tests and a separate Codex checker
+passed. A human plan revision and two human approvals were involved. This closes this
+rehearsal item, not ALPHA-FOUR, clean-user onboarding or autonomous correction loops.
+See [the accepted-cycle report](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
+**Обновление доказательств, 11.11.2026:** учебный Windows-цикл Codex + Grok
+`counter-src-19956c8-r1` принят владельцем, terminal complete. Пять рабочих шагов,
+реальный патч, три native unittest и отдельный checker прошли. План уточнялся человеком,
+оба human gate приняты владельцем. Закрыт этот сценарий; ALPHA-FOUR, подключения новых
+пользователей и автономные correction loops остаются отдельными критериями.
+Доказательства — в [отчёте принятого цикла](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
 ### Arachnid Studio: рабочее место оператора
 
 Решение владельца от 9 ноября 2026. Первым экраном Studio должен быть разговор с Атласом.
