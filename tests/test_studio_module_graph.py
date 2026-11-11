@@ -75,7 +75,10 @@ PERMITTED_IMPORTS = {
     "studio-notice-copy.js": frozenset(),
     "studio-agents-copy.js": frozenset(),
     'studio-budget-guidance.js': frozenset(),
-    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js'}),
+    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js',
+        './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js',
+        './studio-test-preview.js'}),
+    'studio-test-preview.js': frozenset({'./command-projection.js', './studio-model.js'}),
     'studio-automation-providers.js': frozenset({'./studio-model.js'}),
     'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
     'studio-automation-copy.js': frozenset(set()),
@@ -318,7 +321,8 @@ PERMITTED_IMPORTS = {
     #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
     #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
     #: that gives a key its stable bytes.
-    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js", "./studio-budget-guidance.js"}),
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js", "./studio-budget-guidance.js",
+                                        "./studio-test-preview.js"}),
     #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
     #: functions over the card's slice. It reaches the card's own module and nothing else.
     "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),

@@ -16,6 +16,10 @@ SOURCE_MARKER = "\n\nconduct.patch-sources.v1\n"
 def _names(instruction):
     if instruction is None or instruction.source_action_id is not None:
         return ()
+    from .local_test_plan import plan_for
+    plan_for(instruction)
+    if instruction.content.count(SOURCE_MARKER) > 1:
+        raise codex_patch.PatchRefused("invalid patch source list")
     _, marker, encoded = instruction.content.partition(SOURCE_MARKER)
     if not marker:
         return ()

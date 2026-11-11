@@ -6,6 +6,7 @@ import {exactKeys, isDigest, isId, isInstant, isPlainObject} from "./studio-mode
 import {compareInstants} from "./studio-taskruns.js";
 import {validProviderFacts} from "./studio-automation-providers.js";
 import {canonicalJson} from "./command-projection.js";
+import {validTestSteps} from "./studio-test-preview.js";
 
 export const AUTOMATION_STATES = Object.freeze(["unconfigured", "ready", "running", "waiting",
   "paused", "revoked", "expired", "complete", "stalled", "restart_required"]);
@@ -76,6 +77,7 @@ export function projectAutomationPreview(value, detail) {
   const keys = ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"];
   if (marked !== undefined) keys.push("grok_diagnostic_steps");
   if (value?.patch_steps !== undefined) keys.push("patch_steps");
+  if (value?.test_steps !== undefined) keys.push("test_steps");
   if (!automationEligible(detail) || !object(value, keys)
       || !validProviderFacts(value.provider_facts, detail)
       || !object(value.terms, [...TERMS, "duration_seconds"]) || !validTerms(value.terms, detail)
@@ -96,7 +98,7 @@ export function projectAutomationPreview(value, detail) {
         || detail.graph.definition_digest !== value.terms.graph_digest
         || !patches.every((node, i) => node.node_id === value.patch_steps[i])) return null;
   }
-  return copy(value);
+  return validTestSteps(value, detail) ? copy(value) : null;
 }
 function validGrant(grant, detail) {
   return object(grant, GRANT) && validTerms(grant, detail) && grant.schema_version === 2

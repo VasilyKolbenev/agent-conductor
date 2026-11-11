@@ -44,6 +44,10 @@ ALLOWED_SDK_RELATIVE_IMPORTS = frozenset({
     (3, "ownership_errors")})
 # Each named module keeps its own filesystem imports and the value-module call bans.
 FILE_IMPORTS = {
+    "local_test_plan.py": {"os", "stat", "time", "..containment"},
+    "local_test_receipt.py": {"base64"},
+    "local_test_run.py": {"base64", "time", "..containment"},
+    "independent_transport.py": {"time"},
     "codex_patch.py": {"os", "stat", "time", "..accept_manifest", "..containment",
                        "..long_path", "..work_layout"},
     "codex_patch_dispatch.py": {"time"},
@@ -100,7 +104,7 @@ BANNED_SDK_CALLS = frozenset({
 # argv shape, and the day one of them calls `.run()` itself is the day it grew a
 # second spawn road beside the shared one.
 SDK_INJECTED_RUNNER_CALLERS = frozenset({
-    "deep_adapters.py", "harness_attempt.py"})
+    "deep_adapters.py", "harness_attempt.py", "local_test_run.py"})
 
 
 def an_action(**changes):

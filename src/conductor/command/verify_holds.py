@@ -97,6 +97,10 @@ CHECKER_MARKER_STANDING = "this action already claimed its independent checker; 
 CHECKER_CLAIM_REFUSED = "the checker could not reserve its check, so nothing was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
+TEST_REPORT_REFUSED = "the post-patch test protocol does not match this attempt"
+TEST_EXECUTION_FAILED = "post-patch tests did not produce a complete usable result"
+TESTS_FAILED = "post-patch tests failed; the checker cannot confirm success"
+TEST_RUNTIME_CHANGED = "the pinned test runtime changed around independent checking"
 #: The checker's own shared login lease was refused when its guard was entered, so that attempt
 #: spawned nothing. The ids that follow it come from the two closed lists of `failure_reasons`.
 CHECKER_LEASE_REFUSED = "the checker's shared login lease was refused"

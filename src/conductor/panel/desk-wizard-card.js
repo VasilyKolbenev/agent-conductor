@@ -96,6 +96,15 @@ function stepRow(ctx, row) {
   if (row.grokDiagnostic) item.append(element("p", {
     text: ctx.t("automation.grok_session_diagnostic", {step: row.step})}));
   if (row.patch) item.append(element("p", {text: ctx.t("automation.patch_step")}));
+  if (row.tests) {
+    const plan = row.tests;
+    item.append(element("p", {text: ctx.t("automation.local_tests", {runner: plan.runner,
+      start: plan.start, pattern: plan.pattern,
+      seconds: String(Math.min(plan.timeout_seconds, row.timeout))})}),
+    element("details", {}, [element("summary", {text: ctx.t("automation.test_pin")}),
+      element("pre", {text: JSON.stringify(plan.toolchain, null, 2)})]));
+  } else if (row.testsUnavailable) item.append(element("p", {
+    text: ctx.t("automation.test_preview_unavailable")}));
   if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
     {name: recipientName(ctx, row, "checker")})}));
   return item;

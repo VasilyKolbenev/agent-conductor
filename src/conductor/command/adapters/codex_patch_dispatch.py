@@ -34,6 +34,8 @@ class PatchDispatch:
         # Imported here because result path validation derives reserved names from the catalogue.
         from . import codex_patch as patch
         from .codex_patch_sources import source_section
+        from .local_test_plan import plan_for, vet_runtime
+        from .local_test_run import run_local_tests
         from .patch_publish import PublishUnknown, publish
 
         if (not marked_policy(request) or not args.task_scope or not self._confine
@@ -44,7 +46,10 @@ class PatchDispatch:
         cwd = work.relative_to(self._workspace.root).as_posix()
         try:
             relation = attempt_relation(request)
-            _, _, instruction = self._check_materials[relation]
+            instruction_text, _, instruction = self._check_materials[relation]
+            test_plan = plan_for(instruction, instruction_text)
+            if test_plan is not None:
+                vet_runtime(test_plan, deadline=deadline)
             sources = source_section(self._workspace, args, work, before, instruction,
                                      lambda: (*self._sensitive_values(relation), *self._login_seen))
             payload = self._task_stdin(task_text + sources + INSTRUCTION)
@@ -88,6 +93,10 @@ class PatchDispatch:
                     expected[prefix + name] = hashlib.sha256(image[1]).hexdigest()
             if self._evidence() != expected:
                 raise PublishUnknown()
+            if test_plan is not None:
+                report = run_local_tests(
+                    self, request, args, work, expected, test_plan, deadline)
+                self._test_reports[relation] = report
             return outcome, expected
         except patch.PatchRefused as error:
             return self._receipt(request, "failed", None, str(error))

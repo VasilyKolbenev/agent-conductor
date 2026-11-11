@@ -103,6 +103,51 @@ def _project_files(root, request, seed, snapshot, git):
     return files
 
 
+def _sealed_attempt(root, recovered, request, result, view, git, *, proof=None):
+    from .attempt_protocol import read_attempt_seal, read_bound_protocol
+    from .attempt_test_evidence import read_test_evidence
+    task = frozen_config_task(recovered.config)
+    try:
+        if read_attempt_seal(root, request) is None:
+            return None
+        seed = read_seed(root, task.task_id) if task else None
+        if seed is None:
+            raise SnapshotRefused("attempt_protocol_invalid")
+        if (request.arguments.get("work_item_id") != WORK_ITEM_ID
+                or (seed.task_id, seed.work_scope, seed.work_item_id) != (
+                    task.task_id, task.work_scope, WORK_ITEM_ID)):
+            raise SnapshotRefused("attempt_protocol_invalid")
+        bound = read_bound_protocol(root, recovered, request, seed, result, proof=proof)
+        if bound is None:
+            return None
+        seal, report, feedback = bound
+        snapshot = _snapshot(root, request, seed, seal["snapshot_digest"])
+        if any(not _included(row.path, seed) for row in snapshot.rows):
+            raise SnapshotRefused("snapshot_damaged")
+        rows = {row.path: row for row in snapshot.rows}
+        prefix = f"_tasks/{seed.work_scope}/{seed.work_item_id}/"
+        for file in seal["result_manifest"]["files"]:
+            if not file["path"].startswith(prefix):
+                raise SnapshotRefused("attempt_protocol_invalid")
+            row = rows.get(file["path"][len(prefix):])
+            if (row is None or (file["state"] == "deleted") != (row.state == "deleted")
+                    or file["state"] != "deleted" and (
+                        file["sha256"] != row.sha256 or file["length"] != row.length)):
+                raise SnapshotRefused("attempt_protocol_invalid")
+        shown = {**view, "manifest_digest": snapshot.digest, "files_total": len(snapshot.rows),
+                 "files": _project_files(root, request, seed, snapshot, git),
+                 "tests": read_test_evidence(root, request, snapshot.digest, seed, snapshot,
+                                             protocol=report)}
+        if feedback is not None:
+            from .contract_values import _thaw_json
+            shown["verdict"] = {"status": "rejected", "instance_id": seal["checker"]["instance"],
+                "adapter_id": seal["checker"]["adapter"], "reason": "rejected",
+                "findings": _thaw_json(feedback.payload)["findings"]}
+        return shown
+    except (OSError, ValueError, CorruptSeed, RecursionError, KeyError, TypeError):
+        return {**view, "tests": {**view["tests"], "status": "unavailable"}}
+
+
 def read_attempt(root, recovered, node_id, action_id, *, git=None):
     """Resolve the selected action under its run and node; never select its successor."""
     if recovered.warnings:
@@ -126,9 +171,12 @@ def read_attempt(root, recovered, node_id, action_id, *, git=None):
             "tests": {"status": "not_recorded", "summary": None, "cases": [], "source": None}}
     proof = patch_verifier(recovered, request, result)
     if proof is None:
-        return view
+        return _sealed_attempt(root, recovered, request, result, view, git) or view
     view["verdict"] = {"status": proof.verification, "instance_id": proof.verifier_instance_id,
                        "adapter_id": proof.verified_by}
+    sealed = _sealed_attempt(root, recovered, request, result, view, git, proof=proof)
+    if sealed is not None:
+        return sealed
     digest = proof.extra.get("accept_manifest_digest")
     tree = proof.extra.get("work_tree_digest")
     if (result.outcome != "succeeded" or proof.verification != "verified"

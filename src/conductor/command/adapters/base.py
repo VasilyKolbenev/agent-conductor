@@ -136,6 +136,7 @@ class Published:
     result_document: Mapping[str, Any] | None = field(default=None, repr=False)
     instruction_document: Mapping[str, Any] | None = field(default=None, repr=False)
     result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
+    test_report: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.refusal is not None and (
@@ -173,6 +174,13 @@ class Published:
         if self.instruction_document is not None:
             object.__setattr__(self, "instruction_document", _contract(
                 _object, "instruction document", self.instruction_document))
+        if self.test_report is not None:
+            from .local_test_receipt import settled_report
+            try:
+                report = settled_report(self.test_report)
+            except (ValueError, TypeError) as error:
+                raise AdapterContractError("invalid local test report") from error
+            object.__setattr__(self, "test_report", _contract(_object, "test report", report))
 
 
 def _published(value: object) -> Published:
@@ -183,7 +191,8 @@ def _published(value: object) -> Published:
         input_artifact_ids=value.input_artifact_ids, sensitive=value.sensitive,
         instruction=value.instruction, input_documents=value.input_documents,
         result_document=value.result_document,
-        instruction_document=value.instruction_document, result_manifest=value.result_manifest)
+        instruction_document=value.instruction_document, result_manifest=value.result_manifest,
+        test_report=value.test_report)
 
 
 def _freeze_manifest(value):

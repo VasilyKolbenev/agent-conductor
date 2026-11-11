@@ -144,6 +144,7 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         self._check_materials: dict[
             tuple[str, str, str, str],
             tuple[str | None, tuple[ArtifactDocument, ...], ArtifactDocument | None]] = {}
+        self._test_reports: dict[tuple[str, str, str, str], dict] = {}
 
     def prepare(self, request: ActionRequest) -> PreparedAction:
         if request.capability != REVIEW_CAPABILITY:
@@ -525,16 +526,12 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             "it produced was published")
 
     def _forget(self, request: ActionRequest) -> None:
-        """Drop everything ONE attempt left in memory, by its full relation.
-
-        One place, so a new road out cannot forget to be added to it, and by the
-        relation rather than the action id, so forgetting one run's attempt
-        never reaches into another's.
-        """
+        """Release one attempt's cached inputs, observations and local test report."""
         relation = attempt_relation(request)
         self._dispatch_inputs.pop(relation, None)
         self._materials.pop(relation, None)
         self._check_materials.pop(relation, None)
+        self._test_reports.pop(relation, None)
         self._review_attempts.pop(relation, None)
         # The snapshot and the login values this attempt saw are the BASE's to
         # release, and it is asked rather than copied: two bodies dropping the
@@ -690,7 +687,8 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             ids, self._sensitive_values(relation), instruction,
             tuple(row.as_dict() for row in inputs),
             None if result_document is None else result_document.as_dict(),
-            None if bound is None else bound.as_dict())
+            None if bound is None else bound.as_dict(),
+            test_report=self._test_reports.get(relation))
 
     def publish(self, request, result) -> Published:
         """The doer's own holds and exact live material; never a self-verdict."""

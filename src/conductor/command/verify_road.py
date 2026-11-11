@@ -22,6 +22,10 @@ PUBLISH_REASONS = MappingProxyType({
     "env_echo": words.DOER_ENV_ECHO,
 })
 CHECK_REASONS = MappingProxyType({
+    ("error", "test_report_refused"): words.TEST_REPORT_REFUSED,
+    ("error", "test_execution_failed"): words.TEST_EXECUTION_FAILED,
+    ("error", "tests_failed"): words.TESTS_FAILED,
+    ("error", "test_runtime_changed"): words.TEST_RUNTIME_CHANGED,
     ("error", "frame_over_limit"): words.FRAME_OVER_LIMIT,
     ("error", "frame_env_echo"): words.FRAME_ENV_ECHO,
     ("error", "homes_refused"): words.CHECKER_HOMES_REFUSED,

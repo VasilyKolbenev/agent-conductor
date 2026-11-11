@@ -18,6 +18,7 @@
 // ask's id (`previews`, `seq`, `attempts`, `presses`).
 import {stableJson as stable} from "./desk-wizard-digest.js";
 import {DEPTH, validRecommendation} from "./studio-budget-guidance.js";
+import {validTestRows, validTestSteps} from "./studio-test-preview.js";
 
 export const MAX_REPEATS = 6;
 const COUNTDOWN_CAP = 300;
@@ -154,11 +155,12 @@ export function projectPreview(payload, runId) {
   if (marked !== undefined) keys.push("grok_diagnostic_steps");
   if (payload?.patch_steps !== undefined) keys.push("patch_steps");
   if (payload?.recommendation !== undefined) keys.push("recommendation");
+  if (payload?.test_steps !== undefined) keys.push("test_steps");
   const good = keysAre(payload, keys) && validTerms(payload.terms, runId)
     && validBudget(payload.budget) && validFacts(payload.provider_facts)
     && DIGEST.test(payload.preview_digest) && epochSeconds(payload.previewed_at) !== null
     && epochSeconds(payload.valid_until) !== null;
-  if (!good) return null;
+  if (!good || !validTestRows(payload)) return null;
   if (payload.recommendation !== undefined && !validRecommendation(payload.recommendation, payload.terms)) {
     return null;
   }
@@ -180,6 +182,7 @@ function changedLines(before, after) {
   if (stable(before.grok_diagnostic_steps ?? []) !== stable(after.grok_diagnostic_steps ?? [])
       || stable(before.patch_steps ?? []) !== stable(after.patch_steps ?? []))
     hit.add("steps");
+  if (stable(before.test_steps ?? []) !== stable(after.test_steps ?? [])) hit.add("steps");
   return CARD_LINES.filter((line) => hit.has(line));
 }
 
@@ -648,6 +651,11 @@ function decisionPoints(definition) {
 export function cardFacts(launch, around) {
   if (launch.preview === null) return null;
   const {terms, budget} = launch.preview;
+  const read = launch.reads.run?.status === "ok" ? launch.reads.run.payload : null;
+  const testsConfirmed = read?.run?.run_id === terms.run_id
+    && read.run.config_digest === terms.config_digest
+    && read.graph?.definition_digest === terms.graph_digest && validTestSteps(launch.preview, read);
+  const testRows = new Map((launch.preview.test_steps ?? []).map(row => [row.node_id, row]));
   const clamped = new Map(budget.steps.map((row) => [row.step_id, row.clamped === true]));
   const {byStep, providers, gates} = recipients(launch);
   return {actions: {max: terms.max_actions, of: budget.limits.max_actions},
@@ -657,6 +665,8 @@ export function cardFacts(launch, around) {
     time: terms.max_total_task_seconds, actionTime: terms.max_action_seconds, window: terms.duration_seconds,
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
+      ...(testRows.has(row.node_id) ? {tests: testsConfirmed ? testRows.get(row.node_id).policy : null,
+        testsUnavailable: !testsConfirmed} : {}),
       grokDiagnostic: launch.preview.grok_diagnostic_steps?.includes(row.node_id) === true,
       patch: launch.preview.patch_steps?.includes(row.node_id) === true,
       role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,

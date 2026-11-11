@@ -11,6 +11,22 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "tests/test_desk_test_preview.py",
+    "browser_tests/test_local_test_preview.py",
+    "tests/test_local_test_checker.py",
+    "src/conductor/command/local_test_preview.py",
+    "src/conductor/panel/studio-test-preview.js",
+    "src/conductor/command/adapters/local_test_plan.py",
+    "src/conductor/command/adapters/local_test_run.py",
+    "src/conductor/command/adapters/local_test_receipt.py",
+    "src/conductor/command/adapters/local_test_frame.py",
+    "src/conductor/command/attempt_protocol.py",
+    "tests/test_local_test_protocol.py",
+    "tests/test_local_test_plan.py",
+    "tests/test_local_test_run.py",
+    "tests/test_local_test_preview.py",
+    "tests/test_attempt_rejected_protocol.py",
+    "browser_tests/test_atlas_rejected_protocol.py",
     "browser_tests/test_arachnid_entry.py",
     "browser_tests/test_arachnid_layout.py",
     "src/conductor/panel/arachnid-layout.js",

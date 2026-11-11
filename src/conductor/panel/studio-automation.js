@@ -109,6 +109,15 @@ function reviewedWork(state, preview) {
     }
     if (preview.patch_steps?.includes(node.node_id))
       box.append(note(word(state, "patch_step")));
+    const tests = preview.test_steps?.find(row => row.node_id === node.node_id);
+    if (tests) {
+      const plan = tests.policy;
+      box.append(note(word(state, "local_tests", {runner: plan.runner,
+        start: plan.start, pattern: plan.pattern,
+        seconds: String(Math.min(plan.timeout_seconds, limit.timeout_seconds))})),
+      element("details", {}, [element("summary", {text: word(state, "test_pin")}),
+        element("pre", {text: JSON.stringify(plan.toolchain, null, 2)})]));
+    }
     if (node.arguments?.work_item_id) box.append(note(`work/${node.arguments.work_item_id}`));
   }
   return box;

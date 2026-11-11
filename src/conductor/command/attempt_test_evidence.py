@@ -81,12 +81,17 @@ def _cases(snapshot):
     return found
 
 
-def read_test_evidence(root, request, manifest_digest, seed, snapshot):
+def read_test_evidence(root, request, manifest_digest, seed, snapshot, *, protocol=None):
     root = Path(root).resolve()
     result = {"status": "not_recorded", "summary": None, "cases": [], "source": None}
     try:
         binding = _binding(request, manifest_digest, seed, snapshot)
         result["cases"] = _cases(snapshot)
+        if protocol is not None:
+            from .adapters.local_test_receipt import valid_report
+            report = valid_report(request, protocol)
+            return {**result, "status": "recorded", "source": "native",
+                    "summary": report["counts"], "protocol": report}
         path = _path(root, request)
         _hold(root, path)
         value = json.loads(_read(root, path, _LIMIT), object_pairs_hook=_unique)

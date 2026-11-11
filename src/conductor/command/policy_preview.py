@@ -93,6 +93,12 @@ def build_preview(recovered, body, *, budget, provider_digest, registry, clock, 
                if n.capability == "dispatch" and n.arguments.get("profile") == PATCH_PROFILE]
     if patches:
         preview["patch_steps"] = patches
+    from .artifacts import settled_products
+    from .local_test_preview import test_steps
+    tests = test_steps(executable_nodes(definition), settled_products(values),
+                       instructions, terms["node_limits"])
+    if tests:
+        preview["test_steps"] = tests
     return preview
 
 

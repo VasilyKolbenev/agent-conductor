@@ -1,6 +1,13 @@
 "use strict";
 // English/Russian interface copy only; user text and protocol IDs stay intact.
 export const AUTOMATION_COPY = Object.freeze({
+  "automation.local_tests": [
+    "After applying the patch, before the checker: {runner}, {start}/{pattern}, up to {seconds}s.",
+    "После патча, до проверяющего: {runner}, {start}/{pattern}, до {seconds} с."],
+  "automation.test_pin": ["Pinned test runtime", "Закреплённая среда тестов"],
+  "automation.test_preview_unavailable": [
+    "The test policy could not be matched to this run's instruction.",
+    "Не удалось связать правила тестирования с указанием для этого запуска."],
   "automation.patch_step": ["Codex proposes a patch in read-only mode. This one action also applies it to the task copy. The checker reads the changed files.", "Codex подготовит патч в режиме чтения. Этим же действием приложение применит его к копии задачи. Проверяющий получит изменённые файлы."],
   "automation.patch_method": ["How Do edits files", "Как Do изменяет файлы"],
   "automation.patch_direct": ["Edit directly", "Изменять напрямую"],
