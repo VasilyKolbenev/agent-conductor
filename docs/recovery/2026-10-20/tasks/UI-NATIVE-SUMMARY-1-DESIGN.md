@@ -1,4 +1,4 @@
-# UI-NATIVE-SUMMARY-1: дизайн v1
+# UI-NATIVE-SUMMARY-1: дизайн v2
 
 ## Причина и варианты
 
@@ -14,6 +14,14 @@ B: экспортировать существующий pure formatter и ис�
 Две независимые линзы: do_rejected_inspector — контракт/отрицательные сценарии;
 alpha_readiness_now — стандарт/доказательства и границы альфы. Замечания до кода
 фиксируются в v2, исполнитель Codex; внешние недоступные Opus/Sonnet не имитируются.
+
+Замечание 1.1 (обе линзы): оставить matchesAtlasAttempt единственной дверью к helper,
+не подменять binding и не отображать повреждённый protocol как успех.
+Замечание 1.2 (do_rejected_inspector): resultHere badge тоже читает summary.total
+без nullguard; native timeout может иметь counts null. Badge требует реальных counts,
+а сводка показывает статус без выдуманного нуля; browser ловит pageerror и неверный текст.
+Замечание 2.1 (alpha_readiness_now): helper использовать напрямую в обоих местах,
+legacy external и отказ при несовпадении попытки сохранить. Альфа не следует из UI fix.
 
 ## Швы и границы
 
