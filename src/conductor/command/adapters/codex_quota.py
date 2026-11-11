@@ -67,14 +67,17 @@ def service_for(argv, stdin_bytes: bytes | None) -> SubscriptionRpc | None:
 
 def _cells(value: object, path: tuple = ()):
     """Every string leaf of a JSON value with the place it stands at; object names are no cells."""
-    if isinstance(value, str):
-        yield path, value
-    elif isinstance(value, dict):
-        for name, item in value.items():
-            yield from _cells(item, (*path, name))
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            yield from _cells(item, (*path, index))
+    pending = [(path, value)]
+    while pending:
+        location, item = pending.pop()
+        if isinstance(item, str):
+            yield location, item
+        elif isinstance(item, dict):
+            pending.extend(((*location, name), child)
+                           for name, child in reversed(tuple(item.items())))
+        elif isinstance(item, list):
+            pending.extend(((*location, index), item[index])
+                           for index in range(len(item) - 1, -1, -1))
 
 
 def reply_metadata(home: str, names: tuple[str, ...]) -> dict[str, frozenset[bytes]]:

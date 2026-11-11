@@ -262,14 +262,17 @@ def _read_json(target: Path) -> object:
 
 
 def _strings(value: object) -> list[str]:
-    """Every string inside a JSON value, in no particular order."""
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, dict):
-        return [row for item in value.values() for row in _strings(item)]
-    if isinstance(value, list):
-        return [row for item in value for row in _strings(item)]
-    return []
+    """Every JSON string value, in the original depth-first traversal order."""
+    found, pending = [], [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            found.append(item)
+        elif isinstance(item, dict):
+            pending.extend(reversed(tuple(item.values())))
+        elif isinstance(item, list):
+            pending.extend(reversed(item))
+    return found
 
 
 def _pinned(home: str) -> bool:
