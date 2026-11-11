@@ -11,9 +11,10 @@ The account of the login is not in that file but in the vendor's profile, `.clau
 (`oauthAccount`: `accountUuid`, `organizationUuid`...), which also holds tool servers, projects,
 cached feature flags and a primary API key slot. The relay copies the account object from it into
 a new profile and nothing else, and refuses a login whose account it cannot name. Of the account
-object only the keys whose values are plain (text, number, flag, null) are copied: an object or a
-list inside it is the vendor's to explain, and until the live measurement M2 names the keys the CLI
-needs, a nested value is not carried into a folder a child can read. The profile is read ONCE, in
+object only the measured names and types are admitted. The saved dedicated profile's structural
+roster was measured on 11.11.2026; this is not a new live compatibility measurement. Its observed
+ccOnboardingFlags object is explicitly omitted, as nested values were before. The profile is read
+ONCE, in
 `bootstrap`; the account named for the evidence is read from the bytes that are written, and those
 bytes are part of the digest `copy_in` holds the copy to.
 
@@ -51,6 +52,17 @@ _TEXT = frozenset({"accessToken", "refreshToken", "subscriptionType", "rateLimit
 _NUMBER = frozenset({"expiresAt", "refreshTokenExpiresAt"})
 _KEYS = _TEXT | _NUMBER | {"scopes"}
 _ACCOUNT_KEYS = ("accountUuid", "organizationUuid")
+# Names/types only, from the saved 30.10 profile; no values or nested contents were recorded.
+# Structural roster SHA256: 821849d871fb70d6aaeac3fc38220a23c9a2bb18b23d2da918a7d9b51f931231.
+_ACCOUNT_SCHEMA = (
+    ("accountCreatedAt", "str"), ("accountUuid", "str"), ("billingType", "str"),
+    ("ccOnboardingFlags", "dict"), ("claudeCodeTrialDurationDays", "null"),
+    ("claudeCodeTrialEndsAt", "null"), ("displayName", "str"), ("emailAddress", "str"),
+    ("fullName", "str"), ("hasExtraUsageEnabled", "bool"), ("organizationName", "str"),
+    ("organizationRateLimitTier", "str"), ("organizationRole", "str"),
+    ("organizationType", "str"), ("organizationUuid", "str"), ("profileFetchedAt", "int"),
+    ("seatTier", "null"), ("subscriptionCreatedAt", "str"), ("userRateLimitTier", "null"),
+    ("workspaceRole", "null"))
 
 
 def _typed(key: str, value: object) -> bool:
@@ -66,17 +78,8 @@ def _typed(key: str, value: object) -> bool:
     return type(value) is list and all(type(row) is str for row in value)
 
 
-def _plain(value: object) -> bool:
-    """Whether a value is text, a number, a flag or null: nothing nested."""
-    return value is None or type(value) in (str, int, float, bool)
-
-
-def _account(home: object) -> dict | None:
-    """The plain keys of the `oauthAccount` object of the vendor's profile, or None.
-
-    None if the profile does not name an account (both uuids are non-empty text). Whatever is
-    nested in the object (an object, a list) is left out.
-    """
+def _account(home: object, schema, omitted) -> dict | None:
+    """The closed measured account fields, without the explicitly omitted nested object."""
     leaf = read_leaf(Path(home) / PROFILE, limit=PROFILE_LIMIT)
     if isinstance(leaf, Refused):
         return None
@@ -85,12 +88,20 @@ def _account(home: object) -> dict | None:
         return None
     if any(type(account.get(key)) is not str or not account[key] for key in _ACCOUNT_KEYS):
         return None
-    return {key: value for key, value in account.items() if _plain(value)}
+    allowed = dict(schema)
+    if any(key not in allowed or ("null" if value is None else type(value).__name__)
+           != allowed[key] for key, value in account.items()):
+        return None
+    return {key: value for key, value in account.items() if key not in omitted}
 
 
 @dataclass(frozen=True)
 class ClaudeRelay(RelaySpec):
     """The relay of Claude Code; its facts are in `CLAUDE_RELAY`."""
+
+    # Dataclass fields: policy_providers freezes them into the same grant digest as the profile.
+    account_schema: tuple[tuple[str, str], ...] = _ACCOUNT_SCHEMA
+    account_omitted: tuple[str, ...] = ("ccOnboardingFlags",)
 
     def admit(self, doc: dict) -> str | None:
         if set(doc) != {SECTION}:
@@ -107,7 +118,7 @@ class ClaudeRelay(RelaySpec):
         return "console_plan" if plan_value(plan) == API_BILLING_PLAN else None
 
     def bootstrap(self, real_home: Path) -> dict[str, bytes] | Refused:
-        account = _account(real_home)
+        account = _account(real_home, self.account_schema, self.account_omitted)
         if account is None:
             return Refused("account_unknown")
         profile = json.dumps({"oauthAccount": account}, separators=(",", ":")).encode("utf-8")

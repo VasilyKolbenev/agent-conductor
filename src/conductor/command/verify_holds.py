@@ -74,6 +74,10 @@ DOER_HOME_RETAINED = (
     "offered for independent verification")
 DOER_TREE_CHANGED = "the review doer changed the work tree instead of only reviewing"
 DOER_ENV_ECHO = "the doer output contains an allowed environment value and was not published"
+DOER_CREDENTIAL_READBACK_UNTRUSTED = (
+    "the doer's credential read-back could not be established; nothing was published")
+CHECKER_CREDENTIAL_READBACK_UNTRUSTED = (
+    "the checker's credential read-back could not be established; no verdict was accepted")
 FRAME_OVER_LIMIT = "the independent verification materials exceed their input ceiling"
 FRAME_ENV_ECHO = "the independent verification materials contain an allowed environment value"
 CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safely"

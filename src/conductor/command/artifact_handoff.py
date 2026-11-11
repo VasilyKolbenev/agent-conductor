@@ -54,6 +54,70 @@ class ArtifactHandoff:
         self._ids = ids
         self._accept_git = None
 
+    def record_subscription_account(
+            self, request: ActionRequest, *, actor_instance_id: str, adapter_id: str,
+            role: str, proof: object) -> EvidenceRef:
+        """Append local provenance once, outside the login lease and acceptance evidence."""
+        from .attempt_replay import action_request_for, attempt_events_for
+        from .attempts import action_request_digest
+        from .contracts import _content_digest, _id, frozen_config_bindings
+        from .graph_causality import permitted_verifier
+        from .subscription_account import require_adapter_vendor, settled_proof
+
+        safe = settled_proof(proof)
+        if not isinstance(request, ActionRequest):
+            raise ValueError("account evidence requires a validated request")
+        _id("actor_instance_id", actor_instance_id)
+        _id("adapter_id", adapter_id)
+        require_adapter_vendor(adapter_id, safe["vendor"])
+        if type(role) is not str or role not in {"doer", "checker"}:
+            raise ValueError("account evidence role must be doer or checker")
+        binding = {
+            "run_id": request.run_id, "action_id": request.action_id,
+            "attempt_id": request.attempt_id, "instance_id": request.instance_id,
+            "actor_instance_id": actor_instance_id, "adapter_id": adapter_id, "role": role}
+        extra = {"binding": binding, "request_digest": action_request_digest(request),
+                 "proof": safe}
+        digest = _content_digest(extra)
+        uri = (f"subscription-account/{request.action_id}/{request.attempt_id}/"
+               f"{role}/{actor_instance_id}")
+        with self._store.transaction():
+            recovered = self._store.read(request.run_id)
+            if recovered.warnings:
+                raise StoreError("account evidence refuses unjudged durable bytes")
+            values = tuple(row.value for row in recovered.records)
+            stored = action_request_for(values, request.action_id)
+            if stored is None or stored.as_dict() != request.as_dict():
+                raise RecordConflict("account evidence names another durable request")
+            bound = frozen_config_bindings(recovered.config).get(request.instance_id)
+            expected = ((bound, request.instance_id) if role == "doer" else
+                        permitted_verifier(recovered, request.action_id))
+            if expected != (adapter_id, actor_instance_id):
+                raise RecordConflict("account evidence names another frozen actor")
+            phase = "effect_lease" if role == "doer" else "execution_observed"
+            if not any(event.phase == phase
+                       for event in attempt_events_for(values, request.action_id)):
+                raise RecordConflict("account evidence precedes its attempt boundary")
+            anchors = [row.value for row in recovered.records
+                       if row.kind == "evidence" and row.value.uri == uri]
+            if len(anchors) > 1:
+                raise RecordConflict("attempt carries duplicate account evidence")
+            if anchors:
+                anchor = anchors[0]
+                if (anchor.kind != "subscription_account_v1" or anchor.created_by != adapter_id
+                        or anchor.verification != "unverified" or anchor.digest != digest
+                        or dict(anchor.extra) != extra):
+                    raise RecordConflict("attempt account evidence records different facts")
+            else:
+                anchor = EvidenceRef(
+                    evidence_id=self._ids(f"subscription-account-{role}-{actor_instance_id}"),
+                    run_id=request.run_id,
+                    kind="subscription_account_v1", uri=uri, label="Local account provenance",
+                    created_by=adapter_id, observed_at=self._clock(), digest=digest,
+                    verification="unverified", extra=extra)
+                self._store.append(anchor)
+            return EvidenceRef.from_dict(anchor.as_dict())
+
     def claim_test_run(self, request, binding):
         from .attempt_protocol import claim_test_run
         return claim_test_run(self._store.project_root, request, binding)

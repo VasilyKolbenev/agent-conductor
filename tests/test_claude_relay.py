@@ -231,20 +231,17 @@ def test_the_profile_may_be_far_larger_than_a_credential_but_not_without_a_bound
         "account_unknown")
 
 
-def test_plain_values_of_the_account_object_are_carried_and_nested_ones_are_not(tmp_path):
-    """Until M2 names the keys the CLI needs: text, numbers, flags and null go; objects and lists
-    do not, at any depth, and nothing of the rest of the profile goes."""
+def test_observed_plain_values_are_carried_and_known_nested_flags_are_not(tmp_path):
+    """Only measured names/types are admitted; nested flags keep their explicit omission."""
     account = {**fake.claude_profile()["oauthAccount"],
-               "hasExtraUsageEnabled": True, "seats": 3, "ratio": 0.5, "billingType": None,
-               "nested": {"token": "fake-nested-value-must-not-travel"},
-               "listed": ["fake-listed-value-must-not-travel"],
-               "deep": {"a": {"b": {"c": "fake-deep-value-must-not-travel"}}}}
+               "hasExtraUsageEnabled": True, "profileFetchedAt": 3, "billingType": "stripe",
+               "ccOnboardingFlags": {"token": "fake-nested-value-must-not-travel"}}
     home = fake.claude_home(tmp_path, profile=fake.claude_profile(oauthAccount=account))
 
     found = bootstrapped(home)
 
     assert json.loads(found[".claude.json"]) == {"oauthAccount": {
-        **ACCOUNT, "hasExtraUsageEnabled": True, "seats": 3, "ratio": 0.5, "billingType": None}}
+        **ACCOUNT, "hasExtraUsageEnabled": True, "profileFetchedAt": 3, "billingType": "stripe"}}
     assert b"must-not-travel" not in found[".claude.json"]
 
 
@@ -252,7 +249,7 @@ def test_an_object_nested_far_below_the_account_is_left_out_and_does_not_fail_th
     deep: object = "fake-bottom-value-must-not-travel"
     for _ in range(200):
         deep = {"x": deep}
-    account = {**fake.claude_profile()["oauthAccount"], "deep": deep}
+    account = {**fake.claude_profile()["oauthAccount"], "ccOnboardingFlags": deep}
     home = fake.claude_home(tmp_path, profile=fake.claude_profile(oauthAccount=account))
 
     found = bootstrapped(home)

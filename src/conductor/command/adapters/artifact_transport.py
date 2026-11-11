@@ -389,7 +389,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             **({} if limit is None else {"output_limit": limit}))
         evidence = AttemptEvidence(
             work_dir=work, before=before, after=self._evidence(),
-            retained=bool(self._retained))
+            retained=bool(self._retained),
+            credential_readback_untrusted=self._credential_readback_untrusted,
+            login_account=self._login_account)
         relation = attempt_relation(request)
         self._attempts[relation] = evidence
         self._keep_login_values(relation)
@@ -504,20 +506,15 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
     def _retention_refusal(
             self, request: ActionRequest,
             relation: tuple[str, str, str, str]) -> AdapterVerification | None:
-        """Refuse to verify an attempt whose own home this build could not take back.
+        """Use frozen attempt facts before either ordinary publication branch.
 
-        Read from the ATTEMPT, never from `_retained`. This runs after the
-        workspace turn has been released, and that count is instance-wide: by
-        now it answers for whatever ran last or for a sibling action running
-        this moment. The attempt recorded its own fact inside its own turn, and
-        that is the only reading this road may make.
-
-        The refusal is `error` and says nothing about the child. The execution
-        was observed and the observation stands in the record exactly as it was
-        written; what is refused is the step after it -- that a run whose home
-        outlived its spawn may publish and be called verified.
+        A sibling road cannot restore this attempt's cleanup or credential read-back.
         """
         attempt = self._attempts.get(relation)
+        if attempt is not None:
+            self._record_login_account(request, request.instance_id, "doer", attempt.login_account)
+            if attempt.credential_readback_untrusted:
+                return self._verification(request, "error", (), "credential_readback_untrusted")
         if attempt is None or not attempt.retained:
             return None
         return self._verification(
@@ -621,14 +618,9 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
             "the bound adapter recorded post-observation durable evidence")
 
     def _review_attempt_carries(self, outcome) -> bool:
-        """Whether this review's output carries a credential, by BOTH answers.
+        """Check pre/post-spawn echo samples; unknown read-back also refuses this output.
 
-        They answer different questions. The runner scanned for the values that
-        stood before the spawn -- the only ones it could have -- and
-        `_login_echo` for the ones the spawn itself left behind. A vendor that
-        refreshes its own credential while it runs makes the second the only one
-        that can see what this output really carries, and this road is where the
-        output becomes durable content.
+        Publication separately checks the attempt's frozen read-back fact.
         """
         return bool(outcome.output_contains_env_value or self._login_echo)
 
@@ -694,6 +686,10 @@ class ArtifactAwareTransport(IndependentCheckTransport, HeadlessCliTransport):
         """The doer's own holds and exact live material; never a self-verdict."""
         self._hold_result(request, result)
         snapshot = self._attempts.get(attempt_relation(request))
+        if snapshot is not None:
+            self._record_login_account(request, request.instance_id, "doer", snapshot.login_account)
+            if snapshot.credential_readback_untrusted:
+                return self._published(request, "credential_readback_untrusted")
         if (result.outcome != "succeeded" or result.exit_code not in (None, 0)
                 or snapshot is None or snapshot.after is None):
             return self._published(request, "uncontained")

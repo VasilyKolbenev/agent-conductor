@@ -131,7 +131,7 @@ CHECKER_REASONS = frozenset({
     "object_format_changed", "base_missing", "reserved_path", "irregular_result",
     "result_too_large", "unportable_name", "case_collision", "boundary_unavailable",
     "login_not_ready", "test_report_refused", "test_execution_failed", "tests_failed",
-    "test_runtime_changed"})
+    "test_runtime_changed", "credential_readback_untrusted"})
 MARKER_STANDING_WORDS = (
     "this action already claimed its independent checker; no second check was started")
 CLAIM_REFUSED_WORDS = "the checker could not reserve its check, so nothing was started"
@@ -169,6 +169,8 @@ def test_the_closed_set_of_checker_reasons_has_words_for_every_reason_it_answers
     ("test_execution_failed", "post-patch tests did not produce a complete usable result"),
     ("tests_failed", "post-patch tests failed; the checker cannot confirm success"),
     ("test_runtime_changed", "the pinned test runtime changed around independent checking"),
+    ("credential_readback_untrusted",
+     "the checker's credential read-back could not be established; no verdict was accepted"),
 ])
 def test_local_test_refusals_keep_their_distinct_runtime_words(reason, words):
     assert verify_road.check_reason(_checker_answer(reason), "default") == words

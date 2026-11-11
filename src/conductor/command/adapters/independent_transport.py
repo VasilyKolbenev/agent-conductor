@@ -71,6 +71,9 @@ class IndependentCheckTransport:
             # task must not run after a promise this build has already broken.
             return self._finish_check(request, verifier, frame,
                                       self._checker_answer(request, "login_residue"))
+        if self._credential_readback_untrusted:
+            return self._finish_check(request, verifier, frame,
+                self._checker_answer(request, "credential_readback_untrusted"))
         # The preflight has no authority to alter the tree it is about to judge.
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._finish_check(request, verifier, frame,
@@ -95,6 +98,10 @@ class IndependentCheckTransport:
                 refused.code, "login_not_ready")
             return self._finish_check(request, verifier, frame,
                                       self._checker_answer(request, reason))
+        self._record_login_account(request, verifier.instance_id, "checker", self._login_account)
+        if self._credential_readback_untrusted:
+            return self._finish_check(request, verifier, frame,
+                self._checker_answer(request, "credential_readback_untrusted"))
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
             return self._finish_check(request, verifier, frame,
                                       self._checker_answer(request, "tree_changed"))

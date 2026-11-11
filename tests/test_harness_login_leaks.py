@@ -649,10 +649,9 @@ def test_the_value_channel_carries_bytes_and_refuses_anything_else():
     assert "kept" not in repr(spec)
 
 
-def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
+def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_the_task(
         tmp_path):
-    """A login that cannot be read is a scan that cannot be widened, not a
-    reason to refuse a run the login preflight already admitted."""
+    """An unreadable credential contributes no values and cannot authorize a task."""
     from conductor.command.adapters import login_home
 
     home = a_login_home(tmp_path)
@@ -662,7 +661,7 @@ def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
         tmp_path, auth="subscription", auth_home=str(home))
 
     assert adapter._login_secrets() == ()
-    assert run_once(adapter, a_request()).outcome == "succeeded"
+    assert run_once(adapter, a_request()).outcome == "failed"
     assert login_home.credential_values(
         str(home), (".credentials.json",)) == ()
 

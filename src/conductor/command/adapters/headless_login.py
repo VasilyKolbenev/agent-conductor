@@ -256,6 +256,8 @@ class LoginRoad:
         self._retained = 0
         self._login_residue = 0
         self._login_seen = ()
+        self._credential_readback_untrusted = False
+        self._login_account = None
 
     def _remember_login_values(self) -> None:
         """Add the login as it stands NOW to what this road has seen.
@@ -266,6 +268,10 @@ class LoginRoad:
         from either alone looks for the wrong secret in material that carries
         the other.
         """
+        spec = self.profile.login_relay
+        required = (spec.credential,) if spec is not None else ()
+        self._credential_readback_untrusted |= not login_home.credential_readback_trusted(
+            self._signed_in_road(), self.profile.login_credentials, required)
         self._login_seen = tuple(dict.fromkeys(
             (*self._login_seen, *self._login_secrets())))
 
@@ -295,6 +301,16 @@ class LoginRoad:
         """
         self._login_seen = ()
         self._relay_ready = None
+        self._credential_readback_untrusted = False
+        self._login_account = None
+
+    def _record_login_account(self, request, actor, role, proof):
+        """Persist only a proof captured under the task's own relay lease."""
+        record = getattr(getattr(self, "_handoff", None), "record_subscription_account", None)
+        if (proof is not None and callable(record)
+                and self._handoff.named_proposal(request) is not None):
+            record(request, actor_instance_id=actor, adapter_id=self.manifest.adapter_id,
+                   role=role, proof=proof)
 
     def _keep_login_values(self, relation: tuple[str, str, str, str]) -> None:
         """Hand what this road has seen to the attempt it belongs to.

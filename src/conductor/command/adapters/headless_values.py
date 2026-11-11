@@ -111,6 +111,8 @@ class _Attempt:
     #: field and published as though it had taken its home back, which a review
     #: found. Required, that road could not have been written.
     retained: bool
+    credential_readback_untrusted: bool
+    login_account: Mapping | None
 
 
 #: What ``_attempt`` is handed to build the child's OWN tokens with. A provider

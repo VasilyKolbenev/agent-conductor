@@ -216,6 +216,8 @@ class HeadlessCliTransport(
         self._login_echo = False
         self._login_history: dict[tuple[str, str, str, str], tuple[bytes, ...]] = {}
         self._login_seen: tuple[bytes, ...] = ()
+        self._credential_readback_untrusted = False
+        self._login_account = None
 
     # -- what a provider brings ------------------------------------------------
 
@@ -444,7 +446,9 @@ class HeadlessCliTransport(
         outcome, after = result
         self._attempts[attempt_relation(request)] = _Attempt(
             work_dir=work, before=before, after=after,
-            retained=bool(self._retained))
+            retained=bool(self._retained),
+            credential_readback_untrusted=self._credential_readback_untrusted,
+            login_account=self._login_account)
         self._keep_login_values(attempt_relation(request))
         if self._login_residue:
             return self._residue_receipt(request, outcome)
@@ -492,6 +496,9 @@ class HeadlessCliTransport(
         if self._retained:
             return self._receipt(
                 request, "failed", None, PREFLIGHT_RESIDUE_DETAIL)
+        if self._credential_readback_untrusted:
+            return self._receipt(request, "failed", None,
+                                 "credential read-back could not be established before the task")
         if self._login_residue:
             return self._receipt(
                 request, "failed", None, PREFLIGHT_LOGIN_RESIDUE_DETAIL)

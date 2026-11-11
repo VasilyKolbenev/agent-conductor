@@ -215,6 +215,27 @@ def quota_metadata(home: str, name: str, field: str) -> object:
     return value.get(field) if type(value) is dict else None
 
 
+def credential_readback_trusted(home: str, names: tuple[str, ...], required=()) -> bool:
+    """Read declared JSON credentials; optional absent leaves may remain absent."""
+    if not names or not home:
+        return True
+    if not _pinned(home):
+        return False
+    for name in names:
+        target = Path(home) / name
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            if name in required:
+                return False
+            continue
+        except OSError:
+            return False
+        if _is_portal(target) or type(_read_json(target)) is not dict:
+            return False
+    return True
+
+
 def credential_document(home: str, name: str) -> object:
     """One declared login file as parsed JSON, under the leak scan's own bounds, or None.
 

@@ -239,7 +239,11 @@ def _checked_run(site: Site, doer, checker, cross: bool):
         runtime, authorization, store = _run_state(
             site.root, doer, checker, cross, False, None, None, None)
         attempt = runtime.execute(authorization)
-        return attempt, [row.value for row in store.read(RUN).records if row.kind == "evidence"]
+        evidence = [row.value for row in store.read(RUN).records if row.kind == "evidence"]
+        accounts = [row for row in evidence if row.kind == "subscription_account_v1"]
+        assert all(row.verification == "unverified" for row in accounts)
+        assert not {row.evidence_id for row in accounts} & set(attempt.receipt.evidence_refs)
+        return attempt, [row for row in evidence if row.kind != "subscription_account_v1"]
 
 
 def test_claude_is_checked_by_another_claude_instance_each_on_its_own_relay_home(tmp_path):

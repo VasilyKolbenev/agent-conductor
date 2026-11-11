@@ -28,6 +28,7 @@ REASONS = frozenset({
     "irregular_result", "result_too_large", "unportable_name", "case_collision",
     "boundary_unavailable", "login_not_ready",
     "test_report_refused", "test_execution_failed", "tests_failed", "test_runtime_changed",
+    "credential_readback_untrusted",
 })
 #: The whole serialized frame -- JSON, hex and service fields included -- the same number as
 #: process.STDIN_LIMIT, which carries it (pinned equal by a test). Codex ruling K, 23.09.2026:

@@ -20,8 +20,10 @@ PUBLISH_REASONS = MappingProxyType({
     "home_retained": words.DOER_HOME_RETAINED,
     "tree_changed": words.DOER_TREE_CHANGED,
     "env_echo": words.DOER_ENV_ECHO,
+    "credential_readback_untrusted": words.DOER_CREDENTIAL_READBACK_UNTRUSTED,
 })
 CHECK_REASONS = MappingProxyType({
+    ("error", "credential_readback_untrusted"): words.CHECKER_CREDENTIAL_READBACK_UNTRUSTED,
     ("error", "test_report_refused"): words.TEST_REPORT_REFUSED,
     ("error", "test_execution_failed"): words.TEST_EXECUTION_FAILED,
     ("error", "tests_failed"): words.TESTS_FAILED,

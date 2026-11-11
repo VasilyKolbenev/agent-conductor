@@ -374,6 +374,15 @@ class RelayAttempt:
         ticket = login_relay.copy_in(auth_home, home, spec, ready.digest)
         if isinstance(ticket, login_relay.Refused):
             return NotStarted(ticket.code)
+        from ..subscription_account import make_proof, normalize_vendor
+        from types import MappingProxyType
+        try:
+            vendor = normalize_vendor(self.manifest.vendor)
+        except ValueError:
+            vendor = None
+        if vendor is not None:
+            self._login_account = MappingProxyType(
+                make_proof(vendor, ready.account, ticket.account).as_dict())
         values = (*ready.secrets, *ticket.secrets)
         self._remember_relay_values(values)
         built = self._relay_spec(argv, home, cwd, values, timeout=timeout, mode=mode, **options)
@@ -413,15 +422,14 @@ class RelayAttempt:
         The vendor's own artefact first (Codex's final message file), then the credential of the
         home again: a token the child renewed there is a value the copy did not hold. A credential
         that cannot be read, or is no longer in the shape the relay admits, is taken as echoed,
-        which a REVIEW honours (it is not published): what the file holds is not known. A dispatch
-        and a checker read no such flag on any road; for them the protection is the values: those
-        of a document that parses but has left its shape are ALL its texts, not only the named
-        fields, and those of one that cannot be read are none, since there is nothing to read.
+        and recorded as a sticky road fact, then frozen in the doer's attempt. Publication and
+        the checker refuse unknown read-back independently of the known secret byte set.
         """
         spec = self.profile.login_relay
         self._read_attempt_home(home)
         leaf = login_relay.read_leaf(ticket.leaf)
         unreadable = isinstance(leaf, login_relay.Refused) or spec.admit(leaf.doc) is not None
+        self._credential_readback_untrusted |= unreadable
         values = ()
         if not isinstance(leaf, login_relay.Refused):
             values = (login_relay.every_text(leaf.doc) if unreadable

@@ -319,7 +319,7 @@ def _stand_an_attempt(transport, request) -> None:
     work = transport._workspace.work_dir("work-001")
     transport._attempts[attempt_relation(request)] = AttemptEvidence(
         work_dir=work, before={}, after={"work-001/out.py": "digest"},
-        retained=False)
+        retained=False, credential_readback_untrusted=False, login_account=None)
 
 
 def test_the_base_forgets_its_snapshot_on_the_ordinary_road(tmp_path):

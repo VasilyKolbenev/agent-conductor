@@ -33,30 +33,10 @@ from .deep_commands import PATCH_DISPATCH_PROFILES, PATCH_PROFILE, REVIEW_DIAGNO
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
 _INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
-#: Guards that exist only where the registration carries the seam that makes
-#: them. Named ONE BY ONE, guard and seam both, rather than as a rule about a
-#: kind of guard: a rule would excuse every claim that ever lands under it, and
-#: this is the list of claims a class can inherit and be unable to keep.
-#:
-#: `login_directory_gained_state` names the CHECKER's constant
-#: (`verify_holds.CHECKER_LOGIN_RESIDUE`), and a transport serving no review
-#: road has `verify_for` set to None by its base's `__init_subclass__` -- it
-#: inherits the method name and none of the road, so the checker's measurement
-#: is struck for it.
-#:
-#: WHAT THIS DOES NOT SAY, and an earlier version of this comment did: that the
-#: checker is the only thing that measures that directory. It is not. `LoginRoad`
-#: measures it after every spawn and `HeadlessCliTransport._dispatch` refuses on
-#: what it found (`LOGIN_RESIDUE_DETAIL`), as does the review road. Those are the
-#: DOER's own refusals, and the table carries no row of its own for them -- so
-#: for a dispatch-only transport with a pinned subscription login this filter
-#: under-reports a guard that really runs. It under-reports rather than
-#: over-claims, and no shipped provider reaches the case: subscription login is
-#: admitted only for the two protocols whose transports both serve review.
-#: Closing it means giving the doer's refusal its own row, which changes the
-#: table and the wire; it is recorded as a follow-up in
-#: `handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md` and is not
-#: to be closed by widening this filter into a rule.
+#: This declaration names the checker's verify_for guard, not every login measurement.
+#: LoginRoad also measures doer residue; its separate table row remains tracked in
+#: handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md.
+#: Do not widen this filter to claim an inherited seam a provider cannot execute.
 _GUARD_SEAMS = {"login_directory_gained_state": "verify_for"}
 
 
@@ -81,6 +61,7 @@ class IndependentVerifierUnavailable(AdapterContractError):
 PUBLISH_REFUSALS = frozenset({
     "outside_subtree", "nothing_changed", "uncontained", "home_retained",
     "tree_changed", "env_echo", "over_read_budget",
+    "credential_readback_untrusted",
 })
 
 
