@@ -25,6 +25,18 @@ Duration, workflow attempts, protocol envelopes and durable results need separat
 budgets, presented for approval with the task. Local capture tests do not establish
 long-duration execution, token renewal or recovery; those need their own real evidence.
 
+**Owner clarification, 2026-11-11:** Arachnid is a persistent autonomous workspace
+for complete harnesses. The owner's analogy is OpenClaw applied to harness teams;
+Dalio is the default workflow inside that workspace. Ordinary UI should emphasize
+the task and its work, keeping the process name in settings and relevant details.
+Future runs should route a checker's rejection and evidence back to the responsible
+harnesses for correction, continuing until the goal's acceptance criteria are met
+within the approved scope and budgets. Preserve progress and pause when permission,
+quota or time is exhausted; renewal may continue that work. Unknown outcomes,
+changed scope and explicit human gates still require their proper resolution.
+Do not silently turn an existing one-attempt grant into a correction loop.
+This clarifies the product goal; it does not claim the current default supports it.
+
 The product must show each configured harness's subscription usage, remaining allowance,
 and reset time for the windows the vendor actually reports, including daily, weekly and
 five-hour windows where applicable. Distinguish measured values, stale observations and
