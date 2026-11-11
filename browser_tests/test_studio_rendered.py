@@ -144,6 +144,7 @@ BOOT_ASSETS = {
     "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
     "studio-automation.js": 200, "studio-automation-flow.js": 200,
     "studio-automation-model.js": 200, "studio-automation-providers.js": 200,
+    "studio-test-preview.js": 200,
     "studio-feedback.js": 200, "studio-feedback-model.js": 200,
 }
 

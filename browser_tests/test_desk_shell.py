@@ -84,6 +84,7 @@ DESK_BOOT_ASSETS = {
     "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-situation.js": 200,
     "studio-feedback-model.js": 200, "studio-controls.js": 200,
     "studio-automation-providers.js": 200,
+    "studio-test-preview.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
