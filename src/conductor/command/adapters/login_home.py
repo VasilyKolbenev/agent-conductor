@@ -194,7 +194,7 @@ def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
     for name in names:
         for value in _strings(_read_json(Path(home) / name)):
             if len(value) >= 12:
-                found.append(value.encode("utf-8"))
+                found.append(value.encode("utf-8", errors="surrogatepass"))
     return tuple(dict.fromkeys(found))
 
 
