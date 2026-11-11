@@ -62,8 +62,8 @@ export const ATLAS_COPY = Object.freeze({
     "Для этой попытки нет отчёта о запуске тестов."],
   "atlas.test_broken": ["The recorded test report could not be verified.",
     "Подлинность отчёта о тестах не подтверждена."],
-  "atlas.test_total": ["External check · total {total}, failures {failures}, "
-    + "errors {errors}, skipped {skipped}.",
+  "atlas.test_total": [
+    "External check · total {total}, failures {failures}, errors {errors}, skipped {skipped}.",
     "Внешняя проверка · всего {total}, падений {failures}, ошибок {errors}, пропущено {skipped}."],
   "atlas.native_total": ["total {total}, failures {failures}, errors {errors}, skipped {skipped}",
     "всего {total}, падений {failures}, ошибок {errors}, пропущено {skipped}"],

@@ -65,6 +65,7 @@ ASSETS = {
     "/panel/studio-preferences.js": "text/javascript; charset=utf-8",
     "/panel/studio-shell.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-model.js": "text/javascript; charset=utf-8",
+    "/panel/studio-test-preview.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-providers.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-flow.js": "text/javascript; charset=utf-8",
     "/panel/studio-workflow-copy.js": "text/javascript; charset=utf-8",
