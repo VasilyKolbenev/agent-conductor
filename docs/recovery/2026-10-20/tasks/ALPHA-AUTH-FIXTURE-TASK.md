@@ -12,3 +12,6 @@ Ticket, UUID/прочие plain fields и запрет попадания вло
 Unknown/type-change negatives уже проверены в test_claude_auth_contract.py.
 Это отдельный test-only срез, не ослабление Q8 и не RS1 production change.
 Прогнать весь модуль в двух кодировках, code/tests и отчёт отдельно; моделей нет.
+Полный модуль дал ещё 1 failed/78 passed: refresh-leak witness использует unknown
+note и не доходит до проверяемого отказа. Заменить только ключ на измеренный
+displayName, сохранив тот же fake refresh и ожидаемый refresh_leak/пустой relay.
