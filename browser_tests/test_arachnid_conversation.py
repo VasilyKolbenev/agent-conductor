@@ -1,5 +1,7 @@
 """The main project page keeps Atlas and selects exact attempt evidence on the orbit."""
 from dataclasses import replace
+import json
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
@@ -14,6 +16,72 @@ from conductor.command.task_store import TaskStore
 
 def select(page, value):
     page.evaluate("(value) => { location.hash = value; }", value)
+
+
+@pytest.mark.parametrize("lang", ["en", "ru"])
+@pytest.mark.parametrize(("status", "label", "russian"), [
+    ("passed", "Tests passed", "Тесты пройдены"),
+    ("failed", "Tests failed", "Тесты не пройдены"),
+    ("zero_tests", "No tests ran", "Тесты не запущены"),
+    ("timed_out", "Test execution timed out", "Время запуска тестов истекло"),
+    ("truncated", "Test output was truncated", "Вывод тестов усечён"),
+    ("infrastructure_error", "Test execution failed", "Ошибка запуска тестов"),
+    ("unavailable", "The recorded test report could not be verified.",
+     "Подлинность отчёта о тестах не подтверждена."),
+])
+def test_native_summary_matches_the_selected_protocol(
+        chromium, atlas_url, tmp_path, lang, status, label, russian):
+    fixture = Path(__file__).parents[1] / "tests/fixtures/atlas-accepted-native.json"
+    row = json.loads(fixture.read_text(encoding="utf-8"))
+    protocol = row["tests"]["protocol"]
+    assert protocol["counts"] == {"total": 3, "failures": 0, "errors": 0, "skipped": 0}
+    assert "Ran 3 tests" in protocol["output"]
+    if status == "unavailable":
+        row["tests"] = {"status": status, "source": None, "summary": None, "cases": []}
+    elif status != "passed":
+        protocol.update(status=status, exit_code=1)
+        if status == "failed":
+            protocol["counts"]["failures"] = 1
+        elif status == "zero_tests":
+            protocol["counts"]["total"] = 0
+        else:
+            protocol.update(counts=None, process_status="stopped", truncated=status == "truncated")
+            row["tests"]["summary"] = None
+        if protocol["counts"] is not None:
+            row["tests"]["summary"] = dict(protocol["counts"])
+        row.update(outcome="failed", verdict=None)
+    context = chromium.new_context(viewport={"width": 1440, "height": 900})
+    page = context.new_page()
+    errors, writes = [], []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on("request", lambda req: writes.append(req.method) if req.method != "GET" else None)
+    try:
+        page.route("**/actions/action-first-2", lambda route: route.fulfill(json=row))
+        absent = evidence("action-first-1")
+        absent["tests"].update(status="not_recorded", source=None, summary=None)
+        page.route("**/actions/action-first-1", lambda route: route.fulfill(json=absent))
+        page.goto(atlas_url + "/#session=first&lang=" + lang)
+        page.locator("#orbitHere [data-step=repair-counter]").click()
+        fact = page.locator('#inspection [data-atlas-fact="tests"]')
+        expected = label if lang == "en" else russian
+        expect(fact).to_contain_text(expected)
+        if status == "passed":
+            expected += (" · total 3, failures 0, errors 0, skipped 0" if lang == "en"
+                         else " · всего 3, падений 0, ошибок 0, пропущено 0")
+            expect(fact).to_have_text(expected)
+        if protocol["counts"] is None:
+            expect(fact).to_have_text(expected)
+        page.locator('#inspection [data-atlas-tab="tests"]').click()
+        expect(page.locator("#inspection .studio-hint").first).to_have_text(fact.inner_text())
+        if status == "passed":
+            expect(page.locator("#inspection")).to_contain_text("Ran 3 tests")
+            page.screenshot(path=str(tmp_path / ("native-summary-" + lang + ".png")))
+        page.locator("#inspection [data-atlas-attempt]").select_option("action-first-1")
+        expect(fact).to_have_text("No test report was recorded for this attempt." if lang == "en"
+                                  else "Для этой попытки нет отчёта о запуске тестов.")
+        assert not errors and not writes, (errors, writes)
+    finally:
+        close_context(context)
 
 
 def test_pinned_scope_and_summary_follow_the_chosen_request(chromium, atlas_url, tmp_path):

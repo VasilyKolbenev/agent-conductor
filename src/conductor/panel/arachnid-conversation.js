@@ -2,7 +2,9 @@
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {sceneOf} from "./studio-scene-model.js";
-import {answerFor, atlasInspector, matchesAtlasAttempt} from "./studio-atlas-inspector.js";
+import {
+  answerFor, atlasInspector, atlasTestSummary, matchesAtlasAttempt,
+} from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 
 const rows = value => Array.isArray(value) ? value : [];
@@ -188,7 +190,8 @@ export function arachnidConversation(center, inspector, door) {
     const e = open && step() === s ? read?.value : null;
     if (e?.files_total != null) row.append(element("span", {className: "summary-stat",
       text: tr("files", {n: String(e.files_total)})}));
-    if (e?.tests.status === "recorded") row.append(element("span", {className: "summary-stat",
+    if (e?.tests.status === "recorded" && e.tests.summary) row.append(element("span", {
+      className: "summary-stat",
       text: words("Tests", "Тесты") + " · " + e.tests.summary.total}));
     row.append(element("span", {className: "summary-arrow", "aria-hidden": "true", text: "↗"}));
     host.append(row);
@@ -209,10 +212,7 @@ export function arachnidConversation(center, inspector, door) {
       ? tr("partial", {shown: String(paths.length), total: String(e.files_total)})
       : tr("files", {n: String(e.files_total)});
     const tests = e.tests, verdict = e.verdict;
-    const testReport = tests.status === "recorded" && tests.source === "external"
-      ? tr("test_total", Object.fromEntries(["total", "failures", "errors", "skipped"]
-        .map(k => [k, String(tests.summary[k])])))
-      : tr(tests.status === "unavailable" ? "test_broken" : "test_absent");
+    const testReport = atlasTestSummary(model, tests);
     const table = element("dl");
     for (const [key, value] of [
       ["outcome", e.outcome ? localize(model, "scene.outcome_" + e.outcome) : tr("pending_result")],

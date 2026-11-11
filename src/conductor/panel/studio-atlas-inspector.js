@@ -14,7 +14,7 @@ const digest = (v) => text(v) && /^sha256:[0-9a-f]{64}$/.test(v);
 const tabs = ["diff", "tests", "verdict"];
 const tr = (view, key, args) => localize(view, "atlas." + key, args);
 const note = (value) => element("p", {className: "studio-hint", text: value});
-function summary(view, tests) {
+export function atlasTestSummary(view, tests) {
   if (tests.status !== "recorded") {
     return tr(view, tests.status === "unavailable" ? "test_broken" : "test_absent");
   }
@@ -111,7 +111,7 @@ export function answerFor(view, tab, evidence) {
   if (tab === "tests") {
     const t = evidence.tests;
     const c = relatedAtlasCase(evidence);
-    return summary(view, t)
+    return atlasTestSummary(view, t)
       + (c ? " " + c.name + " · " + (c.assertion || tr(view, "no_assert")) : "");
   }
   if (tab === "verdict") {
@@ -152,7 +152,7 @@ function diff(body, view, data, choice, select) {
 
 function tests(body, view, data, choice, select) {
   const t = data.tests;
-  body.append(note(summary(view, t)));
+  body.append(note(atlasTestSummary(view, t)));
   if (t.source === "native") {
     const p = t.protocol;
     body.append(element("h4", {text: tr(view, "protocol")}),

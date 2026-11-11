@@ -1,0 +1,141 @@
+{
+  "action_id": "action-first-2",
+  "attempt_id": "attempt-action-first-2",
+  "files": [
+    {
+      "diff_status": "available",
+      "lines": [
+        "@@ -1,3 +1,6 @@",
+        " def count_succeeded(rows):",
+        "-    \"\"\"KNOWN DEFECT, fixed in the rehearsal: every row is counted.\"\"\"",
+        "-    return len(rows)",
+        "+    \"\"\"Count dictionaries whose outcome equals the string \"succeeded\".\"\"\"",
+        "+    return sum(",
+        "+        1 for row in rows",
+        "+        if isinstance(row, dict) and row.get(\"outcome\") == \"succeeded\"",
+        "+    )"
+      ],
+      "path": "runstats/counts.py",
+      "state": "modified"
+    },
+    {
+      "diff_status": "available",
+      "lines": [
+        "@@ -5,3 +5,26 @@",
+        " class CountSucceededTest(unittest.TestCase):",
+        "     def test_empty_input_is_zero(self):",
+        "         self.assertEqual(count_succeeded([]), 0)",
+        "+",
+        "+    def test_counts_only_succeeded_records(self):",
+        "+        rows = [",
+        "+            {\"outcome\": \"succeeded\"},",
+        "+            {\"outcome\": \"succeeded\"},",
+        "+            {\"outcome\": \"failed\"},",
+        "+            {},",
+        "+        ]",
+        "+        self.assertEqual(count_succeeded(rows), 2)",
+        "+",
+        "+    def test_skips_non_dictionaries_and_inexact_outcomes(self):",
+        "+        rows = [",
+        "+            {\"outcome\": \"succeeded\"},",
+        "+            None,",
+        "+            \"succeeded\",",
+        "+            1,",
+        "+            [\"succeeded\"],",
+        "+            [(\"outcome\", \"succeeded\")],",
+        "+            {\"outcome\": None},",
+        "+            {\"outcome\": \"Succeeded\"},",
+        "+            {\"outcome\": \"succeeded \"},",
+        "+        ]",
+        "+        self.assertEqual(count_succeeded(rows), 1)"
+      ],
+      "path": "tests/test_counts.py",
+      "state": "modified"
+    }
+  ],
+  "files_total": 2,
+  "manifest_digest": "sha256:3733fec2f676a7605213038641984f69dbb546cdfb3bb82e4d67d96cf8b184ef",
+  "node_id": "repair-counter",
+  "outcome": "succeeded",
+  "run_id": "first",
+  "tests": {
+    "cases": [
+      {
+        "assertion": "self.assertEqual(count_succeeded([]), 0)",
+        "line": 7,
+        "name": "test_empty_input_is_zero",
+        "path": "tests/test_counts.py"
+      },
+      {
+        "assertion": "self.assertEqual(count_succeeded(rows), 2)",
+        "line": 16,
+        "name": "test_counts_only_succeeded_records",
+        "path": "tests/test_counts.py"
+      },
+      {
+        "assertion": "self.assertEqual(count_succeeded(rows), 1)",
+        "line": 30,
+        "name": "test_skips_non_dictionaries_and_inexact_outcomes",
+        "path": "tests/test_counts.py"
+      }
+    ],
+    "protocol": {
+      "argv": [
+        "python.exe",
+        "-I",
+        "-S",
+        "-B",
+        "conduct-unittest-v1.py",
+        "product-fixture",
+        "work/one",
+        "tests",
+        "test_*.py"
+      ],
+      "binding": {
+        "action": "action-first-2",
+        "attempt": "attempt-action-first-2",
+        "grant": "fixture-grant",
+        "grant_digest": "sha256:e773c3c10f1dc96cac3b5e911f411828e2d090687a578e39430f10cd8843de15",
+        "instance": "maker",
+        "policy": "sha256:d5bb8df247c8007154aa2eae7e4ad603af2dd1f4bb5505987761c6e33664cddd",
+        "run": "first",
+        "toolpin": "sha256:158fdf233ba56a8e374175fb0a496641cc0e7e03aac562d45b78a7e40e0bd679",
+        "work_modes": "sha256:08fcc691d3351815bfa2c300b3f442b51f4c7528ef92fc94432e1c3928d9c7ad",
+        "workspace_tree": "sha256:8690c262a4c255f9e1eb1232e27ec49ab033f1840b9c94f252637d0ea5915dac"
+      },
+      "counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "total": 3
+      },
+      "cwd": "work/one",
+      "exit_code": 0,
+      "output": "test_counts_only_succeeded_records (test_counts.CountSucceededTest.test_counts_only_succeeded_records) ... ok\r\ntest_empty_input_is_zero (test_counts.CountSucceededTest.test_empty_input_is_zero) ... ok\r\ntest_skips_non_dictionaries_and_inexact_outcomes (test_counts.CountSucceededTest.test_skips_non_dictionaries_and_inexact_outcomes) ... ok\r\n\r\n----------------------------------------------------------------------\r\nRan 3 tests in 0.000s\r\n\r\nOK\r\n\r\nconduct.test-result.v1 {\"errors\": 0, \"failures\": 0, \"skipped\": 0, \"total\": 3}\r\n",
+      "output_b64": "dGVzdF9jb3VudHNfb25seV9zdWNjZWVkZWRfcmVjb3JkcyAodGVzdF9jb3VudHMuQ291bnRTdWNjZWVkZWRUZXN0LnRlc3RfY291bnRzX29ubHlfc3VjY2VlZGVkX3JlY29yZHMpIC4uLiBvaw0KdGVzdF9lbXB0eV9pbnB1dF9pc196ZXJvICh0ZXN0X2NvdW50cy5Db3VudFN1Y2NlZWRlZFRlc3QudGVzdF9lbXB0eV9pbnB1dF9pc196ZXJvKSAuLi4gb2sNCnRlc3Rfc2tpcHNfbm9uX2RpY3Rpb25hcmllc19hbmRfaW5leGFjdF9vdXRjb21lcyAodGVzdF9jb3VudHMuQ291bnRTdWNjZWVkZWRUZXN0LnRlc3Rfc2tpcHNfbm9uX2RpY3Rpb25hcmllc19hbmRfaW5leGFjdF9vdXRjb21lcykgLi4uIG9rDQoNCi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0NClJhbiAzIHRlc3RzIGluIDAuMDAwcw0KDQpPSw0KDQpjb25kdWN0LnRlc3QtcmVzdWx0LnYxIHsiZXJyb3JzIjogMCwgImZhaWx1cmVzIjogMCwgInNraXBwZWQiOiAwLCAidG90YWwiOiAzfQ0K",
+      "output_sha256": "sha256:ee11aee39b4930c6c1526f68dbbc68e494eb88fe7336ea6a7325fb85ebbd21fe",
+      "output_stream": "merged",
+      "policy": {
+        "runner": "python-unittest-v1"
+      },
+      "process_status": "completed",
+      "reason": null,
+      "status": "passed",
+      "truncated": false,
+      "version": 1
+    },
+    "source": "native",
+    "status": "recorded",
+    "summary": {
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "total": 3
+    }
+  },
+  "verdict": {
+    "adapter_id": "codex",
+    "instance_id": "checker",
+    "status": "verified"
+  }
+}
