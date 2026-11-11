@@ -1,5 +1,11 @@
 # December Command: продолжение после восстановления
 
+Последнее: RS1-CREDENTIAL-DEPTH-REPORT.md, код1147b86 плюс test-onlyf9df475.
+Остаток RS1 локально закрыт на реальных Python3.11.9/3.12.14, без моделей/цикла.
+Следующий шаг — единый release candidate, полный core/CI/installed road и новый
+пользователь с собственными четырьмя подписками/UX/owner acceptance.
+Защищённая Studio пока19956c8; исторические строки об открытом RS1 ниже заменены.
+
 Последний security срез 11.11: ALPHA-AUTH-CLOSE-REPORT.md, код 7742eaa.
 Q6/Q8/Q10 локально закрыты: 534 combined passed в каждой кодировке, без vendor calls.
 Защищённый продукт пока 19956c8. Следующее — остаток RS1 depth/runtime audit,

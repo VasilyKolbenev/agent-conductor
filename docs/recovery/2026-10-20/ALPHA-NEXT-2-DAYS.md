@@ -19,10 +19,10 @@ terminal complete и свободный слот. Отчёт DALIO-FIRST-COMPLET
    Проверить эту правку уже в финальном установленном release candidate.
 2. Q6/Q8/Q10 локально закрыты 7742eaa: 534 combined passed/codec, без моделей/цикла;
    см. ALPHA-AUTH-CLOSE-REPORT.md. Проверить их на финальном установленном кандидате.
-   Остаётся полный H5-QUOTA-IDS-RS1 depth/runtime audit; его не закрывает Q10.
-   В RS1 локально исправлен один UnicodeEncodeError (919fed1, 195 targets/codec);
-   deep600 не воспроизведён на 3.12, recursive walker по-прежнему не менялся.
-   Политика Q10 в 7742eaa уже отказывает при недостоверном read-back.
+   RS1 также локально закрыт: surrogate919fed1 и depth1147b86 на Python3.11.9/3.12.14.
+   Итеративные обходы сохраняют все decoded значения; 200 targets+4subtests/codec,
+   пять stdlib методов/codec на обеих версиях. Старые Q8 fixtures исправлены f9df475.
+   См. RS1-CREDENTIAL-DEPTH-REPORT.md. Политика Q107742eaa сохраняет fail-closed.
 3. Зафиксировать один release candidate SHA. Полная матрица ci.yml на этом SHA,
    полный Windows core в обеих кодировках, installed road; wheel именно этого CI run,
    проверенный sha256. Старый зелёный core 385d035 не заменяет проверку нового кандидата.
