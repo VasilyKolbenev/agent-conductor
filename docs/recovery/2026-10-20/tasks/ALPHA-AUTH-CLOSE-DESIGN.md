@@ -1,4 +1,4 @@
-# ALPHA-AUTH-CLOSE: дизайн v1
+# ALPHA-AUTH-CLOSE: дизайн v2
 
 ## Q10: недостоверный read-back
 
@@ -29,7 +29,7 @@ Vendor, источник source_relay и статус local_match/unknown сох
 Не серверное подтверждение, не криптографическая аттестация подписки.
 B: отдельный журнал account evidence с собственной lifetime/route. Лишний store и
 опасность не связать с ActionResult; предпочтён A при доказанном сохранении runtime.
-Точный wire door уточняется по независимому tracing до реализации.
+Точный wire door уточнён независимым tracing ниже; receipt-only вариант A отклонён.
 
 ## Q8: закрытая схема и окружение
 
@@ -58,3 +58,31 @@ v2 фиксирует их замечания номерами до кода. О
 Q8 все 12 имён/lowercase отказаны до spawn, harmless/API-control сохранены.
 Мутанты: убрать readback guard, snapshot binding, account proof persistence и env guard;
 M0 и каждый изолированно с import/restore SHA. Targets UTF-8/CP1251, CI не заявлять.
+
+## Замечания линз и окончательные интерфейсы
+
+1.1 native_test_runner_v2: общий _login_echo не достаточен; обязательный frozen
+credential_readback_untrusted в _Attempt, sticky внутри одной road, проверяется
+publish и независимым checker до verdict/feedback. Два constructor обновить явно.
+1.2: optional absent secondary не считать порчей; expected relay leaf обязателен.
+Present malformed declared credential на direct subscription тоже недостоверен.
+Старый permissive тест менять как новый контракт Q10, не замалчивать.
+2.1 do_rejected_inspector: runtime намеренно отбрасывает receipt.extra, AttemptEvent
+строгий. Выбран Q6 вариант B существующего EvidenceRef вместо нового журнала:
+kind subscription_account_v1, verification unverified; фиксированные run/action/
+attempt/instance/role binding в extras, безопасный URI/label, только account ID hash.
+Это дополнительный provenance, не acceptance evidence_refs и не успех задачи.
+Account proof вычислить из Ready.account/Ticket.account внутри lease, сохранить в
+attempt snapshot; записать через существующий ArtifactHandoff/RunStore после выхода
+из lease для doer и checker. Unknown — явно, без перечитывания текущего профиля.
+2.2: нельзя использовать Ready.digest, нельзя обещать server identity/relay reread.
+3.1 alpha_readiness_now: старый M1 не содержит полного roster, fake не измерение.
+Разрешён отдельный helper только names/types под lease; тот же saved snapshot не
+является доказательством актуальной live совместимости. Все observed поля сохраняются,
+только unknown names/types отказываются. Новая схема — отдельный code-owned контракт.
+
+Исполнение: native_test_runner_v2 — Q10 и shared relay/headless/snapshot glue Q6;
+do_rejected_inspector — новый helper account evidence, ArtifactHandoff и Q6 tests;
+alpha_readiness_now — relay_env/claude_relay и новые Q8 tests. Общие модули не делят;
+root интегрирует CAPPED и module graph registrations, общие документы/коммиты.
+Конкретные названия helper/API согласовать сообщениями перед shared integration.
