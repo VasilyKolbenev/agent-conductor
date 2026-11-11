@@ -15,6 +15,9 @@ https://github.com/VasilyKolbenev/agent-conductor.git.
 после чтения и проверки покрытия новых модулей, с новым kit/worktree/output/temp
 prefix. Все CONDUCT_ opt-ins и наследуемые PYTHON/GIT override очищены; модельные
 native opt-ins не включать. Реальные vendor CLI не вызывать.
+Аудит контроллера нашёл native OS-тест в test_process_profile.py без native в имени:
+явно отнести его к single-file native partition. Ожидается56jobs (21native+7ordinary
+на кодировку). Новые короткие каталоги zu*/zc* должны отсутствовать до pytest.
 Каждый native файл отдельным процессом, затем ordinary shards; UTF-8 полностью
 до CP1251. Никаких retry/skip/timeout ослаблений и исправлений кандидата по ходу.
 Сохранить полный inventory, mode/import witnesses, PID, stdout/JUnit, skip reasons,
@@ -30,3 +33,6 @@ native opt-ins не включать. Реальные vendor CLI не вызы�
 Kit вне Git: work/alpha-candidate-1111. На пороге12% штатно остановить controller
 и уже запущенные дочерние проверки по записанным PID, сохранить незавершённый статус;
 не называть его зелёным. Перед остановкой handoff, отчёт и отдельный docs commit.
+Внешний controller получает stop-marker в kit; на остановке не создаёт новых jobs,
+останавливает только собственные живые Popen trees по сохранённым PID (не по именам),
+сохраняет interrupted/незавершённые результаты. Тестовые timeouts и assertions прежние.
