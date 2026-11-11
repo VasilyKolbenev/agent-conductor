@@ -27,6 +27,22 @@ method/config cases, включая negative. Golden изменить тольк
 Root единолично пишет общие docs/решения, интегрирует и коммитит. Остальное readonly.
 TASK/DESIGN и уточнения вступают в работу отдельными docs commits до реализации.
 
+## Уточнение C1: новый blocker во время полного core
+
+В кандидате7368dc0 UTF8 зелёный, CP1251 interruption[with_input-CancelWait]
+падает TypeError None>int в test_command_process_interruption.py:86.
+read_int имеет контракт int|None; writer уже os.replace, причина конкретного
+неудачного OS-read не измерена. Не объявлять её truncate/продуктовым дефектом.
+I4 (исполнитель I3): только tests/test_command_process_interruption.py. Сначала
+детерминированный RED через реальный observer caller и подмену IO/time boundary;
+три-пять гипотез, различить потерю initial sample, None-as-progress и last reread.
+Исправлять наблюдение валидного увеличения, не смягчать product retirement assertions
+или существующий deadline5/sleep.01. Постоянный None/нет роста обязаны дать отказ.
+Новый guard — meaningful mutants; полные interruption tests в обеих кодировках.
+Текущий7368 full core завершить/сохранить без retry/source edits; CI не запускать.
+После C1/code commit новый immutable candidate и вновь полный core в двух modes.
+Root технически утвердил продолжение по доказанному blocker, бюджет/границы прежние.
+
 ## Доказательства и закрытие
 
 RED уже измерен полным core в обоих modes:19failed, raw kit alpha-candidate-1111.

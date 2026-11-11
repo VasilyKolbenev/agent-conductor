@@ -1,4 +1,4 @@
-# ALPHA-CORE-REPAIR — дизайн v2
+# ALPHA-CORE-REPAIR — дизайн v3
 
 ## Контракт и варианты
 
@@ -56,3 +56,18 @@ action/attempt и actor/role. Один filter/count недостаточен.
 B2 принят: реальные LoginRoad reset/account hooks, явно None proof и действительный
 verifier.instance_id; без production defaults или no-op account override.
 Обе линзы дали GO, blockers нет; root утвердил выбранный вариант A.
+
+## C1: валидное наблюдение heartbeat
+
+По trace последняя read_int вернула None; OS-причина неизвестна. По коду текущий
+while считает None!=before ростом, затем повторное чтение теряет уже наблюдённый
+результат. Даже initial baseline теряется после wait_for_int из-за нового read.
+A выбран: использовать возвращённый wait_for_int int как baseline, в прежнем
+5-секундном окне получать по одному sample, считать доказательством только sample
+не None и >baseline, проверять сохранённый sample без нового чтения после loop.
+B отклонён: менять atomic writer/read_int или подавлять None в последнем assert —
+OS-причина не измерена, а подавление не доказывает живое потомство.
+Новые детерминированные случаи через InterruptedRun.spawn/owned.proc.wait должны
+поймать transient unknown/last-reread и fail-closed never-progress. Existing real
+четыре interruption случая сохраняют точные identity/token/thread/beat assertions.
+Независимое чтение C1 до реализации; новый факт допускает этот дополнительный срез.
