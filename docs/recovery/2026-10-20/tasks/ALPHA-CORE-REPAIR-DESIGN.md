@@ -1,0 +1,45 @@
+# ALPHA-CORE-REPAIR — дизайн v1
+
+## Контракт и варианты
+
+A (выбран): pure account-proof helper целиком перенести в adapters; payload,
+hash domain, closed validation, freeze и unverified evidence остаются побайтно
+прежними. ArtifactHandoff импортирует owning adapter value module, relay_attempt
+использует sibling import. CAPPED и внутренние tests imports следуют за файлом.
+Это устраняет vendor literals в request-path и SDK upward import без guard waiver.
+
+B: разделить neutral proof model и provider mapping через registry. Отклонён:
+новый интерфейс и больший diff без второго потребителя/необходимости менять поведение.
+Старый module не объявлен публичным SDK API; compatibility shim не нужен.
+
+## Фикстуры и стражи
+
+Partial Checker должен вызывать настоящий LoginRoad reset/account hook с явно
+отсутствующим account proof, иметь действительный verifier identity. Не добавлять
+production getattr(False), не подменять check outcome/events/runtime substitution.
+
+Evidence census проверяет exact prepared seal/verification и отдельно ровно два
+Q6 subscription_account_v1/unverified с actor/role/request/attempt bindings.
+Не фильтровать все None или все unverified: это спрятало бы потерю/подмену provenance.
+
+Login fixtures создают plain fake primary credential в реальном tmp_path и pin
+именно его. Seed действует на ВСЕ cases method/config parametrization, чтобы
+negative tests ловили свой запрет, а не ранний Q10 refusal. Tokens только fake.
+Snapshots: адресно изменить два Claude facts по утверждённому ALPHA-AUTH-CLOSE;
+сохранить strict equality, остальные snapshots и все existing deny assertions.
+
+## Швы и пределы доказательств
+
+- Два существующих architecture guards ловят placement/import; positive account
+  tests доказывают сохранение proof semantics, не server identity.
+- Полные login modules ловят allowed/denied configs, env и pinned homes; fake CLI
+  не доказывает реальную подписку/доступность vendor.
+- Existing checker/census tests плюс Q6/Q10 guards ловят exact evidence/state,
+  read-back refusal и сохранение test-before-checker порядка. Не live boundary proof.
+- Golden equality ловит drift всей модели фактов; mutation утверждённого Q8 поля
+  должен снова сделать snapshot красным.
+- Full core в двух modes не заменяет остальные OS/browser/installed/owner gates.
+
+До реализации: две независимые линзы (границы source/SDK и достоверность fixtures),
+находки обозначить A1/B1; v2 с ответами коммитом. Затем ограниченный diff,
+targeted checks/mutants/cross-review, новый immutable candidate/core/conditionalCI.
