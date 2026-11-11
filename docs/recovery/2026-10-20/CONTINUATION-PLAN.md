@@ -1,5 +1,11 @@
 # December Command: продолжение после восстановления
 
+Последний security срез 11.11: ALPHA-AUTH-CLOSE-REPORT.md, код 7742eaa.
+Q6/Q8/Q10 локально закрыты: 534 combined passed в каждой кодировке, без vendor calls.
+Защищённый продукт пока 19956c8. Следующее — остаток RS1 depth/runtime audit,
+затем единый release candidate/core/CI/installed road/чистые четыре подписки и приёмка.
+ALPHA-NEXT-2-DAYS.md обновлён; принятый counter-src-19956c8-r1 не повторять.
+
 Оперативная точка на 11.11.2026 — `HANDOFF-2026-11-11.md` и
 `tasks/DALIO-FIRST-COMPLETE-REPORT.md`. Первый полный учебный цикл Codex + Grok
 по подпискам принят владельцем: counter-src-19956c8-r1, terminal complete,

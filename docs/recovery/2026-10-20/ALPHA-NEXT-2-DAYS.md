@@ -17,11 +17,12 @@ terminal complete и свободный слот. Отчёт DALIO-FIRST-COMPLET
 1. Локально закрыто 11.11: UI-NATIVE-SUMMARY-1 (77b8104, отчёт a3e06ef), сводка,
    Tests и protocol согласованы; 28 browser + 327 structure passed/codec.
    Проверить эту правку уже в финальном установленном release candidate.
-2. Адресно сверить и закрыть pre-alpha долги H5-I2B-Q6/Q8/Q10 и H5-QUOTA-IDS-RS1.
-   Источник — OPEN-DECISIONS.md; не считать их закрытыми успешным учебным циклом.
-   Для каждого: воспроизведение, минимальная правка причины, регрессия и evidence.
+2. Q6/Q8/Q10 локально закрыты 7742eaa: 534 combined passed/codec, без моделей/цикла;
+   см. ALPHA-AUTH-CLOSE-REPORT.md. Проверить их на финальном установленном кандидате.
+   Остаётся полный H5-QUOTA-IDS-RS1 depth/runtime audit; его не закрывает Q10.
    В RS1 локально исправлен один UnicodeEncodeError (919fed1, 195 targets/codec);
-   deep600 не воспроизведён на 3.12, walker и политика Q10 не изменены.
+   deep600 не воспроизведён на 3.12, recursive walker по-прежнему не менялся.
+   Политика Q10 в 7742eaa уже отказывает при недостоверном read-back.
 3. Зафиксировать один release candidate SHA. Полная матрица ci.yml на этом SHA,
    полный Windows core в обеих кодировках, installed road; wheel именно этого CI run,
    проверенный sha256. Старый зелёный core 385d035 не заменяет проверку нового кандидата.
