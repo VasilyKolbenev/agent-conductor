@@ -1,4 +1,4 @@
-# ALPHA-CORE-REPAIR — дизайн v1
+# ALPHA-CORE-REPAIR — дизайн v2
 
 ## Контракт и варианты
 
@@ -43,3 +43,16 @@ Snapshots: адресно изменить два Claude facts по утверж
 До реализации: две независимые линзы (границы source/SDK и достоверность fixtures),
 находки обозначить A1/B1; v2 с ответами коммитом. Затем ограниченный diff,
 targeted checks/mutants/cross-review, новый immutable candidate/core/conditionalCI.
+
+## Ревью v1 и решения v2
+
+A1 принят: byte SHA helper до/после одинаков; оба imports остаются deferred,
+без adapters.__init__ re-export. Существующие SDK stdlib/sibling guards достаточны.
+A2 принят: полный rg census — два product imports, два test imports, один CAPPED
+path; старый путь не опубликован, pickle/importlib/entry-point зависимостей нет.
+B1 принят: кроме точных seal/verification и двух Q6 rows сохранить общий evidence
+count и запрет любых лишних rows; account rows связаны с durable request_ref,
+action/attempt и actor/role. Один filter/count недостаточен.
+B2 принят: реальные LoginRoad reset/account hooks, явно None proof и действительный
+verifier.instance_id; без production defaults или no-op account override.
+Обе линзы дали GO, blockers нет; root утвердил выбранный вариант A.
