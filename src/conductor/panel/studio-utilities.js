@@ -111,13 +111,18 @@ export function utilityDrawer(dialog, door) {
     const name = input("input", attachment.label, value => { attachment.label = value; }, {maxlength: "80", required: ""});
     const id = input("input", attachment.id, value => { attachment.id = value; },
       {maxlength: "48", required: "", placeholder: "my-cli"});
-    const mode = element("select", {"aria-label": tr("mode")});
+    const hintText = () => tr(attachment.mode === "manual" ? "manual_info" : "protocol_info");
+    const hint = element("p", {id: "utilityModeHint", text: hintText()});
+    const mode = element("select", {"aria-label": tr("mode"), "aria-describedby": hint.id});
     for (const k of modes) mode.append(element("option", {value: k, text: tr(k === "manual" ? "manual" : "protocol")}));
     mode.value = attachment.mode;
-    mode.addEventListener("change", () => { attachment.mode = mode.value; });
+    mode.addEventListener("change", () => {
+      attachment.mode = mode.value;
+      hint.textContent = hintText();
+    });
     const add = element("button", {type: "submit", text: tr("attach")});
     add.disabled = !writable();
-    form.append(field(tr("name"), name), field(tr("id"), id), field(tr("mode"), mode), add);
+    form.append(field(tr("name"), name), field(tr("id"), id), field(tr("mode"), mode), hint, add);
     form.addEventListener("submit", event => {
       event.preventDefault();
       if (!validId(attachment.id) || !attachment.label.trim()) { tell("invalid"); return; }
@@ -127,8 +132,13 @@ export function utilityDrawer(dialog, door) {
   }
   function exchange(main, u, e) {
     const card = element("article", {className: "utility-exchange"});
-    card.append(element("small", {text: tr(e.state)}), element("pre", {text: e.text}), copy(e.text));
-    if (e.state === "answered") card.append(element("h4", {text: tr("external")}), element("pre", {text: e.reply}));
+    const answered = e.state === "answered";
+    card.append(element("small", {text: tr(answered ? "draft" : e.state)}),
+      element("pre", {text: e.text}), copy(e.text));
+    if (answered) {
+      const source = u.mode === "manual" ? "operator_reply" : "bridge_reply";
+      card.append(element("h4", {text: tr(source)}), element("pre", {text: e.reply}));
+    }
     if (u.mode === "manual" && e.state === "pending") {
       const key = "reply:" + e.exchange_id;
       const area = input("textarea", drafts.get(key) || "", value => drafts.set(key, value), {rows: "3"});
@@ -144,7 +154,8 @@ export function utilityDrawer(dialog, door) {
   }
   function utility(main, u) {
     main.append(heading(u.label), element("small", {text: tr(u.mode === "manual" ? "manual" : "protocol")}),
-      element("p", {text: tr(u.mode === "manual" ? "manual_info" : "protocol_info")}));
+      element("p", {text: tr(u.mode === "manual" ? "manual_info" : "protocol_info")}),
+      element("small", {className: "utility-mode", text: tr("limits")}));
     if (u.mode === "stdio-v1") {
       const command = "conduct utility-bridge --server " + door.origin + " --utility " + u.utility_id;
       main.append(element("code", {text: command}), copy(command));

@@ -1,4 +1,5 @@
 """Connect to two real project utilities and reopen the saved exchange in view mode."""
+import re
 from contextlib import contextmanager
 from threading import Thread
 
@@ -9,6 +10,7 @@ from browser_tests.test_studio_rendered import studio_url
 from conductor import demo, ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.project_claim import Launch
+from conductor.utility_bridge import LocalStudio, exchange
 
 
 @contextmanager
@@ -29,6 +31,9 @@ def attach(panel, name, identifier, mode):
     panel.get_by_label("Name", exact=True).fill(name)
     panel.get_by_label("Identifier", exact=True).fill(identifier)
     panel.get_by_label("Connection", exact=True).select_option(mode)
+    hint = "Copy the task" if mode == "manual" else "arachnid.utility.v1"
+    expect(panel.get_by_label("Connection", exact=True)).to_have_accessible_description(
+        re.compile(hint))
     panel.get_by_role("button", name="Connect utility").click()
     expect(panel.get_by_label("Task text")).to_be_visible()
     expect(panel.get_by_role("heading", name=name, exact=True)).to_be_visible()
@@ -64,6 +69,8 @@ def test_saved_exchange_is_readable_when_the_same_project_reopens_read_only(chro
             panel.get_by_label("CLI reply").fill("Counter verified")
             panel.get_by_role("button", name="Save reply").click()
             expect(panel).to_contain_text("Counter verified")
+            manual_reply = panel.get_by_role("heading", name="Reply recorded by the operator")
+            expect(manual_reply).to_be_visible()
             expect(panel.get_by_label("CLI reply")).to_have_count(0)
             attach(panel, "CLI B", "cli-b", "stdio-v1")
             expect(panel).to_contain_text(f"utility-bridge --server {url} --utility cli-b")
@@ -72,6 +79,28 @@ def test_saved_exchange_is_readable_when_the_same_project_reopens_read_only(chro
             expect(panel).to_contain_text("Awaiting handoff")
             expect(panel.get_by_label("CLI reply")).to_have_count(0)
             expect(panel).not_to_contain_text("Counter verified")
+            bridge_reply = panel.get_by_role("heading", name="Reply received through the bridge")
+            expect(bridge_reply).to_have_count(0)
+            client = LocalStudio(url)
+            held = client.get("/command/project/utilities")["exchanges"]
+            entry, = [e for e in held if e["utility_id"] == "cli-b"]
+            claim = dict(utility_id="cli-b", exchange_id=entry["exchange_id"], claim_token="a" * 64)
+            assert client.post(op="claim", **claim)[0] == 201
+            panel.get_by_role("button", name="Refresh exchanges").click()
+            expect(panel.get_by_text("Claimed by bridge", exact=True)).to_be_visible()
+            expect(bridge_reply).to_have_count(0)
+            panel.get_by_role("button", name="Close with unknown outcome").click()
+            expect(panel.get_by_text("Outcome unknown", exact=True)).to_be_visible()
+            expect(bridge_reply).to_have_count(0)
+            panel.get_by_label("Task text").fill("Read another file")
+            panel.get_by_role("button", name="Send task").click()
+            expect(panel.get_by_text("Awaiting handoff", exact=True)).to_be_visible()
+            assert exchange(client, "cli-b", lambda req: "echo: " + req["text"])
+            panel.get_by_role("button", name="Refresh exchanges").click()
+            expect(bridge_reply).to_be_visible()
+            expect(panel).to_contain_text("echo: Read another file")
+            limits = "Workflow roles and quota readings require a provider adapter"
+            expect(panel).to_contain_text(limits)
             panel.get_by_role("button", name="Close").click()
             expect(opener).to_be_focused()
             page.goto("about:blank")
@@ -84,8 +113,10 @@ def test_saved_exchange_is_readable_when_the_same_project_reopens_read_only(chro
             expect(panel).to_contain_text("только для просмотра")
             panel.get_by_role("button", name="My local CLI", exact=True).click()
             expect(panel).to_contain_text("Counter verified")
+            expect(panel.get_by_role("heading", name="Ответ записал оператор")).to_be_visible()
             expect(panel.get_by_role("button", name="Отправить задачу")).to_be_disabled()
-            assert [op for op, _ in sent] == ["attach", "send", "manual_reply", "attach", "send"]
+            assert [op for op, _ in sent] == [
+                "attach", "send", "manual_reply", "attach", "send", "mark_unknown", "send"]
             assert all(headers.get("x-conduct-csrf") for _, headers in sent)
             assert all(headers.get("x-conduct-project") == project_id for _, headers in sent)
             assert not errors
