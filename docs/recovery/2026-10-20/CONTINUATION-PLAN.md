@@ -1,5 +1,14 @@
 # December Command: продолжение после восстановления
 
+Актуально13.11: CI-PORTABLE-ROOT-REPORT.md, candidate6f4d947. POSIX collection и
+root provenance локально исправлены; fullcore58/58green:20621passed+4subtests,
+0failed/errors/441skipped/4warnings на codec. CI43388477627 запущен exact6f4d947,
+последний snapshot12jobs:3success/9in_progress, build и оба POSIX installed roads
+зелёные; это ещё не remote green. Старый CI
+43106716036 завершился2success/10failure; отдельные Win3.11/browser blockers в отчёте.
+Без моделей/нового цикла, порог10% остатка. Принятый цикл/Studio19956c8 не менять.
+Ниже сохранены исторические срезы; текущие результаты в новом REPORT/HANDOFF13.11.
+
 Актуально12.11: ALPHA-CORE-REPAIR-REPORT.md и HANDOFF-2026-11-12.md.
 d7334d6 локально56/56green:20587passed+4subtests/0failed/441skipped на mode.
 CI43106716036 запущен на exactSHA, но POSIX collection/installed root уже красные.

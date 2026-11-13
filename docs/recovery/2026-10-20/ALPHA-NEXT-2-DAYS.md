@@ -1,5 +1,15 @@
 # Альфа Arachnid: два следующих рабочих дня
 
+Срез13.11: CI-PORTABLE-ROOT candidate6f4d947 исправляет ранние native imports и
+installed-root provenance из owning ENTRY_PAGE; строгие SHA/UI проверки сохранены.
+Targets и15mutants пройдены, полный core58/58green:20621passed+4subtests/441skip,
+0fail/errors/4warnings на codec. CI43388477627 запущен exact6f4d947,
+snapshot12jobs:3success/9in_progress; build и оба POSIX installed roads зелёные.
+CI d7334d6 завершён2success/10failure. Следующие отдельные
+blockers: Win3.11 device-Path fixture и browser gates; подробности в новом REPORT.
+Порог10% остатка, модели/новые циклы0. Alpha release и четыре harness не закрыты.
+Старые срезы ниже — история; актуальный handoff13.11 и CI-PORTABLE-ROOT-REPORT.md.
+
 Текущий срез12.11: d7334d6 локально green в UTF-8/CP1251, CI43106716036
 начат, но уже имеет6POSIX jobs failure. Следующий blocker-срез — lazy Windows-only
 imports до platform gates и installed-root provenance Arachnid, сохраняя все SHA checks.
