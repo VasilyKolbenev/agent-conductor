@@ -115,10 +115,15 @@ December Command coordinates these applications; you keep their accounts and pay
 | Grok Build | Native subscription login | Native quota source |
 | DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
-On Windows, Claude Code completed a subscription Goal in isolation. In the shared Dalio rehearsal,
-Codex 0.164.0 completed Goal, Identify and Design, and Grok Build 1.0.13 returned a read-only diagnosis.
-The 7 November run stopped at Do. Kimi Code 0.38.0 has a quota reader, and subscription execution is
-still closed. Use the wheel identified for your trial. [Evidence and platform scope](docs/first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
+On Windows, Codex 0.164.0 and Grok Build 1.0.13 completed a five-step subscription workflow
+to fix a counter. Grok diagnosed the bug, Codex patched two files, three tests passed, and a
+separate Codex checker verified the result. A person revised the plan before Do and approved
+both gates. [Accepted run](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
+Claude Code completed a subscription Goal in isolation. Kimi Code 0.38.0 opened an offline
+session with test credentials. Its first task and quota reading on a real subscription are
+still pending, along with the clean-install check for all four harnesses using a new user's
+accounts. [Evidence and platform scope](docs/first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.

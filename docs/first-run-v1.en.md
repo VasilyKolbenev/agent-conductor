@@ -311,11 +311,13 @@ On Windows the pinned executable, its login directory and the requested role mus
 ### What has been checked with the real vendor
 
 - **Claude Code 2.1.239.** A real subscription Goal ran inside AppContainer, produced `artifact-goal` and cleaned up. Identify then timed out. [Run report](recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
-- **Codex 0.164.0.** In the shared cycle `gpt-6.1-sol` completed Goal, Identify and Design on subscription. Do ended without changes on 7 November. The new patch route has been checked separately with fixed model replies. [Live cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
-- **Grok Build 1.0.13.** The live G6 diagnosis on subscription passed its rehearsal gate. In the shared cycle Grok identified the faulty code and missing test. Its role is read-only review. A quota response can omit usage percentages. [G6 report](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Live cycle](recovery/2026-10-20/HANDOFF-2026-11-07.md).
+- **Codex 0.164.0.** In the accepted `count_succeeded` rehearsal, Codex completed Goal, Identify, Design and Do on subscription. At Do it patched the implementation and tests in the task copy. Three unittest tests passed, then a separate Codex instance checked the changes and the test report. [Accepted run](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+- **Grok Build 1.0.13.** In the same cycle Grok completed Diagnose with read-only access to two source files. Its subscription diagnosis had also passed a separate G6 rehearsal gate. A quota response can omit usage percentages. [G6 report](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md).
 - **Kimi Code 0.38.0.** The native CLI accepted synthetic credentials offline in isolation. Quota reads from a real account still need verification. The product refuses subscription tasks before spawn while isolation of writable CLI state is under development. [Native check](recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Execution boundary](recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
 
-A complete independently checked Dalio cycle with Codex and Grok still needs a successful live acceptance run.
+This cycle ran for one iteration on Windows. A person aligned the plan with the test command before
+Do, and the owner approved execution and accepted the result. Public alpha acceptance still requires
+a new user to obtain a task result from each of their four subscriptions on a clean installation.
 
 ### DeepSeek: balance, key, and server restart
 
