@@ -43,8 +43,15 @@ def test_publish_and_choose_a_personal_cycle_without_losing_the_task(
         build = form.locator('[data-card-id="build"]')
         link = build.get_by_role("link")
         expect(link).to_be_visible()
-        link_box = link.bounding_box()
-        assert build.locator("small").bounding_box()["y"] >= link_box["y"] + link_box["height"]
+        # A catalog response redraws the card. Measure both live children in one DOM read.
+        bounds = form.evaluate("""mount => {
+            const card = mount.querySelector('[data-card-id="build"]');
+            const link = card.querySelector('a').getBoundingClientRect();
+            const note = card.querySelector('small').getBoundingClientRect();
+            return {link: link.toJSON(), note: note.toJSON()};
+        }""")
+        assert all(box["width"] > 0 and box["height"] > 0 for box in bounds.values()), bounds
+        assert bounds["note"]["top"] >= bounds["link"]["bottom"], bounds
         with context.expect_page() as opened:
             link.click()
         editor = opened.value

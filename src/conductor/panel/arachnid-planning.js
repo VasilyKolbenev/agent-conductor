@@ -70,7 +70,13 @@ export function atlasPlanning(host, door) {
     try { await work(); }
     catch (error) {
       if (valid(e)) { e.issue = error.message || "store_error"; e.phase = "blocked"; }
-    } finally { e.working = false; if (valid(e)) snapshot(); }
+    } finally {
+      e.working = false;
+      if (valid(e)) {
+        snapshot();
+        if (e.pendingTick) { e.pendingTick = false; tick(); }
+      }
+    }
   }
   function mainDoor(e) {
     return {read: route => door.readJson(route),
@@ -103,7 +109,7 @@ export function atlasPlanning(host, door) {
     e.authorization = result.authorization; e.phase = "authorized";
   }
   function make(ctx) {
-    const e = {...ctx, prepared: null, authorization: null, working: false,
+    const e = {...ctx, prepared: null, authorization: null, working: false, pendingTick: false,
       actor: actors.get(ctx.projectId) ?? "local-operator", phase: null, issue: null};
     e.advisor = createArachnidAdvisor({
       readJson: door.readJson, write: mainDoor(e).submit,
@@ -166,7 +172,11 @@ export function atlasPlanning(host, door) {
   }
   function tick() {
     const e = active;
-    if (e && !e.working && valid(e) && ["running","recover"].includes(e.advisor.state().phase)) {
+    if (!e || !valid(e)) return;
+    // A completion frame may arrive before the grant response or an older journal read.
+    // Remember it for this session until the in-flight operation can finish.
+    if (e.working) { e.pendingTick = true; return; }
+    if (["running","recover"].includes(e.advisor.state().phase)) {
       void action(e, () => e.advisor.tick());
     }
   }

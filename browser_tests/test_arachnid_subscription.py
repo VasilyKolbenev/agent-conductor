@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from playwright.sync_api import expect
 
-from browser_tests.desk_hold import close_context
+from browser_tests.desk_hold import close_context, until
+from browser_tests.test_studio_lifecycle import _STREAM_DOUBLE
 from conductor import ownership, ownership_transition, server
 from conductor.command import operator_config
 from conductor.command import providers as provider_factory
@@ -24,7 +25,45 @@ from tests.test_patch_do_policy import reply
 from tests.test_store import good_lane, write_project
 
 
-@pytest.mark.parametrize("case", ["authorize", "replace", "operator"])
+def finish_during_planner_read(page, run_id, advisor, case, calls, release_answer):
+    """Deliver the final frame while the grant response or a prior journal read is in transit."""
+    journal = page.url.split("/#")[0] + "/command/runs/" + run_id
+    held = []
+
+    def hold_reply(route):
+        held.append((route, route.fetch()))
+
+    def frame():
+        page.evaluate("id => __stream.emit(JSON.stringify({kind:'run', run_id:id}))", run_id)
+
+    def completed():
+        rows = page.request.get(journal).json()["records"]
+        return any(r["record_type"] == "action_result" and r["record"]["outcome"] == "succeeded"
+                   for r in rows) and any(r["record_type"] == "artifact" and
+                   r["record"]["artifact_ref"] == "draft-suggestion" for r in rows)
+
+    if case == "grant_signal":
+        page.route(journal + "/automation/authorize", hold_reply, times=1)
+        advisor.click()
+    else:
+        with page.expect_response(lambda reply: reply.url == journal + "/automation/authorize"):
+            advisor.click()
+        until(page, "the fake vendor received the request", lambda: calls)
+        page.route(journal, hold_reply, times=1)
+        frame()
+    until(page, "a reply is in transit", lambda: held)
+    route, response = held[0]
+    assert response.ok
+    if case == "read_signal":
+        assert not any(r["record_type"] == "action_result" for r in response.json()["records"])
+        release_answer.set()
+    until(page, "the result and suggestion are in the journal", completed)
+    frame()
+    route.fulfill(response=response)
+
+
+@pytest.mark.parametrize("case", [
+    "authorize", "replace", "operator", "grant_signal", "read_signal"])
 def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         tmp_path, chromium, monkeypatch, case):
     root = write_project(tmp_path / "project", lanes={"test": good_lane()})
@@ -57,6 +96,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
     worker = threading.Thread(target=http.serve_forever, daemon=True)
     worker.start()
     calls = []
+    release_answer = threading.Event()
     for runner in runners:
         runner.auth_homes = tuple(tmp_path / "DecemberCommand/logins" / p.provider_id
                                   for p in providers)
@@ -67,6 +107,8 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
             calls.append(spec)
             if len(calls) == 1:
                 assert b"COUNT_CORRECT" in spec.stdin_bytes
+                if case == "read_signal":
+                    assert release_answer.wait(timeout=20)
                 return reply(json.dumps({"criterion": "Count only accepted rows", "question": None,
                     "cycle_id": None, "roles": {}, "depth": "balanced"}).encode("ascii"))
             return reply(b"Goal recorded")
@@ -74,6 +116,8 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
     context = chromium.new_context(viewport={"width": 1280, "height": 840})
     try:
         page = context.new_page()
+        if case in ("grant_signal", "read_signal"):
+            page.add_init_script(_STREAM_DOUBLE)
         page.goto(f"http://127.0.0.1:{http.server_address[1]}/#lang=ru")
         expect(page.locator("#new")).to_be_enabled()
         page.locator("#new").click()
@@ -85,10 +129,18 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         if case == "operator":
             page.locator("#planner input").fill("Alice")
         assert not calls
-        advisor.click()
+        if case in ("grant_signal", "read_signal"):
+            run_id = page.url.split("advice=")[1].split("&")[0]
+            finish_during_planner_read(page, run_id, advisor, case, calls, release_answer)
+        else:
+            advisor.click()
         prepare = page.locator('[data-planner-action="prepareMain"]')
         expect(prepare).to_be_enabled(timeout=30000)
         assert len(calls) == 1
+        if case in ("grant_signal", "read_signal"):
+            expect(page.locator("#planner")).to_contain_text("Count only accepted rows")
+            assert not any(r.kind == "decision" for r in RunStore(root).read(run_id).records)
+            return
         first_url = page.url
         if case == "replace":
             page.route("**/command/workflows", lambda route: route.fulfill(status=503, body="{}"))
@@ -155,6 +207,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         expect(page.locator("#planner")).to_contain_text(target)
         assert sum(r.kind == "run_authorization" for r in RunStore(root).read(target).records) == 1
     finally:
+        release_answer.set()
         close_context(context)
         http.shutdown()
         worker.join(timeout=5)
