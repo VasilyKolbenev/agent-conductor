@@ -8,6 +8,7 @@
 
 | ID | Решение | Дата | Следствие |
 | --- | --- | --- | --- |
+| ATLAS-TEST-CASES | Разделить проверку в коде и фактическую запись unittest для каждого теста выбранной попытки. | 13.11.2026 | Пятая реплика сохраняет контекст; читается принятый Do без нового исполнения. |
 | ATLAS-CHECKER-WHY | Показать независимый вердикт на вопрос о приёмке правки в том же чате. | 13.11.2026 | Сверить автора, снимок и основание с данными принятого Do. Новый запуск не нужен. |
 | ATLAS-CONTEXT-DIFF | По запросу о правке Codex показать diff и тесты попытки из текущего диалога. | 13.11.2026 | Проверить на принятом цикле только чтением, согласно tasks/ATLAS-CONTEXT-DIFF-TASK.md. |
 | CI-PORTABLE-ROOT | Исправить POSIX collection и root verification, полный core двух codecs, CI только allgreen. | 13.11.2026 | Код6f4d947 с CAPPED: full58/58green,20621passed+4subtests/441skipped/4warnings/0fail/errors на codec,15mutants killed.744files once/mode,sourceclean,sessionexit0. Один push candidate/alpha-2026-11-13-6f4d947; CI43388477627 exactSHA,12jobs:3success/9in_progress; build и оба POSIX installed roads зелёные. Старый CI43106716036 окончательно2success/10failure; отдельные Win3.11/browser blockers не закрыты. Отчёт tasks/CI-PORTABLE-ROOT-REPORT.md. Без моделей/цикла, порог10%, остаток12%. |
