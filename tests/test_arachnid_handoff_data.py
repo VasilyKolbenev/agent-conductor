@@ -230,3 +230,13 @@ def test_followup_asks_about_individual_tests_not_the_handoff_or_checker():
         "А что именно проверили эти три теста?", "What exactly did these three tests check?",
         "Что из этого проверили тестами?", "А почему проверяющий принял эту правку?"])
     assert routes == ["cases", "cases", "tests", "verdict"]
+
+
+def test_unfamiliar_unittest_layout_does_not_imply_test_names_are_absent():
+    evidence = {"tests": {"cases": [], "source": "native", "status": "recorded", "summary": None,
+                          "protocol": {"status": "passed", "output": (
+                              "test_a (test_a.Suite.test_a)\nA useful description ... ok\n")}}}
+    reply = run_js('console.log(JSON.stringify(panel.handoffCasesAnswer("ru", d)))',
+                   {"panel": "arachnid-handoff.js"}, evidence)
+    assert "Подробности — в полном выводе" in reply
+    assert "Поимённых результатов в выводе нет" not in reply

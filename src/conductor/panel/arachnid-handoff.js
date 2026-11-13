@@ -153,9 +153,12 @@ function reportNote(w, t, named) {
   if (t.source === "external") return w("Only totals were recorded in the external report.",
     "Во внешнем отчёте записаны только общие счётчики.");
   if (t.source !== "native") return "";
-  return named.length ? w("Named results below are quoted from unittest output.",
-    "Поимённые результаты приведены из вывода unittest.") : w("No named results in the output.",
-    "Поимённых результатов в выводе нет.");
+  if (named.length) return w("Named results are quoted from unittest output.",
+    "Поимённые результаты приведены из вывода unittest.");
+  const quiet = t.protocol.output.split(/\r?\n/).every(s => !s.trim() || /^[-.sFxEu]+$/.test(s)
+    || /^(?:Ran \d+ tests? in \S+s|OK(?: \(.*\))?|conduct\.test-result\.v1 \{.*\})$/.test(s));
+  return quiet ? w("No named results in the output.", "Поимённых результатов в выводе нет.")
+    : w("See the full output for details.", "Подробности — в полном выводе.");
 }
 
 export function handoffCasesAnswer(locale, data) {
