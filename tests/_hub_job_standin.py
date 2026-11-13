@@ -37,5 +37,8 @@ try:
     record["started"] = True
 except spawn.SpawnRefused as refused:
     record.update(started=False, code=refused.code)
-result.write_text(json.dumps(record), encoding="utf-8")
+# The parent treats the final name as the signal that every field is ready.
+pending = result.with_suffix(".tmp")
+pending.write_text(json.dumps(record), encoding="utf-8")
+pending.replace(result)
 time.sleep(120)
