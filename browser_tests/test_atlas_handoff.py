@@ -193,6 +193,7 @@ def test_six_questions_follow_one_handoff_to_the_tests_that_reveal_the_old_bug(
         expect(comparison).to_contain_text("runstats/counts.py:3")
         expect(comparison).to_contain_text("Расчёт без выполнения старого кода")
         expect(comparison.locator("[data-case-run]")).to_contain_text("Протокол Do после правки")
+        widths = []
         for name, old, expected, effect in (
                 ("test_empty_input_is_zero", "0", "0", "Не обнаружил бы"),
                 ("test_counts_only_succeeded_records", "4", "2", "Обнаружил бы"),
@@ -201,12 +202,19 @@ def test_six_questions_follow_one_handoff_to_the_tests_that_reveal_the_old_bug(
             expect(row.locator("[data-old-actual]")).to_have_text(old)
             expect(row.locator("[data-old-expected]")).to_have_text(expected)
             expect(row.locator("[data-old-effect]")).to_have_text(effect)
+            for series, number in (("actual", old), ("expected", expected)):
+                bar = row.locator(f'meter[data-old-bar="{series}"]')
+                expect(bar).to_be_visible()
+                assert bar.evaluate("m => [m.min, m.max, m.value]") == [0, 9, int(number)]
+                widths.append(bar.bounding_box()["width"])
+        assert min(widths) > 0 and max(widths) - min(widths) <= 1
+        expect(comparison.locator("[data-case-run] meter")).to_have_count(0)
         actual = comparison.locator("[data-case-run] [data-case-observation]")
         assert actual.all_text_contents() == [
             s for s in proof["tests"]["protocol"]["output"].splitlines() if s.endswith(" ... ok")]
-        expect(reply).to_contain_text("test_counts_only_succeeded_records")
-        expect(reply).to_contain_text("test_skips_non_dictionaries_and_inexact_outcomes")
         expect(reply).to_contain_text("Обнаружили бы ошибку: 2 из 3")
+        assert "test_" not in reply.inner_text()
+        assert reply.inner_text().count("2 из 3") == 1
         expect(page.locator("#messages .msg.user")).to_have_count(6)
         assert requests and set(requests) == {"action-first-1"}
         assert writes == []
@@ -359,9 +367,44 @@ def test_run_totals_do_not_turn_source_definitions_into_named_outcomes(
         old = page.locator("[data-handoff-old-tests]")
         expect(old.locator("[data-old-row]")).to_have_count(3)
         expect(old.locator("[data-old-actual]")).to_have_count(0)
+        expect(old.locator("meter")).to_have_count(0)
         expect(old.locator("[data-old-effect]")).to_have_text(["Недостаточно данных"] * 3)
         expect(old.locator("[data-case-run]")).to_contain_text("всего 3", ignore_case=True)
         expect(old.locator("[data-case-observation]")).to_have_count(0)
+    finally:
+        close_context(context)
+
+
+def test_old_test_chart_scales_zero_and_keeps_negative_or_unknown_values_textual(
+        chromium, atlas_url, tmp_path):
+    context = chromium.new_context()
+    page = context.new_page()
+    journal = handoff_read(tmp_path / "root")
+    proof = native_protocol()
+    for case, actual, expected in zip(proof["tests"]["cases"][:2], (0, 4), (0, -2), strict=True):
+        case["old_length"] = {"expression": "len(rows)", "function": "count_succeeded",
+                              "path": "runstats/counts.py", "line": 3,
+                              "actual": actual, "expected": expected}
+    page.route("**/command/runs/first", lambda r: r.fulfill(json=journal))
+    page.route("**/steps/repair-counter/actions/action-first-2", lambda r: r.fulfill(json=proof))
+    try:
+        page.goto(atlas_url + "/#session=first&lang=ru")
+        expect(page.locator('#orbitHere [data-step="repair-counter"]')).to_be_attached()
+        ask(page, QUESTION)
+        expect(page.locator('[data-handoff-view="handoff"]')).to_be_visible()
+        ask(page, OLD_TESTS)
+        panel = page.locator("[data-handoff-old-tests]")
+        empty = panel.locator('[data-old-row="test_empty_input_is_zero"]')
+        bars = empty.locator("meter[data-old-bar]")
+        expect(bars).to_have_count(2)
+        assert bars.evaluate_all("ms => ms.map(m => [m.min, m.max, m.value])") == [[0, 1, 0]] * 2
+        negative = panel.locator('[data-old-row="test_counts_only_succeeded_records"]')
+        expect(negative.locator("[data-old-actual]")).to_have_text("4")
+        expect(negative.locator("[data-old-expected]")).to_have_text("-2")
+        expect(negative.locator("meter")).to_have_count(0)
+        unknown = panel.locator('[data-old-row="test_skips_non_dictionaries_and_inexact_outcomes"]')
+        expect(unknown.locator("[data-old-effect]")).to_have_text("Недостаточно данных")
+        expect(unknown.locator("meter, [data-old-actual], [data-old-expected]")).to_have_count(0)
     finally:
         close_context(context)
 

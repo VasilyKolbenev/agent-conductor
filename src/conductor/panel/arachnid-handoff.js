@@ -223,17 +223,28 @@ function oldEffect(w, p) {
 
 export function handoffOldAnswer(locale, data) {
   const w = word(locale), t = data.tests;
-  const rows = t.cases.map(c => ({name: c.name, p: oldProof(c, data.files)}));
-  const known = rows.filter(r => r.p), caught = known.filter(({p}) => p.actual !== p.expected);
-  const counts = known.length ? w("Would catch the bug: ", "Обнаружили бы ошибку: ")
-    + caught.length + w(" of ", " из ") + known.length
+  const proofs = t.cases.map(c => oldProof(c, data.files)).filter(Boolean);
+  const caught = proofs.filter(p => p.actual !== p.expected).length;
+  const counts = proofs.length ? w("Would catch the bug: ", "Обнаружили бы ошибку: ")
+    + caught + w(" of ", " из ") + proofs.length
     : w("The available source does not establish the old result.",
       "По доступному коду прежний результат не определён.");
-  return [w("Source comparison", "Сравнение по коду") + " · " + counts,
-    ...rows.map(({name, p}) => name + " · " + (p ? p.expression + " = " + p.actual
-      + w(", expected ", ", ожидалось ") + p.expected + " · " + oldEffect(w, p) : oldEffect(w, p))),
+  const unknown = t.cases.length - proofs.length;
+  const missing = proofs.length && unknown
+    ? w("Insufficient evidence for ", "Недостаточно данных ещё для ") + unknown + "." : "";
+  return [counts, missing,
     w("Post-patch Do report", "Протокол Do после правки") + " · " + atlasTestSummary({locale}, t)]
-    .join("\n");
+    .filter(Boolean).join("\n");
+}
+
+function comparisonValue(label, kind, value, maximum) {
+  const number = element("span", {["data-old-" + kind]: "", text: String(value)});
+  const cell = element("dd", {}, [number]);
+  if (maximum !== null) cell.prepend(element("meter", {
+    "data-old-bar": kind, min: "0", max: String(maximum), value: String(value),
+    "aria-hidden": "true",
+  }));
+  return element("div", {}, [text("dt", label), cell]);
 }
 
 function oldPanel(host, locale, w, data) {
@@ -243,18 +254,29 @@ function oldPanel(host, locale, w, data) {
     [text("h3", w("By the code before the patch", "По коду до правки")),
       text("p", w("Static comparison without running the old code.",
         "Расчёт без выполнения старого кода."))]);
-  for (const c of data.tests.cases) {
-    const p = oldProof(c, data.files);
+  const rows = data.tests.cases.map(c => [c, oldProof(c, data.files)]);
+  const maximum = rows.reduce((max, [, p]) => p && p.expected >= 0
+    ? Math.max(max, p.actual, p.expected) : max, 0);
+  if (maximum > 0) source.append(text("p",
+    w("Shared scale", "Общая шкала") + " · 0 — " + maximum, "handoff-axis"));
+  for (const [c, p] of rows) {
     const row = element("article", {className: "handoff-source-case", "data-old-row": c.name},
-      [text("h4", c.name), text("code", c.path + ":" + c.line, "handoff-ref")]);
+      [text("h4", c.name)]);
     if (p) {
+      const scale = p.expected < 0 ? null : Math.max(1, maximum);
       const values = element("dl", {className: "handoff-compare-values"}, [
-        text("dt", p.expression), element("dd", {"data-old-actual": "", text: String(p.actual)}),
-        text("dt", w("Expected", "Ожидалось")),
-        element("dd", {"data-old-expected": "", text: String(p.expected)})]);
-      row.append(values, text("code", p.path + ":" + p.line, "handoff-ref"));
+        comparisonValue(p.expression, "actual", p.actual, scale),
+        comparisonValue(w("Expected", "Ожидалось"), "expected", p.expected, scale)]);
+      row.append(values);
     }
-    row.append(element("p", {"data-old-effect": "", text: oldEffect(w, p)}));
+    const refs = element("details", {className: "handoff-chart-source"}, [
+      element("summary", {"data-focus": "comparison-source:" + c.name,
+        text: w("Source", "Исходники")}), text("code", c.path + ":" + c.line, "handoff-ref")]);
+    if (p) refs.append(text("code", p.path + ":" + p.line, "handoff-ref"));
+    const different = p && p.actual !== p.expected;
+    row.append(element("div", {className: "handoff-chart-footer"}, [
+      element("p", {"data-old-effect": different ? "different" : "", text: oldEffect(w, p)}),
+      refs]));
     source.append(row);
   }
   if (!data.tests.cases.length) source.append(text("p",
