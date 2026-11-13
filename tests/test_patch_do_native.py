@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 from conductor import ownership
 from conductor.command import operator_config
-from conductor.command.adapters import _winlaunch
 from conductor.command.adapters.codex_cli import CODEX_PROTOCOL
 from conductor.command.adapters.provider import ProviderConfig
 from tests.test_codex_native_compat import _site, verified_exe  # noqa: F401 -- opt-in fixture
@@ -19,6 +18,8 @@ def _hash(path):
 
 
 def test_offline_native_patch_and_independent_check(tmp_path, verified_exe):
+    from conductor.command.adapters import _winlaunch
+
     destination = tmp_path / "harnesses" / "codex" / "0.164.0" / "vendor"
     vendor = verified_exe.parent.parent
     shutil.copytree(vendor, destination)

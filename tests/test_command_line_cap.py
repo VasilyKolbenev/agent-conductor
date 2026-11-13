@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "tests/test_native_probe_imports.py",
+    "tests/test_wheel_root_contract.py",
     "tests/test_credential_depth.py",
     "src/conductor/command/adapters/subscription_account.py",
     "tests/test_subscription_account.py",

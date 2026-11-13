@@ -17,12 +17,15 @@ import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from tests import os_boundary_windows as ac
 from tests._ps1 import write_ps1
 from tests.os_boundary_layout import Layout, Operation, Step, make_layout, render, snapshot
+
+if TYPE_CHECKING:
+    from tests import os_boundary_windows as ac
 
 _STEP_TIMEOUT = 90.0
 #: Every launch of a probe script starts without PowerShell's own cmdlet modules. The CI
@@ -66,6 +69,8 @@ class StepResult:
 
 def base_environment(scratch: Path) -> dict[str, str]:
     """A minimal environment. LOCALAPPDATA is required by the container launch (measured)."""
+    from tests import os_boundary_windows as ac
+
     root = os.environ["SystemRoot"]
     return {"SystemRoot": root, "windir": root, "ComSpec": str(ac.CMD),
             "PATH": f"{ac.SYSTEM32};{root}", "LOCALAPPDATA": str(scratch),
@@ -104,6 +109,8 @@ def require_child_shell(box) -> None:
 
 def powershell_line(body: str) -> str:
     """The command line that runs ``body`` in Windows PowerShell exactly as written."""
+    from tests import os_boundary_windows as ac
+
     return subprocess.list2cmdline([
         str(ac.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
         "-Command", body])
@@ -115,8 +122,12 @@ def command_line(step: Step, tokens: dict[str, str]) -> str:
     if step.tool == "ps":
         return powershell_line(WITHOUT_CMDLETS + body)
     if step.tool == "cmd":
+        from tests import os_boundary_windows as ac
+
         return f'"{ac.CMD}" /d /s /c "{body}"'
     if step.tool == "icacls":
+        from tests import os_boundary_windows as ac
+
         return f'"{ac.ICACLS}" {body}'
     raise ValueError(f"no Windows tool named {step.tool!r}")
 
@@ -129,15 +140,21 @@ class Box:
         self.container = container
 
     def snapshot(self, root_name: str):
+        from tests import os_boundary_windows as ac
+
         return snapshot(self.layout.root(root_name), acl=ac.acl_text)
 
     def tokens(self, root_name: str = "source") -> dict[str, str]:
+        from tests import os_boundary_windows as ac
+
         found = self.layout.tokens(root_name)
         found["POWERSHELL"] = str(ac.POWERSHELL)
         return found
 
     def launch(self, line: str, *, confined: bool, suspended: bool = False,
                capabilities=(), env: dict[str, str] | None = None):
+        from tests import os_boundary_windows as ac
+
         return ac.launch(
             line, sid=self.container.sid if confined else None, capabilities=capabilities,
             cwd=str(self.layout.tmp), env=env or base_environment(self.layout.tmp),
@@ -233,12 +250,16 @@ def serve_loopback():
 
 @pytest.fixture(scope="module")
 def container():
+    from tests import os_boundary_windows as ac
+
     with ac.Container() as current:
         yield current
 
 
 def make_box(tmp_path: Path, current: ac.Container, work_rights: str) -> Box:
     """A layout under ``tmp_path`` and the grants for a container the caller owns."""
+    from tests import os_boundary_windows as ac
+
     layout = make_layout(tmp_path)
     for directory in (layout.tmp, layout.home, layout.vendor_home):
         ac.grant(directory, current.sid, ac.MODIFY)
@@ -249,10 +270,14 @@ def make_box(tmp_path: Path, current: ac.Container, work_rights: str) -> Box:
 @pytest.fixture
 def implement_box(tmp_path, container):
     """Tmp, home, vendor home and the work copy writable. The source tree: no entry."""
+    from tests import os_boundary_windows as ac
+
     return make_box(tmp_path, container, ac.MODIFY)
 
 
 @pytest.fixture
 def review_box(tmp_path, container):
     """As the implement box, but the work copy is read and execute only."""
+    from tests import os_boundary_windows as ac
+
     return make_box(tmp_path, container, ac.READ_EXECUTE)
