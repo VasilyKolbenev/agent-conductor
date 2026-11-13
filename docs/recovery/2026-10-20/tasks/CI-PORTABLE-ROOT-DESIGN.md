@@ -57,3 +57,9 @@ ENTRY_PAGE override в копии ловит duplicated literal; HTTP expectatio
 Уточнение census I1: actual reads охватывают десять функций, не девять.
 Для command_line импорт нужен только native branches; unknown-tool ValueError
 сохраняется без загрузки backend. Остальные A1–A3 и границы файлов прежние.
+
+B3 root review: provenance обязан включать обе required routes `/` и
+`/panel/studio.html`. Иначе alias на тот же studio file сохраняет asset census,
+но пропускает все пять screen checks и ломает root classic link. Добавить RED
+на missing-explicit-route при сохранённом alias/census и явный required-route
+guard; остальные SHA/UI assertions прежние. Root утвердил этот обязательный шов.
