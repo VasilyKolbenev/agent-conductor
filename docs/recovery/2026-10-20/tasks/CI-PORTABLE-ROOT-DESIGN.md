@@ -1,4 +1,4 @@
-# CI-PORTABLE-ROOT — дизайн v1
+# CI-PORTABLE-ROOT — дизайн v2
 
 ## I1: portable collection, Windows-only use
 
@@ -38,3 +38,18 @@ screen/root missing anchor обязаны падать. Не зеркалить 
 V2 отвечает находкам; scoped implementations, mutants, cross-review, code commit,
 полный core exactSHA, conditional CI. Дополнительные CI findings не скрывать:
 root решает доказанные blockers, остальные в report/open questions.
+
+## Ответы независимым линзам
+
+A1 принят: direct function-local native imports во всех девяти use sites,
+TYPE_CHECKING-only alias для deferred annotations. Нет proxy/cache/stub/accessor.
+A2 принят: fresh subprocess импортирует helper и шесть реальных collectors,
+Windows backend imports блокируются finder-границей; ноль попыток при collection,
+явный прежний ImportError при native use. Это не выдаётся за настоящий Linux run.
+A3 принят: _winlaunch import в теле native patch test после verified_exe fixture gate.
+B1 принят: root literal chat witness и classic anchor на /panel/studio.html,
+не Studio screen ids на root; strict byte/type/redirect/census guards прежние.
+B2 принят: regression caller installed_probe запускается -I в настоящем временном
+venv с только собственным copied package/minimal metadata. Отдельный owning
+ENTRY_PAGE override в копии ловит duplicated literal; HTTP expectations независимы.
+Обе линзы дали GO. Root утвердил варианты A, реализация только в named scope.
