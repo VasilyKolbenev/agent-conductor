@@ -292,6 +292,9 @@ diff. Выбор шага, файла или теста сам по себе н�
 
 ### Other V2 commitments
 
+The [November alpha review](plans/2026-11-13-v2-alpha-review.ru.md) compares the Windows
+pilot with the proposed 2.0 scope and records the access paths for additional harnesses.
+
 - **Stage two: up to three concurrent runs per project** (owner decision, 2026-11-02).
   A run is one execution of a cycle for a task. The three tasks may use the same
   cycle template or different ones. Studio shows which runs are working, waiting
