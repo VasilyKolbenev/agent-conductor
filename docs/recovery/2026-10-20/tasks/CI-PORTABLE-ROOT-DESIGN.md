@@ -41,7 +41,7 @@ root решает доказанные blockers, остальные в report/op
 
 ## Ответы независимым линзам
 
-A1 принят: direct function-local native imports во всех девяти use sites,
+A1 принят: direct function-local native imports во всех native-use функциях,
 TYPE_CHECKING-only alias для deferred annotations. Нет proxy/cache/stub/accessor.
 A2 принят: fresh subprocess импортирует helper и шесть реальных collectors,
 Windows backend imports блокируются finder-границей; ноль попыток при collection,
@@ -53,3 +53,7 @@ B2 принят: regression caller installed_probe запускается -I в 
 venv с только собственным copied package/minimal metadata. Отдельный owning
 ENTRY_PAGE override в копии ловит duplicated literal; HTTP expectations независимы.
 Обе линзы дали GO. Root утвердил варианты A, реализация только в named scope.
+
+Уточнение census I1: actual reads охватывают десять функций, не девять.
+Для command_line импорт нужен только native branches; unknown-tool ValueError
+сохраняется без загрузки backend. Остальные A1–A3 и границы файлов прежние.
