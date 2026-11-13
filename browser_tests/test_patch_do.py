@@ -16,7 +16,8 @@ from conductor.command.task_store import TaskStore
 from tests import _fakeexe
 from tests.fake_process_fixtures import registered_fake_processes
 from tests.relay_roads import CODEX, Site
-from tests.test_patch_do_policy import ACTUAL, PATCH, run_state, work_and_calls
+from tests.test_patch_do_policy import ACTUAL, PATCH, assert_account_evidence, run_state
+from tests.test_patch_do_policy import work_and_calls
 from tests.test_policy_runtime import NOW, PD
 
 
@@ -82,10 +83,15 @@ def test_review_one_patch_and_see_the_independent_result(chromium, tmp_path, see
             "data-automation-state", "waiting" if gated else "complete", timeout=action_ms)
         records = f.store.read("run").records
         assert calls == ["prepare", "apply", "check"]
-        assert len([r for r in records if r.kind == "action_request"]) == 1
+        request, = [r.value for r in records if r.kind == "action_request"]
         assert [r.value.outcome for r in records if r.kind == "action_result"] == ["succeeded"]
-        assert [r.value.verifier_instance_id for r in records
-                if r.kind == "evidence"] == ["checker"]
+        evidence = [r.value for r in records if r.kind == "evidence"]
+        assert [row.kind for row in evidence] == [
+            "subscription_account_v1", "subscription_account_v1", "verification"]
+        assert_account_evidence(evidence, request)
+        verification = evidence[-1]
+        assert (verification.verifier_instance_id, verification.verification) == (
+            "checker", "verified")
         assert (work / "count.py").read_bytes() == ACTUAL
         if seeded:
             (work / "count.py").unlink()

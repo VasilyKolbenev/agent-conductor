@@ -60,7 +60,11 @@ def test_a_device_name_is_not_taken_for_a_network_path_and_is_left_in_its_own_fo
     """`\\\\.\\X` also starts with two backslashes, and `\\\\?\\UNC\\.\\X` is no device: the prefix
     would name a share called `.`. The system reads a device name itself, so it is only cleaned."""
     assert extended("\\\\.\\C:\\x") == "\\\\.\\C:\\x"
-    assert extended(Path("\\\\.\\PhysicalDrive0")) == "\\\\.\\PhysicalDrive0"
+    device = r"\\.\PhysicalDrive0"
+    assert extended(device) == device
+    device_path = Path(device)
+    # pathlib on Python 3.11 adds a trailing separator to this device root.
+    assert extended(device_path) == os.fspath(device_path)
     assert extended("//./C:/x") == "\\\\.\\C:\\x"
     assert extended("//?/C:/x") == "\\\\?\\C:\\x"  # the extended form spelt with `/` is no share
 

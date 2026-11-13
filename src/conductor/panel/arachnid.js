@@ -366,7 +366,9 @@ function boot() {
       : incomplete || (current?.bad ? "unreadable" : detailState);
     $("notice").textContent = phase ? tr(phase) : "";
     $("retry").hidden = !["failed", "offline", "unreadable"].includes(phase);
-    $("new").disabled = !connected || listState !== "ready";
+    for (const id of ["new", "memory", "limits"]) {
+      $(id).disabled = !connected || listState !== "ready";
+    }
     $("prepareTask").hidden = identity?.mode !== "active" || !["new", "task"].includes(current?.kind);
     $("prepareTask").textContent = tr(current?.kind === "task" ? "resume" : "start");
     $("prepareTask").href = toolAddress("desk", current?.kind === "task" ? {task: current.task, prepare: "1"}

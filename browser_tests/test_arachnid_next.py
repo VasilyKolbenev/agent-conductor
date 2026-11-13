@@ -1,6 +1,7 @@
 """Atlas brings the selected run's next human action into its conversation."""
 from contextlib import contextmanager
 from copy import deepcopy
+import json
 
 import pytest
 from playwright.sync_api import expect
@@ -128,6 +129,7 @@ def test_lost_ack_needs_the_exact_gate_receipt(chromium, tmp_path, field, wrong)
             card.locator('input[name="actor"]').fill("reviewer")
             initial = page.request.get(origin + "/command/runs/pair").json()
             corrupt = True
+            sent = {}
 
             def replay(route):
                 value = route.fetch().json()
@@ -142,7 +144,10 @@ def test_lost_ack_needs_the_exact_gate_receipt(chromium, tmp_path, field, wrong)
                         value["records"].append(altered)
                     else:
                         receipts[0]["record"] = altered["record"]
-                route.fulfill(json=value, headers={
+                body = json.dumps(value)
+                if corrupt and receipts:
+                    sent[route.request] = body
+                route.fulfill(body=body, headers={
                     "Content-Type": "application/json",
                     "X-Fixture-Receipt": "altered" if receipts and corrupt else "regular"})
 
@@ -156,10 +161,16 @@ def test_lost_ack_needs_the_exact_gate_receipt(chromium, tmp_path, field, wrong)
                     lambda r: r.headers.get("x-fixture-receipt") == "altered") as read:
                 card.locator("button[type=submit]").click()
             check = card.get_by_role("button", name="Check the run")
-            receipt = next(row["record"] for row in read.value.json()["records"]
-                           if row["record_type"] == "decision")
+            response = read.value
+            assert response.ok and response.headers["x-fixture-receipt"] == "altered"
+            delivered = json.loads(sent[response.request])
+            receipt, = [row["record"] for row in delivered["records"]
+                        if row["record_type"] == "decision"]
+            durable, = [r.value.as_dict() for r in RunStore(root).read("pair").records
+                        if r.kind == "decision"]
+            assert durable[field] != wrong
+            assert receipt == {**durable, field: wrong}
             assert receipt["receipt_id"] == "receipt-gate-confirm-do-0-reviewer"
-            assert receipt[field] == wrong
             expect(card).to_contain_text("Your decision has no matching receipt yet")
             expect(card.locator("form")).to_have_count(0)
             corrupt = False

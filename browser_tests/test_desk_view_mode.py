@@ -389,7 +389,9 @@ def test_panel_continue_opens_the_block_and_the_router_writes_nothing(embed, rig
     window.frame.wait_for_selector("#deskPult .desk-flag[open]", timeout=6000)
     window.frame.wait_for_function(SETTLED)
     facts = window.frame.evaluate(WHERE)
-    assert (facts["open"], facts["focus"]) == (True, "flag:summary")
+    assert (facts["open"], facts["focus"]) == (True, None)
+    assert window.page.evaluate("document.activeElement === document.body")
+    assert window.frame.evaluate("document.hasFocus()") is False
     assert facts["hash"] == f"#project={PROJECT}&embed=hub&panel=continue&lang={language}"
     assert server.posts == [] and server.reads == 1 and window.problems == []
 
@@ -401,6 +403,7 @@ def test_a_hash_the_hub_sends_later_opens_the_block_without_a_reload_and_writes_
     window.frame.wait_for_function(SETTLED)
     assert window.frame.evaluate(WHERE)["open"] is False
     marker = window.frame.evaluate("window.__marker")
+    window.page.locator("#desk").focus()
     window.frame.evaluate("(hash) => location.replace(location.href.split('#')[0] + hash)",
                           f"#project={PROJECT}&embed=hub&panel=continue&lang=en")
     window.frame.wait_for_selector("#deskPult .desk-flag[open]", timeout=6000)

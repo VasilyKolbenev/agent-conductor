@@ -8,7 +8,7 @@
             "auth_home": "",
             "entrypoint": "",
             "env_allow": [],
-            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
             "protocol": "claude-code-headless-v1",
             "provider_id": "claude-code"
           },
@@ -299,7 +299,7 @@
             "auth_home": "<TMP>/DecemberCommand/logins/x",
             "entrypoint": "",
             "env_allow": [],
-            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+            "executable": "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
             "protocol": "claude-code-headless-v1",
             "provider_id": "claude-code"
           },
@@ -590,7 +590,7 @@
             "auth_home": "",
             "entrypoint": "",
             "env_allow": [],
-            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
             "protocol": "codex-headless-v1",
             "provider_id": "codex"
           },
@@ -821,7 +821,7 @@
             "auth_home": "<TMP>/DecemberCommand/logins/x",
             "entrypoint": "",
             "env_allow": [],
-            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+            "executable": "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
             "protocol": "codex-headless-v1",
             "provider_id": "codex"
           },
@@ -1049,7 +1049,7 @@
     "claude/api/checker": [
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1064,7 +1064,7 @@
       },
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1093,7 +1093,7 @@
       },
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1108,7 +1108,7 @@
       },
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Independently judge the supplied result and return the requested verdict. Your final reply carries the verdict itself, never a pointer to a file or plan.",
@@ -1139,7 +1139,7 @@
     "claude/api/dispatch": [
       {
         "argv": [
-          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1154,7 +1154,7 @@
       },
       {
         "argv": [
-          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1183,7 +1183,7 @@
     "claude/api/review": [
       {
         "argv": [
-          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1198,7 +1198,7 @@
       },
       {
         "argv": [
-          "<TMP>/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Read the task supplied on standard input and produce the complete output document it asks for. Your final reply is that document: write the whole document in it, not a summary of it or a pointer to a file or plan.",
@@ -1227,7 +1227,7 @@
     "claude/relay/checker": [
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1249,7 +1249,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "auth",
           "status",
@@ -1274,7 +1274,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1313,7 +1313,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1335,7 +1335,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "auth",
           "status",
@@ -1360,7 +1360,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "-p",
           "Independently judge the supplied result and return the requested verdict. Your final reply carries the verdict itself, never a pointer to a file or plan.",
@@ -1401,7 +1401,7 @@
     "claude/relay/dispatch": [
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1423,7 +1423,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "auth",
           "status",
@@ -1448,7 +1448,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1487,7 +1487,7 @@
     "claude/relay/review": [
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1509,7 +1509,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "auth",
           "status",
@@ -1534,7 +1534,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/harness-x/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--safe-mode",
           "-p",
           "Read the task supplied on standard input and produce the complete output document it asks for. Your final reply is that document: write the whole document in it, not a summary of it or a pointer to a file or plan.",
@@ -1573,7 +1573,7 @@
     "codex/api/checker": [
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1588,7 +1588,7 @@
       },
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1617,7 +1617,7 @@
       },
       {
         "argv": [
-          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1630,7 +1630,7 @@
       },
       {
         "argv": [
-          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/checker/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",
@@ -1673,7 +1673,7 @@
     "codex/api/dispatch": [
       {
         "argv": [
-          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1686,7 +1686,7 @@
       },
       {
         "argv": [
-          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",
@@ -1727,7 +1727,7 @@
     "codex/api/review": [
       {
         "argv": [
-          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1740,7 +1740,7 @@
       },
       {
         "argv": [
-          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",
@@ -1781,7 +1781,7 @@
     "codex/relay/checker": [
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1796,7 +1796,7 @@
       },
       {
         "argv": [
-          "<TMP>/doer/harnesses/claude-code/2.1.239/claude.exe",
+          "<TMP>/doer/harnesses/claude-code/2.1.239/claude<EXE_SUFFIX>",
           "--bare",
           "-p",
           "Execute the complete task supplied on standard input.",
@@ -1825,7 +1825,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1844,7 +1844,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "-c",
           "cli_auth_credentials_store=\"file\"",
           "login",
@@ -1866,7 +1866,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",
@@ -1919,7 +1919,7 @@
     "codex/relay/dispatch": [
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -1938,7 +1938,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "-c",
           "cli_auth_credentials_store=\"file\"",
           "login",
@@ -1960,7 +1960,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",
@@ -2011,7 +2011,7 @@
     "codex/relay/review": [
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "--version"
         ],
         "env": {
@@ -2030,7 +2030,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "-c",
           "cli_auth_credentials_store=\"file\"",
           "login",
@@ -2052,7 +2052,7 @@
       },
       {
         "argv": [
-          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+          "<TMP>/harness-x/harnesses/codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex<EXE_SUFFIX>",
           "exec",
           "--skip-git-repo-check",
           "--ephemeral",

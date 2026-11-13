@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 
@@ -55,7 +56,9 @@ def _golden() -> dict:
     """The snapshot written on the unchanged tree; empty if the file is not there yet."""
     if not FIXTURE.is_file():
         return {"specs": {}, "facts": {}}
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+    # The registered fixture is a Windows launcher or a POSIX script with the same stem.
+    expected = FIXTURE.read_text(encoding="utf-8")
+    return json.loads(expected.replace("<EXE_SUFFIX>", ".exe" if os.name == "nt" else ""))
 
 
 def _scrubber(base: Path):

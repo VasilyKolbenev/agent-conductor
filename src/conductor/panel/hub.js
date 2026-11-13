@@ -407,6 +407,10 @@ function openFlag(project) {
   const id = project.project_id;
   select(state.selection.project_id === id ? state.selection : {...NOTHING, project_id: id},
     {panel: "continue"});
+  // Hand off the keyboard on this press, once its visible desk is on screen.
+  if (host.current() === id && document.hasFocus() && !document.hidden) {
+    byId("hubDesk").querySelector("iframe")?.focus();
+  }
   if (frameAddress(project, location.port) === null) perform(OPEN_FOR_VIEWING, project);
 }
 

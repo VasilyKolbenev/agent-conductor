@@ -16,6 +16,7 @@ import os
 import shlex
 import subprocess
 import sys
+from itertools import takewhile
 
 import pytest
 
@@ -301,24 +302,32 @@ def test_pasted_kimi_login_uses_the_dedicated_home_and_disables_updates(
         project, tmp_path, capsys, monkeypatch):
     executable, _ = pinned_files(tmp_path, "kimi-code")
     home = tmp_path / "Kimi User's Login"
-    assert configure(project, menu_choice("kimi-code"), str(executable), "1", str(home), "",
-                     "y") == 0
-    windows = os.name == "nt"
-    def quote(path):
-        return "'" + str(path).replace("'", "''") + "'" if windows else shlex.quote(str(path))
-    marker = ("& " if windows else "") + quote(executable)
-    rows = [line.strip() for line in capsys.readouterr().err.splitlines()]
-    commands = [line for line in rows if line.startswith(("$env:", "export ", marker))]
-    # Replace only the pinned executable. The real shell applies the wizard's printed text.
     probe = tmp_path / "owner_login.py"
     probe.write_text("import os, sys, json\n"
                      "print(json.dumps([sys.argv[1:], os.getenv('KIMI_CODE_HOME'), "
                      "os.getenv('KIMI_CODE_NO_AUTO_UPDATE')]))\n", encoding="utf-8")
+    windows = os.name == "nt"
+    if not windows:
+        executable.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(probe)])
+                              + ' "$@"\n', encoding="utf-8", newline="\n")
+        executable.chmod(0o700)
+    assert configure(project, menu_choice("kimi-code"), str(executable), "1", str(home), "",
+                     "y") == 0
+    rows = iter(capsys.readouterr().err.splitlines())
+    assert any(line.endswith("Paste these commands:") for line in rows)
+    home_line, update_line, command = (line.strip() for line in
+                                       takewhile(lambda line: line.startswith("    "), rows))
+    if windows:
+        def quote(path):
+            return "'" + str(path).replace("'", "''") + "'"
+        marker = "& " + quote(executable) + " "
+        assert command.startswith(marker)
+        command = "& " + quote(sys.executable) + " " + quote(probe) + " " + command[len(marker):]
+    else:
+        assert shlex.split(command) == [str(executable), "login"]
     monkeypatch.setenv("KIMI_CODE_HOME", str(tmp_path / "other"))
     monkeypatch.setenv("KIMI_CODE_NO_AUTO_UPDATE", "0")
-    replacement = ("& " if windows else "") + quote(sys.executable) + " " + quote(probe)
-    script = "\n".join(replacement + line[len(marker):] if line.startswith(marker) else line
-                       for line in commands)
+    script = "\n".join((home_line, update_line, command))
     shell = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"] if windows else [
         "sh", "-c"]
     call = subprocess.run([*shell, script], capture_output=True, timeout=15, check=True)

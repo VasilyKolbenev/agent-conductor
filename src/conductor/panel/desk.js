@@ -475,16 +475,15 @@ function openFlag(open) {
   remember();
 }
 
-//: The address says `panel=continue` (spec 4.5.3, 5.8): open the block and put the keyboard in it
-//: -- at once if it stands, and when the read of the flag lands if it does not. This only
-//: selects and focuses: nothing is written. A block the person opened themselves is not a request
-//: of the address, so the keyboard is left where it is (`focus` false).
+//: The address asks to open the block. Move the keyboard within the desk when the hub has
+//: handed it over. If the operator stayed in the hub or returned to it during the read,
+//: opening the block leaves the keyboard there. A manual toggle keeps its own focus.
 function showContinue(focus) {
   panels?.open(null);
   wantContinue = true;
   if (state.flag === null) return;
   move({flag: Object.freeze({...state.flag, open: true})});
-  if (focus) focusOn("flag:summary");
+  if (focus && document.hasFocus()) focusOn("flag:summary");
   remember();
 }
 
@@ -528,7 +527,7 @@ async function loadFlag() {
   move({flag: Object.freeze({record, draft: null, open: wantContinue, saving: false,
     refused: null})});
   if (wantContinue) {
-    focusOn("flag:summary");
+    if (document.hasFocus()) focusOn("flag:summary");
     remember();
   }
 }

@@ -151,8 +151,7 @@ def test_patch_files_require_this_attempt_and_its_named_checker(studio):
     assert result_panel.count() == 0
 
 
-def test_open_result_selects_the_document_of_the_final_review(studio):
-    page, _ = studio
+def test_open_result_selects_the_document_of_the_final_review(chromium, studio_url):
     detail = _review_detail()
     detail["graph"]["situation"] = {"state": "not_required", "checked": [
         {"reason": "run_ended", "sources": ["finished"], "count": 1}]}
@@ -163,18 +162,29 @@ def test_open_result_selects_the_document_of_the_final_review(studio):
         {"record_type": "action_result", "record": {
             "action_id": "review-action", "outcome": "succeeded", "evidence_refs": ["proof"]}},
         _artifact("later", "unrelated")]
-    page.locator("#navRuns").click()
-    page.evaluate("""async detail => {
-      const {mountRuns} = await import("/panel/studio-runs.js");
-      const {runPrimary} = await import("/panel/studio-runhead.js");
-      const state = {connection: "open", runs: {phase: "ready", list: [],
-        selectedId: detail.run.run_id, detail}, locale: "en"};
-      mountRuns(document.getElementById("bodyRuns"), state, {});
-      document.getElementById("studioPrimary").replaceChildren(runPrimary(state, {}, detail));
-    }""", detail)
-    page.get_by_role("button", name="Open the result").press("Enter")
-    assert page.locator("[data-output-action='review-action']").evaluate(
-        "el => el === document.activeElement")
+    # The two renderers own these mounts. A live Studio shell redraws them on catalog reads.
+    with chromium.new_context() as context:
+        page = context.new_page()
+        renderer = studio_url + "/result-fixture"
+        page.route(renderer, lambda route: route.fulfill(content_type="text/html", body="""
+          <!doctype html><html lang="en"><head>
+          <link rel="stylesheet" href="/panel/studio.css">
+          <link rel="stylesheet" href="/panel/studio-atlas.css">
+          <link rel="stylesheet" href="/panel/studio-utilities.css">
+          </head><body class="studio-shell">
+          <header id="studioPrimary"></header><main id="bodyRuns"></main></body></html>"""))
+        page.goto(renderer)
+        page.evaluate("""async detail => {
+          const {mountRuns} = await import("/panel/studio-runs.js");
+          const {runPrimary} = await import("/panel/studio-runhead.js");
+          const state = {connection: "open", runs: {phase: "ready", list: [],
+            selectedId: detail.run.run_id, detail}, locale: "en"};
+          mountRuns(document.getElementById("bodyRuns"), state, {});
+          document.getElementById("studioPrimary").replaceChildren(runPrimary(state, {}, detail));
+        }""", detail)
+        page.get_by_role("button", name="Open the result").press("Enter")
+        assert page.locator("[data-output-action='review-action']").evaluate(
+            "el => el === document.activeElement")
 
 
 def test_long_document_uses_one_scroll_position_and_keeps_it_on_live_read(studio):

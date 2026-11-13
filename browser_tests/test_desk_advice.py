@@ -9,6 +9,7 @@ from browser_tests.desk_hold import close_context
 
 from conductor import ownership, ownership_transition, server
 from conductor.command import operator_config
+from conductor.command import providers as provider_factory
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.run_store import RunStore
 from tests._fakeboundary import recording_runners
@@ -39,6 +40,7 @@ def test_subscription_advice_has_its_own_grant_and_only_edits_the_open_draft(
         operator_config.save_provider_configs(operator_config.provider_config_path(
             ownership.data_root(root)), [config], project_root=root)
     made = recording_runners(monkeypatch, tmp_path / "attempts")
+    monkeypatch.setattr(provider_factory, "host_platform", lambda: "win32")
     monkeypatch.setattr(server.QuotaCollector, "start", lambda self: None)
     monkeypatch.setattr(server.QuotaCollector, "stop", lambda self: None, raising=False)
     http = server.build(root, 0, providers=[config])

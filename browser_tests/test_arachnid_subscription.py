@@ -9,6 +9,7 @@ from playwright.sync_api import expect
 from browser_tests.desk_hold import close_context
 from conductor import ownership, ownership_transition, server
 from conductor.command import operator_config
+from conductor.command import providers as provider_factory
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.run_store import RunStore
 from conductor.tool_pins import pin_tool
@@ -49,6 +50,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         operator_config.save_provider_configs(operator_config.provider_config_path(
             ownership.data_root(root)), providers, project_root=root)
     runners = recording_runners(monkeypatch, tmp_path / "attempts")
+    monkeypatch.setattr(provider_factory, "host_platform", lambda: "win32")
     monkeypatch.setattr(server.QuotaCollector, "start", lambda self: None)
     monkeypatch.setattr(server.QuotaCollector, "stop", lambda self: None)
     http = server.build(root, 0, providers=providers)

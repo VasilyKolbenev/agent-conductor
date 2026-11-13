@@ -129,3 +129,37 @@ def test_delayed_first_open_cannot_transfer_a_draft_to_another_archive(chromium,
             assert (1, 200) in wire.identities
         finally:
             close_context(context)
+
+
+def test_served_inspector_buttons_start_disabled_before_scripts_run(chromium, tmp_path):
+    with archive(tmp_path / "a", "Archive Alpha") as origin:
+        context = chromium.new_context(java_script_enabled=False)
+        try:
+            page = context.new_page()
+            page.goto(origin)
+            expect(page.locator("#memory")).to_be_disabled()
+            expect(page.locator("#limits")).to_be_disabled()
+        finally:
+            close_context(context)
+
+
+def test_inspectors_become_available_when_the_first_session_is_selected(chromium, tmp_path):
+    with archive(tmp_path / "a", "Archive Alpha") as origin:
+        context = chromium.new_context(locale="en-US")
+        page = context.new_page()
+        Switch(page, (origin,), initial_open=False)
+        try:
+            page.goto(origin + "/#session=shared-run&lang=en")
+            page.wait_for_function("Boolean(window.testWire)")
+            memory, limits = page.locator("#memory"), page.locator("#limits")
+            expect(memory).to_be_disabled()
+            expect(limits).to_be_disabled()
+            page.evaluate("window.testWire.dispatchEvent(new Event('open'))")
+            expect(page.get_by_role("heading", name="Archive Alpha")).to_be_visible()
+            memory.click()
+            expect(page.locator("#detail")).to_be_visible()
+            expect(page.locator("#detailTitle")).to_have_text("Session memory")
+            limits.click()
+            expect(page.locator("#inspection [data-focus-key=quota-read]")).to_be_visible()
+        finally:
+            close_context(context)
