@@ -79,6 +79,8 @@ def test_the_overview_derives_its_readiness_from_the_payload_it_read(
     route enforces. A card that hardcoded either sentence fails one of them.
     """
     page, problems = studio
+    # The stream can open before the workflow catalog carrying the project name arrives.
+    page.wait_for_selector('#screenOverview[data-state="ready"]')
     # Lowered before matching: `studio.css` sets `text-transform:uppercase` on
     # every card heading, so `inner_text` answers with what is PAINTED. A test
     # matching the source casing would be pinning the stylesheet by accident.
