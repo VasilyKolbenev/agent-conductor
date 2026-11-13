@@ -3,6 +3,8 @@ from hashlib import sha256
 from itertools import count
 import json
 from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +14,7 @@ from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.process import ProcessOutcome, STDIN_DELIVERED
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import RunEnvelope
-from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
+from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphLoop, GraphNode
 from conductor.command.policy_service import PolicyService
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import Budget, ControlRuntime
@@ -41,7 +43,7 @@ REGRESSION = (b"from count import count_succeeded\n\ndef test_mixed():\n"
 
 
 def run_state(root, adapter, *, checker="checker", item="item", with_gates=False, documents=(),
-              instruction="Count successes and cover a mixed input."):
+              instruction="Count successes and cover a mixed input.", correction=False):
     registry, counter = AdapterRegistry([adapter]), count()
     store = RunStore(root)
     ids = lambda kind: f"{kind}-{next(counter)}"
@@ -56,14 +58,17 @@ def run_state(root, adapter, *, checker="checker", item="item", with_gates=False
             "artifact_refs": [d.artifact_ref for d in documents], "output_limit_profile": "normal",
             "work_scope": "one"}
     node = GraphNode("do", "task", "Do", instance_id="doer", capability="dispatch",
-                     arguments=args, timeout_seconds=30, attempt_bound=1,
+                     arguments=args, timeout_seconds=30, attempt_bound=2 if correction else 1,
                      verifier_instance_id=checker)
     nodes = (node,)
     edges = ()
+    if correction:
+        nodes += (GraphNode("correct", "loop", "Correct", loop=GraphLoop(bound=2, back_to="do")),)
+        edges = (GraphEdge("do", "correct", condition="on_failed"),)
     if with_gates:
         nodes += (GraphNode("accept", "gate", "Accept the patch", gate_id="accept"),
                   GraphNode("next", "gate", "Next decision", gate_id="next"))
-        edges = (GraphEdge("do", "accept"), GraphEdge("accept", "next"))
+        edges += (GraphEdge("do", "accept"), GraphEdge("accept", "next"))
     store.append(GraphDefinition("graph", "run", NOW, nodes=nodes, edges=edges,
                                  execution_contract="bounded-run-v1"))
     store.append(ArtifactDocument("instruction", "brief", "run", NOW, "text/plain", instruction))
@@ -256,3 +261,134 @@ def test_preview_without_a_checker_grants_no_patch_authority(tmp_path):
                 "duration_seconds": 300})
         assert all(row.kind not in {"run_authorization", "action_request"}
                    for row in f.store.read("run").records)
+
+
+def test_two_patch_attempts_apply_typed_finding_and_check_the_cumulative_result(tmp_path):
+    from conductor.command.adapters.local_test_plan import inventory_digest
+    from conductor.command.attempt_detail import read_attempt
+    from conductor.command.attempt_protocol import read_test_run
+    from conductor.command.seed_record import SeedRecord, write_seed
+    from tests.test_policy_native_feedback import terminal
+    from tests.test_seed_record import an_empty_seed
+
+    site = Site(tmp_path, CODEX)
+    old = "def answer():\n    return 2\n"
+    fixed = "def answer():\n    return 1\n"
+    test = ("import unittest\nfrom answer import answer\n\nclass Answer(unittest.TestCase):\n"
+            "    def test_result(self):\n        self.assertEqual(answer(), 1)\n")
+    finding = {"kind": "defect", "summary": "Return 1 from answer() to meet the requirement.",
+               "path": "answer.py", "line": 2}
+    payload = {"protocol": "conduct.feedback.v1", "findings": [finding]}
+    first_patch = ("*** Begin Patch\n*** Add File: answer.py\n+def answer():\n+    return 2\n"
+                   "*** Add File: tests/test_answer.py\n"
+                   + "".join("+" + line + "\n" for line in test.splitlines()) + "*** End Patch\n")
+    correction = ("*** Begin Patch\n*** Update File: answer.py\n@@\n def answer():\n"
+                  "-    return 2\n+    return 1\n*** End Patch\n")
+    pin = tmp_path / "harnesses" / "python-unittest" / "3.12.14"
+    pin.mkdir(parents=True)
+    (pin / "python.exe").write_bytes(b"process double")
+    policy = {"runner": "python-unittest-v1", "start": "tests", "pattern": "test_*.py",
+              "timeout_seconds": 30, "toolchain": {"install": str(pin), "entry": "python.exe",
+                                                    "runtime_digest": inventory_digest(pin)}}
+    instruction = ("Make answer return one.\n\nconduct.test-plan.v1\n" + json.dumps(policy)
+                   + '\n\nconduct.patch-sources.v1\n["answer.py","tests/test_answer.py"]')
+    calls, frames, feedback_rows = [], [], []
+    original = site.runner.run
+
+    def child(spec):
+        if spec.codex_patch_stdin:
+            calls.append("patch")
+            scratch = Path(spec.env["TMP"])
+            if not frames:
+                (scratch / "edit-0").write_bytes(old.encode())
+                (scratch / "edit-1").write_bytes(test.encode())
+            else:
+                assert (scratch / "edit-0").read_bytes() == old.encode()
+                (scratch / "edit-0").write_bytes(fixed.encode())
+            return reply(b"done")
+        if spec.argv[0] == str(pin / "python.exe"):
+            calls.append("unittest")
+            assert spec.boundary and not spec.boundary.internet_client
+            assert (work / "tests/test_answer.py").read_bytes() == test.encode()
+            assert (work / "answer.py").read_text() in (old, fixed)
+            # Execute the product bootstrap against only these known fixture bytes.
+            command = [sys.executable, *spec.argv[1:5], sys.base_prefix, *spec.argv[6:]]
+            proc = subprocess.run(command, cwd=work, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, timeout=15)
+            return reply(proc.stdout, code=proc.returncode)
+        if "doer-model" in spec.argv:
+            calls.append("prepare")
+            frame = spec.stdin_bytes.decode()
+            section = frame.partition("\nCORRECTION DATA")[2]
+            if section:
+                feedback_rows.extend(json.loads(section.splitlines()[1]))
+                source = [json.loads(s) for s in frame.splitlines() if s.startswith('{"path":')]
+                assert {s["path"]: s["content"] for s in source} == {
+                    "answer.py": old, "tests/test_answer.py": test}
+            return reply((correction if section else first_patch).encode())
+        if "checker-model" not in spec.argv:
+            return original(spec)
+        calls.append("check")
+        frame = spec.stdin_bytes.decode()
+        frames.append(frame)
+        protocol = frame.split("\nPOST-PATCH TEST EXECUTION\n")[1]
+        report = json.loads(protocol.splitlines()[0])
+        if report["status"] == "failed" and "2 != 1" in report["output"]:
+            return reply(b"VERDICT: reject\n" + json.dumps(payload).encode())
+        assert report["status"] == "passed" and "test_result" in report["output"]
+        return reply(b"VERDICT: accept\n")
+
+    with site.owned():
+        write_seed(site.root, SeedRecord.from_dict(an_empty_seed(task_id="one", work_scope="one")))
+        work = site.adapter._workspace.work_dir("work-001", "one")
+        (work / "tests").mkdir()
+        site.runner.run = child
+        f = run_state(site.root, site.adapter, item="work-001", instruction=instruction,
+                      correction=True)
+        driver, execution = attach_driver(f)
+        try:
+            terms = {"node_limits": [{"node_id": "do", "timeout_seconds": 30, "max_attempts": 2}],
+                     "max_actions": 2, "max_action_seconds": 60, "max_total_task_seconds": 120,
+                     "duration_seconds": 1800}
+            preview = f.policy.preview("run", terms)
+            f.policy.authorize("run", {"authorization_id": "grant", "authorized_by": "test-owner",
+                "preview_digest": preview["preview_digest"], "terms": preview["terms"],
+                "supersedes": None})
+            read = terminal(f)
+        finally:
+            driver.stop()
+            execution.shutdown()
+        requests = [row.value for row in read.records if row.kind == "action_request"]
+        receipts = [row.value for row in read.records if row.kind == "action_result"]
+        assert [r.outcome for r in receipts] == ["verification_failed", "succeeded"]
+        first, second = requests
+        assert first.attempt_id != second.attempt_id and first.action_id != second.action_id
+        assert all(r.node_id == "do" and r.instance_id == "doer" and
+                   r.run_authorization_id == "grant" for r in requests)
+        assert sum(row.kind == "run_authorization" for row in read.records) == 1
+        feedback, = (r.value for r in read.records if r.kind == "correction_feedback")
+        assert feedback_rows == [feedback.as_dict()] and feedback_rows[0]["payload"] == payload
+        assert feedback.source_attempt_id == first.attempt_id and feedback.source_lap == 1
+        assert feedback.source_action_id == first.action_id
+        assert feedback.checker_instance_id == "checker"
+        assert calls == ["prepare", "patch", "unittest", "check"] * 2
+        attempts = [(first, "failed", old, 1), (second, "passed", fixed, 0)]
+        for (request, status, data, failures), frame in zip(attempts, frames, strict=True):
+            report = read_test_run(site.root, request)
+            assert report["status"] == status
+            assert report["counts"] == dict(total=1, failures=failures, errors=0, skipped=0)
+            assert report["binding"]["action"] == request.action_id
+            assert report["binding"]["attempt"] == request.attempt_id
+            assert "test_result" in report["output"]
+            protocol = frame.split("\nPOST-PATCH TEST EXECUTION\n")[1]
+            assert json.loads(protocol.splitlines()[0]) == report
+            accumulated = frame.split("\nACCUMULATED RESULT\n")[1].split("\nPOST-PATCH")[0]
+            files = [json.loads(s) for s in accumulated.splitlines() if '"encoding"' in s]
+            assert {v["path"]: v["content"] for v in files} == {
+                "answer.py": data, "tests/test_answer.py": test}
+            detail = read_attempt(site.root, read, "do", request.action_id)
+            assert {row["path"] for row in detail["files"]} == {"answer.py", "tests/test_answer.py"}
+            assert detail["verdict"]["instance_id"] == "checker"
+            assert detail["verdict"]["status"] == ("rejected" if request == first else "verified")
+        changed = json.loads(frames[1].split("\nCHANGED PATHS\n")[1].splitlines()[0])
+        assert changed == ["_tasks/one/work-001/answer.py"]
