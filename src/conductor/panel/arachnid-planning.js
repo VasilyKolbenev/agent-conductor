@@ -1,7 +1,8 @@
 "use strict";
 import {path} from "./desk-transport.js";
 import {createArachnidAdvisor, planningSession} from "./arachnid-advisor.js";
-import {authorizeDalio, observeDalio, prepareDalio, restoreDalio} from "./arachnid-plan.js";
+import {authorizeDalio, observeDalio, prepareDalio, readDalioChoice,
+  restoreDalio} from "./arachnid-plan.js";
 import {dalioOutline} from "./arachnid-plan-model.js";
 import {renderPlanner} from "./arachnid-planner-view.js";
 
@@ -19,7 +20,7 @@ export function atlasPlanning(host, door) {
   function snapshot() {
     if (!active) { host.hidden = true; host.replaceChildren(); return; }
     const e = active, a = e.advisor.state(), p = e.prepared;
-    const outline = a.proposal ? dalioOutline() : null;
+    const outline = a.proposal ? dalioOutline(e.allowCorrection) : null;
     const roles = p?.roles || outline?.roles;
     const limits = p?.limits || outline?.limits;
     const plan = a.proposal ? {...a.proposal, adviceRunId: a.runId, roles,
@@ -33,7 +34,8 @@ export function atlasPlanning(host, door) {
       actor: e.actor, lead: "codex", model, brief: a.brief || e.brief, plan,
       advicePreview: a.advicePreview, mainPreview: p?.preview, terms: p?.terms || limits,
       quota: a.quota, input: a.input, advisorId: a.runId, baseCommit: p?.baseCommit,
-      sourcePaths: p?.sourcePaths,
+      sourcePaths: p?.sourcePaths, allowCorrection: e.allowCorrection,
+      choiceLocked: e.choiceLocked || Boolean(p),
       authorization: e.authorization, runId: p?.runId || a.runId, issue: e.issue || a.issue};
     const signature = JSON.stringify(view);
     if (signature === e.signature) return;
@@ -42,6 +44,12 @@ export function atlasPlanning(host, door) {
       actorChanged: value => { if (!e.working && valid(e)) {
         e.actor = value; actors.set(e.projectId, value); snapshot();
       } },
+      correctionChanged: value => {
+        if (valid(e) && !e.working && view.phase === "proposal" && !view.plan?.question
+          && !e.choiceLocked && !e.prepared) {
+          e.allowCorrection = value; snapshot();
+        }
+      },
       authorizeAdvice: () => action(e, () => e.advisor.grant(e.actor)),
       reviewAdvice: () => action(e, () => e.advisor.state().runId ? e.advisor.prepare() :
         beginAdvice(e, e.brief)),
@@ -61,8 +69,9 @@ export function atlasPlanning(host, door) {
       e.phase = grant ? "authorized" : e.launchAttempted ? "proposal" : "main-preview";
       return;
     }
-    e.phase = null;
     await e.advisor.tick();
+    if (e.advisor.state().phase === "accepted") await recoverMain(e, e.advisor.state());
+    else e.phase = null;
   }
   async function action(e, work) {
     if (!valid(e) || e.working) return;
@@ -86,7 +95,21 @@ export function atlasPlanning(host, door) {
   }
   function mainRequest(e, a) {
     return {projectId: e.projectId, advisorId: a.runId, sessionId: e.sessionId,
-      proposal: a.proposal, brief: a.brief, actor: e.actor, locale: a.input?.language || e.locale};
+      proposal: a.proposal, brief: a.brief, actor: e.actor, locale: a.input?.language || e.locale,
+      allowCorrection:e.allowCorrection};
+  }
+  async function recoverMain(e, advice) {
+    e.phase = "building"; snapshot();
+    const io = mainDoor(e), req = mainRequest(e, advice);
+    const recorded = await restoreDalio(io, req);
+    const saved = recorded
+      ? recorded.limits.node_limits.find(row => row.node_id === "do").max_attempts === 2
+      : await readDalioChoice(io, req);
+    if (!valid(e)) return;
+    if (saved !== null) e.allowCorrection = saved;
+    e.choiceLocked = saved !== null;
+    e.prepared = recorded; e.authorization = recorded?.authorization || null;
+    e.phase = recorded ? "authorized" : null;
   }
   async function materialize(e) {
     const advisor = e.advisor;
@@ -110,6 +133,7 @@ export function atlasPlanning(host, door) {
   }
   function make(ctx) {
     const e = {...ctx, prepared: null, authorization: null, working: false, pendingTick: false,
+      allowCorrection: false, choiceLocked: false,
       actor: actors.get(ctx.projectId) ?? "local-operator", phase: null, issue: null};
     e.advisor = createArachnidAdvisor({
       readJson: door.readJson, write: mainDoor(e).submit,
@@ -133,13 +157,7 @@ export function atlasPlanning(host, door) {
             sessionId: e.sessionId, runId: ctx.reference});
           if (!valid(e)) return;
           if (a.actor) e.actor = a.actor;
-          if (a.phase === "accepted") {
-            e.phase = "building"; snapshot();
-            const recorded = await restoreDalio(mainDoor(e), mainRequest(e, a));
-            if (!valid(e)) return;
-            e.prepared = recorded; e.authorization = recorded?.authorization || null;
-            e.phase = recorded ? "authorized" : null;
-          }
+          if (a.phase === "accepted") await recoverMain(e, a);
         });
       }
     }
@@ -165,6 +183,7 @@ export function atlasPlanning(host, door) {
     const brief = a.proposal?.question && ["result","accepted"].includes(a.phase) ?
       [a.brief, a.proposal.question, text].join("\n\n") : text;
     e.brief = brief; e.prepared = null; e.authorization = null; e.phase = "preparing";
+    e.allowCorrection = false; e.choiceLocked = false;
     e.advisor.close();
     door.saveReference(null); e.reference = null; snapshot();
     void action(e, () => beginAdvice(e, brief));

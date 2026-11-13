@@ -63,7 +63,7 @@ def finish_during_planner_read(page, run_id, advisor, case, calls, release_answe
 
 
 @pytest.mark.parametrize("case", [
-    "authorize", "replace", "operator", "grant_signal", "read_signal"])
+    "authorize", "correction", "replace", "operator", "grant_signal", "read_signal"])
 def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         tmp_path, chromium, monkeypatch, case):
     root = write_project(tmp_path / "project", lanes={"test": good_lane()})
@@ -173,11 +173,24 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         page.get_by_role("link", name="Вернуться к плану Атласа").click()
         expect(prepare).to_be_enabled(timeout=15000)
         expect(page.locator("#planner")).to_contain_text("Count only accepted rows")
+        if case == "correction":
+            choice = page.get_by_role("checkbox", name="Разрешить одну доработку Do")
+            expect(choice).not_to_be_checked(timeout=5000)
+            choice.check()
+            expect(page.locator("#planner")).to_contain_text("4800")
         prepare.click()
         authorize = page.locator('[data-planner-action="authorizeMain"]')
         expect(authorize).to_be_enabled(timeout=20000)
         expect(page.locator("#planner")).to_contain_text("grok-build")
-        expect(page.locator("#planner")).to_contain_text("3600")
+        if case == "correction":
+            expect(page.locator("#planner").get_by_role("checkbox")).to_have_count(0)
+            page.reload()
+            expect(prepare).to_be_enabled(timeout=15000)
+            expect(page.locator("#planner")).to_contain_text("4800")
+            expect(page.locator("#planner").get_by_role("checkbox")).to_have_count(0)
+            prepare.click()
+            expect(authorize).to_be_enabled(timeout=15000)
+        expect(page.locator("#planner")).to_contain_text("4800" if case == "correction" else "3600")
         base = f"http://127.0.0.1:{http.server_address[1]}/command"
         runs = page.request.get(base + "/runs").json()["runs"]
         assert len(runs) == 2
@@ -187,6 +200,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         detail = page.request.get(f"{base}/runs/{target}").json()
         graph = detail["graph"]["definition"]["nodes"]
         do, = [n for n in graph if n["node_id"] == "do"]
+        assert do["attempt_bound"] == (2 if case == "correction" else 1)
         diagnose, = [n for n in graph if n["node_id"] == "diagnose"]
         instances = {item["id"]: item["adapter"] for item in detail["config"]["instances"]}
         assert instances[diagnose["instance_id"]] == "grok-build"
@@ -201,6 +215,7 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
         record = RunStore(root).read(target)
         grants = [row.value for row in record.records if row.kind == "run_authorization"]
         assert len(grants) == 1 and grants[0].authorized_by == "local-operator"
+        assert grants[0].max_actions == (6 if case == "correction" else 5)
         page.reload()
         expect(page.locator("#planner")).to_have_attribute(
             "data-planner-phase", "authorized", timeout=15000)

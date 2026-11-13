@@ -103,6 +103,103 @@ def exercise(body, *, brief="Repair the counter"):
     return run_js(setup + PORT + body, data, modules=MODULES)
 
 
+def test_one_correction_is_frozen_in_the_same_workflow_before_and_after_the_grant():
+    out = exercise("""
+      const choice = {...req, allowCorrection:true};
+      const prepared = await plan.prepareDalio(main,choice);
+      const ids = [prepared.workflowId,prepared.taskId,prepared.runId];
+      const bounds = rev.nodes.filter(n=>n.kind==="task").map(n=>[n.node_id,n.attempt_bound]);
+      const onlyRead = {...main,submit(){throw Error("restore wrote")}};
+      const saved = await plan.readDalioChoice(onlyRead,req);
+      const start = writes.length;
+      let conflict = null;
+      try{await plan.prepareDalio(main,{...req,allowCorrection:false});}
+      catch(e){conflict=e.message;}
+      const changed = writes.length-start;
+      const resumed = await plan.prepareDalio(main,req);
+      const before = Boolean(grant);
+      await plan.authorizeDalio(main,resumed,"owner");
+      const reopened=await plan.restoreDalio(onlyRead,req);
+      console.log(JSON.stringify({bounds,saved,conflict,changed,before,
+        grants:writes.filter(v=>v==="automationAuthorize").length, ids,
+        restored:[reopened.workflowId,reopened.taskId,reopened.runId],
+        limits:prepared.terms.node_limits.map(r=>[r.node_id,r.max_attempts]),
+        budget:[reopened.limits.max_actions,reopened.limits.max_total_task_seconds],
+        equal:JSON.stringify(prepared.limits)===JSON.stringify(resumed.limits)}));
+    """)
+    stages = ("goal", "identify", "diagnose", "design", "do")
+    bounds = [[node, 2 if node == "do" else 1] for node in stages]
+    assert out["bounds"] == out["limits"] == bounds
+    assert out["saved"] and out["conflict"] == "correction_conflict" and out["changed"] == 0
+    assert not out["before"] and out["grants"] == 1
+    assert out["budget"] == [6, 4800] and out["ids"] == out["restored"] and out["equal"]
+
+
+def test_interrupted_draft_reopens_with_its_original_choice_and_incorrect_bounds_refuse():
+    out = exercise("""
+      const choice={...req,allowCorrection:true};
+      const partial={...main,submit(name,subject,body){
+        if(name==="revisions") return {status:"refused",code:"stopped"};
+        return main.submit(name,subject,body);
+      }};
+      try{await plan.prepareDalio(partial,choice);}catch(e){if(e.message!=="stopped")throw e;}
+      const saved=await plan.readDalioChoice(main,req);
+      const node=draft.document.nodes.find(n=>n.node_id==="do");
+      node.attempt_bound=3;
+      let refused=null;
+      try{await plan.prepareDalio(main,choice);}catch(e){refused=e.message;}
+      console.log(JSON.stringify({saved,refused,rev,grant}));
+    """)
+    assert out == {"saved": True, "refused": "workflow_conflict", "rev": None, "grant": None}
+
+
+def test_an_opt_in_cannot_expand_a_racing_single_pass_or_forge_its_preview():
+    out = exercise("""
+      // Both tabs reach expected_absent against the same empty workflow before either writes.
+      let count=0, release, forged=null;
+      const both=new Promise(resolve=>{release=resolve;});
+      const race={...main, async submit(name,subject,body){
+        if(name==="draft"){
+          if(++count===2) release();
+          await both;
+          if(draft||rev) return {status:"refused", code:"draft_exists"};
+        }
+        return main.submit(name,subject,body);
+      }};
+      const [single,extra]=await Promise.allSettled([false,true].map(allowCorrection=>
+        plan.prepareDalio(race,{...req,allowCorrection})));
+      const saved=await plan.readDalioChoice(main,req);
+      const prepared=single.value;
+      const copy=structuredClone(prepared);
+      copy.terms.max_actions=6; copy.terms.max_total_task_seconds=4800;
+      try{await plan.authorizeDalio(main,copy,"owner");}
+      catch(e){forged=e.message;}
+      console.log(JSON.stringify({raced:extra.reason.message,forged,saved,revisionHeads,grant,
+        original:prepared.terms.max_actions,attempts:writes.filter(w=>w==="automationAuthorize")}));
+    """)
+    assert out == {"raced": "workflow_conflict", "forged": "preview_changed", "saved": False,
+                   "revisionHeads": 1, "grant": None, "original": 5, "attempts": []}
+
+
+def test_raced_published_revision_cannot_change_the_chosen_mode_or_create_a_task():
+    out = exercise("""
+      const swapped={...main,async submit(name,subject,body){
+        const result=await main.submit(name,subject,body);
+        if(name==="revisions"){
+          rev=structuredClone(rev);
+          rev.nodes.find(n=>n.node_id==="do").attempt_bound=2;
+        }
+        return result;
+      }};
+      let error=null;
+      try{await plan.prepareDalio(swapped,{...req,allowCorrection:false});}
+      catch(e){error=e.message;}
+      console.log(JSON.stringify({error,writes,task,grant}));
+    """)
+    assert out == {"error": "workflow_conflict", "writes": ["draft", "revisions"],
+                   "task": None, "grant": None}
+
+
 def test_restore_of_an_older_instruction_keeps_its_original_source_scope():
     out = exercise("""
       const first=await plan.prepareDalio(main,req);

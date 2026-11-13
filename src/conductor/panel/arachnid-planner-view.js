@@ -18,6 +18,10 @@ const labels = {
   reviewAdvice: ["Review advisor request", "Посмотреть запрос советнику"],
   authorizeAdvice: ["Authorize one Codex review", "Разрешить один запрос к Codex"],
   prepareMain: ["Accept plan and review run", "Принять план и посмотреть запуск"],
+  correction: ["Allow one Do correction after the checker returns findings",
+    "Разрешить одну доработку Do по замечаниям проверяющего"],
+  correctionOn: ["The checker can return Do once with findings and review the revised patch.",
+    "Проверяющий может один раз вернуть Do с замечаниями и проверить исправленную правку."],
   authorizeMain: ["Authorize this Dalio run", "Разрешить этот запуск Далио"],
   refresh: ["Read current state", "Перечитать состояние"],
   openRun: ["Open run", "Открыть запуск"],
@@ -55,6 +59,8 @@ const labels = {
   provider_unavailable: ["A required harness or role is unavailable.", "Нужный харнесс или роль недоступны."],
   preview_stale: ["The reviewed terms have changed.", "Просмотренные условия изменились."],
   preview_changed: ["The project or preview changed.", "Проект или предпросмотр изменился."],
+  correction_conflict: ["Another tab has saved different Do terms. Read the current state.",
+    "В другой вкладке сохранены другие условия Do. Перечитайте состояние."],
   actor_invalid: ["Enter an operator name to authorize.", "Для разрешения укажите имя оператора."],
   answer_invalid: ["Codex returned an invalid plan.", "Ответ Codex не прошёл проверку плана."],
   advice_unsuccessful: ["Codex did not complete the review.", "Codex не завершил проверку."],
@@ -235,6 +241,16 @@ export function renderPlanner(host, view, handlers) {
     action(ui, view, "refresh");
   } else if (view.phase === "proposal") {
     plan(ui.body, view);
+    if (view.plan && !view.plan.question && !view.choiceLocked) {
+      const input = element("input", {type:"checkbox", "data-planner-action":"correction"});
+      input.checked = view.allowCorrection === true;
+      input.addEventListener("change", () => {
+        if (input.isConnected) ui.handlers.correctionChanged(input.checked);
+      });
+      ui.body.append(element("label", {}, [input, " " + copy(view, "correction")]));
+    } else if (view.allowCorrection) {
+      ui.body.append(element("p", {text:copy(view, "correctionOn")}));
+    }
     if (view.terms && budgets.every(key => pos(view.terms[key]))) {
       ui.body.append(element("h3", {text: copy(view, "proposed")}));
       bounds(ui.body, view, view.terms);
@@ -242,6 +258,7 @@ export function renderPlanner(host, view, handlers) {
     if (view.plan && !view.plan.question) action(ui, view, "prepareMain");
   } else if (view.phase === "main-preview") {
     plan(ui.body, view); preview(ui, view, true);
+    if (view.allowCorrection) ui.body.append(element("p", {text:copy(view, "correctionOn")}));
   } else if (view.phase === "authorized") {
     line(ui.body, copy(view, "openRun"), view.runId);
     if (view.runId) action(ui, view, "openRun");
@@ -251,5 +268,6 @@ export function renderPlanner(host, view, handlers) {
   }
   const details = ui.body.querySelector("details[data-preview-digest]");
   if (expanded && details?.dataset.previewDigest === expanded) details.open = true;
-  if (focus) [...ui.actions.children].find(b => b.dataset.plannerAction === focus)?.focus({preventScroll: true});
+  if (focus) [...host.querySelectorAll("[data-planner-action]")]
+    .find(b => b.dataset.plannerAction === focus)?.focus({preventScroll: true});
 }

@@ -28,13 +28,16 @@ function verifyProposal(proposal) {
       Object.hasOwn(BINDINGS, role) && BINDINGS[role] === provider), "proposal_invalid");
 }
 
-export function dalioOutline() {
+export function dalioOutline(allowCorrection = false) {
+  need(typeof allowCorrection === "boolean", "proposal_invalid");
   const roles = Object.entries(BINDINGS).map(([role, provider]) => ({
     role, provider, instance: "instance-" + role, model: provider === "codex" ? MODEL : null,
   }));
-  const node_limits = STAGES.map(node_id => ({node_id, timeout_seconds: 600, max_attempts: 1}));
-  const limits = {max_actions: 5, max_action_seconds: 1200, max_total_task_seconds: 3600,
-    duration_seconds: 7200, node_limits};
+  const node_limits = STAGES.map(node_id => ({
+    node_id, timeout_seconds: 600, max_attempts: node_id === "do" && allowCorrection ? 2 : 1,
+  }));
+  const limits = {max_actions: allowCorrection ? 6 : 5, max_action_seconds: 1200,
+    max_total_task_seconds: allowCorrection ? 4800 : 3600, duration_seconds: 7200, node_limits};
   return {roles, steps: [...STAGES], stageRoles: {...STAGE_ROLES}, limits};
 }
 
@@ -50,7 +53,7 @@ function admitProviders(catalog) {
   }
 }
 
-function dalioDocument(catalog, locale, reviewSources) {
+function dalioDocument(catalog, locale, reviewSources, limits) {
   const starters = catalog.starters?.filter(s => s.starter_id === "dalio-v6" && s.revision === 6);
   const source = starters?.[0]?.document;
   need(starters?.length === 1 && source?.template_id === "template-dalio" && source.revision === 6
@@ -77,8 +80,9 @@ function dalioDocument(catalog, locale, reviewSources) {
       purpose = "Inspect the supplied task source code and explain the concrete cause of the "
         + "reported defect. Distinguish existing inputs from future Do and checker results";
     }
+    const limit = limits.node_limits.find(step => step.node_id === n.node_id);
     return {...n, ...(purpose === undefined ? {} : {purpose}), arguments: args,
-      timeout_seconds: 600, attempt_bound: 1};
+      timeout_seconds: limit.timeout_seconds, attempt_bound: limit.max_attempts};
   });
   return {schema_version: source.schema_version, title: locale === "ru" ? "Далио · Codex и Grok" : "Dalio · Codex and Grok",
     execution_contract: "bounded-run-v1", nodes, edges: source.edges};
@@ -112,10 +116,10 @@ export function recordedDalio(request, catalog, baseCommit, {reviewSources = tru
   verifyProposal(proposal);
   need(typeof baseCommit === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(baseCommit), "source_required");
   need(typeof reviewSources === "boolean", "proposal_invalid");
-  const {roles, limits} = dalioOutline();
+  const {roles, limits} = dalioOutline(request.allowCorrection);
   const {taskId, runId, workflowId} = targetIds(request);
   const sourcePaths = namedSources(brief);
-  const document = dalioDocument(catalog, locale, reviewSources && sourcePaths.length > 0);
+  const document = dalioDocument(catalog, locale, reviewSources && sourcePaths.length > 0, limits);
   const instruction = locale === "ru"
     ? "Подготовь ограниченную правку в рамках принятого плана и брифа. Изменяй только файлы задачи."
     : "Prepare a bounded patch for the accepted plan and brief. Modify only files in the task.";

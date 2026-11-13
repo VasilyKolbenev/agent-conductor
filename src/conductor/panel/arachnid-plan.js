@@ -96,14 +96,33 @@ function reviewSourceMode(document) {
   return nodes[0].arguments.target_artifact_refs.includes("source-context");
 }
 
-async function frozenReviewMode(road, workflowId) {
+function correctionMode(document) {
+  need(Array.isArray(document?.nodes), "workflow_conflict");
+  const nodes = document.nodes.filter(n => n.node_id === "do");
+  need(nodes.length === 1 && [1, 2].includes(nodes[0].attempt_bound), "workflow_conflict");
+  return nodes[0].attempt_bound === 2;
+}
+
+async function frozenDocument(road, workflowId) {
   const state = await road.read(path.workflow(workflowId));
   need(Array.isArray(state?.revisions) && !state.unreadable_revisions?.length, "workflow_conflict");
   if (state.revisions.length) {
     need(same(state.revisions, [1]), "workflow_conflict");
-    return reviewSourceMode((await road.read(path.revision(workflowId, 1)))?.document);
+    const revision = await road.read(path.revision(workflowId, 1));
+    need(revision?.document, "workflow_conflict");
+    return revision.document;
   }
-  return state.draft ? reviewSourceMode(state.draft.document) : true;
+  if (!state.draft) return null;
+  need(state.draft.document, "workflow_conflict");
+  return state.draft.document;
+}
+
+// A persisted draft already binds the choice, even before the run or grant exists.
+export async function readDalioChoice(door, request) {
+  const road = session(door, request.projectId);
+  await road.owner();
+  const document = await frozenDocument(road, targetIds(request).workflowId);
+  return document ? correctionMode(document) : null;
 }
 
 async function task(road, p) {
@@ -238,8 +257,12 @@ export async function prepareDalio(door, request) {
   await road.owner();
   const locale = await approvedAdvice(road, request);
   const catalog = await road.read(path.workflows());
-  const reviewSources = await frozenReviewMode(road, targetIds(request).workflowId);
-  const p = compileDalio({...request,locale}, catalog,
+  const document = await frozenDocument(road, targetIds(request).workflowId);
+  const reviewSources = document ? reviewSourceMode(document) : true;
+  const allowCorrection = document ? correctionMode(document) : request.allowCorrection;
+  need(request.allowCorrection === undefined || request.allowCorrection === allowCorrection,
+    "correction_conflict");
+  const p = compileDalio({...request,locale,allowCorrection}, catalog,
     await road.read(path.git()), {reviewSources});
   await workflow(road, p);
   await task(road, p);
@@ -285,7 +308,8 @@ export async function restoreDalio(door, request) {
   const preparation = await road.read(path.preparation(taskId));
   const revision = await road.read(path.revision(workflowId, 1));
   const reviewSources = reviewSourceMode(revision?.document);
-  const p = recordedDalio({...request,locale}, await road.read(path.workflows()),
+  const allowCorrection = correctionMode(revision?.document);
+  const p = recordedDalio({...request,locale,allowCorrection}, await road.read(path.workflows()),
     preparation?.seed?.base_commit, {reviewSources});
   need(same(revision?.document, {...p.document, template_id:workflowId, revision:1}), "workflow_conflict");
   await seed(road, p, true);
