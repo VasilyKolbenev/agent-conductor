@@ -130,12 +130,11 @@ def _names_in_scope(source: str) -> set[str]:
     return found
 
 
-#: A regular-expression literal, in the only positions this codebase writes one:
-#: after `=`, `(`, `,`, `[`, `:` or `return`. Blanked before names are read,
-#: because `/(\d{2})T(\d{2})/` contains `T(` and nothing else in this module can
-#: tell that from a call.
+#: At these operand starts a slash introduces a literal. The last character
+#: of && or || is sufficient: bitwise & and | also require a right operand.
+#: A slash after an identifier or a closing parenthesis can be division.
 _REGEX_LITERAL = re.compile(
-    r"(?<=[=(,\[:])\s*/(?![/*])(?:\\.|\[[^\]]*\]|[^/\n\\])+/[gimsuy]*")
+    r"(?<=[=(,\[:&|])\s*/(?![/*])(?:\\.|\[[^\]]*\]|[^/\n\\])+/[gimsuy]*")
 
 
 def _scannable(source: str) -> str:
@@ -278,6 +277,16 @@ def test_the_scanner_reads_no_call_out_of_a_regular_expression():
     pattern = r"const UTC = /^(\d{4})-(\d{2})T(\d{2})$/;"
 
     assert "T" not in _called(_scannable(pattern))
+
+
+@pytest.mark.parametrize("operator", ["||", "&&"])
+def test_boolean_operand_regex_is_text_but_divisors_and_real_calls_still_resolve(operator):
+    source = rf"""
+    const quiet = ready {operator} /^(?:Ran|OK(?: \(.*\))?)$/.test(line);
+    const quotient = total / missingDivisor() / scale;
+    """
+    assert _unreachable(source, "arachnid-handoff.js") == ["missingDivisor"]
+    assert _unreachable(source + "OK(line);", "arachnid-handoff.js") == ["OK", "missingDivisor"]
 
 
 def test_this_guard_forgives_what_a_module_really_can_reach():
