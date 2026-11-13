@@ -1,0 +1,54 @@
+/* The ledger relation and the revision used by the next action have different meanings. */
+.handoff-panel { min-width:0; padding:16px; color:var(--text); overflow-wrap:anywhere }
+.handoff-panel h2 { margin:0 0 13px; font-size:21px; letter-spacing:-.035em; line-height:1.18 }
+.handoff-panel h3 { margin:0 0 8px; font-size:15px }
+.handoff-panel h4 { margin:12px 0 5px; font-size:13px }
+.handoff-panel p { color:var(--dim); margin:6px 0; font-size:13px }
+.handoff-picker { display:grid; gap:4px; margin:8px 0 12px; font-size:12px; color:var(--dim) }
+.handoff-picker select { width:100%; min-width:0; padding:6px; color:var(--text);
+  background:var(--well); border:1px solid var(--edge); border-radius:6px }
+.handoff-map { display:grid; grid-template-columns:minmax(0,1fr) minmax(42px,.42fr) minmax(0,1fr);
+  align-items:center; gap:9px 2px; padding:14px 9px; border:1px solid var(--edge);
+  border-radius:11px; background:radial-gradient(ellipse at top right,var(--active),var(--well)) }
+.handoff-node { --owner:var(--ink); position:relative; display:grid; gap:3px; min-width:0;
+  min-height:73px; padding:8px 7px 9px 10px; text-align:left; align-content:center;
+  border:1px solid var(--edge); border-radius:7px; background:var(--card); color:var(--text);
+  overflow-wrap:anywhere; box-shadow:inset 2px 0 var(--owner) }
+.handoff-node[data-handoff-node=source] { --owner:var(--add) }
+.handoff-node[aria-pressed=true] { border-color:var(--owner); background:var(--active) }
+.handoff-node small { color:var(--owner); font:11px/1.2 var(--code) }
+.handoff-node strong { font-size:14px; line-height:1.15 }
+.handoff-node span,.handoff-ref { color:var(--dim); font:11px/1.4 var(--code) }
+.handoff-edge { min-width:0; align-self:center; color:var(--add); text-align:center }
+.handoff-edge svg { width:100%; height:20px; fill:none; stroke:currentColor; stroke-width:1.7 }
+.handoff-edge span { display:block; font-size:10px; line-height:1.2; color:var(--dim) }
+.handoff-edge[data-handoff-revision] { grid-column:1 / 3; margin-top:2px; text-align:left;
+  border-top:1px solid var(--ink); padding:7px 5px; color:var(--ink) }
+.handoff-edge[data-handoff-revision] svg { height:12px }
+.handoff-edge[data-handoff-revision=different_revision] { border-top:2px dashed var(--mute) }
+.handoff-edge[data-handoff-revision] span { font-size:12px }
+.handoff-node[data-handoff-node=input] { grid-column:3 }
+.handoff-proof,.handoff-results { margin:10px 0 0; padding:12px; border:1px solid var(--edge);
+  border-radius:9px; background:var(--card) }
+.handoff-proof blockquote { margin:8px 0; padding:9px; border-inline-start:2px solid var(--ink);
+  white-space:pre-wrap; font:12px/1.5 var(--code); color:var(--text); background:var(--well) }
+.handoff-ids { display:grid; grid-template-columns:minmax(57px,max-content) minmax(0,1fr);
+  gap:4px 8px; font-size:11px; margin:10px 0 0 }
+.handoff-ids dt { color:var(--dim) }
+.handoff-ids dd,.handoff-counts dd { margin:0; overflow-wrap:anywhere }
+.handoff-tests-button,.handoff-case { color:var(--ink); background:var(--active);
+  border:1px solid var(--edge); border-radius:7px; padding:8px 10px; margin-top:7px;
+  font-size:12px; text-align:left }
+.handoff-case { display:block; min-width:0; max-width:100%; overflow-wrap:anywhere }
+.handoff-counts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px }
+.handoff-counts dt { color:var(--dim); font-size:11px }
+.handoff-counts strong { font:19px/1.4 var(--code); display:block }
+.handoff-counts meter { width:100%; height:7px; display:block; border:0 }
+.handoff-counts meter::-webkit-meter-bar { background:var(--well); border:0 }
+.handoff-counts meter::-webkit-meter-optimum-value { background:var(--ink) }
+.handoff-counts meter::-moz-meter-bar { background:var(--ink) }
+.handoff-protocol { padding:8px 0; border-block:1px solid var(--line) }
+.handoff-protocol summary { color:var(--ink); cursor:pointer }
+.handoff-results pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:8px;
+  border-radius:5px; background:var(--well); color:var(--text); font:12px/1.5 var(--code) }
+.handoff-caveat { padding-inline-start:8px; border-inline-start:2px dashed var(--mute) }

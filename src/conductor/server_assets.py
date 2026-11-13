@@ -44,6 +44,8 @@ ENTRY_PAGE = "arachnid.html"
 _ARACHNID_FILES = (
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js", "arachnid-panels.js",
     "arachnid-layout.js",
+    "arachnid-handoff.js", "arachnid-handoff-data.js", "arachnid-handoff-context.js",
+    "arachnid-handoff.css",
     "arachnid-next.js", "arachnid-next-view.js", "arachnid-palette.js",
     "arachnid-copy.js", "arachnid.css", "arachnid-planning.js", "arachnid-advisor.js",
     "arachnid-plan.js", "arachnid-plan-model.js", "arachnid-planner-view.js",

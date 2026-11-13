@@ -23,6 +23,10 @@ from tests.test_store import good_lane, write_project
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
     "/panel/arachnid.css": "text/css; charset=utf-8",
+    "/panel/arachnid-handoff.css": "text/css; charset=utf-8",
+    "/panel/arachnid-handoff.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-handoff-context.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-handoff-data.js": "text/javascript; charset=utf-8",
     "/panel/arachnid.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-layout.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-next.js": "text/javascript; charset=utf-8",

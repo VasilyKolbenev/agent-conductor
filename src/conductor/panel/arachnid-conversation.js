@@ -6,6 +6,11 @@ import {
   answerFor, atlasInspector, atlasTestSummary, matchesAtlasAttempt,
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
+import {handoffData} from "./arachnid-handoff-data.js";
+import {renderHandoff} from "./arachnid-handoff.js";
+import {
+  continuationPin, handoffIntent, handoffPin, sameContinuation, sameHandoff,
+} from "./arachnid-handoff-context.js";
 
 const rows = value => Array.isArray(value) ? value : [];
 const controls = {
@@ -34,7 +39,7 @@ function button(text, onClick, cls = "") {
   return node;
 }
 function newSession() {
-  return {draft: "", messages: [], scope: null, choices: new Map()};
+  return {draft: "", messages: [], scope: null, choices: new Map(), handoff: null};
 }
 
 export function arachnidConversation(center, inspector, door) {
@@ -43,6 +48,7 @@ export function arachnidConversation(center, inspector, door) {
   const sessions = new Map(), events = door.stop();
   let model = null, state = null, scene = null, open = false, read = null, controller = null;
   let signature = null, generation = 0, paintedMessages = null, disposed = false;
+  let handoffPanel = false, projection = null, projectionDetail = null, pair = null;
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
   const step = () => scene?.steps.find(row => row.nodeId === state?.scope?.nodeId);
@@ -83,7 +89,7 @@ export function arachnidConversation(center, inspector, door) {
     menu.disabled = !model.ready;
     menu.addEventListener("change", () => {
       if (menu.value) { openStep(model.runId, menu.value); return; }
-      close(); state.scope = null; revoke(); drawOrbit(); drawScope(); summary();
+      close(); state.scope = null; state.handoff = null; revoke(); paint();
       host.querySelector("select")?.focus({preventScroll: true});
     });
     host.replaceChildren(element("label", {className: "atlas-scope"}, [
@@ -114,7 +120,8 @@ export function arachnidConversation(center, inspector, door) {
     let changed = false;
     for (const row of state?.messages || []) {
       if (row.wait !== epoch) continue;
-      row.text = evidence ? answerFor(model, row.topic, evidence) : tr("unavailable");
+      row.text = evidence ? row.topic === "handoff-tests" ? testAnswer(evidence)
+        : answerFor(model, row.topic, evidence) : tr("unavailable");
       delete row.wait; changed = true;
     }
     if (changed) transcript();
@@ -150,6 +157,7 @@ export function arachnidConversation(center, inspector, door) {
   }
   function choose(s, focus = false) {
     if (!s || !model.ready) return;
+    handoffPanel = false; state.handoff = null;
     if (state.scope?.nodeId !== s.nodeId) {
       const options = actions(s);
       pin(s, options.at(-1), options);
@@ -160,12 +168,14 @@ export function arachnidConversation(center, inspector, door) {
   }
   function close() {
     if (!open) return;
+    const wasHandoff = handoffPanel;
+    handoffPanel = false;
     const last = state.scope?.nodeId;
     revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     drawOrbit(); summary();
     const orbitNode = [...fields.orbitHere.querySelectorAll("[data-step]")]
       .find(n => n.dataset.step === last);
-    (orbitNode || fields.scopeHere.querySelector("select") || fields.command)
+    (wasHandoff ? fields.command : orbitNode || fields.scopeHere.querySelector("select") || fields.command)
       .focus({preventScroll: true});
   }
   function paletteSteps() {
@@ -232,6 +242,7 @@ export function arachnidConversation(center, inspector, door) {
     return element("section", {className: "atlas-attempt-summary"}, [heading, table]);
   }
   function populateInspector() {
+    if (open && handoffPanel) { drawHandoff(); return; }
     const s = step();
     if (!open || !s) return;
     const showIds = inspector.querySelector(".atlas-attempt-ids")?.open === true;
@@ -307,6 +318,114 @@ export function arachnidConversation(center, inspector, door) {
     refresh.dataset.focus = "atlas:refresh";
     refresh.disabled = !model.ready || read?.phase === "loading"; body.append(refresh);
   }
+  function activeTransfer() {
+    const h = state?.handoff;
+    if (!model.ready || !h || !model.runId || h.runId !== model.runId
+        || model.detail?.run?.run_id !== h.runId) return null;
+    const adapters = h.from + "/" + h.to;
+    if (model.detail !== projectionDetail || pair !== adapters) {
+      projectionDetail = model.detail; pair = adapters;
+      projection = handoffData(model.detail, h.from, h.to);
+    }
+    if (!projection || projection.runId !== h.runId) return null;
+    const linkIndex = projection.links.findIndex(row => sameHandoff(row, h.link));
+    const link = projection.links[linkIndex];
+    const options = link ? projection.continuations.filter(
+      row => row.fromArtifactId === link.target.artifactId) : [];
+    const continuation = options.find(row => sameContinuation(row, h.continuation));
+    return {graph: projection, link, linkIndex, options, continuation,
+      continuationIndex: continuation ? projection.continuations.indexOf(continuation) : -1};
+  }
+  function setLink(link) {
+    const h = state.handoff;
+    h.link = handoffPin(link); h.selectedKey = "source"; h.continuation = null;
+    const {options} = activeTransfer();
+    if (options.length === 1) h.continuation = continuationPin(options[0]);
+  }
+  function selectProof() {
+    const row = activeTransfer()?.continuation?.target;
+    const s = row && scene?.steps.find(item => item.nodeId === row.nodeId && patchStep(item));
+    const options = s ? actions(s) : [];
+    const a = options.find(item => item.action_id === row.actionId
+      && item.attempt_id === row.attemptId && item.instance_id === row.instanceId);
+    state.scope = null;
+    if (a) pin(s, a, options);
+    load();
+  }
+  function testAnswer(evidence) {
+    const status = atlasTestSummary(model, evidence.tests);
+    if (evidence.tests.status !== "recorded") return status;
+    const output = evidence.tests.protocol?.output || "";
+    const cases = [...output.matchAll(/^(test_[\w]+)\s+\([^\n]+?\)\s+\.\.\. ok\s*$/gm)]
+      .slice(0, 5).map(match => match[1]);
+    const names = cases.length ? "\n" + cases.join(", ") : "";
+    return status + names + words(
+      ". The report applies to the selected Do attempt. Individual findings have no test links.",
+      ". Протокол относится к попытке Do. Связи отдельных выводов с тестами не записаны.");
+  }
+  function readHandoff(intent, reply) {
+    if (intent.kind === "clarify" || !model.ready || !scene) {
+      reply.text = words("Select a run and ask what Grok handed to Codex.",
+        "Выберите запуск и спросите, что Grok передал Codex.");
+      return;
+    }
+    handoffPanel = true; open = true;
+    if (intent.kind === "transfer") {
+      revoke(); state.scope = null;
+      state.handoff = {from: intent.from, to: intent.to, runId: model.runId,
+        view: "handoff", link: null, continuation: null, selectedKey: "source"};
+      const data = activeTransfer();
+      if (data?.graph.links.length === 1) setLink(data.graph.links[0]);
+    } else {
+      state.handoff.view = "tests"; state.handoff.selectedKey = "check"; selectProof();
+    }
+    const current = activeTransfer(), link = current?.link;
+    if (!link) {
+      reply.text = current?.graph.links.length ? words("Choose a handoff in the inspector.",
+        "Выберите нужную передачу в инспекторе.") : words("No recorded handoff for this pair.",
+        "В этом запуске нет подтверждённой передачи между этими участниками.");
+    } else if (intent.kind === "transfer") {
+      const excerpt = link.source.excerpt || "";
+      const paragraph = excerpt.match(/(?:^|[.!?]\s*)#{1,4} [^\n]+\n+([^#\n][^\n]*)/m)?.[1]
+        || excerpt;
+      reply.text = words("The recorded input to ", "Вход для ") + link.target.adapter
+        + " · " + link.target.nodeId + " — " + link.source.artifactRef + " ("
+        + link.source.adapter + "). " + paragraph.slice(0, 320);
+    } else if (!current.continuation || !selected(step())) {
+      reply.text = words("Choose a linked Do attempt if one is recorded.",
+        "Выберите связанную попытку Do, если для неё записан вход.");
+    } else if (read?.phase === "ready") reply.text = testAnswer(read.value);
+    else if (read?.phase === "loading") Object.assign(reply,
+      {text: tr("loading"), wait: generation, topic: "handoff-tests"});
+    else reply.text = tr("unavailable");
+    door.inspect(true); drawOrbit(); drawScope(); drawInspector(); summary();
+  }
+  function drawHandoff() {
+    const current = activeTransfer();
+    if (!current) { inspector.replaceChildren(element("p", {text: tr("unavailable")})); return; }
+    const h = state.handoff;
+    renderHandoff(inspector, model.locale, current.graph,
+      {view: h.view, linkIndex: current.linkIndex, continuationIndex: current.continuationIndex,
+        selectedKey: h.selectedKey, phase: read?.phase || "unavailable",
+        evidence: current.continuation && read?.phase === "ready" ? read.value : null}, {
+        select: key => { h.selectedKey = key; drawInspector(); },
+        link: index => {
+          const link = current.graph.links[index];
+          if (!link) return;
+          setLink(link);
+          if (h.view === "tests") selectProof();
+          drawInspector(); drawScope(); drawOrbit();
+        },
+        continuation: index => {
+          const next = current.graph.continuations[index];
+          if (!current.options.includes(next)) return;
+          h.continuation = continuationPin(next);
+          if (h.view === "tests") selectProof();
+          drawInspector(); drawScope(); drawOrbit();
+        },
+        tests: () => ask(words("Which of those were tested?", "Что из этого проверили тестами?")),
+      });
+  }
   function ask(text) {
     const message = text.trim();
     if (!state || !message) return;
@@ -316,6 +435,15 @@ export function arachnidConversation(center, inspector, door) {
     const panel = planning ? directPanel(message) : commandOf(controls, message);
     const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
+    const intent = model.runId ? handoffIntent(message, state.handoff) : null;
+    if (intent) {
+      readHandoff(intent, reply); state.messages.push(reply); paint();
+      fields.messages.lastElementChild?.scrollIntoView({block: "nearest"}); return;
+    }
+    if (!planning && (panel || topic)) {
+      if (handoffPanel) close();
+      state.handoff = null;
+    }
     if (panel) {
       close();
       reply.text = {limits: words("Subscription limits", "Лимиты подписок"),
@@ -357,6 +485,15 @@ export function arachnidConversation(center, inspector, door) {
       const proof = tr("step_tests", {step: target.title || target.nodeId});
       fields.quick.append(button(proof, () => { choose(target); ask(proof); }));
     }
+    if (model.ready && model.runId && participants.includes("grok-build")
+        && participants.includes("codex")) {
+      const q = words("What did Grok hand to Codex?", "Что Grok передал Codex?");
+      fields.quick.append(button(q, () => ask(q)));
+      if (state.handoff?.link) {
+        const next = words("Which of those were tested?", "Что из этого проверили тестами?");
+        fields.quick.append(button(next, () => ask(next)));
+      }
+    }
     const limits = words("Limits", "Лимиты");
     fields.quick.append(button(limits, () => ask(limits)));
     drawScope(); drawOrbit(); summary(); transcript();
@@ -368,6 +505,7 @@ export function arachnidConversation(center, inspector, door) {
     if (switching) {
       if (state) state.draft = fields.command.value;
       revoke();
+      handoffPanel = false; projectionDetail = null; projection = null;
       if (open) { open = false; inspector.replaceChildren(); door.inspect(false); }
     }
     model = next;
@@ -384,10 +522,12 @@ export function arachnidConversation(center, inspector, door) {
       fields.command.value = ""; return;
     }
     if (switching) fields.command.value = state.draft;
-    if (open && !step()) {
+    if (open && !handoffPanel && !step()) {
       revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     }
-    load(); paint();
+    if (open && handoffPanel && state.handoff?.view === "tests") selectProof();
+    else load();
+    paint();
   }
   fields.command.addEventListener("input", () => {
     if (state) state.draft = fields.command.value;

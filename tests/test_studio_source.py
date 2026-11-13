@@ -103,6 +103,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
 ARACHNID_MODULES = (
+    "arachnid-handoff.js", "arachnid-handoff-context.js", "arachnid-handoff-data.js",
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",
     "arachnid-panels.js", "arachnid-copy.js", "arachnid-layout.js",
     "arachnid-next.js", "arachnid-next-view.js", "arachnid-palette.js",
@@ -110,7 +111,7 @@ ARACHNID_MODULES = (
     "arachnid-plan-model.js", "arachnid-planner-view.js",
 )
 MODULES += ARACHNID_MODULES
-ARACHNID_DOCUMENTS = (PANEL / "arachnid.html", PANEL / "arachnid.css")
+ARACHNID_DOCUMENTS = (PANEL / "arachnid.html", PANEL / "arachnid.css", PANEL / "arachnid-handoff.css")
 #: The one transport module: every `fetch(`, the one stream and the session
 #: token, moved out of the boot module so the desk can be built on the same
 #: doors. `graph.js` holds the same position in its window, and the sealed-API
@@ -175,7 +176,7 @@ def test_arachnid_only_loads_packaged_code_and_uses_the_canonical_editor():
     assert not re.search(r"\son[a-z]+=", html)
     assert set(ref for ref in refs if not ref.startswith("#")) == {
         "/panel/arachnid.css", "/panel/studio-utilities.css", "/panel/arachnid.js",
-        "/panel/studio.html", "/panel/desk.html",
+        "/panel/studio.html", "/panel/desk.html", "/panel/arachnid-handoff.css",
     }
 
 

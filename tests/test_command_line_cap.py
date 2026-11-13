@@ -11,6 +11,12 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/panel/arachnid-handoff.js",
+    "src/conductor/panel/arachnid-handoff.css",
+    "src/conductor/panel/arachnid-handoff-context.js",
+    "src/conductor/panel/arachnid-handoff-data.js",
+    "tests/test_arachnid_handoff_data.py",
+    "browser_tests/test_atlas_handoff.py",
     "tests/test_native_probe_imports.py",
     "tests/test_wheel_root_contract.py",
     "tests/test_credential_depth.py",
