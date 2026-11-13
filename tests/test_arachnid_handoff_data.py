@@ -220,3 +220,13 @@ def test_verified_attempt_without_manifest_has_no_verified_snapshot():
     assert "reviewer" in answer and "принял результат этой попытки Do" in answer
     assert "Идентификатор снимка не записан." in answer
     assert "подтвердил снимок" not in answer
+
+
+def test_followup_asks_about_individual_tests_not_the_handoff_or_checker():
+    routes = run_js("""
+      const pin = {from: "grok-build", to: "codex", view: "verdict"};
+      console.log(JSON.stringify(d.map(q => ctx.handoffIntent(q, pin)?.kind)));
+    """, {"ctx": "arachnid-handoff-context.js"}, [
+        "А что именно проверили эти три теста?", "What exactly did these three tests check?",
+        "Что из этого проверили тестами?", "А почему проверяющий принял эту правку?"])
+    assert routes == ["cases", "cases", "tests", "verdict"]

@@ -1,4 +1,6 @@
-"""Atlas chat follows a recorded handoff into one Do patch, its tests and its checker."""
+"""Atlas keeps one Do attempt through questions on its handoff, patch, checker and tests."""
+import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -17,6 +19,7 @@ QUESTION = "Что Grok передал Codex?"
 FOLLOWUP = "Что из этого проверили тестами?"
 CHANGES = "А что именно Codex исправил?"
 VERDICT = "А почему проверяющий принял эту правку?"
+CASES = "А что именно проверили эти три теста?"
 
 
 def handoff_read(root, action="action-first-2"):
@@ -58,7 +61,7 @@ def native_protocol(action="action-first-2"):
 
 
 @pytest.mark.parametrize("width", [1440, 375])
-def test_four_questions_follow_one_handoff_to_its_tests_patch_and_verdict(
+def test_five_questions_follow_one_handoff_to_its_patch_verdict_and_test_cases(
         chromium, atlas_url, tmp_path, width):
     context = chromium.new_context(viewport={"width": width, "height": 900})
     page = context.new_page()
@@ -137,7 +140,45 @@ def test_four_questions_follow_one_handoff_to_its_tests_patch_and_verdict(
         for evidence in (reply, verdict):
             expect(evidence).to_contain_text("Отдельное обоснование проверяющего не записано.")
         expect(reply).to_contain_text("checker")
-        expect(page.locator("#messages .msg.user")).to_have_count(4)
+        if width == 375:
+            page.locator("#close").click()
+        ask(page, CASES)
+        evidence = panel.locator('[data-handoff-view="cases"] [data-handoff-cases]')
+        expect(evidence).to_have_attribute("data-handoff-action", "action-first-1")
+        expect(evidence).to_have_attribute("data-handoff-attempt", "attempt-action-first-1")
+        cards = evidence.locator("[data-case-source] [data-handoff-case]")
+        expect(cards).to_have_count(3)
+        named = evidence.locator("[data-case-run]")
+        expect(named.locator("[data-case-observation]")).to_have_count(3)
+        for method, line, assertion in (
+                ("test_empty_input_is_zero", 7, "self.assertEqual(count_succeeded([]), 0)"),
+                ("test_counts_only_succeeded_records", 16,
+                 "self.assertEqual(count_succeeded(rows), 2)"),
+                ("test_skips_non_dictionaries_and_inexact_outcomes", 30,
+                 "self.assertEqual(count_succeeded(rows), 1)")):
+            source = cards.filter(has_text=method)
+            expect(source).to_contain_text("tests/test_counts.py:" + str(line))
+            expect(source).to_contain_text(assertion)
+            expect(reply).to_contain_text(method)
+            expect(reply).to_contain_text(assertion)
+            row = f"{method} (test_counts.CountSucceededTest.{method}) ... ok"
+            expect(named.locator("[data-case-observation]").filter(has_text=row)).to_have_text(row)
+        for method, examples, other in (
+                ("test_counts_only_succeeded_records",
+                 ('{"outcome": "failed"}', "{}"), '{"outcome": "Succeeded"}'),
+                ("test_skips_non_dictionaries_and_inexact_outcomes",
+                 ('{"outcome": "Succeeded"}', '{"outcome": "succeeded "}'),
+                 '{"outcome": "failed"}')):
+            excerpt = cards.filter(has_text=method).locator("[data-case-example]")
+            excerpt.locator("summary").click()
+            for example in examples:
+                expect(excerpt.locator("pre")).to_contain_text(example)
+            expect(excerpt.locator("pre")).not_to_contain_text(other)
+        raw = evidence.locator("[data-handoff-protocol]")
+        if raw.get_attribute("open") is None:
+            raw.locator("summary").click()
+        assert raw.locator("pre").last.text_content() == proof["tests"]["protocol"]["output"]
+        expect(page.locator("#messages .msg.user")).to_have_count(5)
         assert requests and set(requests) == {"action-first-1"}
         assert writes == []
     finally:
@@ -166,6 +207,7 @@ def test_switching_sessions_during_read_never_paints_or_replies_with_foreign_tes
         page.wait_for_function("typeof window.deliverFirst === 'function'")
         ask(page, CHANGES)
         ask(page, VERDICT)
+        ask(page, CASES)
         page.locator("#close").click()
         page.locator('[data-session="run/second"]').click()
         expect(page.locator("#messages")).not_to_contain_text(QUESTION)
@@ -174,6 +216,7 @@ def test_switching_sessions_during_read_never_paints_or_replies_with_foreign_tes
         expect(page.locator('[data-handoff-tests]')).to_have_count(0)
         expect(page.locator('[data-atlas-diff]')).to_have_count(0)
         expect(page.locator('[data-handoff-verdict]')).to_have_count(0)
+        expect(page.locator('[data-handoff-cases]')).to_have_count(0)
         ask(page, FOLLOWUP)
         expect(page.locator("#messages .msg.atlas").last).to_contain_text("Выберите запуск")
         expect(page.locator("#messages")).not_to_contain_text("Ran 3 tests")
@@ -215,12 +258,65 @@ def test_followup_refuses_foreign_attempt_or_checker(chromium, atlas_url, tmp_pa
             "Доказательства этой попытки не подтверждены")
         expect(page.locator("#inspection [data-atlas-diff]")).to_have_count(0)
         expect(page.locator("#inspection [data-handoff-case]")).to_have_count(0)
+        ask(page, CASES)
+        expect(page.locator('[data-handoff-view="cases"]')).to_contain_text(
+            "Сведения об этой попытке недоступны")
+        expect(page.locator("[data-handoff-cases]")).to_have_count(0)
+        expect(page.locator("#messages .msg.atlas").last).not_to_contain_text("test_empty_input")
+        expect(page.locator("#inspection [data-handoff-case]")).to_have_count(0)
         ask(page, VERDICT)
         expect(page.locator('[data-handoff-view="verdict"]')).to_contain_text(
             "Сведения об этой попытке недоступны")
         expect(page.locator("[data-handoff-verdict]")).to_have_count(0)
         expect(page.locator("#messages .msg.atlas").last).to_contain_text(
             "Доказательства этой попытки не подтверждены")
+    finally:
+        close_context(context)
+
+
+@pytest.mark.parametrize("source", ["quiet", "external"])
+def test_run_totals_do_not_turn_source_definitions_into_named_outcomes(
+        chromium, atlas_url, tmp_path, source):
+    context = chromium.new_context(viewport={"width": 1440, "height": 850})
+    page = context.new_page()
+    journal = handoff_read(tmp_path / "root")
+    proof = native_protocol()
+    tests = proof["tests"]
+    if source == "quiet":
+        raw = b"...\r\nRan 3 tests in 0.000s\r\n\r\nOK\r\n"
+        tests["protocol"].update(output=raw.decode(), output_b64=base64.b64encode(raw).decode(),
+                                 output_sha256="sha256:" + hashlib.sha256(raw).hexdigest())
+    else:
+        tests["source"] = "external"
+        del tests["protocol"]
+        # A saved assertion can still be displayed when this file has no available diff.
+        test_file = next(f for f in proof["files"] if f["path"] == "tests/test_counts.py")
+        test_file.update(diff_status="base_unavailable", lines=[])
+    page.route("**/command/runs/first", lambda route: route.fulfill(json=journal))
+    page.route("**/steps/repair-counter/actions/action-first-2", lambda r: r.fulfill(json=proof))
+    try:
+        page.goto(atlas_url + "/#session=first&lang=ru")
+        expect(page.locator('#orbitHere [data-step="repair-counter"]')).to_be_attached()
+        ask(page, QUESTION)
+        expect(page.locator('[data-handoff-view="handoff"]')).to_be_visible()
+        ask(page, VERDICT)
+        expect(page.locator('[data-handoff-verdict]')).to_be_visible()
+        ask(page, CASES)
+        panel = page.locator('[data-handoff-view="cases"] [data-handoff-cases]')
+        expect(panel.locator("[data-case-source] [data-handoff-case]")).to_have_count(3)
+        run = panel.locator("[data-case-run]")
+        expect(run).to_be_visible()
+        expect(run.locator("[data-case-observation]")).to_have_count(0)
+        expect(run).not_to_contain_text("test_empty_input_is_zero")
+        if source == "quiet":
+            expect(run).to_contain_text("Поимённых результатов в выводе нет")
+            expect(page.locator("#messages .msg.atlas").last).to_contain_text(
+                "Поимённых результатов в выводе нет")
+        else:
+            expect(run.locator("[data-handoff-protocol]")).to_have_count(0)
+            expect(panel.locator("[data-case-example]")).to_have_count(0)
+            expect(panel.locator("[data-case-source]")).to_contain_text(
+                "self.assertEqual(count_succeeded(rows), 2)")
     finally:
         close_context(context)
 

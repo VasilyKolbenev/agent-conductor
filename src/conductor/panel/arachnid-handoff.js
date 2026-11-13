@@ -112,6 +112,90 @@ function protocol(w, p) {
   return box;
 }
 
+// Read the after-side of a single hunk. A gap or a different definition ends the excerpt.
+function caseExcerpt(files, c) {
+  if (!c.assertion) return null;
+  const file = files.find(f => f.path === c.path && f.diff_status === "available");
+  let number = null, body = [], indent = -1;
+  for (const line of file?.lines || []) {
+    if (line.startsWith("@@")) {
+      const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      number = header ? Number(header[1]) : null;
+      body = []; indent = -1; continue;
+    }
+    if (number === null || !/^[+ ]/.test(line)) continue;
+    const source = line.slice(1), trimmed = source.trimStart();
+    const depth = source.length - trimmed.length;
+    if (trimmed && depth <= indent) { body = []; indent = -1; }
+    const def = /^(?:async\s+)?def\s+([^\s(]+)\s*\(/.exec(trimmed);
+    if (def) {
+      body = [];
+      indent = def[1] === c.name ? depth : -1;
+    }
+    if (indent >= 0) body.push(source);
+    if (number++ === c.line) {
+      return source.trim() === c.assertion && body.length > 2 && body.length <= 24
+        && body.every(row => row.length <= 320) ? body.join("\n") : null;
+    }
+  }
+  return null;
+}
+
+// These are transcript quotes. A short method name can occur in multiple modules or classes.
+function reportedCases(t) {
+  if (t.source !== "native") return [];
+  return t.protocol.output.split(/\r?\n/).filter(line =>
+    /^test_\S+ \([^()]+\) \.\.\. (?:ok|FAIL|ERROR|skipped .+|expected failure|unexpected success)$/
+      .test(line));
+}
+
+function reportNote(w, t, named) {
+  if (t.source === "external") return w("Only totals were recorded in the external report.",
+    "Во внешнем отчёте записаны только общие счётчики.");
+  if (t.source !== "native") return "";
+  return named.length ? w("Named results below are quoted from unittest output.",
+    "Поимённые результаты приведены из вывода unittest.") : w("No named results in the output.",
+    "Поимённых результатов в выводе нет.");
+}
+
+export function handoffCasesAnswer(locale, data) {
+  const w = word(locale), t = data.tests, named = reportedCases(t);
+  const lines = t.cases.map(c => c.name + " · " + (c.assertion ||
+    w("Assertion unavailable.", "Строка проверки недоступна.")));
+  return [w("From the test source", "В коде тестов"), ...lines,
+    w("Attempt report", "Протокол попытки") + " · " + atlasTestSummary({locale}, t),
+    reportNote(w, t, named)].filter(Boolean).join("\n");
+}
+
+function casesPanel(host, locale, w, data) {
+  const t = data.tests, named = reportedCases(t);
+  const section = element("section", {className: "handoff-case-proof", "data-handoff-cases": "",
+    "data-handoff-action": data.action_id, "data-handoff-attempt": data.attempt_id});
+  const source = element("section", {className: "handoff-results", "data-case-source": ""},
+    [text("h3", w("In the test source", "В коде тестов"))]);
+  for (const [i, c] of t.cases.entries()) {
+    const card = element("article", {className: "handoff-source-case", "data-handoff-case": c.name},
+      [text("h4", c.name), text("code", c.path + ":" + c.line, "handoff-ref"),
+        text("pre", c.assertion || w("Assertion unavailable.", "Строка проверки недоступна."))]);
+    const excerpt = caseExcerpt(data.files, c);
+    if (excerpt) card.append(element("details", {"data-case-example": String(i)}, [
+      element("summary", {"data-focus": "case-example:" + i,
+        text: w("Show source through the assertion", "Показать код до проверки")}),
+      text("pre", excerpt)]));
+    source.append(card);
+  }
+  if (!t.cases.length) source.append(text("p", w("No test locations recorded.",
+    "Места проверок в коде не записаны.")));
+  const run = element("section", {className: "handoff-results", "data-case-run": ""},
+    [text("h3", w("In the attempt report", "В протоколе попытки")),
+      text("p", atlasTestSummary({locale}, t))]);
+  const note = reportNote(w, t, named);
+  if (note) run.append(text("p", note));
+  for (const line of named) run.append(element("pre", {"data-case-observation": "", text: line}));
+  if (t.source === "native") run.append(protocol(w, t.protocol));
+  section.append(source, run); host.append(section);
+}
+
 function checkerDecision(locale, data) {
   const w = word(locale), result = data.verdict;
   if (result?.status !== "verified") return answerFor({locale}, "verdict", data);
@@ -177,6 +261,7 @@ function proofPanel(host, locale, w, runId, next, choice, callbacks) {
     verdictPanel(host, locale, w, data, next);
     return;
   }
+  if (choice.view === "cases") { casesPanel(host, locale, w, data); return; }
   const t = data.tests, panel = element("section", {className: "handoff-results",
     "data-handoff-tests": "", "data-handoff-action": data.action_id,
     "data-handoff-attempt": data.attempt_id});
@@ -237,10 +322,15 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
   const link = model.links[choice.linkIndex];
   const next = model.continuations[choice.continuationIndex];
   const bound = link && next?.fromArtifactId === link.target.artifactId ? next : null;
-  const scope = JSON.stringify([model.runId, link?.target.artifactId, bound?.target.actionId]);
-  const keepProtocol = details?.open && host.firstElementChild?.dataset.handoffScope === scope;
+  const scope = JSON.stringify([model.runId, link?.target.artifactId,
+    bound?.target.actionId, bound?.target.attemptId]);
+  const sameScope = host.firstElementChild?.dataset.handoffScope === scope;
+  const keepProtocol = details?.open && sameScope;
+  const examples = sameScope ? [...host.querySelectorAll("[data-case-example][open]")]
+    .map(el => el.dataset.caseExample) : [];
   const title = {changes: w("Changes and tests", "Изменения и тесты"),
     verdict: w("Independent verdict", "Независимый вердикт"),
+    cases: w("What the tests check", "Что проверяют тесты"),
     tests: w("Test evidence", "Сведения о тестах"),
     handoff: w("Harness handoff", "Передача работы")}[choice.view];
   const panel = element("section", {className: "handoff-panel", "data-handoff-scope": scope,
@@ -266,6 +356,9 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
       "Передача по точному идентификатору входного документа не найдена.")));
   const p = panel.querySelector("[data-handoff-protocol]");
   if (p && keepProtocol) p.open = true;
+  for (const el of panel.querySelectorAll("[data-case-example]")) {
+    el.open = examples.includes(el.dataset.caseExample);
+  }
   if (focus) [...panel.querySelectorAll("[data-focus]")].find(b => b.dataset.focus === focus)
     ?.focus({preventScroll: true});
 }

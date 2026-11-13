@@ -3,6 +3,9 @@
 const grok = /grok|грок/i, codex = /codex|кодекс/i;
 const transfer = /переда[лнчй]|переда[её]т|получил|handoff|hand|pass|sen[dt]|give|receiv/i;
 const testing = /тест|tests?|unittest/i;
+const testDetail = /что (?:именно )?провер(?:яют|ил[аиы]?)|что .*тест[а-яё]* проверя/i;
+const perTest = /кажд(?:ый|ого|ом) тест|кажд(?:ая|ую) проверк|each test|assertions?/i;
+const whatTested = /what\b.*\btests?\b.*\b(?:check|assert|verify|cover)(?:ed|s)?\b/i;
 const reviewer = /проверяющ|ревьюер|\b(?:checker|reviewer|verifier)\b/i;
 const verdict = /вердикт|\bverdict\b/i;
 const decision = /приня|подтверд|одобр|отклони|решил|accept|approv|confirm|reject|decid|conclud/i;
@@ -32,6 +35,8 @@ export function handoffIntent(text, context) {
   if (context && (verdict.test(text) || reviewer.test(text) && decision.test(text))) {
     return {kind: "verdict"};
   }
+  if (testing.test(text) && (testDetail.test(text) || whatTested.test(text)
+      || perTest.test(text))) return {kind: context ? "cases" : "clarify"};
   if (context && changed.test(text) && !testing.test(text)) {
     const question = text.trim().replace(/[?!.]+$/, "").trim().replace(/\s+/g, " ");
     const named = c >= 0 || g >= 0;

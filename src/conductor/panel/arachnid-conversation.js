@@ -7,7 +7,7 @@ import {
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 import {handoffData} from "./arachnid-handoff-data.js";
-import {handoffVerdictAnswer, renderHandoff} from "./arachnid-handoff.js";
+import {handoffCasesAnswer, handoffVerdictAnswer, renderHandoff} from "./arachnid-handoff.js";
 import {
   continuationPin, handoffIntent, handoffPin, sameContinuation, sameHandoff,
 } from "./arachnid-handoff-context.js";
@@ -355,6 +355,7 @@ export function arachnidConversation(center, inspector, door) {
     load();
   }
   function evidenceAnswer(topic, evidence) {
+    if (topic === "cases") return handoffCasesAnswer(model.locale, evidence);
     if (topic === "handoff-verdict") return handoffVerdictAnswer(model.locale, evidence);
     if (topic === "tests-in-handoff") return testAnswer(evidence);
     if (topic !== "changes") return answerFor(model, topic, evidence);
@@ -422,8 +423,8 @@ export function arachnidConversation(center, inspector, door) {
       reply.text = words("Choose a linked Do attempt if one is recorded.",
         "Выберите связанную попытку Do, если для неё записан вход.");
     } else {
-      const topic = {changes: "changes", tests: "tests-in-handoff", verdict: "handoff-verdict"}
-        [intent.kind];
+      const topic = {tests: "tests-in-handoff", verdict: "handoff-verdict"}[intent.kind]
+        || intent.kind;
       reply.origin = state.scope;
       if (read?.phase === "ready") reply.text = evidenceAnswer(topic, read.value);
       else if (read?.phase === "loading") Object.assign(reply,
