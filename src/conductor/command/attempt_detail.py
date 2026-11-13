@@ -83,7 +83,7 @@ def _snapshot(root, request, seed, digest):
     return read_snapshot(root, request.run_id, digest, object_format=fmt)
 
 
-def _project_files(root, request, seed, snapshot, git):
+def _project_files(root, request, seed, snapshot, git, tests):
     rows = snapshot.rows[:MAX_SHOWN]
     # Do not fetch a before-image for a path which the client cannot view.
     permitted = [r for r in rows if not _private_path(r.path) and r.length <= _FILE_BYTES]
@@ -91,8 +91,13 @@ def _project_files(root, request, seed, snapshot, git):
         before = {} if all(r.state == "added" for r in snapshot.rows) else None
     else:
         from .attempt_base import read_attempt_base
+        touched = {r.path for r in snapshot.rows}
+        packages = {r.path.split("/")[0] + "/__init__.py" for r in permitted
+                    if r.state == "modified" and r.path.endswith(".py") and r.path.count("/") == 1}
         try:
-            before = read_attempt_base(root, request.run_id, seed, permitted, git=git)
+            before = read_attempt_base(root, request.run_id, seed, permitted, git=git,
+                                       package_initializers=sorted(packages - touched)
+                                       if tests["cases"] else ())
         except SnapshotRefused:
             before = None
     files, remaining = [], _DIFF_BYTES
@@ -100,6 +105,8 @@ def _project_files(root, request, seed, snapshot, git):
         file, size = _file(row, before, snapshot, remaining)
         files.append(file)
         remaining -= size
+    from .attempt_old_behavior import annotate_cases
+    annotate_cases(tests["cases"], before, snapshot, files, displayable_source)
     return files
 
 
@@ -134,10 +141,9 @@ def _sealed_attempt(root, recovered, request, result, view, git, *, proof=None):
                     or file["state"] != "deleted" and (
                         file["sha256"] != row.sha256 or file["length"] != row.length)):
                 raise SnapshotRefused("attempt_protocol_invalid")
+        tests = read_test_evidence(root, request, snapshot.digest, seed, snapshot, protocol=report)
         shown = {**view, "manifest_digest": snapshot.digest, "files_total": len(snapshot.rows),
-                 "files": _project_files(root, request, seed, snapshot, git),
-                 "tests": read_test_evidence(root, request, snapshot.digest, seed, snapshot,
-                                             protocol=report)}
+                 "files": _project_files(root, request, seed, snapshot, git, tests), "tests": tests}
         if feedback is not None:
             from .contract_values import _thaw_json
             shown["verdict"] = {"status": "rejected", "instance_id": seal["checker"]["instance"],
@@ -198,7 +204,7 @@ def read_attempt(root, recovered, node_id, action_id, *, git=None):
         view["tests"]["status"] = "unavailable"
         return view
     view["files_total"] = len(snapshot.rows)
-    view["files"] = _project_files(root, request, seed, snapshot, git)
     from .attempt_test_evidence import read_test_evidence
     view["tests"] = read_test_evidence(root, request, digest, seed, snapshot)
+    view["files"] = _project_files(root, request, seed, snapshot, git, view["tests"])
     return view

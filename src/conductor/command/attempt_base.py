@@ -146,14 +146,27 @@ def _git_loader(root, git):
     return load
 
 
-def read_attempt_base(root, run_id, seed, rows, *, git=None):
+def read_attempt_base(root, run_id, seed, rows, *, git=None, package_initializers=()):
     """Read exact old regular blobs by the immutable tree in seed. Omit proven added paths."""
     root = Path(root).resolve()
     folder = _folder(root, run_id) / "base"
     load = _git_loader(root, git) if git is not None else (
         lambda kind, oid, ceiling: _read(root, folder / oid, ceiling))
     try:
-        before, _proof = _resolve(seed, rows, load)
+        before, proof = _resolve(seed, rows, load)
+        # A test may import a changed function through its unchanged package initializer.
+        # Share the same verified tree and object budget. Missing optional evidence cannot
+        # invalidate before-images already obtained for the diff.
+        for name in package_initializers:
+            if (seed.source != "git" or not re.fullmatch(r"[a-zA-Z_]\w*/__init__\.py", name)
+                    or not _included(name, seed)):
+                continue
+            try:
+                entry = proof.find(seed.base_tree, name.split("/"))
+            except (GitReadFailed, OSError, ValueError):
+                continue
+            if entry is not None:
+                before[name] = entry[2]
         return before
     except (GitReadFailed, OSError, WindowsNameError, WindowsPathError, UnicodeError):
         raise SnapshotRefused("base_unavailable") from None

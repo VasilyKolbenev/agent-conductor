@@ -20,6 +20,7 @@ FOLLOWUP = "Что из этого проверили тестами?"
 CHANGES = "А что именно Codex исправил?"
 VERDICT = "А почему проверяющий принял эту правку?"
 CASES = "А что именно проверили эти три теста?"
+OLD_TESTS = "А какие из этих тестов поймали бы старую ошибку?"
 
 
 def handoff_read(root, action="action-first-2"):
@@ -61,7 +62,7 @@ def native_protocol(action="action-first-2"):
 
 
 @pytest.mark.parametrize("width", [1440, 375])
-def test_five_questions_follow_one_handoff_to_its_patch_verdict_and_test_cases(
+def test_six_questions_follow_one_handoff_to_the_tests_that_reveal_the_old_bug(
         chromium, atlas_url, tmp_path, width):
     context = chromium.new_context(viewport={"width": width, "height": 900})
     page = context.new_page()
@@ -70,6 +71,10 @@ def test_five_questions_follow_one_handoff_to_its_patch_verdict_and_test_cases(
     # The later Do is also Codex; only the older Do received this plan.
     journal = handoff_read(tmp_path / "root", "action-first-1")
     proof = native_protocol("action-first-1")
+    for row, count, expected in zip(proof["tests"]["cases"], (0, 4, 9), (0, 2, 1), strict=True):
+        row["old_length"] = {"expression": "len(rows)", "function": "count_succeeded",
+                             "path": "runstats/counts.py", "line": 3,
+                             "actual": count, "expected": expected}
 
     def attempt(route):
         requests.append(route.request.url.rsplit("/", 1)[-1])
@@ -178,7 +183,31 @@ def test_five_questions_follow_one_handoff_to_its_patch_verdict_and_test_cases(
         if raw.get_attribute("open") is None:
             raw.locator("summary").click()
         assert raw.locator("pre").last.text_content() == proof["tests"]["protocol"]["output"]
-        expect(page.locator("#messages .msg.user")).to_have_count(5)
+        if width == 375:
+            page.locator("#close").click()
+        ask(page, OLD_TESTS)
+        comparison = panel.locator('[data-handoff-view="old-tests"] [data-handoff-old-tests]')
+        expect(comparison).to_have_attribute("data-handoff-attempt", "attempt-action-first-1")
+        expect(comparison).to_have_attribute("data-handoff-action", "action-first-1")
+        expect(comparison).to_contain_text("len(rows)")
+        expect(comparison).to_contain_text("runstats/counts.py:3")
+        expect(comparison).to_contain_text("Расчёт без выполнения старого кода")
+        expect(comparison.locator("[data-case-run]")).to_contain_text("Протокол Do после правки")
+        for name, old, expected, effect in (
+                ("test_empty_input_is_zero", "0", "0", "Не обнаружил бы"),
+                ("test_counts_only_succeeded_records", "4", "2", "Обнаружил бы"),
+                ("test_skips_non_dictionaries_and_inexact_outcomes", "9", "1", "Обнаружил бы")):
+            row = comparison.locator("[data-old-row]").filter(has_text=name)
+            expect(row.locator("[data-old-actual]")).to_have_text(old)
+            expect(row.locator("[data-old-expected]")).to_have_text(expected)
+            expect(row.locator("[data-old-effect]")).to_have_text(effect)
+        actual = comparison.locator("[data-case-run] [data-case-observation]")
+        assert actual.all_text_contents() == [
+            s for s in proof["tests"]["protocol"]["output"].splitlines() if s.endswith(" ... ok")]
+        expect(reply).to_contain_text("test_counts_only_succeeded_records")
+        expect(reply).to_contain_text("test_skips_non_dictionaries_and_inexact_outcomes")
+        expect(reply).to_contain_text("Обнаружили бы ошибку: 2 из 3")
+        expect(page.locator("#messages .msg.user")).to_have_count(6)
         assert requests and set(requests) == {"action-first-1"}
         assert writes == []
     finally:
@@ -256,6 +285,10 @@ def test_followup_refuses_foreign_attempt_or_checker(chromium, atlas_url, tmp_pa
         ask(page, CHANGES)
         expect(page.locator("#messages .msg.atlas").last).to_contain_text(
             "Доказательства этой попытки не подтверждены")
+        ask(page, OLD_TESTS)
+        expect(page.locator('[data-handoff-view="old-tests"]')).to_contain_text(
+            "Сведения об этой попытке недоступны")
+        expect(page.locator("[data-handoff-old-tests]")).to_have_count(0)
         expect(page.locator("#inspection [data-atlas-diff]")).to_have_count(0)
         expect(page.locator("#inspection [data-handoff-case]")).to_have_count(0)
         ask(page, CASES)
@@ -292,6 +325,11 @@ def test_run_totals_do_not_turn_source_definitions_into_named_outcomes(
         # A saved assertion can still be displayed when this file has no available diff.
         test_file = next(f for f in proof["files"] if f["path"] == "tests/test_counts.py")
         test_file.update(diff_status="base_unavailable", lines=[])
+        impl = next(f for f in proof["files"] if f["path"] == "runstats/counts.py")
+        impl.update(diff_status="withheld", lines=[])
+        tests["cases"][0]["old_length"] = {
+            "expression": "len(rows)", "function": "count_succeeded", "path": "runstats/counts.py",
+            "line": 3, "actual": 0, "expected": 0}
     page.route("**/command/runs/first", lambda route: route.fulfill(json=journal))
     page.route("**/steps/repair-counter/actions/action-first-2", lambda r: r.fulfill(json=proof))
     try:
@@ -317,6 +355,13 @@ def test_run_totals_do_not_turn_source_definitions_into_named_outcomes(
             expect(panel.locator("[data-case-example]")).to_have_count(0)
             expect(panel.locator("[data-case-source]")).to_contain_text(
                 "self.assertEqual(count_succeeded(rows), 2)")
+        ask(page, OLD_TESTS)
+        old = page.locator("[data-handoff-old-tests]")
+        expect(old.locator("[data-old-row]")).to_have_count(3)
+        expect(old.locator("[data-old-actual]")).to_have_count(0)
+        expect(old.locator("[data-old-effect]")).to_have_text(["Недостаточно данных"] * 3)
+        expect(old.locator("[data-case-run]")).to_contain_text("всего 3", ignore_case=True)
+        expect(old.locator("[data-case-observation]")).to_have_count(0)
     finally:
         close_context(context)
 

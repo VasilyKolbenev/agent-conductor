@@ -3,6 +3,9 @@
 const grok = /grok|грок/i, codex = /codex|кодекс/i;
 const transfer = /переда[лнчй]|переда[её]т|получил|handoff|hand|pass|sen[dt]|give|receiv/i;
 const testing = /тест|tests?|unittest/i;
+const oldCodeRu = /(?:стар|прежн|исходн)[а-яё]*\s+(?:ошиб|верси|реализац|код)/i;
+const oldCodeEn = /(?:old|original|previous)\s+(?:bug|defect|version|code|implementation)/i;
+const detects = /пойма|ловил|выяв|обнаруж|провал|упа[лд]|catch|caught|detect|expos|fail|reveal/i;
 const testDetail = /что (?:именно )?провер(?:яют|ил[аиы]?)|что .*тест[а-яё]* проверя/i;
 const perTest = /кажд(?:ый|ого|ом) тест|кажд(?:ая|ую) проверк|each test|assertions?/i;
 const whatTested = /what\b.*\btests?\b.*\b(?:check|assert|verify|cover)(?:ed|s)?\b/i;
@@ -31,6 +34,9 @@ export function handoffIntent(text, context) {
       : /получил|receiv/i.test(text) ? c > g : g > c;
     return reverse ? {kind: "transfer", from: "codex", to: "grok-build"}
       : {kind: "transfer", from: "grok-build", to: "codex"};
+  }
+  if (testing.test(text) && (oldCodeRu.test(text) || oldCodeEn.test(text)) && detects.test(text)) {
+    return {kind: context ? "old-tests" : "clarify"};
   }
   if (context && (verdict.test(text) || reviewer.test(text) && decision.test(text))) {
     return {kind: "verdict"};

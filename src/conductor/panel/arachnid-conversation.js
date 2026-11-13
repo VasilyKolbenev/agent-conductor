@@ -7,7 +7,9 @@ import {
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 import {handoffData} from "./arachnid-handoff-data.js";
-import {handoffCasesAnswer, handoffVerdictAnswer, renderHandoff} from "./arachnid-handoff.js";
+import {
+  handoffCasesAnswer, handoffOldAnswer, handoffVerdictAnswer, renderHandoff,
+} from "./arachnid-handoff.js";
 import {
   continuationPin, handoffIntent, handoffPin, sameContinuation, sameHandoff,
 } from "./arachnid-handoff-context.js";
@@ -355,6 +357,7 @@ export function arachnidConversation(center, inspector, door) {
     load();
   }
   function evidenceAnswer(topic, evidence) {
+    if (topic === "old-tests") return handoffOldAnswer(model.locale, evidence);
     if (topic === "cases") return handoffCasesAnswer(model.locale, evidence);
     if (topic === "handoff-verdict") return handoffVerdictAnswer(model.locale, evidence);
     if (topic === "tests-in-handoff") return testAnswer(evidence);

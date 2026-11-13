@@ -171,7 +171,7 @@ export function handoffCasesAnswer(locale, data) {
 }
 
 function casesPanel(host, locale, w, data) {
-  const t = data.tests, named = reportedCases(t);
+  const t = data.tests;
   const section = element("section", {className: "handoff-case-proof", "data-handoff-cases": "",
     "data-handoff-action": data.action_id, "data-handoff-attempt": data.attempt_id});
   const source = element("section", {className: "handoff-results", "data-case-source": ""},
@@ -189,14 +189,78 @@ function casesPanel(host, locale, w, data) {
   }
   if (!t.cases.length) source.append(text("p", w("No test locations recorded.",
     "Места проверок в коде не записаны.")));
+  section.append(source, runPanel(locale, w, t)); host.append(section);
+}
+
+function runPanel(locale, w, t, title = w("In the attempt report", "В протоколе попытки")) {
+  const named = reportedCases(t);
   const run = element("section", {className: "handoff-results", "data-case-run": ""},
-    [text("h3", w("In the attempt report", "В протоколе попытки")),
-      text("p", atlasTestSummary({locale}, t))]);
+    [text("h3", title), text("p", atlasTestSummary({locale}, t))]);
   const note = reportNote(w, t, named);
   if (note) run.append(text("p", note));
   for (const line of named) run.append(element("pre", {"data-case-observation": "", text: line}));
   if (t.source === "native") run.append(protocol(w, t.protocol));
-  section.append(source, run); host.append(section);
+  return run;
+}
+
+function oldProof(c, files) {
+  const p = c.old_length;
+  if (!p || !Number.isSafeInteger(p.actual) || p.actual < 0 || !Number.isSafeInteger(p.expected)
+      || !Number.isSafeInteger(p.line) || p.line < 1 || !c.assertion
+      || typeof p.function !== "string" || !p.function || typeof p.expression !== "string"
+      || !/^len\([\p{ID_Start}_][\p{ID_Continue}]*\)$/u.test(p.expression)
+      || !files.some(f => f.path === p.path && f.state === "modified"
+        && f.diff_status === "available")
+      || !files.some(f => f.path === c.path && f.diff_status === "available")) return null;
+  return p;
+}
+
+function oldEffect(w, p) {
+  if (!p) return w("Insufficient evidence", "Недостаточно данных");
+  return p.actual === p.expected ? w("Would not catch it", "Не обнаружил бы")
+    : w("Would catch it", "Обнаружил бы");
+}
+
+export function handoffOldAnswer(locale, data) {
+  const w = word(locale), t = data.tests;
+  const rows = t.cases.map(c => ({name: c.name, p: oldProof(c, data.files)}));
+  const known = rows.filter(r => r.p), caught = known.filter(({p}) => p.actual !== p.expected);
+  const counts = known.length ? w("Would catch the bug: ", "Обнаружили бы ошибку: ")
+    + caught.length + w(" of ", " из ") + known.length
+    : w("The available source does not establish the old result.",
+      "По доступному коду прежний результат не определён.");
+  return [w("Source comparison", "Сравнение по коду") + " · " + counts,
+    ...rows.map(({name, p}) => name + " · " + (p ? p.expression + " = " + p.actual
+      + w(", expected ", ", ожидалось ") + p.expected + " · " + oldEffect(w, p) : oldEffect(w, p))),
+    w("Post-patch Do report", "Протокол Do после правки") + " · " + atlasTestSummary({locale}, t)]
+    .join("\n");
+}
+
+function oldPanel(host, locale, w, data) {
+  const section = element("section", {className: "handoff-case-proof", "data-handoff-old-tests": "",
+    "data-handoff-action": data.action_id, "data-handoff-attempt": data.attempt_id});
+  const source = element("section", {className: "handoff-results"},
+    [text("h3", w("By the code before the patch", "По коду до правки")),
+      text("p", w("Static comparison without running the old code.",
+        "Расчёт без выполнения старого кода."))]);
+  for (const c of data.tests.cases) {
+    const p = oldProof(c, data.files);
+    const row = element("article", {className: "handoff-source-case", "data-old-row": c.name},
+      [text("h4", c.name), text("code", c.path + ":" + c.line, "handoff-ref")]);
+    if (p) {
+      const values = element("dl", {className: "handoff-compare-values"}, [
+        text("dt", p.expression), element("dd", {"data-old-actual": "", text: String(p.actual)}),
+        text("dt", w("Expected", "Ожидалось")),
+        element("dd", {"data-old-expected": "", text: String(p.expected)})]);
+      row.append(values, text("code", p.path + ":" + p.line, "handoff-ref"));
+    }
+    row.append(element("p", {"data-old-effect": "", text: oldEffect(w, p)}));
+    source.append(row);
+  }
+  if (!data.tests.cases.length) source.append(text("p",
+    w("No test locations recorded.", "Места проверок в коде не записаны.")));
+  section.append(source, runPanel(locale, w, data.tests,
+    w("Post-patch Do report", "Протокол Do после правки"))); host.append(section);
 }
 
 function checkerDecision(locale, data) {
@@ -265,6 +329,7 @@ function proofPanel(host, locale, w, runId, next, choice, callbacks) {
     return;
   }
   if (choice.view === "cases") { casesPanel(host, locale, w, data); return; }
+  if (choice.view === "old-tests") { oldPanel(host, locale, w, data); return; }
   const t = data.tests, panel = element("section", {className: "handoff-results",
     "data-handoff-tests": "", "data-handoff-action": data.action_id,
     "data-handoff-attempt": data.attempt_id});
@@ -334,6 +399,7 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
   const title = {changes: w("Changes and tests", "Изменения и тесты"),
     verdict: w("Independent verdict", "Независимый вердикт"),
     cases: w("What the tests check", "Что проверяют тесты"),
+    "old-tests": w("Which tests would catch the bug?", "Какие тесты обнаружили бы ошибку?"),
     tests: w("Test evidence", "Сведения о тестах"),
     handoff: w("Harness handoff", "Передача работы")}[choice.view];
   const panel = element("section", {className: "handoff-panel", "data-handoff-scope": scope,
