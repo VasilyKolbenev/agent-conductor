@@ -198,3 +198,25 @@ def test_continuation_requires_the_same_input_node_action_and_attempt():
     assert pin == {"inputId": "revision-2", "nodeId": "do", "actionId": "action-do",
                    "attemptId": "attempt-2"}
     assert matches == [True, False, False, False, False]
+
+
+def test_request_for_checker_verdict_is_distinct_from_owner_acceptance():
+    answers = run_js("""
+      const context = {from: 'grok-build', to: 'codex', view: 'changes'};
+      console.log(JSON.stringify(d.map(query => ctx.handoffIntent(query, context)?.kind ?? null)));
+    """, {"ctx": "arachnid-handoff-context.js"}, [
+        "А почему проверяющий принял эту правку?", "Why did the checker accept this patch?",
+        "Почему владелец принял результат?", "Почему я принял эту правку?"])
+    assert answers[:2] == ["verdict", "verdict"]
+    assert "verdict" not in answers[2:]
+
+
+def test_verified_attempt_without_manifest_has_no_verified_snapshot():
+    evidence = {"verdict": {"status": "verified", "adapter_id": "codex", "instance_id": "reviewer"},
+                "manifest_digest": None, "files_total": None, "files": [],
+                "tests": {"status": "not_recorded"}}
+    answer = run_js('console.log(JSON.stringify(panel.handoffVerdictAnswer("ru", d)))',
+                    {"panel": "arachnid-handoff.js"}, evidence)
+    assert "reviewer" in answer and "принял результат этой попытки Do" in answer
+    assert "Идентификатор снимка не записан." in answer
+    assert "подтвердил снимок" not in answer

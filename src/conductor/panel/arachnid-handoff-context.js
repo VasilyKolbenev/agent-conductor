@@ -3,6 +3,9 @@
 const grok = /grok|грок/i, codex = /codex|кодекс/i;
 const transfer = /переда[лнчй]|переда[её]т|получил|handoff|hand|pass|sen[dt]|give|receiv/i;
 const testing = /тест|tests?|unittest/i;
+const reviewer = /проверяющ|ревьюер|\b(?:checker|reviewer|verifier)\b/i;
+const verdict = /вердикт|\bverdict\b/i;
+const decision = /приня|подтверд|одобр|отклони|решил|accept|approv|confirm|reject|decid|conclud/i;
 const reference = /из (этого|них)|из переданного|по этому|эти |этот |это |those|that|of it/i;
 const changed = /исправил|поменял|изменил|поправил|\b(?:fix(?:ed)?|chang(?:e|ed)|patch(?:ed)?)\b/i;
 
@@ -25,6 +28,9 @@ export function handoffIntent(text, context) {
       : /получил|receiv/i.test(text) ? c > g : g > c;
     return reverse ? {kind: "transfer", from: "codex", to: "grok-build"}
       : {kind: "transfer", from: "grok-build", to: "codex"};
+  }
+  if (context && (verdict.test(text) || reviewer.test(text) && decision.test(text))) {
+    return {kind: "verdict"};
   }
   if (context && changed.test(text) && !testing.test(text)) {
     const question = text.trim().replace(/[?!.]+$/, "").trim().replace(/\s+/g, " ");

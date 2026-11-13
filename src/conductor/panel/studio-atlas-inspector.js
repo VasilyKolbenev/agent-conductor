@@ -88,6 +88,7 @@ export function matchesAtlasAttempt(row, request, step, run) {
   }
   if (row.verdict?.status === "rejected" && (row.outcome !== "verification_failed"
       || !text(row.verdict.reason) || !validFindings(row.verdict.findings))) return false;
+  if (row.verdict?.status === "verified" && row.outcome !== "succeeded") return false;
   return row.files.every(file => file && text(file.path) && states.includes(file.state)
     && diffs.includes(file.diff_status) && Array.isArray(file.lines)
     && file.lines.every(text) && (file.diff_status === "available" || !file.lines.length));

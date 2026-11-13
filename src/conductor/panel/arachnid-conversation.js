@@ -7,7 +7,7 @@ import {
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 import {handoffData} from "./arachnid-handoff-data.js";
-import {renderHandoff} from "./arachnid-handoff.js";
+import {handoffVerdictAnswer, renderHandoff} from "./arachnid-handoff.js";
 import {
   continuationPin, handoffIntent, handoffPin, sameContinuation, sameHandoff,
 } from "./arachnid-handoff-context.js";
@@ -141,7 +141,10 @@ export function arachnidConversation(center, inspector, door) {
     Promise.resolve().then(() => pending.signal.aborted ? null
       : door.readAttempt(run, s.nodeId, a.action_id, pending)).then(value => {
       if (disposed || generation !== epoch || signature !== key) return;
-      read = matchesAtlasAttempt(value, a, s, run)
+      const checker = scene.participants.filter(p => p.instanceId === s.verifierId);
+      const sameChecker = !value?.verdict || checker.length === 1
+        && value.verdict.adapter_id === checker[0].adapter;
+      read = sameChecker && matchesAtlasAttempt(value, a, s, run)
         ? {phase: "ready", value} : {phase: "unavailable"};
       settle(epoch, read.value); drawInspector(); summary();
     }, () => {
@@ -352,6 +355,7 @@ export function arachnidConversation(center, inspector, door) {
     load();
   }
   function evidenceAnswer(topic, evidence) {
+    if (topic === "handoff-verdict") return handoffVerdictAnswer(model.locale, evidence);
     if (topic === "tests-in-handoff") return testAnswer(evidence);
     if (topic !== "changes") return answerFor(model, topic, evidence);
     const overview = answerFor(model, "diff", evidence);
@@ -418,7 +422,8 @@ export function arachnidConversation(center, inspector, door) {
       reply.text = words("Choose a linked Do attempt if one is recorded.",
         "Выберите связанную попытку Do, если для неё записан вход.");
     } else {
-      const topic = intent.kind === "changes" ? "changes" : "tests-in-handoff";
+      const topic = {changes: "changes", tests: "tests-in-handoff", verdict: "handoff-verdict"}
+        [intent.kind];
       reply.origin = state.scope;
       if (read?.phase === "ready") reply.text = evidenceAnswer(topic, read.value);
       else if (read?.phase === "loading") Object.assign(reply,
@@ -466,7 +471,7 @@ export function arachnidConversation(center, inspector, door) {
     const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
     const intent = model.runId ? handoffIntent(message, state.handoff) : null;
-    if (intent && !(panel && ["changes", "other-author"].includes(intent.kind))) {
+    if (intent && !(panel && ["changes", "other-author", "verdict"].includes(intent.kind))) {
       readHandoff(intent, reply); state.messages.push(reply); paint();
       fields.messages.lastElementChild?.scrollIntoView({block: "nearest"}); return;
     }

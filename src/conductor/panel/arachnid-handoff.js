@@ -112,7 +112,58 @@ function protocol(w, p) {
   return box;
 }
 
-function testPanel(host, locale, w, runId, next, choice, callbacks) {
+function checkerDecision(locale, data) {
+  const w = word(locale), result = data.verdict;
+  if (result?.status !== "verified") return answerFor({locale}, "verdict", data);
+  const checker = w("Independent checker ", "Независимый проверяющий ")
+    + result.adapter_id + " (" + result.instance_id + ")";
+  if (data.manifest_digest) return checker
+    + w(" verified the snapshot of this Do attempt.", " подтвердил снимок этой попытки Do.");
+  return checker + w(" accepted this Do attempt's result. The snapshot ID was not recorded.",
+    " принял результат этой попытки Do. Идентификатор снимка не записан.");
+}
+
+function checkerRationale(locale, data) {
+  if (data.verdict?.status === "rejected") {
+    return data.verdict.findings.map(f => f.summary).join("\n");
+  }
+  if (data.verdict?.status !== "verified") return "";
+  return word(locale)("The checker recorded no separate rationale.",
+    "Отдельное обоснование проверяющего не записано.");
+}
+
+export function handoffVerdictAnswer(locale, data) {
+  const w = word(locale), result = [checkerDecision(locale, data)];
+  if (data.verdict?.status === "verified" && data.manifest_digest && data.files_total !== null) {
+    result.push(answerFor({locale}, "diff", data));
+  }
+  if (data.tests.status === "recorded") {
+    result.push(w("Test report for this attempt", "Протокол тестов этой попытки") + " · "
+      + atlasTestSummary({locale}, data.tests));
+  }
+  return [...result, checkerRationale(locale, data)].filter(Boolean).join("\n");
+}
+
+function verdictPanel(host, locale, w, data, next) {
+  const section = element("section", {className: "handoff-results", "data-handoff-verdict": "",
+    "data-handoff-action": data.action_id, "data-handoff-attempt": data.attempt_id});
+  const rationale = checkerRationale(locale, data);
+  section.append(text("h3", checkerDecision(locale, data)));
+  if (rationale) section.append(text("p", rationale, "handoff-caveat"));
+  if (data.manifest_digest) {
+    section.append(text("h4", w("Snapshot of this attempt", "Снимок этой попытки")),
+      text("p", answerFor({locale}, "diff", data)),
+      text("code", data.manifest_digest, "handoff-ref"));
+  }
+  section.append(text("h4", w("Test report for this attempt", "Протокол тестов этой попытки")),
+    text("p", atlasTestSummary({locale}, data.tests)));
+  if (data.tests.source === "native") section.append(protocol(w, data.tests.protocol));
+  section.append(identity(w, next.target, [[w("Input document", "Входной документ"),
+    next.inputArtifactId]]));
+  host.append(section);
+}
+
+function proofPanel(host, locale, w, runId, next, choice, callbacks) {
   const data = choice.evidence;
   if (!next || choice.phase !== "ready" || !data || data.run_id !== runId
       || data.action_id !== next.target.actionId
@@ -120,6 +171,10 @@ function testPanel(host, locale, w, runId, next, choice, callbacks) {
     host.append(text("p", choice.phase === "loading" && next
       ? w("Reading the attempt…", "Читаю попытку…")
       : w("No matching attempt evidence available.", "Сведения об этой попытке недоступны.")));
+    return;
+  }
+  if (choice.view === "verdict") {
+    verdictPanel(host, locale, w, data, next);
     return;
   }
   const t = data.tests, panel = element("section", {className: "handoff-results",
@@ -184,8 +239,10 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
   const bound = link && next?.fromArtifactId === link.target.artifactId ? next : null;
   const scope = JSON.stringify([model.runId, link?.target.artifactId, bound?.target.actionId]);
   const keepProtocol = details?.open && host.firstElementChild?.dataset.handoffScope === scope;
-  const title = choice.view === "changes" ? w("Changes and tests", "Изменения и тесты")
-    : proof ? w("Test evidence", "Сведения о тестах") : w("Harness handoff", "Передача работы");
+  const title = {changes: w("Changes and tests", "Изменения и тесты"),
+    verdict: w("Independent verdict", "Независимый вердикт"),
+    tests: w("Test evidence", "Сведения о тестах"),
+    handoff: w("Harness handoff", "Передача работы")}[choice.view];
   const panel = element("section", {className: "handoff-panel", "data-handoff-scope": scope,
     "data-handoff-view": choice.view}, [text("h2", title)]);
   host.replaceChildren(panel);
@@ -201,7 +258,7 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
     if (proof && !bound && options.length) {
       panel.append(text("p", w("Select the next action to inspect its attempt.",
         "Выберите следующее действие, чтобы открыть его попытку.")));
-    } else if (proof) testPanel(panel, locale, w, model.runId, bound, choice, callbacks);
+    } else if (proof) proofPanel(panel, locale, w, model.runId, bound, choice, callbacks);
     else handoff(panel, w, link, bound, options, choice, callbacks);
   } else panel.append(text("p", model.links.length
     ? w("Select a recorded handoff.", "Выберите записанную передачу.")
