@@ -1,6 +1,6 @@
 "use strict";
 import {element} from "./command-view.js";
-import {answerFor, atlasTestSummary} from "./studio-atlas-inspector.js";
+import {answerFor, atlasDiff, atlasTestSummary} from "./studio-atlas-inspector.js";
 
 const text = (tag, value, cls = "") => element(tag, {className: cls, text: value});
 const word = locale => (en, ru) => locale === "ru" ? ru : en;
@@ -125,6 +125,15 @@ function testPanel(host, locale, w, runId, next, choice, callbacks) {
   const t = data.tests, panel = element("section", {className: "handoff-results",
     "data-handoff-tests": "", "data-handoff-action": data.action_id,
     "data-handoff-attempt": data.attempt_id});
+  if (choice.view === "changes") {
+    const pair = element("div", {className: "handoff-changes"});
+    const patch = element("section", {className: "handoff-patch atlas-artifacts"},
+      [element("header", {className: "handoff-patch-heading"}, [text("h3", w("Patch", "Патч")),
+        text("span", atlasTestSummary({locale}, t))])]);
+    atlasDiff(patch, {locale}, data, choice, ({file}) => callbacks.file(file));
+    pair.append(patch, panel);
+    host.append(pair);
+  } else host.append(panel);
   const scope = next.kind === "different_revision"
     ? w("Tested work used a different plan revision.",
       "На проверенном шаге использовалась другая редакция плана.")
@@ -132,8 +141,8 @@ function testPanel(host, locale, w, runId, next, choice, callbacks) {
       "На проверенном шаге использовалась редакция из передачи.");
   panel.append(text("h3", w("Tests for this attempt", "Тесты этой попытки")),
     element("p", {"data-handoff-revision": next.kind, text: scope}),
-    identity(w, next.target, [[w("Input document", "Входной документ"), next.inputArtifactId]]),
-    text("p", atlasTestSummary({locale}, t)));
+    identity(w, next.target, [[w("Input document", "Входной документ"), next.inputArtifactId]]));
+  if (choice.view !== "changes") panel.append(text("p", atlasTestSummary({locale}, t)));
   if (t.summary) {
     const metrics = [[w("Total", "Всего"), t.summary.total], [w("Failures", "Падения"),
       t.summary.failures], [w("Errors", "Ошибки"), t.summary.errors], [w("Skipped", "Пропуски"),
@@ -163,11 +172,10 @@ function testPanel(host, locale, w, runId, next, choice, callbacks) {
   if (data.verdict?.reason) panel.append(text("p", data.verdict.reason));
   panel.append(text("p", w("Individual findings have no recorded test mapping.",
     "Для отдельных выводов связь с тестами не записана."), "handoff-caveat"));
-  host.append(panel);
 }
 
 export function renderHandoff(host, locale, model, choice, callbacks) {
-  const w = word(locale), tests = choice.view === "tests";
+  const w = word(locale), proof = choice.view !== "handoff";
   const active = host.contains(document.activeElement) ? document.activeElement : null;
   const focus = active?.dataset.focus;
   const details = host.querySelector("[data-handoff-protocol]");
@@ -176,9 +184,10 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
   const bound = link && next?.fromArtifactId === link.target.artifactId ? next : null;
   const scope = JSON.stringify([model.runId, link?.target.artifactId, bound?.target.actionId]);
   const keepProtocol = details?.open && host.firstElementChild?.dataset.handoffScope === scope;
+  const title = choice.view === "changes" ? w("Changes and tests", "Изменения и тесты")
+    : proof ? w("Test evidence", "Сведения о тестах") : w("Harness handoff", "Передача работы");
   const panel = element("section", {className: "handoff-panel", "data-handoff-scope": scope,
-    "data-handoff-view": choice.view}, [text("h2", tests ? w("Test evidence", "Сведения о тестах")
-      : w("Harness handoff", "Передача работы"))]);
+    "data-handoff-view": choice.view}, [text("h2", title)]);
   host.replaceChildren(panel);
   selectRecord(panel, "link", w("Handoff", "Передача"), model.links.map((l, index) =>
     ({index, title: l.source.nodeId + " → " + l.target.nodeId + " · " + l.target.artifactId})),
@@ -189,10 +198,10 @@ export function renderHandoff(host, locale, model, choice, callbacks) {
       .map(({c, index}) => ({index, title: c.target.nodeId + " · " + c.target.attemptId}));
     selectRecord(panel, "continuation", w("Next action", "Следующее действие"),
       options, choice.continuationIndex, callbacks.continuation);
-    if (tests && !bound && options.length) {
-      panel.append(text("p", w("Select the next action to read its tests.",
-        "Выберите следующее действие, чтобы открыть его тесты.")));
-    } else if (tests) testPanel(panel, locale, w, model.runId, bound, choice, callbacks);
+    if (proof && !bound && options.length) {
+      panel.append(text("p", w("Select the next action to inspect its attempt.",
+        "Выберите следующее действие, чтобы открыть его попытку.")));
+    } else if (proof) testPanel(panel, locale, w, model.runId, bound, choice, callbacks);
     else handoff(panel, w, link, bound, options, choice, callbacks);
   } else panel.append(text("p", model.links.length
     ? w("Select a recorded handoff.", "Выберите записанную передачу.")

@@ -1,4 +1,4 @@
-"""Two questions in the Atlas chat keep a recorded Grok/Codex handoff and its exact Do."""
+"""Atlas chat follows a recorded Grok/Codex handoff to its exact Do, tests and patch."""
 import json
 from pathlib import Path
 
@@ -15,9 +15,10 @@ from tests.test_arachnid_handoff_data import world
 
 QUESTION = "Что Grok передал Codex?"
 FOLLOWUP = "Что из этого проверили тестами?"
+CHANGES = "А что именно Codex исправил?"
 
 
-def handoff_read(root):
+def handoff_read(root, action="action-first-2"):
     """The served store supplies the graph and requests. Attach the recorded artifact chain."""
     detail = recovered_payload(RunStore(root).read("first"), TaskStore(root),
                                computed_at="2026-11-10T10:00:00Z")
@@ -28,9 +29,9 @@ def handoff_read(root):
         row["record"]["run_id"] = "first"
     request, result = rows[-2]["record"], rows[-1]["record"]
     original = next(r["record"] for r in detail["records"]
-                    if r["record"].get("action_id") == "action-first-2")
-    request.update(node_id="repair-counter", action_id="action-first-2",
-                   attempt_id="attempt-action-first-2", instance_id="maker")
+                    if r["record"].get("action_id") == action)
+    request.update(node_id="repair-counter", action_id=action,
+                   attempt_id="attempt-" + action, instance_id="maker")
     result.update(action_id=request["action_id"], attempt_id=request["attempt_id"],
                   instance_id=request["instance_id"])
     # Keep the store's complete request and the slot of its previous attempt.
@@ -47,20 +48,24 @@ def ask(page, text):
     field.press("Enter")
 
 
-def native_protocol():
+def native_protocol(action="action-first-2"):
     fixture = Path(__file__).parents[1] / "tests/fixtures/atlas-accepted-native.json"
-    return json.loads(fixture.read_text(encoding="utf-8"))
+    row = json.loads(fixture.read_text(encoding="utf-8"))
+    row.update(action_id=action, attempt_id="attempt-" + action)
+    row["tests"]["protocol"]["binding"].update(action=action, attempt=row["attempt_id"])
+    return row
 
 
 @pytest.mark.parametrize("width", [1440, 375])
-def test_two_chat_questions_open_the_exact_material_and_native_protocol(
+def test_three_questions_show_the_handoff_then_tests_then_the_patch_with_its_tests(
         chromium, atlas_url, tmp_path, width):
     context = chromium.new_context(viewport={"width": width, "height": 900})
     page = context.new_page()
     writes, requests = [], []
     page.on("request", lambda r: writes.append(r.method) if r.method != "GET" else None)
-    journal = handoff_read(tmp_path / "root")
-    proof = native_protocol()
+    # The later Do is also Codex; only the older Do received this plan.
+    journal = handoff_read(tmp_path / "root", "action-first-1")
+    proof = native_protocol("action-first-1")
 
     def attempt(route):
         requests.append(route.request.url.rsplit("/", 1)[-1])
@@ -86,8 +91,8 @@ def test_two_chat_questions_open_the_exact_material_and_native_protocol(
         page.locator("#close").click()
         ask(page, FOLLOWUP)
         tests = panel.locator('[data-handoff-tests]')
-        expect(tests).to_have_attribute("data-handoff-action", "action-first-2")
-        expect(tests).to_have_attribute("data-handoff-attempt", "attempt-action-first-2")
+        expect(tests).to_have_attribute("data-handoff-action", "action-first-1")
+        expect(tests).to_have_attribute("data-handoff-attempt", "attempt-action-first-1")
         reply = page.locator("#messages .msg.atlas").last
         expect(reply).to_contain_text("test_empty_input_is_zero")
         expect(reply).to_contain_text("test_skips_non_dictionaries_and_inexact_outcomes")
@@ -95,7 +100,30 @@ def test_two_chat_questions_open_the_exact_material_and_native_protocol(
         expect(tests).to_contain_text("Для отдельных выводов связь с тестами не записана.")
         tests.locator('[data-handoff-protocol] summary').press("Enter")
         expect(tests.locator('[data-handoff-protocol]')).to_contain_text("Ran 3 tests")
-        assert requests and set(requests) == {"action-first-2"}
+        if width == 375:
+            page.locator("#close").click()
+        ask(page, CHANGES)
+        changes = panel.locator('[data-handoff-view="changes"]')
+        diff = changes.locator('[data-atlas-diff="runstats/counts.py"]')
+        expect(diff).to_be_visible()
+        expect(diff).to_contain_text("-    return len(rows)")
+        predicate = 'if isinstance(row, dict) and row.get("outcome") == "succeeded"'
+        expect(diff).to_contain_text(predicate)
+        expect(reply).to_contain_text("runstats/counts.py")
+        expect(reply).to_contain_text("len(rows)")
+        expect(reply).to_contain_text(predicate)
+        related = changes.locator("[data-handoff-tests]")
+        expect(related).to_have_attribute("data-handoff-action", "action-first-1")
+        expect(related).to_have_attribute("data-handoff-attempt", "attempt-action-first-1")
+        expect(related.locator("[data-handoff-case]")).to_have_count(3)
+        expect(related.get_by_role("button", name="test_empty_input_is_zero",
+                                   exact=False)).to_be_visible()
+        changes.locator('[data-focus="atlas:file:tests/test_counts.py"]').click()
+        expect(changes.locator('[data-atlas-diff="tests/test_counts.py"]')).to_contain_text(
+            "+        self.assertEqual(count_succeeded(rows), 2)")
+        expect(related).to_contain_text("test_skips_non_dictionaries_and_inexact_outcomes")
+        expect(page.locator("#messages .msg.user")).to_have_count(3)
+        assert requests and set(requests) == {"action-first-1"}
         assert writes == []
     finally:
         close_context(context)
@@ -121,17 +149,20 @@ def test_switching_sessions_during_read_never_paints_or_replies_with_foreign_tes
         page.locator("#close").click()
         ask(page, FOLLOWUP)
         page.wait_for_function("typeof window.deliverFirst === 'function'")
+        ask(page, CHANGES)
         page.locator("#close").click()
         page.locator('[data-session="run/second"]').click()
         expect(page.locator("#messages")).not_to_contain_text(QUESTION)
         page.evaluate("row => window.deliverFirst(row)", native_protocol())
         page.evaluate("() => new Promise(requestAnimationFrame)")
         expect(page.locator('[data-handoff-tests]')).to_have_count(0)
+        expect(page.locator('[data-atlas-diff]')).to_have_count(0)
         ask(page, FOLLOWUP)
         expect(page.locator("#messages .msg.atlas").last).to_contain_text("Выберите запуск")
         expect(page.locator("#messages")).not_to_contain_text("Ran 3 tests")
         page.locator('[data-session="run/first"]').click()
         expect(page.locator("#messages")).to_contain_text(QUESTION)
+        expect(page.locator("#messages")).not_to_contain_text("len(rows)")
         expect(page.locator('[data-handoff-tests]')).to_have_count(0)
     finally:
         close_context(context)
@@ -155,6 +186,11 @@ def test_followup_refuses_a_protocol_for_an_earlier_attempt(chromium, atlas_url,
         expect(page.locator("#inspection")).to_contain_text("Сведения об этой попытке недоступны")
         expect(page.locator('[data-handoff-tests]')).to_have_count(0)
         expect(page.locator("#inspection")).not_to_contain_text("Ran 3 tests")
+        ask(page, CHANGES)
+        expect(page.locator("#messages .msg.atlas").last).to_contain_text(
+            "Доказательства этой попытки не подтверждены")
+        expect(page.locator("#inspection [data-atlas-diff]")).to_have_count(0)
+        expect(page.locator("#inspection [data-handoff-case]")).to_have_count(0)
     finally:
         close_context(context)
 

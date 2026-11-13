@@ -173,6 +173,20 @@ def test_only_a_remembered_handoff_answers_a_deictic_tests_question():
     assert result == [{"kind": "clarify"}, {"kind": "tests"}]
 
 
+def test_fix_followup_uses_the_recipient_of_the_remembered_handoff():
+    kinds = run_js("""
+      const context = {from: 'grok-build', to: 'codex'};
+      const kind = (text, pin) => ctx.handoffIntent(text, pin)?.kind ?? null;
+      console.log(JSON.stringify([...d.map(text => kind(text, context)), kind(d[0], null)]));
+    """, {"ctx": "arachnid-handoff-context.js"}, [
+        "А что именно Codex исправил?", "What exactly did Codex fix?", "Что изменил Грок?",
+        "А что исправил Claude?", "А что исправил Kimi?"])
+    assert kinds[:2] == ["changes", "changes"]
+    assert kinds[2] not in (None, "changes")
+    assert "changes" not in kinds[3:]
+    assert kinds[-1] is None
+
+
 def test_continuation_requires_the_same_input_node_action_and_attempt():
     row = {"inputArtifactId": "revision-2", "target": {
         "nodeId": "do", "actionId": "action-do", "attemptId": "attempt-2"}}

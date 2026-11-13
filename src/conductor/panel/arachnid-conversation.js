@@ -21,7 +21,7 @@ const controls = {
 const topics = {
   tests: /тест|проверки|tests?|assert/i,
   verdict: /вердикт|проверяющ|checker|verdict/i,
-  diff: /измен|патч|разниц|diff|chang|patch/i,
+  diff: /измен|исправил|поменял|поправил|патч|разниц|diff|chang|patch|\bfix(?:ed)?\b/i,
 };
 const commandOf = (words, text) => Object.keys(words).find(name => words[name].test(text));
 const shortCommands = {
@@ -120,8 +120,7 @@ export function arachnidConversation(center, inspector, door) {
     let changed = false;
     for (const row of state?.messages || []) {
       if (row.wait !== epoch) continue;
-      row.text = evidence ? row.topic === "handoff-tests" ? testAnswer(evidence)
-        : answerFor(model, row.topic, evidence) : tr("unavailable");
+      row.text = evidence ? evidenceAnswer(row.topic, evidence) : tr("unavailable");
       delete row.wait; changed = true;
     }
     if (changed) transcript();
@@ -352,6 +351,24 @@ export function arachnidConversation(center, inspector, door) {
     if (a) pin(s, a, options);
     load();
   }
+  function evidenceAnswer(topic, evidence) {
+    if (topic === "tests-in-handoff") return testAnswer(evidence);
+    if (topic !== "changes") return answerFor(model, topic, evidence);
+    const overview = answerFor(model, "diff", evidence);
+    const file = evidence.files.find(f => f.diff_status === "available" && f.lines.length);
+    if (!file) return overview;
+    const hunk = file.lines.findIndex(line => line.startsWith("@@"));
+    if (hunk < 0) return overview;
+    const excerpt = [];
+    for (const line of file.lines.slice(hunk + 1)) {
+      if (line.startsWith("@@")) break;
+      if (/^[+-].*\S/.test(line)) excerpt.push(line);
+      if (excerpt.length === 8) break;
+    }
+    return excerpt.length ? overview + "\n" + file.path + "\n" +
+      excerpt.map(line => line.length > 128 ? line.slice(0, 127) + "…" : line).join("\n")
+      : overview;
+  }
   function testAnswer(evidence) {
     const status = atlasTestSummary(model, evidence.tests);
     if (evidence.tests.status !== "recorded") return status;
@@ -364,6 +381,12 @@ export function arachnidConversation(center, inspector, door) {
       ". Протокол относится к попытке Do. Связи отдельных выводов с тестами не записаны.");
   }
   function readHandoff(intent, reply) {
+    if (intent.kind === "other-author") {
+      if (handoffPanel) close();
+      reply.text = words("This handoff leads to a different harness. Select the requested step.",
+        "В этой передаче правку выполняет другой харнесс. Выберите нужный шаг.");
+      return;
+    }
     if (intent.kind === "clarify" || !model.ready || !scene) {
       reply.text = words("Select a run and ask what Grok handed to Codex.",
         "Выберите запуск и спросите, что Grok передал Codex.");
@@ -377,7 +400,7 @@ export function arachnidConversation(center, inspector, door) {
       const data = activeTransfer();
       if (data?.graph.links.length === 1) setLink(data.graph.links[0]);
     } else {
-      state.handoff.view = "tests"; state.handoff.selectedKey = "check"; selectProof();
+      state.handoff.view = intent.kind; state.handoff.selectedKey = "check"; selectProof();
     }
     const current = activeTransfer(), link = current?.link;
     if (!link) {
@@ -394,33 +417,40 @@ export function arachnidConversation(center, inspector, door) {
     } else if (!current.continuation || !selected(step())) {
       reply.text = words("Choose a linked Do attempt if one is recorded.",
         "Выберите связанную попытку Do, если для неё записан вход.");
-    } else if (read?.phase === "ready") reply.text = testAnswer(read.value);
-    else if (read?.phase === "loading") Object.assign(reply,
-      {text: tr("loading"), wait: generation, topic: "handoff-tests"});
-    else reply.text = tr("unavailable");
+    } else {
+      const topic = intent.kind === "changes" ? "changes" : "tests-in-handoff";
+      reply.origin = state.scope;
+      if (read?.phase === "ready") reply.text = evidenceAnswer(topic, read.value);
+      else if (read?.phase === "loading") Object.assign(reply,
+        {text: tr("loading"), wait: generation, topic});
+      else reply.text = tr("unavailable");
+    }
     door.inspect(true); drawOrbit(); drawScope(); drawInspector(); summary();
   }
   function drawHandoff() {
     const current = activeTransfer();
     if (!current) { inspector.replaceChildren(element("p", {text: tr("unavailable")})); return; }
     const h = state.handoff;
+    const selectedAction = selected(step());
     renderHandoff(inspector, model.locale, current.graph,
       {view: h.view, linkIndex: current.linkIndex, continuationIndex: current.continuationIndex,
         selectedKey: h.selectedKey, phase: read?.phase || "unavailable",
+        file: selectedAction ? held(selectedAction).file : null,
         evidence: current.continuation && read?.phase === "ready" ? read.value : null}, {
         select: key => { h.selectedKey = key; drawInspector(); },
+        file: path => { if (selectedAction) held(selectedAction).file = path; drawInspector(); },
         link: index => {
           const link = current.graph.links[index];
           if (!link) return;
           setLink(link);
-          if (h.view === "tests") selectProof();
+          if (h.view !== "handoff") selectProof();
           drawInspector(); drawScope(); drawOrbit();
         },
         continuation: index => {
           const next = current.graph.continuations[index];
           if (!current.options.includes(next)) return;
           h.continuation = continuationPin(next);
-          if (h.view === "tests") selectProof();
+          if (h.view !== "handoff") selectProof();
           drawInspector(); drawScope(); drawOrbit();
         },
         tests: () => ask(words("Which of those were tested?", "Что из этого проверили тестами?")),
@@ -436,7 +466,7 @@ export function arachnidConversation(center, inspector, door) {
     const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
     const intent = model.runId ? handoffIntent(message, state.handoff) : null;
-    if (intent) {
+    if (intent && !(panel && ["changes", "other-author"].includes(intent.kind))) {
       readHandoff(intent, reply); state.messages.push(reply); paint();
       fields.messages.lastElementChild?.scrollIntoView({block: "nearest"}); return;
     }
@@ -525,7 +555,7 @@ export function arachnidConversation(center, inspector, door) {
     if (open && !handoffPanel && !step()) {
       revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     }
-    if (open && handoffPanel && state.handoff?.view === "tests") selectProof();
+    if (open && handoffPanel && state.handoff?.view !== "handoff") selectProof();
     else load();
     paint();
   }

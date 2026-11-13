@@ -124,7 +124,7 @@ export function answerFor(view, tab, evidence) {
       + (evidence.files.length ? " · " + evidence.files.map(file => file.path).join(", ") : "");
 }
 
-function diff(body, view, data, choice, select) {
+export function atlasDiff(body, view, data, choice, select) {
   if (data.files_total === null) { body.append(note(tr(view, "no_files"))); return; }
   body.append(element("strong", {text: tr(view, "files", {n: String(data.files_total)})}));
   if (data.files.length < data.files_total) body.append(note(tr(view, "partial",
@@ -196,7 +196,7 @@ export function atlasInspector(body, view, data, choice, select) {
   const panel = element("div", {role: "tabpanel", id: "atlas-tab-panel",
     className: "atlas-artifacts", "aria-labelledby": "atlas-tab-" + choice.tab});
   body.append(bar, panel);
-  if (choice.tab === "diff") diff(panel, view, data, choice, select);
+  if (choice.tab === "diff") atlasDiff(panel, view, data, choice, select);
   else if (choice.tab === "tests") tests(panel, view, data, choice, select);
   else {
     panel.append(element("strong", {text: answerFor(view, "verdict", data)}));
