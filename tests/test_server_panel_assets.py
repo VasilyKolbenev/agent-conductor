@@ -28,6 +28,7 @@ ASSETS = {
     "/panel/arachnid-handoff-context.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-handoff-data.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-review-source.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-manual-review.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-review-draft.js": "text/javascript; charset=utf-8",
     "/panel/arachnid.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-layout.js": "text/javascript; charset=utf-8",

@@ -2,6 +2,7 @@
 import {path} from "./desk-transport.js";
 import {isDigest, isId} from "./studio-model.js";
 import {matchesAtlasAttempt} from "./studio-atlas-inspector.js";
+import {manualReviewSource} from "./arachnid-manual-review.js";
 
 const rows = items => Array.isArray(items) ? items : [];
 const only = items => items.length === 1 ? items[0] : null;
@@ -129,15 +130,22 @@ export async function findReviewSource({readJson, projectId, runIds, taskForRun,
     if (!isId(taskId)) continue;
     const detail = await readJson(path.run(id));
     if (!valid()) return null;
-    const ref = acceptedPatch(detail, id);
-    if (!ref || ref.taskId !== taskId) continue;
-    const attempt = await readJson(path.atlasAttempt(id, ref.nodeId, ref.actionId));
+    const manual = await manualReviewSource(detail, id, taskId, projectId);
     if (!valid()) return null;
-    const source = projectSource(projectId, ref, attempt);
-    if (!source) continue;
+    let source = manual, ref;
+    if (!source) {
+      ref = acceptedPatch(detail, id);
+      if (!ref || ref.taskId !== taskId) continue;
+      const attempt = await readJson(path.atlasAttempt(id, ref.nodeId, ref.actionId));
+      if (!valid()) return null;
+      source = projectSource(projectId, ref, attempt);
+      if (!source) continue;
+    }
     if (projectId === null) {
-      const reread = acceptedPatch(await readJson(path.run(id)), id);
-      if (!valid() || JSON.stringify(ref) !== JSON.stringify(reread)) return null;
+      const raw = await readJson(path.run(id));
+      const reread = manual ? await manualReviewSource(raw, id, taskId, projectId)
+        : acceptedPatch(raw, id);
+      if (!valid() || JSON.stringify(manual || ref) !== JSON.stringify(reread)) return null;
     }
     const end = await readJson(path.project());
     return valid() && end?.project_id === projectId && end.mode === project.mode

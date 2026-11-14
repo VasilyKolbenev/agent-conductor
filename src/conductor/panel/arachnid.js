@@ -11,6 +11,7 @@ import {word} from "./arachnid-copy.js";
 import {harnesses, showHarnesses, showLimits, showMemory} from "./arachnid-panels.js";
 import {arachnidConversation} from "./arachnid-conversation.js";
 import {findReviewSource} from "./arachnid-review-source.js";
+import {manualReviewEvidence} from "./arachnid-manual-review.js";
 import {atlasPlanning} from "./arachnid-planning.js";
 import {attachLayout} from "./arachnid-layout.js";
 import {attachPalette} from "./arachnid-palette.js";
@@ -69,8 +70,10 @@ function boot() {
       const epoch = linkEpoch, projectId = identity?.project_id;
       const valid = () => !controller.signal.aborted && connected && epoch === linkEpoch
         && identity?.project_id === projectId && !foreign() && listState === "ready"
-        && current?.kind === "new" && key(addressedSelection()) === sessionId;
-      const catalog = new Map(sessions().filter(row => row.kind === "run" && !row.bad)
+        && ["new", "task"].includes(current?.kind) && !current.bad
+        && key(current) === sessionId && key(addressedSelection()) === sessionId;
+      const catalog = new Map(sessions().filter(row => row.kind === "run" && !row.bad
+          && row.task !== current?.task)
         .map(row => [row.id, row.task]));
       return findReviewSource({projectId, runIds: [...catalog.keys()], valid,
         taskForRun: id => catalog.get(id),
@@ -80,8 +83,11 @@ function boot() {
       const q = new URLSearchParams({session: source.runId, lang: locale});
       if (source.projectId) q.set("project", source.projectId);
       const session = "/#" + q;
-      q.set("proofNode", source.nodeId); q.set("proofAction", source.actionId);
-      q.set("proofAttempt", source.attemptId);
+      if (source.kind === "operator") q.set("reviewEvidence", source.documentId);
+      else {
+        q.set("proofNode", source.nodeId); q.set("proofAction", source.actionId);
+        q.set("proofAttempt", source.attemptId);
+      }
       return {session, attempt: "/#" + q};
     },
     planMessage: (sessionId, text) => planning.message(sessionId, text),
@@ -194,7 +200,8 @@ function boot() {
   }
   function address(row) {
     const params = fields();
-    for (const name of ["session", "task", "new", "advice", "proofNode", "proofAction", "proofAttempt"])
+    for (const name of ["session", "task", "new", "advice", "proofNode", "proofAction",
+      "proofAttempt", "reviewEvidence"])
       params.delete(name);
     if (row.kind === "new" && adviceRefs.has(key(row))) params.set("advice", adviceRefs.get(key(row)));
     if (identity?.project_id) params.set("project", identity.project_id);
@@ -297,7 +304,26 @@ function boot() {
     else paintPanel();
     $("close").focus({preventScroll: true});
   }
+  async function paintReviewEvidence() {
+    const q = fields(), id = q.get("reviewEvidence"), hash = location.hash;
+    const epoch = ++sideEpoch, raw = detail, projectId = identity?.project_id;
+    const run = current?.id, task = current?.task, lang = locale;
+    const matches = q.get("session") === run && q.getAll("reviewEvidence").length === 1
+      && isId(id) && !["proofNode", "proofAction", "proofAttempt"].some(name => q.has(name));
+    let evidence;
+    if (matches && validRun(projectId, run, task)) {
+      $("inspection").replaceChildren(element("p", {role: "status", text: tr("loading")}));
+      try { evidence = await manualReviewEvidence(raw, run, task, projectId, id, lang); }
+      catch (_) { evidence = null; }
+      if (side !== "review-evidence" || sideEpoch !== epoch || hash !== location.hash
+          || raw !== detail || lang !== locale || !validRun(projectId, run, task)) return;
+    }
+    const text = lang === "ru" ? "Указанная запись проверки не найдена."
+      : "The cited review record was not found.";
+    $("inspection").replaceChildren(evidence || element("p", {role: "status", text}));
+  }
   function paintPanel() {
+    if (side === "review-evidence") paintReviewEvidence();
     if (side === "memory") showMemory($("inspection"), detail, scene.history(), locale);
     if (side === "participants") showHarnesses($("inspection"), members, memberFilter,
       locale, detail);
@@ -449,8 +475,14 @@ function boot() {
     }
     paint();
     const q = fields();
-    if (!detail || current?.id !== row.id || q.get("session") !== row.id || !q.has("proofAttempt")
+    if (!detail || current?.id !== row.id || q.get("session") !== row.id
         || shownProof === location.hash) return;
+    if (q.has("reviewEvidence")) {
+      if (side === "step") scene.close();
+      side = "review-evidence"; ++sideEpoch; shownProof = location.hash;
+      showAside("inspector"); paintPanel(); return;
+    }
+    if (!q.has("proofAttempt")) return;
     const ids = ["proofNode", "proofAction", "proofAttempt"];
     if (ids.every(id => q.getAll(id).length === 1 && isId(q.get(id)))
         && scene.openAttempt(row.id, ...ids.map(id => q.get(id)))) shownProof = location.hash;
@@ -458,7 +490,10 @@ function boot() {
       : "The cited attempt was not found.";
   }
   function navigate(keep = false) {
-    if (shownProof !== location.hash) shownProof = null;
+    if (shownProof !== location.hash) {
+      if (side === "review-evidence") hideAside();
+      shownProof = null;
+    }
     if (legacy()) return;
     preferences();
     if (listState === "foreign") { location.reload(); return; }

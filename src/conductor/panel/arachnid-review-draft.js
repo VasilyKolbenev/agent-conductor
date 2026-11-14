@@ -21,7 +21,9 @@ export function reviewIntent(text) {
     && /провер|ревью|review|verif|check/i.test(text);
 }
 export function newReview(source) {
-  return {source, version: 1, steps: source.steps.map(id => ({id}))};
+  const steps = source.kind === "operator" ? source.steps.map(row => ({custom: row.label}))
+    : source.steps.map(id => ({id}));
+  return {source, version: 1, steps};
 }
 export function editReview(plan, raw, locale) {
   const text = raw.trim();
@@ -29,7 +31,7 @@ export function editReview(plan, raw, locale) {
   const nominee = text.match(/^(?:проверяющий|проверяющим|checker|reviewer)\s*[:—]\s*(.+)$/iu);
   if (nominee) {
     const value = nominee[1].trim();
-    if (value === plan.source.doer.instanceId || !/^[\p{L}\d][\p{L}\d ._-]{0,63}$/u.test(value))
+    if (value === plan.source.doer?.instanceId || !/^[\p{L}\d][\p{L}\d ._-]{0,63}$/u.test(value))
       return message("Name a separate checker.", "Укажи отдельного проверяющего.");
     return {plan: {...plan, nominee: value, version: plan.version + 1},
       text: pick(["Recorded your nomination.", "Записал твоего кандидата."], locale)};
@@ -51,9 +53,12 @@ export function editReview(plan, raw, locale) {
     const match = where?.[1].toLowerCase();
     const anchor = ["тестами", "tests"].includes(match) ? "run_tests"
       : ["проверяющим", "checker"].includes(match) ? "independent_check" : "result_gate";
-    const pos = number ? Number(number[1]) - 1 : steps.findIndex(row => row.id === anchor);
+    const append = !number && !where && plan.source.kind === "operator";
+    const pos = number ? Number(number[1]) - 1 : append ? steps.length
+      : steps.findIndex(row => row.id === anchor);
     const value = (number?.[2] ?? where?.[2] ?? arg).trim();
-    if (!value || value.length > 320 || steps.length >= 20 || pos < 0 || pos >= steps.length)
+    if (!value || value.length > 320 || steps.length >= 20 || pos < 0
+        || (!append && pos >= steps.length))
       return message("Invalid step or plan too long.", "Проверь номер шага и длину дополнения.");
     steps.splice(pos, 0, {custom: value});
   } else if (change || remove) {
@@ -76,20 +81,26 @@ export function editReview(plan, raw, locale) {
 export function reviewCard(plan, locale, href, use) {
   const tr = (en, ru) => pick([en, ru], locale);
   const s = plan.source, list = plan.steps.map(row => line(row, locale));
-  const previous = s.checker.adapter + " · " + s.checker.instanceId;
+  const manual = s.kind === "operator";
+  const previous = manual ? s.author : s.checker.adapter + " · " + s.checker.instanceId;
   const reviewer = plan.nominee || previous;
   const title = tr("Review plan", "План проверки") + " · v" + plan.version;
   const steps = element("ol", {className: "review-steps"}, list.map((text, i) =>
     element("li", {"data-kind": plan.steps[i].id || "operator", text})));
   const source = element("a", {className: "review-source", href: href.session,
-    target: "_blank", rel: "noopener", text: s.runId});
+    target: "_blank", rel: "noopener", text: manual ? s.taskTitle : s.runId});
   const proof = element("a", {href: href.attempt, target: "_blank", rel: "noopener",
-    text: tr("Do attempt and protocol", "Попытка Do и протокол")});
-  const summary = tr("Independent checker proposed: ", "Предлагаю независимого проверяющего: ");
-  const reason = tr("Previously verified by ", "В прошлом запуске проверял ") + previous
+    text: manual ? tr("Accepted check record", "Принятая запись проверок")
+      : tr("Do attempt and protocol", "Попытка Do и протокол")});
+  const summary = manual ? tr("Suggested reviewer: ", "Предлагаю проверяющего: ")
+    : tr("Independent checker proposed: ", "Предлагаю независимого проверяющего: ");
+  const reason = manual ? tr("The operator confirmed the first task: ",
+    "Проверки первой задачи подтвердил(а) ") + previous
+    : tr("Previously verified by ", "В прошлом запуске проверял ") + previous
     + tr("; tests recorded: ", "; в протоколе тестов: ") + s.tests.total + ".";
   const plain = [title, ...list.map((v, i) => (i + 1) + ". " + v), summary + reviewer,
-    tr("Source: ", "Источник: ") + s.runId + " / " + s.nodeId + " / " + s.attemptId].join("\n");
+    tr("Source: ", "Источник: ") + (manual ? s.taskTitle + " / " + s.runId + " / " + s.documentId
+      : s.runId + " / " + s.nodeId + " / " + s.attemptId)].join("\n");
   const card = element("section", {
     className: "review-proposal", "data-revision": String(plan.version)}, [
     element("h3", {text: title}), steps, element("p", {text: summary + reviewer}),

@@ -19,6 +19,8 @@ CAPPED = (
     "src/conductor/panel/arachnid-review-draft.js",
     "src/conductor/panel/arachnid-review-source.js",
     "tests/test_arachnid_review_source.py",
+    "src/conductor/panel/arachnid-manual-review.js",
+    "tests/test_arachnid_manual_review.py",
     "browser_tests/test_atlas_second_task.py",
     "browser_tests/test_atlas_handoff.py",
     "tests/test_native_probe_imports.py",

@@ -55,6 +55,7 @@ export function arachnidConversation(center, inspector, door) {
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
   const step = () => scene?.steps.find(row => row.nodeId === state?.scope?.nodeId);
+  const reviewChat = () => model.ready && /^(?:new|task)\//u.test(model.sessionId);
   function actions(s) {
     return rows(model.detail?.records).filter(row => row.record_type === "action_request"
       && row.record?.run_id === model.runId && row.record.node_id === s?.nodeId)
@@ -115,7 +116,8 @@ export function arachnidConversation(center, inspector, door) {
         [element("b", {text: who}), element("p", {text: row.text})]);
       if (row.review) msg.append(reviewCard(row.review, model.locale, door.reviewLinks(row.review.source),
         state.review === row.review ? text => {
-          const brief = fields.command.value.trimEnd() || words("Task:", "Задача:");
+          const savedTitle = model.sessionId?.startsWith("task/") ? model.title : "";
+          const brief = fields.command.value.trimEnd() || savedTitle || words("Task:", "Задача:");
           state.review = null; state.draft = brief + " · " + text.split("\n").join(" · ");
           fields.command.value = state.draft;
           paintedMessages = null; paint(); fields.command.focus();
@@ -508,8 +510,8 @@ export function arachnidConversation(center, inspector, door) {
         target.review = newReview(source); row.review = target.review;
         row.text = words("The last qualifying task used this order. ",
           "В последней подходящей задаче проверяли так. ") + reviewHelp(model.locale);
-      } else row.text = words("No accepted attempt with a bound test report and checker was found.",
-        "Нет принятой попытки с подтверждённым протоколом тестов и вердиктом проверяющего.");
+      } else row.text = words("No accepted review record or verified Do attempt was found.",
+        "Нет принятой попытки Do или записи проверки, подтверждённой человеком.");
     }, () => {
       if (lookup?.pending === pending) row.text = words("Could not read the source. Try again.",
         "Не удалось прочитать источник. Можно повторить поиск.");
@@ -525,7 +527,8 @@ export function arachnidConversation(center, inspector, door) {
     state.messages.push({role: "user", text: message});
     state.draft = ""; fields.command.value = "";
     const planning = model.sessionId?.startsWith("new/") && typeof door.planMessage === "function";
-    const panel = planning ? directPanel(message) : commandOf(controls, message);
+    const reviewing = reviewChat() && (state.review || lookup || reviewIntent(message));
+    const panel = planning || reviewing ? directPanel(message) : commandOf(controls, message);
     const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
     const intent = model.runId ? handoffIntent(message, state.handoff) : null;
@@ -544,7 +547,7 @@ export function arachnidConversation(center, inspector, door) {
         participants: words("Session participants", "Участники сессии")}[panel];
       state.messages.push(reply); transcript(); door.command(panel); return;
     }
-    if (planning && reviewMessage(message)) return;
+    if (reviewChat() && reviewMessage(message)) return;
     if (planning && door.planMessage(model.sessionId, message)) { transcript(); return; }
     if (topic) {
       const s = step();
@@ -573,7 +576,7 @@ export function arachnidConversation(center, inspector, door) {
       : model.runId && !scene ? words("No cycle is available for this run.",
         "Для этого запуска пока нет схемы цикла.") : "";
     fields.quick.replaceChildren();
-    if (model.ready && model.sessionId?.startsWith("new/")) {
+    if (reviewChat()) {
       const q = state.review ? words("Close draft", "Закрыть черновик")
         : words("Find the review order from the previous task", "Найди порядок проверки из прошлой задачи");
       fields.quick.append(button(q, () => ask(q)));
