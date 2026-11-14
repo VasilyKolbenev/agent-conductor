@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
-If you only want to see the interface, start with the [account-free demo](../README.md#try-the-demo).
+To try the interface on Windows first, download a pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) and follow `START-HERE.txt` in its ZIP. In [Pilot 2](../distribution/windows-two-task/START-HERE.txt), Kolos recalls the checks you recorded on your first task. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) includes the accepted Codex + Grok example. Both work offline.
 
 The project root opens Arachnid. In an empty active project, choose **Prepare task**.
 In an existing project, you can also use **Desk → New task**. You can answer one

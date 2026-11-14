@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Если хотите только посмотреть интерфейс, начните с [демо без аккаунтов](../README.ru.md#попробуйте-демо).
+Чтобы сначала посмотреть интерфейс на Windows, скачайте пилот из [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) и откройте `START-HERE.txt` из ZIP. В [Pilot 2](../distribution/windows-two-task/START-HERE.txt) Колос восстановит порядок записанных вами проверок первой задачи. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно изучить принятый пример Codex + Grok. Оба пилота работают офлайн.
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
