@@ -53,3 +53,7 @@ Windows-пилоты проверяют конкретные сценарии. �
 остаются открытыми. Архив, доступный для распространения, указан в
 [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases).
 [План V2](../../../plans/2026-11-13-v2-alpha-review.ru.md).
+
+Выпущен [Windows Pilot 2](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
+Контрольные суммы, чистая установка и проверка скачивания описаны в
+[отчёте о поставке для коллеги](REPO-PILOT-TWO-TASKS-REPORT.md).

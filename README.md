@@ -13,7 +13,7 @@ The [Releases page](https://github.com/VasilyKolbenev/agent-conductor/releases) 
 | Which experience do you want? | What to open |
 | --- | --- |
 | Inspect a worked example with Codex and Grok | [Windows Pilot 1 and its installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Its bundled project contains a teaching example you can inspect without signing in. |
-| Carry a review procedure from one of your tasks to the next | [Two-task Windows pilot instructions](distribution/windows-two-task/START-HERE.txt). The first task records the checks and observations you confirm. In the second, ask Kolos for that procedure, open the cited record or edit the proposed plan in chat. |
+| Carry a review procedure from one of your tasks to the next | [Download Windows Pilot 2](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2) · [Quick start](distribution/windows-two-task/START-HERE.txt). The first task records the checks and observations you confirm. In the second, ask Kolos for that procedure, open the cited record or edit the proposed plan in chat. |
 | Connect your own harnesses | [First-run and account setup](docs/first-run-v1.en.md). Check the supported CLI version, sign into your own account and preview the scope before granting a run. |
 
 The two-task pilot stores both tasks and the accepted observations locally. The edited plan stays in the open tab. Copy the plan from the task brief if you want to keep that revision. These pilot walkthroughs make no model calls.
