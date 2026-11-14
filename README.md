@@ -1,4 +1,10 @@
-# December Command
+# Arachnid Studio
+
+Download a Windows pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases). For the source of the newest published pilot, open its release and follow the version tag.
+
+[Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) · [Pilot 1 source code](https://github.com/VasilyKolbenev/agent-conductor/tree/v0.1.0-pilot.1)
+
+## December Command
 
 ![December Command — your coding agents, one clear workflow](docs/assets/december-command.svg)
 

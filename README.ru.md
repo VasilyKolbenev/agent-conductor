@@ -1,4 +1,10 @@
-# December Command
+# Arachnid Studio
+
+Скачать пилот для Windows можно в [разделе релизов GitHub](https://github.com/VasilyKolbenev/agent-conductor/releases). Чтобы посмотреть исходный код последнего опубликованного пилота, откройте его выпуск и перейдите по тегу версии.
+
+[Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) · [Исходный код Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/tree/v0.1.0-pilot.1)
+
+## December Command
 
 ![December Command — ваши ИИ-агенты и единый рабочий процесс](docs/assets/december-command.svg)
 
