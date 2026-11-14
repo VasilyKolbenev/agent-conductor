@@ -1,4 +1,4 @@
-# Contributing to December Command
+# Contributing to Arachnid Studio
 
 [Русский](CONTRIBUTING.ru.md) · [README](README.md) · [Documentation](docs/index.md) · [Architecture](docs/architecture.md)
 
@@ -39,7 +39,11 @@ Start with the [architecture guide](docs/architecture.md), then read nearby code
 - `src/conductor/panel/` contains the browser UI, including the Workflow Studio.
 - `tests/` checks Python behavior and source contracts; `browser_tests/` checks the rendered application in Chromium.
 
-Keep existing boundaries. For Studio, `studio-model.js` transforms payloads without DOM or network access; `desk-transport.js` owns transport (the read door, the one write door and the event stream), while the boot module `studio.js` decides what an answer means and keeps the read epochs and the quota poll. The allowed imports are checked in [test_studio_module_graph.py](tests/test_studio_module_graph.py) and the file limits in [test_studio_source.py](tests/test_studio_source.py). Adapter import cycles and public interfaces are checked in [test_adapter_module_graph.py](tests/test_adapter_module_graph.py). Read the relevant guard before splitting or moving a module.
+The root page loads `arachnid.js` for the session list, Kolos chat and inspector.
+The workflow editor has its own entry point in `studio.js`. Shared read and write requests go
+through `desk-transport.js`. Read the relevant checks before moving a module.
+[Studio imports](tests/test_studio_module_graph.py) · [Source limits](tests/test_studio_source.py)
+· [Adapter interfaces](tests/test_adapter_module_graph.py)
 
 The UI should read provider capabilities from the owning backend contract, not invent a hardcoded list. A successful child-process exit does not prove that its work was verified. Preserve those distinctions in behavior, labels and documentation.
 
@@ -92,7 +96,10 @@ Give the assistant a concrete result, an area to inspect and a boundary for the 
 - Ask it to inspect the affected code, contracts and tests, then explain the intended behavior before editing.
 - Preserve existing user edits. Avoid blanket rewrites, unrelated cleanup, and weakening or deleting checks just to obtain a pass.
 - If behavior changes a specification, keep the real implementation, relevant checks and documentation consistent. Editing a spec alone does not implement a feature.
-- Keep API keys and tokens out of chat, repository files, screenshots and logs. Use the documented environment-variable setup for an explicitly authorized live-provider task.
+- For an explicitly authorized live task, use the adapter's documented sign-in method.
+  Codex and Grok use their subscription CLI logins. The DeepSeek Harness adapter uses a
+  DeepSeek API key. Keep credentials out of chat, repository files, screenshots and logs.
+  [First run](docs/first-run-v1.en.md)
 - Ask for the exact checks run, their results and anything still unverified. Routine development should use fixtures and fake providers.
 
 Copy and adapt this brief:

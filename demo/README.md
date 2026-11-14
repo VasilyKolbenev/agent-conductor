@@ -1,11 +1,17 @@
-# Conduct demo
+# Explore Arachnid Studio with `conduct demo`
 
-`conduct demo` serves a bundled, fictional release-gate scenario for a plain web project:
-a release whose smoke gate went red with three blockers. The reviewer confirms two
-findings and partially disputes the third (the panel computes exactly one disagreement
-from that), and one genuine ops decision — bake the payment config into the release image
-or provision it per environment — sits in the human queue. Everything on screen is derived
-by the merge rules from the fixture files; nothing is hand-written state. The fixture
-ships inside the package at `src/conductor/_demo/conductor/` (map.toml, lanes/claude.json,
-lanes/codex.json, events.jsonl) and is copied to a throwaway temp directory each run, so
-poking at the served files never mutates the packaged copy.
+Run `conduct demo` from an installed copy, open the printed loopback URL and select
+`demo-run-001`. The bundled release-review workflow contains a recorded attempt, an
+approved decision and a final decision still pending. The command prepares a temporary
+project, so you can explore it without connecting a subscription or calling a model.
+Stop the server with Ctrl+C.
+
+The same temporary project also contains the classic release-gate example. Its two
+lane reports describe three blockers, one disagreement and a decision about payment
+configuration. The example reads those reports from the packaged fixture. The workflow
+history above comes from the separate Studio demo builder.
+[Packaged fixture](../src/conductor/_demo/conductor) ·
+[Studio demo](../src/conductor/command/demo_scenario.py)
+
+For the Windows download that lets a colleague supply two tasks and reuse a review
+procedure in Kolos chat, see the [two-task pilot](../distribution/windows-two-task/README.md).
