@@ -30,7 +30,8 @@ Download `agent_conductor-0.1.0-py3-none-any.whl` from the public release or ext
 the original `candidate-wheel` CI artifact while available.
 [Release wheel](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.1/agent_conductor-0.1.0-py3-none-any.whl)
 · [CI run](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43454184474)
-· [Original artifact](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43454184474/artifacts/14051753924)
+
+The original CI artifact ID was `14051753924`. The release wheel above is the public download.
 
 Place the wheel in the repository root. From that directory, run these commands in PowerShell
 with Python 3.12. The builder uses the Python standard library.
