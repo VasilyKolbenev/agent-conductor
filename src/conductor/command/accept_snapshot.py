@@ -53,9 +53,9 @@ def _read(root: Path, path: Path, limit: int) -> bytes:
         if ((found.st_dev, found.st_ino) != (named.st_dev, named.st_ino)
                 or found.st_nlink != 1 or found.st_size > limit):
             raise SnapshotRefused("snapshot_damaged")
-        payload = stream.read(limit + 1)
+        payload = stream.read(found.st_size + 1)
     _hold(root, path)
-    if len(payload) > limit:
+    if len(payload) != found.st_size:
         raise SnapshotRefused("snapshot_damaged")
     return payload
 

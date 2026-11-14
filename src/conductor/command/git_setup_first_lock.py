@@ -79,9 +79,10 @@ def _bytes_of(path: Path, found: os.stat_result) -> bytes | None:
     try:
         with open(path, "rb") as stream:
             opened = os.fstat(stream.fileno())
-            if (opened.st_dev, opened.st_ino) != (found.st_dev, found.st_ino):
+            if ((opened.st_dev, opened.st_ino) != (found.st_dev, found.st_ino)
+                    or opened.st_size != found.st_size):
                 return None
-            data = stream.read(INDEX_LIMIT + 1)
+            data = stream.read(opened.st_size + 1)
     except OSError:
         return None
     return data if len(data) == found.st_size else None
