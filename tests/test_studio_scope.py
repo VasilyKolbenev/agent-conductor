@@ -71,6 +71,8 @@ GLOBALS = frozenset({
 # or any other foreign global is still reported in these modules too.
 # Browser witnesses exercise construction, redraw, resizing and teardown.
 MODULE_GLOBALS = {
+    # The operator receipt pins the SHA-256 bytes returned by Web Crypto.
+    "arachnid-manual-review.js": frozenset({"Uint8Array"}),
     # Numeric column preferences follow their box and the shell's open/closed state.
     "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
     "studio-trace.js": frozenset({"ResizeObserver"}),
@@ -200,6 +202,7 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
         assert _unreachable(source, module) == [
             "ResizeObserver", "missingHelper"], module
     assert MODULE_GLOBALS == {
+        "arachnid-manual-review.js": frozenset({"Uint8Array"}),
         "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
         "studio-trace.js": frozenset({"ResizeObserver"}),
         "studio-orbit.js": frozenset({"ResizeObserver"}),
@@ -220,6 +223,14 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
                               if name not in _code(PANEL / module))
                for module, names in MODULE_GLOBALS.items()}
     assert not any(unspent.values()), unspent
+
+
+def test_receipt_bytes_are_local_to_the_operator_review_guard():
+    source = "function verify(buffer) { new Uint8Array(buffer); missingHelper(); }"
+    for module in MODULES:
+        missing = ["missingHelper"] if module == "arachnid-manual-review.js" else [
+            "Uint8Array", "missingHelper"]
+        assert _unreachable(source, module) == missing
 
 
 def test_intl_is_admitted_for_the_time_module_alone_and_no_other_module_names_it():
