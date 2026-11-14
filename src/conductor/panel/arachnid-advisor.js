@@ -200,8 +200,9 @@ export function createArachnidAdvisor(door) {
     change({phase: "preparing", issue: null, advicePreview: null});
     try {
       const q = await quota(bound);
+      const ru = JSON.parse(req.content).language === "ru";
       const result = await prepareAdvice(bound, req,
-        JSON.parse(req.content).language === "ru" ? "План Атласа" : "Atlas plan");
+        ru ? "План Колоса" : "Kolos plan", ru ? "План Атласа" : "Atlas plan");
       if (!valid(at)) return state();
       door.saveReference(ref);
       if (!valid(at)) return state();

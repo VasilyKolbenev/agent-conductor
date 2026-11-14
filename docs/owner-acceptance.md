@@ -99,7 +99,7 @@ Start-Process "http://127.0.0.1:7801/"
 window does not reach it (measured: the server kept answering and stayed `opened`), and the only
 way left to end it, `Stop-Process`, leaves the project `opened` as well (step 16).
 
-The project root must show Arachnid Studio with its session list and Atlas chat.
+The project root must show Arachnid Studio with its session list and the chat with Kolos.
 For the following acceptance steps open **Workflow controls** (`/panel/studio.html`).
 **You must see** a project name, a connection state, and five screens —
 Overview, Workflow, Runs, Decisions, Agents. **Overview must answer, without you clicking

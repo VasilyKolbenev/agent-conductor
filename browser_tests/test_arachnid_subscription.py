@@ -169,8 +169,8 @@ def test_codex_chat_prepares_grok_and_leaves_main_authority_to_operator(
             return
         page.reload()
         expect(prepare).to_be_enabled(timeout=15000)
-        page.locator("#sessions button", has_text="План Атласа").click()
-        page.get_by_role("link", name="Вернуться к плану Атласа").click()
+        page.locator("#sessions button", has_text="План Колоса").click()
+        page.get_by_role("link", name="Вернуться к плану Колоса").click()
         expect(prepare).to_be_enabled(timeout=15000)
         expect(page.locator("#planner")).to_contain_text("Count only accepted rows")
         if case == "correction":

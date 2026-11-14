@@ -350,7 +350,7 @@ in the displayed command with `python -m conductor` using the Studio environment
 
 In **Sessions**, select the run and click **Do** on the Dalio orbit. When the step has
 several attempts, pick one in the right panel. **Changes**, **Tests** and **Verdict**
-describe that action. Ask Atlas in the center which files changed or what the checker
+describe that action. Ask Kolos in the center which files changed or what the checker
 concluded. These answers use the recorded evidence. The Tests tab distinguishes the
 external execution summary from definitions found in the verified source files.
 
@@ -390,7 +390,7 @@ not reach it. A forced end (for example `Stop-Process`) leaves ownership `opened
 refuses with `recovery_required`, and `ownership status` cannot tell a live server from a killed
 one. Recovery on Windows is in the table below.
 
-The home screen shows project sessions and harnesses on the left and Atlas in the
+The home screen shows project sessions and harnesses on the left and your chat with Kolos in the
 center. When a saved run is available, the latest readable run opens immediately.
 Selecting Do opens its changes, tests and verdict on the right. The editor, decisions
 and run permissions are under **Workflow controls** (`/panel/studio.html`).

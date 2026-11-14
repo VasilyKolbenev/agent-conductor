@@ -41,6 +41,7 @@ export const LATE = "read_late";
 
 export const path = Object.freeze({
   tasks: () => "/command/tasks",
+  task: (id) => "/command/tasks/" + encodeURIComponent(id),
   atlasAttempt: (run, node, action) => "/command/runs/" + encodeURIComponent(run)
     + "/steps/" + encodeURIComponent(node) + "/actions/" + encodeURIComponent(action),
   preparation: (id) => `/command/tasks/${encodeURIComponent(id)}/preparation`,

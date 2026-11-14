@@ -89,12 +89,13 @@ The workflow decides the actual steps and return paths. The diagram shows the co
 A process finishing successfully is not the same as its work being verified.
 An uncertain result stays visible and requires resolution.
 
-The project root opens Arachnid Studio. Choose a session on the left and a step
-on its orbit to inspect the recorded result alongside Atlas. **Workflow controls**
+The project root opens Arachnid Studio with Kolos, the AI Titan, in the center chat.
+Choose a session on the left and a step on its orbit to inspect the recorded result
+on the right. **Workflow controls**
 opens **Overview, Workflow, Runs, Decisions, and Agents**.
 
-In an active project with Codex and Grok subscriptions connected, choose **New session**,
-select Codex as the Atlas lead and describe the change. Review the text and limit for
+In an active project with Codex and Grok subscriptions connected, open **New session**,
+choose Codex as the lead harness for Kolos and describe the change. Review the text and limit for
 one Codex planning request. Once Codex responds, accept its suggestion to preview the
 Grok and Codex roles, source Git commit and execution limits. **Authorize this Dalio run**
 grants separate execution authority. The operator still decides before Do and at the

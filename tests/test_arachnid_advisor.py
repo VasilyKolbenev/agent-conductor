@@ -143,6 +143,48 @@ console.log(JSON.stringify({stages,zero:[zero.phase,zero.issue],done:done.issue,
 """
 
 
+def test_new_plans_use_kolos_and_only_the_exact_old_task_can_resume_after_a_conflict():
+    result = run_js(STORE + """
+      const post = io.write, get = io.readJson, observed = [];
+      const cases = ["new", "legacy", "foreignTitle", "foreignId", "foreignScope", "unknown"];
+      for (const kind of cases) {
+        run = undefined; auth = undefined;
+        const ru = kind !== "new";
+        const expected = ru ? "План Колоса" : "Kolos plan", old = "План Атласа";
+        const a = atlas.createArachnidAdvisor(io);
+        const own = a.open({...args, input:{...args.input, language:ru?"ru":"en"}}).runId;
+        const titles = []; let applied = 0, reads = 0;
+        io.write = async (command, subject, body) => {
+          if (command === "tasks") {
+            titles.push(body.title);
+            if (kind === "unknown") return {status:"unknown", code:"timeout"};
+            if (kind !== "new") return {status:"refused", code:"record_conflict"};
+          }
+          if (command === "runs") applied++;
+          return post(command, subject, body);
+        };
+        io.readJson = async url => {
+          if (url === "/command/tasks/" + own) {
+            reads++;
+            return {task:{schema_version:1, task_id:kind === "foreignId"?"other":own,
+              work_scope:kind === "foreignScope"?"elsewhere":own,
+              title:kind === "foreignTitle"?"Operator title":old}};
+          }
+          return get(url);
+        };
+        const end = await a.prepare();
+        observed.push([titles.length === 1 && titles[0] === expected,
+          end.phase, end.issue, applied, reads]);
+      }
+      console.log(JSON.stringify(observed));
+    """, modules=MODULES)
+    assert result == [
+        [True, "preview", None, 1, 0], [True, "preview", None, 1, 1],
+        *[[True, "recover", "record_conflict", 0, 1]] * 3,
+        [True, "recover", "timeout", 0, 0],
+    ]
+
+
 def test_lost_grant_reload_and_acceptance_never_dispatch_twice():
     out = run_js(WIRE, {"case": "ok"}, modules=MODULES)
     assert out == {"stages": ["draft", "preview", "recover", "running", "result"],
