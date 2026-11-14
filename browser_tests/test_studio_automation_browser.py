@@ -252,9 +252,29 @@ def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, 
         box = prepare(page, project)
         box.locator('[data-focus="automation:authorize"]').click()
         expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "waiting")
+        store = RunStore(project.root)
+        granted = store.read("run").records
+        assert any(row.kind == "run_authorization" for row in granted)
+        assert not any(row.kind == "run_authorization_control" for row in granted)
         owner = require_owner(project.root)
+        status = box.locator("[data-automation-state]")
+        pause = box.locator('[data-focus="automation:pause"]')
+        refresh = box.locator('[data-focus="automation:refresh"]')
+
+        def read_owner():
+            with page.expect_request(lambda row: row.method == "GET" and
+                                     row.url.endswith("/command/runs/run/automation")) as read:
+                refresh.click()
+            reply = read.value.response()
+            assert reply is not None and reply.status == 200
+            view = reply.json()
+            return view["state"], view["reason_code"], view["owner_present"]
+
         with monkeypatch.context() as patch:
             patch.setattr(owner, "_uncertain", True)
+            assert read_owner() == ("restart_required", "recovery_required", False)
+            expect(status).to_have_attribute("data-automation-state", "restart_required")
+            expect(pause).to_have_count(0)
             slot = page.request.get(f"{project.url}command/queue").json()["slot"]
             assert slot == {"state": "unavailable", "reason_code": "owner_required", "run_id": "run"}
             desk = page.context.new_page()
@@ -263,22 +283,20 @@ def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, 
                        else "the execution owner is unavailable")
             expect(desk.locator("#deskPult .desk-queue__now")).to_contain_text(wording)
             desk.close()
-        box.locator('[data-focus="automation:pause"]').click()
+        # Restoring the fixture sends no owner event to the other open page.
+        assert read_owner() == ("waiting", "plan_waiting", True)
+        expect(status).to_have_attribute("data-automation-state", "waiting")
+        assert store.read("run").records == granted
+        expect(pause).to_be_enabled()
+        pause.click()
         expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "paused")
         expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
-        store = RunStore(project.root)
         before = store.read("run").records
         if language == "ru":
             page.locator('[data-focus="preference-language"]').select_option("ru")
         with monkeypatch.context() as patch:
             patch.setattr(owner, "_uncertain", True)
-            with page.expect_response(lambda row: row.request.method == "GET" and
-                                      row.url.endswith("/command/runs/run/automation")) as read:
-                box.locator('[data-focus="automation:refresh"]').click()
-            response = read.value.json()
-            assert (response["state"], response["reason_code"], response["owner_present"]) == (
-                "restart_required", "recovery_required", False)
-            status = box.locator("[data-automation-state]")
+            assert read_owner() == ("restart_required", "recovery_required", False)
             expect(status).to_contain_text("conduct ownership status --dir .")
             expect(status).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
             expect(box.locator('[data-focus="automation:resume"]')).to_have_count(0)
@@ -290,11 +308,7 @@ def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, 
             expect(row).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
             desk.close()
             assert store.read("run").records == before
-        with page.expect_response(lambda row: row.request.method == "GET" and
-                                  row.url.endswith("/command/runs/run/automation")) as healthy:
-            box.locator('[data-focus="automation:refresh"]').click()
-        response = healthy.value.json()
-        assert (response["state"], response["reason_code"], response["owner_present"]) == ("paused", "paused", True)
+        assert read_owner() == ("paused", "paused", True)
         expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
         assert store.read("run").records == before
         assert adapter.execute_calls == 0 and not window.page_errors
