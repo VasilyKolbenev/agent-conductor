@@ -2,11 +2,12 @@
 * { box-sizing: border-box }
 :root {
   color-scheme: dark;
-  --bg:#111218; --rail:#15151d; --panel:#181920; --card:#1b1c25; --well:#101217;
-  --text:#f1f0f7; --dim:#a7a8b9; --mute:#9596a9; --edge:#343440; --line:#2b2b36;
-  --ink:#bba9ff; --active:#292637; --node:#967ce2; --star:#464154; --track:#77708b;
-  --grid:#77748b25; --chart:#171720; --add:#9be6c1; --add-bg:#1d332b;
-  --del:#f2abab; --del-bg:#39282d; --shadow:#0004; --focus:#c7b5ff;
+  --bg:#12151c; --rail:#101219; --panel:#171b24; --card:#1c212d; --well:#10131a;
+  --text:#f0f3fb; --dim:#b9c2d3; --mute:#9aa7bf; --edge:#354050; --line:#2a323f;
+  --ink:#c0bcff; --active:#292b40; --node:#a3a2ed; --star:#556274; --track:#92a1be;
+  --grid:#9caec92b; --chart:#131b2b; --add:#94e0b8; --add-bg:#19362c;
+  --del:#f2b0b8; --del-bg:#39252d; --shadow:#06080e55; --focus:#dbd4ff;
+  --aurora-tide:#4abcae; --aurora-sky:#8b73df; --aurora-peak:#d8e7ff;
   --surface-selected:color-mix(in srgb,var(--ink) 12%,var(--card));
   --border-control:color-mix(in srgb,var(--mute) 73%,var(--panel));
   --border-divider:color-mix(in srgb,var(--mute) 72%,var(--panel));
@@ -15,18 +16,20 @@
   font:14px/1.5 Inter,"Segoe UI",sans-serif; background:var(--bg); color:var(--text)
 }
 :root[data-theme="light"] {
-  color-scheme:light; --bg:#fafafd; --rail:#f0f0f5; --panel:#f7f7fb; --card:#fff;
-  --well:#f5f4fa; --text:#22212d; --dim:#4f5161; --mute:#606173; --edge:#d5d3df;
-  --line:#e1dfe8; --ink:#66429c; --active:#eae3f6; --node:#835ac7; --star:#9689a8;
-  --track:#a093b3; --grid:#897baa25; --chart:#f3effa; --add:#206547; --add-bg:#e6f4ed;
-  --del:#983c4e; --del-bg:#faeaec; --shadow:#37254c15; --focus:#6943a2
+  color-scheme:light; --bg:#fafbfe; --rail:#f0f3f7; --panel:#f5f7fb; --card:#fff;
+  --well:#f0f3f8; --text:#202733; --dim:#465267; --mute:#56637b; --edge:#c9d2df;
+  --line:#d9dfe8; --ink:#50449c; --active:#e9e9f9; --node:#6756a6; --star:#728598;
+  --track:#64758e; --grid:#657e9a28; --chart:#edf2f8; --add:#1b6445; --add-bg:#e4f3e9;
+  --del:#933e50; --del-bg:#fae8ed; --shadow:#1c284312; --focus:#483493;
+  --aurora-tide:#55a99f; --aurora-sky:#9d8bd4; --aurora-peak:#fff
 }
 @media(prefers-color-scheme:light) { :root:not([data-theme]) {
-  color-scheme:light; --bg:#fafafd; --rail:#f0f0f5; --panel:#f7f7fb; --card:#fff;
-  --well:#f5f4fa; --text:#22212d; --dim:#4f5161; --mute:#606173; --edge:#d5d3df;
-  --line:#e1dfe8; --ink:#66429c; --active:#eae3f6; --node:#835ac7; --star:#9689a8;
-  --track:#a093b3; --grid:#897baa25; --chart:#f3effa; --add:#206547; --add-bg:#e6f4ed;
-  --del:#983c4e; --del-bg:#faeaec; --shadow:#37254c15; --focus:#6943a2
+  color-scheme:light; --bg:#fafbfe; --rail:#f0f3f7; --panel:#f5f7fb; --card:#fff;
+  --well:#f0f3f8; --text:#202733; --dim:#465267; --mute:#56637b; --edge:#c9d2df;
+  --line:#d9dfe8; --ink:#50449c; --active:#e9e9f9; --node:#6756a6; --star:#728598;
+  --track:#64758e; --grid:#657e9a28; --chart:#edf2f8; --add:#1b6445; --add-bg:#e4f3e9;
+  --del:#933e50; --del-bg:#fae8ed; --shadow:#1c284312; --focus:#483493;
+  --aurora-tide:#55a99f; --aurora-sky:#9d8bd4; --aurora-peak:#fff
 } }
 body { margin:0 }
 button, input, select { font:inherit; color:inherit }
@@ -92,6 +95,11 @@ svg.glyph { display:block; width:18px; height:18px; flex:none }
 .icon-btn { width:32px; height:32px; border-radius:7px; color:var(--dim) }
 #navClose,#menu { display:none }
 #chat { display:flex; flex-direction:column; container-type:inline-size }
+#chat:has(#orbitHere:empty) {
+  background-image:radial-gradient(ellipse 74% 52% at 99% -28%,
+    color-mix(in srgb,var(--aurora-tide) 25%,transparent),transparent),
+    radial-gradient(ellipse 62% 46% at 2% -22%,
+    color-mix(in srgb,var(--aurora-sky) 20%,transparent),transparent) }
 .topline,.inspector-top { display:flex; flex:none; align-items:center; gap:10px;
   height:54px; padding:0 24px; border-bottom:1px solid var(--line); font-size:12px;
     color:var(--mute) }
@@ -124,6 +132,31 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .msg b { display:block; font-weight:600; color:var(--ink); margin-bottom:3px }
 .msg.user { border-left:2px solid var(--edge); padding-left:12px; color:var(--dim) }
 .msg.user b { color:var(--text) }
+.review-proposal { margin:12px 0; padding:14px 16px; color:var(--text);
+  border:1px solid var(--edge); border-radius:12px; background:var(--card);
+  overflow-wrap:anywhere; white-space:normal }
+.review-proposal h3 { display:flex; align-items:center; gap:8px;
+  margin:0 0 12px; font-size:15px; letter-spacing:-.018em }
+.review-proposal h3::before { content:""; width:9px; height:9px; border-radius:50%;
+  border:1px solid var(--node); background:linear-gradient(115deg,var(--aurora-tide),var(--node)) }
+.review-steps { margin:0 0 13px; padding-inline-start:25px; border-bottom:1px solid var(--line);
+  padding-bottom:9px }
+.review-steps li { padding:4px 8px; border-inline-start:2px solid var(--edge) }
+.review-steps li[data-kind=operator] { background:var(--surface-selected);
+  border-inline-start-color:var(--ink); border-radius:0 5px 5px 0 }
+.review-steps li::marker { color:var(--ink); font:12px var(--code) }
+.review-proposal p { margin:6px 0; white-space:normal }
+.review-proposal .review-meta,.review-proposal small { color:var(--dim); font-size:12px }
+.review-proposal a { text-decoration:underline; text-underline-offset:3px }
+.review-source { font:12px var(--code) }
+.review-proposal details { margin:9px 0; padding-block:8px; border-block:1px solid var(--line) }
+.review-proposal summary { width:fit-content; cursor:pointer; color:var(--dim) }
+.review-proposal pre { margin:8px 0 0; padding:8px; border-radius:5px; background:var(--well);
+  font:12px/1.65 var(--code); white-space:pre-wrap; overflow-wrap:anywhere }
+.review-proposal button { display:block; margin-block:10px; min-height:var(--control-height);
+  padding:5px 11px; border:1px solid var(--border-control); border-radius:var(--radius-control);
+  background:var(--surface-selected); color:var(--text) }
+.review-proposal button:hover { background:var(--active); border-color:var(--ink) }
 .compose-wrap { padding-block:10px 15px; flex:none }
 .quick { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:9px }
 .quick button,.pill { border:1px solid var(--edge); border-radius:7px; font-size:12px;
@@ -147,9 +180,16 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .orbit-header h2 { color:var(--text); font-size:15px; margin:0; font-weight:600 }
 .orbit-header .mono { margin-left:auto; color:var(--dim) }
 .stage { position:relative; height:clamp(190px,23vh,252px); overflow:hidden;
-  background-image:radial-gradient(ellipse at 49% 49%,#9b77ff26,transparent 56%),
-    radial-gradient(var(--grid) 1px,transparent 1px);
-  background-size:auto,14px 14px; isolation:isolate }
+  background-color:var(--chart);
+  background-image:radial-gradient(var(--grid) .8px,transparent .9px),
+    radial-gradient(ellipse 61% 116% at 9% -28%,color-mix(in srgb,var(--aurora-tide) 52%,transparent),transparent 87%),
+    radial-gradient(ellipse 60% 125% at 105% 107%,color-mix(in srgb,var(--aurora-sky) 43%,transparent),transparent 83%),
+    radial-gradient(ellipse at 49% 49%,color-mix(in srgb,var(--node) 13%,transparent),transparent 66%);
+  background-size:13px 13px,auto,auto,auto; isolation:isolate }
+.stage::before { content:""; position:absolute; pointer-events:none; inset:0;
+  background:radial-gradient(ellipse 69% 28% at 31% 2%,transparent 60%,
+    color-mix(in srgb,var(--aurora-tide) 18%,transparent) 80%,transparent 100%);
+  transform:skewY(-7deg); transform-origin:50% 35% }
 .tracks { position:absolute; inset:0; width:100%; height:100%; color:var(--track) }
 .tracks ellipse { vector-effect:non-scaling-stroke; stroke-width:1px; fill:none; stroke:currentColor
   }
@@ -158,11 +198,11 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .selected-arc { stroke:var(--ink); fill:none; stroke-width:2; vector-effect:non-scaling-stroke;
   filter:drop-shadow(0 0 3px var(--node)); stroke-linecap:round }
 .core { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-  width:46px; height:46px; border-radius:50%; border:1px solid #e3d6ff;
-  background:radial-gradient(circle at 32% 23%,#f1dcff 0%,#b48de8 23%,#6952a2 49%,#282235
-    76%,#a990d3 100%);
-  box-shadow:0 0 24px 7px #ab79fc32,0 0 63px 16px #9e77eb16 }
-.core::after { content:""; position:absolute; inset:6px -8px; border:1px solid #dbccff9e;
+  width:46px; height:46px; border-radius:50%; border:1px solid var(--aurora-peak);
+  background:radial-gradient(circle at 32% 22%,var(--aurora-peak),#a5d6e3 18%,#718ec1 38%,#5c5889 61%,#2c354e 83%);
+  box-shadow:0 0 24px 6px color-mix(in srgb,var(--aurora-sky) 24%,transparent) }
+.core::after { content:""; position:absolute; inset:6px -8px;
+  border:1px solid color-mix(in srgb,var(--aurora-peak) 80%,var(--node));
   border-radius:50%; transform:rotate(-29deg) scaleY(.41) }
 .core::before { content:""; position:absolute; inset:1px; border-radius:50%;
   background:repeating-radial-gradient(ellipse at 75% 12%,transparent 0 3px,#dec8ff29
@@ -173,13 +213,13 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .node { position:absolute; width:max-content; min-width:42px; height:38px; padding:0;
   transform:translate(-50%,-50%); display:grid; place-items:center; border-radius:8px; z-index:1 }
 .node:hover { background:transparent } .node:hover .node-label { color:var(--ink) }
-.planet { width:12px; height:12px; border-radius:50%; border:2px solid #bcade0;
-  background:#554967; box-shadow:0 0 0 4px var(--chart),0 0 0 5px #76648777 }
+.planet { width:12px; height:12px; border-radius:50%; border:2px solid var(--node);
+  background:var(--chart); box-shadow:0 0 0 3px var(--chart),0 0 0 4px var(--track) }
 .node[data-effect][aria-pressed="false"] .planet { width:14px; height:14px;
   border-color:var(--ink) }
 .node[aria-pressed="true"] .planet { width:17px; height:17px;
-  background:#cdb0ff; border:3px solid #a077d8; box-shadow:0 0 0 5px var(--chart),0 0 0 6px
-    #a981e0,0 0 18px #b89aff66 }
+  background:var(--ink); border:3px solid var(--node);
+  box-shadow:0 0 0 4px var(--chart),0 0 0 6px var(--ink) }
 .node-label { position:absolute; top:calc(50% + 14px); background:var(--chart); border-radius:4px;
   white-space:nowrap; font-size:12px; font-weight:550; color:var(--dim); padding:0 3px }
 .node[aria-pressed="true"] .node-label { color:var(--ink); text-decoration:underline;

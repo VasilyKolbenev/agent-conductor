@@ -26,6 +26,7 @@ PERMITTED_IMPORTS = {
         "./arachnid-copy.js", "./arachnid-panels.js", "./arachnid-conversation.js",
         "./arachnid-planning.js", "./arachnid-layout.js", "./arachnid-palette.js",
         "./arachnid-next.js",
+        "./arachnid-review-source.js",
     }),
     "arachnid-planning.js": frozenset({"./desk-transport.js", "./arachnid-advisor.js",
         "./arachnid-plan.js", "./arachnid-plan-model.js", "./arachnid-planner-view.js"}),
@@ -39,9 +40,14 @@ PERMITTED_IMPORTS = {
         "./command-view.js", "./studio-i18n.js", "./studio-scene-model.js",
         "./studio-atlas-inspector.js", "./arachnid-orbit.js",
         "./arachnid-handoff-data.js", "./arachnid-handoff-context.js", "./arachnid-handoff.js",
+        "./arachnid-review-draft.js",
     }),
     "arachnid-handoff-data.js": frozenset({"./studio-model.js", "./desk-wizard-digest.js"}),
     "arachnid-handoff-context.js": frozenset(),
+    "arachnid-review-draft.js": frozenset({"./command-view.js"}),
+    "arachnid-review-source.js": frozenset({
+        "./desk-transport.js", "./studio-model.js", "./studio-atlas-inspector.js",
+    }),
     "arachnid-handoff.js": frozenset({"./command-view.js", "./studio-atlas-inspector.js"}),
     "arachnid-orbit.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     "arachnid-panels.js": frozenset({

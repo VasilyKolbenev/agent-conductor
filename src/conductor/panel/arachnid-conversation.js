@@ -7,6 +7,7 @@ import {
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 import {handoffData} from "./arachnid-handoff-data.js";
+import {editReview, newReview, reviewCard, reviewHelp, reviewIntent} from "./arachnid-review-draft.js";
 import {
   handoffCasesAnswer, handoffOldAnswer, handoffVerdictAnswer, renderHandoff,
 } from "./arachnid-handoff.js";
@@ -49,7 +50,7 @@ export function arachnidConversation(center, inspector, door) {
     "quick", "send", "command"].map(id => [id, center.querySelector("#" + id)]));
   const sessions = new Map(), events = door.stop();
   let model = null, state = null, scene = null, open = false, read = null, controller = null;
-  let signature = null, generation = 0, paintedMessages = null, disposed = false;
+  let signature = null, generation = 0, paintedMessages = null, disposed = false, lookup = null;
   let handoffPanel = false, projection = null, projectionDetail = null, pair = null;
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
@@ -112,6 +113,13 @@ export function arachnidConversation(center, inspector, door) {
       const who = tr(row.role === "user" ? "you" : "title");
       const msg = element("div", {className: "msg " + row.role},
         [element("b", {text: who}), element("p", {text: row.text})]);
+      if (row.review) msg.append(reviewCard(row.review, model.locale, door.reviewLinks(row.review.source),
+        state.review === row.review ? text => {
+          const brief = fields.command.value.trimEnd() || words("Task:", "Задача:");
+          state.review = null; state.draft = brief + " · " + text.split("\n").join(" · ");
+          fields.command.value = state.draft;
+          paintedMessages = null; paint(); fields.command.focus();
+        } : null));
       if (row.origin) msg.append(element("small", {className: "atlas-origin",
         title: [row.origin.nodeId, row.origin.actionId, row.origin.attemptId].join(" · "),
         text: scopeName(row.origin)}));
@@ -191,6 +199,14 @@ export function arachnidConversation(center, inspector, door) {
     const s = scene?.steps.find(row => row.nodeId === nodeId);
     if (!s) return false;
     choose(s, true); return true;
+  }
+  function openAttempt(runId, nodeId, actionId, attemptId) {
+    if (disposed || !model?.ready || model.runId !== runId) return false;
+    const s = scene?.steps.find(row => row.nodeId === nodeId && patchStep(row));
+    const options = s ? actions(s) : [];
+    const item = options.find(a => a.action_id === actionId && a.attempt_id === attemptId);
+    if (!item) return false;
+    held(item).tab = "tests"; pin(s, item, options); choose(s, true); return true;
   }
   function summary() {
     const host = fields.resultHere;
@@ -465,6 +481,44 @@ export function arachnidConversation(center, inspector, door) {
         tests: () => ask(words("Which of those were tested?", "Что из этого проверили тестами?")),
       });
   }
+  function reviewMessage(message) {
+    const save = (text, review) => {
+      state.messages.push({role: "atlas", text, review}); paint();
+      fields.messages.lastElementChild?.scrollIntoView({block: "nearest"});
+    };
+    if (lookup) {
+      save(words("Reading the previous task…", "Читаю прошлую задачу…")); return true;
+    }
+    if (state.review && /^(?:закрыть черновик|close draft)[.!]?$/iu.test(message)) {
+      state.review = null; save(words("Draft closed.", "Черновик закрыт.")); return true;
+    }
+    if (state.review) {
+      const result = editReview(state.review, message, model.locale);
+      const changed = result.plan !== state.review;
+      state.review = result.plan; save(result.text, changed ? state.review : null); return true;
+    }
+    if (!reviewIntent(message)) return false;
+    const pending = door.stop(), target = state;
+    const row = {role: "atlas", text: words("Reading accepted attempts…", "Ищу принятые попытки…")};
+    lookup = {pending, row}; target.messages.push(row); paint();
+    const session = model.sessionId;
+    Promise.resolve().then(() => door.reviewSource(session, pending)).then(source => {
+      if (disposed || pending.signal.aborted || target !== state || !model.ready) return;
+      if (source) {
+        target.review = newReview(source); row.review = target.review;
+        row.text = words("The last qualifying task used this order. ",
+          "В последней подходящей задаче проверяли так. ") + reviewHelp(model.locale);
+      } else row.text = words("No accepted attempt with a bound test report and checker was found.",
+        "Нет принятой попытки с подтверждённым протоколом тестов и вердиктом проверяющего.");
+    }, () => {
+      if (lookup?.pending === pending) row.text = words("Could not read the source. Try again.",
+        "Не удалось прочитать источник. Можно повторить поиск.");
+    }).finally(() => {
+      if (lookup?.pending !== pending) return;
+      lookup = null; paint(); fields.messages.lastElementChild?.scrollIntoView({block: "nearest"});
+    });
+    return true;
+  }
   function ask(text) {
     const message = text.trim();
     if (!state || !message) return;
@@ -490,6 +544,7 @@ export function arachnidConversation(center, inspector, door) {
         participants: words("Session participants", "Участники сессии")}[panel];
       state.messages.push(reply); transcript(); door.command(panel); return;
     }
+    if (planning && reviewMessage(message)) return;
     if (planning && door.planMessage(model.sessionId, message)) { transcript(); return; }
     if (topic) {
       const s = step();
@@ -518,6 +573,11 @@ export function arachnidConversation(center, inspector, door) {
       : model.runId && !scene ? words("No cycle is available for this run.",
         "Для этого запуска пока нет схемы цикла.") : "";
     fields.quick.replaceChildren();
+    if (model.ready && model.sessionId?.startsWith("new/")) {
+      const q = state.review ? words("Close draft", "Закрыть черновик")
+        : words("Find the review order from the previous task", "Найди порядок проверки из прошлой задачи");
+      fields.quick.append(button(q, () => ask(q)));
+    }
     const patches = scene?.steps.filter(patchStep) || [];
     const target = patchStep(step()) ? step() : patches.length === 1 ? patches[0] : null;
     if (target && model.ready) {
@@ -542,6 +602,10 @@ export function arachnidConversation(center, inspector, door) {
     if (disposed) return;
     const switching = model?.sessionId !== next.sessionId || model?.runId !== next.runId;
     if (switching) {
+      if (lookup) {
+        lookup.pending.abort(); lookup.row.text = words("Lookup interrupted.", "Поиск прерван.");
+        lookup = null;
+      }
       if (state) state.draft = fields.command.value;
       revoke();
       handoffPanel = false; projectionDetail = null; projection = null;
@@ -574,8 +638,9 @@ export function arachnidConversation(center, inspector, door) {
   fields.send.addEventListener("submit", e => {
     e.preventDefault(); ask(fields.command.value);
   }, {signal: events.signal});
-  return {sync, close, paletteSteps, openStep,
+  return {sync, close, paletteSteps, openStep, openAttempt,
     history: () => (state?.messages || []).map(({role, text, origin}) =>
       ({role, text: origin ? scopeName(origin) + " · " + text : text})),
-    dispose() { disposed = true; revoke(); events.abort(); sessions.clear(); }};
+    dispose() { disposed = true; lookup?.pending.abort(); lookup = null;
+      revoke(); events.abort(); sessions.clear(); }};
 }

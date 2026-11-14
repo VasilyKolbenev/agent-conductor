@@ -10,6 +10,7 @@ import {utilityDrawer} from "./studio-utilities.js";
 import {word} from "./arachnid-copy.js";
 import {harnesses, showHarnesses, showLimits, showMemory} from "./arachnid-panels.js";
 import {arachnidConversation} from "./arachnid-conversation.js";
+import {findReviewSource} from "./arachnid-review-source.js";
 import {atlasPlanning} from "./arachnid-planning.js";
 import {attachLayout} from "./arachnid-layout.js";
 import {attachPalette} from "./arachnid-palette.js";
@@ -30,6 +31,7 @@ function boot() {
   let listState = "loading", detailState = "", connected = false, stream = null;
   let listEpoch = 0, detailEpoch = 0, sideEpoch = 0, identityEpoch = 0, side = null;
   let detailStop, catalogStop, opener, memberFilter, members = [], checking = false, again = false;
+  let shownProof = null;
   const leads = new Map();
   const drafts = new Map();
   const adviceRefs = new Map();
@@ -63,6 +65,25 @@ function boot() {
     openRun: (run, task) => { address({kind: "run", id: run, task}); refresh(); },
   });
   const scene = arachnidConversation($("chat"), $("inspection"), {
+    reviewSource: (sessionId, controller) => {
+      const epoch = linkEpoch, projectId = identity?.project_id;
+      const valid = () => !controller.signal.aborted && connected && epoch === linkEpoch
+        && identity?.project_id === projectId && !foreign() && listState === "ready"
+        && current?.kind === "new" && key(addressedSelection()) === sessionId;
+      const catalog = new Map(sessions().filter(row => row.kind === "run" && !row.bad)
+        .map(row => [row.id, row.task]));
+      return findReviewSource({projectId, runIds: [...catalog.keys()], valid,
+        taskForRun: id => catalog.get(id),
+        readJson: route => transport.readJson(route, controller)});
+    },
+    reviewLinks: source => {
+      const q = new URLSearchParams({session: source.runId, lang: locale});
+      if (source.projectId) q.set("project", source.projectId);
+      const session = "/#" + q;
+      q.set("proofNode", source.nodeId); q.set("proofAction", source.actionId);
+      q.set("proofAttempt", source.attemptId);
+      return {session, attempt: "/#" + q};
+    },
     planMessage: (sessionId, text) => planning.message(sessionId, text),
     stop: () => new AbortController(),
     readAttempt: (run, node, action, controller) =>
@@ -173,7 +194,8 @@ function boot() {
   }
   function address(row) {
     const params = fields();
-    for (const key of ["session", "task", "new", "advice"]) params.delete(key);
+    for (const name of ["session", "task", "new", "advice", "proofNode", "proofAction", "proofAttempt"])
+      params.delete(name);
     if (row.kind === "new" && adviceRefs.has(key(row))) params.set("advice", adviceRefs.get(key(row)));
     if (identity?.project_id) params.set("project", identity.project_id);
     params.set(row.kind === "run" ? "session" : row.kind, row.id);
@@ -426,8 +448,17 @@ function boot() {
       detail = null; detailState = "failed";
     }
     paint();
+    const q = fields();
+    if (!detail || current?.id !== row.id || q.get("session") !== row.id || !q.has("proofAttempt")
+        || shownProof === location.hash) return;
+    const ids = ["proofNode", "proofAction", "proofAttempt"];
+    if (ids.every(id => q.getAll(id).length === 1 && isId(q.get(id)))
+        && scene.openAttempt(row.id, ...ids.map(id => q.get(id)))) shownProof = location.hash;
+    else $("notice").textContent = locale === "ru" ? "Указанная попытка не найдена."
+      : "The cited attempt was not found.";
   }
   function navigate(keep = false) {
+    if (shownProof !== location.hash) shownProof = null;
     if (legacy()) return;
     preferences();
     if (listState === "foreign") { location.reload(); return; }

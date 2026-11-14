@@ -4,7 +4,11 @@ import {localize} from "./studio-i18n.js";
 
 const builtin = [
   ["claude-code", "Claude Code"], ["codex", "Codex"], ["grok-build", "Grok Build"], ["kimi-code", "Kimi Code"],
+  ["deepseek-harness", "DeepSeek Harness"],
 ];
+const deepseekChat = {utility_id: "deepseek-chat", label: "DeepSeek Chat", mode: "manual"};
+const isDeepseekChat = u => u?.utility_id === deepseekChat.utility_id
+  && u.label === deepseekChat.label && u.mode === deepseekChat.mode;
 const idPattern = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 const validId = value => typeof value === "string" && idPattern.test(value) && !reserved.test(value);
@@ -100,9 +104,17 @@ export function utilityDrawer(dialog, door) {
     });
   }
   function builtinSetup(main, id, name) {
-    main.append(heading(name), element("h4", {text: tr("setup")}),
+    main.append(heading(name));
+    if (id === "deepseek-harness") {
+      const existing = read?.utilities.find(u => u.utility_id === deepseekChat.utility_id);
+      main.append(element("h4", {text: deepseekChat.label}), element("p", {text: tr("deepseek_manual")}));
+      if (isDeepseekChat(existing)) main.append(btn(tr("deepseek_history"), () => choose("saved:" + existing.utility_id)));
+      else if (existing) main.append(element("p", {text: tr("deepseek_conflict")}));
+      else main.append(btn(tr("deepseek_attach"), () => save({op: "attach", ...deepseekChat}), !writable()));
+    }
+    main.append(element("h4", {text: tr(id === "deepseek-harness" ? "deepseek_api" : "setup")}),
       element("p", {text: tr("stopped")}), element("code", {text: "conduct providers --dir ."}),
-      element("p", {text: tr("provider", {id})}));
+      element("p", {text: tr(id === "deepseek-harness" ? "deepseek_provider" : "provider", {id})}));
     if (id === "kimi-code") main.append(element("p", {text: tr("kimi")}));
   }
   function connect(main) {
@@ -156,6 +168,9 @@ export function utilityDrawer(dialog, door) {
     main.append(heading(u.label), element("small", {text: tr(u.mode === "manual" ? "manual" : "protocol")}),
       element("p", {text: tr(u.mode === "manual" ? "manual_info" : "protocol_info")}),
       element("small", {className: "utility-mode", text: tr("limits")}));
+    if (isDeepseekChat(u)) main.append(element("a", {
+      href: "https://chat.deepseek.com/", target: "_blank", rel: "noopener noreferrer", text: tr("deepseek_open"),
+    }));
     if (u.mode === "stdio-v1") {
       const command = "conduct utility-bridge --server " + door.origin + " --utility " + u.utility_id;
       main.append(element("code", {text: command}), copy(command));
@@ -166,7 +181,7 @@ export function utilityDrawer(dialog, door) {
     if (fromRuns && door.question().trim()) main.append(btn(tr("atlas"), () => {
       area.value = door.question(); drafts.set(key, area.value); area.focus();
     }));
-    main.append(btn(tr("send"), () => {
+    main.append(btn(tr(u.mode === "manual" ? "handoff" : "send"), () => {
       if (!area.value.trim()) { area.focus(); return; }
       if (!fits(area.value)) { tell("too_long"); return; }
       const prior = pending?.op === "send" && pending.utility_id === u.utility_id && pending.text === area.value;
