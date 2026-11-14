@@ -61,10 +61,10 @@ Windows, Python 3.12.14 из `.venv`, bundled Node/Git, `PYTHONUTF8=1`,
 
 Локальные свидетельства вне репозитория, рядом с рабочей копией:
 
-- [JUnit моделей и CLI](../../../../../Codex-H5-review/model-tests.xml)
-- [JUnit Chromium](../../../../../Codex-H5-review/browser-tests.xml)
-- [Снимок CI](../../../../../Codex-H5-review/CI/ci43-ci44-snapshot.json)
-- [Фрагмент падения CI #43](../../../../../Codex-H5-review/CI/ci43-windows-py312-failure.txt)
+- JUnit моделей и CLI (локальный файл QA `model-tests.xml`)
+- JUnit Chromium (локальный файл QA `browser-tests.xml`)
+- Снимок CI (локальный файл QA `ci43-ci44-snapshot.json`)
+- Фрагмент падения CI #43 (локальный файл QA `ci43-windows-py312-failure.txt`)
 
 Эти относительные ссылки относятся к восстановленному workspace; сами XML и логи не входят
 в Git. В репозитории остаётся этот отчёт с результатами и публичными ссылками на CI.

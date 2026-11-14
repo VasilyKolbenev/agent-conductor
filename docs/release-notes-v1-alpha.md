@@ -1,5 +1,7 @@
 # December Command — V1 alpha, release notes (candidate draft, 8 November 2026)
 
+**Public Windows downloads.** This document records the November candidate. For the available pilot archives and per-version installation notes, use [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases). The [current Studio overview](../README.md) describes the colleague walkthroughs and harness status.
+
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 
 ## Current Windows alpha work

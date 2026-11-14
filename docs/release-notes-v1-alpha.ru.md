@@ -1,5 +1,7 @@
 # December Command — альфа V1, заметки к выпуску (черновик кандидата, 8 ноября 2026)
 
+**Публичные сборки для Windows.** Ниже сохранён срез ноябрьского кандидата. Архивы пилотов и инструкции к конкретным версиям доступны в [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases). [Текущее описание Studio](../README.ru.md) показывает сценарии для коллег и состояние харнессов.
+
 English version: [release-notes-v1-alpha.md](release-notes-v1-alpha.md).
 
 ## Текущая подготовка альфы для Windows

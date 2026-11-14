@@ -44,9 +44,9 @@ CI #45 ещё не закончен, а предыдущий CI #44 имеет �
 
 Свидетельства вне Git, рядом с рабочей копией:
 
-- [Воспроизведение](../../../../../Codex-candidate-2cb380d/R16/reproduce_cpu_threshold.py)
-- [Наблюдавшееся падение](../../../../../Codex-candidate-2cb380d/R16/observed-cpu-failure.txt)
-- [Разбор R1.6/R1.5/E1](../../../../../Codex-candidate-2cb380d/R16/REVIEW.txt)
+- Воспроизведение (локальный файл QA `reproduce_cpu_threshold.py`)
+- Наблюдавшееся падение (локальный файл QA `observed-cpu-failure.txt`)
+- Разбор R1.6/R1.5/E1 (локальный файл QA `REVIEW.txt`)
 
 Сам код диагностики сохраняет TimeoutExpired и не повторяет задачу. Запросы к ОС и drain
 после kill ограничены; недоступная диагностика превращается в примечание. Её данные могут
@@ -115,7 +115,7 @@ Metadata `candidate-wheel` доступна (artifact `12357435775`), но wheel
 и не передавался как принятый кандидат. SHA256 файла wheel в этом ревью не измерялся.
 После необходимой правки теста потребуется новый SHA, его CI и его wheel.
 
-[Снимок job и происхождение архивов](../../../../../Codex-candidate-2cb380d/ci-snapshot.json)
+Снимок job и происхождение архивов (локальный файл QA `ci-snapshot.json`)
 
 ## Остальные ревью и технические решения Codex
 
@@ -192,7 +192,7 @@ Windows, Python 3.12.14, bundled Node/Git, существующая `.venv`, п�
 
 Команды использовали `-q -p no:cacheprovider` и собственные basetemp.
 Выводы подзадач сохранены в истории инструментов; JUnit есть только у нового SSE-прогона:
-[sse-windows.xml](../../../../../Codex-candidate-2cb380d/sse-windows.xml).
+sse-windows.xml (локальный файл QA `sse-windows.xml`).
 Полный core, оба browser gate, POSIX и Python 3.11 локально не повторялись.
 
 ## Следующая передача Claude Code

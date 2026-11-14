@@ -1,149 +1,56 @@
 # Arachnid Studio
 
-Download a Windows pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases). For the source of the newest published pilot, open its release and follow the version tag.
+[Русский](README.ru.md) · [Windows downloads](https://github.com/VasilyKolbenev/agent-conductor/releases) · [Getting started](docs/first-run-v1.en.md) · [Architecture](docs/architecture.md)
 
-[Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) · [Pilot 1 source code](https://github.com/VasilyKolbenev/agent-conductor/tree/v0.1.0-pilot.1)
+Arachnid is a local workspace for coding harnesses. Describe a task to **Kolos**, choose the tools and their roles, and review the proposed limits before work begins. Follow the workflow on an orbit. Select a step to see what that participant actually produced while the conversation stays in the middle.
 
-## December Command
+![Kolos in the second task with the first task’s checks, their source and the proposed reviewer](docs/assets/kolos-second-task.png)
 
-![December Command — your coding agents, one clear workflow](docs/assets/december-command.svg)
+## Try it on Windows
 
-[English](README.md) · [Русский](README.ru.md) · [Start here](docs/index.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
+The [Releases page](https://github.com/VasilyKolbenev/agent-conductor/releases) lists downloadable pilots. Open a release, download its ZIP and checksum, extract the ZIP and run the included Windows launcher. Python 3.11 or 3.12 with venv and pip is required. The notes for each pilot describe exactly what you can try offline.
 
-[![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-78914f)](LICENSE)
-
-**Bring your coding tools into one workflow and assign each a role.**
-
-December Command runs locally. You choose the CLI tools for your subscriptions, assign an
-implementer and a separate checker, and set limits on their work. For example, one participant
-can diagnose a bug, another can fix the code, and the checker can verify the result against
-your criteria. Start with Dalio's five steps or design your own workflow in Studio without code.
-You can confirm each action or authorize a bounded sequence with a limit on its work.
-Human decision steps still wait for you.
-
-**December Command v0.1.0 alpha.** The V1 candidate is under acceptance; this is not a completed release announcement.
-The Python package is `agent-conductor`, and its command is `conduct`.
-See the [candidate's evidence and remaining checks](docs/release-notes-v1-alpha.md).
-
-## Choose your first step
-
-| You want to… | Start with… |
+| Which experience do you want? | What to open |
 | --- | --- |
-| See the interface without connecting a paid account | The demo below |
-| Connect your coding tools and try a real task | [First run](docs/first-run-v1.en.md) |
-| Understand what happens after you click Run | [Architecture, with a diagram](docs/architecture.md) |
-| Make your first change, with or without an AI assistant | [Contributor guide](CONTRIBUTING.md) |
+| Inspect a worked example with Codex and Grok | [Windows Pilot 1 and its installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Its bundled project contains a teaching example you can inspect without signing in. |
+| Carry a review procedure from one of your tasks to the next | [Two-task Windows pilot instructions](distribution/windows-two-task/START-HERE.txt). The first task records the checks and observations you confirm. In the second, ask Kolos for that procedure, open the cited record or edit the proposed plan in chat. |
+| Connect your own harnesses | [First-run and account setup](docs/first-run-v1.en.md). Check the supported CLI version, sign into your own account and preview the scope before granting a run. |
 
-## Try the demo
+The two-task pilot stores both tasks and the accepted observations locally. The edited plan stays in the open tab. Copy the plan from the task brief if you want to keep that revision. These pilot walkthroughs make no model calls.
 
-You need **Git and Python 3.11+**. A virtual environment keeps this project's packages separate from other Python projects.
-These commands install a source checkout for exploration. Use the [first-run guide](docs/first-run-v1.en.md)
-and the identified build for release-candidate acceptance; the default branch alone does not identify that build.
+[View the source record with both observations and the operator who accepted them](docs/assets/kolos-task-evidence.png).
 
-<details open>
-<summary><strong>Windows · PowerShell</strong></summary>
+## What a completed run looks like
 
-```powershell
-git clone https://github.com/VasilyKolbenev/agent-conductor.git
-cd agent-conductor
-py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\conduct.exe demo
-```
+In the accepted Windows run, Grok diagnosed a bug in `count_succeeded`. Codex patched two files. Three unittest cases ran before a separate Codex instance reviewed the result. The operator confirmed Do and accepted the final result. The inspector binds the diff, test protocol and verdict to the selected attempt. [Run report](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
-</details>
+![Do in the offline Codex and Grok example. The inspector shows the counter diff, three tests and a separate checker.](docs/assets/pilot1-codex-grok-do.png)
 
-<details>
-<summary><strong>macOS / Linux · terminal</strong></summary>
+| Harness | Evidence available today |
+| --- | --- |
+| Codex CLI and Grok Build | Together completed the five-step subscription workflow above on Windows. |
+| Claude Code | Completed a subscription Goal in isolation. Full-role acceptance remains open. |
+| Kimi Code CLI | Opened a session in an offline test. A live subscription task is pending. |
+| DeepSeek Harness | API-key adapter with a local test. The service uses an API balance. |
+| Additional utilities | Manual CLI handoff or a compatible protocol bridge. Each utility needs its own check for automation and subscription support. |
+
+Start with the five-step Dalio workflow or build a custom workflow in Studio. The operator grants a bounded run and takes the decisions assigned to them. [Workflow and harness setup](docs/first-run-v1.en.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md).
+
+## Build and explore
+
+The runtime originated as **December Command v0.1.0 alpha**. Its Python distribution is `agent-conductor` and its command is `conduct`. CI covers Windows, Linux and macOS. The downloadable colleague pilots target Windows. Use the tag next to a release to inspect the source corresponding to that ZIP. [Release evidence](docs/release-notes-v1-alpha.md) · [CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE).
+
+For a source checkout:
 
 ```sh
 git clone https://github.com/VasilyKolbenev/agent-conductor.git
 cd agent-conductor
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/conduct demo
+python -m venv .venv
 ```
 
-</details>
+On Windows, run `.\.venv\Scripts\python.exe -m pip install -e .` and then `.\.venv\Scripts\conduct.exe demo`. On Linux and macOS, use `.venv/bin/python -m pip install -e .` and `.venv/bin/conduct demo`. Open the local URL printed in your terminal. Ctrl+C stops the demo.
 
-Open the address printed in the terminal, normally `http://127.0.0.1:7777/`.
-In Studio choose **Start the exercise**, enter “Count the passing checks”, then **Create task**.
-Choose **Review sample result**. Checks A and C passed and B failed. Compare the reported count
-with the check marks, choose your answer, enter your name (for example, `anna`) and click
-**Record this decision**. Refresh to see the answer and author on the same task.
-Stop the server with **Ctrl+C**.
-If the port is busy, add `--port 8080` to the demo command.
-
-The demo uses a temporary copy of sample data. It needs no provider login and starts no paid model task.
-A successful demo shows the interface; it does not prove that your real harness accounts are configured.
-
-## From a task to a checked result
-
-```mermaid
-flowchart LR
-    T[Task and instructions] --> W[Published workflow]
-    W --> P[Preview and permission]
-    P --> D[Agent does the work]
-    D --> C[Separate checker]
-    C -->|Accept| H[Human result decision]
-    C -->|Reject with usable findings| F[Correction within granted limits]
-    F --> C
-```
-
-The workflow decides the actual steps and return paths. The diagram shows the core idea, not every possible workflow.
-A process finishing successfully is not the same as its work being verified.
-An uncertain result stays visible and requires resolution.
-
-The project root opens Arachnid Studio with Kolos, the AI Titan, in the center chat.
-Choose a session on the left and a step on its orbit to inspect the recorded result
-on the right. **Workflow controls**
-opens **Overview, Workflow, Runs, Decisions, and Agents**.
-
-In an active project with Codex and Grok subscriptions connected, open **New session**,
-choose Codex as the lead harness for Kolos and describe the change. Review the text and limit for
-one Codex planning request. Once Codex responds, accept its suggestion to preview the
-Grok and Codex roles, source Git commit and execution limits. **Authorize this Dalio run**
-grants separate execution authority. The operator still decides before Do and at the
-result gate.
-
-It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
-
-## Bring your existing tools
-
-A **harness** is the coding application that runs the model and its tools.
-December Command coordinates these applications; you keep their accounts and payment methods.
-
-| V1 harness | Account route | Resource reading |
-| --- | --- | --- |
-| Claude Code | Native subscription login | Subscription windows and reset times |
-| Codex | Native subscription login | Subscription windows and reset times |
-| Kimi Code | Native subscription login | Native usage source |
-| Grok Build | Native subscription login | Native quota source |
-| DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
-
-On Windows, Codex 0.164.0 and Grok Build 1.0.13 completed a five-step subscription workflow
-to fix a counter. Grok diagnosed the bug, Codex patched two files, three tests passed, and a
-separate Codex checker verified the result. A person revised the plan before Do and approved
-both gates. [Accepted run](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
-
-Claude Code completed a subscription Goal in isolation. Kimi Code 0.38.0 opened an offline
-session with test credentials. Its first task and quota reading on a real subscription are
-still pending, along with the clean-install check for all four harnesses using a new user's
-accounts. [Evidence and platform scope](docs/first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
-Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
-[release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
-DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.
-
-## Built to be understandable
-
-- **Local application:** Python 3.11+, no runtime Python dependencies; the interface is plain HTML, CSS, and JavaScript.
-- **Visible authority:** inspect the task and limits before authorizing work; pause and revoke are explicit controls.
-- **Readable history:** workflow revisions, decisions, and results are recorded on disk.
-- **A separate check:** the checker evaluates the result, rather than treating the agent's own success message as proof.
-
-New to the code? Start with the [repository map and glossary](docs/architecture.md).
-For the agreed V1 boundary and future memory/learning work, see the [V1 / V2 roadmap](docs/v1-v2-scope.md).
+Developers can find the versioned workflow contracts under the documentation index, `docs/index.md`.
 
 <details>
 <summary><strong>CLI reference · useful once you leave the demo</strong></summary>
@@ -183,12 +90,3 @@ where nodes already name components, it tells the agent to check each one agains
 `conduct init` does not overwrite existing project data. Follow [first run](docs/first-run-v1.en.md) for ownership activation.
 
 </details>
-
-## Join in
-
-Small fixes, clearer explanations, and reproducible bug reports all help.
-[CONTRIBUTING](CONTRIBUTING.md) explains local setup, choosing a focused check, and a first pull request.
-[Browse the documentation](docs/index.md) for tutorials, architecture, reference material, and release procedures.
-In a local checkout, the documentation entry point is `docs/index.md`.
-
-Released under the [MIT license](LICENSE).
