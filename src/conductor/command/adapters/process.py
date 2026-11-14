@@ -46,7 +46,6 @@ from contextlib import contextmanager
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import MappingProxyType
 
 from ..contracts import (
     ActionRequest,
@@ -58,13 +57,25 @@ from ..containment import (
     render_cwd_violation,
 )
 from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
+from ..work_layout import WORK_DIR
 from . import _procgroup
 from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
 from .jsonl_completion import JsonlCompletion
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
+from .process_env_rules import INJECTING_ENV
+from .process_errors import (  # LaunchRefused is raised by `_procgroup` and reached from here
+    CommandSpecError, ContainmentError, LaunchRefused, OwnershipError, ProcessRunnerError)
+from .process_loans import holds_entry
 from .process_profile import ProfileJournal
-from .environment_values import ENV_NAME as _ENV_NAME, EnvironmentValues, literal_environment, select_environment
+from .relay_home import absolute_home
+from .environment_values import (
+    ENV_NAME as _ENV_NAME,
+    EnvironmentValues,
+    git_ceiling_environment,
+    literal_environment,
+    select_environment,
+)
 from .base import (
     AdapterContractError,
     AdapterManifest,
@@ -111,46 +122,10 @@ STDIN_STATES = (STDIN_NOT_PROVIDED, STDIN_DELIVERED, STDIN_INCOMPLETE)
 _READ_CHUNK = 64 * 1024
 #: The one capability this adapter executes; every other control stays absent.
 DISPATCH_CAPABILITY = "dispatch"
-
-#: Environment names an operator may NOT put in `env_allow`, grouped by the
-#: runtime that reads them, each group carrying the reason it is refused.
-#:
-#: The line is a relation, not a feeling about a name. `PATH` and its kin choose
-#: a SEPARATE program the child may decide to start, and the reviewed entrypoint
-#: still runs first and still decides. Every name below instead chooses code
-#: loaded INTO the reviewed process before its own first instruction, which
-#: hands back the authority an absolute pin was taken to hold. The roster is
-#: closed against the runtimes a vendor CLI here can BE, not against today's
-#: five providers, so adding a runtime obliges adding its row. The ruling, its
-#: evidence and its stated limits: `docs/adr/0007-env-allow-trust-boundary.md`.
-_INJECTING_ENV_GROUPS: tuple[tuple[tuple[str, ...], str], ...] = (
-    (("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH"),
-     "the ELF dynamic loader maps and runs what it names inside the process "
-     "before the program's own first instruction"),
-    (("DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH",
-      "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH"),
-     "macOS dyld inserts and redirects libraries into the process before "
-     "main() runs"),
-    (("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONEXECUTABLE"),
-     "CPython reads it before the pinned entrypoint script, so the first "
-     "import that script performs can be an attacker's module"),
-    (("NODE_OPTIONS", "NODE_PATH", "NODE_REPL_EXTERNAL_MODULE"),
-     "node executes --require and --import modules, and resolves requires "
-     "through NODE_PATH, ahead of the pinned entrypoint"),
-    (("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH"),
-     "the JVM reads it before main: the option variables carry -javaagent, "
-     "whose premain runs first, and CLASSPATH decides which class a name is"),
-    (("DOTNET_STARTUP_HOOKS", "CORECLR_ENABLE_PROFILING", "CORECLR_PROFILER",
-      "CORECLR_PROFILER_PATH", "COR_ENABLE_PROFILING", "COR_PROFILER",
-      "COR_PROFILER_PATH"),
-     "the .NET host runs a startup hook, and loads a profiler library, before "
-     "the entrypoint's Main"),
-    (("RUBYOPT", "RUBYLIB", "PERL5OPT", "PERL5LIB", "PERLLIB"),
-     "ruby and perl read them for -r and -I, requiring a library before the "
-     "script they were pointed at"),
-)
-INJECTING_ENV: Mapping[str, str] = MappingProxyType({
-    name: reason for names, reason in _INJECTING_ENV_GROUPS for name in names})
+#: What a runner for a project opened for viewing says to every spawn and every container entry.
+_VIEWING = "this runner may not spawn a child (project open for viewing)"
+#: What the runner says to a confined launch and to a container entry off Windows.
+_NO_WINDOWS_BOUNDARY = "Windows boundary is unavailable on this platform"
 
 
 def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | None:
@@ -171,22 +146,6 @@ def injecting_env_reason(name: str, *, windows: bool | None = None) -> str | Non
     if windows is None:
         windows = os.name == "nt"
     return INJECTING_ENV.get(name.upper() if windows else name)
-
-
-class ProcessRunnerError(RuntimeError):
-    """The runner cannot safely honour the request as stated."""
-
-
-class CommandSpecError(ProcessRunnerError):
-    """A command is not structured argv, or its environment names are malformed."""
-
-
-class ContainmentError(ProcessRunnerError):
-    """The requested cwd is not strictly, locally beneath the project root."""
-
-
-class OwnershipError(ProcessRunnerError):
-    """A stop names no child this runner started and still holds."""
 
 
 def _argv(value):
@@ -266,9 +225,15 @@ class CommandSpec:
     # A finite RPC batch keeps stdin open until this stdout response arrives.
     stdin_completion_id: int | None = None
     boundary: WindowsContainer | None = field(default=None, repr=False)
+    # Fixed arg0 selects stdin mode in the pinned executable. No caller-chosen alias.
+    codex_patch_stdin: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "argv", _argv(self.argv))
+        if type(self.codex_patch_stdin) is not bool or self.codex_patch_stdin and (
+                not isinstance(self.boundary, WindowsContainer) or self.boundary.internet_client
+                or len(self.argv) != 1 or self.stdin_bytes is None or self.env_allow):
+            raise CommandSpecError("the patch helper requires one confined executable and stdin")
         if not isinstance(self.cwd, str) or not self.cwd:
             raise CommandSpecError("cwd must be a non-empty path string")
         object.__setattr__(self, "env_allow", _env_names(self.env_allow))
@@ -486,6 +451,8 @@ class ProcessRunner:
     """Own children beneath one root, with an explicit environment snapshot."""
 
     ownership_scopes = OwnershipScopes(threading.RLock())
+    #: The entry loans an absolute relay home (`relay_home`); doors ask `entry_lends_relay_homes`.
+    RELAY_HOME_LOANS = True
 
     @classmethod
     @contextmanager
@@ -514,12 +481,61 @@ class ProcessRunner:
         self._owned: dict[str, _Owned] = {}
         self._lock = threading.Lock()
 
-    def container_profile(self, *, internet_client: bool = False, mode=None):
+    def container_profile(self, *, internet_client: bool = False, mode=None, folders=None,
+                          kimi_state=False, kimi_read_config=None):
+        """One AppContainer profile for one attempt: a context manager (`process_profile`).
+
+        `folders` is an `AttemptFolders`: the existing work folder, home and install folder the
+        attempt stands on, or the login home its lease names. The work folder and a project home
+        are routes walked from the project root like a working folder (`ContainmentError` for a
+        link or a way out); a home written as an absolute path is a relay home and never a folder
+        of the project (`absolute_home`), judged by the loan (`relay_home`). Nothing is made or
+        granted when one is refused. A runner for a project opened for viewing refuses first
+        (`CommandSpecError`), before the native helper is even imported, so no profile, journal
+        record or grant exists for a project that never spawns. Off Windows the runner refuses
+        too (`CommandSpecError`), before the native helper is imported, creating nothing.
+        `kimi_state` adds temporary state directories only for an offline Kimi staged review.
+        It does not copy a credential or authorize a provider task.
+        A Kimi read-role preview pins the source and generated config to that offline attempt.
+        """
+        if not self._spawns_allowed:
+            raise CommandSpecError(_VIEWING)
+        if os.name != "nt":
+            raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
         from . import _winlaunch
-        return ProfileJournal.for_project(self._root, _winlaunch).container(internet_client=internet_client, mode=mode, active_tokens=self.active_tokens)
+        loaned = None if folders is None else self._loaned(folders)
+        return ProfileJournal.for_project(self._root, _winlaunch).container(
+            internet_client=internet_client, mode=mode, active_tokens=self.active_tokens,
+            folders=loaned, readonly_home_identity=getattr(folders, "readonly_home_identity", None),
+            kimi_state=kimi_state, kimi_read_config=kimi_read_config)
+
+    def _loaned(self, folders) -> dict[str, Path]:
+        found = {"work": self._resolve_cwd(folders.work), "install": Path(folders.install)}
+        if folders.home is not None:  # a route is walked; an absolute path is a relay home
+            absolute = Path(folders.home).is_absolute()
+            found["home"] = (absolute_home(folders.home, self._root) if absolute
+                             else self._resolve_cwd(folders.home))
+        if getattr(folders, "login", None) is not None:
+            found["login"] = Path(folders.login)
+        return found
+
     def recover_container_profiles(self) -> None:
         from . import _winlaunch
         ProfileJournal.for_project(self._root, _winlaunch).recover()
+
+    @staticmethod
+    def ensure_relay_root(auth_home) -> Path:
+        """The relay folder of a login home, made if absent and proven (`relay_home`)."""
+        if os.name != "nt":
+            raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
+        from . import _winlaunch, relay_home
+        return relay_home.ensure_relay_root(auth_home, native=_winlaunch)
+
+    @staticmethod
+    def relay_acl_refusal(auth_home, relay_home=None) -> str | None:
+        """Why the DACLs a relay attempt rests on are not as it needs them, or None (Windows)."""
+        from . import _winlaunch, relay_home as relay
+        return relay.relay_acl_refusal(_winlaunch, auth_home, relay_home)
 
     def start(self, spec: CommandSpec) -> OwnedProcess:
         """Spawn and return an ownership token that must be explicitly stopped.
@@ -583,9 +599,12 @@ class ProcessRunner:
 
     def _spawn(self, spec: CommandSpec) -> _Owned:
         if not self._spawns_allowed:      # first, so no loan or working folder is touched
-            raise CommandSpecError("this runner may not spawn a child (project open for viewing)")
+            raise CommandSpecError(_VIEWING)
         cwd = self._resolve_cwd(spec.cwd)  # refuses before any child exists
-        env = self._child_env(spec)
+        if spec.boundary is not None and not holds_entry(spec.argv, spec.boundary.install):
+            raise CommandSpecError("the program is not in the install folder loaned to the attempt")
+        env = git_ceiling_environment(      # ADR-7e: extra protection, never the boundary
+            self._child_env(spec), self._root, self._root / WORK_DIR, cwd, windows=os.name == "nt")
         sensitive_values = self.allowed_environment_values(
             spec.env_allow, overrides=spec.env) + spec.sensitive_extra
         # No payload means DEVNULL, byte for byte the spawn every provider got
@@ -595,24 +614,9 @@ class ProcessRunner:
         with self.project_write_guard(self._root):
             scope = self.ownership_scopes.find(self._root)
             loan = None if scope is None else scope.claim()
-        try:
-            proc = self._launch(spec, cwd, env, payload, loan)
-        except BaseException:
-            if loan is not None:
-                loan.retire(False)
-            raise
-        try:
-            if spec.boundary is not None:
-                from . import _winlaunch
-                _winlaunch.require_policy(proc, spec.boundary.sid)
-            group = _procgroup.make_group(proc)
-        except BaseException:
-            try:
-                self._cleanup_failed_spawn(proc, None)
-            finally:
-                if loan is not None:
-                    loan.retire(False)
-            raise
+        proc = _procgroup.start(lambda: self._launch(spec, cwd, env, payload, loan),
+                                confined=spec.boundary is not None, loan=loan)
+        group = _procgroup.adopt(proc, self._policy_check(spec), loan)
         try:
             token = secrets.token_hex(16)
             owned = _Owned(
@@ -631,12 +635,20 @@ class ProcessRunner:
         return owned
 
     @staticmethod
+    def _policy_check(spec):
+        """The check that the container policy is on a suspended child; None for a plain spawn."""
+        if spec.boundary is None:
+            return None
+        from . import _winlaunch
+        return lambda child: _winlaunch.require_policy(child, spec.boundary.sid)
+
+    @staticmethod
     def _launch(spec, cwd, env, payload, loan):
         if loan is not None and type(loan) is not ProcessLease:
             raise OwnershipError("invalid native ownership loan")
         if spec.boundary is not None:
             if os.name != "nt":
-                raise CommandSpecError("Windows boundary is unavailable on this platform")
+                raise CommandSpecError(_NO_WINDOWS_BOUNDARY)
             from . import _winlaunch
             return _winlaunch.launch(spec, cwd, env, payload, loan)
         options = _procgroup.popen_kwargs()
@@ -774,10 +786,9 @@ class ProcessAdapter:
         spec = _spec_from_payload(prepared.adapter_payload, request.timeout_seconds)
         outcome = self._runner.run(spec)
         mapped, detail = _map_outcome(outcome)
-        # A zero the vocabulary refused to read as success (undelivered input) is not carried:
-        # the runtime admits `failed` only with no code or a non-zero one, and recorded the
-        # pair as `unknown` otherwise (the same defect the first real login found on the
-        # harness road, 23.09.2026).
+        # A zero the vocabulary refused to read as success (undelivered input) is not carried: the
+        # runtime admits `failed` only with no code or a non-zero one, and recorded the pair as
+        # `unknown` otherwise (the defect the first real login found on this road, 23.09.2026).
         return ActionResultReceipt(
             receipt_id=self._ids("receipt"), action_id=request.action_id,
             run_id=request.run_id, attempt_id=request.attempt_id,

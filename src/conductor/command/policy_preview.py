@@ -3,6 +3,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta
 from threading import RLock
 
+from .adapters.deep_commands import PATCH_PROFILE, review_preview_fields
 from .authorization_history import (journal_prefix_digest, validate_authorization_history)
 from .authorization_inputs import bind_inputs, executable_nodes
 from .authorization_terms import closed_fields, positive_integer
@@ -82,21 +83,45 @@ def build_preview(recovered, body, *, budget, provider_digest, registry, clock, 
     facts = provider_facts(recovered.config) if provider_facts is not None else None
     if facts is not None and _content_digest(facts) != candidate.provider_config_digest:
         raise ContractError("provider facts changed while building preview")
-    return {"terms": terms, "preview_digest": _content_digest(terms), "previewed_at": now,
-            "provider_facts": facts,
-            "valid_until": later(now, min(300, budget.max_confirmation_age_seconds))}
+    preview = {"terms": terms, "preview_digest": _content_digest(terms), "previewed_at": now,
+               "provider_facts": facts,
+               "valid_until": later(now, min(300, budget.max_confirmation_age_seconds))}
+    reviews = ((node.node_id, node.arguments) for node in executable_nodes(definition)
+               if node.capability == "review")
+    preview.update(review_preview_fields(reviews))
+    patches = [n.node_id for n in executable_nodes(definition)
+               if n.capability == "dispatch" and n.arguments.get("profile") == PATCH_PROFILE]
+    if patches:
+        preview["patch_steps"] = patches
+    from .artifacts import settled_products
+    from .local_test_preview import test_steps
+    tests = test_steps(executable_nodes(definition), settled_products(values),
+                       instructions, terms["node_limits"])
+    if tests:
+        preview["test_steps"] = tests
+    return preview
 
 
 def _hold_capabilities(recovered, definition, registry):
     from .contracts import frozen_config_bindings
-    from .containment import unprovidable_sandboxes
+    from .containment import node_boundary, node_unprovidable_sandboxes
     bindings = frozen_config_bindings(recovered.config)
     for node in executable_nodes(definition):
         adapter = bindings.get(node.instance_id)
         if registry.argument_schema(adapter, node.capability) != "deep-arguments-v1":
             raise ContractError("automation requires the registered deep argument schema")
         registry.validate_arguments(adapter, node.capability, _thaw_json(node.arguments))
-        if unprovidable_sandboxes(node.resources):
+        if node.capability == "dispatch" and node.arguments.get("profile") == PATCH_PROFILE:
+            if (not node.verifier_instance_id or node.verifier_instance_id == node.instance_id
+                    or not node.arguments.get("work_scope")):
+                raise ContractError("patch dispatch requires a task and a separate checker")
+            if not all(registry.execution_boundary(who, "review") for who in (
+                    adapter, bindings.get(node.verifier_instance_id))):
+                raise ContractError("patch dispatch requires isolated preparation and checking")
+        fact = node_boundary(
+            lambda adapter_id, mode: registry.execution_boundary(adapter_id, mode),
+            recovered.config, node)
+        if node_unprovidable_sandboxes(node, boundary=fact):
             raise ContractError("automation cannot provide a required sandbox")
         if node.verifier_instance_id is not None:
             checker = bindings.get(node.verifier_instance_id)

@@ -140,7 +140,9 @@ def test_a_subscription_row_is_admitted_with_an_absolute_login_directory():
 def test_the_api_billing_variables_are_a_closed_named_roster():
     assert API_BILLING_ENV == frozenset({
         "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-        "OPENAI_API_KEY", "CODEX_API_KEY"})
+        "OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN",
+        "OPENAI_FEDERATION_RULE_ID", "OPENAI_IDENTITY_TOKEN_FILE",
+        "OPENAI_WORKLOAD_IDENTITY_CONTEXT", "CODEX_GUARDIAN_DECISIONS_API_KEY"})
 
 
 @pytest.mark.parametrize("name", sorted(API_BILLING_ENV))
@@ -156,9 +158,10 @@ def test_an_api_key_row_still_forwards_the_credential_that_road_needs(name):
 
 
 def test_a_subscription_row_may_forward_a_variable_that_is_not_a_credential():
+    """Not a proxy either: a proxy replaces the route of the login (`tests/test_relay_env.py`)."""
     config = a_config(
-        auth=SUBSCRIPTION_AUTH, auth_home=AUTH_HOME, env_allow=["HTTPS_PROXY"])
-    assert config.env_allow == ("HTTPS_PROXY",)
+        auth=SUBSCRIPTION_AUTH, auth_home=AUTH_HOME, env_allow=["MY_TOOL_SETTING"])
+    assert config.env_allow == ("MY_TOOL_SETTING",)
 
 
 def test_the_operator_file_reads_and_writes_the_two_new_keys(tmp_path):
@@ -262,7 +265,7 @@ def test_the_wire_row_never_carries_the_login_directory(tmp_path):
     assert AUTH_HOME not in blob
     assert set(provider_projection(resolution.contracts)[0]) == {
         "provider_id", "display_name", "availability", "implementation", "auth",
-        "controls", "vendor_sandbox"}
+        "task_road", "controls", "vendor_sandbox"}
 
 
 @pytest.mark.parametrize("row", [

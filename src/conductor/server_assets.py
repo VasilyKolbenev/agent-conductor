@@ -6,11 +6,10 @@ handler in `server.py` stays the one reader of these resources.
 """
 from __future__ import annotations
 
-#: Every packaged Studio file that is SERVED. `studio.html` is deliberately
-#: absent: `GET /` answers with it, and a second route would give one document
-#: two. A module that is packaged and missing here fails the packaged-resource
-#: partition test in tests/test_server_panel_assets.py.
+#: Every packaged Studio script and stylesheet that is served on the project origin.
 _STUDIO_FILES = (
+    "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js", "studio-atlas.css",
+    "studio-utilities.js", "studio-utilities-copy.js", "studio-utilities.css",
     "studio.css", "studio.js", "studio-model.js", "studio-layout.js", "studio-review.js",
     "studio-runread.js", "studio-edits.js", "studio-sections.js", "studio-artifacts.js",
     "studio-fields.js", "studio-transitions.js", "studio-store.js", "studio-view.js",
@@ -25,6 +24,8 @@ _STUDIO_FILES = (
     "studio-i18n.js", "studio-preferences.js", "studio-shell.js", "studio-runhead.js",
     "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
     "studio-automation.js", "studio-automation-model.js", "studio-automation-providers.js",
+    "studio-test-preview.js",
+    "studio-budget-guidance.js",
     "studio-workflow-copy.js",
     "studio-workflow-detail-copy.js",
     "studio-view-copy.js",
@@ -38,16 +39,24 @@ _STUDIO_FILES = (
 _STUDIO_TYPES = {"css": "text/css; charset=utf-8",
                  "js": "text/javascript; charset=utf-8"}
 
-#: The page `GET /` answers with: the Studio's shell, named by a literal here
-#: so no request target can select it. It is not a `PANEL_ASSETS` key.
-ENTRY_PAGE = "studio.html"
+#: The primary project document is served only at `/`.
+ENTRY_PAGE = "arachnid.html"
+_ARACHNID_FILES = (
+    "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js", "arachnid-panels.js",
+    "arachnid-layout.js",
+    "arachnid-handoff.js", "arachnid-handoff-data.js", "arachnid-handoff-context.js",
+    "arachnid-review-source.js", "arachnid-review-draft.js",
+    "arachnid-manual-review.js",
+    "arachnid-handoff.css",
+    "arachnid-next.js", "arachnid-next-view.js", "arachnid-palette.js",
+    "arachnid-copy.js", "arachnid.css", "arachnid-planning.js", "arachnid-advisor.js",
+    "arachnid-plan.js", "arachnid-plan-model.js", "arachnid-planner-view.js",
+)
 
 #: The desk's own files, registered by the desk's lane and served from the first
 #: day. Written as literal rows -- route, content type, packaged name -- for the
 #: reason the Studio's names are literals below: nothing in a route comes from a
-#: request. `desk.html` is reachable here while `GET /` still answers
-#: `ENTRY_PAGE`; the entry page switches to it in the slice that removes the
-#: Studio's five tabs, and `hub` mounts this route both before and after. Every
+#: request. The hub mounts `/panel/desk.html` independently of the project entry. Every
 #: row must also be a key of `PANEL_ASSETS`, which splices this table in.
 DESK_ASSETS = {
     "/panel/desk.html": ("text/html; charset=utf-8", "desk.html"),
@@ -57,6 +66,8 @@ DESK_ASSETS = {
     "/panel/desk-run.css": ("text/css; charset=utf-8", "desk-run.css"),
     "/panel/desk.js": ("text/javascript; charset=utf-8", "desk.js"),
     "/panel/desk-wizard-host.js": ("text/javascript; charset=utf-8", "desk-wizard-host.js"),
+    "/panel/desk-advice-panel.js": ("text/javascript; charset=utf-8", "desk-advice-panel.js"),
+    "/panel/desk-advice-run.js": ("text/javascript; charset=utf-8", "desk-advice-run.js"),
     # The wire doors the Studio's boot module and, later, the desk share.
     "/panel/desk-transport.js": ("text/javascript; charset=utf-8", "desk-transport.js"),
     "/panel/desk-stream.js": ("text/javascript; charset=utf-8", "desk-stream.js"),
@@ -98,6 +109,10 @@ DESK_ASSETS = {
     "/panel/desk-feed.js": ("text/javascript; charset=utf-8", "desk-feed.js"),
     "/panel/desk-summary.js": ("text/javascript; charset=utf-8", "desk-summary.js"),
     "/panel/desk-pult.js": ("text/javascript; charset=utf-8", "desk-pult.js"),
+    # The transitions: when the desk may play one, and the layer that plays it (spec 5.5).
+    "/panel/desk-motion-model.js": (
+        "text/javascript; charset=utf-8", "desk-motion-model.js"),
+    "/panel/desk-motion.js": ("text/javascript; charset=utf-8", "desk-motion.js"),
     # The wizard's own modules: the lane that writes the wizard adds one row per file.
     "/panel/desk-wizard-model.js": ("text/javascript; charset=utf-8", "desk-wizard-model.js"),
     "/panel/desk-wizard-materials.js": (
@@ -111,12 +126,20 @@ DESK_ASSETS = {
     "/panel/desk-wizard-prep.js": ("text/javascript; charset=utf-8", "desk-wizard-prep.js"),
     "/panel/desk-wizard-launch.js": ("text/javascript; charset=utf-8", "desk-wizard-launch.js"),
     "/panel/desk-wizard-skip.js": ("text/javascript; charset=utf-8", "desk-wizard-skip.js"),
+    "/panel/desk-wizard-git.js": ("text/javascript; charset=utf-8", "desk-wizard-git.js"),
+    "/panel/desk-wizard-git-run.js": (
+        "text/javascript; charset=utf-8", "desk-wizard-git-run.js"),
+    "/panel/desk-wizard-git-copy.js": (
+        "text/javascript; charset=utf-8", "desk-wizard-git-copy.js"),
     "/panel/desk-wizard-run.js": ("text/javascript; charset=utf-8", "desk-wizard-run.js"),
     "/panel/desk-wizard-draw.js": ("text/javascript; charset=utf-8", "desk-wizard-draw.js"),
     "/panel/desk-wizard-prepare-view.js": (
         "text/javascript; charset=utf-8", "desk-wizard-prepare-view.js"),
     "/panel/desk-wizard-card.js": ("text/javascript; charset=utf-8", "desk-wizard-card.js"),
+    "/panel/desk-wizard-git-view.js": (
+        "text/javascript; charset=utf-8", "desk-wizard-git-view.js"),
     "/panel/desk-wizard-copy.js": ("text/javascript; charset=utf-8", "desk-wizard-copy.js"),
+    "/panel/desk-wizard-advice-copy.js": ("text/javascript; charset=utf-8", "desk-wizard-advice-copy.js"),
     "/panel/desk-wizard.js": ("text/javascript; charset=utf-8", "desk-wizard.js"),
     "/panel/desk-flow-shape.js": ("text/javascript; charset=utf-8", "desk-flow-shape.js"),
     "/panel/desk-flow-loops.js": ("text/javascript; charset=utf-8", "desk-flow-loops.js"),
@@ -167,9 +190,8 @@ PANEL_ASSETS = {
         "text/javascript; charset=utf-8", "graph-adapter.js"),
     "/panel/graph-default.js": (
         "text/javascript; charset=utf-8", "graph-default.js"),
-    # The Workflow Studio. Its shell is what `GET /` answers with, so — unlike
-    # graph.html — studio.html is NOT on this list: it is the panel route's own
-    # entry, and putting it here as well would give one document two routes.
+    # The Workflow Studio authoring surface keeps its own document.
+    "/panel/studio.html": ("text/html; charset=utf-8", "studio.html"),
     # Its stylesheet and its modules are ordinary allowlisted assets, and they
     # are BUILT from `_STUDIO_FILES` rather than written out twice each: the
     # route is `/panel/<name>` and the packaged file is `<name>`, which is a
@@ -179,7 +201,7 @@ PANEL_ASSETS = {
     # them comes from a request — so the allowlist is exactly as closed as it
     # was when it was typed out.
     **{f"/panel/{name}": (_STUDIO_TYPES[name.rsplit(".", 1)[1]], name)
-       for name in _STUDIO_FILES},
+       for name in (*_STUDIO_FILES, *_ARACHNID_FILES)},
     # The desk: its own registry, spliced in whole.
     **DESK_ASSETS,
     # The classic panel. It kept its file name when the Studio took the front

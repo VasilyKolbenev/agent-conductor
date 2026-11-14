@@ -17,13 +17,14 @@
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
-import {action, choice, instantText, later, textField, timeText} from "./desk-wizard-draw.js";
+import {action, choice, instantText, later, participantSetup, textField, timeText} from "./desk-wizard-draw.js";
 import {prepareBody} from "./desk-wizard-prepare-view.js";
 import {runBody} from "./desk-wizard-card.js";
-import {BUILT_STEPS, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
-  canAdvance, closeNeedsWarning, cycleCards, cycleFacts, documentPicker, gitReading,
-  instructionFields, materialsEstimate, nextStep, preselection, rosterStatus, stepStates,
-  taskFields} from "./desk-wizard-model.js";
+import {firstExit, firstName, firstPanel} from "./desk-wizard-git-view.js";
+import {BUILT_STEPS, GUIDE_STAGES, guideStage, LIMITS, RETRYABLE, agentInstructionsRow, assignmentView, availableKinds,
+  canAdvance, canEditModels, closeBusy, closeBusyWord, closeNeedsWarning, cycleCards, cycleFacts,
+  documentPicker, firstFacts, gitReading, instructionFields, materialsEstimate, nextStep,
+  preselection, rosterStatus, stepStates, taskFields} from "./desk-wizard-model.js";
 
 function modeOf(wizard) {
   if (wizard.mode.starterId !== null) return "starter";
@@ -33,10 +34,13 @@ function modeOf(wizard) {
 //: What one pass carries: the model's slice, the words in the reader's language, and the two ways
 //: out. `lang` is the language a document the wizard writes is composed in; leaving may name the
 //: run the desk should open (`{runId, stage}`).
-function context(state, handlers) {
+function context(state, handlers, mount) {
   return {wizard: state.wizard, lang: state.locale === "ru" ? "ru" : "en",
+    expanded: new Set([...mount.querySelectorAll("[data-guide-details][open]")]
+      .map((node) => node.dataset.guideDetails)),
     t: (key, params) => localize(state, key, params),
-    send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome)};
+    send: (event) => handlers.onWizard(event), leave: (outcome) => handlers.onWizardClose(outcome),
+    editLimits: handlers.onEditLimits, advisorPanel: handlers.advisorPanel, redraw: handlers.onQuestionDone};
 }
 
 // -- the frame ---------------------------------------------------------------------------
@@ -87,30 +91,40 @@ function foot(ctx) {
   const why = gate.ok ? "" : gateWords(ctx, gate);
   const back = wizard.step === BUILT_STEPS[0] ? []
     : [action("wizard:back", ctx.t("wizard.back"), () => ctx.send({type: "back"}))];
-  const primary = following === null ? []
-    : [action("wizard:next", ctx.t("wizard.next"), () => ctx.send({type: "next"}),
-      gate.ok ? null : why)];
+  const label = ctx.t(wizard.guided ? "wizard.ask.next" : "wizard.next");
+  const next = action("wizard:next", label, () => ctx.send({type: "next"}), !wizard.guided && !gate.ok ? why : null);
+  if (wizard.guided && gate.ok) next.className = "desk-ask__primary";
+  if (wizard.guided && !gate.ok) {
+    next.disabled = true; next.className = "desk-ask__blocked"; next.setAttribute("aria-describedby", "deskAskWhy");
+  }
+  const quiet = wizard.guided && wizard.step === "task" && !wizard.task.brief.trim() && !wizard.titleEdited;
   return element("footer", {className: "desk-wizard__foot"}, [
-    ...back, ...primary, element("p", {className: "desk-wizard__reason", "data-wizard-reason": "",
-      "aria-live": "polite", text: why})]);
+    ...back, ...(following === null ? [] : [next]), element("p", {id: "deskAskWhy", className: "desk-wizard__reason", hidden: wizard.guided && (quiet || !why) ? "" : null,
+      "data-wizard-reason": "", "aria-live": "polite", text: quiet ? "" : why})]);
 }
 
-//: The warning shown while the owner has asked to close with materials that are not saved.
+//: The warning shown while the owner has asked to close with materials that are not saved, or
+//: with a request of the git block still working (closing does not stop it, and its answer is
+//: not seen; a starter's chain that is closed before its second request goes does not send it).
 function closing(ctx) {
   if (ctx.wizard.closing !== "confirm") return [];
+  const busy = closeBusy(ctx.wizard), kept = ctx.wizard.materials.items.length > 0;
+  const lines = [...(busy ? [element("p", {text: ctx.t(closeBusyWord(ctx.wizard))})] : []),
+    ...(kept ? [element("p", {text: ctx.t("wizard.close.warning")})] : [])];
   return [element("div", {className: "desk-wizard__dialog", role: "alertdialog",
-    "aria-modal": "true", "data-close-dialog": ""}, [
-    element("p", {text: ctx.t("wizard.close.warning")}),
+    "aria-modal": "true", "data-close-dialog": ""}, [...lines,
     action("wizard:close:keep", ctx.t("wizard.close.keep"), () => ctx.send({type: "close-cancel"})),
-    action("wizard:close:discard", ctx.t("wizard.close.discard"), () => ctx.leave())])];
+    action("wizard:close:discard",
+      ctx.t(kept ? "wizard.close.discard" : "wizard.first.close_anyway"), () => ctx.leave())])];
 }
 
 // -- step 1: the task --------------------------------------------------------------------
 
-function taskField(ctx, field) {
+function taskField(ctx, field, label = null) {
   const locked = field === "title" && ctx.wizard.task.written;
   return textField(ctx, {key: `wizard:${field}`, name: field, multi: field !== "title", locked,
-    label: ctx.t(`wizard.task.${field}`), value: ctx.wizard.task[field],
+    label: label || ctx.t(`wizard.task.${field}`), value: ctx.wizard.task[field],
+    placeholder: ctx.wizard.guided && field === "brief" ? ctx.t("wizard.ask.goal_example") : null,
     onValue: (value) => ctx.send({type: `edit-${field}`, value}),
     extra: locked ? [element("small", {text: ctx.t("wizard.task.title_locked")})] : []});
 }
@@ -140,17 +154,33 @@ function commandBlock(ctx, command) {
     [element("p", {text: lead}), ...COMMANDS[command].map((line) => element("code", {text: line}))]);
 }
 
-function exitButton(ctx, id) {
+function exitButton(ctx, id, facts) {
   const key = `wizard:git:${id}`, label = ctx.t(`wizard.exit.${id}`);
   const node = id === "reread" ? action(key, label, () => ctx.send({type: "reread", name: "git"}))
     : id === "run_without_git" ? choice(key, label, "switch",
       ctx.wizard.materials.withoutGit, () => ctx.send({type: "run-without-git"}))
-    : later(ctx, id, key, label);
+    : firstExit(ctx, id, facts);
   return element("span", {"data-git-exit": id}, [node]);
 }
 
+//: The exits the read offers, without the first commit's own while its panel is open.
+function exitsShown(git, facts) {
+  return git.exits.filter((id) => !(id === "first_commit" && facts.shown.panel));
+}
+
 function gitPanel(ctx) {
-  const git = gitReading(ctx.wizard), dirty = git.params.dirty;
+  const git = gitReading(ctx.wizard), dirty = git.params.dirty, facts = firstFacts(ctx.wizard);
+  if (ctx.wizard.guided && git.state === "not_git" && git.exits.includes("run_without_git")
+      && facts.phase !== "busy" && !facts.result && !facts.pending) {
+    const selected = ctx.wizard.materials.withoutGit;
+    return element("section", {className: "desk-wizard__git", "data-git-state": git.state}, [
+      element("p", {text: ctx.t("wizard.guide.empty_source")}),
+      choice("wizard:git:run_without_git", ctx.t(selected ? "wizard.guide.empty_chosen" : "wizard.guide.empty_choose"),
+        "switch", selected, () => ctx.send({type: "run-without-git"})),
+      disclosure(ctx, "git_setup", [...firstName(ctx, facts),
+        ...git.exits.filter((id) => id !== "run_without_git").map((id) => exitButton(ctx, id, facts)),
+        ...firstPanel(ctx, facts)])]);
+  }
   const parts = [element("h3", {text: ctx.t("wizard.git.heading")}),
     element("p", {className: "desk-wizard__git-sentence", text: gitSentence(ctx, git)})];
   if (git.state === "repo" && typeof dirty === "number" && dirty > 0) {
@@ -158,10 +188,18 @@ function gitPanel(ctx) {
       text: ctx.t("wizard.git.dirty", {count: String(dirty)})}));
   }
   if (git.command !== null) parts.push(commandBlock(ctx, git.command));
-  if (git.exits.length > 0) {
-    parts.push(element("div", {className: "desk-wizard__exits"},
-      git.exits.map((id) => exitButton(ctx, id))));
+  if (git.state === "unavailable") {
+    parts.push(element("p", {text: ctx.t("wizard.git.after_pin")}),
+      action("wizard:git:reread", ctx.t("wizard.git.check_source"),
+        () => ctx.send({type: "reread", name: "git"})));
   }
+  parts.push(...firstName(ctx, facts));
+  const exits = exitsShown(git, facts);
+  if (exits.length > 0) {
+    parts.push(element("div", {className: "desk-wizard__exits"},
+      exits.map((id) => exitButton(ctx, id, facts))));
+  }
+  parts.push(...firstPanel(ctx, facts));
   return element("section", {className: "desk-wizard__git", "data-git-state": git.state}, parts);
 }
 
@@ -343,12 +381,14 @@ function unreadNote(ctx) {
 }
 
 function cardName(ctx, card) {
+  if (card.kind === "starter" && card.id === "dalio-v6") return ctx.t("wizard.guide.dalio");
   return card.kind === "starter" ? ctx.t(`wizard.cycle.name_${CYCLE_NAMES[card.id]}`)
     : card.title ?? card.id;
 }
 
 function cycleCard(ctx, card) {
-  const chosen = ctx.wizard.cycle.choice?.workflowId === card.workflowId;
+  const current = ctx.wizard.cycle.choice;
+  const chosen = current?.workflowId === card.workflowId && (!current.revision || current.revision === card.revision);
   const small = (text) => element("small", {text});
   const notes = [];
   if (card.pinned) notes.push(small(ctx.t("wizard.cycle.pinned")));
@@ -370,10 +410,19 @@ function cycleCard(ctx, card) {
 }
 
 function cardItems(ctx) {
-  return cycleCards(ctx.wizard).map((card) => (card.kind === "build"
-    ? element("li", {className: "desk-wizard__card", "data-card-id": "build"},
-      [later(ctx, "build_own", "wizard:cycle:build", ctx.t("wizard.cycle.build"))])
-    : cycleCard(ctx, card)));
+  return cycleCards(ctx.wizard).map(card => {
+    if (card.kind !== "build") return cycleCard(ctx, card);
+    const body = ctx.wizard.mode.view ? [element("p", {text: ctx.t("wizard.cycle.active_needed")})]
+      : [element("a", {"data-focus": "wizard:cycle:build", href: `/panel/studio.html#screen=workflow&lang=${ctx.lang}`,
+        target: "_blank", rel: "noopener", text: ctx.t("wizard.cycle.build")}),
+      element("small", {text: ctx.t("wizard.cycle.return")})];
+    if (ctx.wizard.guided && ctx.wizard.reads.workflows && preselection(ctx.wizard.reads).workflowsUnread) {
+      body.push(element("p", {role: "status", text: ctx.t("wizard.cycle.workflows_unread")}));
+    }
+    body.push(action("wizard:cycle:refresh-catalog", ctx.t("wizard.cycle.refresh"),
+      () => ctx.send({type: "reread", name: "workflows"})));
+    return element("li", {className: "desk-wizard__card desk-wizard__custom-cycle", "data-card-id": "build"}, body);
+  });
 }
 
 //: What the server said about the cycle chosen, or that its answer is not in yet. A lost answer
@@ -402,7 +451,7 @@ function budgetView(ctx, facts) {
     line("data-budget-worst", ctx.t("wizard.budget.worst", {actions: String(worst.actions),
       time: timeText(ctx, worst.seconds)})),
     line("data-budget-limit", ctx.t("wizard.budget.limit",
-      {actions: String(limits.max_actions)}))])];
+      {actions: String(limits.max_actions)})), element("p", {text: ctx.t("wizard.budget.note")})])];
 }
 
 function addressText(ctx, at) {
@@ -485,7 +534,21 @@ function roleRow(ctx, row) {
   return element("li", {className: "desk-wizard__role", "data-role": row.role_id,
     "data-by": row.by ?? "none", "data-subject": `role:${row.role_id}`}, [
     element("span", {text: roleName(ctx, row)}), rolePicker(ctx, row),
-    element("small", {text: by}), ...notes, ...clear]);
+    element("small", {text: by}), ...roleModel(ctx, row), ...notes, ...clear]);
+}
+
+function roleModel(ctx, row) {
+  const offer = row.offers.find((item) => item.id === row.provider);
+  if (offer?.modelPinSupported !== true) return offer?.modelPinSupported === false
+    ? [element("small", {text: ctx.t("wizard.role.model_default_only")})] : [];
+  const pin = ctx.wizard.roles.models?.[row.role_id];
+  const control = element("input", {type: "text", autocomplete: "off", maxlength: "128",
+    "data-focus": `wizard:model:${row.role_id}`, "data-focus-value": "state", spellcheck: "false"});
+  control.disabled = !canEditModels(ctx.wizard);
+  control.value = pin?.provider === row.provider ? pin.text : "";
+  control.addEventListener("input", () => ctx.send({type: "role-model", role_id: row.role_id, text: control.value}));
+  return [element("label", {}, [element("span", {text: ctx.t("wizard.role.model_id")}), control,
+    element("small", {text: ctx.t("wizard.role.model_hint")})])];
 }
 
 function fieldLabel(ctx, field) {
@@ -496,6 +559,7 @@ function fieldLabel(ctx, field) {
 
 //: The "as step X" chooser, offered only where the model says it may be.
 function likePicker(ctx, field) {
+  if (ctx.wizard.cycle.choice?.revision) return [];
   if (field.likeChoices.length === 0 && field.source !== "like") return [];
   const pick = element("select", {"data-focus": `wizard:instr:${field.step_id}:like`,
     "aria-label": ctx.t("wizard.instr.like")}, [
@@ -558,15 +622,165 @@ function rolesBody(ctx) {
 const BODIES = {task: taskBody, materials: materialsBody, cycle: cycleBody, roles: rolesBody,
   prepare: prepareBody, run: runBody};
 
+function guideSteps(ctx) {
+  const current = guideStage(ctx.wizard.step)[0];
+  return element("ol", {className: "desk-wizard__steps desk-ask__steps", "aria-label": ctx.t("wizard.steps_label")},
+    GUIDE_STAGES.map(([name], index) => element("li", {"data-guide-stage": name,
+      className: name === current ? "desk-wizard__current" : "",
+      "aria-current": name === current ? "step" : null, text: `${index + 1}. ${ctx.t(`wizard.ask.stage_${name}`)}`})));
+}
+
+function disclosure(ctx, key, children, opened = false) {
+  return element("details", {className: "desk-wizard__options", open: opened || ctx.expanded.has(key) ? "" : null,
+    "data-guide-details": key}, [
+    element("summary", {text: ctx.t(`wizard.guide.${key}`)}), ...children]);
+}
+
+function guideRole(ctx, label, rows) {
+  const people = new Map();
+  for (const row of rows) {
+    const offer = row.offers.find((one) => one.id === row.provider);
+    if (!offer || people.has(offer.id)) continue;
+    const duty = row.verifies.length ? "verify" : row.steps.includes("diagnose") && row.needs.includes("review")
+      ? "diagnose" : row.needs.includes("dispatch") ? "dispatch" : row.needs.includes("review") ? "review" : "observe";
+    const basis = row.by !== "suggestion" ? ctx.t(`wizard.role.by_${row.by}`)
+      : row.notes.includes("independent_pick") ? ctx.t("wizard.ask.role_independent") : "";
+    const why = ctx.t(`wizard.ask.duty_${duty}`) + (basis ? " " + basis : "");
+    people.set(offer.id, element("div", {className: "desk-ask__person"}, [
+      element("strong", {text: offer.name}), element("p", {"data-assignment-reason": "", text: why}),
+      element("small", {text: quotaText(ctx, offer.quota)})]));
+  }
+  const group = element("section", {className: "desk-ask__role", "data-guide-role": label},
+    [element("h4", {text: ctx.t(`wizard.guide.${label}`)}), ...people.values()]);
+  if (!rows.length && label === "checker") group.append(element("p", {text: ctx.t("wizard.guide.no_checker")}));
+  return group;
+}
+
+function guideTeam(ctx, roster) {
+  const setup = participantSetup(ctx, roster);
+  if (roster !== "ready") return setup.length ? setup : [element("p", {text: ctx.t("wizard.providers.pending")})];
+  const rows = assignmentView(ctx.wizard);
+  if (!rows.length) return setup;
+  const dispatch = rows.filter((row) => row.needs.includes("dispatch"));
+  const doers = dispatch.length ? dispatch : rows.filter((row) => row.steps.length);
+  const checkers = rows.filter((row) => row.verifies.length);
+  const diagnoses = rows.filter((row) => row.steps.includes("diagnose") && !doers.includes(row) && !checkers.includes(row));
+  const shared = checkers.some((row) => row.provider && doers.some((other) => other.provider === row.provider));
+  const missing = rows.find((row) => !row.provider);
+  return [...setup, element("div", {className: "desk-ask__team"}, [guideRole(ctx, "executor", doers),
+    ...(diagnoses.length ? [guideRole(ctx, "diagnose", diagnoses)] : []), guideRole(ctx, "checker", checkers)]),
+    ...(missing ? [element("section", {"data-ask-role": missing.role_id}, [
+      element("h3", {text: ctx.t("wizard.ask.missing_role", {role: roleName(ctx, missing)})}),
+      element("ul", {className: "desk-wizard__roles"}, [roleRow(ctx, missing)])])] : []),
+    ...(shared ? [element("p", {text: ctx.t("wizard.guide.shared")})] : []),
+    disclosure(ctx, "assignments", [element("ul", {className: "desk-wizard__roles"},
+      rows.filter((row) => row !== missing).map((row) => roleRow(ctx, row)))])];
+}
+
+function guideAnswer(ctx, name, text, step) {
+  const edit = action(`wizard:ask:edit-${name}`, ctx.t("wizard.ask.edit"), () => ctx.send({type: "goto", step}));
+  edit.setAttribute("aria-label", ctx.t(`wizard.ask.edit_${name}`));
+  return element("section", {className: "desk-ask__answer", "data-answer": name,
+    "data-git-state": name === "files" ? gitReading(ctx.wizard).state : null}, [
+    element("div", {className: "desk-ask__answer-text"}, [element("strong", {text: ctx.t(`wizard.ask.${name}`)}), element("p", {text})]),
+    edit]);
+}
+
+function sourceAnswer(ctx) {
+  const git = gitReading(ctx.wizard);
+  if (git.state === "not_git" && ctx.wizard.materials.withoutGit) return ctx.t("wizard.ask.empty");
+  if (!["repo", "not_active"].includes(git.state)) return null;
+  const dirty = git.params.dirty;
+  return gitSentence(ctx, git) + (dirty > 0 ? ". " + ctx.t("wizard.git.dirty", {count: String(dirty)}) : "");
+}
+
+function guideInstructions(ctx, fields, reason) {
+  if (!fields.length) return [];
+  const replyKey = (field) => `reply-${ctx.wizard.cycle.generation}-${field.step_id}`;
+  const sticky = fields.find((field) => ctx.expanded.has(replyKey(field)));
+  const active = sticky || (reason === "instruction_empty" && fields.find((field) => field.required && !field.text.trim()));
+  const other = fields.filter((field) => field !== active);
+  const controls = other.length ? [disclosure(ctx, "instructions", other.map((field) => instructionView(ctx, field)))] : [];
+  if (!active) return controls;
+  const box = element("details", {open: "", "data-guide-details": replyKey(active),
+    className: "desk-wizard__options"}, [
+    element("summary", {text: ctx.t("wizard.ask.instruction", {step: active.title || active.step_id})}),
+    instructionView(ctx, active)]);
+  box.append(action(`wizard:ask:keep:${active.step_id}`, ctx.t("wizard.ask.keep"), () => {
+    box.open = false;
+    ctx.redraw?.();
+  }, active.text.trim() ? null : ctx.t("wizard.reason.instruction_empty")));
+  return [box, ...controls];
+}
+
+function guideBody(ctx) {
+  const state = ctx.wizard, [stage] = guideStage(state.step);
+  if (stage === "result") {
+    const [git, ...materials] = materialsBody(ctx);
+    const materialIssue = ["material_incomplete", "materials_over_bytes"].includes(canAdvance(state).reason);
+    const options = disclosure(ctx, "optional", [taskField(ctx, "title"), taskField(ctx, "hint"), ...materials], materialIssue);
+    const missing = state.draftMaterialsMissing ? [element("p", {role: "status", text: ctx.t("wizard.guide.missing_files")})] : [];
+    if (state.step === "materials") return [guideAnswer(ctx, "goal", state.task.brief, "task"),
+      ...(sourceAnswer(ctx) ? [] : [element("h3", {"data-ask-prompt": "", tabindex: "-1", text: ctx.t("wizard.ask.files_question")})]),
+      git, ...missing, options];
+    const advisor = ctx.advisorPanel?.(state, ctx.send);
+    const known = state.task.brief.trim() && sourceAnswer(ctx);
+    const reading = gitReading(state);
+    const first = firstFacts(state);
+    const repair = first.phase === "busy" || first.result || reading.pending ||
+      ["unavailable", "unborn", "unsafe_directory", "not_repo_root", "unsupported"].includes(reading.state);
+    return [element("div", {className: "desk-ask__goal"}, [taskField(ctx, "brief", ctx.t("wizard.ask.goal_prompt"))]),
+      ...(advisor ? [advisor] : []), ...(repair ? [git] : []),
+      ...(known && !repair ? [guideAnswer(ctx, "files", known, "materials")] : []), ...missing,
+      options];
+  }
+  if (stage === "team") {
+    const chosen = cycleCards(state).find((card) => card.workflowId === state.cycle.choice?.workflowId);
+    const roster = rosterStatus(state), facts = cycleFacts(state);
+    const fields = instructionFields(state, ctx.lang);
+    const checks = diagnosticsView(ctx, facts);
+    const warningsOnly = facts.diagnostics.length && facts.diagnostics.every((row) => row.severity === "warning");
+    const source = sourceLine(ctx), budget = budgetView(ctx, facts);
+    return [guideAnswer(ctx, "goal", state.task.brief, "task"),
+      ...(sourceAnswer(ctx) ? [guideAnswer(ctx, "files", sourceAnswer(ctx), "materials")] : []),
+      ...(chosen ? [element("h3", {text: cardName(ctx, chosen), tabindex: "-1", "data-ask-prompt": "", "data-card-id": chosen.id, "data-chosen": "true"}),
+        element("div", {"data-cycle-reason": ""}, source.length ? source : [element("p", {text: ctx.t(
+          chosen.id === "dalio-v6" && state.cycle.chosenBy === "suggested" ? "wizard.ask.cycle_default" : "wizard.ask.cycle_chosen")})])] : []),
+      ...(state.cycle.choice?.revision ? [element("p", {text: ctx.t("wizard.cycle.selected_revision",
+        {number: String(state.cycle.choice.revision)})})] : []),
+      ...(!chosen ? source : []), ...unreadNote(ctx),
+      disclosure(ctx, "choose", [element("ul", {className: "desk-wizard__cards"}, cardItems(ctx))], !chosen),
+      ...guideTeam(ctx, roster), ...guideInstructions(ctx, fields, canAdvance(state).reason),
+      ...flowStatus(ctx, facts), ...(budget.length ? [disclosure(ctx, "estimate", budget)] : []),
+      ...(warningsOnly ? [disclosure(ctx, "checks", checks)] : checks)];
+  }
+  return [element("p", {text: ctx.t("wizard.guide.named", {title: state.task.title})}),
+    ...(state.step === "run" ? runBody(ctx) : prepareBody(ctx))];
+}
+
 export function mountWizard(mount, state, handlers) {
   if (typeof handlers?.onWizard !== "function" || typeof handlers.onWizardClose !== "function") {
     throw new Error("the wizard is mounted without its handlers");
   }
-  const ctx = context(state, handlers), wizard = ctx.wizard;
+  const ctx = context(state, handlers, mount), wizard = ctx.wizard;
   const draw = Object.hasOwn(BODIES, wizard.step) ? BODIES[wizard.step] : () => [];
-  mount.replaceChildren(element("section", {className: "desk-wizard", "data-wizard": "",
+  const mode = action("wizard:mode", ctx.t(wizard.guided ? "wizard.ask.fields" : "wizard.ask.questions"),
+    () => ctx.send({type: "guide-mode"}));
+  mode.className = "desk-ask__mode";
+  mount.replaceChildren(element("section", {className: wizard.guided ? "desk-wizard desk-ask" : "desk-wizard", "data-wizard": "",
     "data-wizard-current": wizard.step, "data-mode": modeOf(wizard)}, [
-    head(ctx), stepper(ctx),
-    element("div", {className: "desk-wizard__body", "data-body": wizard.step}, draw(ctx)),
-    foot(ctx), ...closing(ctx)]));
+    head(ctx), wizard.guided ? guideSteps(ctx) : stepper(ctx),
+    element("div", {className: "desk-wizard__body", "data-body": wizard.step},
+      wizard.guided ? guideBody(ctx) : draw(ctx)),
+    ...(wizard.guided && !wizard.run.pressed ? [foot(ctx)] : []),
+    ...(wizard.firstRunGuide && !wizard.run.pressed && (wizard.task.brief || wizard.titleEdited || wizard.materials.items.length
+      || state.draftStatus !== "saved" && state.draftStatus !== "saving") && state.draftStatus
+      && state.draftStatus !== "empty" ? [state.draftStatus === "saved" && wizard.guided
+        ? element("details", {className: "desk-ask__saved", "data-draft": "saved", "data-guide-details": "saved",
+          open: ctx.expanded.has("saved") ? "" : null}, [element("summary", {text: ctx.t("wizard.ask.saved")}),
+          element("p", {text: ctx.t("wizard.guide.saved")})])
+        : element("p", {role: "status", "data-draft": state.draftStatus,
+          text: ctx.t(`wizard.guide.${state.draftStatus}`)})] : []),
+    ...(wizard.guided ? [] : [foot(ctx)]),
+    ...(wizard.firstRunGuide && !wizard.run.pressed ? [mode] : []), ...closing(ctx)]));
 }

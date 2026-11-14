@@ -17,6 +17,12 @@ from conductor.command import failure_reasons
 from conductor.command.adapters import login_lifetime, login_refusal
 from conductor.command.adapters.process import OwnershipError, ProcessRunner
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 SENTENCE = "the shared page is not the documented layout of this build"
 PRIVATE = "C:\\private\\path"
 READER_CODES = ("native_unavailable", "layout_unknown", "partial_read", "value_empty",

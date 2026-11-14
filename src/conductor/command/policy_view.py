@@ -3,6 +3,8 @@ from .authorization_terms import _time_parts
 from .contracts import ActionRequest, ActionResultReceipt
 from .graph_schedule import schedule
 from .policy_history import current_authorization, current_control, spent_budget
+from .run_terminal import TERMINAL_STATES
+from .runtime_values import ProjectRecoveryRequired
 
 #: What the driver may name when it stops on its own; `seed_blocked` is the seed of the run
 #: (spec 9.1.4) and, like the others, only a reason of `stalled`.
@@ -18,9 +20,9 @@ def automation_view(policy, run_id):
     definition = next((row.value for row in recovered.records if row.kind == "graph_definition"), None)
     terminal = {v.action_id for v in values if type(v) is ActionResultReceipt}
     pending = [v.action_id for v in values if type(v) is ActionRequest and v.action_id not in terminal]
-    owner = _owner_present(policy)
+    owner_refusal = _owner_refusal(policy)
     computed = schedule(definition, values) if definition else None
-    state, reason = _state(policy, run_id, grant, control, computed, pending, owner, policy.clock())
+    state, reason = _state(policy, run_id, grant, control, computed, pending, owner_refusal, policy.clock())
     actions, seconds = spent_budget(values, definition) if grant else (0, 0)
     next_node = next((n.node_id for n in definition.nodes if n.capability is not None
                      and n.node_id in computed.runnable), None) if computed else None
@@ -30,21 +32,26 @@ def automation_view(policy, run_id):
             "spent_actions": actions, "remaining_actions": max(0, grant.max_actions - actions) if grant else 0,
             "spent_task_seconds": seconds,
             "remaining_task_seconds": max(0, grant.max_total_task_seconds - seconds) if grant else 0,
-            "expires_at": grant.expires_at if grant else None, "owner_present": owner}
+            "expires_at": grant.expires_at if grant else None, "owner_present": owner_refusal is None}
 
 
-def _owner_present(policy):
+def _owner_refusal(policy):
     try:
         policy.owner_check()
+    except ProjectRecoveryRequired:
+        return "recovery_required"
     except Exception:
-        return False
-    return True
+        return "owner_required"
+    return None
 
 
-def _state(policy, run_id, grant, control, computed, pending, owner, now):
+def _state(policy, run_id, grant, control, computed, pending, owner_refusal, now):
     if grant is None:
         return "unconfigured", "authorization_required"
-    if computed is not None and computed.run_state == "complete":
+    # A plan that has ended, on either of its two words, is judged before the controls, the clock
+    # and the driver: its run takes no pause, resume, revoke or new grant, and any of those words
+    # would offer one.
+    if computed is not None and computed.run_state in TERMINAL_STATES:
         return "complete", "plan_ended"
     if control is not None and control.action == "revoke":
         return "revoked", "revoked"
@@ -52,10 +59,12 @@ def _state(policy, run_id, grant, control, computed, pending, owner, now):
     # `paused` would promise that it can. A revoke is the human's final word and stays first.
     if _time_parts("now", now) >= _time_parts("expires_at", grant.expires_at):
         return "expired", "expired"
+    if owner_refusal == "recovery_required":
+        return "restart_required", "recovery_required"
     if control is not None and control.action == "pause":
         return "paused", "paused"
     driver = policy.driver
-    if not owner:
+    if owner_refusal:
         return "restart_required", "owner_required"
     if driver is None:  # an owner and no driver: a process opened for viewing (spec 4.4.1)
         return "restart_required", "project_not_active"

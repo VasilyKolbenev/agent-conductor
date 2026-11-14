@@ -8,6 +8,7 @@ from .contract_values import ContractError
 from .graph_schedule import schedule
 from .policy_history import current_authorization, hold_selected_inputs
 from .policy_runtime import hold_live
+from .run_terminal import TERMINAL_STATES
 from .service import CommandService
 from .work_layout import work_route
 
@@ -210,10 +211,11 @@ class PolicyDriver:
         """Whether the seed of this run's task is still owed, so that nothing may be proposed.
 
         Asked before the store is held (the move waits for the root's turn, and a dispatch holds
-        the turn and then needs the store). Nothing owed is the answer of a run that performs no
-        dispatch, of no task and of a task never seeded; otherwise the settler moves a staged seed
-        or performs a requested one (spec 9.1.4). When it cannot, the driver names `seed_blocked`
-        and tries again on its next tick.
+        the turn and then needs the store). Nothing owed is the answer of a run that has recorded
+        its ending (so the tick goes on to free its slot), of a run that performs no dispatch, of
+        no task and of a task never seeded; otherwise the settler moves a staged seed or performs
+        a requested one (spec 9.1.4). When it cannot, the driver names `seed_blocked` and tries
+        again on its next tick.
         """
         seeds = getattr(self.policy, "seeds", None)
         if seeds is None or seeds.settle(run_id):
@@ -243,7 +245,12 @@ class PolicyDriver:
                 slot.release()
 
     def _select_next(self, run_id, grant_id):
-        """The proposal to admit next, and whether the plan just ended (and the slot was freed)."""
+        """The proposal to admit next, and whether the plan just ended (and the slot was freed).
+
+        A plan ends on either of its two words, `complete` or `stalled`, and either frees the
+        slot: a run that has recorded its ending takes no pause, revoke or resume, so nobody else
+        could free it.
+        """
         with self.policy.store.transaction():
             if not self.is_active(run_id, grant_id):
                 return None, False
@@ -256,9 +263,10 @@ class PolicyDriver:
             with self._condition:
                 self._reason = reason
             if selected is None:
-                if reason == "complete":
+                ended = reason in TERMINAL_STATES
+                if ended:
                     self.deactivate(run_id)
-                return None, reason == "complete"
+                return None, ended
             proposal = self._proposal(recovered, grant, selected)
             hold_live(self.runtime, recovered, grant, proposal)
             return proposal, False
@@ -297,17 +305,22 @@ class PolicyDriver:
 
 
 def _next_node(recovered, grant):
+    """The step to propose next and the reason, or None and the reason the driver stops on.
+
+    The plan's own word comes before the refusal of an `unknown` result: an ended plan proposes
+    nothing either way, and only its word lets `_select_next` free the slot the run holds.
+    """
     values = tuple(row.value for row in recovered.records)
     definition = next(row.value for row in recovered.records if row.kind == "graph_definition")
     requests = {v.action_id: v for v in values if type(v) is ActionRequest}
     results = {v.action_id: v for v in values if type(v) is ActionResultReceipt}
     if requests.keys() - results.keys():
         return None, "running"
-    from .policy_frontier import failure_sources, required_feedback
-    failure_sources(values, grant)  # Unknown always refuses, even if other steps look runnable.
     computed = schedule(definition, values)
     if computed.run_state != "open":
         return None, computed.run_state
+    from .policy_frontier import failure_sources, required_feedback
+    failure_sources(values, grant)  # Unknown always refuses, even if other steps look runnable.
     candidates = [n for n in definition.nodes if n.capability is not None
                   and n.node_id in computed.runnable]
     for node in candidates:

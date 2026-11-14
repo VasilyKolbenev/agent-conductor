@@ -4,24 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title id="studioTitle">December — Workflow Studio</title>
-<!-- The application shell. This document is what `GET /` answers with; the
-     classic panel keeps its own file name and is reached at /panel/index.html.
+<!-- The workflow editor is served at /panel/studio.html. Its header leads back
+     to Arachnid on this project's origin. All assets come from the absolute
+     allowlisted /panel/ path, which tests/test_studio_source.py checks.
 
-     Every asset below is named with a ROOT-RELATIVE path under /panel/, and
-     that is forced rather than chosen: this document is served at `/`, so a
-     document-relative "studio.css" would resolve to /studio.css, which is not
-     a route. The paths carry no scheme and no host, so the served copy still
-     reaches only this origin's own packaged directory -- which is the property
-     graph.html gets from being relative, kept here by the only spelling the
-     entry route leaves available. tests/test_studio_source.py holds it.
-
-     One script, one stylesheet, and no inline anything: a Content-Security
+     One script, three stylesheets, and no inline code: a Content-Security
      rule that forbids inline script is the shape this surface already has, and
      the structure below stands without either of them. With scripting off, or
      before /panel/studio.js has run, every screen still says in plain language
      that nothing has been read yet -- never a blank area, and never a spinner
      with no exit. -->
 <link rel="stylesheet" href="/panel/studio.css">
+<link rel="stylesheet" href="/panel/studio-atlas.css">
+<link rel="stylesheet" href="/panel/studio-utilities.css">
 <script src="/panel/studio.js" type="module"></script>
 </head>
 <body>
@@ -45,8 +40,9 @@
          same words in every state, and a link that only appeared once a read
          had landed would be missing on exactly the screens a person reaches
          when a read did not. -->
-    <a class="studio-elsewhere" data-i18n="shell.classic" href="/panel/index.html">Map, findings, feed
-      and handoffs — classic panel</a>
+    <a class="studio-elsewhere" id="studioHome" href="/">Arachnid</a>
+    <a class="studio-elsewhere" data-i18n="shell.map" data-i18n-label="shell.classic"
+      href="/panel/index.html" aria-label="Map, findings, feed and handoffs — classic panel">Project map and history</a>
     <div class="studio-preferences" id="studioPreferences" role="group"
       aria-label="Appearance and language"></div>
     <div class="studio-primary" id="studioPrimary"></div>
@@ -88,8 +84,6 @@
       data-state="empty" id="screenOverview" role="tabpanel" tabindex="0">
       <h2 data-i18n="nav.overview">Overview</h2>
       <p class="studio-state" id="stateOverview">Nothing has been read yet.</p>
-      <p class="studio-hint" data-i18n="shell.overview">This screen answers what the project is, whether
-        it is ready to run, what is blocked, and what needs you.</p>
       <div class="studio-body" id="bodyOverview"></div>
     </section>
 
@@ -120,10 +114,12 @@
       hidden id="screenRuns" role="tabpanel" tabindex="0">
       <header class="studio-screen__head"><h2 data-i18n="nav.runs">Runs</h2>
       <p class="studio-state" id="stateRuns">Nothing has been read yet.</p>
+      <button id="utilityRuns" data-i18n="utility.open" type="button">Connect a harness</button>
       <details class="studio-explain"><summary data-i18n="shell.runs">About runs</summary>
         <p class="studio-hint" data-i18n="shell.verification">A process that exits 0 has finished, which is not
           the same as having been verified. Both words are shown.</p>
       </details></header>
+      <div id="studioAtlas" hidden></div>
       <div class="studio-body" id="bodyRuns"></div>
     </section>
 
@@ -132,8 +128,7 @@
       tabindex="0">
       <h2 data-i18n="nav.decisions">Decisions</h2>
       <p class="studio-state" id="stateDecisions">Nothing has been read yet.</p>
-      <p class="studio-hint" data-i18n="shell.decisions">A decision is a durable receipt. This screen says
-        why one is needed, what each choice causes, and what it unblocks.</p>
+      <p class="studio-hint" data-i18n="shell.decisions">Review the step and record your decision.</p>
       <div class="studio-body" id="bodyDecisions"></div>
     </section>
 
@@ -143,12 +138,14 @@
       <p class="studio-state" id="stateAgents">Nothing has been read yet.</p>
       <p class="studio-hint" data-i18n="shell.agents">A participant binds one instance to one configured
         provider. Providers are operator-written and read at startup.</p>
+      <button id="utilityAgents" data-i18n="utility.open" type="button">Connect a harness</button>
       <div class="studio-body" id="bodyAgents"></div>
     </section>
 
     </div>
     <aside class="studio-bridge" id="studioBridge" hidden aria-label="Run controls and usage" data-i18n-label="bridge.region"></aside>
   </main>
+  <dialog id="studioUtilities" aria-labelledby="utilitiesTitle"></dialog>
 
   <!-- The one place a transient sentence is written. Persistent in the
        document rather than rebuilt with its text, for graph.html's reason: an

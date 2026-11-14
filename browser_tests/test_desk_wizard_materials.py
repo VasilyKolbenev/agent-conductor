@@ -206,18 +206,23 @@ def test_in_view_mode_git_is_unread_until_the_answer_lands_and_only_then_not_act
 
 
 @pytest.mark.parametrize("lang", LANGS)
-def test_git_exits_keep_later_buttons_disabled_and_enable_explicit_no_git_choice(bench, lang):
-    for state, ids in (("not_git", ["connect_git"]),
-                       ("unborn", ["first_commit"])):
-        to_materials(bench, lang, git=state)
-        for control in ids:
-            button = bench.control(f"wizard:git:{control}")
-            assert button.is_disabled(), control
-            why = bench.page.locator(f'[data-blocked="wizard:git:{control}"] small')
-            assert why.inner_text() == bench.say(f"wizard.later.{control}")
-            before = bench.wizard()
-            button.click(force=True)
-            assert bench.wizard() == before, "a disabled control is not a silent no-op"
+def test_git_exits_are_buttons_and_the_no_git_choice_and_the_starter_documents_stay_as_they_were(
+        bench, lang):
+    to_materials(bench, lang, git="not_git")
+    connect = bench.control("wizard:git:connect_git")
+    assert connect.is_disabled(), "no name yet: a press is blocked beside its reason"
+    why = bench.page.locator('[data-blocked="wizard:git:connect_git"] small')
+    assert why.inner_text() == bench.say("wizard.first.why.actor_invalid")
+    before = bench.wizard()
+    connect.click(force=True)
+    assert bench.wizard() == before, "a disabled control is not a silent no-op"
+    to_materials(bench, lang, git="unborn")
+    first = bench.control("wizard:git:first_commit")
+    expect(first).to_be_enabled()
+    assert bench.page.locator("[data-git-commit]").count() == 0
+    first.click()
+    expect(bench.page.locator("[data-git-commit]")).to_have_count(1)
+    assert [row for row in bench.asks() if row[0].startswith("write:")] == [], "nothing is sent"
     to_materials(bench, lang, git="not_git")
     without_git = bench.control("wizard:git:run_without_git")
     expect(without_git).to_be_enabled()

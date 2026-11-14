@@ -326,8 +326,13 @@ def open_desk(browser: Any, served: Project, language: str = "en", *, width: int
     page.route("**/events", lambda route: route.fulfill(status=204))
     if before is not None:
         before(page)
-    page.goto(served.url(language, extra=extra), wait_until="load")
+    with page.expect_response(lambda r: r.url == served.origin + "/events",
+                              timeout=15000) as stream:
+        page.goto(served.url(language, extra=extra), wait_until="load")
+    assert stream.value.status == 204
     page.wait_for_function(SETTLED, timeout=15000)
+    # A terminal SSE error invalidates an in-flight CSRF read. Start gestures after Desk handled it.
+    page.locator('#deskShell[data-connection="closed"]').wait_for(state="attached")
     return window
 
 

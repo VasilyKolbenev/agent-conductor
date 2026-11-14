@@ -251,8 +251,7 @@ class ControlRuntime:
         # the attempt id that request already carries.
         _hold_attempt_identity(proposal, recovered)
         self._hold_budget(proposal, recovered, budget)
-        _hold_plan_admits(proposal, recovered,
-                          verifies_independently=self._registry.verifies_independently)
+        _hold_plan_admits(proposal, recovered, registry=self._registry)
         request = self._mint_request(confirmation, proposal)
         self._hold_route(confirmation.run_id, AuthorizationError)
         if admit is not None:

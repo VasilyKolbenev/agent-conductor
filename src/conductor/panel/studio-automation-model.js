@@ -1,14 +1,17 @@
 "use strict";
+import {BOUNDS, DEPTH, limitFields, validRecommendation} from "./studio-budget-guidance.js";
+export {DEPTH, limitFields};
 // Closed presentation boundary. The server owns admission, time and execution.
 import {exactKeys, isDigest, isId, isInstant, isPlainObject} from "./studio-model.js";
 import {compareInstants} from "./studio-taskruns.js";
 import {validProviderFacts} from "./studio-automation-providers.js";
 import {canonicalJson} from "./command-projection.js";
+import {validTestSteps} from "./studio-test-preview.js";
 
 export const AUTOMATION_STATES = Object.freeze(["unconfigured", "ready", "running", "waiting",
   "paused", "revoked", "expired", "complete", "stalled", "restart_required"]);
 export const AUTOMATION_REASONS = Object.freeze(["authorization_required", "plan_ended", "paused", "revoked",
-  "expired", "owner_required", "explicit_resume_required", "ambiguous_actions", "action_in_flight",
+  "expired", "owner_required", "recovery_required", "explicit_resume_required", "ambiguous_actions", "action_in_flight",
   "unknown_action", "feedback_required", "admission_refused", "stalled", "plan_stalled", "plan_waiting", "ready",
   "project_not_active", "seed_blocked"]);
 const TERMS = ["run_id", "contract", "config_digest", "graph_digest", "provider_config_digest",
@@ -62,14 +65,40 @@ function validTerms(terms, detail) {
 export function automationEligible(detail) {
   return detail?.run.mode === "policy" && detail.config?.automation_contract === "bounded-run-v1";
 }
+export function projectGrantRefusal(answer) {
+  if (answer?.status !== "refused") return null;
+  if (answer.code === "preview_stale") return {notice: "preview_stale", preview: null};
+  if (answer.code !== "slot_busy") return null;
+  const holder = answer.payload?.error?.detail?.run_id;
+  return {notice: "slot_busy", holder: isId(holder) ? holder : null};
+}
 export function projectAutomationPreview(value, detail) {
-  if (!automationEligible(detail) || !object(value, ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"])
+  const marked = value?.grok_diagnostic_steps;
+  const keys = ["terms", "preview_digest", "previewed_at", "valid_until", "provider_facts"];
+  if (marked !== undefined) keys.push("grok_diagnostic_steps");
+  if (value?.patch_steps !== undefined) keys.push("patch_steps");
+  if (value?.test_steps !== undefined) keys.push("test_steps");
+  if (!automationEligible(detail) || !object(value, keys)
       || !validProviderFacts(value.provider_facts, detail)
       || !object(value.terms, [...TERMS, "duration_seconds"]) || !validTerms(value.terms, detail)
       || !positive(value.terms.duration_seconds) || value.terms.duration_seconds > 86400
       || !isDigest(value.preview_digest) || !isInstant(value.previewed_at) || !isInstant(value.valid_until)
       || compareInstants(value.previewed_at, value.valid_until) >= 0) return null;
-  return copy(value);
+  const planned = (detail.graph?.definition?.nodes ?? []).filter((node) =>
+    node.capability === "review" && node.arguments?.grok_diagnostic === "session-phase-v1");
+  if (planned.length || marked !== undefined) {
+    if (!planned.length || !Array.isArray(marked) || planned.length !== marked.length
+        || detail.graph.definition_digest !== value.terms.graph_digest
+        || !planned.every((node, i) => node.node_id === marked[i])) return null;
+  }
+  const patches = (detail.graph?.definition?.nodes ?? []).filter((node) =>
+    node.capability === "dispatch" && node.arguments?.profile === "implement-patch-v1");
+  if (patches.length || value.patch_steps !== undefined) {
+    if (!patches.length || !Array.isArray(value.patch_steps) || patches.length !== value.patch_steps.length
+        || detail.graph.definition_digest !== value.terms.graph_digest
+        || !patches.every((node, i) => node.node_id === value.patch_steps[i])) return null;
+  }
+  return validTestSteps(value, detail) ? copy(value) : null;
 }
 function validGrant(grant, detail) {
   return object(grant, GRANT) && validTerms(grant, detail) && grant.schema_version === 2
@@ -103,38 +132,49 @@ export function projectAutomation(value, detail) {
   return copy(value);
 }
 
-//: The limits a person starts from, made to fit together and to fit the frozen plan. A step an
-//: independent checker judges reserves the checker's time as well (2x, as the server holds it); a
-//: step whose own failure road loops back to it is budgeted for that planned correction up front,
-//: so the preview shows every attempt it would authorize. A frozen timeout or attempt bound is never
-//: exceeded. Only a starting draft: nothing here authorizes or runs anything, and a person's own
-//: edits are kept by the flow, never recomputed over.
-export function automationDraft(detail) {
-  const definition = detail.graph?.definition || {};
-  const loops = new Map((definition.nodes || []).filter((node) => node.loop).map((node) => [node.node_id, node.loop]));
-  const rows = (definition.nodes || []).filter((node) => node.capability).map((node) => {
-    const timeout = Math.min(node.timeout_seconds || 300, 300);
-    const checked = Boolean(node.verifier_instance_id) && node.verifier_instance_id !== node.instance_id;
-    const correction = (definition.edges || []).find((edge) => edge.from_node === node.node_id
-      && edge.condition === "on_failed" && loops.get(edge.to_node)?.back_to === node.node_id);
-    const planned = correction ? loops.get(correction.to_node).bound : 1;
-    return {node_id: node.node_id, timeout, reserved: timeout * (checked ? 2 : 1),
-      attempts: Math.max(1, Math.min(planned, node.attempt_bound || planned))};
-  });
-  const total = rows.reduce((sum, row) => sum + row.reserved * row.attempts, 0);
-  return {actor: "", max_actions: String(Math.max(1, rows.reduce((sum, row) => sum + row.attempts, 0))),
-    max_action_seconds: String(Math.max(1, ...rows.map((row) => row.reserved))),
-    max_total_task_seconds: String(Math.max(1, total)),
-    duration_seconds: String(Math.min(86400, Math.max(3600, total))),
-    node_limits: rows.map((row) => ({node_id: row.node_id, timeout_seconds: String(row.timeout),
-      max_attempts: String(row.attempts)}))};
+// A Desk suggestion is editable input, never a server preview or authorization.
+export function draftFromDesk(detail, bounds) {
+  if (!object(bounds, [...BOUNDS, "node_limits"]) || !BOUNDS.every((key) => positive(bounds[key]))
+      || !validRows(bounds.node_limits, "node_id", validNode)) return null;
+  const nodes = (detail.graph?.definition?.nodes ?? []).filter((node) => node.capability);
+  if (nodes.length !== bounds.node_limits.length
+      || !nodes.every((node, i) => node.node_id === bounds.node_limits[i].node_id)) return null;
+  return {...automationDraft(detail, bounds), custom: true, suggestedInDesk: true};
+}
+
+// Blank until the server supplies values. Named rows let a person enter a custom
+// budget even if a recommendation could not be obtained.
+export function automationDraft(detail, terms = null, actor = "") {
+  const rows = terms?.node_limits ?? (detail.graph?.definition?.nodes ?? [])
+    .filter((node) => node.capability).map((node) => ({node_id: node.node_id}));
+  return {actor, custom: false, ...Object.fromEntries(BOUNDS.map((key) => [key, String(terms?.[key] ?? "")])),
+    node_limits: rows.map((row) => ({node_id: row.node_id, timeout_seconds: String(row.timeout_seconds ?? ""),
+      max_attempts: String(row.max_attempts ?? "")}))};
+}
+
+export function projectRecommendation(value, detail) {
+  if (!isPlainObject(value)) return null;
+  const {budget, recommendation: guidance, ...core} = value;
+  const preview = projectAutomationPreview(core, detail);
+  if (!preview || !isPlainObject(budget) || typeof budget.exhausted !== "boolean"
+      || !isPlainObject(budget.worst) || !count(budget.worst.actions)) return null;
+  const spent = budget.spent;
+  if (spent !== null && !(object(spent, ["actions", "seconds", "attempts"]) && count(spent.actions)
+      && count(spent.seconds) && Array.isArray(spent.attempts) && spent.attempts.every((row) =>
+        object(row, ["step_id", "attempts"]) && isId(row.step_id) && count(row.attempts)))) return null;
+  const expected = limitFields(preview.terms);
+  if (guidance !== undefined && !validRecommendation(guidance, preview.terms)) return null;
+  if (!isPlainObject(budget.terms_draft) || canonicalJson(expected) !== canonicalJson(budget.terms_draft)) return null;
+  return {preview, recommendation: {steps: preview.terms.node_limits.length, attempts: budget.worst.actions,
+    checked: detail.graph.definition.nodes.filter((node) => node.capability && node.verifier_instance_id).length,
+    spent, exhausted: budget.exhausted, ...(guidance ? {guidance} : {})}};
 }
 export function previewRequest(draft) {
+  if (!draft.custom) return {};
   const integer = (text) => typeof text === "string" && /^[1-9][0-9]*$/.test(text) && positive(Number(text));
-  const names = ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"];
-  if (!names.every((key) => integer(draft[key])) || !draft.node_limits.every((row) =>
+  if (!BOUNDS.every((key) => integer(draft[key])) || !draft.node_limits.every((row) =>
     isId(row.node_id) && integer(row.timeout_seconds) && integer(row.max_attempts))) return null;
-  return {...Object.fromEntries(names.map((key) => [key, Number(draft[key])])), node_limits:
+  return {...Object.fromEntries(BOUNDS.map((key) => [key, Number(draft[key])])), node_limits:
     draft.node_limits.map((row) => ({node_id: row.node_id, timeout_seconds: Number(row.timeout_seconds), max_attempts: Number(row.max_attempts)}))};
 }
 

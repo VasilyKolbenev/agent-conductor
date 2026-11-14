@@ -10,10 +10,14 @@
 // decisions panel exists to open. The word of the live connection is the boot module's to
 // say, and goes to the deck as it is: the deck's own rule turns a gate into an attention it
 // cannot confirm when that word is `closed`.
+//
+// Every view the scene is mounted with goes first to the transitions module (spec 5.5), before
+// the foreign plate and the deck: it draws on a layer of its own and reads and writes no door.
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
 import {participantDeck, participantSelection, releaseParticipants,
   restoreParticipantScroll} from "./studio-participants.js";
+import {watchMotion} from "./desk-motion.js";
 
 //: Why a chosen task has no run to show, each with the sentence that says it.
 const ABSENT = Object.freeze({none: "desk.scene.no_run", unknown: "desk.scene.unknown_run",
@@ -28,6 +32,21 @@ function subject(view) {
   const task = view.task?.title || localize(view, "desk.rail.unreadable");
   return element("p", {className: "desk-scene__subject", text: localize(view,
     "desk.scene.subject", {task, run: view.run.detail.run.run_id})});
+}
+
+// This fixed verification refusal occurs before the independent checker is called.
+function stoppedResult(view, detail) {
+  if (detail.graph?.schedule?.run_state !== "stalled") return [];
+  const records = detail.records ?? [];
+  const result = records.findLast((row) => row.record_type === "action_result")?.record;
+  if (!result?.action_id || result.outcome !== "verification_failed"
+      || result.detail !== "the doer left no changed file for the checker to verify") return [];
+  const request = records.find((row) => row.record_type === "action_request"
+    && row.record?.action_id === result.action_id)?.record;
+  if (request?.capability !== "dispatch" || !request.node_id) return [];
+  const step = detail.graph.definition?.nodes?.find((node) => node.node_id === request.node_id);
+  return [element("p", {className: "desk-scene__note", text:
+    localize(view, "desk.scene.no_changed_files", {step: step?.title || request.node_id})})];
 }
 
 //: What stands in the scene when no run is drawn: the reason a chosen task has none, or the
@@ -52,6 +71,7 @@ function foreignPlate(view, handlers) {
 //: A redraw of the same run keeps the lens, the selection and the scroll a person left it
 //: in: the deck reads them off the mount before it is replaced and is handed them back.
 export function mountScene(mount, view, handlers) {
+  watchMotion(view);
   const previous = participantSelection(mount);
   releaseParticipants(mount);
   if (view.foreign) {
@@ -61,7 +81,7 @@ export function mountScene(mount, view, handlers) {
   const {phase, detail} = view.run;
   if (phase === "loading") mount.replaceChildren(note(view, "phase.loading"));
   else if (detail !== null) {
-    mount.replaceChildren(subject(view),
+    mount.replaceChildren(subject(view), ...stoppedResult(view, detail),
       participantDeck(detail, previous, {locale: view.locale, connection: view.connection},
         handlers));
   } else mount.replaceChildren(...nothingToShow(view));

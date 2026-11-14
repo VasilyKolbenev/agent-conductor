@@ -87,6 +87,8 @@ export function rosterOf(providers) {
     return {id: row.provider_id,
       name: typeof row.display_name === "string" ? row.display_name : row.provider_id,
       available: row.availability === "available",
+      taskRoad: row.task_road,
+      ...(typeof row.model_pin_supported === "boolean" ? {modelPinSupported: row.model_pin_supported} : {}),
       roads: (Array.isArray(row.controls) ? row.controls : [])
         .filter((one) => typeof one === "string"),
       channel: typeof channel?.channel === "string" ? channel.channel : null};
@@ -105,8 +107,19 @@ export function rosterState(providers) {
   return rosterOf(providers).length === 0 ? "none" : "ready";
 }
 
+//: Why the isolation was refused, read from the rows of the agents chosen for the roles and from no
+//: name: `login` when one of them signs in by subscription and its task road is refused (the pair
+//: `auth`, `task_road`), else `plain`. A row that serves no `task_road` claims no cause.
+export function boundaryCause(providers, chosen) {
+  const ids = new Set(Object.values(chosen ?? {}));
+  return providerRows(providers).some((row) => ids.has(row.provider_id)
+    && row.auth === "subscription" && row.task_road === "refused") ? "login" : "plain";
+}
+
 export function offersFor(role, roster) {
-  return roster.filter((row) => row.available && role.needs.every((need) => row.roads.includes(need)));
+  return roster.filter((row) => row.available && role.needs.every((need) => row.roads.includes(need))
+    && (row.taskRoad !== "review_only"
+      || (!role.needs.includes("dispatch") && role.verifies.length === 0)));
 }
 
 //: What is left of a harness's limit, or that it is not known. A reading that is missing,
@@ -151,8 +164,9 @@ function pick(role, ctx) {
   }
   const carries = role.needs.includes("dispatch");
   const fits = argvFit("", ctx.chars[role.role_id] ?? 0).fits;
-  const fitting = eligible.filter((row) => row.channel !== "argv" || !carries || fits);
-  if (fitting.length < eligible.length) notes.push("argv_not_fit");
+  const automatic = eligible.filter((row) => row.taskRoad !== "review_only");
+  const fitting = automatic.filter((row) => row.channel !== "argv" || !carries || fits);
+  if (fitting.length < automatic.length) notes.push("argv_not_fit");
   if (fitting.length === 0) return {provider: null, by: null, notes: [...notes, "none_eligible"]};
   const before = ctx.previous[role.role_id];
   if (fitting.some((row) => row.id === before)) return {provider: before, by: "previous", notes};
@@ -232,12 +246,14 @@ export function assignmentFrom(revisionNodes, planNodes, instances) {
 
 // -- the instruction fields --------------------------------------------------------------
 
-function entryOf(step, entries) {
-  if (Object.hasOwn(entries, step.step_id)) return entries[step.step_id];
+function entryOf(step, entries, dalio, pinned) {
+  const selected = entries[step.step_id];
+  if (Object.hasOwn(entries, step.step_id)
+      && (!pinned || (!step.instruction_from && selected.source !== "like"))) return selected;
   if (typeof step.instruction_from === "string") {
     return {source: "like", like: step.instruction_from, text: ""};
   }
-  const doer = roleKind(step.role_id) === "doer";
+  const doer = roleKind(step.role_id) === "doer" || (dalio && step.role_id === "role-implementer");
   return {source: doer ? "task" : "own", like: null, text: ""};
 }
 
@@ -246,9 +262,9 @@ function entryOf(step, entries) {
 //: empty; "like step X" is offered only where the wizard may write the flow (a cycle the product
 //: does not own), only to a step with no "like" of its own, and never to one others already
 //: follow (spec 6.2.4).
-export function fieldsOf(flow, entries, taskText, owned) {
+export function fieldsOf(flow, entries, taskText, owned, dalio = false, pinned = false) {
   const steps = dispatchSteps(flow);
-  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries)]));
+  const held = new Map(steps.map((step) => [step.step_id, entryOf(step, entries, dalio, pinned)]));
   return steps.map((step) => {
     const entry = held.get(step.step_id);
     const sharedWith = steps.filter((one) => held.get(one.step_id).source === "like"
@@ -258,6 +274,7 @@ export function fieldsOf(flow, entries, taskText, owned) {
       .map((one) => one.step_id) : [];
     const kind = roleKind(step.role_id);
     return {step_id: step.step_id, title: step.title ?? null, role_id: step.role_id,
+      instructionRef: step.ext?.arguments?.instruction_ref ?? `instruction-${step.step_id}`,
       kind: kind === "doer" || kind === "tester" ? kind : "custom",
       required: entry.source !== "like", source: entry.source, like: entry.like,
       sharedWith, costNote: entry.source === "like", likeChoices: choices,

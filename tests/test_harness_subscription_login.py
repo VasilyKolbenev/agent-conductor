@@ -16,7 +16,7 @@ and discarded for everything that is not the login.
 
 Driven against the fake harness, which records the argv, the config directory
 and the environment NAMES it was handed. Nothing here logs in, and nothing here
-needs a credential: what is proved is which directory the child is pointed at
+uses a real credential: what is proved is which directory the child is pointed at
 and which flag it is given, both of which are facts about this build.
 """
 from __future__ import annotations
@@ -76,7 +76,8 @@ def a_harness(tmp_path: Path, *, auth: str = "api_key", auth_home: str = "",
         protocol=CLAUDE_PROTOCOL, env_allow=tuple(sorted(environ)),
         auth=auth, auth_home=auth_home)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ,
+        confine_platform=None)  # the pre-R5 launch: a plain child (tests/_fakeboundary.py)
     return resolution.registry.resolve(CLAUDE_PROVIDER_ID), root, log
 
 
@@ -135,8 +136,9 @@ def test_a_pin_refuses_a_login_pair_the_config_door_would_refuse(
 def test_the_subscription_road_swaps_one_token_and_leaves_the_rest_alone(tmp_path):
     """Token by token, because "the same except for the login" is the claim."""
     api_key, _root, api_log = a_harness(tmp_path / "one")
+    home = a_login_home(tmp_path)
     subscription, _root2, sub_log = a_harness(
-        tmp_path / "two", auth="subscription", auth_home=AUTH_HOME)
+        tmp_path / "two", auth="subscription", auth_home=str(home))
 
     assert run_once(api_key, a_request()).outcome == "succeeded"
     assert run_once(subscription, a_request()).outcome == "succeeded"
@@ -171,12 +173,13 @@ def test_every_read_only_road_carries_the_same_isolation_flag(tmp_path):
 def test_a_subscription_child_is_pointed_at_the_directory_the_operator_pinned(
         tmp_path):
     """The whole of the login contract at the environment seam."""
+    home = a_login_home(tmp_path)
     adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=AUTH_HOME)
+        tmp_path, auth="subscription", auth_home=str(home))
 
     assert run_once(adapter, a_request()).outcome == "succeeded"
 
-    assert prompt_row(log)["claude_home"] == AUTH_HOME
+    assert prompt_row(log)["claude_home"] == str(home)
 
 
 def test_an_api_key_child_still_gets_a_minted_home_it_will_never_see_again(
@@ -196,9 +199,7 @@ def test_a_subscription_login_directory_is_not_swept_with_the_attempt_homes(
         tmp_path):
     """A login deleted after every attempt would have to be performed again
     before every run, which is not a supported login at all."""
-    kept = tmp_path / "auth" / "claude-code"
-    kept.mkdir(parents=True)
-    (kept / ".credentials.json").write_text("{}", encoding="utf-8", newline="\n")
+    kept = a_login_home(tmp_path)
     adapter, root, _log = a_harness(
         tmp_path, auth="subscription", auth_home=str(kept))
 
@@ -232,7 +233,8 @@ def a_codex_harness(tmp_path: Path, *, auth: str = "api_key",
         protocol=CODEX_PROTOCOL, env_allow=tuple(sorted(environ)),
         auth=auth, auth_home=auth_home)
     resolution = resolve_providers(
-        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ)
+        [config], root=root, clock=lambda: NOW, ids=_Ids(), environ=environ,
+        confine_platform=None)  # the pre-R5 launch: a plain child (tests/_fakeboundary.py)
     return resolution.registry.resolve(CODEX_PROVIDER_ID), root, log
 
 
@@ -248,8 +250,7 @@ def test_codex_moves_its_home_and_keeps_the_model_text_out_of_it(tmp_path):
     """
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     adapter, root, log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home))
 
@@ -266,15 +267,15 @@ def test_codex_moves_its_home_and_keeps_the_model_text_out_of_it(tmp_path):
         "the agent's last message was written where the login lives")
     asked = [row for row in _fakecodex.spawns(log)
              if _fakecodex.login_question(row["argv"])]
-    assert [row["argv"] for row in asked] == [["login", "status"]]
+    assert [row["argv"] for row in asked] == [
+        ["-c", 'cli_auth_credentials_store="file"', "login", "status"]]
 
 
 def test_codex_refuses_a_run_whose_login_is_missing(tmp_path):
     """The same refusal on the other harness, driven by the vendor's own exit."""
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     adapter, _root, log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home),
         **{_fakecodex.LOGIN_FAILS: "1"})
@@ -284,7 +285,7 @@ def test_codex_refuses_a_run_whose_login_is_missing(tmp_path):
     assert receipt.outcome == "failed"
     assert "reports no subscription login" in receipt.detail
     assert "CODEX_HOME" in receipt.detail
-    assert "run login" in receipt.detail, receipt.detail
+    assert 'run -c cli_auth_credentials_store="file" login' in receipt.detail, receipt.detail
     assert _fakecodex.task_spawns(log) == []
 
 
@@ -294,8 +295,9 @@ def test_a_missing_login_refuses_before_any_task_is_spawned(tmp_path):
     It names the variable and says who signs in; it quotes no byte of what the
     vendor's status command printed, because that answer describes an account.
     """
+    home = a_login_home(tmp_path)
     adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=AUTH_HOME,
+        tmp_path, auth="subscription", auth_home=str(home),
         **{_fakeclaude.LOGIN_FAILS: "1"})
 
     receipt = run_once(adapter, a_request())
@@ -316,8 +318,9 @@ def test_a_missing_login_refuses_before_any_task_is_spawned(tmp_path):
 def test_a_login_that_answers_lets_the_task_run(tmp_path):
     """The positive control, so the refusal above is not passing for a second
     reason: the same road with a login that answers spawns the task."""
+    home = a_login_home(tmp_path)
     adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=AUTH_HOME)
+        tmp_path, auth="subscription", auth_home=str(home))
 
     assert run_once(adapter, a_request()).outcome == "succeeded"
 
@@ -337,8 +340,9 @@ def test_the_api_key_road_is_never_asked_about_a_login(tmp_path):
 
 def test_the_status_command_this_build_asks_is_the_vendors_own(tmp_path):
     """Read for its EXIT CODE, and asked with the login directory in place."""
+    home = a_login_home(tmp_path)
     adapter, _root, log = a_harness(
-        tmp_path, auth="subscription", auth_home=AUTH_HOME)
+        tmp_path, auth="subscription", auth_home=str(home))
 
     run_once(adapter, a_request())
 
@@ -357,7 +361,7 @@ def test_the_status_command_this_build_asks_is_the_vendors_own(tmp_path):
     # read whatever a previous task left under `.claude/` there.
     assert asked[0]["argv"] == ["--safe-mode", "auth", "status", "--json"]
     assert list(LOGIN_STATUS_ARGV) == ["auth", "status", "--json"]
-    assert asked[0]["claude_home"] == AUTH_HOME
+    assert asked[0]["claude_home"] == str(home)
 
 
 # -- what a spawn may leave in a directory this build cannot delete ------------
@@ -369,6 +373,15 @@ def a_login_home(tmp_path: Path) -> Path:
     home.mkdir(parents=True)
     (home / ".credentials.json").write_text(
         '{"token": "SYNTHETIC"}', encoding="utf-8", newline="\n")
+    return home
+
+
+def a_codex_login_home(tmp_path: Path) -> Path:
+    """A plain fake primary credential, before status or config is tested."""
+    home = tmp_path / "auth" / "codex"
+    home.mkdir(parents=True)
+    (home / "auth.json").write_text(
+        '{"tokens": {"access_token": "SYNTHETIC"}}', encoding="utf-8", newline="\n")
     return home
 
 

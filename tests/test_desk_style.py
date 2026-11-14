@@ -74,6 +74,10 @@ FOCUSED = ("focus-visible",)
 #: is (chain, mark property, floor, surface-token override or None); None
 #: composites the surface by walking the chain's own backgrounds.
 MEASURED = {
+    ".desk-ask__setup-link": [(BODY + [E("section", "desk-wizard", "desk-ask"), E("section"),
+        E("a", "desk-ask__setup-link")], "color", TEXT_MIN, None)],
+    ".desk-ask .desk-ask__primary": [(BODY + [E("section", "desk-wizard", "desk-ask"),
+        E("footer", "desk-wizard__foot"), E("button", "desk-ask__primary")], "color", TEXT_MIN, None)],
     "body": [(BODY, "color", TEXT_MIN, None)],
     ".desk-status": [(TOP + [E("p", "desk-status")], "color", TEXT_MIN, None)],
     ".desk-note": [(TOP + [E("p", "desk-note")], "color", TEXT_MIN, None)],

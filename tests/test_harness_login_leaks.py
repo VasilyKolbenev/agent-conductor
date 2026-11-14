@@ -33,6 +33,12 @@ from tests import _fakeclaude
 from tests.test_command_claude_transport import NOW, _Ids, a_request, run_once
 from tests.test_harness_subscription_login import a_harness, a_login_home
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 REFRESHED = "sk-ant-oat01-SYNTHETIC-REFRESHED-VALUE-NOT-A-REAL-CREDENTIAL"
 #: Words only the CHILD's own review output carries. The fixture's seed document
 #: is an artifact in the same run, so a needle both could hold would call a
@@ -643,10 +649,9 @@ def test_the_value_channel_carries_bytes_and_refuses_anything_else():
     assert "kept" not in repr(spec)
 
 
-def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
+def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_the_task(
         tmp_path):
-    """A login that cannot be read is a scan that cannot be widened, not a
-    reason to refuse a run the login preflight already admitted."""
+    """An unreadable credential contributes no values and cannot authorize a task."""
     from conductor.command.adapters import login_home
 
     home = a_login_home(tmp_path)
@@ -656,7 +661,7 @@ def test_a_login_this_build_cannot_read_widens_nothing_and_refuses_nothing(
         tmp_path, auth="subscription", auth_home=str(home))
 
     assert adapter._login_secrets() == ()
-    assert run_once(adapter, a_request()).outcome == "succeeded"
+    assert run_once(adapter, a_request()).outcome == "failed"
     assert login_home.credential_values(
         str(home), (".credentials.json",)) == ()
 
@@ -671,6 +676,7 @@ def test_the_two_declared_lists_are_the_measured_ones():
     """
     from conductor.command.adapters.claude_code import CLAUDE_PROFILE
     from conductor.command.adapters.codex_cli import CODEX_PROFILE
+    from conductor.command.adapters.grok_build import GROK_PROFILE
 
     # `session-env` and `shell-snapshots`: MEASURED on the first real login (23.09.2026),
     # written by a spawn that starts a shell; left undeclared they failed every such task.
@@ -682,13 +688,30 @@ def test_the_two_declared_lists_are_the_measured_ones():
         "projects", "file-history")
     assert CLAUDE_PROFILE.login_expected == (
         ".claude.json", "backups", ".credentials.json")
-    assert CODEX_PROFILE.login_scratch == ("tmp",)
-    assert CODEX_PROFILE.login_expected == ("skills", "auth.json", "version.json")
+    # P6/P7 and P11 measured 0.164.0: exact state names, cache and installation UUID.
+    assert CODEX_PROFILE.login_scratch == (
+        "tmp", "log", ".sandbox",
+        "goals_1.sqlite", "goals_1.sqlite-shm", "goals_1.sqlite-wal",
+        "logs_2.sqlite", "logs_2.sqlite-shm", "logs_2.sqlite-wal",
+        "memories_1.sqlite", "memories_1.sqlite-shm", "memories_1.sqlite-wal",
+        "queue_1.sqlite", "queue_1.sqlite-shm", "queue_1.sqlite-wal",
+        "state_5.sqlite", "state_5.sqlite-shm", "state_5.sqlite-wal")
+    assert CODEX_PROFILE.login_expected == (
+        "skills", "auth.json", "version.json", "models_cache.json", "installation_id")
     # `config.toml` moved from tolerated to REFUSED: it carries this vendor's
     # project trust map, and a trusted work tree re-admits the configuration an
     # empty per-attempt home had excluded.
-    assert CODEX_PROFILE.login_forbidden == ("config.toml",)
+    assert CODEX_PROFILE.login_forbidden == ("config.toml", ".env", "environments.toml")
     assert CLAUDE_PROFILE.login_forbidden == ("settings.json", "CLAUDE.md")
+    # Grok 1.0.5. `models_cache.json` and `worktrees.db`: MEASURED on the first real login
+    # (28.10.2026, H5-HARNESS-CHECK), written by the spawn that starts the agent, so they are
+    # per-run state like the rest. Only those names: their `-wal` and `-shm` are NOT declared, so
+    # a spawn that leaves one is a residue and a refusal rather than a quiet cleanup.
+    assert GROK_PROFILE.login_scratch == (
+        "logs", "sessions", "active_sessions.json", "active_sessions.lock",
+        ".config-init.lock", "managed_config.lock", "models_cache.json", "worktrees.db")
+    assert GROK_PROFILE.login_expected == (
+        "auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md")
 
 
 @pytest.mark.parametrize("bad", [

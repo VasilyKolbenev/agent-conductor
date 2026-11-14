@@ -71,7 +71,7 @@ let selectionRead = Promise.resolve(true);
 let panels = null;
 // The bound project comes from the first hash or claim; only the hash's own identity is written
 // back. Embedded origin and announced location belong to this page, never browser storage.
-let bound = null;
+let bound = null, verifiedProject = null;
 let hashProject = null;
 let lastWritten = readDeskHash("");
 let seen = "";
@@ -228,7 +228,7 @@ function addressOf(wizardKeys) {
 function remember(wizardKeys) {
   if (state.foreign || location.hash !== seen) return;
   const address = addressOf(wizardKeys);
-  history.replaceState(null, "", address);
+  if (address !== location.hash) history.replaceState(history.state, "", address);
   seen = location.hash;
   lastWritten = readDeskHash(address);
   shown = where();
@@ -395,8 +395,8 @@ async function readChoice(taskId, runId = null, fresh = () => true) {
   return landed.phase === "ready";
 }
 
-//: The name of a person, in the grammar every id of the routes has: it is what the routes will
-//: take as an actor, so the desk refuses here what they would refuse there.
+//: The name of a person, in the desk's shared compatibility range (ADR-4d, canon row L42): the
+//: id grammar, because a gate decision's receipt takes only an id (`command/contracts.py`).
 const ACTOR = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 //: Put the keyboard where a press that replaced its own control means it to be.
@@ -475,16 +475,15 @@ function openFlag(open) {
   remember();
 }
 
-//: The address says `panel=continue` (spec 4.5.3, 5.8): open the block and put the keyboard in it
-//: -- at once if it stands, and when the read of the flag lands if it does not. This only
-//: selects and focuses: nothing is written. A block the person opened themselves is not a request
-//: of the address, so the keyboard is left where it is (`focus` false).
+//: The address asks to open the block. Move the keyboard within the desk when the hub has
+//: handed it over. If the operator stayed in the hub or returned to it during the read,
+//: opening the block leaves the keyboard there. A manual toggle keeps its own focus.
 function showContinue(focus) {
   panels?.open(null);
   wantContinue = true;
   if (state.flag === null) return;
   move({flag: Object.freeze({...state.flag, open: true})});
-  if (focus) focusOn("flag:summary");
+  if (focus && document.hasFocus()) focusOn("flag:summary");
   remember();
 }
 
@@ -528,7 +527,7 @@ async function loadFlag() {
   move({flag: Object.freeze({record, draft: null, open: wantContinue, saving: false,
     refused: null})});
   if (wantContinue) {
-    focusOn("flag:summary");
+    if (document.hasFocus()) focusOn("flag:summary");
     remember();
   }
 }
@@ -689,9 +688,9 @@ async function readClaim() {
 
 //: Bind an unnamed address to the claim; refuse a conflicting named address.
 function bindToClaim(address, claim) {
+  verifiedProject = projectOf(claim) || null;
   if (address.project !== null) return !claimNamesAnotherProject(bound, claim);
-  const named = projectOf(claim);
-  if (typeof named === "string") bound = named;
+  if (verifiedProject !== null) bound = verifiedProject;
   return true;
 }
 
@@ -782,7 +781,7 @@ function boot() {
   wizardHost = createWizardHost({mount: byId("deskWizard"), trigger: byId("deskNewTask"),
     door, locale, nonce: () => crypto.randomUUID(), onForeign: enterForeign,
     onState: () => { render(); remember(); }, onHash: remember, onExit: wizardExited});
-  wizardHost.bind({actor: () => state.actor, mode: () => state.mode,
+  wizardHost.bind({actor: () => state.actor, mode: () => state.mode, project: () => verifiedProject,
     tasks: () => state.tasks.list, foreign: () => state.foreign, applied: toggles.applied});
   wizardHost.render();
   window.addEventListener("pagehide", stopStream);

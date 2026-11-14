@@ -28,23 +28,26 @@
 //   cycle {choice, chosenBy, generation, flow, flowFor, flowGeneration, draft, status, refusal,
 //          settled, boundKey},  (draft: what the last flow answer said about the standing draft)
 //   roles {owner, instructions}, history {runs, revisions},
+//   git {open, door, panel, mode, preview, list, seq, sending, result, chain}: the git block of
+//          step 2 (`desk-wizard-git-run.js` says what each field is),
 //   run {phase, pressed, lang, settled, done, attempts, seq, prep, ...}: the chain of step 5
 //   (`desk-wizard-prep.js` says what each field is).
 import {taskTitle, isTaskId} from "./studio-tasks-model.js";
 import {GIT_EXITS, GIT_SENTENCES, MATERIAL_KINDS, REFUSALS, bodyOf, documentCard, estimateOf,
   gitFacts, instructionsRow, isComplete, isDocumentRow, isMaterialKind, isOid, pickerOf,
-  textCard} from "./desk-wizard-materials.js";
-import {WIZARD_STARTERS, cardsOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
+  applyTextEdits, textCard, textEdit} from "./desk-wizard-materials.js";
+import {WIZARD_STARTERS, cardsOf, choiceOf, factsOf, isFlowState, preselect} from "./desk-wizard-cycle.js";
 import {NOTES, QUOTA_REASONS, ROLE_KINDS, argvFit, offersFor, quotaOf, roleKind, rolesOf,
   rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
-import {BUILT_STEPS, LIMITS, STEPS, briefDocument, evolve, frozen, inputChars, taskText,
-  utf8Bytes} from "./desk-wizard-base.js";
-import {answerHistory, assignRole, assignmentView, bindingNow, editInstruction, hasProviders,
+import {BUILT_STEPS, GUIDE_STAGES, LIMITS, STEPS, briefDocument, evolve, frozen, guideStage,
+  inputChars, restoreAnswers, taskText, titleFromGoal, utf8Bytes} from "./desk-wizard-base.js";
+import {answerHistory, assignRole, assignmentView, bindingNow, boundaryOf, canEditModels, changeModel, editInstruction, reconcileModelPins,
+  hasProviders,
   historyAsks, instructionFields, likeInstruction, ownInstruction,
   previousAssignment, rolesGate, rolesPublication, rosterStatus, syncBinding}
   from "./desk-wizard-team.js";
 import {flowWriteRequest} from "./desk-wizard-input.js";
-import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
+import {cardActor, cardBudget, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, cardSkip,
   cardSkipCancel, cardSkipConfirm, cardStart, cardTick,
   chainLinks, isPrepared, landCard, landRun, launchFacts, launchWanted, resumeEdit,
   resumeGate as judgeResume, resumeOpening, resumeRestart, resumeView, runAdopt, runBump,
@@ -52,6 +55,9 @@ import {cardActor, cardEnqueue, cardInfo, cardRefresh, cardReread, cardSeen, car
   prepareGate as judgePrepare} from "./desk-wizard-run.js";
 import {CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, initialLaunch}
   from "./desk-wizard-launch.js";
+import {FIRST_COMMIT_CONFIRM_OPEN, initialGit, pendingOf} from "./desk-wizard-git.js";
+import {FIRST_WORDS, GIT_HANDLERS, chainNext, closeBusy, closeBusyWord, firstFacts, gitWanted,
+  landGit, pressBlock} from "./desk-wizard-git-run.js";
 import {SKIP_STATUS, SKIP_STEPS, SKIP_STOPS} from "./desk-wizard-skip.js";
 import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, initialRun}
   from "./desk-wizard-prep.js";
@@ -59,31 +65,34 @@ import {EXITS as RESUME_EXITS, LINKS as CHAIN_LINKS, STATUSES as LINK_STATUSES, 
 //: The one starter the hash may name (spec 4.5.2). The two ready cycles the wizard offers as
 //: cards are the cycle module's, re-exported here as the wizard's one vocabulary.
 export const HASH_STARTERS = Object.freeze(["desk-starter-docs"]);
-export {STEPS, BUILT_STEPS, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
+export {STEPS, BUILT_STEPS, GUIDE_STAGES, guideStage, restoreAnswers, LIMITS, MATERIAL_KINDS, WIZARD_STARTERS, argvFit, briefDocument,
   inputChars, offersFor, quotaOf, roleKind, rolesOf, rosterOf, rosterState, rosterStatus,
   taskText, utf8Bytes,
-  assignmentView, hasProviders, instructionFields, previousAssignment,
+  assignmentView, boundaryOf, hasProviders, instructionFields, previousAssignment,
   GIT_EXITS, GIT_SENTENCES, NOTES, QUOTA_REASONS, REFUSALS, ROLE_KINDS,
   CHAIN_LINKS, LINK_STATUSES, RESUME_EXITS, CARD_LINES, LAUNCH_NOTES, LAUNCH_REFUSALS,
   LAUNCH_STAGES, LAUNCH_WHY, SKIP_STATUS, SKIP_STEPS, SKIP_STOPS, chainLinks, flowWriteRequest,
-  launchFacts, resumeView, wizardExit, wizardHash};
+  launchFacts, resumeView, wizardExit, wizardHash,
+  FIRST_WORDS, closeBusy, closeBusyWord, firstFacts, pressBlock};
 export const suggestAssignment = suggest;
+export {canEditModels};
 //: Every reason a step can give for not being complete, as a closed code. Each has a message
 //: in the catalogue, and a guard holds this list to the codes the gates really return.
 export const REASONS = Object.freeze([
   "title_invalid", "brief_empty", "idea_empty", "brief_too_large",
-  "git_stops", "git_reading", "git_failed", "starter_needs_git", "materials_over_count",
+  "git_stops", "git_reading", "git_failed", "git_tool_unavailable", "git_unfinished", "starter_needs_git",
+  "materials_over_count", "source_needed",
   "material_incomplete", "materials_over_bytes",
   "cycle_none", "flow_pending", "flow_conflict", "flow_changed_elsewhere", "flow_refused",
   "flow_unknown", "flow_unpublishable",
-  "no_providers", "roster_pending", "roles_unassigned", "instruction_empty",
+  "no_providers", "roster_pending", "roles_unassigned", "model_id_invalid", "instruction_empty",
   "instruction_too_large",
   "instruction_argv_over", "binding_pending", "binding_rows", "seed_needs_git",
   "resume_pending", "prepare_not_done"]);
 //: The controls whose door a later slice opens. Each is drawn disabled with its reason and
 //: never as a button that does nothing.
-export const LATER = Object.freeze(["connect_git", "first_commit",
-  "from_starter_docs", "build_own", "make_project_cycle", "unpin_project_cycle"]);
+export const LATER = Object.freeze([
+  "from_starter_docs", "make_project_cycle", "unpin_project_cycle"]);
 
 export function isLater(control) {
   return LATER.includes(control);
@@ -139,6 +148,8 @@ export function initialWizard(opening) {
   const actor = typeof opening.actor === "string" ? opening.actor : "";
   return frozen({step: resumed ? "prepare" : "task", opened: false, asked: [], closing: null,
     nonce: opening.nonce, mode: {starterId, view: opening.viewMode === true},
+    firstRunGuide: opening.firstRunGuide === true, guided: opening.firstRunGuide === true,
+    titleEdited: written, budgetDepth: "balanced", budgetChosen: false,
     task: {taskId: opening.newTaskId, title, brief: "", hint: "", idea: "", written},
     reads: {},
     materials: {items: [], counter: 0, picker: false, refusal: null,
@@ -149,7 +160,8 @@ export function initialWizard(opening) {
       refusal: null, settled: [], boundKey: "null"},
     roles: {owner: {}, instructions: {}},
     history: {runs: {}, revisions: {}}, run: resumed ? resumeOpening(opening) : initialRun(),
-    launch: initialLaunch(actor)});
+    launch: initialLaunch(actor),
+    git: initialGit(FIRST_COMMIT_CONFIRM_OPEN, opening.setupDoor)});
 }
 
 // -- step 1: the task ------------------------------------------------------------------
@@ -179,7 +191,7 @@ function taskPublication(state, lang) {
 
 //: Where the agents get their code, said from the one git read and the mode.
 export function gitReading(state) {
-  return gitFacts(state.reads.git, state.mode);
+  return gitFacts(state.reads.git, state.mode, pendingOf(state.reads.git));
 }
 
 export function availableKinds(state) {
@@ -204,14 +216,18 @@ export function documentPicker(state) {
     state.materials.items);
 }
 
-//: Closing with cards that no server holds yet loses them, so it asks first (spec 6.2.2).
+//: Closing with cards that no server holds yet loses them, and closing while a request works
+//: leaves its outcome unseen, so it asks first (spec 6.2.2).
 export function closeNeedsWarning(state) {
-  return state.materials.items.length > 0;
+  return state.materials.items.length > 0 || closeBusy(state);
 }
 
 function materialsGate(state) {
-  const stop = gitReading(state).stop;
-  if (stop !== null) return stop;
+  const git = gitReading(state);
+  if (state.guided && git.state === "unavailable") return "git_tool_unavailable";
+  if (git.stop !== null) return git.stop;
+  if (state.guided && !["repo", "not_active"].includes(git.state)
+      && !(git.state === "not_git" && state.materials.withoutGit)) return "source_needed";
   const estimate = materialsEstimate(state);
   if (estimate.overCount) return "materials_over_count";
   if (!state.materials.items.every(isComplete)) return "material_incomplete";
@@ -227,7 +243,7 @@ function materialsPublication(state, lang) {
 // -- step 3: the cycle -------------------------------------------------------------------
 
 export function cycleCards(state) {
-  return cardsOf(state.reads, state.mode.starterId);
+  return cardsOf(state.reads, state.mode.starterId, state.firstRunGuide);
 }
 
 //: The card picked beforehand, and where the choice came from (spec 7.10).
@@ -260,9 +276,13 @@ function cyclePublication(state) {
 function applyPreselection(state) {
   const cycle = state.cycle;
   if (cycle.choice !== null || state.mode.starterId !== null) return state;
-  const found = preselect(state.reads);
-  if (!found.ready || found.choice === null) return state;
-  return evolve(state, {cycle: {...cycle, choice: found.choice, chosenBy: "preselection",
+  const found = preselect(state.reads, state.firstRunGuide);
+  if (!found.ready) return state;
+  const suggested = state.guided && !found.pinnedUnread && !found.workflowsUnread
+    && cycleCards(state).find((card) => card.id === "dalio-v6" && card.kind === "starter");
+  const choice = found.choice ?? (suggested ? {kind: "starter", workflowId: suggested.id} : null);
+  if (!choice) return state;
+  return evolve(state, {cycle: {...cycle, choice, chosenBy: found.choice ? "preselection" : "suggested",
     generation: cycle.generation + 1}});
 }
 
@@ -294,9 +314,9 @@ function chooseCycle(state, event) {
   const card = cycleCards(state).find((one) => one.id === event.id && one.kind !== "build");
   if (!card) return state;
   const cycle = state.cycle;
-  const same = cycle.choice?.workflowId === card.workflowId;
-  return evolve(state, {cycle: {...restarted(cycle, !same), choice: {kind: card.kind,
-    workflowId: card.workflowId}, chosenBy: "owner"}});
+  const choice = choiceOf(card, state.firstRunGuide);
+  const same = cycle.choice?.workflowId === choice.workflowId && cycle.choice?.revision === choice.revision;
+  return evolve(state, {cycle: {...restarted(cycle, !same), choice, chosenBy: "owner"}});
 }
 
 // -- the steps and their gates ---------------------------------------------------------
@@ -319,6 +339,8 @@ function gateOf(state, step) {
 }
 
 export function nextStep(state) {
+  if (state.guided && state.step === "task" && materialsGate(state)) return "materials";
+  if (state.guided) return GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) + 1]?.[1] ?? null;
   return BUILT_STEPS[BUILT_STEPS.indexOf(state.step) + 1] ?? null;
 }
 
@@ -329,7 +351,11 @@ export function nextStep(state) {
 //: that fails again after it was left (a read lands late). It does not say whether a step
 //: follows: the last built step is complete and still has nowhere to go.
 export function canAdvance(state) {
-  const held = [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
+  const last = state.guided && state.step === "task" && nextStep(state) === "materials"
+    && !["reading", "unavailable", "unsupported", "not_repo_root"].includes(gitReading(state).state)
+    ? "task" : guideStage(state.step)?.[2];
+  const held = state.guided ? BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(last) + 1)
+    : [state.step, ...BUILT_STEPS.slice(0, BUILT_STEPS.indexOf(state.step))];
   for (const step of held) {
     const reason = gateOf(state, step);
     if (reason !== null) return Object.freeze({ok: false, reason, step});
@@ -436,9 +462,9 @@ function cycleAsks(state) {
   if (cycle.status === "conflict") {
     return [flowReadAsk(`read:flow:${cycle.generation}:reread`, id)];
   }
-  if (cycle.draft?.for !== id) return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
+  if (!cycle.choice.revision && cycle.draft?.for !== id) return [flowReadAsk(`read:flow:${cycle.generation}`, id)];
   const binding = bindingNow(state);
-  if (cycle.choice.kind === "saved" && binding === null) return [];
+  if (cycle.choice.kind === "saved" && !cycle.choice.revision && binding === null) return [];
   const ask = flowWriteRequest(state, {publish: null, binding});
   if (ask === null) return [];
   const busy = state.asked.some((sent) => sent.startsWith("write:flow:") && sent !== ask.id
@@ -455,7 +481,7 @@ export function wantedAsks(state) {
   const filling = state.run.resume === null
     ? [...materialAsks(state), ...cycleAsks(state), ...historyAsks(state)] : [];
   return [...OPENING_READS.map(([name, target]) => readAsk(name, target)), ...filling,
-    ...runWanted(state), ...launchWanted(state)];
+    ...runWanted(state), ...launchWanted(state), ...gitWanted(state)];
 }
 
 function readOf(result) {
@@ -506,7 +532,9 @@ function landFlow(state, ask, result, wasWrite) {
     return evolve(state, {cycle: {...cycle, settled}});
   }
   const ready = cycle.choice.kind === "starter";
-  if (result.status === "accepted" && isFlowState(result.payload, ask.subject, ready)) {
+  const expected = ask.body?.inspect_revision;
+  if (result.status === "accepted" && isFlowState(result.payload, ask.subject, ready)
+      && (!expected || result.payload.published?.revision === expected)) {
     return landAccepted(state, ask, result.payload, wasWrite);
   }
   const code = result.status === "accepted" ? "answer_unreadable" : result.code ?? result.status;
@@ -524,7 +552,10 @@ function answerDocument(state, ask, result) {
   if (!card) return state;
   const payload = result.payload;
   if (result.status === "accepted" && typeof payload?.content === "string") {
-    return replaceCard(state, card, {content: payload.content, fetched: true,
+    const applied = !card.edits?.length ? payload.content
+      : payload.git_oid === card.gitOid ? applyTextEdits(payload.content, card.edits) : null;
+    if (applied === null) return replaceCard(state, card, {content: "", blocked: "read_failed"}, "read_failed");
+    return replaceCard(state, card, {content: applied, fetched: true,
       gitOid: isOid(payload.git_oid) ? payload.git_oid : card.gitOid, blocked: null});
   }
   const reason = payload?.detail?.reason ?? result.code ?? result.status;
@@ -542,10 +573,16 @@ const CARD_ASKS = Object.freeze(["launch_queue", "launch_automation", "launch_ru
   "launch_holder", "launch_preview", "launch_prep", "launch_authorize", "launch_enqueue",
   "launch_skip_enqueue", "launch_skip_order", "launch_skip_pause", "launch_skip_resume"]);
 
+//: The asks of the git block: the four bodies of the setup route (a continue is a confirm).
+const GIT_ASKS = Object.freeze(["git_init", "git_exclude", "git_preview", "git_confirm"]);
+
 const ANSWERS = {...Object.fromEntries([...READ_NAMES, "documents"]
   .map((name) => [name, answerRead(name)])),
   ...Object.fromEntries(CHAIN_ASKS.map((name) => [name, landRun])),
-  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])), document: answerDocument,
+  ...Object.fromEntries(CARD_ASKS.map((name) => [name, landCard])),
+  ...Object.fromEntries(GIT_ASKS.map((name) => [name, landGit])), document: answerDocument,
+  //: The git read lets a starter's chain go on from its first link to its second.
+  git: (state, ask, result) => chainNext(answerRead("git")(state, ask, result)),
   previous_run: answerHistory("runs"), previous_revision: answerHistory("revisions"),
   flow: (state, ask, result) => landFlow(state, ask, result, true),
   flow_read: (state, ask, result) => landFlow(state, ask, result, false)};
@@ -561,8 +598,11 @@ function answered(state, event) {
   return Object.hasOwn(ANSWERS, ask.name) ? ANSWERS[ask.name](state, ask, result) : state;
 }
 
+//: The git read is held while a press of the git block works: a read that meets the project in
+//: the middle of a write says nothing about it, and the answer asks for the read again anyway.
 function reread(state, event) {
   if (!READ_NAMES.includes(event.name) && event.name !== "documents") return state;
+  if (event.name === "git" && closeBusy(state)) return state;
   const {[event.name]: _dropped, ...reads} = state.reads;
   return evolve(state, {reads, asked: state.asked.filter((id) => id !== `read:${event.name}`)});
 }
@@ -631,7 +671,9 @@ function editMaterial(state, event) {
   const card = cardOf(state, event.key);
   if (!card || typeof event.value !== "string" || !editable(card, event.field)
       || card[event.field] === event.value) return state;
-  return replaceCard(state, card, {[event.field]: event.value});
+  const editedCopy = card.kind === "project_doc" && card.fetched && event.field === "content";
+  const edits = editedCopy ? {edits: [...(card.edits ?? []), textEdit(card.content, event.value)]} : {};
+  return replaceCard(state, card, {[event.field]: event.value, ...edits});
 }
 
 function removeMaterial(state, event) {
@@ -660,16 +702,25 @@ function editTask(field, allowed) {
   return (state, event) => {
     if (typeof event.value !== "string" || state.task[field] === event.value) return state;
     if (!allowed(state) || (field === "title" && state.task.written)) return state;
-    return evolve(state, {task: {...state.task, [field]: event.value}});
+    const propose = state.guided && field === "brief" && !state.titleEdited && !state.task.written;
+    return evolve(state, {titleEdited: state.titleEdited || field === "title",
+      task: {...state.task, ...(propose ? {title: titleFromGoal(event.value)} : {}), [field]: event.value}});
   };
 }
 
 const HANDLERS = {
   open: (state) => (state.opened ? state : evolve(state, {opened: true})),
   goto: (state, event) => moveTo(state, event.step),
+  "guide-mode": (state) => state.firstRunGuide && !state.run.pressed
+    ? evolve(state, {guided: !state.guided}) : state,
   next: (state) => (canAdvance(state).ok && nextStep(state) !== null
     ? moveTo(state, nextStep(state)) : state),
   back: (state) => {
+    if (state.guided) {
+      if (state.step === "materials") return moveTo(state, "task");
+      const previous = GUIDE_STAGES[GUIDE_STAGES.indexOf(guideStage(state.step)) - 1];
+      return previous && !state.run.pressed ? moveTo(state, previous[1]) : state;
+    }
     const at = BUILT_STEPS.indexOf(state.step);
     return at > 0 ? evolve(state, {step: BUILT_STEPS[at - 1]}) : state;
   },
@@ -686,6 +737,7 @@ const HANDLERS = {
   "cycle-choose": chooseCycle,
   "cycle-retry": retryFlow,
   "role-assign": assignRole,
+  "role-model": changeModel,
   "instruction-edit": editInstruction,
   "instruction-own": ownInstruction,
   "instruction-like": likeInstruction,
@@ -703,10 +755,12 @@ const HANDLERS = {
   "resume-edit": resumeEdit,
   "resume-restart": resumeRestart,
   tick: cardTick,
-  "actor-edit": cardActor,
+  "actor-edit": (state, event) => (closeBusy(state) ? state : cardActor(state, event)),
+  ...GIT_HANDLERS,
   "launch-start": cardStart,
   "launch-enqueue": cardEnqueue,
   "launch-refresh": cardRefresh,
+  "launch-budget": cardBudget,
   "launch-reread": cardReread,
   "launch-seen": cardSeen,
   "launch-info": cardInfo,
@@ -728,7 +782,11 @@ export function stepWizard(state, event) {
   if (!event || !Object.hasOwn(HANDLERS, event.type)) return {state, asks: []};
   const changed = HANDLERS[event.type](state, event);
   if (changed === state) return {state, asks: []};
-  const next = syncBinding(changed);
+  let next = syncBinding(reconcileModelPins(changed));
+  const bindingEdited = next.roles.models !== state.roles.models || event.type === "role-assign";
+  if (state.launch.preview && state.run.phase === "review" && bindingEdited && canEditModels(state) && !isPrepared(next)) {
+    next = evolve(next, {launch: initialLaunch(state.launch.actor)});
+  }
   const asks = wantedAsks(next).filter((ask) => !next.asked.includes(ask.id));
   if (asks.length === 0) return {state: next, asks};
   return {state: evolve(next, {asked: [...next.asked, ...asks.map((ask) => ask.id)]}), asks};

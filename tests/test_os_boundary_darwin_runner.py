@@ -54,7 +54,7 @@ def test_a_sandboxed_child_that_outlives_its_timeout_dies_with_the_process_it_st
     assert time.monotonic() - started < _PROMPTLY, "the runner waited out an orphan"
     assert outcome.status == "timed_out", outcome
     assert rb.runner.active_tokens() == () and rb.scope.retired == [True]
-    assert grandchild.is_gone(), "the grandchild outlived the process group"
+    assert grandchild.wait_gone(), "the grandchild outlived the process group"
 
 
 @darwin_only
@@ -70,7 +70,7 @@ def test_a_sandboxed_child_started_and_stopped_by_token_leaves_no_live_process(
     assert time.monotonic() - started < _PROMPTLY, "stop waited out an orphan"
     assert outcome.status == "stopped"
     assert rb.runner.active_tokens() == () and rb.scope.retired == [True]
-    assert grandchild.is_gone() and leader.is_gone()
+    assert grandchild.wait_gone() and leader.is_gone()
 
 
 @darwin_only

@@ -318,6 +318,12 @@ class DrainChild:
                 f"the child was still running {timeout}s after the stop request\n"
                 f"child stderr:\n{self.stderr_tail()}") from None
 
+    def expect_exit(self, expected: int, timeout: float = WAIT) -> None:
+        """The exit code, judged with the child's stderr: a traceback names the line that died."""
+        code = self.wait_exit(timeout)
+        assert code == expected, (
+            f"the child exited with {code}, not {expected}\nchild stderr:\n{self.stderr_tail()}")
+
     def finish(self) -> None:
         for number in range(1, 5):
             self.release(number)

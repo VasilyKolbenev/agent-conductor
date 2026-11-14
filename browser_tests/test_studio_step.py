@@ -396,7 +396,7 @@ def _open(chromium: Browser, bench: _Bench) -> tuple[Page, _Window]:
     context = chromium.new_context(viewport={"width": 1700, "height": 1400})
     page = context.new_page()
     window = _Window(page)
-    page.goto(bench.url, wait_until="load")
+    page.goto(bench.url + "panel/studio.html", wait_until="load")
     _settle(page)
     return page, window
 

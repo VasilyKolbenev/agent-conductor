@@ -43,7 +43,7 @@ def blob_oid(data: bytes, object_format: str) -> str:
                        + b"\0" + data).hexdigest()
 
 
-def _path(value: object) -> str:
+def result_path(value: object) -> str:
     if (type(value) is not str or not value or len(value) > 4096
             or any(char in value for char in '\\"<>|?*')
             or any(ord(char) < 32 or ord(char) == 127 for char in value)):
@@ -130,7 +130,7 @@ def build_snapshot(base: Mapping[str, FileImage], current: Mapping[str, FileImag
             if name in current:
                 raise SnapshotRefused("reserved_path")
             continue
-        _path(name)
+        result_path(name)
         if name.casefold() in folded:
             raise SnapshotRefused("case_collision")
         folded.add(name.casefold())
@@ -153,6 +153,13 @@ def build_snapshot(base: Mapping[str, FileImage], current: Mapping[str, FileImag
 
 def read_manifest(payload: bytes, *, object_format: str) -> tuple[ManifestRow, ...]:
     """Read only canonical, closed rows; duplicate JSON keys cannot be canonical."""
+    if object_format not in {"sha1", "sha256"}:
+        raise SnapshotRefused("snapshot_damaged")
+    return read_manifest_index(payload, object_format=object_format)
+
+
+def read_manifest_index(payload: bytes, *, object_format=None) -> tuple[ManifestRow, ...]:
+    """Read canonical rows, inferring their common OID width for historical display."""
     if len(payload) > MAX_MANIFEST_BYTES:
         raise SnapshotRefused("result_too_large")
     try:
@@ -161,6 +168,8 @@ def read_manifest(payload: bytes, *, object_format: str) -> tuple[ManifestRow, .
                                           for row in values):
             raise ValueError("shape")
         rows = tuple(ManifestRow(**row) for row in values)
+        if object_format is None:
+            object_format = "sha256" if rows and len(rows[0].git_oid) == 64 else "sha1"
         _validate_rows(rows, object_format)
         if manifest_bytes(rows) != payload:
             raise ValueError("noncanonical")
@@ -178,7 +187,7 @@ def _validate_rows(rows: tuple[ManifestRow, ...], object_format: str) -> None:
     for row in rows:
         if type(row) is not ManifestRow:
             raise SnapshotRefused("snapshot_damaged")
-        names.append(_path(row.path))
+        names.append(result_path(row.path))
         if (row.state not in {"added", "modified", "deleted"}
                 or row.mode not in {"100644", "100755"}
                 or type(row.length) is not int or row.length < 0

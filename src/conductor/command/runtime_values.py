@@ -36,6 +36,10 @@ class AuthorizationError(RuntimeError):
     """A confirmation fact is changed or stale; the action is refused before preparation."""
 
 
+class ProjectRecoveryRequired(AuthorizationError):
+    """The checked project owner explicitly requires recovery before further execution."""
+
+
 class ProposalNeedsRebinding(AuthorizationError):
     """An old proposal needs a new material-bound preview before fresh effects."""
 

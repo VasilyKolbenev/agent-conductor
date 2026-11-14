@@ -45,6 +45,12 @@ from tests.test_command_task_scope_authority import (
     _task_spawns, place)
 from tests.test_cycle_harness_check_fix import cycle  # noqa: F401 -- fixture
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 #: The review's three rows. History is about the retry road, not the comparison,
 #: whose every spelling the authority module already pins at each door.
 REVIEWED = FOREIGN[:3]

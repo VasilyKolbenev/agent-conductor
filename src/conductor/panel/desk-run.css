@@ -22,6 +22,8 @@
 .desk-run .studio-fact{display:flex;flex-wrap:wrap;gap:6px 12px;margin:3px 0;min-width:0}
 .desk-run .studio-fact__v,.desk-run .studio-document-text{overflow-wrap:anywhere}
 .desk-run .studio-document-text{white-space:pre-wrap}
+.desk-decision-card .studio-gate-material,.desk-run .studio-gate-material{
+  font:inherit;white-space:pre-wrap;overflow-wrap:anywhere}
 .desk-run .studio-positions,.desk-run .studio-artifacts,.desk-run .studio-timeline{
   display:grid;gap:10px;padding-left:22px;min-width:0}
 .desk-run .studio-row,.desk-run .studio-position,.desk-run .studio-artifact{
@@ -50,6 +52,11 @@
   display:grid;gap:9px;min-width:0}
 .desk-decision-card .studio-choices{display:grid;gap:8px;min-width:0}
 .desk-decision-card .studio-choice{display:flex;gap:8px;align-items:flex-start}
+@media (max-width:600px){
+  .desk-decision-card{overflow-wrap:anywhere}
+  .desk-decision-card .studio-choice{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px}
+  .desk-decision-card .studio-choice span{grid-column:2}
+}
 .desk-decision-card .studio-field{display:grid;gap:5px}
 .desk-decision-card .studio-field input{box-sizing:border-box;width:100%;min-width:0;
   padding:8px 10px;border:1px solid var(--line);border-radius:7px;color:var(--ink);
@@ -65,8 +72,10 @@
 .desk-accept h3{font:500 19px/1.3 var(--display)}
 .desk-accept__fact,.desk-accept__choice{overflow-wrap:anywhere}
 .desk-accept__field{display:grid;gap:5px;font-size:12px}
-.desk-accept__field input{min-width:0;padding:8px 10px;border:1px solid var(--line);
-  border-radius:7px;color:var(--ink);background:var(--ground);font:inherit}
+.desk-accept__field input,.desk-accept__field textarea{min-width:0;padding:8px 10px;
+  border:1px solid var(--line);border-radius:7px;color:var(--ink);background:var(--ground);
+  font:inherit}
+.desk-accept__field textarea{min-height:96px;resize:vertical}
 .desk-accept__choice{display:flex;gap:8px;align-items:flex-start}
 .desk-accept pre{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;
   padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--ground)}

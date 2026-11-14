@@ -16,7 +16,7 @@ from browser_tests.desk_hold import close_context
 from browser_tests.run_picker import choose_run
 from browser_tests.task_picker import create_task, selected_task, expect_selected_task
 from browser_tests.test_studio_layout import (  # noqa: F401
-    _model_form, configured_project, project,
+    _model_form, boundary_assumed, configured_project, project,
 )
 from browser_tests.test_studio_lifecycle import _Project, _open
 from browser_tests.test_studio_tasks import _fill_run, _open_run

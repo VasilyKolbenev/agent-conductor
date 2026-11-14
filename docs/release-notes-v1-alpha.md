@@ -1,6 +1,42 @@
-# December Command — V1 alpha, release notes (candidate draft, updated 25 September 2026)
+# December Command — V1 alpha, release notes (candidate draft, 8 November 2026)
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
+
+## Current Windows alpha work
+
+An empty project offers one way to start describing a task. Desk asks one question at
+a time. You can connect a missing participant or publish your own cycle and return to
+the same draft and materials. Depth of work informs the proposed time bounds. A connected
+subscription harness can review the draft under a separate permission. At acceptance,
+the colleague can see which files the independent checker actually verified for that step.
+
+Desk now starts a task in three stages: describe the result and working folder,
+choose the team and cycle, then review the limits and human decisions. The default
+cycle is Dalio revision 6, with an independent check of the Do step. Select **Edit
+limits in Studio** to change the suggested values for that run. Review the new bounds
+before authorizing work. **Return to Desk** reopens the same run. These paths
+have been exercised locally in Chromium in Russian and English, including at 375 px.
+
+In the private offline demo, a colleague can open a completed Dalio run and see
+the two files examined by its checker. The list comes from the archived result
+and survives later edits to the working folder. The demo uses recorded test responses.
+[Result walkthrough](recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
+
+| Harness | Evidence for the current subscription workflow |
+| --- | --- |
+| Claude Code 2.1.239 | Goal completed inside the Windows execution boundary on a subscription. Fresh-account acceptance is outstanding. |
+| Codex 0.164.0 | Goal, Identify, Design and Do succeeded in the live Dalio cycle. A separate checker verified the snapshot of both changed files. |
+| Grok Build 1.0.13 | A subscription diagnosis passed the G6 rehearsal gate; Diagnose in the shared cycle also returned a result. The role is read-only review. |
+| Kimi Code 0.38.0 | The native CLI opened a session with a synthetic login in a networkless Windows AppContainer. A real account quota reading and a subscription task remain outstanding. |
+
+[Accepted Codex and Grok cycle](recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
+
+The public alpha still needs clean-install acceptance of all four subscription
+paths, the final CI wheel and owner acceptance. The September evidence below is
+retained for its named builds. For current setup use the
+[first-run guide](first-run-v1.en.md).
+
+## September candidate archive
 
 **Status of this text.** Evidence snapshot for frozen-19, local code commit
 `d4d2580337a48b63c5898cc300dff2372eb48133`, reviewed on 25 September 2026.
@@ -25,7 +61,7 @@ one team of participants; every action is proposed, confirmed and verified as se
 decision is a receipt, never a click that vanishes. The distribution is `agent-conductor`, the CLI is `conduct`,
 the front door is the Workflow Studio at `http://127.0.0.1:7777/`.
 
-## What the candidate contains
+## What the September candidate contained
 
 - **Five harnesses** through one reviewed catalogue: Claude Code 2.1.239, Codex 0.112.0, Kimi Code 0.38.0,
   Grok Build 1.0.5 (subscription login in a dedicated native profile) and DeepSeek Harness 0.1.0-rc.7 (API key

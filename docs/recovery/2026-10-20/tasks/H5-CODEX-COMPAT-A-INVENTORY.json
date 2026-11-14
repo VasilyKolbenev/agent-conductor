@@ -1,0 +1,252 @@
+{
+ "what": "Reference inventory of %USERPROFILE%\\DecemberCommand\\harnesses (H5-CODEX-COMPAT A, P0 and Codex R1), hashed with Get-FileHash by tools\\preflight.ps1 -Mode ref",
+ "measured": "2026-10-23, after P0; equal to the P0 records and to unpkg per-file integrity",
+ "protected_copy": "%USERPROFILE%\\DecemberCommand\\h5-a\\ref\\harnesses-inventory.json",
+ "protected_copy_sha256": "8a757acbe2421597ed45bfbb9c5e1b1c09edc7ca71049e4a273120f20b39cd46",
+ "files": {
+  "claude-code/2.1.239/claude.exe": {
+   "size": 337672352,
+   "sha256": "0bc1304c7847c317cc550007e7561f9bf270eaa68a0e85a3f381afb18ee20a2b"
+  },
+  "codex/0.112.0/node_modules/@openai/codex/bin/codex.js": {
+   "size": 6659,
+   "sha256": "baefc109b871e73a7bab298ee19b8bf73c8b647c4f8649a9794fc5db01db17b9"
+  },
+  "codex/0.112.0/node_modules/@openai/codex/bin/rg": {
+   "size": 2592,
+   "sha256": "91e7de3ffa0a7dc021ad2fc643593c06c6eceb7d28de90abe3cf5dc446125424"
+  },
+  "codex/0.112.0/node_modules/@openai/codex/package.json": {
+   "size": 977,
+   "sha256": "9acc26e33f6fcb1a31791aa294057a0100e91bd9d2d8112bed3c25ea82fdab16"
+  },
+  "codex/0.112.0/node_modules/@openai/codex/README.md": {
+   "size": 2623,
+   "sha256": "eb9b277b8ff6d1f0d8350c7b9afc4f94ee63dd1c9b2b9e85c3905453b0d644e8"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/package.json": {
+   "size": 511,
+   "sha256": "13e2cff4a4f0523b01a546641ee246d4d02b9a076d4e2da975a0a32a35c7112a"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/README.md": {
+   "size": 2623,
+   "sha256": "eb9b277b8ff6d1f0d8350c7b9afc4f94ee63dd1c9b2b9e85c3905453b0d644e8"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe": {
+   "size": 114542568,
+   "sha256": "af6e92e7daa829cde457c257f712c42a17af130f476e52b02bd026964baa474b"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex-command-runner.exe": {
+   "size": 625640,
+   "sha256": "0a44d5cdcc92956c739104b0656f2a28a414f11bd19db64bc9ce071652f0e7ce"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex-windows-sandbox-setup.exe": {
+   "size": 659432,
+   "sha256": "603f7f433d58caa96e23744cca3ead10eef8f14f0f3637b0733c314ea505145a"
+  },
+  "codex/0.112.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/path/rg.exe": {
+   "size": 4266496,
+   "sha256": "decdd4992f3f1b9a5ef9898f1b40ab16886d579d6516b4efd3d5eaa19364e408"
+  },
+  "codex/0.164.0/node_modules/@openai/codex/bin/codex.js": {
+   "size": 8790,
+   "sha256": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70"
+  },
+  "codex/0.164.0/node_modules/@openai/codex/package.json": {
+   "size": 1082,
+   "sha256": "a7dec242d54cde5569fb242ddc632cf12be875b274f09116ac8a33d921547114"
+  },
+  "codex/0.164.0/node_modules/@openai/codex/README.md": {
+   "size": 3334,
+   "sha256": "ba4e1f69ff48386e72a9c5e1edaf76aad64a475c2d51af79ccba6d1128261ba7"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/package.json": {
+   "size": 511,
+   "sha256": "cdbedfa35eb2d9bfbf3b571be5f1bef4bc6e110daba5b90f8955bf454285bffb"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/README.md": {
+   "size": 3334,
+   "sha256": "ba4e1f69ff48386e72a9c5e1edaf76aad64a475c2d51af79ccba6d1128261ba7"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe": {
+   "size": 354558768,
+   "sha256": "6f267830b029ee25d9339864aa867cd45de9f8fd4c5ea007d2e63c13a0c66d36"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex-code-mode-host.exe": {
+   "size": 78141232,
+   "sha256": "be52517ca0f9a8eb626ec065ed3a357b5ee150fe1934a254d0126e6d40f29b57"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-package.json": {
+   "size": 215,
+   "sha256": "8a25a072b24cd4894bf2679ab11f7d940f1faa6b6b65b58e80aa3162b7d95a43"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-path/rg.exe": {
+   "size": 4218880,
+   "sha256": "14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/codex-command-runner.exe": {
+   "size": 8743216,
+   "sha256": "30b0ba5d42d3a95c839731fbf9939d728a70fcd9e433245a7cb15bc79418a4db"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/codex-windows-sandbox-setup.exe": {
+   "size": 18793264,
+   "sha256": "2cac62ff24aca3aef7768ab5b96d4102e8434eb0cf8ddbc6171b85a8fb3bb4ef"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/codex-voice-host.exe": {
+   "size": 8903472,
+   "sha256": "3b22607ee50aba07006c5f2b8ff63ae6d0747ce5ba4de208f46c504d4d220b40"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gio-2.0-0.dll": {
+   "size": 1695536,
+   "sha256": "fc1863c93f390931ff56d77c22cb0e08286475159ae05ef8ac0834e1182ec624"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/glib-2.0-0.dll": {
+   "size": 1390896,
+   "sha256": "5e2d5d776437d7cf9b46f497fd9ccf818024eb438cf679f0ba61219dbb789d6c"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gmodule-2.0-0.dll": {
+   "size": 34608,
+   "sha256": "1b95e92d541d3c75e55e31f5ffd2a97b6ee7a5810466f7c70fbf38dfd74e592a"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gobject-2.0-0.dll": {
+   "size": 348464,
+   "sha256": "0afafc600fe094fc8bcd2443842d790a158eeabba902ba6090d57cb56fdaa87e"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstapp.dll": {
+   "size": 25392,
+   "sha256": "2238f387158df1442e01e943955d5d2afde5ab76f6649f4e3741b45bde9444b7"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstapp-1.0-0.dll": {
+   "size": 100144,
+   "sha256": "200135d7f44e60358613af2c52cda0fce89a788a0c791df9a0a15e8e7fe920ca"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstaudio-1.0-0.dll": {
+   "size": 512304,
+   "sha256": "d808980d749f0bd3f3ddc82f2578be259ac69d6fd10ed8a142fc85e653037eb4"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstaudioconvert.dll": {
+   "size": 48432,
+   "sha256": "1c134866ff78b04c5839be4217a6b3808f11f538a1b4f99527ed88fe356e3fd6"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstaudioresample.dll": {
+   "size": 45352,
+   "sha256": "642e1584909a9181603d119fca2f0757af030e8b24b5c9a3851c93ca8e7c3620"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstbase-1.0-0.dll": {
+   "size": 484144,
+   "sha256": "1a9ee1457491d8867e3c1d31146aab18cea0f69de72d4b9dd8456036b0d195e8"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstcoreelements.dll": {
+   "size": 409904,
+   "sha256": "dc06b51fc0a1705e7347cb327fdc71b60949c41635b373348dd682f8d3748fc1"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstnet-1.0-0.dll": {
+   "size": 116528,
+   "sha256": "ab16258359a445e566464cddf3dc8f3921c1e7399567501be0c2d63aef45de81"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstopus.dll": {
+   "size": 69424,
+   "sha256": "4c0e7a47dcbfe4a523978f37d10ab4a8f8a1097750dabeb70b47f35733090c71"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstpbutils-1.0-0.dll": {
+   "size": 262448,
+   "sha256": "b7703acfe7cd785340dd492b800f05c16b253e39cf61e2957270bde9d888459d"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstreamer-1.0-0.dll": {
+   "size": 1257264,
+   "sha256": "128cea13843f192a6bfcf1856ee534b9405ac51267b22eaafa092835ca68de12"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstrtp.dll": {
+   "size": 607536,
+   "sha256": "5d35ddc792fe1f5128161c19098724c8a90b73a6189299e01afd2999be54c8c3"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstrtp-1.0-0.dll": {
+   "size": 167216,
+   "sha256": "fd8f75e8854e9a9ef898d2f0cf37bc04061ecf7df7e00eef9e307da9ab059c43"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstrtpmanager.dll": {
+   "size": 501040,
+   "sha256": "d6126b6f3989c0c7e07b1b45813f267b62791083d2467a5bb98c1b4f503f8420"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gsttag-1.0-0.dll": {
+   "size": 254256,
+   "sha256": "cd7a36943553cca1ea6ba83bf5a23bf5194fefe97ac2f554091b18a9699e6eeb"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/gstvideo-1.0-0.dll": {
+   "size": 769840,
+   "sha256": "7529265a18c77962089d5c8d148481363c549117e83fc0273cba65443f5d1ba1"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/intl-8.dll": {
+   "size": 25392,
+   "sha256": "744dd6ea6d0fa8098866dae561ccb63f96ce1bc4b596908238223a24d0f84ed9"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/libffi-8.dll": {
+   "size": 43312,
+   "sha256": "18eaeca552c30b654aa63d7406d2d5ef6be79428cadc134e15e2e61580952797"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/opus.dll": {
+   "size": 440112,
+   "sha256": "00b43b4c72f20b7118cfb44bfa74ca61258b23ab07b8fbfbcce752b682ec6729"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/pcre2-8.dll": {
+   "size": 398128,
+   "sha256": "9dbc1a938515b1f9ea2a1fd07e938249f380a32ec78b73f5703929404edaafd3"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/vcruntime140.dll": {
+   "size": 123472,
+   "sha256": "184146852727a9db4eea06178716bec3cdbb1015c911f6b0f915b184ad7775b2"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/bin/z.dll": {
+   "size": 105264,
+   "sha256": "7aa3d19c0938c0c51b4167d2112f45cb0b4d3257d92f2a21e70c03e541e3ad35"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/LGPL-2.1.txt": {
+   "size": 26934,
+   "sha256": "c7ce1276717604c29c5469179a2f368eac42846557be671bb52f4e16e884b2ad"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/libffi.txt": {
+   "size": 1153,
+   "sha256": "e2a9b884b1c5d718efd6121457a1fbe7ece431352ca75c901260cef2e7d040e5"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/Opus.txt": {
+   "size": 1989,
+   "sha256": "cbd8bd07329a234413710c02b19d22c0cf78fc451882593e817130779b5455e3"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/PCRE2.md": {
+   "size": 4115,
+   "sha256": "4195c519dcfe4a4ffedc4b8ccc5d49e4dd02efd5ece6b69a4fba5d20080902a9"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/proxy-libintl.txt": {
+   "size": 25774,
+   "sha256": "aa092600e3f475f0a55821fb9c529583d8e23e41bf0461254f02fcf94d3a32c2"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/sljit.txt": {
+   "size": 1469,
+   "sha256": "37c7a090fc61388430d63fc97bf8a22ffce92d3ca2249aac572cfaf411d3070f"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/licenses/zlib.txt": {
+   "size": 1024,
+   "sha256": "439c75ab12b340c5362b9d4b08ff05ec3a4d0eb7667a6fff49a9b16d8795c78e"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/manifest.json": {
+   "size": 4773,
+   "sha256": "0c7177aa181d484e77a11842cff985be8febd8e6d43beb50c85aa559f46d52d7"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/NOTICE.md": {
+   "size": 2439,
+   "sha256": "473fcf8ccb68ce726111d016d133f0555adba730d057591512f3f71fb46aeb6e"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/runtime.json": {
+   "size": 16894,
+   "sha256": "9b14faa7f55b97b34041efbcef70f97ecdc43b308f893bddd86378cdd77232e2"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/sources.json": {
+   "size": 4911,
+   "sha256": "e2f6b124f6277e7c3c4f5c7cc8830c66190f671ad65e972bb2cc9507dbfcb937"
+  },
+  "codex/0.164.0/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex-resources/voice/windows-crt.json": {
+   "size": 1385,
+   "sha256": "d16939bc85da395ded5411724fed84ffd36810b78d47c756cf094b0956bc3892"
+  }
+ }
+}

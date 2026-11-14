@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
+from time import monotonic
 from ..contracts import ABSENT, ControlMode
 from .deep_commands import DeepReviewArgs, OUTPUT_LIMIT_BYTES
 from .harness_profile import REVIEW_CAPABILITY
 from .harness_workspace import work_route
-from .independent_check import CheckFrameError, build_frame, scan_frame, verdict
+from .independent_check import CheckFrameError, FRAME_LIMIT, build_frame, scan_frame, verdict
 from .feedback_protocol import parse_feedback, FEEDBACK_PROTOCOL, FeedbackProtocolError
+from .relay_attempt import RelayNotStarted
 from .result_manifest import MaterialManifestError, check_result_manifest, marked_policy
 
 
@@ -17,6 +20,11 @@ class IndependentCheckTransport:
         state = "mismatch" if reason in mismatch else "error"
         return self._verification(request, state, (), reason)
 
+    def _hold_checker_boundary(self) -> None:
+        """A confined checker whose read-only attempt has no boundary spawns nothing (R5)."""
+        if self._confine and not self.boundary_provided("review"):
+            raise CheckFrameError("boundary_unavailable")
+
     def _check_owned(self, request, verifier, material) -> AdapterVerification:
         # No inherited count is read here any more. A doer that could not take
         # its own home back is refused at PUBLICATION now, from a fact recorded
@@ -24,9 +32,17 @@ class IndependentCheckTransport:
         # when the checker is a different instance, and the only one a sibling
         # action cannot corrupt. What is left here is this checker's own view of
         # the home root, which is its own to judge.
+        test_deadline = (None if material.test_report is None
+                         else monotonic() + request.timeout_seconds)
         self._begin_road()
         if self._workspace.sweep_homes():
             return self._checker_answer(request, "homes_refused")
+        started = self._relay_start("review")
+        if started is not None:
+            # A leftover relay home is a home refused; a relay folder that cannot be proved is a
+            # login that is not ready, which a build that failed its preflight is not.
+            return self._checker_answer(
+                request, "homes_refused" if started == "homes" else "login_not_ready")
         if self._workspace.is_verification_claimed(request.run_id, request.action_id):
             return self._checker_answer(request, "marker_standing")
         before = self._workspace.digest_work_tree()
@@ -35,38 +51,123 @@ class IndependentCheckTransport:
         args = (self._review_args(request.arguments) if request.capability == REVIEW_CAPABILITY
                 else self._dispatch_args(request.arguments))
         frame = self._check_frame(request, args, material)
-        scan_frame(frame, (*material.sensitive, *self._sensitive_values()))
-        if self._preflight(request) is not None or self._retained:
-            return self._checker_answer(request, "preflight_refused")
+        frame = self._sealed_frame(request, verifier, material, frame)
+        try:
+            scan_frame(frame, (*material.sensitive, *self._sensitive_values()))
+        except CheckFrameError as error:
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, error.reason))
+        if frame.test_report_status == "unavailable":
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "test_execution_failed"))
+        refused = self._preflight(request)
+        if refused is not None or self._retained:
+            answer = self._checker_answer(
+                request, "login_not_ready" if self._relay_refused(refused) else "preflight_refused")
+            return self._finish_check(request, verifier, frame, answer)
         if self._login_residue:
             # A preflight that already left undeclared state in the login
             # directory is not a preflight this verification may build on: the
             # task must not run after a promise this build has already broken.
-            return self._checker_answer(request, "login_residue")
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "login_residue"))
+        if self._credential_readback_untrusted:
+            return self._finish_check(request, verifier, frame,
+                self._checker_answer(request, "credential_readback_untrusted"))
         # The preflight has no authority to alter the tree it is about to judge.
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
-            return self._checker_answer(request, "tree_changed")
-        self._workspace.claim_verification(request.run_id, request.action_id)
-        outcome = self._attempt(
-            self._verdict_argv, work_route(args.work_item_id, args.task_scope),
-            timeout=request.timeout_seconds, stdin_bytes=frame.payload,
-            separate_stderr=True, model=verifier.model,
-            output_limit=(None if request.capability == REVIEW_CAPABILITY
-                          else OUTPUT_LIMIT_BYTES[args.output_limit_profile]))
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "tree_changed"))
+        if not self._test_runtime_stands(material, test_deadline):
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "test_runtime_changed"))
+        try:
+            outcome = self._attempt(
+                self._verdict_argv, work_route(args.work_item_id, args.task_scope),
+                timeout=(request.timeout_seconds if test_deadline is None
+                         else test_deadline - monotonic()), stdin_bytes=frame.payload,
+                separate_stderr=True, model=verifier.model, mode="review",
+                output_limit=(None if request.capability == REVIEW_CAPABILITY
+                              else OUTPUT_LIMIT_BYTES[args.output_limit_profile]),
+                claim=self._claim_of(request, verification=True))
+        except RelayNotStarted as refused:
+            # Before the claim, or with a claim that could not be taken: whichever it was, the
+            # checker is not started. A claim refused with no marker is told as that (nothing was
+            # reserved); one whose marker stands, or cannot be looked at, as the marker it leaves.
+            reason = {"claim": "claim_refused", "claim_standing": "marker_standing"}.get(
+                refused.code, "login_not_ready")
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, reason))
+        self._record_login_account(request, verifier.instance_id, "checker", self._login_account)
+        if self._credential_readback_untrusted:
+            return self._finish_check(request, verifier, frame,
+                self._checker_answer(request, "credential_readback_untrusted"))
         if self._evidence() != before or not self._frame_modes_stand(frame, args):
-            return self._checker_answer(request, "tree_changed")
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "tree_changed"))
+        if not self._test_runtime_stands(material, test_deadline):
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "test_runtime_changed"))
         if self._retained:
-            return self._checker_answer(request, "homes_refused")
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "homes_refused"))
         if self._login_residue:
             # Its own word rather than the home one: two directories, two
             # promises, and a reader of the journal must be able to tell which
             # of them this verification could not keep.
-            return self._checker_answer(request, "login_residue")
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "login_residue"))
         reason = verdict(outcome)
         if reason != "verified":
-            return self._feedback_answer(request, reason, outcome, material)
+            return self._finish_check(request, verifier, frame,
+                                      self._feedback_answer(request, reason, outcome, material))
+        if frame.test_report_status == "failed":
+            return self._finish_check(request, verifier, frame,
+                                      self._checker_answer(request, "tests_failed"))
         answer = self._record_check(request, args, verifier, frame)
-        return replace(answer, result_manifest=material.result_manifest)
+        return self._finish_check(request, verifier, frame,
+                                  replace(answer, result_manifest=material.result_manifest))
+
+    def _sealed_frame(self, request, verifier, material, frame):
+        if (material.test_report is None or frame.test_report_status == "unavailable"
+                or request.capability != "dispatch"
+                or frame.accept_manifest_digest is None
+                or not marked_policy(request)):
+            return frame
+        seal_attempt = getattr(self._handoff, "seal_attempt", None)
+        if not callable(seal_attempt):
+            if frame.test_report_status is not None:
+                raise CheckFrameError("test_report_refused")
+            return frame
+        seal = seal_attempt(request, verifier, material, frame, material.test_report)
+        if seal is None:
+            if frame.test_report_status is not None:
+                raise CheckFrameError("test_report_refused")
+            return frame
+        payload = frame.payload + b"\nATTEMPT SEAL\n" + json.dumps(
+            {"digest": seal["digest"], "action": request.action_id, "attempt": request.attempt_id},
+            sort_keys=True, separators=(",", ":")).encode("utf8")
+        if len(payload) > FRAME_LIMIT:
+            raise CheckFrameError("frame_over_limit")
+        return replace(frame, payload=payload, attempt_seal=seal)
+
+    def _test_runtime_stands(self, material, deadline):
+        if material.test_report is None:
+            return True
+        from .local_test_plan import plan_for, vet_runtime
+        try:
+            plan = plan_for(material.instruction_document, material.instruction)
+            if plan is None or deadline is None or monotonic() >= deadline:
+                return False
+            vet_runtime(plan, deadline=deadline)
+            return monotonic() < deadline
+        except (ValueError, OSError):
+            return False
+
+    def _finish_check(self, request, verifier, frame, answer):
+        if frame.attempt_seal is not None:
+            self._handoff.finish_attempt(request, frame.attempt_seal, verifier, answer)
+        return answer
 
     def _frame_modes_stand(self, frame, args):
         return (frame.work_modes is None or frame.work_modes == self._workspace.work_modes(
@@ -101,10 +202,13 @@ class IndependentCheckTransport:
             else:
                 tree, contents = self._workspace.read_work_tree(
                     args.work_item_id, material.changed, work_scope=args.task_scope)
+        modes = capture.modes if capture is not None else None
+        if modes is None and material.test_report is not None:
+            modes = self._workspace.work_modes(args.work_item_id, work_scope=args.task_scope)
         return build_frame(request, material, tree, contents, result_digest=digest, result_manifest=manifest,
                            accumulated=None if capture is None else capture.snapshot,
                            work_tree_digest=None if capture is None else capture.work_tree_digest,
-                           work_modes=None if capture is None else capture.modes,
+                           work_modes=modes,
                            sensitive=(*material.sensitive, *self._sensitive_values()))
 
     def _check_manifest(self, request, args, material):
@@ -146,11 +250,13 @@ class IndependentCheckTransport:
                 content=None, adapter_id=self.manifest.adapter_id,
                 verifier_instance_id=verifier.instance_id, expected_digest=digest)
         else:
+            extras = ({} if frame.attempt_seal is None
+                      else {"attempt_seal_digest": frame.attempt_seal["digest"]})
             evidence = self._handoff.record_dispatch(
                 request, adapter_id=self.manifest.adapter_id, digest=digest,
                 verifier_instance_id=verifier.instance_id,
                 work_tree_digest=frame.work_tree_digest,
-                accept_manifest_digest=frame.accept_manifest_digest)
+                accept_manifest_digest=frame.accept_manifest_digest, **extras)
         if evidence is None or evidence.digest != digest:
             return self._checker_answer(request, "material_unavailable")
         return self._verification(request, "verified", (evidence.evidence_id,), "verified")

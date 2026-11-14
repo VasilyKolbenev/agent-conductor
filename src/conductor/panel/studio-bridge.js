@@ -15,11 +15,11 @@ function paragraph(text) { return element("p", {text}); }
 function humanControl(state, handlers) {
   const detail = state.runs.detail, situation = detail?.graph?.situation;
   const fresh = state.connection === "open" && state.runs.phase === "ready" && situation;
-  const value = fresh ? situation.state : "unknown";
+  const value = state.needsRunPermission ? "required" : fresh ? situation.state : "unknown";
   const box = element("section", {className: "studio-bridge__box", "data-human-state": value}, [
     element("h3", {text: localize(state, "bridge.title")}),
     element("h4", {text: localize(state, "bridge.attention")}),
-    paragraph(localize(state, `bridge.${value}`)),
+    paragraph(localize(state, state.needsRunPermission ? "runhead.review_limits" : `bridge.${value}`)),
   ]);
   if (fresh) {
     box.append(paragraph(localize(state, "bridge.as_of", {at: situation.computed_at})));
@@ -44,7 +44,8 @@ function queue(state, handlers) {
   if (state.connection !== "open" || state.runs.phase !== "ready") {
     box.append(paragraph(localize(state, "bridge.unknown"))); return box;
   }
-  const runs = state.runs.list.filter((row) => !row.unreadable && row.human_state === "required")
+  const runs = state.runs.list.filter((row) => !row.unreadable && (row.human_state === "required"
+    || (state.needsRunPermission && row.run_id === state.runs.selectedId)))
     .sort((a, b) => -compareInstants(a.created_at, b.created_at) || a.run_id.localeCompare(b.run_id));
   if (!runs.length) box.append(paragraph(localize(state, "bridge.queue_empty")));
   for (const row of runs.slice(0, 5)) {

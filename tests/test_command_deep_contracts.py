@@ -282,7 +282,7 @@ def test_all_deep_vocabularies_and_protocol_flags_are_exactly_pinned():
     assert EVIDENCE_KINDS == {"result", "diff", "tests", "status"}
     assert EVIDENCE_VERIFICATIONS == {
         "verified", "unavailable", "mismatch", "error"}
-    assert DISPATCH_PROFILES == {"implement", "review"}
+    assert DISPATCH_PROFILES == {"implement", "review", "implement-patch-v1"}
     assert OUTPUT_LIMIT_PROFILES == {"small", "normal"}
     assert REVIEW_PROFILES == {"quality", "security", "spec"}
     assert REQUESTED_EVIDENCE_KINDS == {"result", "diff", "tests", "status"}
@@ -317,7 +317,7 @@ def test_public_deep_schema_authority_names_each_exact_argument_base_type():
             "work_scope"},
         "review": {
             "work_item_id", "target_artifact_refs", "result_artifact_ref",
-            "review_profile", "step_purpose", "work_scope"},
+            "review_profile", "step_purpose", "work_scope", "grok_diagnostic"},
         "evidence": {"target_action_id", "kinds"},
         "stop": {"target_attempt_id", "reason"},
         "retry": {"prior_action_id", "reason"},

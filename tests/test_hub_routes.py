@@ -32,8 +32,8 @@ ROWS = {
     ("GET", "/hub/<name>"): ((), ("route_not_found",)),
     ("GET", "/hub/session"): ((), ()),
     ("GET", "/hub/events"): ((), ()),
-    ("GET", "/hub/projects"): ((), ()),
-    ("GET", "/hub/limits"): ((), ()),
+    ("GET", "/hub/projects"): ((), ("registry_invalid",)),
+    ("GET", "/hub/limits"): ((), ("registry_invalid",)),
     ("GET", "/hub/setup"): ((), ()),
     ("GET", "/hub/operations/<operation_id>"): ((), ("operation_not_found",)),
     ("GET", "/hub/dialogs/<pick_id>"): ((), ("pick_not_found",)),
@@ -53,29 +53,35 @@ ROWS = {
          "review_harness_missing", "operation_busy", "registry_busy", "registry_invalid")),
     ("POST", "/hub/setup/projects-home"): (
         ({"pick_id"}, {"default"}),
-        ("pick_invalid", "projects_home_invalid", "windows_path_too_long")),
+        ("pick_invalid", "projects_home_invalid", "windows_path_too_long", "operation_busy",
+         "registry_invalid")),
     ("POST", "/hub/tools/<tool>/pin"): (
         ({"candidate_id"},), ("candidate_not_found", "git_changed", "gh_changed", "git_too_old",
                               "tool_version_unreadable")),
     ("POST", "/hub/projects/<project_id>/activate"): (
         ((),), ("project_not_found", "already_active", "active_not_closed", "project_unavailable",
-                "recovery_required", "project_busy", "hub_in_kill_on_close_job")),
+                "recovery_required", "project_busy", "hub_in_kill_on_close_job",
+                "registry_invalid")),
     ("POST", "/hub/projects/<project_id>/view"): (
         ((),), ("project_not_found", "already_active", "project_running", "project_unavailable",
-                "recovery_required", "project_busy", "hub_in_kill_on_close_job")),
+                "recovery_required", "project_busy", "hub_in_kill_on_close_job",
+                "registry_invalid")),
     ("POST", "/hub/projects/<project_id>/stop"): (
-        ((),), ("project_not_found", "project_not_running", "project_busy")),
+        ((),), ("project_not_found", "project_not_running", "project_busy", "registry_invalid")),
     ("POST", "/hub/projects/<project_id>/recover"): (
-        ((),), ("project_not_found", "project_running", "recover_not_needed", "project_busy")),
+        ((),), ("project_not_found", "project_running", "recover_not_needed", "project_busy",
+                "registry_invalid")),
     ("POST", "/hub/projects/<project_id>/providers"): (
-        ((),), ("project_not_found", "profile_absent", "profile_invalid", "project_busy")),
+        ((),), ("project_not_found", "profile_absent", "profile_invalid", "project_busy",
+                "registry_invalid")),
     ("POST", "/hub/projects/<project_id>/forget"): (
-        ((),), ("project_not_found", "project_running")),
+        ((),), ("project_not_found", "project_running", "project_busy", "registry_invalid")),
     ("POST", "/hub/logins/<login_key>/recover"): (
-        ((),), ("login_not_found", "recover_not_needed")),
+        ((),), ("login_not_found", "recover_not_needed", "operation_busy")),
     ("POST", "/hub/operations/<operation_id>/cancel"): (
         ((),), ("operation_not_found", "operation_not_cancellable")),
-    ("POST", "/hub/queue/order"): (({"order"},), ("project_queue_changed",)),
+    ("POST", "/hub/queue/order"): (
+        ({"order"},), ("project_queue_changed", "registry_invalid")),
 }
 #: `HUB_WRITE_TARGETS` of 4.6.3: target -> (method, path); the fourteen writes of the page.
 WRITE_TARGETS = {
@@ -100,6 +106,33 @@ def test_the_route_table_is_frozen_row_by_row_in_the_order_of_the_spec():
         assert {frozenset(keys) for keys in row.bodies} == {frozenset(keys) for keys in bodies}, (
             row.method, row.path)
         assert row.refusals == named, (row.method, row.path)
+
+
+#: The refusals the closed list of 7 October adds to a row that already existed (4.6.3): each is
+#: an existing code of the route list, and each answers 409.
+ADDED = {
+    ("GET", "/hub/projects"): ("registry_invalid",),
+    ("GET", "/hub/limits"): ("registry_invalid",),
+    ("POST", "/hub/setup/projects-home"): ("operation_busy", "registry_invalid"),
+    ("POST", "/hub/projects/<project_id>/activate"): ("registry_invalid",),
+    ("POST", "/hub/projects/<project_id>/view"): ("registry_invalid",),
+    ("POST", "/hub/projects/<project_id>/stop"): ("registry_invalid",),
+    ("POST", "/hub/projects/<project_id>/recover"): ("registry_invalid",),
+    ("POST", "/hub/projects/<project_id>/providers"): ("registry_invalid",),
+    ("POST", "/hub/projects/<project_id>/forget"): ("project_busy", "registry_invalid"),
+    ("POST", "/hub/logins/<login_key>/recover"): ("operation_busy",),
+    ("POST", "/hub/queue/order"): ("registry_invalid",),
+}
+
+
+def test_every_refusal_the_closed_list_adds_is_named_by_its_row_and_answers_409():
+    rows = {(row.method, row.path): row for row in routes.HUB_ROUTES}
+    for key, codes in ADDED.items():
+        for code in codes:
+            assert code in rows[key].refusals, (key, code)
+            assert refusals.HUB_ERROR_STATUS[code] == 409, (key, code)
+    forget = rows[("POST", "/hub/projects/<project_id>/forget")].refusals
+    assert forget[:2] == ("project_not_found", "project_running"), "project_running stays"
 
 
 def test_the_writes_of_the_page_are_exactly_the_post_rows_of_the_table():

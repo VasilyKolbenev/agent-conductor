@@ -1,4 +1,5 @@
 """Owned attempt ACL journal with injected native callbacks; no OS ACL mutation."""
+from contextlib import contextmanager
 from types import SimpleNamespace
 import os
 
@@ -12,10 +13,19 @@ from conductor.ownership_native import identity
 SID = "S-1-15-2-1-2-3-4-5-6-7"
 
 
-def fixture(tmp_path):
+@contextmanager
+def free_mutex(hold):
+    """The folder's cross-process mutex: nothing else runs in these tests, so it is free."""
+    hold.check()
+    yield False
+
+
+def fixture(tmp_path, *, extra_sids=()):
+    """A journal over fake natives. Every profile it plans has `SID`, unless `extra_sids` names
+    more: the first planned moniker has `SID`, the next ones those, in order."""
     data = tmp_path / "conductor.v3"
     data.mkdir()
-    acl_state, mappings = {}, {}
+    acl_state, mappings, given = {}, {}, {}
 
     class FakeHold:
         def __init__(self, path, *, directory, security):
@@ -33,14 +43,18 @@ def fixture(tmp_path):
             self.path.rmdir()
 
     def derive(name):
-        return SID
+        if not extra_sids:
+            return SID
+        if name not in given:
+            given[name] = (SID, *extra_sids)[len(given)]
+        return given[name]
 
     def create(name, display):
-        mappings[SID] = (name, display)
-        return SID
+        mappings[derive(name)] = (name, display)
+        return derive(name)
 
     def delete(name):
-        del mappings[SID]
+        del mappings[derive(name)]
 
     def snapshot(hold):
         hold.check()
@@ -51,7 +65,7 @@ def fixture(tmp_path):
         acl_state[str(hold.path)] = (sddl, protected, "S-1-5-21-1")
 
     native = SimpleNamespace(acl_snapshot=snapshot, acl_set=set_acl,
-                             acl_equal=lambda a, b: a == b)
+                             acl_equal=lambda a, b: a == b, acl_exclusive=free_mutex)
     store = ProfileJournal(data, owner_nonce="a" * 32, root_identity=[1, 2],
                            data_identity=[3, 4], derive=derive, create=create,
                            inspect=mappings.get, delete=delete)

@@ -53,6 +53,8 @@ from tests.test_store import good_lane, write_project
 #: the element helper the region modules draw with, and the catalogue (with its
 #: fifteen copy modules) that says a word in the reader's language.
 DESK_BOOT_ASSETS = {
+    "studio-atlas-copy.js": 200,
+    "studio-utilities-copy.js": 200,
     "desk.html": 200, "desk.css": 200, "desk-flow.css": 200, "desk-people.css": 200,
     "desk-run.css": 200,
     "desk.js": 200, "desk-transport.js": 200,
@@ -82,6 +84,7 @@ DESK_BOOT_ASSETS = {
     "studio-scene-model.js": 200, "studio-trace.js": 200, "studio-situation.js": 200,
     "studio-feedback-model.js": 200, "studio-controls.js": 200,
     "studio-automation-providers.js": 200,
+    "studio-test-preview.js": 200,
     "studio-agents-copy.js": 200, "studio-automation-copy.js": 200,
     "studio-feedback-copy.js": 200, "studio-notice-copy.js": 200,
     "studio-participant-copy.js": 200, "studio-run-docs-copy.js": 200,
@@ -91,14 +94,17 @@ DESK_BOOT_ASSETS = {
     "desk-wizard-copy.js": 200, "desk-flow-copy.js": 200,
     # The live new-task overlay: host, reducer, renderer and their pure step modules.
     "desk-wizard-host.js": 200, "desk-wizard.js": 200,
+    "desk-advice-panel.js": 200, "desk-advice-run.js": 200,
+    "desk-wizard-advice-copy.js": 200, "studio-budget-guidance.js": 200,
     "desk-wizard-model.js": 200, "desk-wizard-materials.js": 200,
     "desk-wizard-cycle.js": 200, "desk-wizard-roles.js": 200,
     "desk-wizard-base.js": 200, "desk-wizard-team.js": 200,
     "desk-wizard-digest.js": 200, "desk-wizard-input.js": 200,
     "desk-wizard-prep.js": 200, "desk-wizard-launch.js": 200,
-    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200,
+    "desk-wizard-skip.js": 200, "desk-wizard-run.js": 200, "desk-wizard-git.js": 200,
+    "desk-wizard-git-run.js": 200, "desk-wizard-git-copy.js": 200,
     "desk-wizard-draw.js": 200, "desk-wizard-prepare-view.js": 200,
-    "desk-wizard-card.js": 200,
+    "desk-wizard-card.js": 200, "desk-wizard-git-view.js": 200,
     # The mounted cycle editor: host, graph, inspector, reducer, and canvas primitives.
     "desk-people-host.js": 200, "desk-run-host.js": 200,
     "desk-panels.js": 200, "desk-toggles.js": 200, "studio-runs.js": 200, "studio-runstep.js": 200,
@@ -123,6 +129,9 @@ DESK_BOOT_ASSETS = {
     "studio-canvas-edges.js": 200, "studio-layout.js": 200, "studio-orbit.js": 200,
     # The one live projection stream, which refreshes reads after a signal.
     "desk-stream.js": 200,
+    # The scene's transitions (spec 5.5): the module the scene hands every view to, and the
+    # model that decides which moment a view shows.
+    "desk-motion.js": 200, "desk-motion-model.js": 200,
 }
 #: The regions, the word each stands in once the reads have landed, and why.
 REGION_WORDS = (
@@ -295,7 +304,7 @@ def test_the_regions_that_are_read_and_the_console_stand_ready_and_two_feeds_sta
     assert by_id["deskPult"]["children"] == 6
     assert by_id["deskPult"]["text"] == (
         "Your consoleYou: name not given · setProject queueNow: the slot is unavailable: "
-        "the project has no ownerNothing is queued."
+        "the execution owner is unavailableNothing is queued."
         "Harness limitsLimits are not current while disconnected.No data"
         "Accept into projectChoose a run first.")
     assert by_id["deskRail"]["children"] == 2

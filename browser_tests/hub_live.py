@@ -17,6 +17,7 @@ hub's real surface answers a path it does not serve with a refusal and not with 
 """
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -39,6 +40,9 @@ from tests._hub_world import PIDS, World, id_of
 NAMES = ("a", "b", "c")
 ACTIVATE = "/hub/projects/{}/activate"
 DOORS = {"/hub/session", "/hub/projects", "/hub/limits", "/hub/setup", "/hub/events"}
+#: The one read besides the doors: the row of an operation the page itself began (a recovery or a
+#: profile copy answers `202 {operation_id}`), asked by an id of the grammar of 4.6.3.
+OPERATION_READ = re.compile(r"/hub/operations/operation-[0-9a-f]{32}")
 #: What a browser asks of any page by itself and the hub answers with a refusal.
 BROWSER_OWN = {"/favicon.ico"}
 
@@ -187,7 +191,7 @@ def live_page(chromium: Browser, live: LiveHub, lang: str) -> Iterator[LivePage]
         assert page.evaluate("window.__violations") == []
         allowed = {"/", *HUB_ASSETS, *DOORS, *BROWSER_OWN}
         strays = {path for method, path in opened.asked
-                  if method == "GET" and path not in allowed}
+                  if method == "GET" and path not in allowed and not OPERATION_READ.fullmatch(path)}
         assert strays == set(), "the page asked for something the hub does not list"
         assert foreign == [], "the page itself asked another origin for something"
     finally:

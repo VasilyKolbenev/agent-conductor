@@ -46,6 +46,7 @@ from typing import Any, ClassVar
 from ..contracts import ContractError, _id, _text, canonical_json
 from .base import CAPABILITIES, _ARGUMENT_SCHEMAS, AdapterContractError, AdapterRegistry
 from .deep_contracts import DeepProtocol, _env_names
+from .relay_env import route_env_named
 
 #: Every reviewed provider protocol/version token an operator may pin.
 KNOWN_PROTOCOLS = frozenset(protocol.value for protocol in DeepProtocol)
@@ -88,7 +89,9 @@ SUBSCRIPTION_AUTH = "subscription"
 #: not a proof: a credential forwarded under some other name is not caught here,
 #: and nothing in this build can see the value.
 API_BILLING_ENV = frozenset({
-    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"})
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID", "OPENAI_IDENTITY_TOKEN_FILE",
+    "OPENAI_WORKLOAD_IDENTITY_CONTEXT", "CODEX_GUARDIAN_DECISIONS_API_KEY"})
 #: The reviewed protocols whose transport really drives a vendor login. A mode is
 #: not a label: pinning ``subscription`` where no transport implements it would
 #: leave an operator reading a login this build never performs, so it is refused
@@ -105,6 +108,11 @@ SUBSCRIPTION_PROTOCOLS = frozenset({
 UNPINNED_AUTH = "unpinned"
 #: Every value the wire may carry for the login question.
 CONTRACT_AUTH_STATES = frozenset(AUTH_MODES | {UNPINNED_AUTH})
+#: The two words of the road a task of a provider takes, a fact of the provider row beside its
+#: login (`provider_projection`): ``boundary`` where a dispatch is launched inside the execution
+#: boundary, ``refused`` where it is refused before it starts. Neither shares a value with the
+#: availability, implementation or login words.
+TASK_ROADS = ("boundary", "refused", "review_only")
 #: The one lifecycle capability that carries no argument schema: an observation is
 #: an adapter-authored fact, never a browser-submitted argument body.
 SCHEMALESS_CAPABILITIES = frozenset({"observe"})
@@ -322,11 +330,17 @@ class ProviderConfig:
                 raise ProviderConfigError(
                     "subscription authentication needs auth_home, "
                     "the directory this provider's login is kept in")
-            forwarded = sorted(set(self.env_allow) & API_BILLING_ENV)
+            forwarded = sorted(name for name in self.env_allow if name.upper() in API_BILLING_ENV)
             if forwarded:
                 raise ProviderConfigError(
                     f"subscription authentication may not forward {forwarded}: "
                     "the harness would bill an API account instead of the subscription")
+            rerouted = list(route_env_named(self.env_allow))
+            if rerouted:
+                raise ProviderConfigError(
+                    f"subscription authentication may not forward {rerouted}: they replace the "
+                    "login or reroute the harness's traffic, so a task would not run on the "
+                    "login that was pinned")
         elif self.auth_home:
             raise ProviderConfigError(
                 f"auth_home is read only in {SUBSCRIPTION_AUTH} authentication")
@@ -634,11 +648,34 @@ class ProviderRegistry:
             raise ProviderConfigError(str(error)) from None
 
 
-def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str, Any]]:
+def task_road(boundary: Callable[[str, str], object] | None, provider_id: str) -> str:
+    """A provider's proven task road, including one that supports only read-only tasks.
+
+    ``boundary`` is the registry's own question, `AdapterRegistry.execution_boundary`, asked for
+    a dispatch, then review only after an explicit False. An error or a non-boolean dispatch
+    answer is refused, never evidence that a provider supports a narrower road.
+    """
+    if boundary is None:
+        return "refused"
+    try:
+        dispatch = boundary(provider_id, "dispatch")
+        if dispatch is True:
+            return "boundary"
+        if dispatch is False and boundary(provider_id, "review") is True:
+            return "review_only"
+        return "refused"
+    except Exception:  # noqa: BLE001 -- what cannot be established is refused
+        return "refused"
+
+
+def provider_projection(
+        contracts: Iterable[ProviderContract], *,
+        boundary: Callable[[str, str], object] | None = None) -> list[dict[str, Any]]:
     """Project reviewed provider contracts onto the closed Cockpit surface.
 
-    Each row carries exactly the six names the UI may see -- provider id,
-    display name, availability, implementation, the pinned login, and the PROVEN
+    Each row carries exactly the eight names the UI may see -- provider id,
+    display name, availability, implementation, the pinned login, the road a task
+    takes (``task_road``, from ``boundary``: see `task_road`), and the PROVEN
     controls -- and nothing a provider did not declare. ``auth`` is the mode an
     operator WROTE, never a proof that the login works: what a machine can start,
     which build answers, which login was pinned, and whether a real authenticated
@@ -665,6 +702,7 @@ def provider_projection(contracts: Iterable[ProviderContract]) -> list[dict[str,
             "availability": contract.availability,
             "implementation": contract.implementation,
             "auth": contract.auth,
+            "task_road": task_road(boundary, contract.provider_id),
             "controls": sorted(capability for capability, _ in contract.schema_pairs),
             # The vendor's own mechanism, per road, carried rather than derived:
             # the request path may not know which provider has what. `null` is

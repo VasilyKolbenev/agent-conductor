@@ -23,6 +23,8 @@ import subprocess
 import time
 from typing import Protocol
 
+from .process_errors import LaunchRefused
+
 
 class ProcessGroup(Protocol):
     """A handle to the started child's group; terminate reaches only that group."""
@@ -66,6 +68,52 @@ def cleanup_failed_spawn(proc, group):
                         pass
             if release := getattr(proc, "release_handle", None):
                 release()
+
+
+def start(launch, *, confined: bool, loan):
+    """Create the child with `launch()`. The loan is retired unproven if that fails.
+
+    A confined child the OS refuses to create is a `LaunchRefused`, a known refusal with no child
+    left. Any other failure, and any failure of a plain child, keeps its own error.
+    """
+    try:
+        return launch()
+    except BaseException as error:
+        if loan is not None:
+            loan.retire(False)
+        if not (confined and isinstance(error, OSError)):
+            raise
+        number = error.errno
+    raise LaunchRefused("launch_failed", number)
+
+
+def adopt(proc, check, loan):
+    """Prove the container policy on the still suspended child, then put it in its group.
+
+    `check(proc)` raises `OSError` when the policy is not shown on the child (None: a plain
+    child). The group lets the child run. A policy not shown is a `LaunchRefused`, but only once
+    the child is ended and reaped. If ending it fails, or anything fails at or after the group (the
+    child may have run), that failure keeps its own error: neither is a safe refusal to start.
+    The loan is retired unproven on every failure.
+    """
+    refused = []
+    try:
+        if check is not None:
+            try:
+                check(proc)
+            except OSError as error:
+                refused.append(error.errno)
+                raise
+        return make_group(proc)
+    except BaseException:
+        try:
+            cleanup_failed_spawn(proc, None)
+        finally:
+            if loan is not None:
+                loan.retire(False)
+        if not refused:
+            raise
+    raise LaunchRefused("policy_not_applied", refused[0])
 
 
 def popen_kwargs() -> dict[str, object]:

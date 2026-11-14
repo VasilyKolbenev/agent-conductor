@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import re
 import secrets
@@ -27,8 +27,31 @@ _PHASES = frozenset({"planned", "created", "retired"})
 
 class ProfileRefused(RuntimeError):
     def __init__(self, code: str, detail: str):
-        self.code = code
+        self.code, self.detail = code, detail
         super().__init__(f"{code}: {detail}")
+
+
+def refusal_summary(failures: list) -> Exception:
+    """The error of a step that did several things: one failure as it is, several as one refusal.
+
+    The refusal carries the code of the first refusal among them, and names every failure.
+    """
+    if len(failures) == 1:
+        return failures[0]
+    parts = [f"[{e.code}] {e.detail}" if isinstance(e, ProfileRefused) else f"[{type(e).__name__}]"
+             for e in failures]
+    code = next((e.code for e in failures if isinstance(e, ProfileRefused)), "profile_acl_invalid")
+    return ProfileRefused(code, "; ".join(parts))
+
+
+def _attempt(failures: list, step, *args, **options) -> bool:
+    """Run one recovery step; its error is kept for the end. True when it ended clean."""
+    try:
+        step(*args, **options)
+    except (ProfileRefused, OSError) as error:
+        failures.append(error)
+        return False
+    return True
 
 
 def _plain(path: Path, directory: bool) -> None:
@@ -43,6 +66,17 @@ def _plain(path: Path, directory: bool) -> None:
 def _bytes(value: dict) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"),
                        ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8")
+
+
+def _present(path: Path) -> bool:
+    """An access error is not evidence of removal."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise ProfileRefused("profile_acl_unproven", "cannot establish attempt presence") from error
+    return True
 
 
 def _write_new(path: Path, value: dict) -> None:
@@ -167,6 +201,11 @@ class ProfileJournal:
         value = self._read(path)
         if value["phase"] == "retired":
             return
+        # If allocation stopped before the ACL record, there is no verified identity for the
+        # fresh folders. Do not adopt them by name or silently mark this profile retired.
+        attempt = self.directory.parent / "container-attempts" / value["attempt"]
+        if _present(attempt):
+            raise ProfileRefused("profile_acl_unproven", "the attempt tree has not been retired")
         if self.derive(value["moniker"]) != value["sid"]:
             raise ProfileRefused("profile_ambiguous", "derived profile SID changed")
         mapping = self.inspect(value["sid"])
@@ -177,15 +216,32 @@ class ProfileJournal:
         value["phase"] = "retired"
         _replace(path, value)
 
-    def recover(self) -> None:
+    def recover(self, *, abandon_loans: bool = False) -> None:
+        """Return the loans, retire the attempts and delete the profiles a crash left.
+
+        The loans are recovered apart from the rest: a loan is returned without any restart proof,
+        so what stops it must not stop the fresh folders or the profiles, and what stops those must
+        not keep a loan out. The profiles wait for the same restart proof as the fresh folders. The
+        errors of what ran are raised together, at the end.
+
+        Args:
+            abandon_loans: The owner gives up a loan whose folder is no longer the one it granted
+                (`FolderLoans.restore`).
+        """
         self._directory()
         from .process_acl import AttemptAclJournal, _ACL_NAME, _ACL_PREP, _ACL_TEMP
+        from .process_loans import FolderLoans, _LOAN_NAME, _LOAN_TEMP
+        failures: list = []
         if self.native is not None:
-            AttemptAclJournal(self, self.native).recover()
+            _attempt(failures, FolderLoans(self, self.native).recover, abandon=abandon_loans)
+            if not _attempt(failures, AttemptAclJournal(self, self.native).recover):
+                raise refusal_summary(failures)
         for path in sorted(self.directory.iterdir()):
             if self.native is not None and (_ACL_NAME.fullmatch(path.name)
                                             or _ACL_PREP.fullmatch(path.name)
-                                            or _ACL_TEMP.fullmatch(path.name)):
+                                            or _ACL_TEMP.fullmatch(path.name)
+                                            or _LOAN_NAME.fullmatch(path.name)
+                                            or _LOAN_TEMP.fullmatch(path.name)):
                 continue
             if _TEMP.fullmatch(path.name):
                 _plain(path, False)
@@ -193,7 +249,9 @@ class ProfileJournal:
                 continue
             if not _NAME.fullmatch(path.name):
                 raise ProfileRefused("profile_record_invalid", "unexpected profile journal entry")
-            self.retire(path)
+            _attempt(failures, self.retire, path)
+        if failures:
+            raise refusal_summary(failures)
 
     def prepare_restarts(self) -> list[dict]:
         """The explicit action for attempt loans from before the boot counter: prepare each one.
@@ -206,10 +264,42 @@ class ProfileJournal:
             return []
         return AttemptAclJournal(self, self.native).prepare_restarts()
 
+    def _loans(self, mode, folders, readonly_home_identity=None):
+        """The loans of a block that names folders, checked before any profile exists."""
+        if folders is None:
+            if readonly_home_identity is not None:
+                raise ProfileRefused("profile_acl_invalid", "a staged home needs a loaned folder")
+            return None
+        if mode is None or self.native is None:
+            raise ProfileRefused("profile_acl_invalid", "loaned folders need an attempt mode")
+        from .process_loans import FolderLoans
+        options = ({} if readonly_home_identity is None
+                   else {"readonly_home_identity": readonly_home_identity})
+        loans = FolderLoans(self, self.native, **options)
+        loans.targets(folders)
+        return loans
+
     @contextmanager
-    def container(self, *, internet_client: bool = False, mode=None, active_tokens=None):
+    def container(self, *, internet_client: bool = False, mode=None, active_tokens=None,
+                  folders=None, readonly_home_identity=None, kimi_state=False,
+                  kimi_read_config=None):
+        """One AppContainer profile for one attempt, and what the attempt may stand on.
+
+        Args:
+            folders: None, or a mapping of `work`, `install` and optionally `home` (or `login`) to
+                existing folders (`process_loans`), which are loaned instead of the fresh work and
+                login folders. The block then yields `parent`, `runtime` and these, in their real
+                places.
+            kimi_state: Add separately journaled, nonsecret state to an offline staged review.
+        """
         if mode not in (None, "dispatch", "review"):
             raise ProfileRefused("profile_acl_invalid", "unknown trusted attempt mode")
+        if (type(kimi_state) is not bool or kimi_state and (internet_client or mode != "review"
+                or folders is None or readonly_home_identity is None)):
+            raise ProfileRefused("profile_acl_invalid", "Kimi state requires an offline staged home")
+        if kimi_read_config is not None and not kimi_state:
+            raise ProfileRefused("profile_acl_invalid", "Kimi read role requires staged state")
+        loans = self._loans(mode, folders, readonly_home_identity)
         path, sid = self.create_profile()
         acl = None
         try:
@@ -220,19 +310,35 @@ class ProfileJournal:
                     raise ProfileRefused("profile_acl_invalid", "trusted ACL callbacks are absent")
                 from .process_acl import AttemptAclJournal
                 acl = AttemptAclJournal(self, self.native)
-                _, paths = acl.prepare(path, sid, mode)
-                yield WindowsContainer(sid, internet_client=internet_client), paths
+                record, paths = acl.prepare(path, sid, mode, folders=loans is not None,
+                                            kimi_state=kimi_state)
+                if loans is not None:
+                    loans.grant(path, sid, mode, folders)
+                    paths = {**paths, **loans.paths}
+                install = None if loans is None else str(paths["install"])
+                with ExitStack() as kept:
+                    if kimi_read_config is not None:
+                        from .kimi_read_config import bind_read_config
+                        binding = kept.enter_context(
+                            bind_read_config(paths, kimi_read_config, sid, self.native))
+                        acl.record_kimi_read_role(record, binding)
+                    boundary = WindowsContainer(sid, internet_client=internet_client, install=install)
+                    yield boundary, paths
         finally:
             try:
                 if active_tokens is not None and active_tokens():
                     raise ProfileRefused("profile_acl_unproven", "native children still hold attempt loan")
                 if self.owner_root is not None:
                     ownership.require_owner(self.owner_root).check()
+                if loans is not None:
+                    loans.restore()
                 if acl is not None:
                     record = acl._record_path(self._read(path)["attempt"])
                     if record.exists():
                         acl.retire(record, proven=True)
                 self.retire(path)
             finally:
+                if loans is not None:
+                    loans.close()
                 if acl is not None:
                     acl.close()

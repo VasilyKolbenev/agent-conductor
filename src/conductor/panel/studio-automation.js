@@ -1,8 +1,9 @@
 "use strict";
 // A reviewed human permission is separate from per-action confirmation.
 import {element, field} from "./command-view.js";
+import {DEPTH, guidanceHeadline, guidanceText} from "./studio-budget-guidance.js";
 import {localize} from "./studio-i18n.js";
-import {automationEligible} from "./studio-automation-model.js";
+import {automationEligible, previewRequest} from "./studio-automation-model.js";
 
 const note = (text) => element("p", {className: "studio-hint", text});
 const word = (state, key, params) => localize(state, `automation.${key}`, params);
@@ -26,6 +27,57 @@ function input(state, held, actions, key, node = null) {
 }
 function boundsForm(state, held, actions) {
   const form = element("form", {className: "studio-automation__bounds"});
+  const {max_actions: actionsMax, max_action_seconds: actionSeconds,
+    max_total_task_seconds: total, duration_seconds: duration} = held.draft;
+  const custom = held.draft.custom, plan = held.recommendation;
+  const t = (key, params) => localize(state, key, params);
+  if (!custom && !held.view?.authorization) {
+    const choose = element("select", {"data-focus": "automation:budget_depth"});
+    choose.append(element("option", {value: "", text: t("wizard.budget.plan")}));
+    for (const depth of DEPTH) choose.append(element("option", {
+      value: depth, text: t(`wizard.budget.${depth}`)}));
+    choose.value = held.depth || "";
+    choose.disabled = Boolean(held.pending || held.request);
+    choose.addEventListener("change", () => actions.edit("budget_depth", choose.value));
+    form.append(field(t("wizard.budget.heading"), choose));
+  }
+  if (!custom && plan?.guidance) {
+    const time = (n) => t("wizard.time.s", {seconds: String(n)});
+    const lines = [guidanceHeadline(plan.guidance, t)];
+    if (held.expanded) lines.push(...guidanceText(plan.guidance, t, time));
+    const explanation = element("div", {"data-budget-guidance": plan.guidance.depth}, lines.map(note));
+    form.append(explanation);
+  }
+  const summary = custom || plan ? word(state, "budget_summary",
+    {actions: actionsMax, seconds: actionSeconds, total, duration}) : word(state, "budget_wait");
+  form.append(element("p", {"data-budget-summary": "", text: summary}));
+  if (custom) {
+    form.append(note(word(state, held.draft.suggestedInDesk ? "desk_suggestion" : "budget_custom")),
+      button(state, "use_plan", !held.pending && !held.request,
+      () => actions.preview("edit")));
+  } else if (plan) {
+    form.append(note(word(state, "plan_basis", {steps: String(plan.steps), attempts: String(plan.attempts),
+      checked: String(plan.checked)})));
+    if (plan.spent) form.append(note(word(state, "plan_spent",
+      {actions: String(plan.spent.actions), seconds: String(plan.spent.seconds)})));
+    if (plan.exhausted) form.append(note(word(state, "plan_exhausted")));
+  }
+  const toggle = button(state, held.expanded ? "collapse_limits" : "edit_limits",
+    !held.pending && !held.request, () => {
+      if (!held.expanded || !custom || form.reportValidity()) actions.toggleLimits();
+    });
+  toggle.setAttribute("aria-expanded", String(Boolean(held.expanded)));
+  toggle.dataset.focus = "automation:limits";
+  form.append(toggle);
+  if (held.expanded) appendLimitInputs(form, state, held, actions);
+  const invalid = custom && previewRequest(held.draft) === null;
+  if (invalid) form.append(element("p", {role: "status", "data-invalid-bounds": "", text: word(state, "invalid")}));
+  const submit = button(state, "preview", !invalid && !held.pending && !held.request && held.phase === "ready", () => {});
+  submit.type = "submit"; submit.formNoValidate = !custom; form.append(submit);
+  form.addEventListener("submit", (event) => { event.preventDefault(); if (!custom || form.reportValidity()) actions.preview(); });
+  return form;
+}
+function appendLimitInputs(form, state, held, actions) {
   for (const key of ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"])
     form.append(input(state, held, actions, key));
   for (const row of held.draft.node_limits) {
@@ -34,10 +86,6 @@ function boundsForm(state, held, actions) {
     group.append(input(state, held, actions, "timeout_seconds", row), input(state, held, actions, "max_attempts", row));
     form.append(group);
   }
-  const submit = button(state, "preview", !held.pending && !held.request && held.phase === "ready", () => {});
-  submit.type = "submit"; form.append(submit);
-  form.addEventListener("submit", (event) => { event.preventDefault(); if (form.reportValidity()) actions.preview(); });
-  return form;
 }
 function participant(state, detail, id, duty) {
   const found = detail.config.instances.find((row) => row.id === id);
@@ -45,7 +93,8 @@ function participant(state, detail, id, duty) {
   return note(word(state, duty, {instance: found.id, adapter: found.adapter,
     model: found.model || word(state, "unpinned")}));
 }
-function reviewedWork(state, terms) {
+function reviewedWork(state, preview) {
+  const {terms} = preview;
   const detail = state.runs.detail, box = element("section", {}, [element("h4", {text: word(state, "bounds")})]);
   for (const name of ["max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds"])
     box.append(note(`${word(state, name)}: ${terms[name]}`));
@@ -55,6 +104,20 @@ function reviewedWork(state, terms) {
       participant(state, detail, node.instance_id, "performs"),
       participant(state, detail, node.verifier_instance_id, "verifies"),
       note(`${word(state, "timeout_seconds")}: ${limit.timeout_seconds} · ${word(state, "max_attempts")}: ${limit.max_attempts}`));
+    if (preview.grok_diagnostic_steps?.includes(node.node_id)) {
+      box.append(note(word(state, "grok_session_diagnostic", {step: node.node_id})));
+    }
+    if (preview.patch_steps?.includes(node.node_id))
+      box.append(note(word(state, "patch_step")));
+    const tests = preview.test_steps?.find(row => row.node_id === node.node_id);
+    if (tests) {
+      const plan = tests.policy;
+      box.append(note(word(state, "local_tests", {runner: plan.runner,
+        start: plan.start, pattern: plan.pattern,
+        seconds: String(Math.min(plan.timeout_seconds, limit.timeout_seconds))})),
+      element("details", {}, [element("summary", {text: word(state, "test_pin")}),
+        element("pre", {text: JSON.stringify(plan.toolchain, null, 2)})]));
+    }
     if (node.arguments?.work_item_id) box.append(note(`work/${node.arguments.work_item_id}`));
   }
   return box;
@@ -110,27 +173,30 @@ function review(state, held, actions) {
   const preview = held.preview;
   const box = element("section", {className: "studio-automation__review", "data-automation-preview": "true"}, [
     note(word(state, "valid_until", {at: preview.valid_until})),
-    reviewedWork(state, preview.terms), providerFacts(state, preview.provider_facts),
+    reviewedWork(state, preview), providerFacts(state, preview.provider_facts),
     documents(state, preview.terms), roads(state),
     note(word(state, "limit_note")), note(word(state, "stop_note")), note(word(state, "workspace")),
     element("details", {}, [element("summary", {text: word(state, "technical")}),
       element("pre", {text: JSON.stringify(preview.terms, null, 2)})]),
   ]);
   box.append(button(state, "authorize", held.phase === "ready" && Boolean(held.view?.owner_present)
-    && Boolean(held.draft.actor.trim()) && !held.pending && !held.request, actions.authorize));
+    && Boolean(held.draft.actor.trim()) && !held.pending && !held.request
+    && (held.draft.custom || !held.recommendation?.exhausted), actions.authorize));
+  if (!held.draft.actor.trim()) box.append(note(word(state, "name_needed")));
   return box;
 }
 function status(state, held, actions) {
+  const recovery = held.view.reason_code === "recovery_required";
   const view = held.view, box = element("section", {"data-automation-state": view.state}, [
-    element("h4", {text: word(state, view.state)}), note(word(state, view.reason_code)),
+    element("h4", {text: word(state, recovery ? "recovery_title" : view.state)}), note(word(state, view.reason_code)),
     note(word(state, "actions_left", {spent: String(view.spent_actions), remaining: String(view.remaining_actions)})),
     note(word(state, "time_left", {spent: String(view.spent_task_seconds), remaining: String(view.remaining_task_seconds)})),
   ]);
   if (view.expires_at) box.append(note(word(state, "expires", {at: view.expires_at})));
   if (view.active_action_id) box.append(note(word(state, "current_action", {id: view.active_action_id})));
   if (view.next_node_id) box.append(note(word(state, "next_node", {id: view.next_node_id})));
-  if (!view.owner_present) box.append(note(word(state, "owner_absent")));
-  if (view.authorization && !["revoked", "expired", "complete"].includes(view.state)) {
+  if (!view.owner_present && !recovery) box.append(note(word(state, "owner_absent")));
+  if (!recovery && view.authorization && !["revoked", "expired", "complete"].includes(view.state)) {
     const ready = held.phase === "ready" && view.owner_present && !held.pending && !held.request && held.draft.actor.trim();
     const action = ["paused", "restart_required", "stalled"].includes(view.state) ? "resume" : "pause";
     box.append(button(state, action, ready, () => actions.control(action)),
@@ -138,18 +204,36 @@ function status(state, held, actions) {
   }
   return box;
 }
-export function mountAutomation(mount, state, held, actions) {
+export function mountAutomation(mount, state, held, actions, showDecisions, deskReturn = null) {
   if (!automationEligible(state.runs.detail) || !held.draft || held.runId !== state.runs.selectedId) return;
+  const recovery = held.view?.reason_code === "recovery_required";
+  const awaiting = !recovery && state.connection === "open" && state.decisions.phase === "ready"
+    && state.decisions.list.some((row) => row.run_id === held.runId && row.needs_answer);
   const box = element("section", {className: "studio-section studio-automation", "data-automation": held.runId}, [
-    element("h3", {text: word(state, "title")}), note(word(state, "explain")), input(state, held, actions, "actor"),
+    element("h3", {text: word(state, "title")}), note(word(state, awaiting ? "decision_waiting" : "explain")),
+    ...(awaiting ? [button(state, "open_decision", true, () => showDecisions(held.runId))] : []),
+    input(state, held, actions, "actor"),
+    ...(deskReturn ? [element("a", {href: deskReturn, text: word(state, "desk_return")})] : []),
     button(state, "refresh", state.connection === "open" && !held.pending, actions.refresh),
   ]);
   if (["loading", "failed", "disconnected"].includes(held.phase)) box.append(note(word(state, held.phase)));
-  if (held.notice) box.append(element("p", {"data-automation-notice": held.notice, text: word(state, held.notice)}));
+  const deck = mount.querySelector(".studio-deck");
+  if (deck) deck.after(box); else mount.append(box);
+  if (recovery) {
+    box.append(status(state, held, actions));
+    return;
+  }
+  const grantRefusal = ["slot_busy", "preview_stale"].includes(held.notice);
+  if (held.notice && !grantRefusal) box.append(element("p", {"data-automation-notice": held.notice, text: word(state, held.notice)}));
   if (held.view) box.append(status(state, held, actions));
   if (held.request) box.append(button(state, "retry", !held.pending && state.connection === "open", actions.retry));
   else if (!held.view?.authorization || ["expired", "revoked"].includes(held.view.state)) box.append(boundsForm(state, held, actions));
   if (held.preview) box.append(review(state, held, actions));
-  const deck = mount.querySelector(".studio-deck");
-  if (deck) deck.after(box); else mount.append(box);
+  if (grantRefusal) {
+    const feedback = element("p", {role: "status", "data-automation-notice": held.notice, text: word(state, held.notice)});
+    if (held.notice === "slot_busy" && held.holder) feedback.append(" ", element("a", {target: "_blank", rel: "noopener",
+      href: `#screen=runs&run=${encodeURIComponent(held.holder)}&lang=${state.locale}`,
+      text: word(state, "open_holder", {id: held.holder})}));
+    box.append(feedback);
+  }
 }

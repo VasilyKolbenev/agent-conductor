@@ -29,12 +29,17 @@ class AttemptScope:
         return AttemptScope(self.resource, self.acquire, self.release)
 
 
+def instance_declarations(adapter):
+    """Read only values stored on this instance, without invoking its capability getters."""
+    try:
+        return object.__getattribute__(adapter, "__dict__")
+    except AttributeError:
+        return {}
+
+
 def registered_attempt_scope(adapter) -> AttemptScope | None:
     """Read an explicit value/slot without invoking discovery or a descriptor getter."""
-    try:
-        values = object.__getattribute__(adapter, "__dict__")
-    except AttributeError:
-        values = {}
+    values = instance_declarations(adapter)
     if "attempt_scope" in values:
         claimed = values["attempt_scope"]
     else:

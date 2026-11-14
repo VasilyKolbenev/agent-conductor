@@ -1,0 +1,419 @@
+"""Source guards of the git block: the one switch, the one target, honest words, text as text.
+
+Each guard is a function of source text that returns the faults it finds (`early_flip`, the one
+yes-or-no guard, returns whether the flip is early), so the same function is run on the real
+modules (and finds none) and on planted strings (and finds the planted fault): a guard that has
+never been seen to fail proves nothing. What a press does is
+`tests/test_desk_wizard_git_run.py`; what is drawn is in `browser_tests/test_desk_wizard_git*.py`.
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from conductor.command.git_setup_first import TITLES
+from tests.desk_wizard_node import PANEL, run_js
+from tests.test_graph_source import _code
+
+ROOT = Path(__file__).resolve().parents[1]
+SWITCH_MODULE = "desk-wizard-git.js"
+MODEL = "desk-wizard-model.js"
+BLOCK = ("desk-wizard-git.js", "desk-wizard-git-run.js", "desk-wizard-git-view.js",
+         "desk-wizard-git-copy.js")
+MODULES = {"i18n": "studio-i18n.js"}
+SWITCH = "FIRST_COMMIT_CONFIRM_OPEN"
+#: How the route's own switch is spelled in lane L's module; the desk never opens before it.
+ROUTE = ROOT / "src" / "conductor" / "command" / "git_setup.py"
+
+
+def _code_of(name: str) -> str:
+    return _code(PANEL / name)
+
+
+def switch_faults(sources: dict[str, str]) -> list[str]:
+    """A switch that is not one boolean literal, or is read in more than the one place."""
+    faults = []
+    own = sources.get(SWITCH_MODULE, "")
+    declared = re.findall(rf"^export const {SWITCH} = (true|false);$", own, re.MULTILINE)
+    if len(declared) != 1:
+        faults.append(f"the switch is not declared exactly once as a boolean literal: {declared}")
+    if own.count(SWITCH) != 1:
+        faults.append("the module that declares the switch also reads it")
+    for name, code in sources.items():
+        if name != SWITCH_MODULE and name != MODEL and SWITCH in code:
+            faults.append(f"{name} names the switch")
+    readers = len(re.findall(rf"\b{SWITCH}\b", sources.get(MODEL, "")))
+    if readers > 2:
+        faults.append(f"the model reads the switch in {readers - 1} places")
+    return faults
+
+
+def target_faults(sources: dict[str, str]) -> list[str]:
+    """Any write target other than the one setup route, or a second endpoint named in the block."""
+    faults = []
+    for name, code in sources.items():
+        for target in re.findall(r'target: "(\w+)"', code):
+            if target != "gitSetup":
+                faults.append(f"{name} asks target {target}")
+        if re.search(r"/command/", code):
+            faults.append(f"{name} names an endpoint")
+    return faults
+
+
+#: The words that speak of a request whose outcome the desk may not know: the wait, the lost answer,
+#: the press that was turned away, the chain's status and skipped-step words, and the lines of the
+#: dialog that asks before a window with a request in flight is closed.
+UNKNOWN_OUTCOME_WORDS = ("wizard.first.busy.", "wizard.first.lost.", "wizard.first.unsent.",
+                         "wizard.first.chain.status.", "wizard.first.chain.skipped.",
+                         "wizard.first.close_")
+
+
+def word_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
+    """A busy, lost or unsent word that promises progress or names a verdict it does not know."""
+    banned_en = re.compile(r"cancel|fail|error|abort", re.IGNORECASE)
+    banned_ru = re.compile(r"отмен|ошибк|не удалось|сбой", re.IGNORECASE)
+    faults = []
+    for key, (en, ru) in catalogue.items():
+        if not key.startswith(UNKNOWN_OUTCOME_WORDS):
+            continue
+        if "%" in en or "%" in ru or re.search(r"\d", en + ru):
+            faults.append(f"{key} carries a figure")
+        if banned_en.search(en) or banned_ru.search(ru):
+            faults.append(f"{key} says cancelled or failed")
+    return faults
+
+
+def coaching_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
+    """A next-step line that tells the person to type a name into the name field.
+
+    The field holds the name of whoever acts now: a line that says which name to type coaches a
+    person to act under another person's name, which the route's contract forbids.
+    """
+    en = re.compile(r"\b(?:type|enter|put|write|use) (?:that|the|this|their|his|her) name",
+                    re.IGNORECASE)
+    ru = re.compile(r"(?:введите|впишите|укажите|используйте) (?:его|это|то|имя)", re.IGNORECASE)
+    return [f"{key} tells the person to type a name" for key, (said_en, said_ru) in
+            catalogue.items() if key.startswith("wizard.first.next.")
+            and (en.search(said_en) or ru.search(said_ru))]
+
+
+PLAIN_LINE = "wizard.first.next.head_exists"
+WAIT_LINE = "wizard.first.next.head_exists_signing"
+#: What a person is told about the commit that stops the first commit: that this operation cannot
+#: accept it, never that the product did not make it (the review ruling of 13.10, section 3).
+HEAD_FITS = {"en": "a commit this operation cannot accept",
+             "ru": "коммит, который эта операция принять не может"}
+#: What each of the two lines told the person before, and still tells.
+HEAD_KEPT = {"en": ("Nothing was changed", "never moves or removes a branch"),
+             "ru": ("Ничего не изменено", "никогда не переносит и не убирает ветку")}
+HEAD_BLAME = {"en": re.compile(r"did not make|didn't make|not the product", re.IGNORECASE),
+              "ru": re.compile(r"сделал не продукт|не продукт", re.IGNORECASE)}
+LANGUAGE_COLUMN = {"en": 0, "ru": 1}
+
+
+def head_exists_faults(catalogue: dict[str, tuple[str, str]], lang: str) -> list[str]:
+    """The two `head_exists` next-step lines in one language: neutral about who made the commit.
+
+    The branch holds a commit this operation cannot accept. What matters is whether it fits this
+    operation, not whether the product made it, so each line says that it does not fit, does not
+    say who made it, and keeps what it told the person: nothing was changed, and the product
+    never moves or removes a branch. A missing line fails every check.
+    """
+    faults = []
+    for key in (PLAIN_LINE, WAIT_LINE):
+        said = catalogue.get(key, ("", ""))[LANGUAGE_COLUMN[lang]]
+        if HEAD_BLAME[lang].search(said):
+            faults.append(f"{key} ({lang}) says who made the commit")
+        if HEAD_FITS[lang] not in said:
+            faults.append(f"{key} ({lang}) does not say this operation cannot accept the commit")
+        faults += [f"{key} ({lang}) no longer says {kept!r}" for kept in HEAD_KEPT[lang]
+                   if kept.lower() not in said.lower()]
+    return faults
+
+
+FALLBACK = "wizard.first.manual.other"
+
+
+def fallback_faults(catalogue: dict[str, tuple[str, str]]) -> list[str]:
+    """The words for a `manual` reason the desk has none for: the code, and that the file stays out.
+
+    A row of the `manual` list is a file the product does not commit. When the desk cannot say why,
+    the row must still carry the code, so that a person can name it, and must say the file is left
+    out, so that a bare code is never read as a file that goes in.
+    """
+    left_en = re.compile(r"\bleft out\b|\bnot (?:committed|added|included)\b", re.IGNORECASE)
+    left_ru = re.compile(r"не попад|не будет|не войд", re.IGNORECASE)
+    en, ru = catalogue.get(FALLBACK, ("", ""))
+    faults = []
+    if "{code}" not in en or "{code}" not in ru:
+        faults.append(f"{FALLBACK} does not carry the code")
+    if not left_en.search(en) or not left_ru.search(ru):
+        faults.append(f"{FALLBACK} does not say the file is left out")
+    return faults
+
+
+def markup_faults(sources: dict[str, str]) -> list[str]:
+    """Any way a text could reach the page as markup."""
+    pattern = re.compile(r"innerHTML|outerHTML|insertAdjacentHTML|createContextualFragment"
+                         r"|DOMParser|document\.write|[<\"']progress", re.IGNORECASE)
+    return [f"{name}: {found.group(0)}" for name, code in sources.items()
+            for found in pattern.finditer(code)]
+
+
+def command_faults(code: str) -> list[str]:
+    """`signCommands` must take `signing` alone and never name the stored terms."""
+    found = re.search(r"export function signCommands\(([^)]*)\) \{\n(.*?)^\}$", code,
+                      re.MULTILINE | re.DOTALL)
+    if found is None:
+        return ["signCommands is not declared as an exported function"]
+    faults = []
+    if found.group(1).strip() != "signing":
+        faults.append(f"signCommands takes {found.group(1)!r}")
+    if re.search(r"\bterms\b", found.group(2)):
+        faults.append("signCommands reads the stored terms")
+    return faults
+
+
+def _sources() -> dict[str, str]:
+    return {name: _code_of(name) for name in (*BLOCK, MODEL)}
+
+
+def test_the_switch_is_one_boolean_literal_with_one_declaration_and_at_most_one_reader():
+    assert switch_faults(_sources()) == []
+
+
+DECLARATION = re.compile(rf"^export const {SWITCH} = (?:true|false);$", re.MULTILINE)
+
+
+def redeclared(source: str, line: str) -> str:
+    """`source` with the switch's one declaration replaced by `line`, whichever boolean it holds.
+
+    The module must hold exactly one declaration to replace: a substitution that found nothing
+    would hand the guard an unchanged module, and a negative built on it would fail for the
+    wrong reason (or pass, the day the shipped literal is the one the substitution names).
+    """
+    swapped, count = DECLARATION.subn(lambda _found: line, source)
+    assert count == 1, f"the module declares the switch {count} times, not once"
+    return swapped
+
+
+def test_the_switch_guard_accepts_the_one_literal_whichever_boolean_it_holds():
+    real = _sources()
+    for value in ("true", "false"):
+        held = redeclared(real[SWITCH_MODULE], f"export const {SWITCH} = {value};")
+        assert switch_faults({**real, SWITCH_MODULE: held}) == [], value
+
+
+def test_the_switch_guard_names_a_second_reader_a_missing_literal_and_a_non_boolean():
+    real = _sources()
+    second = {**real, "desk-wizard-git-run.js": real["desk-wizard-git-run.js"] + f"\n{SWITCH}"}
+    assert switch_faults(second) == ["desk-wizard-git-run.js names the switch"]
+    wide = {**real, MODEL: real[MODEL] + f"\nconst a = {SWITCH}; const b = {SWITCH}; {SWITCH};"}
+    assert any("the model reads the switch" in fault for fault in switch_faults(wide))
+    own = real[SWITCH_MODULE]
+    for line in (f"export const {SWITCH} = 0;", ""):
+        faults = switch_faults({**real, SWITCH_MODULE: redeclared(own, line)})
+        assert any("not declared" in fault for fault in faults), repr(line)
+    both = own + f"\nexport const {SWITCH} = true;"
+    assert switch_faults({**real, SWITCH_MODULE: both})
+
+
+def early_flip(route: str, desk: str) -> bool:
+    """Whether the desk's literal is true while the route still names its own switch as false.
+
+    That is the one state where a press would reach a door that answers 422. A route whose switch
+    is true, or gone, constrains nothing: the flip is the tech lead's.
+    """
+    closed = re.search(r"^_CONFIRM_OPEN\s*=\s*False\b", route, re.MULTILINE) is not None
+    opened = re.search(rf"^export const {SWITCH} = true;$", desk, re.MULTILINE) is not None
+    return opened and closed
+
+
+def test_the_desk_never_opens_the_confirm_while_the_route_it_guards_is_closed():
+    """One direction only: lane L may delete or flip its switch first; the desk is flipped after."""
+    route = ROUTE.read_text(encoding="utf-8")
+    assert not early_flip(route, _code_of(SWITCH_MODULE)), (
+        "the desk's switch is open and the route's is closed")
+
+
+def test_the_one_direction_guard_fails_for_an_open_desk_beside_a_closed_route_only():
+    shut, open_, gone = "_CONFIRM_OPEN = False\n", "_CONFIRM_OPEN = True\n", "x = 1\n"
+    desk_open, desk_shut = f"export const {SWITCH} = true;", f"export const {SWITCH} = false;"
+    assert early_flip(shut, desk_open) is True
+    assert [early_flip(shut, desk_shut), early_flip(open_, desk_open), early_flip(gone, desk_open),
+            early_flip(open_, desk_shut), early_flip(gone, desk_shut)] == [False] * 5
+
+
+def test_the_block_asks_only_the_one_setup_target_and_names_no_endpoint_of_its_own():
+    assert target_faults({name: _code_of(name) for name in BLOCK}) == []
+    planted = {"x.js": 'const ask = {target: "gitSetup"}; const other = {target: "seed"};',
+               "y.js": 'const path = "/command/project/git/setup";'}
+    assert target_faults(planted) == ["x.js asks target seed", "y.js names an endpoint"]
+
+
+def _catalogue() -> dict[str, tuple[str, str]]:
+    """Every message of the one table, as `key: (English, Russian)`."""
+    return run_js("""
+      console.log(JSON.stringify(Object.fromEntries(Object.entries(i18n.MESSAGES).map(
+        ([key, row]) => [key, [row.en, row.ru]]))));
+    """, modules=MODULES)
+
+
+def test_no_busy_lost_or_unsent_word_carries_a_figure_or_calls_an_unknown_outcome_a_verdict():
+    out = _catalogue()
+    assert all(any(key.startswith(prefix) for key in out) for prefix in UNKNOWN_OUTCOME_WORDS)
+    assert word_faults(out) == []
+    planted = {"wizard.first.busy.confirm": ("Working, 60% done", "Работаем"),
+               "wizard.first.lost.head": ("The request was cancelled", "Запрос отменён"),
+               "wizard.first.unsent.route_not_found": ("It is fine", "Не удалось отправить"),
+               "wizard.first.next.git_failed": ("It failed 3 times", "Сбой"),
+               "wizard.first.chain.status.lost": ("The step failed", "Шаг не выполнен"),
+               "wizard.first.chain.skipped.read": ("Skipped after 3 tries", "Пропущен"),
+               "wizard.first.chain.title": ("Create the repository: 2 steps", "Создать: 2 шага"),
+               "wizard.first.close_chain": ("The second step is cancelled", "Шаг отменён"),
+               "wizard.first.close_busy": ("Stopped, 2 of 2 done", "Остановлено"),
+               "wizard.first.close_anyway": ("Close anyway", "Закрыть всё равно")}
+    assert word_faults(planted) == [
+        "wizard.first.busy.confirm carries a figure",
+        "wizard.first.lost.head says cancelled or failed",
+        "wizard.first.unsent.route_not_found says cancelled or failed",
+        "wizard.first.chain.status.lost says cancelled or failed",
+        "wizard.first.chain.skipped.read carries a figure",
+        "wizard.first.close_chain says cancelled or failed",
+        "wizard.first.close_busy carries a figure"]
+
+
+def test_no_next_step_line_coaches_a_person_to_type_another_persons_name():
+    catalogue = _catalogue()
+    assert any(key.startswith("wizard.first.next.") for key in catalogue)
+    assert coaching_faults(catalogue) == []
+    planted = {"wizard.first.next.setup_terms_changed": (
+        "Another name or git author is acting now. The name that confirmed it can still finish "
+        "it: type that name above, then continue.",
+        "Сейчас действует другое имя или другой автор git. Закончить может имя, которое "
+        "подтверждало: введите его выше и продолжите."),
+        "wizard.first.next.git_failed": ("Check git in a terminal.", "Проверьте git."),
+        "wizard.first.done.init": ("Type the name.", "Введите имя.")}
+    assert coaching_faults(planted) == [
+        "wizard.first.next.setup_terms_changed tells the person to type a name"]
+
+
+def test_the_words_for_an_unknown_manual_reason_carry_its_code_and_say_the_file_is_left_out():
+    assert fallback_faults(_catalogue()) == []
+    assert fallback_faults({FALLBACK: ("reason: {code}", "причина: {code}")}) == [
+        f"{FALLBACK} does not say the file is left out"]
+    assert fallback_faults({FALLBACK: ("Left out.", "Не попадёт в коммит.")}) == [
+        f"{FALLBACK} does not carry the code"]
+    assert len(fallback_faults({})) == 2, "a missing message fails both ways"
+
+
+def test_the_store_error_notice_is_never_the_words_of_a_lost_answer():
+    for name in BLOCK[:3]:
+        assert "error.store_error" not in _code_of(name), name
+
+
+def test_the_plain_head_exists_line_names_no_commands_and_the_signature_wait_line_does():
+    catalogue = _catalogue()
+    commands = re.compile(r"command|check again|команд|проверьте снова", re.IGNORECASE)
+    plain = catalogue["wizard.first.next.head_exists"]
+    wait = catalogue["wizard.first.next.head_exists_signing"]
+    assert not any(commands.search(said) for said in plain), "a plain confirm has no commands"
+    assert all(commands.search(said) for said in wait), "a wait for a signature has two"
+    assert plain != wait
+
+
+@pytest.mark.parametrize("lang", ("en", "ru"))
+def test_the_head_exists_lines_call_the_commit_one_this_operation_cannot_accept(lang):
+    assert head_exists_faults(_catalogue(), lang) == []
+
+
+#: The two lines as they were shipped: the plain one said the product did not make the commit, and
+#: the wait one said it was not the one the two commands make.
+OLD_LINES = {
+    PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit the product did not make, and "
+        "the product never moves or removes a branch.",
+        "Ничего не изменено. В ветке уже есть коммит, который сделал не продукт, а продукт "
+        "никогда не переносит и не убирает ветку."),
+    WAIT_LINE: (
+        "The branch already holds a commit that is not the one the two commands make, an "
+        "unsigned commit included. Nothing was changed and the wait stays. The product never "
+        "moves or removes a branch: make sure the branch holds the commit made by the two "
+        "commands, then check again.",
+        "В ветке уже есть коммит, который сделан не этими двумя командами, в том числе "
+        "неподписанный. Ничего не изменено, ожидание остаётся. Продукт никогда не переносит и "
+        "не убирает ветку: проверьте, что в ветке коммит, сделанный двумя командами, и "
+        "проверьте снова.")}
+NEUTRAL_LINES = {
+    PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit this operation cannot accept, "
+        "and the product never moves or removes a branch.",
+        "Ничего не изменено. В ветке уже есть коммит, который эта операция принять не может, а "
+        "продукт никогда не переносит и не убирает ветку."),
+    WAIT_LINE: (
+        "The branch already holds a commit this operation cannot accept, an unsigned commit "
+        "included. Nothing was changed and the wait stays. The product never moves or removes a "
+        "branch: make sure the branch holds the commit made by the two commands, then check "
+        "again.",
+        "В ветке уже есть коммит, который эта операция принять не может, в том числе "
+        "неподписанный. Ничего не изменено, ожидание остаётся. Продукт никогда не переносит и "
+        "не убирает ветку: проверьте, что в ветке коммит, сделанный двумя командами, и "
+        "проверьте снова.")}
+
+
+def _swapped(lang: str) -> dict[str, tuple[str, str]]:
+    """The neutral lines with the old words in one language and the neutral ones in the other."""
+    column = LANGUAGE_COLUMN[lang]
+    return {key: tuple(OLD_LINES[key][i] if i == column else NEUTRAL_LINES[key][i]
+                       for i in (0, 1)) for key in NEUTRAL_LINES}
+
+
+def test_the_head_exists_guard_fails_the_old_words_in_each_language_on_its_own():
+    assert head_exists_faults(NEUTRAL_LINES, "en") == []
+    assert head_exists_faults(NEUTRAL_LINES, "ru") == []
+    for lang, other in (("en", "ru"), ("ru", "en")):
+        assert head_exists_faults(_swapped(lang), other) == [], f"the {other} words are neutral"
+        assert head_exists_faults(_swapped(lang), lang) == [
+            f"{PLAIN_LINE} ({lang}) says who made the commit",
+            f"{PLAIN_LINE} ({lang}) does not say this operation cannot accept the commit",
+            f"{WAIT_LINE} ({lang}) does not say this operation cannot accept the commit"]
+
+
+def test_the_head_exists_guard_names_a_dropped_promise_and_a_missing_line():
+    dropped = {**NEUTRAL_LINES, PLAIN_LINE: (
+        "Nothing was changed. The branch already holds a commit this operation cannot accept.",
+        NEUTRAL_LINES[PLAIN_LINE][1])}
+    assert head_exists_faults(dropped, "en") == [
+        f"{PLAIN_LINE} (en) no longer says 'never moves or removes a branch'"]
+    assert head_exists_faults(dropped, "ru") == []
+    for lang in ("en", "ru"):
+        assert len(head_exists_faults({}, lang)) == 6, "a missing line fails the fit and both kept"
+
+
+def test_no_module_of_the_block_can_put_a_text_on_the_page_as_markup_or_draws_a_progress_bar():
+    assert markup_faults({name: _code_of(name) for name in BLOCK}) == []
+    planted = {"v.js": "node.innerHTML = text;", "w.js": 'element("progress", {})'}
+    assert markup_faults(planted) == ["v.js: innerHTML", 'w.js: "progress']
+
+
+def test_the_sign_commands_take_signing_alone_and_never_the_stored_terms():
+    assert command_faults(_code_of(SWITCH_MODULE)) == []
+    bad_arity = "export function signCommands(signing, terms) {\n  return null;\n}\n"
+    bad_read = ("export function signCommands(signing) {\n"
+                "  return `git update-ref ${terms.target_ref}`;\n}\n")
+    assert command_faults(bad_arity) != [] and command_faults(bad_read) != []
+    assert command_faults("") == ["signCommands is not declared as an exported function"]
+
+
+def test_the_commit_message_the_chain_shows_is_the_one_the_product_writes():
+    out = run_js('console.log(JSON.stringify(g.EMPTY_COMMIT_MESSAGE ?? null));',
+                 modules={"g": SWITCH_MODULE})
+    assert out == TITLES["empty"], "the page says the message the empty first commit really has"
+
+
+def test_the_view_assigns_every_free_text_through_a_text_property_or_a_value():
+    code = _code_of("desk-wizard-git-view.js")
+    assert "textContent" not in code, "text goes through the element helper's `text:`"
+    assert re.findall(r"\.value = (\w+(?:\.\w+)*);", code) == ["text"], "only the commands' area"

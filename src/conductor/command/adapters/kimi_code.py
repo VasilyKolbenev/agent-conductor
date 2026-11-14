@@ -116,6 +116,7 @@ KIMI_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAMES this adapter owns. Only names live in durable config;
 #: the home's VALUE is minted per attempt and never written to any config.
 KIMI_HOME_ENV = "KIMI_CODE_HOME"
+KIMI_PIN_ENV = ("KIMI_CODE_NO_AUTO_UPDATE", "1")
 KIMI_TELEMETRY_ENV = "KIMI_DISABLE_TELEMETRY"
 #: The vendor documents ``1`` as the value that turns telemetry off.
 TELEMETRY_DISABLED = "1"
@@ -152,7 +153,7 @@ KIMI_PROFILE = HarnessProfile(
     reviewed_version=REVIEWED_KIMI_VERSION,
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=KIMI_HOME_ENV,
-    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED),),
+    forced_env=((KIMI_TELEMETRY_ENV, TELEMETRY_DISABLED), KIMI_PIN_ENV),
     version_argv=VERSION_ARGV,
     home_id_kind="kimi-home",
     login_argv=("acp",), login_command=("login",),
@@ -219,25 +220,27 @@ class KimiCodeAdapter(ArtifactAwareTransport):
         return (*OUTPUT_FORMAT_ARGV, PROMPT_FLAG, task_text)
 
     def _env_allow(self) -> tuple[str, ...]:
-        return self._pin.env_allow
+        # A Windows child may treat a differently spelled name as the same variable.
+        owned = {self.profile.home_env, *(name for name, _ in self.profile.forced_env)}
+        return tuple(name for name in self._pin.env_allow if name.upper() not in owned)
 
     def _login(self):
         return self._pin.auth, self._pin.auth_home
 
     def _login_home_grants(self, home):
         blocked = super()._login_home_grants(home)
-        if not _managed_profile(login_home.profile_document(home, "config.toml")):
+        if not _managed_key(home):
             blocked += ("config.toml",)
-        selected = self._runner.capture_environment(self._env_allow())
-        if any(name.startswith("KIMI_") and name not in (KIMI_HOME_ENV, KIMI_TELEMETRY_ENV)
-               and selected.native_value(name) is not None for name in self._env_allow()):
+        allowed = self._env_allow()
+        selected = self._runner.capture_environment(allowed)
+        if any(name.upper().startswith("KIMI_") and selected.native_value(name) is not None
+               for name in allowed):
             blocked += ("environment",)
         return blocked
 
     def _login_secrets(self):
         home = self._signed_in_road()
-        config = login_home.profile_document(home, "config.toml") if home else None
-        key = _managed_profile(config)
+        key = _managed_key(home) if home else None
         if not key:
             return ()
         return login_home.nested_credentials(home, "credentials", (key.removeprefix("oauth/")+".json",))
@@ -368,58 +371,88 @@ def _managed_profile(config):
     return key
 
 
+def _managed_key(home):
+    return _managed_profile(login_home.profile_document(home, "config.toml"))
+
+
+def _quota_credential_name(adapter, home):
+    blocked = adapter._login_home_grants(home)
+    if blocked == ("config.toml",) and login_home.profile_absent(home, "config.toml"):
+        raise NativeQuotaReadError("not_authenticated")
+    if blocked:
+        raise NativeQuotaReadError("not_supported")
+    key = _managed_key(home)
+    if key is None:
+        raise NativeQuotaReadError("not_supported")
+    return key.removeprefix("oauth/") + ".json"
+
+
+def _check_quota_credential(fields):
+    """Admit the pinned CLI's OAuth fields before any version or usage call."""
+    strings = {"access_token", "refresh_token", "token_type", "scope"}
+    times = {"expires_at", "expires_in"}
+    if set(fields) - strings - times or any(type(fields[k]) is not str for k in strings & fields.keys()):
+        raise NativeQuotaReadError("not_supported")
+    if any(type(fields[k]) not in (int, float) or not 0 <= fields[k] <= 2**53-1 for k in times & fields.keys()):
+        raise NativeQuotaReadError("not_supported")
+    if not fields.get("access_token"):
+        raise NativeQuotaReadError("not_authenticated")
+
+
 def _read_local_usage(adapter, wait, fetch, choose_port):
     with _Turn(adapter):
         adapter._begin_road()
         try:
             home = adapter._signed_in_road()
-            blocked = adapter._login_home_grants(home) if home else ("home",)
-            if blocked == ("config.toml",) and login_home.profile_absent(home, "config.toml"):
-                # The vendor's own login writes config.toml, so its absence is a sign-in still owed,
-                # not an unsupported source (measured 23.09: a signed-out home read `not_supported`).
-                raise NativeQuotaReadError("not_authenticated")
-            if blocked:
+            if not home:
                 raise NativeQuotaReadError("not_supported")
-            if adapter._workspace.sweep_homes():
-                raise NativeQuotaReadError()
-            adapter._workspace.work_root()
-            version = adapter._attempt(VERSION_ARGV, WORK_DIR, timeout=10)
-            _clean(adapter, version)
-            if not adapter._version_matches(version.output):
-                raise NativeQuotaReadError("not_supported")
-            port = choose_port()
-            if type(port) is not int or not 1 <= port <= 65535:
-                raise NativeQuotaReadError()
-            result = []
-            def read(pid):
-                auth = []
-                def ready():
-                    bearer = login_home.native_server_token(home, "server.token")
-                    if bearer is None:
-                        return None
-                    try:
-                        value = fetch(port=port, path="/api/v1/auth", bearer=bearer, timeout=.25)
-                    except Exception:
-                        return None
-                    auth.append(value)
-                    return port, bearer
-                _, bearer = wait(ready, timeout=10)
-                value = auth[-1]
-                data = value.get("data") if type(value) is dict and type(value.get("code")) is int and value["code"] == 0 else None
-                if (type(data) is not dict or data.get("ready") is not True
-                        or type(data.get("providers_count")) is not int or data["providers_count"] != 1
-                        or data.get("managed_provider") != {
-                            "name": "managed:kimi-code", "status": "authenticated"}):
-                    raise NativeQuotaReadError("not_authenticated")
-                result.append(fetch(port=port, path="/api/v1/oauth/usage", bearer=bearer, timeout=10))
-            outcome = adapter._attempt(("web", "--no-open", "--host", "127.0.0.1", "--port", str(port)),
-                WORK_DIR, timeout=30, separate_stderr=True, server_read=read)
-            if (outcome.status != "stopped" or outcome.output_truncated or outcome.output_contains_env_value
-                    or adapter._login_echo or adapter._retained or adapter._login_residue or len(result) != 1):
-                raise NativeQuotaReadError()
-            return result[0]
+            with login_home.held_quota_credential(
+                    home, "credentials", lambda: _quota_credential_name(adapter, home),
+                    _check_quota_credential):
+                return _read_held_local_usage(adapter, home, wait, fetch, choose_port)
         finally:
             adapter._forget_login_sample()
+
+
+def _read_held_local_usage(adapter, home, wait, fetch, choose_port):
+    if adapter._workspace.sweep_homes():
+        raise NativeQuotaReadError()
+    adapter._workspace.work_root()
+    version = adapter._attempt(VERSION_ARGV, WORK_DIR, timeout=10)
+    _clean(adapter, version)
+    if not adapter._version_matches(version.output):
+        raise NativeQuotaReadError("not_supported")
+    port = choose_port()
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise NativeQuotaReadError()
+    result = []
+    def read(pid):
+        auth = []
+        def ready():
+            bearer = login_home.native_server_token(home, "server.token")
+            if bearer is None:
+                return None
+            try:
+                value = fetch(port=port, path="/api/v1/auth", bearer=bearer, timeout=.25)
+            except Exception:
+                return None
+            auth.append(value)
+            return port, bearer
+        _, bearer = wait(ready, timeout=10)
+        value = auth[-1]
+        data = value.get("data") if type(value) is dict and type(value.get("code")) is int and value["code"] == 0 else None
+        if (type(data) is not dict or data.get("ready") is not True
+                or type(data.get("providers_count")) is not int or data["providers_count"] != 1
+                or data.get("managed_provider") != {
+                    "name": "managed:kimi-code", "status": "authenticated"}):
+            raise NativeQuotaReadError("not_authenticated")
+        result.append(fetch(port=port, path="/api/v1/oauth/usage", bearer=bearer, timeout=10))
+    outcome = adapter._attempt(("web", "--no-open", "--host", "127.0.0.1", "--port", str(port)),
+        WORK_DIR, timeout=30, separate_stderr=True, server_read=read)
+    if (outcome.status != "stopped" or outcome.output_truncated or outcome.output_contains_env_value
+            or adapter._login_echo or adapter._retained or adapter._login_residue or len(result) != 1):
+        raise NativeQuotaReadError()
+    return result[0]
 
 
 def _local_usage(payload):

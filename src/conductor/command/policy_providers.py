@@ -32,6 +32,11 @@ class ProviderAuthority:
         # Profiles contain code-owned arguments, finite caps and login NAME rules,
         # never sampled credentials.
         transport = asdict(profile) if is_dataclass(profile) else {}
+        review_format = getattr(type(adapter), "review_output_format", None)
+        if review_format is not None:
+            if review_format != "json":
+                raise ContractError("unsupported review output format")
+            transport["review_output_format"] = review_format
         from .adapters.deep_commands import OUTPUT_LIMIT_BYTES
         from .adapters.harness_workspace import FILE_BUDGET, INSTRUCTION_LIMIT
         from .adapters.independent_check import FRAME_LIMIT
@@ -54,9 +59,11 @@ def task_channel_fact(profile):
     if not is_dataclass(profile):
         return None
     from .adapters._procgroup import COMMAND_LINE_LIMIT
-    from .adapters.harness_profile import TASK_CHANNEL_STDIN
+    from .adapters.harness_profile import OFF_ARGV_CHANNELS
     from .adapters.process import STDIN_LIMIT
-    if profile.task_channel == TASK_CHANNEL_STDIN:
-        return {"channel": "stdin", "limit": STDIN_LIMIT, "unit": "utf8_bytes", "scope": "task"}
+    if profile.task_channel in OFF_ARGV_CHANNELS:
+        # Stdin and file hold the same bound: the file is checked at the stdin ceiling.
+        return {"channel": profile.task_channel, "limit": STDIN_LIMIT, "unit": "utf8_bytes",
+                "scope": "task"}
     return {"channel": "argv", "limit": COMMAND_LINE_LIMIT, "unit": "utf16_units",
             "scope": "command_line"}

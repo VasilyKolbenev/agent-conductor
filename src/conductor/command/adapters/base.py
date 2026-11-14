@@ -26,35 +26,17 @@ from ..contracts import (
     canonical_json,
 )
 from ..dispatch import validate_dispatch_arguments
-from .attempt_scope import AttemptScopeError, registered_attempt_scope
+from ..execution_boundary import boundary_provided
+from .attempt_scope import AttemptScopeError, instance_declarations, registered_attempt_scope
+from .deep_commands import PATCH_DISPATCH_PROFILES, PATCH_PROFILE, REVIEW_DIAGNOSTICS
 
 
 _ARGUMENT_SCHEMAS = frozenset({"structured-process-v1", "deep-arguments-v1"})
 _INDEPENDENT_SEAMS = ("publish", "release", "verify_for")
-#: Guards that exist only where the registration carries the seam that makes
-#: them. Named ONE BY ONE, guard and seam both, rather than as a rule about a
-#: kind of guard: a rule would excuse every claim that ever lands under it, and
-#: this is the list of claims a class can inherit and be unable to keep.
-#:
-#: `login_directory_gained_state` names the CHECKER's constant
-#: (`verify_holds.CHECKER_LOGIN_RESIDUE`), and a transport serving no review
-#: road has `verify_for` set to None by its base's `__init_subclass__` -- it
-#: inherits the method name and none of the road, so the checker's measurement
-#: is struck for it.
-#:
-#: WHAT THIS DOES NOT SAY, and an earlier version of this comment did: that the
-#: checker is the only thing that measures that directory. It is not. `LoginRoad`
-#: measures it after every spawn and `HeadlessCliTransport._dispatch` refuses on
-#: what it found (`LOGIN_RESIDUE_DETAIL`), as does the review road. Those are the
-#: DOER's own refusals, and the table carries no row of its own for them -- so
-#: for a dispatch-only transport with a pinned subscription login this filter
-#: under-reports a guard that really runs. It under-reports rather than
-#: over-claims, and no shipped provider reaches the case: subscription login is
-#: admitted only for the two protocols whose transports both serve review.
-#: Closing it means giving the doer's refusal its own row, which changes the
-#: table and the wire; it is recorded as a follow-up in
-#: `handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md` and is not
-#: to be closed by widening this filter into a rule.
+#: This declaration names the checker's verify_for guard, not every login measurement.
+#: LoginRoad also measures doer residue; its separate table row remains tracked in
+#: handoff-v1-studio/ISOLATION-C1-DOER-LOGIN-RESIDUE-2026-09-09.md.
+#: Do not widen this filter to claim an inherited seam a provider cannot execute.
 _GUARD_SEAMS = {"login_directory_gained_state": "verify_for"}
 
 
@@ -79,6 +61,7 @@ class IndependentVerifierUnavailable(AdapterContractError):
 PUBLISH_REFUSALS = frozenset({
     "outside_subtree", "nothing_changed", "uncontained", "home_retained",
     "tree_changed", "env_echo", "over_read_budget",
+    "credential_readback_untrusted",
 })
 
 
@@ -134,6 +117,7 @@ class Published:
     result_document: Mapping[str, Any] | None = field(default=None, repr=False)
     instruction_document: Mapping[str, Any] | None = field(default=None, repr=False)
     result_manifest: Mapping[str, Any] | None = field(default=None, repr=False)
+    test_report: Mapping[str, Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if self.refusal is not None and (
@@ -171,6 +155,13 @@ class Published:
         if self.instruction_document is not None:
             object.__setattr__(self, "instruction_document", _contract(
                 _object, "instruction document", self.instruction_document))
+        if self.test_report is not None:
+            from .local_test_receipt import settled_report
+            try:
+                report = settled_report(self.test_report)
+            except (ValueError, TypeError) as error:
+                raise AdapterContractError("invalid local test report") from error
+            object.__setattr__(self, "test_report", _contract(_object, "test report", report))
 
 
 def _published(value: object) -> Published:
@@ -181,7 +172,8 @@ def _published(value: object) -> Published:
         input_artifact_ids=value.input_artifact_ids, sensitive=value.sensitive,
         instruction=value.instruction, input_documents=value.input_documents,
         result_document=value.result_document,
-        instruction_document=value.instruction_document, result_manifest=value.result_manifest)
+        instruction_document=value.instruction_document, result_manifest=value.result_manifest,
+        test_report=value.test_report)
 
 
 def _freeze_manifest(value):
@@ -442,6 +434,8 @@ class AdapterRegistry:
         self._argument_schemas: dict[str, Mapping[str, str]] = {}
         self._independent_seams: dict[str, Mapping[str, Any]] = {}
         self._attempt_scopes = {}
+        self._review_diagnostics: dict[str, str] = {}
+        self._patch_adapters: set[str] = set()
         for adapter in adapters:
             self.register(adapter)
 
@@ -477,12 +471,19 @@ class AdapterRegistry:
             scope = registered_attempt_scope(adapter)
         except AttemptScopeError as error:
             raise AdapterContractError(str(error)) from None
+        declarations = instance_declarations(adapter)
+        version = declarations.get("review_diagnostic_version")
+        patch = declarations.get("patch_dispatch_version")
+        if type(patch) is str and PATCH_DISPATCH_PROFILES.get(reviewed.adapter_id) == patch:
+            self._patch_adapters.add(reviewed.adapter_id)
         # Publish the registration only after every supplied claim validated.
         self._adapters[reviewed.adapter_id] = adapter
         self._manifests[reviewed.adapter_id] = reviewed
         self._argument_schemas[reviewed.adapter_id] = MappingProxyType(reviewed_schemas)
         self._independent_seams[reviewed.adapter_id] = MappingProxyType(independent)
         self._attempt_scopes[reviewed.adapter_id] = scope
+        if type(version) is str and REVIEW_DIAGNOSTICS.get(reviewed.adapter_id) == version:
+            self._review_diagnostics[reviewed.adapter_id] = version
 
     def attempt_scope(self, adapter_id: str):
         """Return the registered value; no discovery or effect is performed."""
@@ -671,6 +672,24 @@ class AdapterRegistry:
                 and all(name in self._independent_seams[manifest.adapter_id]
                         for name in _INDEPENDENT_SEAMS))
 
+    def execution_boundary(self, adapter_id: str, mode: str) -> bool:
+        """Whether this adapter launches an attempt of this mode inside the execution boundary (R5).
+
+        Read off the registered adapter at the moment of asking, because whether a harness is
+        confined is a fact about the instance a door built. The answer fails closed: an adapter
+        that exposes no such seam has not said yes, so it is no (the owned process adapter runs an
+        arbitrary child and has none), and so is anything but True from a seam. A fake or a demo
+        that starts no vendor agent says so by exposing the seam and answering True.
+
+        Raises:
+            AdapterContractError: The adapter is not registered.
+            ValueError: ``mode`` is not an attempt mode.
+        """
+        adapter = self.resolve(adapter_id)
+        boundary_provided("", mode)  # a wrong mode is an error for every adapter, seam or not
+        seam = getattr(adapter, "boundary_provided", None)
+        return seam is not None and seam(mode) is True
+
     def verification_started(self, adapter_id: str, request: ActionRequest) -> bool | None:
         """Read a checker's durable claim; absent knowledge is not a negative fact."""
         self.resolve(adapter_id)
@@ -732,6 +751,14 @@ class AdapterRegistry:
         if not manifest.supports(capability):
             raise UnsupportedCapability(
                 f"adapter {safe!r} does not declare capability {capability!r}")
+        if isinstance(arguments, Mapping) and "grok_diagnostic" in arguments and (
+                capability != "review" or safe not in self._review_diagnostics
+                or arguments["grok_diagnostic"] != self._review_diagnostics[safe]):
+            raise AdapterContractError(
+                "this provider does not support the requested review diagnostic")
+        if (isinstance(arguments, Mapping) and arguments.get("profile") == PATCH_PROFILE
+                and (safe not in self._patch_adapters or capability != "dispatch")):
+            raise AdapterContractError("this provider does not support the requested patch profile")
         if self._argument_schemas[safe].get(capability) == "structured-process-v1":
             validate_dispatch_arguments(arguments)
         if self._argument_schemas[safe].get(capability) == "deep-arguments-v1":

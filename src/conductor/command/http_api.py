@@ -72,6 +72,7 @@ from .http_transport import (
 from .run_store import CorruptRun, RunStore, StoreError
 from .new_work_admission import admit_new_work
 from .project_claim import UNCLAIMED, ProjectIdentity
+from .project_task_draft import TaskDrafts
 from .auto_continue import AutoContinueStore
 from .project_cycle import ProjectCycleStore
 from .project_git import GitRead
@@ -174,11 +175,14 @@ class CommandApi:
             tasks: TaskStore | None = None,
             project: Callable[[], str | None] = lambda: None,
             identity: ProjectIdentity = UNCLAIMED,
-            project_git: GitRead | None = None) -> None:
+            project_git: GitRead | None = None,
+            project_gh: Callable[..., object] | None = None) -> None:
         _admit_parts(store, registry, templates, tasks, identity, session, budget,
                      (clock, ids, publish_run, project))
         if project_git is not None and not callable(project_git):
             raise TypeError("CommandApi project_git must be a git reader")
+        if project_gh is not None and not callable(project_gh):
+            raise TypeError("CommandApi project_gh must be a gh reader")
         # Reviewed descriptors only, rebuilt by the projection before one field of
         # them is read; the boundary never resolves or probes a provider itself.
         self._providers = tuple(providers)
@@ -190,8 +194,12 @@ class CommandApi:
         self._project = project
         # What this server is, and the claim a request may make on it (spec 4.5.1).
         self._identity = identity
+        self._task_drafts = TaskDrafts()
         # The reader of the project's git (spec 9.3), or None for a server that has none.
         self._project_git = project_git
+        # The reader of the pinned gh (spec 9.3) that the push and the pull request use, or
+        # None for a server that has none (a project opened for viewing builds none).
+        self._project_gh = project_gh
         self._store = store
         self._templates, self._tasks, self._cycle, self._flag = _project_stores(
             store, templates, tasks)
@@ -258,7 +266,8 @@ class CommandApi:
                     _quota_get(target, pairs, raw_body)
                 return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
-            self._identity.check(pairs)
+            self._identity.check(pairs, required=route.name in {
+                "project_task_draft", "project_utilities"})
             return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())
@@ -367,7 +376,8 @@ class CommandApi:
 
     def _controls(self, config: Mapping[str, Any]) -> dict[str, object]:
         """Join neither deployment facts nor build facts by a display label."""
-        providers = provider_projection(self._providers)
+        providers = provider_projection(
+            self._providers, boundary=self._registry.execution_boundary)
         # The login mode and the vendor's own sandbox are MACHINE facts and live
         # on the provider row; a binding is a RUN fact. Joined here, once, so the
         # browser is never the place two projections become a promise.

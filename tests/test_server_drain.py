@@ -101,7 +101,7 @@ def test_the_drain_harness_delivers_a_real_ctrl_c_that_closes_the_idle_project(p
     child = project.start(hub=False, auto_release=True, ctrl_c="enabled", settle_delay=0)
     child.wait_serving()
     child.send_ctrl_c()
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.head_phase() == "closed" and not project.lease_standing()
 
 
@@ -112,7 +112,7 @@ def test_eof_stops_new_proposals_and_lets_the_running_attempt_finish(project):
                "the status file to carry drain_deadline", child)
     _let_the_drain_settle(child, project, PROBE)
     child.release(1)
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.results() == ["succeeded"]
     assert project.request_nodes() == ["do"]
     assert "next" not in project.proposal_nodes()
@@ -136,7 +136,7 @@ def test_closed_is_published_only_after_workers_and_the_login_lease_retire(proje
 
     wait_until(closed_is_visible, WAIT, "the ownership head to say closed", child)
     assert len(at_closed["leases"]) == 1 and not at_closed["standing"]
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert child.state() == "stopped"
 
 
@@ -148,7 +148,7 @@ def test_ctrl_c_in_standalone_up_takes_the_same_drain_path(project):
     assert child.http("GET", "/command/session")[0] == 200
     _let_the_drain_settle(child, project, PAST_THE_OLD_JOIN)
     child.release(1)
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.results() == ["succeeded"]
     assert "next" not in project.proposal_nodes()
     assert project.head_phase() == "closed" and len(project.closed_leases()) == 1
@@ -186,7 +186,7 @@ def test_second_ctrl_c_does_not_interrupt_drain(project):
                and project.head_phase() == "opened", PAST_THE_OLD_JOIN,
                "the drain goes on after a second Ctrl+C")
     child.release(1)
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.results() == ["succeeded"]
     assert project.head_phase() == "closed"
 
@@ -195,7 +195,7 @@ def test_unproven_retirement_ends_in_stop_uncertain_with_exit_1(project):
     child = project.start(hub=True, fault="quota_uncertain")
     child.wait_serving()
     child.close_stdin()
-    assert child.wait_exit(WAIT) == 1
+    child.expect_exit(1)
     assert child.state() == "stop_uncertain"
     assert project.head_phase() == "opened" and not project.closed_leases()
 
@@ -215,7 +215,7 @@ def test_no_quota_poll_that_needs_a_new_spawn_starts_once_the_drain_has_stopped_
     stays_true(lambda: child.alive() and project.quota_polls() == started, QUOTA_WINDOW,
                "no quota poll starts once the drain has stopped the collector")
     child.release(1)
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.quota_polls() == started
 
 
@@ -228,5 +228,5 @@ def test_the_drain_waits_for_a_quota_poll_that_is_already_running(project):
     stays_true(lambda: child.alive() and not (child.status() or {}).get("drain_deadline"),
                PAST_THE_OLD_JOIN, "the drain waits inside step 3 for the running poll")
     project.release_quota_poll(1)
-    assert child.wait_exit(WAIT) == 0
+    child.expect_exit(0)
     assert project.head_phase() == "closed"

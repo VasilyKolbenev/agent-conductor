@@ -5,6 +5,74 @@ prove one useful independently checked result, and pass final review and owner
 acceptance. This is the current delivery boundary, not another platform roadmap.
 Nothing here declares a release, a green remote run, or completed manual acceptance.
 
+## Owner clarification, 2026-10-21: the core product contract
+
+December Command orchestrates complete, existing vendor coding harnesses that the user
+accesses through paid subscriptions: Grok, Claude Code, Codex, Kimi and DeepSeek.
+The user assigns each harness roles and tasks, connects them into execution/review loops,
+and collects independently checked results. Each harness retains its own agent execution
+loop and tools; December Command supplies the workflow and coordination above that layer.
+
+The default workflow is Ray Dalio's five-step cycle: goals, identify problems, diagnose,
+design and do. Workflow Studio must also let users create and edit their own cycles
+without code; the default cycle is not the only supported topology.
+
+**Owner clarification, 2026-11-10:** The primary scenario is prolonged autonomous work
+on large, compound tasks by complete harnesses. A Dalio action contains a harness's own
+agent and tool loop; five workflow actions do not mean five internal model turns.
+The five-action / 600-second rehearsal does not set a universal product ceiling.
+Duration, workflow attempts, protocol envelopes and durable results need separate
+budgets, presented for approval with the task. Local capture tests do not establish
+long-duration execution, token renewal or recovery; those need their own real evidence.
+
+**Owner clarification, 2026-11-11:** Arachnid is a persistent autonomous workspace
+for complete harnesses. The owner's analogy is OpenClaw applied to harness teams;
+Dalio is the default workflow inside that workspace. Ordinary UI should emphasize
+the task and its work, keeping the process name in settings and relevant details.
+Future runs should route a checker's rejection and evidence back to the responsible
+harnesses for correction, continuing until the goal's acceptance criteria are met
+within the approved scope and budgets. Preserve progress and pause when permission,
+quota or time is exhausted; renewal may continue that work. Unknown outcomes,
+changed scope and explicit human gates still require their proper resolution.
+Do not silently turn an existing one-attempt grant into a correction loop.
+This clarifies the product goal; it does not claim the current default supports it.
+
+The product must show each configured harness's subscription usage, remaining allowance,
+and reset time for the windows the vendor actually reports, including daily, weekly and
+five-hour windows where applicable. Distinguish measured values, stale observations and
+unavailable data. Do not invent missing limits, equate local action counts with vendor
+usage, or promise access that a particular vendor/account has not demonstrated.
+
+Subscription access is part of V1's core acceptance, not a V2 improvement. API access may
+remain optional, but an API-only rehearsal does not establish this product outcome and
+API keys must not be required as a substitute for the owner's paid subscriptions.
+This supersedes the earlier recovery decision H5-V1 and API-based R5-keys plan.
+
+Claude Code 2.1.239 executing and Codex 0.112.0 checking is the first end-to-end proof,
+not a reduction of the five-harness product scope. Record each remaining harness's actual
+support and evidence separately. Native subscription execution inside the product's
+boundary is still unfinished; this requirement does not claim the current wheel supports it.
+Preserve the independent checker, explicit budgets, human gates and original-project safety.
+
+**Owner decision, 2026-10-28 (V1-HARNESS):** V1 acceptance requires Claude Code and Codex
+to execute and check tasks through their subscriptions, and shows the subscription limits
+of Claude Code, Codex and Grok. Grok and Kimi as executors, and DeepSeek, are marked "not
+yet supported" in V1 and form the next slice. The five harnesses remain the product goal.
+
+**Public alpha decision, 2026-11-02 (ALPHA-FOUR):** Finish first-run UX first. Before public
+distribution a new user must be able to connect their own Claude Code, Codex, Grok Build and
+Kimi Code subscriptions and obtain a real task result with each. Record the version, result
+and source of any quota readings per harness. Also complete the default Dalio cycle with
+Codex and Grok, its human gates and independent result check. A scripted adapter only proves
+local integration. DeepSeek remains in the product roadmap. The three-run concurrency target
+belongs to the second stage. The earlier acceptance steps below are retained as milestones.
+
+**Owner decision, 2026-10-30 (V1-GROK-ROLE):** Grok also takes one minimal role in the V1
+Dalio v6 run, to show it working: role-diagnostician, the single read-only `diagnose` step.
+Claude Code keeps the other steps and Codex stays the independent checker. If Grok's task
+road is not ready in time, Claude Code takes that step and Grok joins in a later run, so the
+Claude Code and Codex core is not delayed. Kimi and DeepSeek remain "not yet supported".
+
 ## What remains non-negotiable in V1
 
 The product is a local-first control plane for heterogeneous coding harnesses.
@@ -40,6 +108,203 @@ exercise is a test of V1's usefulness, not permission to start the V2 implementa
 
 ## Preserve for V2 — do not reopen before alpha
 
+### One entry point for subscription harnesses («единая розетка»)
+
+Owner direction, 2026-11-07. A user brings subscriptions to complete vendor
+harnesses. Each keeps its own tools and execution loop. December Command connects
+their roles, workspaces, handoffs, budgets and results in one workflow. The
+catalogue shows what each installed harness has actually demonstrated, including
+account access, supported roles and quota windows. A reading the vendor does not
+provide is displayed as unknown.
+
+The conversational launcher starts with the task in the user's own words. It asks
+only for missing details and drafts an editable Dalio cycle or a user-defined
+no-code cycle. It proposes participants, a separate checker, time and action
+limits suited to the task, and shows where a person will make a decision. The
+user can revise those choices in conversation or in Studio. Both views use the
+same plan and the same preview. Execution begins with explicit bounded permission.
+
+Acceptance example: on a clean installation, a colleague connects their own
+subscriptions and asks to fix a counter that counts failed runs as successes.
+They can see why Grok is assigned diagnosis, what Codex may edit, who checks the
+change and the limits of the first action. After the run they can find the change,
+test result, checker verdict and their decision together, then reuse the cycle on
+a second task. Measure time to an accepted result, human interventions and vendor
+quota readings where available. Reuse on a second task is a separate product signal.
+
+The immediate rehearsal is the full Codex and Grok Dalio cycle. A three-harness
+rehearsal with Kimi Code follows confirmed subscription access and a verified task
+on that harness. Previous Claude Code rehearsal evidence remains attached to its
+specific version and steps. **Arachnid** is the owner's proposed product name.
+
+**Evidence update, 2026-11-11:** the bounded Windows Codex + Grok rehearsal
+`counter-src-19956c8-r1` is now accepted by the owner and terminal `complete`.
+Five task steps, a real patch, three native unittest tests and a separate Codex checker
+passed. A human plan revision and two human approvals were involved. This closes this
+rehearsal item, not ALPHA-FOUR, clean-user onboarding or autonomous correction loops.
+See [the accepted-cycle report](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
+**Обновление доказательств, 11.11.2026:** учебный Windows-цикл Codex + Grok
+`counter-src-19956c8-r1` принят владельцем, terminal complete. Пять рабочих шагов,
+реальный патч, три native unittest и отдельный checker прошли. План уточнялся человеком,
+оба human gate приняты владельцем. Закрыт этот сценарий; ALPHA-FOUR, подключения новых
+пользователей и автономные correction loops остаются отдельными критериями.
+Доказательства — в [отчёте принятого цикла](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
+### Arachnid Studio: рабочее место оператора
+
+По решению владельца от 9 ноября 2026 Studio открывается на разговоре с ведущим харнессом.
+14 ноября центральный агент получил имя «Колос» (Kolos). В шапке чата видны роль
+«Титан ИИ» и выбранный пользователем ведущий харнесс. Оператор ставит цель, меняет команду или цикл, принимает решения
+и получает результат в одной сессии. Харнессы поставщиков подключаются как инструменты
+по личным подпискам и сохраняют свои собственные интерфейсы и возможности.
+
+| Область | Что видит и делает оператор |
+| --- | --- |
+| Слева | Сессии и история задач. Выбор восстанавливает разговор, текущий шаг и связанные результаты. Одна сессия может включать несколько задач и запусков. |
+| В центре | Основной чат с Колосом. Здесь появляются цель, предложенная команда, следующий шаг, запрос решения и принятый результат. Для обычного запуска хватает разговора. |
+| Справа, по запросу | Рабочее представление выбранного агента или харнесса в конкретной сессии. Оператор открывает его, чтобы увидеть ход работы, ввод и вывод. Закрытие панели возвращает к тому же месту в основном чате. |
+
+По умолчанию Колос предлагает пять шагов Далио, роли подключённых харнессов
+с учётом их подтверждённых возможностей и отдельного проверяющего. Оператор может
+сказать «поменяй проверяющего» или выбрать свой опубликованный no-code цикл. Перед
+исполнением чат показывает обновлённый план, границы и точки решения. Совет и
+просмотр возможностей сами по себе не запускают задачу.
+
+Команда «покажи лимиты» открывает панель подписок с доступными окнами, расходом
+и временем сброса. Для отсутствующих показаний выводится «неизвестно». Эта панель,
+редактор ролей, цикл, журналы и подробности участников открываются по запросу.
+Для харнесса используется поддерживаемый способ доступа к его сессии. Если поставщик
+не предоставляет встраиваемое представление, Studio показывает доступные действия
+и предлагает открыть родное приложение. На узком экране список сессий и детали
+участника открываются по очереди с возвратом в тот же разговор.
+
+**Адаптивная инфографика.** Содержимое правой панели определяется ролью участника,
+текущей задачей и вопросом оператора. На вопрос «почему?» диагност показывает вывод,
+исследованные файлы и основания. На «что изменилось?» исполнитель показывает diff
+и результаты тестов. На «можно принять?» проверяющий показывает свой вердикт и
+проверенную ревизию. Один харнесс в разных ролях получает разные представления.
+Сначала видны данные для текущего решения. Подробности можно раскрыть или запросить
+в чате, сохраняя выбранный шаг. Форма следует за данными: орбита показывает ход
+цикла, diff — изменения, шкала времени — окна квоты с известным временем сброса.
+
+**Визуальный референс, 11 ноября 2026 — Minicharts.** Владелец предложил
+[Minicharts](https://april-zhu.com/minicharts) как идею предметной интерактивной
+инфографики для рабочего представления харнесса. Это развитие адаптивной панели,
+а не решение перенести мультяшные шаблоны или установить сторонний skill.
+Данные получают выразительную форму, связанную с работой участника: орбиты,
+узлы, связи, слои и сегменты. Палитра, типографика, глубина и движение согласованы
+с тёмной Studio Arachnid; числовые пропорции и подписи сохраняют точность.
+
+При открытии участника оператор получает краткую сводку «делает / делал / сделал»
+и доступных ресурсов. Представление выбирается по роли, задаче и вопросу,
+а не закрепляется навсегда за брендом харнесса. Подробности раскрываются по запросу;
+тот же чат с Колосом остаётся в центре. Декоративная форма помогает читать данные,
+а фактические diff, тесты и вердикт выбранной попытки остаются доступны рядом.
+
+В исследовании от 13 ноября сопоставлены восемь интерфейсных референсов, роли
+четырёх харнессов, ручная CLI и примеры выбора панели из разговора.
+[Рабочие панели Атласа и харнессов](recovery/2026-10-20/ATLAS-PANELS-RESEARCH.ru.md).
+
+**Открытый набор представлений — уточнение владельца 11 ноября.** Перечень ниже —
+примеры начальной сводки. Через чат Колоса оператор может запросить другие срезы:
+сравнить прогоны, показать задержки и зависимости, собрать карту результатов
+исследования или объединить доступные материалы нескольких участников и задач.
+Колос подбирает данные, форму и детализацию под вопрос; оператор может уточнить
+запрос, состав панели и способ отображения в том же разговоре. Контекст каждого
+источника остаётся явным. При нехватке данных Колос сообщает, чего недостаёт;
+четыре начальных блока не ограничивают вопросы и будущие визуальные представления.
+
+| Вопрос оператора | Полезное представление и основание |
+| --- | --- |
+| Что сейчас происходит? | Орбита текущего цикла, наблюдаемый статус и лента реальных событий: кто работает, что завершено, где ожидание или отказ. Внутренний ход мыслей не имитируется. |
+| Что исследовал диагност? | Исследованные материалы и связи «вывод — основание», только если они переданы харнессом и доступны в артефактах. |
+| Что изменил исполнитель и можно ли принять? | Сводка изменений и проверок с переходом в фактический diff, тесты и независимый вердикт именно выбранной попытки и ревизии. |
+| Что было сделано раньше? | История задач и результатов с отдельно видимыми завершением исполнения, проверкой и принятием человеком. |
+| Сколько подписки осталось? | Отдельные окна квоты, сообщённые поставщиком: остаток или расход, единицы, время наблюдения, источник и известный момент сброса. |
+
+Графики строятся из структурированных показаний и событий; художественная форма
+не меняет значения. Неизвестное не равно нулю, устаревшие показания явно помечены.
+Число локальных действий не становится расходом подписки или процентом готовности.
+Аккаунтная квота не выдаётся за расход конкретной задачи. ETA, токены и экономия
+появляются только при наличии подтверждённого источника или явно обозначенной оценки.
+Размеры и сравнения остаются проверяемыми: выбор элемента открывает исходное событие,
+артефакт или показание. Подписи и состояние читаются без опоры только на цвет;
+движение учитывает reduced motion. Открытие графика не разрешает исполнение или приёмку.
+
+Критерий будущего среза: на принятом Codex + Grok оператор открывает Do на орбите,
+видит сводку работы, diff, тесты и вердикт этой попытки, раскрывает основания
+и окна подписки без потери разговора с Колосом. Для отсутствующих показаний
+видно «неизвестно», для демонстрационных данных — явная отметка.
+Это зафиксированное направление V2; оно не объявляет новую реализацию готовой
+и не заменяет ближайшую проверку полного Далио на `4deb571`.
+
+**Адаптивная память пользователя.** Колос пополняет память в фоне и подбирает для
+текущей задачи сведения о пользователе, его харнессах и агентах. Новый пользователь
+начинает со своей памяти. Предусмотрены три вида записей и процесс их консолидации.
+
+- **Эпизодическая память** хранит события сессий: задачу, шаг, участника, результат
+  и решение оператора. Запись отсылает к исходному событию.
+- **Семантическая память** хранит подтверждённые факты о проектах и предпочтения
+  пользователя, включая стиль общения. Например, краткий итог по умолчанию и
+  подробные доказательства по запросу на ревью.
+- **Процедурная память** хранит повторяемые способы работы: выбор цикла, назначения
+  ролей, ожидаемые проверки и удобный порядок приёмки.
+- **Консолидация** связывает повторяющиеся эпизоды с фактами и процедурами,
+  сохраняет основания и учитывает явные поправки пользователя. По запросу Колос
+  объясняет, что вспомнил и почему это применимо. Оператор может исправить вывод
+  и выбрать, какие сведения передать конкретному харнессу.
+
+**Приёмка компоновки.** Коллега открывает новую сессию и просит исправить счётчик.
+В чате он видит Далио и предложенные роли, меняет одну роль и подтверждает границы.
+Затем открывает работу Grok справа, смотрит лимиты, возвращается в чат, видит
+проверенные изменения и принимает результат. После переключения на прежнюю сессию
+и обратно задача, разговор и решение сохраняются. Другому пользователю эта память
+недоступна. Вариант с собственным циклом проходит тот же путь.
+
+**Критерий макета — Do на орбите Далио.** Оператор выбирает
+Do на орбите текущей задачи. Справа открываются diff фактических изменений Codex и
+результаты тестов именно этой попытки; рядом доступно заключение отдельного
+проверяющего. В центре остаётся тот же чат с Колосом. Оператор спрашивает «какой
+тест подтверждает исправление?», видит соответствующий тест и может вернуться к
+diff. Выбор шага, файла или теста сам по себе не означает принятия результата.
+
+**Рабочая оболочка, 09.11.2026.** Корень установленной Arachnid открывает сессии
+проекта, чат Атласа и орбиту выбранного запуска. На принятом цикле Codex + Grok
+проверены обе стороны diff, результаты тестов и независимый вердикт именно выбранной
+попытки Do. Разбор Атласа использует сохранённые данные. Участники, лимиты и история
+открываются по запросу. [Проверка сборки](recovery/2026-10-20/tasks/ARACHNID-SHELL-REPORT.md).
+
+Дальнейшая цель — диалоговый запуск и персональная память. Проверенный альфа-мастер уже даёт подготовку задачи,
+предпросмотр, разрешение и приёмку. Приоритет следующего изменения Studio — связать
+эти возможности основным чатом и проверить этот сценарий целиком.
+В [макете от 9 ноября](prototypes/arachnid-studio.html) оператор выбирает шаг на орбите
+или переходит [сразу к Do](prototypes/arachnid-studio.html#do). Справа видны изменения
+двух файлов, семь проверенных тестов и вердикт по снимку принятого запуска `dalio-patch`.
+Ответы Атласа демонстрационные. Сессии, участники, память и лимиты открываются локально.
+Данные и границы проверки перечислены в [отчёте сцены](recovery/2026-10-20/tasks/UX-ATLAS-ORBIT-REPORT.md).
+Референс владельца — [пост New World AI о Biotech Studio](https://t.me/newworld2080/8800).
+В присланной записи около 0:49 видны узкая история слева, свободное место в
+центре и ввод внизу. В 1:21 справа открывается широкая рабочая область, а разговор
+остаётся на экране. В 2:01 там видны цели, в 2:39 — Roadmap. Для Arachnid это
+означает, что справа можно работать и с планом или результатом выбранной сессии,
+пока чат остаётся доступен. Компоновка сохраняется в светлой и тёмной теме.
+
+### Other V2 commitments
+
+The [November alpha review](plans/2026-11-13-v2-alpha-review.ru.md) compares the Windows
+pilot with the proposed 2.0 scope and records the access paths for additional harnesses.
+
+- **Stage two: up to three concurrent runs per project** (owner decision, 2026-11-02).
+  A run is one execution of a cycle for a task. The three tasks may use the same
+  cycle template or different ones. Studio shows which runs are working, waiting
+  for a person, or queued, and why. A run waiting at a human gate releases its
+  execution slot; its decision, workspace, artifacts and authorization stay its own.
+  Shared subscription limits or workspace conflicts may reduce actual concurrency.
+  Acceptance: start four authorized, independent tasks. Observe three overlapping
+  executions and the fourth queued. When one reaches a gate or finishes, the fourth
+  can start. Resuming the waiting run respects the same ceiling; pausing one run
+  leaves the others working.
 - Additional harnesses, including the parked Qwen and GLM work; no new transport
   claim enters the alpha catalogue without its own reviewed real-install evidence.
 - **Experience Ledger / evidence-weighted Harness Graph.** Preserve project-owned
@@ -60,6 +325,8 @@ These are planned directions, not shipped V1 features or promises of a particula
 - **Qwen** is planned for V2; the V1 execution catalogue remains the five agreed harnesses.
 - **Memory and portable handoffs:** keep the task goal, constraints, confirmed findings,
   open questions and references to original evidence available across participants and sessions.
+  The [operator workspace](#arachnid-studio-рабочее-место-оператора) defines personal
+  episodic, semantic and procedural memory, consolidation and view selection by role and task.
 - **Dream-RSI-inspired experiments:** use prior work to propose changes to the strategy
   around an existing harness. This does not require rewriting a vendor's agent.
 - **SoL-Pi-inspired context handoffs:** first compare a full research handoff with a compact

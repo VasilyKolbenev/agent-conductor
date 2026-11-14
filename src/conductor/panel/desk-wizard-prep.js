@@ -159,10 +159,10 @@ function materialsSpec(input, run) {
 //: Every write since the last preview changes what the preview says (spec 6.4.1: any record in the
 //: journal changes the digest the grant is checked against), so the preview is owed again whenever
 //: another write landed after it.
-function previewSpec(run) {
+function previewSpec(run, depth = null) {
   const writes = run.done.filter((key) => !key.startsWith("preview:")).length;
   return job("preview", "preview", "preview", "automationPreview", run.runId,
-    `preview:${run.runId}:${writes}`, {});
+    `preview:${run.runId}:${writes}`, depth ? {recommendation: {depth}} : {});
 }
 
 //: After a reload the task, the seed, the cycle and the run stand; what is left is the documents
@@ -184,7 +184,7 @@ function pendingSpecs(run, input) {
   if (run.runId !== null && run.revision !== null) {
     if (run.adopted !== run.runId) list.push(runSpec(input, run));
     list.push(...input.documents.map((paper) => documentSpec(run, paper)));
-    list.push(materialsSpec(input, run), previewSpec(run));
+    list.push(materialsSpec(input, run), previewSpec(run, input.budgetDepth));
   }
   return list.filter((spec) => !run.done.includes(spec.key));
 }
@@ -333,7 +333,8 @@ function reconcile(run, input) {
   }
   const row = run.runId === null ? null : run.prep.runs.find((one) => one.run_id === run.runId);
   let next = {...run};
-  if (row && row.workflow_id === input.workflowId && Number.isSafeInteger(row.revision)) {
+  if (row && row.workflow_id === input.workflowId && Number.isSafeInteger(row.revision)
+      && (!input.flowBody?.inspect_revision || row.revision === input.flowBody.inspect_revision)) {
     next = {...next, revision: row.revision};
     done.add(flowSpec(input).key);
     done.add(runSpec(input, next).key);
@@ -389,12 +390,17 @@ function acceptedWrite(run, input, ask, payload) {
   const done = [...run.done, ask.job];
   if (ask.name === "prep_flow") {
     const revision = payload?.published?.revision;
+    if (input.flowBody?.inspect_revision && (!payload?.publishable || revision !== input.flowBody.inspect_revision)) {
+      return refusedAt(run, "flow", "contract_invalid", null);
+    }
     if (!Number.isSafeInteger(revision)) return unreadable(run, ask);
     return fixRun({...run, done, revision, flowCheck: false}, input);
   }
   if (ask.name === "prep_seed") {
     return seedReady(payload) ? {...run, done, seed: payload} : unreadable(run, ask);
   }
+  if (ask.name === "preview" && ask.body?.recommendation
+      && payload?.recommendation?.depth !== ask.body.recommendation.depth) return unreadable(run, ask);
   return ask.name === "preview" ? {...run, done, phase: "review", preview: payload}
     : {...run, done};
 }
@@ -415,8 +421,9 @@ function landWrite(run, input, ask, result) {
   if (result.status === "unknown") return {...base, phase: "unknown"};
   const code = result.code ?? "refused";
   if (ask.name === "prep_flow" && code === "draft_conflict") return {...base, flowCheck: true};
+  // The word that says why, or the sandbox route a plan door could not provide.
   const detail = result.payload?.error?.detail ?? result.payload?.detail;
-  return refusedAt(base, jobName(ask), code, detail?.reason ?? null);
+  return refusedAt(base, jobName(ask), code, detail?.reason ?? detail?.sandbox ?? null);
 }
 
 /**

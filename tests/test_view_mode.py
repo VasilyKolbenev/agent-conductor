@@ -43,8 +43,8 @@ import pytest
 from conductor import ownership, ownership_transition, server, tool_pins
 from conductor.ownership_records import ANCHOR, HOME
 from conductor.command import (
-    accept_commit, accept_context, accept_preview, git_setup, http_writes,
-    project_git_state, project_routes, providers, seed_routes, task_routes)
+    accept_commit, accept_context, accept_preview, accept_pull_request, accept_push, git_setup,
+    http_writes, project_git_state, project_routes, providers, seed_routes, task_routes)
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.api_contracts import ApiRefusal
 from conductor.command.api_refusals import ERROR_STATUS, _FIXED_MESSAGES
@@ -65,6 +65,12 @@ from tests.test_policy_driver import ask, assert_two_steps, wait_terminal
 from tests.test_policy_runtime import NOW, PD, setup
 from tests.test_server_command_http import _request
 from tests.test_store import good_lane, write_project
+
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 REAL_POPEN = subprocess.Popen
 
@@ -320,15 +326,24 @@ def _walk_materials_and_documents(subject, mode: str) -> None:
     accept_answers = [
         _send(subject, "POST", f"/command/runs/{RUN}/accept/preview", {}, 409),
         _send(subject, "POST", f"/command/runs/{RUN}/accept/commit",
-              {"accept_digest": "sha256:" + "a" * 64, "actor": "Owner"}, 409)]
+              {"accept_digest": "sha256:" + "a" * 64, "actor": "Owner"}, 409),
+        _send(subject, "POST", f"/command/runs/{RUN}/accept/push",
+              {"acceptance_id": "acc-" + "a" * 32, "remote": "origin", "preview": True}, 409),
+        _send(subject, "POST", f"/command/runs/{RUN}/accept/pull-request",
+              {"acceptance_id": "acc-" + "a" * 32, "base": "main", "title": "Title",
+               "body": "Body", "draft": False, "actor": "Owner"}, 409)]
     assert [answer["error"]["code"] for answer in accept_answers] == (
-        ["project_not_active"] * 2 if viewing else ["accept_refused"] * 2)
+        ["project_not_active"] * 4 if viewing else ["accept_refused"] * 4)
     setup_answer = _send(subject, "POST", "/command/project/git/setup",
                          {"step": "init", "actor": "Owner"}, 409)
     if viewing:
         assert setup_answer["error"]["code"] == "project_not_active"
         for body in ({"step": "exclude", "actor": "Owner"},
-                     {"step": "first_commit", "mode": "snapshot", "preview": True}):
+                     {"step": "first_commit", "mode": "snapshot", "preview": True},
+                     {"step": "first_commit", "mode": "empty", "paths_digest": None,
+                      "actor": "Owner"},
+                     {"step": "first_commit", "mode": "snapshot",
+                      "paths_digest": "sha256:" + "a" * 64, "actor": "Owner"}):
             assert _send(subject, "POST", "/command/project/git/setup", body, 409)["error"]["code"] == "project_not_active"
         assert _view_effects(subject.command_store.project_root) == before
     else:
@@ -388,12 +403,14 @@ def test_a_server_launched_for_viewing_spawns_no_child_through_cycle_publication
 #: then the three routes of materials and project documents, which are the ones that may ask git.
 ROADS = ("create_task", "_write_flow", "_save_draft", "_publish_revision",
          "_publish_template", "_open_run", "write_materials", "read_documents", "read_document",
-         "seed_task", "read_git", "read_accept", "preview", "commit", "setup")
+         "seed_task", "read_git", "read_accept", "preview", "commit", "push", "pull_request",
+         "setup")
 #: Where a road lives when it is not in `http_writes`.
 HOMES = {"create_task": task_routes, "read_documents": project_routes,
          "read_document": project_routes, "seed_task": seed_routes, "read_git": project_git_state,
          "read_accept": accept_context, "preview": accept_preview,
-         "commit": accept_commit, "setup": git_setup}
+         "commit": accept_commit, "push": accept_push, "pull_request": accept_pull_request,
+         "setup": git_setup}
 
 
 @pytest.mark.parametrize("road", ROADS)
@@ -503,6 +520,8 @@ WALKED_GIT_ROUTES = frozenset({
     ("GET", "/command/runs/<run_id>/accept"),
     ("POST", "/command/runs/<run_id>/accept/preview"),
     ("POST", "/command/runs/<run_id>/accept/commit"),
+    ("POST", "/command/runs/<run_id>/accept/push"),
+    ("POST", "/command/runs/<run_id>/accept/pull-request"),
     ("POST", "/command/tasks/<task_id>/seed")})
 GIT_WORDS = ("/materials", "/documents", "/project/git", "/seed", "/accept")
 

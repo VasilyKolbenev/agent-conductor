@@ -104,7 +104,8 @@ def test_the_roads_are_read_from_controls_and_a_row_with_only_the_servers_keys_i
         old_shape: wiz.rosterOf([oldShape]).map((row) => row.roads)});
     """, DATA)
     assert out["roads"] == [["claude-code", ["dispatch", "review"]],
-                            ["codex", ["dispatch", "review"]], ["grok-build", ["dispatch"]],
+                            ["codex", ["dispatch", "review"]],
+                            ["grok-build", ["dispatch", "review"]],
                             ["kimi-code", ["dispatch"]], ["deepseek-harness", ["dispatch"]]]
     assert out["served"] == [[], "pending"], "the row the server serves today has no offered flag"
     assert out["full"] == "ready" and out["none"] == ["none", "none"]
@@ -146,11 +147,10 @@ def test_review_roles_and_the_verifier_are_offered_only_harnesses_with_a_review_
         roles: wiz.rolesOf(d.flows.standard.flow).map((role) => [role.role_id, offers(role)])});
     """, DATA)
     assert out["roster"] == [["claude-code", True, "stdin"], ["codex", True, "stdin"],
-                             ["grok-build", True, "argv"], ["kimi-code", False, "argv"],
+                             ["grok-build", True, "file"], ["kimi-code", False, "argv"],
                              ["deepseek-harness", True, "argv"]]
-    assert out["roles"] == [["role-analyst", ["claude-code", "codex"]],
-                            ["role-doer", ["claude-code", "codex", "grok-build",
-                                           "deepseek-harness"]],
+    assert out["roles"] == [["role-analyst", ["claude-code", "codex", "grok-build"]],
+                            ["role-doer", ["claude-code", "codex", "deepseek-harness"]],
                             ["role-checker", ["claude-code", "codex"]]]
 
 
@@ -219,7 +219,8 @@ def test_a_suggestion_prefers_a_known_remainder_to_an_unknown_one_and_the_verifi
 def test_an_argv_harness_is_not_suggested_for_the_doer_when_inputs_do_not_fit_and_says_why():
     out = run_js(ROLES + """
       const quotas = structuredClone(d.quotas);
-      Object.assign(quotas.snapshots[2], {state: "observed", freshness: "current",
+      Object.assign(quotas.snapshots.find((row) => row.binding_ids.includes("deepseek-harness")),
+        {state: "observed", freshness: "current",
         windows: [{limit_id: "5h", window_id: "5h", used_percent: 10, remaining_percent: 90,
           freshness: "current"}]});
       const roles = wiz.rolesOf(d.flows.standard.flow);
@@ -231,7 +232,7 @@ def test_an_argv_harness_is_not_suggested_for_the_doer_when_inputs_do_not_fit_an
         fit: [wiz.argvFit("x".repeat(100), 200), wiz.argvFit("x", 32766),
           wiz.argvFit("x".repeat(2), 32766), wiz.argvFit("я".repeat(10), 40000)]});
     """, DATA)
-    assert out["small"][0] == "grok-build" and "argv_not_fit" not in out["small"][1]
+    assert out["small"][0] == "deepseek-harness" and "argv_not_fit" not in out["small"][1]
     assert out["large"][0] == "codex" and "argv_not_fit" in out["large"][1]
     assert out["fit"] == [{"chars": 300, "limit": 32767, "fits": True},
                           {"chars": 32767, "limit": 32767, "fits": True},
@@ -348,13 +349,13 @@ def test_an_instruction_over_the_byte_limit_is_refused_and_an_argv_harness_shows
       const own = (text) => run(base, {type: "instruction-own", step_id: "do", lang: "en"},
         {type: "instruction-edit", step_id: "do", text});
       const big = own("я".repeat(30000)), fine = own("я".repeat(24000));
-      const toGrok = (state) => run(state, {type: "role-assign", role_id: "role-doer",
-        provider_id: "grok-build"});
+      const toArgv = (state) => run(state, {type: "role-assign", role_id: "role-doer",
+        provider_id: "deepseek-harness"});
       const field = (state) => wiz.instructionFields(state, "en")[0];
-      const withNote = run(toGrok(base), {type: "material-add", kind: "note", title: "T",
+      const withNote = run(toArgv(base), {type: "material-add", kind: "note", title: "T",
         content: "x".repeat(40000)});
       show({big: gate(big), fine: gate(fine), stdin: field(base).argv,
-        argv: field(toGrok(base)).argv, inputs: wiz.inputChars(base),
+        argv: field(toArgv(base)).argv, inputs: wiz.inputChars(base),
         text: field(base).text.length, over: field(withNote).argv, over_gate: gate(withNote)});
     """, DATA)
     assert out["big"] == "instruction_too_large" and out["fine"] != "instruction_too_large"
@@ -405,7 +406,9 @@ def test_a_role_the_owner_assigns_is_kept_and_only_an_offered_harness_is_accepte
         {type: "role-assign", role_id, provider_id});
       const doer = assign("role-doer", "claude-code");
       show({owner: assigned(doer)["role-doer"], others_stay: assigned(doer)["role-analyst"],
-        not_a_review_harness: assign("role-analyst", "grok-build") === state,
+        not_a_review_harness: assign("role-analyst", "deepseek-harness") === state,
+        review_only_doer: assign("role-doer", "grok-build") === state,
+        review_only_checker: assign("role-checker", "grok-build") === state,
         unavailable: assign("role-doer", "kimi-code") === state,
         unknown_role: assign("role-nobody", "codex") === state,
         unknown_harness: assign("role-doer", "nobody") === state,
@@ -414,7 +417,8 @@ def test_a_role_the_owner_assigns_is_kept_and_only_an_offered_harness_is_accepte
         checker_avoids: assigned(doer)["role-checker"][0]});
     """, DATA)
     assert out["owner"] == ["claude-code", "owner"] and out["others_stay"][1] == "suggestion"
-    assert all(out[key] for key in ("not_a_review_harness", "unavailable", "unknown_role",
+    assert all(out[key] for key in ("not_a_review_harness", "review_only_doer",
+                                    "review_only_checker", "unavailable", "unknown_role",
                                     "unknown_harness"))
     assert out["cleared"][1] == "suggestion"
     assert out["checker_avoids"] == "codex"

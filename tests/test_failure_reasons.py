@@ -29,6 +29,13 @@ def test_a_recognized_sentence_earns_only_the_runtimes_words():
     assert secret not in said and said in {words for _fragment, words in REASONS}
 
 
+def test_diagnostic_cause_must_be_one_complete_approved_sentence():
+    phase = "the diagnostic reported an opened session before the error"
+    cause = "the harness reported an access refusal"
+    assert reason_words(phase + " | " + cause) == phase + " | " + cause
+    assert reason_words(phase + " | " + cause + " private") == phase
+
+
 @pytest.mark.parametrize("sentence", [None, 7, "", "adapter said something this build never writes",
                                       "the pinned harness build 9.9.9 printed a version"])
 def test_an_unrecognized_sentence_earns_nothing(sentence):

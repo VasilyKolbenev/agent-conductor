@@ -66,10 +66,10 @@ macOS / Linux:
 Windows PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q --basetemp C:\pt
 .\.venv\Scripts\python.exe -m playwright install chromium
-.\.venv\Scripts\python.exe browser_tests/gate.py
-.\.venv\Scripts\python.exe browser_tests/gate.py --reverse
+.\.venv\Scripts\python.exe browser_tests/gate.py --artifacts C:\bg
+.\.venv\Scripts\python.exe browser_tests/gate.py --reverse --artifacts C:\bgr
 ```
 
 macOS / Linux:
@@ -81,7 +81,9 @@ macOS / Linux:
 .venv/bin/python browser_tests/gate.py --reverse
 ```
 
-Обычная команда pytest собирает `tests/`. Браузерный gate запускает каждый браузерный модуль в отдельном процессе и сохраняет свидетельства во временный каталог; для выпуска важны прямой и обратный порядок. Обычный `pytest browser_tests` не заменяет выпускной gate. Остальные проверки, включая помощник `scripts/mutate_merge.py`, описаны в [конфигурации CI](.github/workflows/ci.yml) и [руководстве проверки выпуска](docs/release-smoke.md). Читайте ошибки и число собранных тестов; не выдавайте невыполненную проверку или успешный код завершения процесса за подтверждённое поведение.
+На Windows полные команды требуют коротких путей, как в CI. Продукт отказывает с `windows_path_too_long`, если путь Windows выходит за его бюджет, а стандартная временная папка pytest в обычном профиле уже слишком длинна для наборов hub и `projects add`. Держите `--basetemp` не длиннее 26 символов целиком (на символ больше уже падает набор перезапуска клонирований hub; измерения — в [LOCAL-SETUP](docs/recovery/2026-10-20/LOCAL-SETUP.md)). `C:\pt` — пример: подойдёт любая короткая папка, в которую можно писать, pytest предварительно очищает её. Для браузерного gate тоже задайте короткую папку `--artifacts` по той же причине: временный корень каждого модуля создаётся внутри неё; CI берёт `bg` и `bgr`, для каждого порядка нужна своя папка. На macOS и Linux это не нужно.
+
+Обычная команда pytest собирает `tests/`. Браузерный gate запускает каждый браузерный модуль в отдельном процессе и сохраняет свидетельства во временный каталог (или в `--artifacts`); для выпуска важны прямой и обратный порядок. Обычный `pytest browser_tests` не заменяет выпускной gate. Остальные проверки, включая помощник `scripts/mutate_merge.py`, описаны в [конфигурации CI](.github/workflows/ci.yml) и [руководстве проверки выпуска](docs/release-smoke.md). Читайте ошибки и число собранных тестов; не выдавайте невыполненную проверку или успешный код завершения процесса за подтверждённое поведение.
 
 ## Работайте с AI-помощником
 

@@ -16,6 +16,8 @@ from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphEdge, GraphNode
 from conductor.command.run_store import RunStore, snapshot_digest
+from conductor.command.task_contracts import TaskRecord
+from conductor.command.task_store import TaskStore
 from tests.test_policy_runtime import ARGS, DeepScripted, NOW, PD
 from tests.test_store import good_lane, write_project
 from browser_tests.desk_hold import close_context
@@ -44,17 +46,21 @@ def bounded_project(tmp_path, request):
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     config = {"cycle": {"id": "cycle"}, "instances": [{"id": "doer", "adapter": "claude-code"}],
               "workflow": {"id": "custom", "revision": 1}, "automation_contract": "bounded-run-v1"}
+    if getattr(request, "param", False) == "recovery":
+        TaskStore(root).create_task(TaskRecord("sample", "Review sample", "sample", NOW))
+        config["task"] = {"id": "sample", "work_scope": "sample"}
     store = RunStore(root)
     store.create_run(RunEnvelope("run", "cycle", NOW, snapshot_digest(config), mode="policy"), config)
     store.append(GraphDefinition("plan", "run", NOW, execution_contract="bounded-run-v1", nodes=(
         GraphNode("ask", "gate", "Human choice", gate_id="answer"),
         GraphNode("work", "task", "Approved work", instance_id="doer", capability="dispatch",
                   arguments=ARGS, timeout_seconds=30, attempt_bound=2)),
-        edges=(GraphEdge("ask", "work", condition="on_approved"),)))
+        edges=((GraphEdge("work", "ask"),) if getattr(request, "param", False) == "task_first"
+               else (GraphEdge("ask", "work", condition="on_approved"),))))
     store.append(ArtifactDocument(artifact_id="instruction", run_id="run", artifact_ref="instructions",
         created_at=NOW, media_type="text/plain", content="Keep this task."))
     ownership_transition.activate(root, legacy_writers_stopped=True)
-    argv_facts = getattr(request, "param", False)
+    argv_facts = getattr(request, "param", False) is True
     adapter = (_ArgvScripted if argv_facts else DeepScripted)(execute_outcome="failed")
     registry = AdapterRegistry([adapter])
     subject = server.build(root, 0, registry=registry,
@@ -80,6 +86,7 @@ def prepare(page, project):
     page.get_by_role("button", name="Read this run", exact=True).click()
     box = page.locator('[data-automation="run"]')
     expect(box.locator('[data-automation-state]')).to_have_attribute("data-automation-state", "unconfigured")
+    box.get_by_role("button", name="Edit limits").click()
     for name, value in {"actor": "owner", "max_actions": "2", "max_action_seconds": "30",
                         "max_total_task_seconds": "60", "duration_seconds": "300"}.items():
         box.locator(f'[data-focus="automation:run:{name}"]').fill(value)
@@ -93,11 +100,215 @@ def prepare(page, project):
     return box
 
 
+def test_pending_decision_from_permission_panel_on_narrow_screen(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        page.locator('[data-focus="preference-language"]').select_option("ru")
+        box = page.locator('[data-automation="run"]')
+        box.get_by_role("button", name="Перейти к решению").click(timeout=4000)
+        form = page.locator("#bodyDecisions .studio-decide")
+        expect(form).to_be_visible()
+        expect(form.get_by_label("Кто решил")).to_have_value("")
+        expect(form.get_by_role("radio", name="Одобрить", exact=False)).to_be_checked()
+        expect(form.get_by_role("button", name="Записать решение")).to_be_disabled()
+        assert form.evaluate("(f) => f.getBoundingClientRect().right <= innerWidth")
+        assert window.writes("/automation/authorize") == window.writes("/decisions") == 0
+        actor = form.get_by_label("Кто решил")
+        actor.fill("owner")
+        expect(actor).to_be_focused()
+        expect(form.get_by_role("button", name="Записать решение")).to_be_enabled()
+        form.get_by_role("button", name="Записать решение").click()
+        receipt = page.locator("#bodyDecisions .studio-decisions__detail")
+        expect(receipt).to_contain_text("receipt-answer-0-owner")
+        expect(receipt.get_by_role("heading", name="Решение записано")).to_be_visible()
+        assert window.writes("/decisions") == 1 and window.writes("/automation/authorize") == 0
+        assert adapter.execute_calls == 0
+    finally:
+        close_context(page.context)
+
+
+def test_review_limits_from_one_draft_on_narrow_screen(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.set_viewport_size({"width": 375, "height": 812})
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        box = page.locator('[data-automation="run"]')
+        expect(box.locator("[data-automation-state]")).to_be_visible()
+        actor = box.get_by_role("textbox", name="Your name")
+        actor.fill("owner")
+        editor = box.locator('[data-focus="automation:run:duration_seconds"]')
+        expect(editor).to_be_hidden()
+        review = box.locator('[data-focus="automation:preview"]')
+        with page.expect_response(lambda result: result.url.endswith("/automation/preview")) as default:
+            review.click()
+        assert default.value.request.post_data_json == {}
+        expect(box.locator("[data-automation-preview]")).to_be_visible()
+        expect(box).to_contain_text("Time limits are reserves")
+        box.get_by_role("button", name="Edit limits").click()
+        editor.fill("0")
+        box.get_by_role("button", name="Close limit settings").click()
+        expect(editor).to_be_visible()
+        assert not editor.evaluate("(input) => input.validity.valid")
+        editor.fill("7200")
+        expect(box.locator("[data-automation-preview]")).to_have_count(0)
+        page.locator('[data-focus="preference-language"]').select_option("ru")
+        expect(editor).to_be_visible()
+        expect(editor).to_have_value("7200")
+        box.get_by_role("button", name="Свернуть настройки лимитов").click()
+        expect(editor).to_be_hidden()
+        expect(box.locator("[data-budget-summary]")).to_contain_text("7200")
+        with page.expect_response(lambda response: response.url.endswith("/automation/preview")) as result:
+            review.click()
+        assert result.value.json()["terms"]["duration_seconds"] == 7200
+        assert result.value.request.post_data_json["duration_seconds"] == 7200
+        with page.expect_response(lambda response: response.url.endswith("/automation/preview")) as reset:
+            box.get_by_role("button", name="Вернуть рекомендации сервера").click()
+        assert reset.value.request.post_data_json == {}
+        expect(box.locator("[data-automation-preview]")).to_have_count(0)
+        expect(box.locator("[data-budget-summary]")).to_contain_text(str(reset.value.json()["terms"]["duration_seconds"]))
+        assert adapter.execute_calls == 0 and window.page_errors == []
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+    finally:
+        close_context(page.context)
+
+
+@pytest.mark.parametrize(("code", "holder"), [
+    ("slot_busy", "earlier-run"), ("slot_busy", None), ("preview_stale", None),
+])
+def test_authorize_refusal_explains_next_step(chromium: Browser, bounded_project, code, holder):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        box = prepare(page, project)
+        writes = []
+        def refused(route):
+            writes.append(route.request.url)
+            route.fulfill(status=409, json={"error": {"code": code, "detail":
+                          {"run_id": holder} if holder else {}}})
+        page.route("**/automation/authorize", refused)
+        box.get_by_role("button", name="Authorize bounded run").click()
+        feedback = box.locator('[role="status"][data-automation-notice]')
+        if code == "slot_busy":
+            expect(feedback).to_contain_text("Another run")
+            expect(box.locator("[data-automation-preview]")).to_be_visible()
+            link = feedback.get_by_role("link")
+            if holder:
+                expect(link).to_have_attribute("href", "#screen=runs&run=earlier-run&lang=en")
+                expect(link).to_have_attribute("target", "_blank")
+            else:
+                expect(link).to_have_count(0)
+        else:
+            expect(feedback).to_contain_text("Review the run limits again")
+            expect(box.get_by_role("button", name="Authorize bounded run")).to_have_count(0)
+            expect(box.get_by_role("button", name="Review bounded run")).to_be_enabled()
+        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("owner")
+        assert len(writes) == 1 and adapter.execute_calls == 0 and window.page_errors == []
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+    finally:
+        close_context(page.context)
+
+
+@pytest.mark.parametrize("bounded_project", ["task_first"], indirect=True)
+def test_first_grant_is_the_visible_next_step(chromium: Browser, bounded_project):
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        page.get_by_role("button", name="Read this run", exact=True).click()
+        box = page.locator('[data-automation="run"]')
+        expect(box.locator("[data-automation-state]")).to_have_attribute(
+            "data-automation-state", "unconfigured")
+        expect(page.locator(".studio-runs__situation")).to_contain_text("Waiting for your permission")
+        expect(page.locator("#studioBridge")).to_contain_text("Review the run limits to start")
+        expect(page.locator('#studioBridge [data-focus="bridge:run:run"]')).to_be_visible()
+        page.get_by_role("button", name="Set up this run", exact=True).click()
+        actor = box.get_by_role("textbox", name="Your name")
+        expect(actor).to_be_focused()
+        box.get_by_role("button", name="Review bounded run").click()
+        grant = box.get_by_role("button", name="Authorize bounded run")
+        expect(grant).to_be_disabled()
+        hint = box.get_by_text("Enter your name in the field above to enable authorization.")
+        expect(hint).to_be_visible()
+        actor.fill("owner")
+        expect(hint).to_have_count(0)
+        expect(grant).to_be_enabled()
+        assert not any(r.kind == "run_authorization" for r in RunStore(project.root).read("run").records)
+        assert adapter.execute_calls == 0 and window.page_errors == []
+    finally:
+        close_context(page.context)
+
+
+@pytest.mark.parametrize("language", ("en", "ru"))
+@pytest.mark.parametrize("bounded_project", ["recovery"], indirect=True)
+def test_confirmed_owner_recovery_in_http_and_studio(bounded_project, chromium, language, monkeypatch):
+    from conductor.ownership import require_owner
+
+    project, adapter = bounded_project
+    page, window = _open(chromium, project)
+    try:
+        box = prepare(page, project)
+        box.locator('[data-focus="automation:authorize"]').click()
+        expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "waiting")
+        owner = require_owner(project.root)
+        with monkeypatch.context() as patch:
+            patch.setattr(owner, "_uncertain", True)
+            slot = page.request.get(f"{project.url}command/queue").json()["slot"]
+            assert slot == {"state": "unavailable", "reason_code": "owner_required", "run_id": "run"}
+            desk = page.context.new_page()
+            desk.goto(f"{project.url}panel/desk.html#lang={language}")
+            wording = ("владелец исполнения недоступен" if language == "ru"
+                       else "the execution owner is unavailable")
+            expect(desk.locator("#deskPult .desk-queue__now")).to_contain_text(wording)
+            desk.close()
+        box.locator('[data-focus="automation:pause"]').click()
+        expect(box.locator("[data-automation-state]")).to_have_attribute("data-automation-state", "paused")
+        expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
+        store = RunStore(project.root)
+        before = store.read("run").records
+        if language == "ru":
+            page.locator('[data-focus="preference-language"]').select_option("ru")
+        with monkeypatch.context() as patch:
+            patch.setattr(owner, "_uncertain", True)
+            with page.expect_response(lambda row: row.request.method == "GET" and
+                                      row.url.endswith("/command/runs/run/automation")) as read:
+                box.locator('[data-focus="automation:refresh"]').click()
+            response = read.value.json()
+            assert (response["state"], response["reason_code"], response["owner_present"]) == (
+                "restart_required", "recovery_required", False)
+            status = box.locator("[data-automation-state]")
+            expect(status).to_contain_text("conduct ownership status --dir .")
+            expect(status).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
+            expect(box.locator('[data-focus="automation:resume"]')).to_have_count(0)
+            expect(box.locator('[data-focus="automation:retry"]')).to_have_count(0)
+            desk = page.context.new_page()
+            desk.goto(f"{project.url}panel/desk.html#lang={language}")
+            row = desk.locator('[data-task-id="sample"] .desk-task__state')
+            expect(row).to_contain_text("conduct ownership status --dir .")
+            expect(row).to_contain_text("не подтверждён" if language == "ru" else "unconfirmed")
+            desk.close()
+            assert store.read("run").records == before
+        with page.expect_response(lambda row: row.request.method == "GET" and
+                                  row.url.endswith("/command/runs/run/automation")) as healthy:
+            box.locator('[data-focus="automation:refresh"]').click()
+        response = healthy.value.json()
+        assert (response["state"], response["reason_code"], response["owner_present"]) == ("paused", "paused", True)
+        expect(box.locator('[data-focus="automation:resume"]')).to_be_enabled()
+        assert store.read("run").records == before
+        assert adapter.execute_calls == 0 and not window.page_errors
+    finally:
+        close_context(page.context)
+
+
 def test_one_reviewed_permission_and_explicit_pause_resume_revoke(chromium: Browser, bounded_project):
     project, adapter = bounded_project
     page, window = _open(chromium, project)
     try:
         box = prepare(page, project)
+        expect(page.get_by_role("button", name="Set up this run", exact=True)).to_have_count(0)
+        expect(page.locator(".studio-runs__situation")).not_to_contain_text("Waiting for your permission")
         store = RunStore(project.root)
         assert not any(row.kind == "run_authorization" for row in store.read("run").records)
         for action, state in [("authorize", "waiting"), ("pause", "paused"),
@@ -122,6 +333,7 @@ def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_kee
     page, window = _open(chromium, project)
     try:
         box = prepare(page, project)
+        box.locator('[data-focus="automation:run:actor"]').fill("коллега-демо")
         posted = []
         def lose_reply(route):
             posted.append(route.request.post_data_json)
@@ -134,9 +346,10 @@ def test_lost_authorize_reply_reads_the_same_durable_permission_and_language_kee
         assert len(posted) == 1
         grants = [row.value for row in RunStore(project.root).read("run").records if row.kind == "run_authorization"]
         assert len(grants) == 1 and grants[0].authorization_id == posted[0]["authorization_id"]
+        assert grants[0].authorized_by == posted[0]["authorized_by"] == "коллега-демо"
         page.locator('[data-focus="preference-language"]').select_option("ru")
         expect(box.locator('[data-focus="automation:pause"]')).to_have_text("Пауза после текущего действия")
-        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("owner")
+        expect(box.locator('[data-focus="automation:run:actor"]')).to_have_value("коллега-демо")
         assert adapter.execute_calls == 0 and window.page_errors == []
     finally:
         close_context(page.context)

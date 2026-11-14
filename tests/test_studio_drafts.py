@@ -4,9 +4,8 @@ Split out of ``tests/test_studio_wiring.py`` when that module reached the line
 cap, along the seam the reducer itself draws: a DRAFT -- the step's three
 typed words, the document, the decision, the toolbar's folds and fields -- is
 the reducer's, kept across every read, cleared only by a change of subject,
-and spent only by the write minted from it. Every guard here is read off the
-SOURCE; what a browser draws and posts under the same rules is measured in
-``browser_tests/test_studio_step_races.py`` and its neighbours.
+and spent only by the write minted from it. Decision tests drive the public reducer and writer.
+The browser exercises these rules in ``browser_tests/test_studio_step_races.py`` and its neighbours.
 
 The paths and the comment stripper are the wiring module's own, imported
 rather than spelled twice.
@@ -15,7 +14,9 @@ from __future__ import annotations
 
 import re
 
-from tests.test_graph_source import _code
+from tests.desk_node import run_js
+from tests.test_command_workflow_routes import get, post
+from tests.test_demo_counter_review import project, request
 from tests.studio_source_messages import _code
 from tests.test_studio_wiring import BOOT, PANEL, RUNFORM, RUNWRITE, STORE, VIEW
 
@@ -63,48 +64,41 @@ def test_the_step_draft_takes_three_typed_keys_and_no_fourth():
     assert "function stepWriting(" not in source
 
 
-def test_a_landed_read_of_the_same_run_leaves_what_a_person_is_typing_alone():
-    """The rule that replaced an unconditional reset, and why it had to.
-
-    Every road into `runMoved` is a READ: a `run` frame for an attempt event on
-    another branch, a `state` frame, the reconnect's own re-read. Resetting both
-    drafts there emptied the form under a person's hands while the control
-    beside it promised that what they typed is kept -- and owner acceptance
-    step 16 asks for the opposite in so many words.
-
-    Held in BOTH directions, because either alone is a defect: a read of the
-    same run keeps both drafts, and a read of another run or of none resets
-    them. `writing` goes off whatever else is kept -- it is a fact about a
-    request that is over once its answer has been read.
-    """
-    source = _code(STORE)
-    assert "const NO_STEP = Object.freeze({" in source
-    kept = re.search(r"function keptDrafts\(state, detail\) \{(.*?)\n\}",
-                     source, re.DOTALL)
-    assert kept is not None, "the reducer decides nothing about a kept draft"
-    said = kept.group(1)
-    assert "detail.run.run_id === state.runs.selectedId" in said, said
-    assert "same ? state.runs.step : cleared(state.runs.step)" in said, said
-    assert "same ? state.decisions.draft : NO_DRAFT" in said, said
-    # A read says NOTHING about a write in flight: that fact left the draft
-    # for `runs.writes` (R07A), so there is no flag here to turn off.
-    assert "writing" not in said, said
-    moved = re.search(r"function runMoved\(state, phase, detail, said\) \{(.*?)"
-                      r"\n\}", source, re.DOTALL)
-    assert moved is not None
-    assert "const kept = keptDrafts(state, detail);" in moved.group(1)
-    assert "step: kept.step" in moved.group(1), moved.group(1)
-    assert "draft: kept.draft" in moved.group(1), moved.group(1)
-    # The unconditional reset is gone from that arm, and the one road a draft
-    # may not cross still resets outright: choosing ANOTHER run -- one
-    # generation on, so a write minted from the old draft cannot spend the
-    # new one; and the writes in flight are not that road's to touch.
-    assert "step: NO_STEP" not in moved.group(1), moved.group(1)
-    chosen = re.search(r"function runChosen\(state, runId\) \{(.*?)\n\}",
-                       source, re.DOTALL)
-    assert chosen is not None
-    assert "step: cleared(state.runs.step)" in chosen.group(1), chosen.group(1)
-    assert "writes" not in chosen.group(1), chosen.group(1)
+def test_a_landed_read_of_the_same_run_leaves_what_a_person_is_typing_alone(tmp_path):
+    subject, _ = project(tmp_path, demo=True)
+    assert post(subject, "/command/runs", request()).status == 201
+    response = get(subject, "/command/runs/practice-mine")
+    assert response.status == 200
+    result = run_js("""
+        const {EMPTY, reduce} = store;
+        const runId = d.run.run_id, nodeId = "review-counter";
+        let state = [
+          {type:"connection", state:"open"}, {type:"screen", screen:"decisions"},
+          {type:"run-chosen", runId}, {type:"run-loaded", read:d}
+        ].reduce(reduce, EMPTY);
+        const autoSelected = state.decisions.draft.key;
+        state = [
+          {type:"decision-edit", patch:{action:"request_changes", actor:"vasily", reason:"typed"}},
+          {type:"step-chosen", nodeId}, {type:"step-edit", patch:{rationale:"unfinished"}},
+          {type:"document-edit", patch:{content:"notes"}},
+          {type:"step-writing", runId, nodeId, writing:true}
+        ].reduce(reduce,state);
+        const before = state;
+        state = reduce(state, {type:"run-loaded", read:d});
+        const describe = s => [s.runs.step.rationale,s.runs.document.content,s.decisions.draft,
+          s.runs.writes[runId+"/"+nodeId]];
+        console.log(JSON.stringify([state.runs.phase,autoSelected,describe(state),
+          state.runs.step.generation === before.runs.step.generation,
+          ...[{type:"run-chosen",runId:"different"},{type:"run-cleared"}].map(event=>{
+            const next=reduce(state,event);
+            return [describe(next),next.runs.step.generation > state.runs.step.generation];
+          })]));
+    """, {"store": "studio-store.js"}, response.payload)
+    empty = {"key": None, "actor": "", "action": "approve", "reason": ""}
+    typed = {"key": "practice-mine/accept", "actor": "vasily",
+             "action": "request_changes", "reason": "typed"}
+    assert result == ["ready", "practice-mine/accept", ["unfinished", "notes", typed, "writing"],
+                      True, [["", "", empty, "writing"], True], [["", "", empty, "writing"], True]]
 
 
 def test_a_read_the_projection_refuses_keeps_both_drafts():
@@ -130,27 +124,55 @@ def test_a_read_the_projection_refuses_keeps_both_drafts():
     assert "writes" not in failed.group(1), failed.group(1)
 
 
-def test_the_two_write_roads_spend_their_own_draft_before_the_read():
-    """A read cannot know the words are finished with; a write does.
+def test_decision_spend_and_refusal_are_visible_before_the_refresh():
+    result = run_js("""
+        const capture = (answer, switchTo=null) => {
+          const {reduce,EMPTY} = store;
+          const row = {run_id:"run", gate_id:"gate", answers:0};
+          let state = [{type:"run-chosen",runId:"run"},{type:"screen",screen:"decisions"},
+            {type:"decision-chosen",key:"run/gate"},
+            {type:"decision-edit",patch:{actor:"vasily",action:"request_changes",reason:"why"}}
+          ].reduce(reduce,EMPTY);
+          const dispatch = event => { state = reduce(state,event); };
+          const reads = [];
+          let sent, respond;
+          const writer = writers.decisionWriters({
+            isId: id => typeof id === "string" && !!id, draft:()=>state.decisions.draft,
+            chosenRun:()=>state.runs.selectedId, dispatch,
+            write:(target,id,body,accept,reject)=>{
+              sent=[target,id,body.actor,body.action,body.reason];
+              respond=answer==="accept" ? accept : ()=>reject({code:answer});
+            },
+            refreshRun: id => reads.push([id,state.decisions.draft])
+          });
+          writer.submitDecision(row);
+          if (switchTo) {
+            if (switchTo==="otherRun") dispatch({type:"run-chosen",runId:"another"});
+            dispatch({type:"decision-chosen",key:switchTo==="otherRun" ? "another/other" : "run/other"});
+            dispatch({type:"decision-edit",patch:{actor:"bob",reason:"not sent"}});
+          }
+          respond();
+          return [sent,reads,state.decisions.draft];
+        };
+        console.log(JSON.stringify([capture("accept"),capture("gate_unreached"),
+            capture("conflict"),capture("accept","otherGate"),capture("gate_unreached","otherGate"),
+            capture("gate_unreached","otherRun")]));
+    """, {"writers": "studio-runwrite.js", "store": "studio-store.js"})
+    sent = ["decisions", "run", "vasily", "request_changes", "why"]
+    empty = {"key": None, "action": "approve", "actor": "", "reason": ""}
+    accepted = {**empty, "key": "run/gate"}
+    typed = {"key": "run/gate", "action": "request_changes", "actor": "vasily", "reason": "why"}
+    other = {**empty, "key": "run/other", "actor": "bob", "reason": "not sent"}
+    another_run = {**other, "key": "another/other"}
+    assert result == [
+        [sent, [["run", accepted]], accepted], [sent, [["run", empty]], empty],
+        [sent, [], typed], [sent, [["run", other]], other], [sent, [["run", other]], other],
+        [sent, [], another_run],
+    ]
 
-    That is the whole seam. Once a landed read of the same run keeps a draft,
-    something has to take it away when it really is spent -- and it is the two
-    handlers that know: an accepted decision, an accepted step write, and the
-    one refusal that says the screen is stale enough to re-read. Each clears
-    BEFORE the read it provokes, so the form a person comes back to is the one
-    the answer drew rather than the one they left.
-    """
+
+def test_a_step_write_spends_only_its_own_generation_before_the_read():
     writer = _code(RUNWRITE)
-    # The decision road: the accepted arm and the `gate_unreached` recovery.
-    assert writer.count('door.dispatch({type: "decision-chosen", key: null});') == 2
-    for arm in ('door.dispatch({type: "status", notice: DECIDED});\n'
-                '      door.dispatch({type: "decision-chosen", key: null});\n'
-                "      door.refreshRun(asked);",
-                'if (result.code !== "gate_unreached" || asked !== door.chosenRun())'
-                " return;\n"
-                '      door.dispatch({type: "decision-chosen", key: null});\n'
-                "      door.refreshRun(asked);"):
-        assert arm in writer, arm
     # The step road: the accepted arm only, and it spends ONLY the draft this
     # write was minted from -- run, step and generation fixed before the
     # request left -- so another step's unsent words survive its answer

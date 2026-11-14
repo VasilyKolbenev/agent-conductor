@@ -116,6 +116,77 @@ def test_instruction_reference_is_not_omitted_or_claimed_as_a_missing_file(studi
     assert "brief: No recorded document" in panel.inner_text()
 
 
+def test_patch_files_require_this_attempt_and_its_named_checker(studio):
+    page, _ = studio
+    detail = _detail()
+    task = {"id": "one", "work_scope": "one"}
+    detail.update(task={**task, "title": "Counter", "unreadable": False})
+    detail["config"]["task"] = task
+    node = detail["graph"]["definition"]["nodes"][0]
+    args = {"profile": "implement-patch-v1", "work_scope": "one", "work_item_id": "item"}
+    node.update(capability="dispatch", arguments=args)
+    request = {"node_id": "analyse", "instance_id": "alpha", "action_id": "one",
+               "attempt_id": "turn-one", "capability": "dispatch", "arguments": args}
+    evidence = {"evidence_id": "proof", "kind": "verification", "uri": "verification/one",
+                "verification": "verified", "verifier_instance_id": "beta"}
+    result = {"action_id": "one", "attempt_id": "turn-one", "outcome": "succeeded",
+              "evidence_refs": ["proof"]}
+    detail["records"] = history = [{"record_type": key, "record": row} for key, row in (
+        ("action_request", request), ("evidence", evidence), ("action_result", result))]
+    result_panel = _inspector(page).locator("[data-patch-result]")
+    _mount(page, detail)
+    assert result_panel.count() == 1 and "beta" in result_panel.inner_text()
+    for row, key, wrong in [(evidence, "verifier_instance_id", "other"),
+                            (evidence, "uri", "verification/foreign"),
+                            (result, "evidence_refs", ["older"]),
+                            (result, "outcome", "verification_failed"),
+                            (result, "attempt_id", "older-turn"), (args, "work_scope", "other")]:
+        old, row[key] = row[key], wrong
+        _mount(page, detail)
+        assert result_panel.count() == 0, key
+        row[key] = old
+    history.append({"record_type": "action_request", "record": {
+        **request, "action_id": "two", "attempt_id": "turn-two"}})
+    _mount(page, detail)
+    assert result_panel.count() == 0
+
+
+def test_open_result_selects_the_document_of_the_final_review(chromium, studio_url):
+    detail = _review_detail()
+    detail["graph"]["situation"] = {"state": "not_required", "checked": [
+        {"reason": "run_ended", "sources": ["finished"], "count": 1}]}
+    detail["records"] = [
+        _artifact("input", "brief"),
+        _artifact("report", "analysis", "review-action"),
+        {"record_type": "evidence", "record": {"evidence_id": "proof", "verification": "verified"}},
+        {"record_type": "action_result", "record": {
+            "action_id": "review-action", "outcome": "succeeded", "evidence_refs": ["proof"]}},
+        _artifact("later", "unrelated")]
+    # The two renderers own these mounts. A live Studio shell redraws them on catalog reads.
+    with chromium.new_context() as context:
+        page = context.new_page()
+        renderer = studio_url + "/result-fixture"
+        page.route(renderer, lambda route: route.fulfill(content_type="text/html", body="""
+          <!doctype html><html lang="en"><head>
+          <link rel="stylesheet" href="/panel/studio.css">
+          <link rel="stylesheet" href="/panel/studio-atlas.css">
+          <link rel="stylesheet" href="/panel/studio-utilities.css">
+          </head><body class="studio-shell">
+          <header id="studioPrimary"></header><main id="bodyRuns"></main></body></html>"""))
+        page.goto(renderer)
+        page.evaluate("""async detail => {
+          const {mountRuns} = await import("/panel/studio-runs.js");
+          const {runPrimary} = await import("/panel/studio-runhead.js");
+          const state = {connection: "open", runs: {phase: "ready", list: [],
+            selectedId: detail.run.run_id, detail}, locale: "en"};
+          mountRuns(document.getElementById("bodyRuns"), state, {});
+          document.getElementById("studioPrimary").replaceChildren(runPrimary(state, {}, detail));
+        }""", detail)
+        page.get_by_role("button", name="Open the result").press("Enter")
+        assert page.locator("[data-output-action='review-action']").evaluate(
+            "el => el === document.activeElement")
+
+
 def test_long_document_uses_one_scroll_position_and_keeps_it_on_live_read(studio):
     page, _ = studio
     detail = _review_detail()

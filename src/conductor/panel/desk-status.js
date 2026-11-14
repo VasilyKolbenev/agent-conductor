@@ -23,7 +23,7 @@ export const STATUS_KEYS = Object.freeze([
   "task_unreadable", "not_started", "run_unreadable", "waiting_you",
   "queue_confirmation", "queue_blocked", "queued", "queued_inactive",
   "state_unknown", "running",
-  "checkpoint_inactive", "checkpoint", "owner_missing", "stalled", "expired", "paused",
+  "checkpoint_inactive", "checkpoint", "owner_missing", "recovery_needed", "stalled", "expired", "paused",
   "revoked",
   "outcome_succeeded", "outcome_verification_failed", "outcome_failed", "outcome_unknown",
   "outcome_rejected", "outcome_cancelled",
@@ -33,10 +33,13 @@ export const STATUS_KEYS = Object.freeze([
 const say = (key, params = {}) => Object.freeze({key, params: Object.freeze(params)});
 
 //: Rules 1-4: what the task and its newest run say before anything else can.
-function first(task, run) {
+function first(task, run, automation) {
   if (task?.unreadable) return say("task_unreadable");
   if (!run) return say("not_started");
   if (run.unreadable) return say("run_unreadable");
+  if (automation?.state === "restart_required" && automation.reason_code === "recovery_required") {
+    return say("recovery_needed");
+  }
   return run.human_state === "required" ? say("waiting_you") : null;
 }
 
@@ -124,7 +127,7 @@ function decorated(word, {attention, data, takenAt}) {
 export function taskStatus(input) {
   const {task, run, automation = null, entry = null, attention = null, data = "live",
     snapshot_at: takenAt = null} = input;
-  const word = first(task, run) || queued(entry) || doing(run) || granted(automation)
+  const word = first(task, run, automation) || queued(entry) || doing(run) || granted(automation)
     || outcome(run) || settled(automation, entry) || say("no_outcome");
   return decorated(word, {attention, data, takenAt});
 }

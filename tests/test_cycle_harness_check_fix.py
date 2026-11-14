@@ -36,6 +36,12 @@ from tests.test_command_run_socket import request
 from tests.test_store import good_lane, write_project
 from tests import _store_error_probe as store_error_probe
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 WORKFLOW = "workflow-checked-fix"
 RUN = "run-cycle-001"
 TASK = "task-cycle-001"

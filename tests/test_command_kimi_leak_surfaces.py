@@ -489,7 +489,8 @@ def test_the_spawn_log_stores_names_and_booleans_and_never_a_value(tmp_path):
     for row in rows:
         assert set(row) == {
             "argv", "argv0", "executable", "cwd", "kimi_home",
-            "telemetry_disabled", "env_names", "probe"}, sorted(row)
+            "telemetry_disabled", "updates_disabled", "env_names", "probe"}, sorted(row)
+        assert isinstance(row["updates_disabled"], bool)
         assert set(row["probe"]) == {"in_names", "in_values"}
         assert all(isinstance(value, bool) for value in row["probe"].values())
         assert CREDENTIAL not in json.dumps(row), (

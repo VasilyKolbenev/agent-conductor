@@ -31,6 +31,8 @@ export const DESK_STATUS_COPY = Object.freeze({
   "desk_status.checkpoint": ["At a checkpoint · needs to be continued",
     "На контрольной точке · нужно продолжить"],
   "desk_status.owner_missing": ["No project owner", "Нет владельца проекта"],
+  "desk_status.recovery_needed": ["Last attempt unconfirmed. Check conduct ownership status --dir . and follow the project recovery procedure.",
+    "Исход последней попытки не подтверждён. Проверьте conduct ownership status --dir . и следуйте процедуре восстановления проекта."],
   "desk_status.stalled": ["Run stalled", "Запуск остановился"],
   "desk_status.expired": ["Permission expired", "Разрешение истекло"],
   "desk_status.paused": ["Paused", "На паузе"],

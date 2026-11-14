@@ -2,6 +2,7 @@
 from datetime import datetime
 
 from . import server_git
+from .command import accept_gh
 from .command.project_claim import ProjectIdentity
 from .command.quota_snapshot_view import LIMITS_FILE, HubLimitsView
 from .hub.home import ConductHomeInvalid, conduct_home_path
@@ -29,6 +30,7 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         clock=lambda: datetime.fromisoformat(clock().replace("Z", "+00:00")))
     # A view process starts no child, git included (9.1.6): it passes no reader and builds none.
     git_reader = None if launch.mode == "view" else server_git.project_git_reader(root)
+    gh_reader = None if launch.mode == "view" else accept_gh.project_gh_reader(root)
     subject.command_api = CommandApi(
         subject.command_store, subject.command_registry,
         session=subject.command_session, budget=budget, clock=clock, ids=ids,
@@ -36,7 +38,7 @@ def start_command(subject, root, registry, providers, budget, clock, ids, token_
         quota_service=subject.command_quotas,
         quota_view=_hub_quota_view() if launch.mode == "view" else None,
         project=subject.broker.project_name, provider_configs=providers,
-        identity=subject.project_identity, project_git=git_reader)
+        identity=subject.project_identity, project_git=git_reader, project_gh=gh_reader)
     # The effect belongs to server-owned workers, never to a request thread:
     # the coordinator holds the API's own runtime, so it spends exactly the
     # grants that boundary minted and can spend no others. Each start() mints

@@ -1,6 +1,6 @@
 """The shipped standard cycle corrects one independent rejection under one authorization.
 
-What the product decides is real, with one setup step taken directly: the shipped `dalio-v5` file
+What the product decides is real, with one setup step taken directly: the shipped default-cycle file
 is materialized by the product's own `materialize` and appended to the run's journal BEFORE
 `server.build`, not through the server's routes. From there everything goes through the server's
 HTTP doors on a real project owner: the input documents, the Policy preview and authorization, and
@@ -234,8 +234,8 @@ def standard(tmp_path):
         subject.close()
 
 
-def test_the_default_standard_cycle_is_revision_five():
-    assert DEFAULT_TEMPLATE == "dalio-v5" and load_template(DEFAULT_TEMPLATE).revision == 5
+def test_the_default_standard_cycle_is_revision_six():
+    assert DEFAULT_TEMPLATE == "dalio-v6" and load_template(DEFAULT_TEMPLATE).revision == 6
 
 
 def test_a_clean_result_runs_five_steps_under_one_grant_through_both_human_doors(standard):
@@ -336,9 +336,13 @@ def test_a_grant_that_budgets_one_planning_attempt_refuses_the_replanned_lap_hon
     cycle.until("the result gate", lambda: cycle.outcomes("do") == ["succeeded"])
     status, body = cycle.decide("gate-result", "changes", action="request_changes")
     assert status == 201, body
-    reason = cycle.until("an honest refusal", lambda: True)
+    # Wait for the refusal itself: right after the decision the driver can say
+    # "waiting" (nothing runnable yet), which is quiet but is not the answer.
+    cycle.until("an honest refusal",
+                lambda: cycle.subject.policy_driver.reason(RUN) == "admission_refused")
     time.sleep(0.3)
-    assert reason == "admission_refused" and len(cycle.outcomes("identify")) == 1
+    assert cycle.subject.policy_driver.reason(RUN) == "admission_refused"
+    assert len(cycle.outcomes("identify")) == 1
 
 
 def test_revision_four_had_no_correction_road(standard):
@@ -350,7 +354,7 @@ def test_revision_four_had_no_correction_road(standard):
 
 
 def _studio_draft(definition):
-    """The preview body the Studio form starts from, computed by the shipped module itself."""
+    """The default preview request that the shipped Studio module sends."""
     import json
     from pathlib import Path
     import shutil
@@ -373,20 +377,21 @@ def test_the_studio_draft_is_a_preview_the_server_admits_and_the_old_defaults_we
     cycle = standard(["accept"])
     cycle.prepare()
     body = _studio_draft(cycle.graph.as_dict())
-    status, preview = cycle.post(f"/command/runs/{RUN}/automation/preview", {**body, "duration_seconds": 3600})
+    assert body == {}
+    status, preview = cycle.post(f"/command/runs/{RUN}/automation/preview", body)
     assert status == 200, preview
     limits = {row["node_id"]: row["max_attempts"] for row in preview["terms"]["node_limits"]}
-    assert limits["do"] == 2 and preview["terms"]["max_actions"] == 6
+    assert limits["do"] == 4 and preview["terms"]["max_actions"] == 8
     old = {"max_actions": 8, "max_action_seconds": 300, "max_total_task_seconds": 2400,
            "duration_seconds": 3600, "node_limits": [
                {"node_id": row["node_id"], "timeout_seconds": 300, "max_attempts": 1}
-               for row in body["node_limits"]]}
+               for row in preview["terms"]["node_limits"]]}
     status, refused = cycle.post(f"/command/runs/{RUN}/automation/preview", old)
     assert status == 422 and refused["error"]["code"] == "contract_invalid", refused
     # The door answers generically; this pins the reason: the admitted draft with ONE change -- a
     # per-action ceiling below `do` plus its checker -- is refused the same way.
     status, refused = cycle.post(f"/command/runs/{RUN}/automation/preview",
-                                 {**body, "duration_seconds": 3600, "max_action_seconds": 300})
+                                 {**preview["budget"]["terms_draft"], "max_action_seconds": 300})
     assert status == 422 and refused["error"]["code"] == "contract_invalid", refused
 
 

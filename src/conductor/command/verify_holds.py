@@ -74,6 +74,10 @@ DOER_HOME_RETAINED = (
     "offered for independent verification")
 DOER_TREE_CHANGED = "the review doer changed the work tree instead of only reviewing"
 DOER_ENV_ECHO = "the doer output contains an allowed environment value and was not published"
+DOER_CREDENTIAL_READBACK_UNTRUSTED = (
+    "the doer's credential read-back could not be established; nothing was published")
+CHECKER_CREDENTIAL_READBACK_UNTRUSTED = (
+    "the checker's credential read-back could not be established; no verdict was accepted")
 FRAME_OVER_LIMIT = "the independent verification materials exceed their input ceiling"
 FRAME_ENV_ECHO = "the independent verification materials contain an allowed environment value"
 CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safely"
@@ -83,9 +87,24 @@ CHECKER_HOMES_REFUSED = "the checker's isolated home could not be prepared safel
 CHECKER_LOGIN_RESIDUE = (
     "the checker left state this build does not declare in its login directory")
 CHECKER_PREFLIGHT_REFUSED = "the checker's installed build did not pass preflight"
+#: The checker's subscription login could not be prepared for an isolated attempt: the relay folder
+#: or the login itself (its shape, its expiry, its folders) was refused before anything was claimed.
+#: A different fact from a build that failed its preflight, so a different sentence. No path.
+CHECKER_LOGIN_NOT_READY = "the checker's login is not ready for an isolated attempt"
+#: The checker is confined and the execution boundary is not provided for its read-only attempt on
+#: this build, so it spawned nothing (R5). No platform, path or vendor detail rides this sentence.
+CHECKER_BOUNDARY_UNAVAILABLE = (
+    "the execution boundary is not provided for the checker's attempt on this build")
 CHECKER_MARKER_STANDING = "this action already claimed its independent checker; no second check was started"
+#: The checker's claim could not be taken and no marker stands, so nothing was reserved and nothing
+#: was started: a different fact from the sentence above, which says a marker exists (Q13).
+CHECKER_CLAIM_REFUSED = "the checker could not reserve its check, so nothing was started"
 CHECKER_NO_VERDICT = "the checker returned no complete accepted verdict for this result"
 CHECKER_MATERIAL_UNAVAILABLE = "the checker could not read the exact result materials safely"
+TEST_REPORT_REFUSED = "the post-patch test protocol does not match this attempt"
+TEST_EXECUTION_FAILED = "post-patch tests did not produce a complete usable result"
+TESTS_FAILED = "post-patch tests failed; the checker cannot confirm success"
+TEST_RUNTIME_CHANGED = "the pinned test runtime changed around independent checking"
 #: The checker's own shared login lease was refused when its guard was entered, so that attempt
 #: spawned nothing. The ids that follow it come from the two closed lists of `failure_reasons`.
 CHECKER_LEASE_REFUSED = "the checker's shared login lease was refused"

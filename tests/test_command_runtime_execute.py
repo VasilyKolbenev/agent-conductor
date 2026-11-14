@@ -35,6 +35,7 @@ from conductor.command.runtime import (
     ExecutionError,
 )
 
+from tests._boundary_assumed import StartsNoAgent
 from tests.test_command_runtime_authorize import (
     NOW,
     a_budget,
@@ -47,7 +48,7 @@ from tests.test_command_runtime_authorize import (
 )
 
 
-class ScriptedAdapter:
+class ScriptedAdapter(StartsNoAgent):
     """A deterministic adapter whose execute and verify are scripted per scenario.
 
     It counts each seam it is asked to run, so a test can prove the runtime never

@@ -13,7 +13,7 @@
 import {element, field} from "./command-view.js";
 import {RESULT_OUTCOMES} from "./studio-model.js";
 import {reachable, runForm} from "./studio-runform.js";
-import {saveRefusal} from "./studio-shell.js";
+import {ownTaskLink, saveRefusal} from "./studio-shell.js";
 import {localize, noticeText} from "./studio-i18n.js";
 import {newestRun} from "./studio-taskruns.js";
 
@@ -320,6 +320,19 @@ function latestRunCard(state, handlers) {
  * `mount` is #bodyOverview; `state` is frozen; `handlers` own navigation.
  */
 export function mountOverview(mount, state, handlers) {
+  if (state.demoTask) {
+    mount.replaceChildren(card(state.demoTask.title, [note(localize(state, "demo.ready"))]));
+    return;
+  }
+  if (state.firstTask) {
+    mount.classList.remove("studio-overview");
+    const first = card(localize(state, "entry.first"), [note(localize(state, "entry.next"))]);
+    first.classList.add("studio-entry");
+    if (state.screen === "overview") first.append(element("div", {className: "studio-primary"},
+      [ownTaskLink(state, true)]));
+    mount.replaceChildren(first);
+    return;
+  }
   const sections = [
     ["latest", latestRunCard(state, handlers)],
     ["attention", needsYouCard(state, handlers)],

@@ -66,15 +66,20 @@ _PROBE_AT = "1970-01-01T00:00:00Z"
 
 
 def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    if route.name == "project_utilities":
+        from .project_utilities import apply
+        if api._identity.mode != "active":
+            raise ApiRefusal.fixed("project_not_active")
+        return apply(api._store.project_root, body)
+    if route.name == "project_task_draft":
+        if api._identity.mode != "active":
+            raise ApiRefusal.fixed("project_not_active")
+        return api._task_drafts.apply(api._identity.project_id, body)
     if route.name == "git_setup":
         from .git_setup import setup
         return setup(api, body)
-    if route.name == "accept_commit":
-        from .accept_commit import commit
-        return commit(api, route.run_id, body)
-    if route.name == "accept_preview":
-        from .accept_preview import preview
-        return preview(api, route.run_id, body)
+    if route.name.startswith("accept_"):
+        return _write_accept(api, route, body)
     if route.name.startswith("automation_"):
         from .policy_routes import route as policy_route
         return policy_route(api, route.name, route.run_id, body)
@@ -115,6 +120,23 @@ def write_route(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Repl
     if route.name == "materials":
         return write_materials(api, route.run_id, body)
     return _decide(api, route.run_id, body)
+
+
+def _write_accept(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
+    """One of the four writes on an accepted result, by name (spec 9.5, 9.7)."""
+    if route.name == "accept_commit":
+        from .accept_commit import commit
+        return commit(api, route.run_id, body)
+    if route.name == "accept_preview":
+        from .accept_preview import preview
+        return preview(api, route.run_id, body)
+    if route.name == "accept_push":
+        from .accept_push import push
+        return push(api, route.run_id, body)
+    if route.name == "accept_pull_request":
+        from .accept_pull_request import pull_request
+        return pull_request(api, route.run_id, body)
+    raise AssertionError(f"no write on an accepted result is named {route.name}")
 
 
 def _write_queue(api: CommandApi, route: Route, body: Mapping[str, Any]) -> _Reply:
@@ -562,7 +584,7 @@ def _open_run(api: CommandApi, body: Mapping[str, Any]) -> _Reply:
         api._store, api._templates, body, tasks=api._tasks,
         clock=api._clock, ids=api._ids, reachable=api._reachable(),
         judge_plan=api._judge_plan, publish=api._publish_run,
-        hold_route=api._hold_route)
+        hold_route=api._hold_route, registry=api._registry, demo=api._identity.demo)
 
 
 def _judge_plan(
@@ -586,4 +608,5 @@ def _judge_plan(
     _verifiers_are_servable(
         snapshot, run_id, nodes, api._bound_adapter,
         api._registry.verifies_independently, reachable=api._reachable())
-    _sandboxes_are_provided(run_id, nodes)
+    _sandboxes_are_provided(
+        run_id, nodes, execution_boundary=api._registry.execution_boundary, config=snapshot)

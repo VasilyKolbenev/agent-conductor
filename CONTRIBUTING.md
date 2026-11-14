@@ -66,10 +66,10 @@ Full checks belong in CI, release preparation, or changes whose impact warrants 
 Windows PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q --basetemp C:\pt
 .\.venv\Scripts\python.exe -m playwright install chromium
-.\.venv\Scripts\python.exe browser_tests/gate.py
-.\.venv\Scripts\python.exe browser_tests/gate.py --reverse
+.\.venv\Scripts\python.exe browser_tests/gate.py --artifacts C:\bg
+.\.venv\Scripts\python.exe browser_tests/gate.py --reverse --artifacts C:\bgr
 ```
 
 macOS / Linux:
@@ -81,7 +81,9 @@ macOS / Linux:
 .venv/bin/python browser_tests/gate.py --reverse
 ```
 
-The default pytest command collects `tests/`. The browser gate runs each browser module in a fresh process and writes evidence to a temporary directory; both normal and reverse order matter for a release. A plain `pytest browser_tests` run is not the release gate. See the [CI workflow](.github/workflows/ci.yml) and [release smoke guide](docs/release-smoke.md) for the wider checks, including the `scripts/mutate_merge.py` helper. Read failures and collected-test counts; do not describe an unrun check or a successful process exit as verified behavior.
+On Windows the full commands need short paths, as in CI. The product refuses a Windows path beyond its budget with `windows_path_too_long`, and pytest's default temporary folder under an ordinary profile is already too long for the hub and `projects add` suites. Keep `--basetemp` at 26 characters or fewer in total (one more already breaks the hub clone-restart suite; the measurements are in [LOCAL-SETUP](docs/recovery/2026-10-20/LOCAL-SETUP.md)). `C:\pt` is an example: any short folder you can write to will do, and pytest empties it first. Give the browser gate a short `--artifacts` folder for the same reason, because each module's temporary root is created inside it; CI uses `bg` and `bgr`, and each order needs its own folder. macOS and Linux do not need this.
+
+The default pytest command collects `tests/`. The browser gate runs each browser module in a fresh process and writes evidence to a temporary directory (or to `--artifacts`); both normal and reverse order matter for a release. A plain `pytest browser_tests` run is not the release gate. See the [CI workflow](.github/workflows/ci.yml) and [release smoke guide](docs/release-smoke.md) for the wider checks, including the `scripts/mutate_merge.py` helper. Read failures and collected-test counts; do not describe an unrun check or a successful process exit as verified behavior.
 
 ## Work with an AI coding assistant
 

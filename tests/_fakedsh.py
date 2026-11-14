@@ -67,9 +67,21 @@ VERSION_FAILS = "FAKEDSH_VERSION_FAILS"
 DEFAULT_VERSION = "0.1.0-rc.7"
 
 
-def fake_pins() -> tuple[str, str]:
-    """The (node_executable, entrypoint) pair that runs this fake through Python."""
-    return sys.executable, FAKE_DSH
+def fake_pins(entry_dir: str | os.PathLike[str] | None = None) -> tuple[str, str]:
+    """The (node_executable, entrypoint) pair that runs this fake through Python.
+
+    With ``entry_dir`` the entrypoint is a stub ``bin.js`` written there, a Python file that runs
+    this fake. It stands where the product's install tree keeps the real entry, so the install
+    folder an adapter asks for, and the real path it names, are facts of that layout.
+    """
+    if entry_dir is None:
+        return sys.executable, FAKE_DSH
+    entry = Path(entry_dir) / "bin.js"
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text(
+        f"import runpy\nrunpy.run_path({FAKE_DSH!r}, run_name='__main__')\n",
+        encoding="utf-8", newline="\n")
+    return sys.executable, str(entry)
 
 
 def spawns(log_path: str | os.PathLike[str]) -> list[dict]:

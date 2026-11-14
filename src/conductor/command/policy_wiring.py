@@ -5,10 +5,12 @@ from .policy_service import PolicyService
 
 def owner_check(root):
     from conductor.ownership import require_owner, OwnerRefused
-    from .runtime_values import AuthorizationError
+    from .runtime_values import AuthorizationError, ProjectRecoveryRequired
     try:
         require_owner(root).check()
-    except OwnerRefused:
+    except OwnerRefused as refused:
+        if refused.code == "recovery_required":
+            raise ProjectRecoveryRequired("a live project owner is required for bounded execution") from None
         raise AuthorizationError("a live project owner is required for bounded execution") from None
 
 

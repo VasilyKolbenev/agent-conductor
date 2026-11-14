@@ -1,7 +1,8 @@
 """The wizard's provider rows are the server's rows, plus only the two facts still owed to it.
 
 `GET /command/workflows` answers with `provider_projection`: provider id, display name,
-availability, implementation, the pinned login, the proven `controls` and the vendor's sandbox.
+availability, implementation, the pinned login, the road a task takes (`task_road`), the proven
+`controls` and the vendor's sandbox.
 The wizard needs two more facts of each harness (`offered`: whether this version offers it, and
 `task_channel`: how it is fed), which the server does not carry yet. A stand-in row that grew
 keys the server never emits let the model read a shape that does not exist, so these guards hold
@@ -18,10 +19,12 @@ from conductor.command.adapters.codex_cli import (
     CODEX_CAPABILITIES, CODEX_DISPLAY_NAME, CODEX_LIFECYCLE, CODEX_PROVIDER_ID,
     CODEX_SCHEMA_PAIRS)
 from conductor.command.adapters.grok_build import (
-    GROK_CAPABILITIES, GROK_DISPLAY_NAME, GROK_LIFECYCLE, GROK_PROVIDER_ID, GROK_SCHEMA_PAIRS)
+    GROK_CAPABILITIES, GROK_DISPLAY_NAME, GROK_LIFECYCLE, GROK_PROFILE, GROK_PROVIDER_ID,
+    GROK_SCHEMA_PAIRS)
 from conductor.command.adapters.kimi_code import (
     KIMI_CAPABILITIES, KIMI_DISPLAY_NAME, KIMI_LIFECYCLE, KIMI_PROVIDER_ID, KIMI_SCHEMA_PAIRS)
 from conductor.command.adapters.provider import ProviderContract, provider_projection
+from conductor.command.policy_providers import task_channel_fact
 from tests.desk_wizard_node import FIXTURES, fixture
 
 #: The facts of a provider row the server does not serve yet. The one place they are named:
@@ -53,7 +56,8 @@ def _rows(name: str) -> list[dict]:
 def test_a_fixture_provider_row_has_the_servers_keys_and_only_the_owed_facts_beyond_them():
     real = set(_served(*ADAPTERS[0]))
     assert real == {"provider_id", "display_name", "availability", "implementation", "auth",
-                    "controls", "vendor_sandbox"}, "the projection itself changed: re-read it"
+                    "task_road", "controls", "vendor_sandbox"}, (
+        "the projection itself changed: re-read it")
     for row in _rows("workflows.json"):
         assert set(row) - OWED == real, row["provider_id"]
         assert set(row) & OWED == OWED, "both owed facts or none: " + row["provider_id"]
@@ -77,7 +81,10 @@ def test_the_roads_of_every_harness_this_build_has_are_the_ones_the_fixture_says
         assert rows[served["provider_id"]]["controls"] == served["controls"], adapter[0]
         assert rows[served["provider_id"]]["display_name"] == served["display_name"]
     assert rows[CLAUDE_PROVIDER_ID]["controls"] == ["dispatch", "review"]
-    assert rows[GROK_PROVIDER_ID]["controls"] == ["dispatch"], "no review road yet"
+    assert rows[GROK_PROVIDER_ID]["controls"] == ["dispatch", "review"]
+    assert rows[GROK_PROVIDER_ID]["task_road"] == "review_only"
+    assert rows[GROK_PROVIDER_ID]["task_channel"] == task_channel_fact(GROK_PROFILE) == {
+        "channel": "file", "limit": 262144, "unit": "utf8_bytes", "scope": "task"}
 
 
 def test_the_readme_names_the_two_owed_facts_as_owed():

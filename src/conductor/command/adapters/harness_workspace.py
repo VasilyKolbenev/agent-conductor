@@ -78,6 +78,7 @@ from threading import Lock, RLock
 from weakref import WeakValueDictionary
 
 from .workspace_turn import _RootGate, indexed_root_gate
+from ..long_path import extended
 from ..path_admission import admit_work_path
 from ..work_layout import WORK_DIR, TASKS_DIR, work_parts, work_route
 from .attempt_scope import AttemptScope
@@ -144,6 +145,16 @@ def _refuse(violation: RouteViolation) -> WorkspaceNotContained:
     return WorkspaceNotContained(render_route_violation(violation))
 
 
+def real_path(path: str | os.PathLike[str]) -> str:
+    """The file a pinned path really names, links and junctions followed, as an absolute string.
+
+    Taken by the parent, outside any container, for a child that cannot walk the folders above
+    its install itself (an interpreter started under the execution boundary). It reads the
+    filesystem and changes nothing, which is why it is here and not in a value module.
+    """
+    return os.path.realpath(path)
+
+
 #: Every mark a route component may never carry, decided ONCE for every system
 #: this build runs on rather than read from the one it happens to be running on.
 #:
@@ -190,7 +201,7 @@ def _leaf(path: Path) -> os.stat_result | None:
     answer.
     """
     try:
-        return os.lstat(path)
+        return os.lstat(extended(path))
     except FileNotFoundError:
         return None
     except OSError as error:
@@ -243,7 +254,7 @@ def _remove_portal(path: Path, found: os.stat_result) -> None:
 def _remove_tree(root: Path) -> None:
     """Delete everything beneath ``root`` and then ``root``, following nothing."""
     directories: list[Path] = []
-    stack = [root]
+    stack = [Path(extended(root))]  # what a child made may be past 260 characters
     while stack:
         current = stack.pop()
         directories.append(current)
@@ -540,7 +551,9 @@ class HarnessWorkspace:
         if not stat.S_ISDIR(found.st_mode):
             raise _refuse(RouteViolation(RouteViolationCode.NOT_DIRECTORY, homes))
         refused: list[str] = []
-        for path in sorted(homes.iterdir()):
+        # Listed in the extended-length form: each name then stands as it is, where a plain one is
+        # read by the system as another (`...` is this root, `h ` and `h.` are `h`).
+        for path in sorted(Path(extended(homes)).iterdir()):
             entry = _leaf(path)
             if entry is None:
                 continue

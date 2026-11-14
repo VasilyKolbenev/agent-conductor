@@ -52,6 +52,12 @@ from tests.test_command_claude_transport import NOW, _Ids, a_harness
 from tests.test_command_runtime_authorize import a_budget, a_confirmation
 from tests.test_cycle_harness_check_fix import DRAFT, cycle  # noqa: F401 -- fixture
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 RUN = "run-scope-001"
 OLD = "bytes that were here before -- nobody was given this directory"
 CAPS = ("dispatch", "review")

@@ -190,7 +190,7 @@ def _open(chromium: Browser, project: _Project) -> tuple[Page, _Window]:
     context = chromium.new_context(viewport={"width": 1700, "height": 1400})
     page = context.new_page()
     window = _Window(page)
-    page.goto(project.url, wait_until="load")
+    page.goto(project.url + "panel/studio.html", wait_until="load")
     _settle(page)
     return page, window
 
@@ -235,6 +235,9 @@ def _answer(page: Page, project: _Project, gate_id: str, *,
             action: str, reason: str) -> None:
     """Answer one gate the way a person does, and wait for the read after it."""
     _open_the_gate(page, project, gate_id)
+    change = page.get_by_text("Change recorded decision", exact=True)
+    if change.count() and not page.locator('[data-focus-key="action:submitDecision"]').is_visible():
+        change.click()
     page.wait_for_selector('[data-focus-key="action:submitDecision"]')
     page.locator('[data-focus-key="field:actor"]').fill(DECIDER)
     page.locator('[data-focus-key="field:actor"]').press("Tab")
@@ -346,7 +349,10 @@ def test_a_gate_answered_last_lap_offers_no_second_answer_until_this_lap_reaches
                     config_digest=DIGEST)
         page.reload(wait_until="load")
         _settle(page)
-        said = _open_the_gate(page, project, CONFIRM_GATE)
+        _read_the_run(page, project, GATED_RUN)
+        page.locator('[data-focus-key="action:showDecisions"]').click()
+        page.wait_for_selector(f'[data-focus-key="decision:{GATED_RUN}/{CONFIRM_GATE}"][aria-pressed="true"]')
+        said = page.locator(".studio-decisions__detail").inner_text()
 
         assert page.locator(
             '[data-focus-key="action:submitDecision"]').count() == 1, said

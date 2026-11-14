@@ -75,7 +75,9 @@ WORKING = ("active", "queued", "stopped", "view")
 #: an unfinished project (`stop_uncertain`, `recovery_required`, `not_active`) are not here: the
 #: spec says "the OS needs a restart" for them, which a review ruling found wrong once a legacy
 #: record or a changed boot environment needs a preparation first. They are held by
-#: `test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart`.
+#: `test_a_project_that_needs_recovery_is_never_told_that_the_os_needs_a_restart`. The registry
+#: banner carries the short label the 4.6.5 ruling gives, not the older «Реестр не читается» of the
+#: banner row in 4.1.10: that sentence is false of a busy registry and of an unwritable hub state.
 SPEC_WORDS = {
     "hub.working.active": "В работе", "hub.working.view": "Просмотр",
     "hub.working.stopped": "Остановлен", "hub.working.stopped_since": "Остановлен · с {time}",
@@ -95,6 +97,8 @@ SPEC_WORDS = {
     "hub.act.recheck": "Проверить снова", "hub.act.recover": "Восстановить",
     "hub.act.forget": "Убрать из списка", "hub.act.raise": "Поднять", "hub.act.lower": "Опустить",
     "hub.act.clear_flag": "Снять флаг", "hub.act.recover_login": "Восстановить вход",
+    "hub.act.pin": "Закрепить", "hub.act.apply_profile": "Применить профиль",
+    "hub.act.apply_profile_restart": "Применить профиль и перезапустить",
     "hub.confirm.switch": "Сейчас в работе {name}: он остановится на контрольной точке — "
                           "текущий шаг закончится сам.",
     "hub.confirm.stop": "Текущий шаг закончится сам, новые шаги не начнутся. Отменить остановку "
@@ -104,7 +108,8 @@ SPEC_WORDS = {
     "hub.waiting.heading": "Ждут вас",
     "hub.banner.profile_absent": "Харнессы не настроены",
     "hub.banner.tools": "git / gh не закреплены или изменились",
-    "hub.banner.login": "Вход {harness} не закрыт", "hub.banner.registry": "Реестр не читается",
+    "hub.banner.login": "Вход {harness} не закрыт",
+    "hub.banner.registry": "Реестр проектов или состояние hub недоступны",
     "hub.banner.job": "Проекты из этого hub не запускаются: он внутри задания Windows",
     "hub.banner.job_how": "Остановите hub (Ctrl+C) и запустите conduct hub из отдельного окна "
                           "терминала, а не из встроенного терминала другого приложения",
@@ -174,6 +179,48 @@ def test_the_code_words_are_exactly_the_union_of_the_three_closed_lists_of_the_s
     assert held == ALL_CODES, sorted(set(held) ^ set(ALL_CODES))
     assert len(ROUTE_CODES) == 48 and len(set(OPERATION_CODES)) == len(OPERATION_CODES)
     assert len(ALL_CODES) == 90 and "hub.code.unknown" not in rows
+
+
+def test_operation_busy_says_a_closing_hub_too_and_registry_invalid_the_hub_state_too():
+    """`operation_busy` is also what a hub that is closing answers; `registry_invalid` is also
+    what a hub state that cannot be read answers. Both clauses are short and name no file."""
+    said = js("""
+      show(Object.fromEntries(["operation_busy", "registry_invalid"].map((code) =>
+        [code, ["en", "ru"].map((locale) => copy.codeWords(locale, code))])));
+    """)
+    busy_en, busy_ru = said["operation_busy"]
+    assert "being added" in busy_en and "closing" in busy_en, busy_en
+    assert "добавля" in busy_ru and "закрыва" in busy_ru, busy_ru
+    invalid_en, invalid_ru = said["registry_invalid"]
+    assert "registry" in invalid_en and "hub state" in invalid_en, invalid_en
+    assert "реестр" in invalid_ru and "состояни" in invalid_ru, invalid_ru
+    for text in (*said["operation_busy"], *said["registry_invalid"]):
+        assert len(text) <= 70 and not re.search(r"[\\/]|\.json", text), text
+
+
+def test_registry_invalid_says_the_hub_state_is_unavailable_in_both_languages_not_unreadable():
+    """The same code answers a hub state that cannot be written, and a lost hub lock; a clause
+    that says only "cannot be read" ("не читаются") is false for those."""
+    en, ru = js("""
+      show(["en", "ru"].map((locale) => copy.codeWords(locale, "registry_invalid")));
+    """)
+    assert "unavailable" in en and "cannot be read" not in en, en
+    assert "недоступн" in ru and "не читаются" not in ru, ru
+
+
+def test_the_registry_banner_is_true_of_every_cause_that_shows_it_in_both_languages():
+    """The page shows it when the project list is refused as `registry_invalid` (a registry or a
+    hub state that cannot be read or written, or a lost hub lock) and as `registry_busy` (the
+    registry is held by someone else). "Cannot be read" is false of all but the first of those."""
+    en, ru = js("""
+      show(["en", "ru"].map((locale) => copy.hubText(locale, "hub.banner.registry")));
+    """)
+    assert "unavailable" in en and "cannot be read" not in en, en
+    assert "недоступн" in ru and "не читается" not in ru, ru
+    assert "registry" in en and "hub state" in en, en
+    assert "реестр" in ru.lower() and "состояни" in ru, ru
+    for text in (en, ru):
+        assert len(text) <= 70 and not re.search(r"[\\/]|\.json", text), text
 
 
 def _hub_refusals():
@@ -278,7 +325,8 @@ def test_a_code_is_said_by_its_clause_and_a_code_the_page_has_no_word_for_is_sai
 PANEL = Path(__file__).resolve().parents[1] / "src" / "conductor" / "panel"
 #: The modules that say a message. The catalogue's own table is not one of them (it would name every
 #: key); its functions, after the table, are.
-SAYERS = ("hub.js", "hub-add.js", "hub-github.js", "hub-rail.js", "hub-stub.js")
+SAYERS = ("hub.js", "hub-add.js", "hub-github.js", "hub-rail.js", "hub-stub.js", "hub-ops.js",
+          "hub-tools.js")
 LITERAL = re.compile(r'"((?:hub|desk_status)\.[a-z0-9_.]+)"')
 FAMILY = re.compile(r"`((?:hub|desk_status)\.[a-z0-9_.]+\.)\$\{")
 

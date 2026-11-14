@@ -11,7 +11,7 @@
 import {FILL_STEPS, LIMITS, evolve, isLanguage, utf8Bytes} from "./desk-wizard-base.js";
 import {resumeInput, runInput} from "./desk-wizard-input.js";
 import {taskTitleOfRun} from "./desk-wizard-cycle.js";
-import {adoptPreview, beginLaunch, cardFacts, controlsOf, editActor, initialLaunch, isActor,
+import {adoptPreview, beginLaunch, cardFacts, changeDepth, controlsOf, editActor, initialLaunch, isActor, isBudgetDepth,
   isViewing, landLaunch, launchAsks, refreshLaunch, remaining, repeatsSpent, rereadLaunch,
   seenLaunch, tickLaunch, toggleInfo, unreadUnknown} from "./desk-wizard-launch.js";
 import {advanceSkip, beginSkip, cancelSkip, confirmSkip, landSkip, skipAsks, skipFacts}
@@ -23,7 +23,9 @@ import {EXITS, adoptRun, bumpRun, chainAsks, followingRunNumber, hashNow, initia
 
 //: The plain facts the chain is built from, in the language the owner pressed the button in.
 export function chainInput(state, lang = state.run.lang) {
-  return state.run.resume === null ? runInput(state, lang) : resumeInput(state, lang);
+  return state.run.resume === null ? {...runInput(state, lang),
+    budgetDepth: state.guided || state.budgetChosen ? state.budgetDepth : null}
+    : resumeInput(state, lang);
 }
 
 function withRun(state, run) {
@@ -74,7 +76,8 @@ export function landRun(state, ask, result) {
   if (run.resume !== null && run.resume.lost) return startOver(next);
   //: The preview of the chain is the first card of step 6 (a later one replaces or keeps it).
   const carded = ask.name === "preview" && run.phase === "review"
-    ? evolve(next, {launch: adoptPreview(state.launch, run.preview, run.runId)}) : next;
+    ? evolve(next, {launch: adoptPreview(state.launch, run.preview, run.runId),
+      ...(state.guided ? {step: "run"} : {})}) : next;
   if (state.task.written) return carded;
   if (run.resume === null) {
     //: The title is fixed once the task is written: the same id with another title would clash.
@@ -229,6 +232,15 @@ export const cardActor = (state, event) => withLaunch(state,
 export const cardStart = (state) => withLaunch(state, beginLaunch(state.launch, "start"));
 export const cardEnqueue = (state) => withLaunch(state, beginLaunch(state.launch, "enqueue"));
 export const cardRefresh = (state) => withLaunch(state, refreshLaunch(state.launch));
+export function cardBudget(state, event) {
+  if (!isBudgetDepth(event.depth)) return state;
+  if (state.launch.phase === "idle" && !state.run.pressed && state.run.resume === null) {
+    return event.depth === state.budgetDepth && state.budgetChosen ? state :
+      evolve(state, {budgetDepth: event.depth, budgetChosen: true});
+  }
+  const launch = changeDepth(state.launch, event.depth);
+  return launch === state.launch ? state : evolve(state, {launch, budgetDepth: event.depth, budgetChosen: true});
+}
 export const cardReread = (state) => withLaunch(state, rereadLaunch(state.launch));
 export const cardSeen = (state) => withLaunch(state, seenLaunch(state.launch));
 export const cardInfo = (state, event) => withLaunch(state,

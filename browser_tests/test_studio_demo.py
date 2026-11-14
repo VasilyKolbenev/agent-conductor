@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import threading
 from collections.abc import Iterator
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import Browser, Locator, Page, expect
@@ -40,7 +41,7 @@ def demo_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address[:2]
     try:
-        yield f"http://{host}:{port}/"
+        yield f"http://{host}:{port}/panel/studio.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
@@ -265,6 +266,8 @@ def test_the_decisions_screen_shows_the_gate_still_waiting_for_a_person(
         ".dataset.state !== 'empty'")
 
     said = page.locator("#screenDecisions").inner_text()
+    expect(page.locator("#screenDecisions")).to_contain_text("D-1")
+    expect(page.locator("#screenDecisions")).to_contain_text("D-2")
     assert demo_scenario.WAITING_GATE in said, said
     assert demo_scenario.ANSWERED_GATE in said, said
     # Both gates, each carrying its own state: one a person has answered and
@@ -577,7 +580,7 @@ _KEYBOARD_ACTIONS = (
     ("#bodyOverview .studio-overview__latest button", "action:onSelectRun"),
     ("#bodyOverview .studio-overview__attention button", "overview:decisions"),
     ("#bodyOverview .studio-overview__context button", "overview:workflow"),
-    ("#studioPrimary button", "action:onScreen"),
+    ("#studioPrimary button", "overview:pending-run"),
 )
 
 
@@ -609,20 +612,22 @@ def test_a_render_keeps_the_keyboard_on_the_same_overview_action_in_both_languag
     page.locator("#navOverview").click()
     page.evaluate(_RENDER_UNDER_FOCUS, [_KEYBOARD_ACTIONS[3][0], "en"])
     page.keyboard.press("Enter")
-    expect(page.locator("#screenWorkflow")).to_be_visible()
+    expect(page.locator("#screenRuns")).to_be_visible()
+    expect(page.locator("#studioPrimary [data-run-action=decide]")).to_be_visible()
+    assert parse_qs(urlsplit(page.url).fragment)["run"] == [demo_scenario.RUN_ID]
     assert problems == []
 
 
 #: The workflow chosen through the toolbar's own control while the keyboard rests on the
 #: Overview's workflow card: the pass redraws that card in its chosen state.
-_CHOOSE_UNDER_FOCUS = """(workflow) => {
-  const held = document.querySelector('#bodyOverview .studio-overview__context button');
+_CHOOSE_UNDER_FOCUS = """([selector, workflow]) => {
+  const held = document.querySelector(selector);
   held.focus();
+  if (document.activeElement !== held) throw Error("Workflow card did not take focus");
   const pick = document.querySelector("#workflowToolbar select[name='workflow']");
   pick.value = workflow;
   pick.dispatchEvent(new Event("change", {bubbles: true}));
-  const now = document.activeElement;
-  return {replaced: !held.isConnected, key: now.getAttribute("data-focus"), words: now.textContent};
+  return held;
 }"""
 
 
@@ -634,9 +639,16 @@ def test_the_chosen_workflow_and_its_blocking_rows_keep_their_keys_through_a_ren
     page, problems = front_door
     context = "#bodyOverview .studio-overview__context button"
     expect(page.locator(context)).to_have_text("Choose a workflow")
-    after = page.evaluate(_CHOOSE_UNDER_FOCUS, demo_scenario.WORKFLOW_ID)
-    assert after == {"replaced": True, "key": "overview:workflow",
-                     "words": "Edit this workflow"}, after
+    workflow = demo_scenario.WORKFLOW_ID
+    option = page.locator(f'#workflowToolbar select[name="workflow"] option[value="{workflow}"]')
+    expect(option).to_have_count(1)
+    # A live read can redraw the card between two Playwright calls. Find and focus
+    # the displayed card in one browser turn, retaining it to prove replacement.
+    original = page.evaluate_handle(_CHOOSE_UNDER_FOCUS, [context, workflow])
+    expect(page.locator(context)).to_have_text("Edit this workflow")
+    expect(page.locator(context)).to_be_focused()
+    expect(page.locator(context)).to_have_attribute("data-focus", "overview:workflow")
+    assert original.evaluate("held => !held.isConnected")
     blocked = page.locator("#bodyOverview .studio-overview__blocked button")
     expect(blocked.first).to_have_text("Open it")
     keys = blocked.evaluate_all("rows => rows.map((row) => row.getAttribute('data-focus'))")
@@ -702,6 +714,8 @@ def test_the_demo_run_is_named_by_its_task_and_its_header_offers_what_it_needs(f
     main.click()
     decisions = page.locator("#screenDecisions")
     expect(decisions).to_contain_text(demo_scenario.WAITING_GATE)
+    gate = decisions.locator(f'[data-focus-key="decision:{demo_scenario.RUN_ID}/{demo_scenario.WAITING_GATE}"]')
+    expect(gate).to_have_attribute("aria-pressed", "true")
     assert demo_scenario.RUN_ID in decisions.inner_text()
     assert problems == []
 

@@ -41,13 +41,15 @@ from conductor.command.adapters.grok_build import (
     grok_pin,
 )
 from conductor.command.adapters.kimi_code import KimiCodeError
-from conductor.command.adapters.headless_cli import ExecutablePin, ProcessOutcome
-from conductor.command.adapters.process import ProcessRunner
+from conductor.command.adapters.headless_cli import ExecutablePin
+from conductor.command.adapters.process import ProcessOutcome, ProcessRunner
 from conductor.command.adapters.provider import ProviderConfig
 from conductor.command.contracts import ActionRequest
+from conductor.command.execution_boundary import ATTEMPT_MODES
 from conductor.command.providers import resolve_providers
 
 from tests import _fakegrok
+from tests._fakeboundary import pin_dir
 from tests._fakeenv import ENV_PROBE, NO_PROBE
 
 NOW = "2026-08-21T12:00:00Z"
@@ -68,7 +70,7 @@ class _Ids:
 
 
 def _executable(tmp_path: Path) -> Path:
-    exe = _fakegrok.build_executable(tmp_path / "bin")
+    exe = _fakegrok.build_executable(pin_dir(tmp_path, "grok-build"))
     if exe is None:
         # Name the CAUSE. "This platform" blamed the platform for what is almost
         # always an environment fact -- no console-script launcher to copy -- and
@@ -81,11 +83,18 @@ def _executable(tmp_path: Path) -> Path:
     return exe
 
 
-def a_harness(tmp_path: Path, ambient=None, **knobs: str):
-    """A registered, available Grok provider over the fake, its root and its log."""
+class DispatchForTests(GrokBuildAdapter):
+    """Keep the dormant dispatch implementation covered without enabling it in production."""
+
+    task_modes = ATTEMPT_MODES
+
+
+def a_harness(tmp_path: Path, ambient=None, *, production=False, auth="api_key", auth_home="",
+              root=None, **knobs: str):
+    """The registered Grok provider, or an explicit dispatch-enabled fixture, over the fake."""
     exe = _executable(tmp_path)
-    root = tmp_path / "root"
-    root.mkdir(exist_ok=True)
+    root = tmp_path / "root" if root is None else Path(root)
+    root.mkdir(parents=True, exist_ok=True)
     instructions = root / INSTRUCTION_DIR
     instructions.mkdir(exist_ok=True)
     (instructions / "instr-001.md").write_text(
@@ -94,7 +103,7 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     environ = {_fakegrok.SPAWN_LOG: str(log), **knobs}
     config = ProviderConfig(
         provider_id=GROK_PROVIDER_ID, executable=str(exe),
-        protocol=GROK_PROTOCOL, env_allow=tuple(sorted(environ)))
+        protocol=GROK_PROTOCOL, env_allow=tuple(sorted(environ)), auth=auth, auth_home=auth_home)
     # `ambient` is a monkeypatch fixture. When it is given, the knobs are planted
     # in the REAL process environment and the runner is left to read that, so the
     # allowlist is exercised against an environment that can actually carry a
@@ -105,10 +114,16 @@ def a_harness(tmp_path: Path, ambient=None, **knobs: str):
     if ambient is not None:
         for _name, _value in environ.items():
             ambient.setenv(_name, _value)
+    # `confine_platform=None`: the launch that existed before R5. The harness fake is a plain
+    # child; the boundary witnesses confine it themselves (tests/_fakeboundary.py).
     resolution = resolve_providers(
         [config], root=root, clock=lambda: NOW, ids=_Ids(),
-        environ=None if ambient is not None else environ)
-    return resolution.registry.resolve(GROK_PROVIDER_ID), root, log
+        environ=None if ambient is not None else environ, confine_platform=None)
+    adapter = resolution.registry.resolve(GROK_PROVIDER_ID)
+    if not production:
+        adapter = DispatchForTests(adapter._pin, adapter._runner, root=root,
+                                   clock=adapter._clock, ids=adapter._ids)
+    return adapter, root, log
 
 
 def a_request(*, action_id="act-1", capability="dispatch", timeout=60,
@@ -164,7 +179,7 @@ def _recorded(tmp_path: Path):
     (root / INSTRUCTION_DIR / "instr-001.md").write_text(
         INSTRUCTION_BODY, encoding="utf-8", newline="\n")
     runner = _RecordingRunner(root)
-    adapter = GrokBuildAdapter(
+    adapter = DispatchForTests(
         grok_pin(str(exe)), runner, root=root, clock=lambda: NOW, ids=_Ids())
     return adapter, runner, exe
 
@@ -173,12 +188,14 @@ def _recorded(tmp_path: Path):
 
 
 def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path):
-    """``<pin> --no-auto-update --output-format plain --single <task>``.
+    """Dormant dispatch uses the pinned binary and a task file, with its narrow write grants.
 
     Read off the spec the adapter built, because that is the only place the whole
     command exists. ``--no-auto-update`` stands FIRST and is not optional here: a
     background update check during a dispatch would change the very build the
-    preflight just proved.
+    preflight just proved. The two ``--allow`` pairs stand before the prompt-file path,
+    which stays LAST; the whole permission witness is in
+    ``tests/test_grok_dispatch_permissions.py``.
     """
     adapter, runner, exe = _recorded(tmp_path)
 
@@ -188,10 +205,10 @@ def test_the_whole_argv_is_the_pinned_binary_and_this_builds_own_flags(tmp_path)
     argvs = [tuple(spec.argv) for spec in runner.specs]  # type: ignore[attr-defined]
     assert argvs[0] == (str(exe), "--version"), f"PREFLIGHT_ARGV={argvs[0]}"
     prompt = argvs[1]
-    assert prompt[:5] == (
+    assert prompt[:9] == (
         str(exe), "--no-auto-update", "--output-format", "plain",
-        "--single"), f"PROMPT_ARGV={prompt}"
-    assert len(prompt) == 6, f"UNEXPECTED_ARGV={prompt}"
+        "--allow", "Edit", "--allow", "Write", "--prompt-file"), f"PROMPT_ARGV={prompt}"
+    assert len(prompt) == 10, f"UNEXPECTED_ARGV={prompt}"
     for argv in argvs:
         assert argv[0] == str(exe), f"SOMETHING_STANDS_IN_FRONT_OF_THE_PIN={argv}"
 
@@ -206,9 +223,10 @@ def test_one_pinned_binary_and_code_owned_flags_really_run_a_child(tmp_path):
     prompts = _fakegrok.prompt_spawns(log)
     assert len(prompts) == 1
     argv = prompts[0]["argv"]
-    assert argv[:4] == [
-        "--no-auto-update", "--output-format", "plain", "--single"]
-    assert len(argv) == 5, f"UNEXPECTED_ARGV={argv}"
+    assert argv[:8] == [
+        "--no-auto-update", "--output-format", "plain",
+        "--allow", "Edit", "--allow", "Write", "--prompt-file"]
+    assert len(argv) == 9, f"UNEXPECTED_ARGV={argv}"
     for row in _fakegrok.spawns(log):
         rendered = " ".join(row["argv"]).lower()
         for banned in ("npx", "npm", ".cmd", "-c ", "&&", "|"):
@@ -216,14 +234,24 @@ def test_one_pinned_binary_and_code_owned_flags_really_run_a_child(tmp_path):
 
 
 def test_the_prompt_carries_the_materialized_instruction_and_not_its_reference(
-        tmp_path):
+        tmp_path, monkeypatch):
     adapter, _root, log = a_harness(tmp_path)
+    captured = []
+    run = adapter._runner.run
+
+    def capture(spec):
+        if "--prompt-file" in spec.argv:
+            captured.append(Path(spec.argv[-1]).read_text(encoding="utf-8"))
+        return run(spec)
+
+    monkeypatch.setattr(adapter._runner, "run", capture)
 
     run_once(adapter, a_request())
 
-    prompt = _fakegrok.prompt_spawns(log)[0]["argv"][4]
+    (prompt,) = captured
     assert INSTRUCTION_BODY in prompt, "PROMPT_LACKS_THE_INSTRUCTION_TEXT=True"
     assert "instr-001" in prompt
+    assert INSTRUCTION_BODY not in " ".join(_fakegrok.prompt_spawns(log)[0]["argv"])
 
 
 def test_a_relative_pin_is_refused_before_any_child_can_exist():
@@ -303,8 +331,9 @@ def test_all_four_documented_switches_are_turned_off_on_every_spawn(tmp_path):
     # constant, so flipping the published disable value -- turning telemetry,
     # trace upload, Mixpanel and feedback all ON -- left the entire suite green.
     # The NAMES still come from the adapter, cross-checked against the fake, so
-    # a fifth switch appearing cannot pass unnoticed either.
-    assert set(dict(GROK_FORCED_ENV)) == set(_fakegrok.SWITCH_NAMES), (
+    # another switch appearing cannot pass unnoticed either. Personal-profile imports have
+    # their own child witness in test_grok_compat_isolation, with the vendor's "false" spelling.
+    assert set(dict(GROK_FORCED_ENV)) == set(_fakegrok.SWITCH_NAMES + _fakegrok.COMPAT_NAMES), (
         "the adapter and the fake disagree about which switches exist")
     expected = {name: "0" for name in _fakegrok.SWITCH_NAMES}
     for row in _fakegrok.spawns(log):

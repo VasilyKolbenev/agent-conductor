@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "title": "Grok: диагностика с проверкой открытия сессии",
+  "execution_contract": "bounded-run-v1",
+  "nodes": [
+    {
+      "node_id": "diagnose",
+      "kind": "task",
+      "stage": "diagnose",
+      "role_id": "role-diagnostician",
+      "capability": "review",
+      "title": "Diagnose Root Causes",
+      "purpose": "Diagnose the root causes of the obstacles, in the input materials' language",
+      "arguments": {
+        "work_item_id": "work-001",
+        "review_profile": "quality",
+        "target_artifact_refs": ["artifact-problems"],
+        "result_artifact_ref": "artifact-causes",
+        "grok_diagnostic": "session-phase-v1"
+      },
+      "resources": []
+    },
+    {
+      "node_id": "result-gate",
+      "kind": "gate",
+      "gate_id": "gate-result",
+      "title": "Result Gate",
+      "resources": []
+    }
+  ],
+  "edges": [{"from_node": "diagnose", "to_node": "result-gate"}]
+}

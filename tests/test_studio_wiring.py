@@ -103,7 +103,7 @@ PERMITTED = {
     "studio-automation-flow.js": frozenset({"./studio-automation-model.js"}),
     "studio-workflowwrite.js": frozenset({"./studio-model.js", "./studio-store.js", "./command-projection.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-utilities-copy.js", "./studio-atlas-copy.js", "./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -133,9 +133,10 @@ PERMITTED = {
         "./command-view.js", "./command-projection.js", "./studio-model.js",
         "./studio-store.js", "./studio-view.js", "./studio-canvas.js",
         "./studio-inspector.js", "./studio-runs.js", "./studio-runwrite.js",
-        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js",
+        "./studio-people.js", "./studio-focus.js", "./studio-tasks.js", "./studio-atlas.js",
+        "./studio-utilities.js",
         "./studio-taskflow.js", "./studio-mounts.js", "./studio-quotaflow.js",
-        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js"}),
+        "./studio-shell.js", "./studio-preferences.js", "./studio-bridge.js", "./desk-hash.js"}),
     #: What a press MEANS, and the whole of what it may reach: the two
     #: fragments' own sentences and keys, nothing else.
     "studio-runwrite.js": frozenset({"./studio-runstep.js",
@@ -174,13 +175,17 @@ DOOR_COUNTS = (("fetch(", 2), ("new EventSource(", 1), ('method: "POST"', 1))
 #: `materials` joined when lane L's route `POST /command/runs/<run_id>/materials` landed
 #: (spec 6.2.3, route-canon 3), and `autoContinue` for the continue-after flag (spec 4.3.4, lane
 #: H's route, written by the block of spec 5.8), and `queue`, `queueOrder` and `queueWithdraw` for
-#: the project queue of the Pult (spec 4.4.8, lane L's route-canon 4): each one more name on the
-#: same door, the counts unchanged.
-WRITE_TARGETS = frozenset({"draft", "revisions", "runs", "decisions",
+#: the project queue of the Pult (spec 4.4.8, lane L's route-canon 4), and `gitSetup` for the
+#: wizard's Git step (spec 5.6.8, 12), and `acceptPush` and `acceptPullRequest` for the two
+#: published steps of an accepted result (spec 9.7), and `cyclePin` for the project's pinned
+#: cycle (spec 7.10; `POST /command/project/cycle/pin`): each one more name on the same door, the
+#: counts unchanged.
+WRITE_TARGETS = frozenset({"taskDraft", "draft", "revisions", "runs", "decisions",
                            "proposals", "actions", "artifacts", "tasks",
                            "automationPreview", "automationAuthorize", "automationControl",
-                           "materials", "autoContinue", "seed", "flow", "queue",
-                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit"})
+                           "materials", "autoContinue", "seed", "flow", "cyclePin", "queue",
+                           "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit",
+                           "gitSetup", "acceptPush", "acceptPullRequest", "utilities"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.
@@ -504,9 +509,11 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     scoped = set(_frozen_list(boot, "RUN_SCOPED"))
     assert scoped == RUN_SCOPED, sorted(scoped ^ RUN_SCOPED)
     assert scoped < set(_frozen_list(_code(TRANSPORT_MODULE), "WRITE_TARGETS"))
-    assert boot.count("RUN_SCOPED.includes(") == 3
-    assert ("const ready = RUN_SCOPED.includes(target)\n"
-            "      ? streamOpen : state.workflows.writeReady;") in boot, boot
+    assert boot.count("RUN_SCOPED.includes(") == 2
+    assert 'const demoReview = demo && target === "runs" && body.workflow_id === DEMO_REVIEW;' in boot
+    assert 'const demo = document.documentElement.hasAttribute("data-demo");' in boot
+    assert "const scoped = demoReview || RUN_SCOPED.includes(target);" in boot
+    assert "const ready = scoped ? streamOpen : state.workflows.writeReady;" in boot
     # And a run-scoped write is RETIRED by nothing but its own answer. The
     # workflow counter retires one workflow write with the next, which is
     # that door's rule; a run write's ownership is per run and step in
@@ -515,7 +522,7 @@ def test_a_run_scoped_write_is_gated_on_the_stream_and_never_on_a_workflow():
     # under. One counter over both retired alpha's refusal when omega's
     # write began, and the refusal that should have re-read the run said
     # nothing at all (the slice-3 review's F).
-    assert ("const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;"
+    assert ("const mine = scoped ? null : ++writeGeneration;"
             in boot), boot
     assert "if (mine !== null && mine !== writeGeneration) return;" in boot, boot
     assert boot.count("++writeGeneration") == 1, boot
@@ -561,31 +568,8 @@ def test_a_decision_id_counts_the_answers_before_it_and_ends_with_the_person():
             in writer), writer
 
 
-def test_a_gate_unreached_refusal_buys_a_re_read_of_the_run_it_named():
-    """The one decision refusal this window acts on rather than only reports.
-
-    Its recovery is `draft_conflict`'s shape for `draft_conflict`'s reason: the
-    screen is offering an answer for a gate the server says the run has not
-    reached, so what is on screen is out of date and the READ is what makes it
-    current. A recovery that only wrote a sentence would leave the same stale
-    form under the same person, still offering the same refused answer.
-
-    The callback BODY is pinned, not merely the code it matches on: replacing
-    the re-read with a status dispatch left every substring here intact. It is
-    two statements now rather than one -- the draft is spent before the read,
-    because a landed read of the same run no longer clears one -- and the
-    re-read is still the last word.
-    """
-    writer = _code(RUNWRITE)
-    recover = re.search(
-        r'if \(result\.code !== "gate_unreached" \|\| asked !== door\.chosenRun\(\)\)'
-        r" return;\n(.*?)\n    \}\);", writer, re.DOTALL)
-    assert recover is not None, "the gate_unreached recovery is gone"
-    assert recover.group(1).split("\n") == [
-        '      door.dispatch({type: "decision-chosen", key: null});',
-        "      door.refreshRun(asked);"], recover.group(1)
-    # The road left the boot module at its line cap; the boot module hands it
-    # the door and looks nothing up itself.
+def test_the_boot_module_delegates_decision_receipts_and_refusal_recovery():
+    """The writer's callbacks and draft/read ordering are exercised in test_studio_drafts."""
     boot = _code(BOOT)
     assert "submitDecision: decisions.submitDecision," in boot
     assert "gate_unreached" not in boot and "receipt_id" not in boot

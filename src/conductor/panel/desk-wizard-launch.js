@@ -17,6 +17,8 @@
 // «Пропустить вперёд» (`skip`, folded by `desk-wizard-skip.js`), and the counters that make every
 // ask's id (`previews`, `seq`, `attempts`, `presses`).
 import {stableJson as stable} from "./desk-wizard-digest.js";
+import {DEPTH, validRecommendation} from "./studio-budget-guidance.js";
+import {validTestRows, validTestSteps} from "./studio-test-preview.js";
 
 export const MAX_REPEATS = 6;
 const COUNTDOWN_CAP = 300;
@@ -89,7 +91,7 @@ export function initialLaunch(actor) {
 
 //: The explanations the card can open behind an ⓘ: the time it reserves, and the short digest of
 //: each input and each instruction (named by the reference or the step it belongs to).
-const INFO = /^(?:time|input:[a-z0-9-]{1,64}|instruction:[A-Za-z0-9._-]{1,128})$/;
+const INFO = /^(?:time|budget|input:[a-z0-9-]{1,64}|instruction:[A-Za-z0-9._-]{1,128})$/;
 
 /**
  * Open or close one explanation behind an ⓘ. Which are open is the model's, not the page's, so a
@@ -148,11 +150,28 @@ function validFacts(facts) {
  * shape of 7.8.
  */
 export function projectPreview(payload, runId) {
-  const good = keysAre(payload, PREVIEW_KEYS) && validTerms(payload.terms, runId)
+  const marked = payload?.grok_diagnostic_steps;
+  const keys = [...PREVIEW_KEYS];
+  if (marked !== undefined) keys.push("grok_diagnostic_steps");
+  if (payload?.patch_steps !== undefined) keys.push("patch_steps");
+  if (payload?.recommendation !== undefined) keys.push("recommendation");
+  if (payload?.test_steps !== undefined) keys.push("test_steps");
+  const good = keysAre(payload, keys) && validTerms(payload.terms, runId)
     && validBudget(payload.budget) && validFacts(payload.provider_facts)
     && DIGEST.test(payload.preview_digest) && epochSeconds(payload.previewed_at) !== null
     && epochSeconds(payload.valid_until) !== null;
-  return good ? structuredClone(payload) : null;
+  if (!good || !validTestRows(payload)) return null;
+  if (payload.recommendation !== undefined && !validRecommendation(payload.recommendation, payload.terms)) {
+    return null;
+  }
+  for (const steps of [marked, payload.patch_steps]) {
+    if (steps === undefined) continue;
+    if (!Array.isArray(steps) || !steps.length || !steps.every(isActor)
+        || new Set(steps).size !== steps.length) return null;
+    const planned = payload.terms.node_limits.map((row) => row.node_id);
+    if (stable(planned.filter((id) => steps.includes(id))) !== stable(steps)) return null;
+  }
+  return structuredClone(payload);
 }
 
 //: The lines of the card whose terms changed between two previews, in the order the card draws
@@ -160,6 +179,10 @@ export function projectPreview(payload, runId) {
 function changedLines(before, after) {
   const hit = new Set(Object.keys(LINE_OF).filter(
     (name) => stable(before.terms[name]) !== stable(after.terms[name])).map((n) => LINE_OF[n]));
+  if (stable(before.grok_diagnostic_steps ?? []) !== stable(after.grok_diagnostic_steps ?? [])
+      || stable(before.patch_steps ?? []) !== stable(after.patch_steps ?? []))
+    hit.add("steps");
+  if (stable(before.test_steps ?? []) !== stable(after.test_steps ?? [])) hit.add("steps");
   return CARD_LINES.filter((line) => hit.has(line));
 }
 
@@ -250,6 +273,9 @@ function heldBy(launch) {
   if (unreadUnknown(launch)) return "lost_unread";
   if (launch.phase !== "review" || launch.skip !== null) return "busy";
   if (launch.preview.budget.exhausted) return "exhausted";
+  if (launch.depth && (launch.refreshWanted || launch.preview.recommendation?.depth !== launch.depth)) {
+    return "busy";
+  }
   if (!launch.seen) return "card_changed";
   return isActor(launch.actor) ? null : "actor_invalid";
 }
@@ -327,8 +353,11 @@ export function launchAsks(launch, ctx) {
   if (launch.phase === "starting") asks.push(writeAsk(launch, ctx, "start"));
   if (launch.phase === "enqueuing") asks.push(writeAsk(launch, ctx, "enqueue"));
   if (previewDue(launch)) {
+    const depth = launch.reads.automation?.payload?.authorization ? null
+      : launch.depth ?? launch.preview.recommendation?.depth;
     asks.push({id: `write:launch:preview:${launch.previews}`, name: "launch_preview",
-      door: "write", target: "automationPreview", subject: ctx.runId, body: {}});
+      door: "write", target: "automationPreview", subject: ctx.runId,
+      body: depth ? {recommendation: {depth}} : {}});
   }
   if (launch.prep?.status === "reading") {
     asks.push({id: `read:launch:prep:${launch.seq}`, name: "launch_prep", door: "read",
@@ -361,6 +390,15 @@ export function refreshLaunch(launch) {
   }
   return {...launch, refreshWanted: true, repeatFailed: false, repeats: 0, error: null};
 }
+
+export function changeDepth(launch, depth) {
+  if (launch.phase !== "review" || launch.skip !== null || !launch.preview?.recommendation
+      || !isBudgetDepth(depth) || depth === (launch.depth ?? launch.preview.recommendation.depth)
+      || launch.reads.automation?.payload?.authorization) return launch;
+  return {...refreshLaunch(launch), depth};
+}
+
+export const isBudgetDepth = (value) => DEPTH.includes(value);
 
 /**
  * Read the queue, the automation and the holder's automation again: on the card, and also when a
@@ -463,13 +501,20 @@ const WRITING = Object.freeze(["starting", "enqueuing", "unknown"]);
 //: answer that comes late changes nothing but its count: the id of the next preview ask is made
 //: from it, and the model hands an id out once. A dialog that is still open is for a card that
 //: another digest replaces, and closes with it.
-function landPreview(launch, ctx, result) {
+function landPreview(launch, ctx, result, ask) {
   const pressing = launch.skip !== null && launch.skip.phase === "running";
   if (pressing || WRITING.includes(launch.phase)) {
     return {...launch, previews: launch.previews + 1};
   }
-  const base = {...launch, previews: launch.previews + 1, refreshWanted: false};
+  const depth = launch.reads.automation?.payload?.authorization ? null : launch.depth;
+  const base = {...launch, depth, previews: launch.previews + 1, refreshWanted: false};
   if (result.status === "accepted") {
+    if (depth && ask.body?.recommendation?.depth !== depth) {
+      return {...base, refreshWanted: true};
+    }
+    if (ask.body?.recommendation && result.payload?.recommendation?.depth !== ask.body.recommendation.depth) {
+      return {...base, repeatFailed: true, error: "schema_mismatch"};
+    }
     const owned = launch.refreshWanted;
     return takePreview({...base, repeatFailed: false}, result.payload, ctx.runId, !owned);
   }
@@ -544,7 +589,7 @@ function landWrite(launch, ctx, ask, result) {
 export function landLaunch(launch, ctx, ask, result) {
   if (launch.settled.includes(ask.id)) return launch;
   const marked = {...launch, settled: [...launch.settled, ask.id]};
-  if (ask.name === "launch_preview") return landPreview(marked, ctx, result);
+  if (ask.name === "launch_preview") return landPreview(marked, ctx, result, ask);
   if (ask.name === "launch_prep") return landPrep(marked, ctx, result);
   if (ask.name === "launch_authorize" || ask.name === "launch_enqueue") {
     return landWrite(marked, ctx, ask, result);
@@ -567,14 +612,36 @@ function warningsOf(budget) {
 
 //: The harness each step of the plan runs on: the plan's node, its instance, that instance's
 //: provider, and the provider's name from the facts the preview carries.
-function harnessByStep(launch) {
-  const plan = launch.reads.run !== null && launch.reads.run.status === "ok"
+function recipients(launch) {
+  const read = launch.reads.run !== null && launch.reads.run.status === "ok"
     ? launch.reads.run.payload : null;
-  const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row.adapter]));
-  const names = new Map((launch.preview.provider_facts?.providers ?? []).map((row) => [
-    row.config.provider_id, row.contract.display_name]));
-  return new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id,
-    names.get(instances.get(node.instance_id)) ?? null]));
+  const matches = read?.graph?.definition_digest === launch.preview.terms.graph_digest;
+  const plan = (launch.preview.grok_diagnostic_steps || launch.preview.patch_steps) && !matches ? null : read;
+  const instances = new Map((plan?.config?.instances ?? []).map((row) => [row.id, row]));
+  const providers = new Map((launch.preview.provider_facts?.providers ?? []).map((row) =>
+    [row.config.provider_id, {id: row.config.provider_id, name: row.contract.display_name,
+      version: row.contract.version ?? null}]));
+  function nameOf(instance) {
+    const id = instances.get(instance)?.adapter;
+    if (!id) return null;
+    if (!providers.has(id)) providers.set(id, {id, name: id, version: null});
+    return providers.get(id).name;
+  }
+  const byStep = new Map((plan?.graph?.definition?.nodes ?? []).map((node) => [node.node_id, {
+    harness: nameOf(node.instance_id), checked: Boolean(node.verifier_instance_id),
+    model: instances.get(node.instance_id)?.model ?? null, checker: nameOf(node.verifier_instance_id),
+    checkerModel: instances.get(node.verifier_instance_id)?.model ?? null}]));
+  return {byStep, providers: [...providers.values()], gates: decisionPoints(plan?.graph?.definition)};
+}
+
+function decisionPoints(definition) {
+  if (!Array.isArray(definition?.nodes)) return null;
+  const titles = new Map(definition.nodes.map((node) => [node.node_id, node.title || node.node_id]));
+  return definition.nodes.filter((node) => node.kind === "gate").map((node) => {
+    const incoming = (definition.edges ?? []).filter((edge) => edge.to_node === node.node_id);
+    return {title: titles.get(node.node_id),
+      after: [...new Set(incoming.map((edge) => titles.get(edge.from_node)).filter(Boolean))]};
+  });
 }
 
 /**
@@ -583,21 +650,31 @@ function harnessByStep(launch) {
  */
 export function cardFacts(launch, around) {
   if (launch.preview === null) return null;
-  const {terms, budget, provider_facts: facts} = launch.preview;
+  const {terms, budget} = launch.preview;
+  const read = launch.reads.run?.status === "ok" ? launch.reads.run.payload : null;
+  const testsConfirmed = read?.run?.run_id === terms.run_id
+    && read.run.config_digest === terms.config_digest
+    && read.graph?.definition_digest === terms.graph_digest && validTestSteps(launch.preview, read);
+  const testRows = new Map((launch.preview.test_steps ?? []).map(row => [row.node_id, row]));
   const clamped = new Map(budget.steps.map((row) => [row.step_id, row.clamped === true]));
-  const harness = harnessByStep(launch);
+  const {byStep, providers, gates} = recipients(launch);
   return {actions: {max: terms.max_actions, of: budget.limits.max_actions},
     spent: budget.spent === null ? null : {actions: budget.spent.actions,
       seconds: budget.spent.seconds},
     clean: {...budget.clean}, worst: {...budget.worst}, warnings: warningsOf(budget),
-    time: terms.max_total_task_seconds, window: terms.duration_seconds,
+    time: terms.max_total_task_seconds, actionTime: terms.max_action_seconds, window: terms.duration_seconds,
     exhausted: budget.exhausted,
     steps: terms.node_limits.map((row) => ({step: row.node_id,
-      role: around.roles[row.node_id] ?? null, harness: harness.get(row.node_id) ?? null,
+      ...(testRows.has(row.node_id) ? {tests: testsConfirmed ? testRows.get(row.node_id).policy : null,
+        testsUnavailable: !testsConfirmed} : {}),
+      grokDiagnostic: launch.preview.grok_diagnostic_steps?.includes(row.node_id) === true,
+      patch: launch.preview.patch_steps?.includes(row.node_id) === true,
+      role: around.roles[row.node_id] ?? null, harness: byStep.get(row.node_id)?.harness ?? null,
+      model: byStep.get(row.node_id)?.model ?? null, checked: byStep.get(row.node_id)?.checked ?? false,
+      checker: byStep.get(row.node_id)?.checker ?? null, checkerModel: byStep.get(row.node_id)?.checkerModel ?? null,
       timeout: row.timeout_seconds, attempts: row.max_attempts,
       clamped: clamped.get(row.node_id) === true})),
-    harnesses: (facts?.providers ?? []).map((row) => ({id: row.config.provider_id,
-      name: row.contract.display_name, version: row.contract.version ?? null})),
+    harnesses: providers, gates,
     receives: {instructions: terms.instruction_bindings.map((row) => ({step: row.node_id,
       digest: row.content_digest})),
     inputs: terms.initial_input_bindings.map((row) => ({ref: row.artifact_ref,

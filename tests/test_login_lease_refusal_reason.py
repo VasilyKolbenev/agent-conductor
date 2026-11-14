@@ -40,6 +40,12 @@ from tests.test_harness_subscription_login import a_harness
 from tests.test_independent_checker_transport import _run_state
 from tests.test_command_run_store import CONFIG, a_run
 
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 SENTENCE = "the shared page is not the documented layout of this build"
 READER_CODES = ("native_unavailable", "layout_unknown", "partial_read", "value_empty",
                 "counter_overflow", "unsupported_platform")

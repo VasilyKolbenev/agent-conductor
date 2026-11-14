@@ -111,12 +111,16 @@ def test_marked_index_is_read_by_git_with_one_ignored_extension_line_in_both_for
 @for_every_reader
 @for_every_format
 @for_both_modes
-def test_the_marker_survives_the_reads_and_goes_with_the_owners_next_write(
+def test_the_marker_survives_the_reads_that_write_nothing_and_goes_with_the_owners_next_write(
         tmp_path, which, fmt, mode):
+    """An ordinary `status` is not such a read: it may refresh the stat cache and be the next
+    writer of the index, so it can take the marker with it. The read that must leave the bytes
+    alone says so, and the bytes are compared, not only the marker."""
     m = made(tmp_path, which, fmt, mode)
     box = published(m)
     box.run(*reads(m.tree)["diff-index"])
-    box.run(*reads(m.tree)["status"])
+    box.run("--no-optional-locks", "status", "--porcelain")
+    assert box.installed() == m.marked
     assert verify(box.installed(), fmt, entries=m.rows).marker == (NONCE, m.claim.terms)
     box.write({"later.txt": "later\n"})
     box.run("add", "later.txt")

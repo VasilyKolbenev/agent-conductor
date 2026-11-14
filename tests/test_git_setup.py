@@ -64,7 +64,10 @@ def unborn(tmp_path):
 
 
 @pytest.mark.parametrize("body", [{"step": "init", "actor": "Owner"},
-    {"step": "exclude", "actor": "Owner"}, {"step": "first_commit", "mode": "empty", "preview": True}])
+    {"step": "exclude", "actor": "Owner"}, {"step": "first_commit", "mode": "empty", "preview": True},
+    {"step": "first_commit", "mode": "empty", "paths_digest": None, "actor": "Owner"},
+    {"step": "first_commit", "mode": "snapshot", "paths_digest": "sha256:" + "a" * 64,
+     "actor": "Owner"}])
 def test_view_refuses_every_setup_shape_without_git_or_writes(tmp_path, body):
     project = Folder(tmp_path, mode="view", reader=NoGit())
     before = snapshot(project.root)

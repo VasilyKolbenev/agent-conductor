@@ -34,7 +34,7 @@ SPEC_WORDS = {
     "wizard.add.plan": "＋ План", "wizard.add.ideas": "＋ Идеи", "wizard.add.note": "＋ Заметка",
     "wizard.add.scheme": "＋ Схема", "wizard.add.starter_docs": "Из стартовых документов",
     "wizard.instr.switch": "Передавать агентам инструкции этого проекта",
-    "wizard.close.keep": "Оставить черновик", "wizard.cycle.build": "＋ Собрать свой",
+    "wizard.close.keep": "Оставить черновик", "wizard.cycle.build": "Создать свой цикл",
     "wizard.cycle.make_project": "Сделать циклом проекта", "wizard.cycle.pinned": "цикл проекта",
     "wizard.cycle.unpin": "Открепить",
     "wizard.step.task": "Задача", "wizard.step.materials": "Материалы",
@@ -44,7 +44,8 @@ SPEC_WORDS = {
     "wizard.exit.run_without_git": "Запустить без git", "wizard.role.unassigned": "назначьте",
     "wizard.git.unborn": "В репозитории нет ни одного коммита",
     "wizard.git.unsafe_directory": "git не доверяет этой папке (другой владелец)",
-    "wizard.git.unavailable": "git не закреплён",
+    "wizard.git.unavailable": "В папке проекта есть .git. Чтобы прочитать исходные файлы, "
+                              "настройте Git для December Command.",
     "wizard.prepare": "Подготовить запуск", "wizard.prepare.continue": "Продолжить подготовку",
     "wizard.resume.retype": "Текст этих полей не был записан до перезагрузки — введите его заново",
     "wizard.chain.adopt": "Продолжить с записанной расстановкой",
@@ -58,7 +59,7 @@ SPEC_WORDS = {
     "wizard.launch.time_info": "Проверяемый шаг резервирует время дважды — исполнителю и "
                                "проверяющему.",
     "wizard.launch.why.project_not_active": "Запуск — только у активного проекта",
-    "wizard.launch.why.owner_required": "Нет владельца проекта",
+    "wizard.launch.why.owner_required": "Владелец исполнения недоступен",
     "wizard.launch.why.server_stopping": "Проект останавливается",
     "wizard.launch.seed_request": "копия HEAD на момент старта; засев сделает активный проект",
     "wizard.launch.result_queued_view": "В очереди · начнётся после активации проекта",
@@ -102,6 +103,13 @@ FAMILIES = {
     "launch_lines": "wizard.launch.line.{}", "skip_steps": "wizard.launch.skip_step.{}",
     "skip_stops": "wizard.launch.skip_stop.{}", "skip_status": "wizard.launch.skip_status.{}",
     "launch_stages": "wizard.launch.check.stage.{}",
+    "first_why": "wizard.first.why.{}", "first_lost": "wizard.first.lost.{}",
+    "first_busy": "wizard.first.busy.{}", "first_done": "wizard.first.done.{}",
+    "first_unsent": "wizard.first.unsent.{}", "first_next": "wizard.first.next.{}",
+    "first_codes": "error.{}", "first_manual": "wizard.first.manual.{}",
+    "first_warning": "wizard.first.warning.{}", "first_pending": "wizard.first.pending.{}",
+    "first_mode": "wizard.first.mode.{}", "first_chain_status": "wizard.first.chain.status.{}",
+    "first_chain_skipped": "wizard.first.chain.skipped.{}",
 }
 
 
@@ -141,7 +149,9 @@ def test_every_closed_word_the_model_can_say_has_a_message_in_both_languages():
         statuses: wiz.LINK_STATUSES, stages: wiz.RESUME_EXITS, launch_why: wiz.LAUNCH_WHY,
         launch_notes: wiz.LAUNCH_NOTES, launch_refusals: wiz.LAUNCH_REFUSALS,
         launch_lines: wiz.CARD_LINES, skip_steps: wiz.SKIP_STEPS, skip_stops: wiz.SKIP_STOPS,
-        skip_status: wiz.SKIP_STATUS, launch_stages: wiz.LAUNCH_STAGES};
+        skip_status: wiz.SKIP_STATUS, launch_stages: wiz.LAUNCH_STAGES,
+        ...Object.fromEntries(Object.entries(wiz.FIRST_WORDS).map(
+          ([family, list]) => [`first_${family}`, list]))};
       const missing = [];
       for (const [family, list] of Object.entries(words)) {
         for (const word of list) {

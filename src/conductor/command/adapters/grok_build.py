@@ -1,5 +1,10 @@
 """Grok Build, driven headlessly: one pinned binary, one prompt, one attempt.
 
+The active V1 task is read-only review over --prompt-file in a fresh attempt home, with an
+access-only subscription relay. Grok returns a JSON terminal response. Only its successful
+text may become the review artifact. Dispatch argv below is dormant test coverage; historical
+--single documentation describes the earlier transport, not the active task channel.
+
 Every vendor fact below was read from xAI's own published sources and is pinned
 to a PERMALINK, so a later reader re-checks the exact bytes this module was
 written against rather than whatever the page says today. Every repository path
@@ -70,8 +75,8 @@ citation is re-checkable only if the words it said are written down.
   preflight standing between an operator's pin and a real prompt. **A form the
   crate can build is not a form the program prints**, and only the second is
   this preflight's subject.
-- **The reviewed version is 1.0.5**, the latest stable release of 2026-08-15
-  (x.ai/build/changelog).
+- The current Windows pin prints ``grok 1.0.13 (5e9a58528b76)``. The older
+  1.0.5 release described below returned HTTP 426 on the subscription service.
 - **The home** relocates with ``GROK_HOME``: "Override config directory
   (default: ``~/.grok``)".
 - **Four switches** are documented, and all four are turned off here:
@@ -106,15 +111,15 @@ opt-in real smoke against a real install is what would show a switch not taking.
 **The channel is parsed and then discarded.** ``channel_label()`` is quoted
 above, so its spelling is a citation rather than the guess an earlier draft of
 this docstring called it. What remains a RULING rather than a fact is that only
-the semver decides: ``1.0.5 [alpha]`` is accepted as the reviewed version,
+the semver decides: a reviewed semver with the alpha suffix is accepted,
 because the owner's rule for this provider is that the commit and the channel
 never become the version. If an alpha build should instead be refused as a
 different build line, that is a change of admission policy and belongs in review,
 not in a quiet edit here.
 
-**The pinned commit is one patch AHEAD of the reviewed version.**
+**Source history for the original version parser.**
 ``crates/codegen/xai-grok-pager-bin/Cargo.toml`` reads ``version = "1.0.6"`` at
-PINNED_COMMIT, while the reviewed release is 1.0.5. Every fact above is a fact
+PINNED_COMMIT, while the originally reviewed release was 1.0.5. Every fact above is a fact
 about the printed FORM, which that tree pins exactly; none of them is the version
 number itself, which comes from the published changelog. Said out loud because a
 module whose method is "pin the exact bytes" owes a reader the version those
@@ -129,9 +134,15 @@ twice, and verification that reads only independent workspace evidence.
 """
 from __future__ import annotations
 
-from . import login_home
+from . import login_home, task_file
 from .quota_connection import NativeQuotaReadError
+from .service_metadata import ServiceMetadata
+from .jsonl_completion import decode_line
+from .deep_commands import GROK_PROVIDER_ID, GROK_SESSION_PHASE
+from .grok_stream import STREAM_OUTPUT_LIMIT, decode_stream
 from .subscription_quota import SubscriptionRpc, native_subscription_connection
+from .grok_relay import GROK_AUTH_FIELDS, GROK_AUTH_CREDENTIALS, GROK_RELAY
+from .relay_env import GROK_COMPAT_ENV, GROK_ROUTE_ENV
 
 from .quota_contracts import NativeQuotaReading, NativeQuotaWindow, QuotaError, QuotaPolicy, quota_object
 
@@ -142,9 +153,10 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .deep_contracts import DeepProtocol
-from .artifact_transport import ArtifactAwareTransport
+from .artifact_transport import ARTIFACT_CONTENT_LIMIT, ArtifactAwareTransport, REVIEW_CAPABILITY
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
+    TASK_CHANNEL_FILE,
     DISPATCH_CAPABILITY,
     ExecutablePin,
     HarnessProfile,
@@ -154,21 +166,22 @@ from .headless_cli import (
 from .process import ProcessRunner
 
 #: The graph node this provider binds to; ``conductor.harnesses`` registers it.
-GROK_PROVIDER_ID = "grok-build"
 #: The exact published version this build was reviewed against: the latest
 #: stable release, 2026-08-15. A preflight reading anything else refuses.
-REVIEWED_GROK_VERSION = "1.0.5"
+REVIEWED_GROK_VERSION = "1.0.13"
 #: The protocol token an operator pins to select this adapter.
 GROK_PROTOCOL = DeepProtocol.GROK_HEADLESS_V1.value
 #: Experimental is said in the one field the Cockpit projection carries.
 GROK_DISPLAY_NAME = "Grok Build (headless, experimental)"
-#: Observation, and the one control this adapter really implements.
-GROK_CAPABILITIES = ("observe", DISPATCH_CAPABILITY)
-GROK_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),)
+#: The shared dispatch schema remains declared, but task_modes refuses that road in V1.
+GROK_CAPABILITIES = ("observe", DISPATCH_CAPABILITY, REVIEW_CAPABILITY)
+GROK_SCHEMA_PAIRS = ((DISPATCH_CAPABILITY, "deep-arguments-v1"),
+                     (REVIEW_CAPABILITY, "deep-arguments-v1"))
 #: The four seams the registration door requires of every provider.
 GROK_LIFECYCLE = ("execute", "observe", "prepare", "verify")
 #: The environment NAME whose VALUE is minted fresh per attempt.
 GROK_HOME_ENV = "GROK_HOME"
+GROK_LOGIN_ARGV = ("--no-auto-update", "login")
 #: The four documented switches, and the value that turns each off. ``0`` is the
 #: demonstrated disable form; see the module docstring on why it is demonstrated
 #: rather than stated.
@@ -182,19 +195,35 @@ GROK_FORCED_ENV = (
     (GROK_TRACE_UPLOAD_ENV, SWITCHED_OFF),
     (GROK_MIXPANEL_ENV, SWITCHED_OFF),
     (GROK_FEEDBACK_ENV, SWITCHED_OFF),
+    # G0b / H5-GROK-DIAGNOSE addendum 1: metadata children run outside the task boundary too.
+    # Disable imports from personal profiles on every child; operator values cannot enable them.
+    *GROK_COMPAT_ENV,
 )
-#: The code-owned flags. No caller contributes one, and the prompt stands LAST so
-#: no token after it could be taken for a flag. ``--no-auto-update`` stands
-#: FIRST: a background update check during a dispatch would change the very
-#: build the preflight just proved.
+#: The code-owned flags. The task travels only in a fresh attempt-home file; the
+#: command line names it and carries no task text. Disable update checks on every task.
 NO_AUTO_UPDATE_ARGV = ("--no-auto-update",)
 OUTPUT_FORMAT_ARGV = ("--output-format", "plain")
-#: ``-p`` and ``--single`` are one flag; the long spelling is used so a reader of
-#: the argv cannot mistake it for anything else.
-PROMPT_FLAG = "--single"
+#: What a DISPATCH may do that headless mode forbids by default (spec 10.2, review ruling of
+#: 28.09.2026). A headless run without auto-approval denies the Edit and Write tools -- measured
+#: live, a dispatch ended "no changed file" -- and the pinned headless guide documents ``--allow``
+#: as repeatable. The tool names are case-sensitive at PINNED_COMMIT
+#: (``xai-grok-workspace/src/permission/rules.rs``), and Bash is a separate rule that stays
+#: gated. These two pairs stand in the dormant dispatch argv ONLY. Active review instead
+#: permits Read/Grep/Glob and explicitly denies edit, shell, web and MCP tools below.
+ALLOW_FLAG = "--allow"
+DISPATCH_ALLOWED_TOOLS = ("Edit", "Write")
+DISPATCH_PERMISSION_ARGV = tuple(
+    token for tool in DISPATCH_ALLOWED_TOOLS for token in (ALLOW_FLAG, tool))
+#: Review may read, never edit or run a shell/web/MCP tool. OS review rights remain authoritative.
+REVIEW_PERMISSION_ARGV = ("--allow", "Read", "--allow", "Grep", "--allow", "Glob",
+                          "--deny", "Edit", "--deny", "Bash", "--deny", "WebFetch",
+                          "--deny", "WebSearch", "--deny", "MCPTool")
 VERSION_ARGV = ("--version",)
-#: Capture ceiling for either spawn; the pump drains past it and drops the rest.
-GROK_OUTPUT_LIMIT = 16 * 1024
+#: Preserve the existing metadata and marked diagnostic stream budget.
+GROK_OUTPUT_LIMIT = STREAM_OUTPUT_LIMIT
+#: A JSON string may encode one UTF-8 byte as six ASCII bytes (\uXXXX).
+#: The separate 256 KiB metadata allowance is a code-owned budget, not a measured reply size.
+GROK_JSON_WIRE_LIMIT = 6 * ARTIFACT_CONTENT_LIMIT + 256 * 1024
 #: The preflight is a version print, not work: it gets its own small budget.
 VERSION_TIMEOUT_SECONDS = 30
 #: The two subtrees THIS provider owns beneath the project root.
@@ -254,7 +283,6 @@ __all__ = [
     "GrokBuildAdapter", "GrokBuildError", "grok_pin",
 ]
 
-#: Every vendor fact above, gathered where the shared transport reads them.
 GROK_PROFILE = HarnessProfile(
     tool_noun="Grok Build", task_noun="Grok Build prompt",
     display_name=GROK_DISPLAY_NAME, vendor="xAI",
@@ -263,13 +291,17 @@ GROK_PROFILE = HarnessProfile(
     home_dir=HOME_DIR, marker_dir=MARKER_DIR,
     home_env=GROK_HOME_ENV, forced_env=GROK_FORCED_ENV,
     version_argv=VERSION_ARGV, exit_codes_published=False,
-    login_argv=("--no-auto-update", "agent", "stdio"), login_command=("login",),
+    login_argv=("--no-auto-update", "agent", "stdio"), login_command=GROK_LOGIN_ARGV,
     login_credentials=("auth.json",),
     login_scratch=("logs", "sessions", "active_sessions.json", "active_sessions.lock",
-                   ".config-init.lock", "managed_config.lock"),
+                   ".config-init.lock", "managed_config.lock",
+                   # MEASURED (1.0.5, 28.10.2026): a spawn that starts the agent writes these two.
+                   # Their `-wal` and `-shm` are not declared: one that appears is a residue.
+                   "models_cache.json", "worktrees.db"),
     login_expected=("auth.json", "config.toml", ".metadata_version", "agent_id", "docs", "README.md"),
     login_forbidden=("mcp_credentials.json", "mcp.json", "hooks", "plugins", "skills", "lsp.json"),
-    capability=DISPATCH_CAPABILITY, output_limit=GROK_OUTPUT_LIMIT,
+    capability=DISPATCH_CAPABILITY, output_limit=GROK_JSON_WIRE_LIMIT,
+    task_channel=TASK_CHANNEL_FILE, login_relay=GROK_RELAY,
     version_timeout_seconds=VERSION_TIMEOUT_SECONDS,
     home_id_kind="grok-home")
 
@@ -290,11 +322,15 @@ def grok_pin(executable: str, env_allow: tuple[str, ...] = (), *,
         auth=auth, auth_home=auth_home)
 
 
-class GrokBuildAdapter(ArtifactAwareTransport):
-    """Run one Grok Build prompt per authorized action, and prove nothing more."""
+class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
+    """Run one read-only Grok review; dispatch and independent checking remain closed."""
 
     profile = GROK_PROFILE
     error = GrokBuildError
+    review_enabled = True
+    review_output_format = "json"
+    serves_checks = False
+    task_modes = ("review",)
 
     def __init__(
             self, pin: ExecutablePin, runner: ProcessRunner, *,
@@ -305,6 +341,8 @@ class GrokBuildAdapter(ArtifactAwareTransport):
             raise GrokBuildError(
                 "this adapter requires a single-executable pin of its own")
         self._pin = pin
+        self.review_diagnostic_version = GROK_SESSION_PHASE if (
+            pin.auth == "subscription" and adapter_id == GROK_PROVIDER_ID) else None
         super().__init__(
             runner, root=root, clock=clock, ids=ids, adapter_id=adapter_id)
 
@@ -312,9 +350,80 @@ class GrokBuildAdapter(ArtifactAwareTransport):
         """One native binary, and nothing in front of it."""
         return (self._pin.executable,)
 
-    def _task_argv(self, task_text: str) -> tuple[str, ...]:
-        """``--no-auto-update --output-format plain --single <task>``."""
-        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, PROMPT_FLAG, task_text)
+    def _stdin_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        """Dormant dispatch builder, exercised only by an explicitly enabled test subclass."""
+        return (*NO_AUTO_UPDATE_ARGV, *OUTPUT_FORMAT_ARGV, *DISPATCH_PERMISSION_ARGV,
+                "--prompt-file", task_file.path_in(home))
+
+    def _review_argv(self, home: Path, model: str | None) -> tuple[str, ...]:
+        return self._review_format_argv(home, self.review_output_format)
+
+    def _review_command(self, request):
+        if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE:
+            return lambda home, model: self._review_format_argv(home, "streaming-messages-json")
+        return self._review_argv
+
+    def _review_output_limit(self, request):
+        return (GROK_OUTPUT_LIMIT if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE
+                else GROK_JSON_WIRE_LIMIT)
+
+    def _attempt_output_limit(self, asked, mode):
+        # Only an explicitly budgeted review may use the larger JSON wire ceiling.
+        if asked is None:
+            asked = GROK_OUTPUT_LIMIT
+        if mode != "review":
+            asked = min(asked, GROK_OUTPUT_LIMIT)
+        return asked
+
+    @staticmethod
+    def _review_format_argv(home, output_format):
+        return (*NO_AUTO_UPDATE_ARGV, "--output-format", output_format,
+                *REVIEW_PERMISSION_ARGV,
+                "--prompt-file", task_file.path_in(home))
+
+    def _review_response(self, request, outcome, relation):
+        receipt = self._observed(request, outcome)
+        if outcome.status != "completed" or outcome.output_truncated:
+            return b"", receipt
+        if self._review_attempt_carries(outcome):
+            return b"", self._receipt(request, "failed", None,
+                                      "the review contained sensitive output")
+        if request.arguments.get("grok_diagnostic") == GROK_SESSION_PHASE:
+            content, reason = decode_stream(outcome.output, outcome.exit_code)
+            if reason is not None:
+                return b"", self._receipt(request, "failed", outcome.exit_code or None, reason)
+            if any(value and value in content for value in self._sensitive_values(relation)):
+                return b"", self._receipt(request, "failed", None,
+                                          "the review contained sensitive output")
+            return content, receipt
+        try:
+            doc = decode_line(outcome.output)
+            if outcome.exit_code != 0:
+                if doc.get("type") == "error" and isinstance(doc.get("message"), str):
+                    reason = _grok_error_reason(doc)
+                    receipt = self._receipt(request, "failed", outcome.exit_code, reason)
+                return b"", receipt
+            if "type" in doc or "message" in doc or doc.get("stopReason") != "end_turn":
+                raise ValueError
+            text = doc.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError
+            content = text.encode("utf-8")
+            if any(value and value in content for value in self._sensitive_values(relation)):
+                return b"", self._receipt(request, "failed", None,
+                                          "the review contained sensitive output")
+            if len(content) > ARTIFACT_CONTENT_LIMIT:
+                return b"", self._receipt(request, "failed", None,
+                    "the review result exceeded the artifact byte limit")
+            return content, receipt
+        except (ValueError, UnicodeError, RecursionError):
+            if outcome.exit_code == 0:
+                receipt = self._receipt(request, "failed", None,
+                                        "the review returned an invalid terminal response")
+            return b"", receipt
+
+    def _task_stdin(self, task_text: str) -> bytes:
+        return task_text.encode("utf-8")
 
     def _env_allow(self) -> tuple[str, ...]:
         return self._pin.env_allow
@@ -345,69 +454,8 @@ class GrokBuildAdapter(ArtifactAwareTransport):
     def quota_connection(self):
         return native_subscription_connection(self, QUOTA_POLICY, GROK_QUOTA_RPC)
 
-    #: The native metadata exchange the running spawn is, or None for every other spawn.
-    _service: SubscriptionRpc | None = None
-
-    def _attempt(self, argv, cwd, **options):
-        """Mark a native metadata exchange, known by its exact argv and stdin, for one spawn."""
-        self._service = (_SERVICE_BY_PAYLOAD.get(options.get("stdin_bytes"))
-                         if argv == _RPC_ARGV else None)
-        self._service_metadata: dict[str, frozenset[bytes]] = {}
-        self._service_values: tuple[bytes, ...] = ()
-        self._service_protected: tuple[bytes, ...] = ()
-        try:
-            return super()._attempt(argv, cwd, **options)
-        finally:
-            self._service = None
-            self._service_metadata = {}
-            self._service_values = self._service_protected = ()
-
-    def _remember_login_values(self) -> None:
-        """Publication history retains every value, including metadata allowed in a service reply."""
-        self._login_seen = tuple(dict.fromkeys((*self._login_seen, *super()._login_secrets())))
-
-    def _login_secrets(self) -> tuple[bytes, ...]:
-        """Every login value, less -- on a metadata exchange only -- the metadata its reply repeats.
-
-        The runner scans the whole output for what this returns before the spawn,
-        and ``_echoed_login`` reads the same split after it, so the two sides never
-        disagree about which values a reply may carry.
-        """
-        values = super()._login_secrets()
-        if self._service is None:
-            return values
-        metadata = self._reply_metadata()
-        admitted = frozenset().union(*metadata.values())
-        self._service_values = tuple(dict.fromkeys((*self._service_values, *values)))
-        self._service_protected = tuple(dict.fromkeys((*self._service_protected,
-            *(value for value in values if value not in admitted))))
-        for field, samples in metadata.items():
-            self._service_metadata[field] = self._service_metadata.get(field, frozenset()) | samples
-        # A refresh may replace metadata or change a value's role. Keep its old
-        # field provenance, while a protected role on either side always wins.
-        self._service_metadata = {field: frozenset(value for value in samples
-            if not any(value in key or key in value for key in self._service_protected))
-            for field, samples in self._service_metadata.items()}
-        admitted = frozenset().union(*self._service_metadata.values())
-        return tuple(value for value in self._service_values if value not in admitted)
-
-    def _echoed_login(self, output: bytes) -> bool:
-        """A key anywhere, or admitted metadata anywhere but its own field of a verified reply."""
-        if self._service is None:
-            return super()._echoed_login(output)
-        if not output or not self._signed_in_road():
-            return False
-        if any(value in output for value in self._login_secrets()):
-            return True
-        metadata = self._service_metadata
-        for value in frozenset().union(*metadata.values()):
-            # Judge each value at its own fields: masking another metadata
-            # value must not conceal this one inside it.
-            own_fields = {field: frozenset((value,)) for field, samples in metadata.items()
-                          if value in samples}
-            if value in _masked_reply(output, self._service, own_fields):
-                return True
-        return False
+    def _service_for(self, argv, stdin_bytes: bytes | None) -> SubscriptionRpc | None:
+        return _SERVICE_BY_PAYLOAD.get(stdin_bytes) if argv == _RPC_ARGV else None
 
     def _reply_metadata(self) -> dict[str, frozenset[bytes]]:
         home = self._signed_in_road()
@@ -415,6 +463,10 @@ class GrokBuildAdapter(ArtifactAwareTransport):
             return {}
         (name,) = self.profile.login_credentials
         return _reply_metadata(login_home.credential_document(home, name))
+
+    def _masked_reply(self, output: bytes, service: SubscriptionRpc,
+                      own_fields: dict[str, frozenset[bytes]]) -> bytes:
+        return _masked_reply(output, service, own_fields)
 
     def _parsed_version(self, output: bytes) -> str | None:
         r"""The semver this parser reads out of a version print, or ``None``.
@@ -459,6 +511,59 @@ class GrokBuildAdapter(ArtifactAwareTransport):
 
 
 
+# These are emitter signatures. An unwrapped ACP error can quote the same text.
+_STARTUP_REASONS = {
+    "Couldn't start session": "the harness reported an embedded agent startup failure",
+    "Couldn't initialize": "the harness reported an agent initialization failure",
+    "Couldn't create session": "the harness reported a task session opening failure",
+}
+
+
+def _grok_error_reason(doc):
+    """Only product-owned categories may leave this module."""
+    message = doc["message"]
+    text = message.casefold().strip().removesuffix(".")
+    prefix, _, detail = message.partition(": ")
+    phase = _STARTUP_REASONS.get(prefix) if detail.strip() else None
+    normalized_prefix = text.partition(":")[0]
+    if phase is None and any(label.casefold() == normalized_prefix for label in _STARTUP_REASONS):
+        phase = "the harness reported a session startup failure"
+    elif message == "Connection closed unexpectedly":
+        phase = "the harness reported that its local prompt channel closed"
+    if phase is not None:
+        # Prompt errors can carry spending fields along with arbitrary text.
+        if "usage" in doc or "usage_is_incomplete" in doc:
+            return _unclassified_grok_error(doc)
+        return phase
+    if text.startswith("not signed in"):
+        return "the harness reported that sign-in is required"
+    if "rate limit" in text or "quota exceeded" in text or "too many requests" in text:
+        return "the harness reported a subscription usage limit"
+    if "subscription required" in text or "requires a subscription" in text:
+        return "the harness reported that a subscription is required for this task"
+    if "model" in text and any(word in text for word in ("unsupported", "not supported", "not found")):
+        return "the harness reported that the requested model is unavailable"
+    if text == "max turns reached":
+        return "the harness reported that the turn limit was reached"
+    if (text == "grok build is not yet available for this account"
+            or any(word in text for word in ("permission denied", "forbidden", "unauthorized"))):
+        return "the harness reported an access refusal"
+    if (text == "connection closed unexpectedly"
+            or any(word in text for word in ("connection refused", "connection reset", "dns error"))):
+        return "the harness reported a connection failure"
+    return _unclassified_grok_error(doc)
+
+
+def _unclassified_grok_error(doc):
+    usage = doc.get("usage")
+    total = usage.get("total_tokens") if isinstance(usage, dict) else None
+    if type(total) is int and total > 0:
+        return "the harness reported an unclassified service error with recorded token usage"
+    if doc.get("usage_is_incomplete") is True:
+        return "the harness reported an unclassified service error with incomplete usage data"
+    return "the harness reported an unclassified service error"
+
+
 def _native_quota(payload):
     """ACP x.ai/billing percentage schema; legacy monetary budgets stay separate."""
     body = quota_object(payload)
@@ -499,15 +604,14 @@ LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": Tru
 
 # Native 1.0.5 ACP calibration: these metadata requests do not create a session
 # or send a model prompt. Billing requires the native xAI session auth gate.
-GROK_LOGIN_OVERRIDES = ("XAI_API_KEY", "GROK_CLI_CHAT_PROXY_BASE_URL", "GROK_AUTH_PROVIDER_COMMAND",
-    "GROK_OIDC_ISSUER", "GROK_OIDC_CLIENT_ID", "GROK_DEPLOYMENT_KEY")
-GROK_LOGIN_ARGV = ("login",)
+GROK_LOGIN_OVERRIDES = GROK_ROUTE_ENV
 _RPC_ARGV = ("--no-auto-update", "agent", "stdio")
 _RPC_INIT = (b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":'
              b'{"protocolVersion":1,"clientCapabilities":{},'
              b'"clientInfo":{"name":"conduct-quota","version":"1"}}}\n')
 _RPC_INFO = b'{"jsonrpc":"2.0","id":2,"method":"_x.ai/auth/info","params":{}}\n'
-_RPC_NOTIFICATIONS = ("_x.ai/mcp/servers_updated",)
+_RPC_NOTIFICATIONS = ("_x.ai/mcp/servers_updated", "_x.ai/settings/update",
+                      "_x.ai/announcements/update")
 GROK_AUTH_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO, (1, 2),
     ("_meta", "defaultAuthMethodId"), "cached_token", _RPC_NOTIFICATIONS)
 GROK_QUOTA_RPC = SubscriptionRpc(_RPC_ARGV, _RPC_INIT+_RPC_INFO+
@@ -518,23 +622,22 @@ _SERVICE_BY_PAYLOAD = MappingProxyType({GROK_AUTH_RPC.payload: GROK_AUTH_RPC,
 #: The id of the auth/info reply in both exchanges above.
 _RPC_INFO_ID = 2
 
-#: The login file is the vendor's `AuthStore`, a map of `GrokAuth` records (SOURCE,
-#: crates/codegen/xai-grok-shell/src/auth/model.rs at PINNED_COMMIT, the commit the
-#: reviewed 1.0.5 prints). These are that record's fields; `key` and `refresh_token`
-#: carry the credential, and a field outside this list is unknown and counts as one.
-GROK_AUTH_FIELDS = (
-    "key", "auth_mode", "create_time", "user_id", "email", "first_name", "last_name",
-    "profile_image_asset_id", "principal_type", "principal_id", "team_id", "team_name",
-    "team_role", "organization_id", "organization_name", "organization_role",
-    "user_blocked_reason", "team_blocked_reasons", "coding_data_retention_opt_out",
-    "has_grok_code_access", "refresh_token", "expires_at", "oidc_issuer", "oidc_client_id")
-GROK_AUTH_CREDENTIALS = ("key", "refresh_token")
-#: auth/info reply field -> the login field whose value it repeats. MEASURED on a real
-#: subscription login (1.0.5, 28.09.2026, names only): these four, and no other reply
-#: field, carried a login value; the image URL carries the asset id inside it.
+#: GROK_AUTH_FIELDS and GROK_AUTH_CREDENTIALS are reexported from the relay value module.
+#: auth/info reply field -> the login field whose value it repeats. The first four are MEASURED
+#: on a real subscription login (1.0.5, 28.09.2026, names only): the image URL carries the asset
+#: id inside it, and (28.10.2026) the principal id inside the image URL. That the principal id
+#: stands inside the asset id itself is read from the source (`handle_info`: the address is the
+#: asset id, or `grok-asset:///` and it), not measured; the live read will confirm it. The nine
+#: after them are the rest of what `handle_info` passes through from the login record (SOURCE,
+#: `handle_info` in extensions/auth.rs at PINNED_COMMIT; not measured): each repeats its own
+#: login field whole, so it is read at exact equality and nowhere else.
 GROK_REPLY_METADATA = MappingProxyType({
     "email": "email", "teamId": "team_id", "principalId": "principal_id",
-    "profileImageUrl": "profile_image_asset_id"})
+    "profileImageUrl": "profile_image_asset_id",
+    "firstName": "first_name", "lastName": "last_name", "teamName": "team_name",
+    "teamRole": "team_role", "organizationId": "organization_id",
+    "organizationName": "organization_name", "organizationRole": "organization_role",
+    "principalType": "principal_type", "userBlockedReason": "user_blocked_reason"})
 #: The leak scan's own floor for a login value (`login_home.credential_values`).
 _SECRET_FLOOR = 12
 

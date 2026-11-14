@@ -7,12 +7,15 @@ from dataclasses import dataclass
 
 from conductor.ownership_errors import OwnerRefused
 from . import git_setup_facts as facts
+from . import git_setup_first as first
 from .accept_manifest import SnapshotRefused
+from .accept_records import _text as _one_line
 from .adapters.harness_workspace import WorkspaceBusy, root_turn
 from .adapters.process import OwnershipError, ProcessRunner
 from .api_refusals import ApiRefusal
 from .authorization_terms import human_identity
-from .contract_values import ContractError
+from .contract_values import ContractError, _digest
+from .git_setup_first_signing import SigningWait
 from .git_setup_records import SetupRefused, publish, receipt
 from .git_setup_snapshot import preview
 from .project_git import GitReadFailed, has_git_entry
@@ -24,11 +27,12 @@ MODES = frozenset({"snapshot", "empty"})
 
 @dataclass(frozen=True)
 class Request:
-    """One accepted body: `kind` is init, exclude or preview."""
+    """One accepted body: `kind` is init, exclude, preview or confirm."""
 
     kind: str
     actor: str | None = None
     mode: str | None = None
+    digest: str | None = None
 
 
 def parse(body: object) -> Request:
@@ -45,7 +49,24 @@ def parse(body: object) -> Request:
             and type(body["mode"]) is str and body["mode"] in MODES
             and body["preview"] is True):
         return Request("preview", mode=body["mode"])
+    if step == "first_commit" and keys == {"step", "mode", "paths_digest", "actor"}:
+        return _confirmation(body)
     raise ContractError("Git setup accepts init/exclude confirmation or first_commit preview")
+
+
+def _confirmation(body: dict) -> Request:
+    """The confirm body: `paths_digest` is null exactly for `empty` and the shown digest else."""
+    mode, digest = body["mode"], body["paths_digest"]
+    if type(mode) is not str or mode not in MODES:
+        raise ContractError("first_commit mode must be snapshot or empty")
+    if (digest is None) != (mode == "empty"):
+        raise ContractError("paths_digest is null exactly for the empty mode")
+    try:
+        actor = _one_line(human_identity("actor", body["actor"]))
+    except ValueError:
+        raise ContractError("actor must be one line of text") from None
+    return Request("confirm", actor=actor, mode=mode,
+                   digest=None if digest is None else _digest("paths_digest", digest))
 
 
 @contextmanager
@@ -57,6 +78,9 @@ def _refusals():
         raise ApiRefusal.git_setup_refused("task_run_active") from None
     except (OwnershipError, OwnerRefused):
         raise ApiRefusal.fixed("project_not_active") from None
+    except SigningWait as error:
+        raise ApiRefusal.signing_required_setup(
+            error.tree, error.target_ref, error.message_path) from None
     except SetupRefused as error:
         raise ApiRefusal.git_setup_refused(error.reason) from None
     except SnapshotRefused as error:
@@ -79,6 +103,9 @@ def setup(api, body):
         if request.kind == "preview":
             _reader(api)
             return 200, {"setup": preview(root, api._project_git, request.mode)}
+        if request.kind == "confirm":
+            _reader(api)
+            return first.confirm(api, request)
         return _step(api, request)
 
 

@@ -13,7 +13,8 @@ const ENDS_THE_WIZARD = Object.freeze(["not_repo_root", "unsupported"]);
 //: The closed words this module can say, each with a message in the catalogue: what the git
 //: step says, the exits it offers, and why a card was refused.
 export const GIT_SENTENCES = Object.freeze(["repo", "unborn", "not_git", "not_repo_root",
-  "unsupported", "unsafe_directory", "unavailable", "not_active", "reading", "failed"]);
+  "unsupported", "unsafe_directory", "unavailable", "not_active", "reading", "failed",
+  "repo_pending", "repo_awaiting", "repo_damaged"]);
 export const GIT_EXITS = Object.freeze(["first_commit", "connect_git", "run_without_git",
   "reread"]);
 export const REFUSALS = Object.freeze(["too_many_materials", "already_added", "doc_unknown",
@@ -80,6 +81,27 @@ export function textCard(key, event) {
     content: typeof event.content === "string" ? event.content : "",
     source: event.source === "starter_docs" ? "starter_docs" : null, mode: null,
     docId: null, gitOid: null, path: null, length: null, fetched: false, blocked: null};
+}
+
+// Record only the owner's edit to a copied document. The fetched project
+// text stays in memory and must be read again from its original git object.
+export function textEdit(before, after) {
+  let start = 0, end = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  while (end < before.length - start && end < after.length - start
+      && before[before.length - end - 1] === after[after.length - end - 1]) end++;
+  return {start, remove: before.length - start - end, insert: after.slice(start, after.length - end)};
+}
+
+export function applyTextEdits(content, edits) {
+  let value = content;
+  for (const edit of edits) {
+    if (!edit || !Number.isSafeInteger(edit.start) || !Number.isSafeInteger(edit.remove)
+        || edit.start < 0 || edit.remove < 0 || edit.start + edit.remove > value.length
+        || typeof edit.insert !== "string") return null;
+    value = value.slice(0, edit.start) + edit.insert + value.slice(edit.start + edit.remove);
+  }
+  return value;
 }
 
 export function isOid(value) {
@@ -182,6 +204,12 @@ function exitsOf(state, starter) {
 }
 
 const COMMANDS = Object.freeze({unsafe_directory: "safe_directory", unavailable: "pin_git"});
+//: A first commit the product started and has not finished is not a finished first commit: the
+//: repo sentence says so, no exit offers a new one, and a wait or an unfinished one holds the step
+//: (a damaged or unreadable record has no way forward in V1, so it holds nothing).
+const PENDING_SENTENCES = Object.freeze({unfinished: "repo_pending",
+  awaiting_signature: "repo_awaiting", damaged: "repo_damaged", unreadable: "repo_damaged"});
+const WAITING = Object.freeze(["unfinished", "awaiting_signature"]);
 //: A read that has not landed, or has failed, is not a fact about the project, so the step holds
 //: (a failed read offers to be read again). It is judged before the starter's own stop, which
 //: would say "no repository" about a repository nobody has looked at yet.
@@ -193,7 +221,7 @@ const HOLDS = Object.freeze({reading: "git_reading", failed: "git_failed"});
 //: waits for activation and the starter goes on to be queued). No state is guessed: an unread
 //: or failed read is its own, in view as everywhere; `not_active` is what the server says when
 //: it says it (spec 6.2.1), never what the desk supposes before the answer lands.
-export function gitFacts(read, mode) {
+export function gitFacts(read, mode, pending = null) {
   const starter = mode.starterId !== null;
   let state = "reading", git = null;
   if (read && read.status === "failed") state = "failed";
@@ -204,10 +232,16 @@ export function gitFacts(read, mode) {
   const ends = ENDS_THE_WIZARD.includes(state);
   const needsGit = starter && !mode.view && state !== "repo";
   const held = Object.hasOwn(HOLDS, state) ? HOLDS[state] : null;
-  const stop = ends ? "git_stops" : held ?? (needsGit ? "starter_needs_git" : null);
-  return {state, sentence: state, params: git === null ? {} : paramsOf(git),
-    exits: state === "failed" ? ["reread"] : exitsOf(state, starter), blocks: stop !== null,
-    stop, command: COMMANDS[state] ?? null};
+  const here = state === "repo" || state === "unborn";
+  const standing = here && pending !== null ? pending.state : null;
+  const unfinished = standing !== null && WAITING.includes(standing);
+  const stop = ends ? "git_stops" : held ?? (unfinished ? "git_unfinished"
+    : (needsGit ? "starter_needs_git" : null));
+  const exits = standing !== null ? []
+    : (state === "failed" ? ["reread"] : exitsOf(state, starter));
+  return {state, sentence: state === "repo" && standing !== null ? PENDING_SENTENCES[standing]
+    : state, pending: standing, params: git === null ? {} : paramsOf(git), exits,
+  blocks: stop !== null, stop, command: COMMANDS[state] ?? null};
 }
 
 //: The project-instructions row (spec 6.2.1, L31): only when files were found, defaulting to

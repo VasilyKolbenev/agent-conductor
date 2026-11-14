@@ -216,6 +216,13 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "mutation": true, "csrf": true
   },
   {
+    "method": "POST", "path": "/command/project/task-draft",
+    "mutation": true, "csrf": true
+  },
+  {"method": "GET", "path": "/command/project/utilities", "mutation": false, "csrf": false},
+  {"method": "POST", "path": "/command/project/utilities", "mutation": true, "csrf": true},
+  {"method": "GET", "path": "/command/project/utilities/registrations", "mutation": false, "csrf": false},
+  {
     "method": "GET", "path": "/command/project/auto-continue",
     "mutation": false, "csrf": false
   },
@@ -232,8 +239,11 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
   {"method": "POST", "path": "/command/project/git/setup", "mutation": true, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/materials", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/runs/<run_id>/accept", "mutation": false, "csrf": false},
+  {"method": "GET", "path": "/command/runs/<run_id>/steps/<node_id>/actions/<action_id>", "mutation": false, "csrf": false},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/preview", "mutation": false, "csrf": true},
   {"method": "POST", "path": "/command/runs/<run_id>/accept/commit", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/push", "mutation": true, "csrf": true},
+  {"method": "POST", "path": "/command/runs/<run_id>/accept/pull-request", "mutation": true, "csrf": true},
   {"method": "GET", "path": "/command/project/documents", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/project/documents/<doc_id>", "mutation": false, "csrf": false},
   {"method": "GET", "path": "/command/queue", "mutation": false, "csrf": false},
@@ -541,7 +551,7 @@ Its canonical config digest is
 The browser never supplies an executable, argv, shell text, cwd, environment
 value, PID, or filesystem destination. It submits one declared capability and
 the endpoint validates `arguments` against this closed registry before calling
-the service. Every listed key is required and no other key is accepted:
+the service. The registry lists all accepted keys for each capability.
 
 <!-- CANONICAL:argument_schemas -->
 ```json
@@ -549,7 +559,7 @@ the service. Every listed key is required and no other key is accepted:
   "dispatch": ["work_item_id", "instruction_ref", "profile", "artifact_refs",
     "output_limit_profile", "step_purpose", "instruction_digest", "work_scope"],
   "review": ["work_item_id", "target_artifact_refs", "result_artifact_ref",
-    "review_profile", "step_purpose", "work_scope"],
+    "review_profile", "step_purpose", "work_scope", "grok_diagnostic"],
   "evidence": ["target_action_id", "kinds"],
   "stop": ["target_attempt_id", "reason"],
   "retry": ["prior_action_id", "reason"],
@@ -559,10 +569,14 @@ the service. Every listed key is required and no other key is accepted:
 
 This registry is derived from the six exact public types in
 `DEEP_ARGUMENT_TYPES`; their `from_dict`/`as_dict` round trip is the authority,
-including exact JSON-list fields and closed enum values. It is the field SET,
-not the required set: `result_artifact_ref`, `step_purpose`,
-`instruction_digest` and `work_scope` are OMITTABLE, so a payload written before
-any of them existed still reads and no frozen revision moves.
+including exact JSON-list fields and closed enum values. The optional fields are
+`result_artifact_ref`, `step_purpose`, `instruction_digest`, `work_scope` and
+`grok_diagnostic`. Earlier frozen revisions retain their original representation.
+
+On a subscription Grok review, `grok_diagnostic: "session-phase-v1"` requests
+session evidence from the CLI's bounded message stream. The grant preview names
+the affected steps in `grok_diagnostic_steps`. The default review uses its
+existing terminal format.
 
 `work_scope` names the TASK a run is bound to, and so which directory a step's
 work lives in: `work/_tasks/<work_scope>/<work_item_id>` for a task's run, and
@@ -1189,6 +1203,12 @@ the latest revision answers 200 and creates nothing. Both verbs are on one path,
 and no other frozen route changes. The shapes are in the desk redesign
 specification, section 7.1.
 
+A caller preparing an existing cycle can POST `{"inspect_revision":1,"binding":null}`
+to the same flow path. This reads the numbered immutable revision and returns its
+flow, diagnostics, budget and revision number. Supplying a role-to-provider binding
+also checks those participants. This form accepts only those two fields. Viewing
+the revision does not create a draft, revision, run or authorization.
+
 Three more routes serve the desk's preparation and its project cycle, each with
 one verb: `GET /command/tasks/<task_id>/preparation` answers, for one task, the
 task, its runs and what each still lacks before it may start (its stage, the
@@ -1230,8 +1250,9 @@ answered as before. The shapes are in the desk redesign specification, section
 
 `POST /command/project/git/setup` accepts these closed bodies:
 `{step:"init"|"exclude",actor}` explicitly confirms one local setup step;
-`{step:"first_commit",mode:"snapshot"|"empty",preview:true}` reads its preview.
-Init/exclude return `{"setup":receipt}`, 201 on their first completed receipt and
+`{step:"first_commit",mode:"snapshot"|"empty",preview:true}` reads its preview;
+`{step:"first_commit",mode:"snapshot"|"empty",paths_digest:"sha256:..."|null,actor}`
+confirms it (`paths_digest` is null exactly for `empty`). Init/exclude return `{"setup":receipt}`, 201 on their first completed receipt and
 200 for the identical actor's exact repeat. Receipts under
 `<data_root>/git/setup/<step>.json` contain `schema_version:1`, `step`,
 `requested_by`, `recorded_at`, `object_format`, `exclude` and `warnings`.
@@ -1255,16 +1276,88 @@ bare list that had no mode, never equals it, so an old preview never confirms th
 terms now shown (`paths_changed`, then a new preview). Unsafe leaves are shown
 as manual paths. Reading this preview creates no Git objects, index, ref or
 receipt. Missing author identity refuses; required signing is a shown warning.
-Actual first-commit confirmation and its recovery are not implemented by these
-accepted request forms. Every setup form requires active mode and a live owner;
-`git_setup_refused` carries one closed `reason`, never Git stderr.
+Every setup form requires active mode and a live owner; `git_setup_refused` carries
+one closed `reason`, never Git stderr.
+
+The first-commit confirmation returns `{"setup":receipt}`: 201 when this call
+completed the step, 200 for the exact repeat of the same mode, digest and actor,
+`setup_terms_changed` for any other. The receipt
+`<data_root>/git/setup/first_commit.json` holds `schema_version:1`, `step`, `mode`,
+`paths_digest`, `digest_version`, `target_ref`, `commit`, `tree`, `object_format`,
+`file_count`, `signature`, `requested_by` and `recorded_at`. The confirmation takes
+the preview again and, in `snapshot` mode, refuses `paths_changed` unless the digest of
+the versioned list equals the one sent; it refuses a `.git` that is not the
+project's own plain directory (a linked worktree, a link, or a `commondir` file that names
+another folder), or whose refs are kept by the reftable backend (not supported in V1), as
+`unsafe_git_route` before any object is written. The same refusal stands for a link or reparse
+point on `objects`, on an existing two-hex folder below it, on `objects/pack` (a blob above
+`core.bigFileThreshold` is streamed into a pack), or on an existing component of the target
+ref, of `logs/refs/heads/<name>` or of `logs/HEAD`; the check reads those names when it runs
+and is not isolation from a process that swaps a folder afterwards. Objects and the parentless
+commit are written without a lock. Inside the store transaction the product then publishes
+the install bytes, the operation record `first_commit.op.json` (read back against the
+bytes) and a private copy in `.git`, moves the copy onto `index.lock` without replacing
+anything, moves the target ref once by `update-ref <ref> <commit> <zero oid>`, installs
+the index by moving that lock onto `index` without replacing, writes the receipt, and
+retires the record before its bytes. A lock is the product's only when the whole binding
+(the marker's nonce and terms, the tree, the entry count, the bytes) proves it; an empty
+or other lock is `index_locked` and is never touched. An index of the owner that is
+equivalent to the committed tree is left exactly as it is; another index is
+`index_exists`; a ref that is not the product's commit is `head_exists`. A retry of
+the same terms by the same actor continues from what the repository shows and never
+moves the ref twice. A retry that comes before the ref is published first reads the
+branch HEAD names, the object format, the author and the signing flag again: when one
+of them is no longer the stored one the unfinished operation is replaced by a new one
+under the facts as they are now, after the product has removed only what it proves is
+its own (its lock and its copy, then the record, then the install bytes); a foreign
+lock, index or ref is never touched. After the ref is published the commit stays on its
+branch, a changed actor, mode, digest or author is `setup_terms_changed`, and the index
+is installed from the stored bytes. A repeat of a step whose receipt stands answers 200
+and removes what an interrupted finish left (the record first, its bytes after). A reload, a GET and a server start repeat nothing: the person
+continues explicitly by the same body (see `first_commit_pending` below). Every
+installed index carries the optional extension `CNDT`, and Git prints `ignoring CNDT
+extension` on stderr when it reads an index file that still carries it. Any Git command
+that writes the index writes it without the marker, an ordinary `status` included, so
+the line can appear once, several times or never. The marker proves the ownership of the
+lock and of the stored install bytes only: an installed index that the owner's Git
+rewrote with an equivalent tree is left as it is and the operation finishes, another
+tree is `index_exists`, and a receipt is never undone by a later rewrite.
+
+When Git is set to sign (`signing: true` in the preview) the product never signs, never makes
+the commit and never moves a ref. It writes the objects and the marked index bytes, STORES the
+intent (the install bytes, the exact message in `<data_root>/git/msg-first-<32 hex>.txt` and the
+operation record at the stage `awaiting_signature`) and only then answers `409 git_setup_refused`
+with the typed detail `{reason:"signing_required", tree, target_ref, message_path}`. The owner runs
+`git commit-tree <tree> -S -F <message_path>` and `git update-ref <target_ref> <oid> <zero>`, where
+`<zero>` is as long as the tree's object id, so that only a branch that does not exist yet can be
+created. The same body repeated recognises that commit by the STORED terms and never by a new
+preview: its tree is the stored tree, it has no parent, its one author is the author that was
+shown, its body is the stored message to the byte, and it carries the signature header of the
+object format (`gpgsig`, or `gpgsig-sha256`) whose first line is an armour line. The commit is
+read without replacement refs, whatever the repository's own `core.useReplaceRefs` says (the
+lowest supported Git lets that setting outweigh `--no-replace-objects`, so the read sets both),
+and the bytes read must hash to the object id the branch
+names: `cat-file` follows a tag object to the commit it points at, and a branch that names a
+tag is `head_exists`, never that commit. The product then
+installs the index through the same driver as the unsigned road and answers 201 with
+`signature:"present"`; it never moves the ref, and once the receipt stands it removes the message
+file, if it is still the plain file it wrote. Only the presence of a signature is checked: its
+validity and the trust of its key are not, and no verifying program is run. While the branch does
+not exist the answer is `signing_required` again, built from the stored intent; any other commit,
+an unsigned one included, is `head_exists`; a changed actor or author after the commit exists is
+`setup_terms_changed`, and before it exists a changed actor, author, branch HEAD names or signing
+flag replaces the wait. A branch name outside `refs/heads/[A-Za-z0-9._/-]+` cannot take this road
+(the two commands are pasted into a terminal): `signing_ref_unsupported`, nothing written.
 
 `GET /command/project/git` reads the repository facts for the task wizard:
 admission state, HEAD and object format, changed-path count excluding product
 files, instruction-file count, the last saved instruction choice, signing and
 the pinned Git version. A status timeout leaves `dirty_paths` unknown (`null`).
 Remotes expose only their names, a GitHub `owner/repo` when recognized, and a
-credential-presence flag; raw remote URLs are never returned. In view mode the
+credential-presence flag; raw remote URLs are never returned. An `owner/repo` is recognized for an
+`https`, `http` or `ssh` address on `github.com` and for `git@github.com:`, each with an optional
+`.git` and an optional trailing `/`; recognizing an address is not admitting it to a push, which
+takes only the exact spellings given with the push terms below. In view mode the
 route starts no Git process and reports only the local Git-entry state and the
 saved instruction choice. It does not write Git metadata. The response is the
 `{"git": ...}` shape in desk redesign specification section 6.2.1.
@@ -1287,6 +1380,29 @@ signature names only a branch of `refs/heads/` followed by letters, digits, `.`,
 other record is `damaged`. The person continues by repeating the first-commit confirmation with
 `mode` and `paths_digest` taken from `terms` and the actor who acts now; the server
 judges that repeat again, from the stored terms.
+
+`GET /command/runs/<run_id>/steps/<node_id>/actions/<action_id>` reads one selected
+request from the frozen run. The response identifies the run, node, action and
+attempt. It carries the recorded outcome, independent verifier and digest, displayable
+diff rows from the sealed manifest and seed tree, and any bound external test result.
+Missing evidence stays unavailable. Case definitions identify source locations.
+Individual case outcomes require their own record. View mode reads archived objects.
+
+`GET /command/project/utilities/registrations` returns `{"utilities": [...]}` on the project
+origin in active and view mode. Each published registration supplies only `utility_id`,
+`label` and `mode`. This read lists the registry and opens registration metadata. It
+does not enumerate exchange directories or read any request, claim, result or reply.
+
+`GET /command/project/utilities` returns the project registrations and their text
+exchanges. An active project accepts a same-origin, project-bound, CSRF-checked POST.
+The closed operations are `attach`, `send`, `manual_reply`, `claim`, `finish` and
+`mark_unknown`. Modes are `manual` and `stdio-v1`. A new claim receives 201, an
+identical replay 200. Only the former starts a peer. The terminal bridge sends one
+UTF-8 JSON line containing `protocol` (`arachnid.utility.v1`), `utility_id`,
+`exchange_id` and `text`. The reply repeats the first three fields and supplies
+the answer in `text`. Each text is limited to 8192 UTF-8 bytes. A claimed exchange
+with an indeterminate result can be closed as unknown. Utility messages are separate
+from the run journal and do not issue workflow grants.
 
 `GET /command/runs/<run_id>/accept` reads the complete durable run inventory, frozen
 workflow revision, queue and current driver facts. It works in view mode without
@@ -1323,6 +1439,112 @@ are full and of the same format, the branch is validated under `conduct/`, and
 `message_path` is only `conductor[.v3]/git/msg-acc-<32 hex>.txt` relative to the
 project. No commit or ref is created until the owner uses the terminal; a later
 explicit retry verifies the complete result before writing its receipt.
+
+`POST /command/runs/<run_id>/accept/push` and `POST /command/runs/<run_id>/accept/pull-request`
+are the second and third of the three separate, shown steps of an accepted result (desk redesign
+section 9.7); neither is reachable from the commit route. A server started to view the project
+refuses both `project_not_active` (409) before it reads the body. The push takes one of two closed
+bodies: the terms `{"acceptance_id","remote","preview":true}`, or the confirmation
+`{"acceptance_id","remote","push_digest","actor"}` with the one optional key `"check":true`. The
+pull request takes the closed body `{"acceptance_id","base","title","body","draft","actor"}` with
+the same optional `"check":true`. `acceptance_id` is `acc-` and 32 lowercase hex, `remote` and
+`actor` follow the ids and the identity of the commit route, `base` is a branch name, `title` is
+one line of at most 256 characters, `body` is text of at most 32 768 characters, and `draft` is a
+boolean. Any other key or value is `contract_invalid`. A press with `"check":true` carries the
+body of the press it looks for, `actor` included, whoever asks to look; a record that the look
+writes names that actor in `requested_by`. After the body, the push answers
+`accept_refused` `push_requires_commit` until a commit record stands, and the pull request answers
+`pr_requires_push` until a push record stands. Both then need the pinned gh: a server that has none
+answers `tool_unavailable` with `{tool:"gh", reason}`. `accept_refused` gains these closed reasons:
+`push_requires_commit`, `push_not_permitted`, `push_rejected`, `push_terms_changed`,
+`push_url_ambiguous`, `push_destination_mismatch`, `remote_url_has_credentials`,
+`push_auth_failed`, `push_timed_out`, `push_unconfirmed`, `pr_requires_push`, `gh_not_logged_in`,
+`pr_mismatch` and `pr_create_failed`. `pr_mismatch` carries a second detail field, `mismatch`, one
+word of `remote_head_moved`, `other_head`, `other_base` and `cross_repository`; no other reason
+carries it.
+
+The push terms answer 200 `{"push_terms":{"commit","remote","push_url","repo","ref","command",
+"push_digest"}}`. `commit` and `ref` come from the commit record, never from the local branch;
+`push_url` is the one address `git remote get-url --push --all <remote>` resolves (it expands
+`pushurl` and `insteadOf`) and is exactly `https://github.com/O/R`, `git@github.com:O/R` or
+`ssh://git@github.com/O/R`, with an optional `.git` and, after it, an optional single trailing
+`/` (so `https://github.com/O/R/` and `git@github.com:O/R.git/` stand: each of the three forms has
+four spellings, and no other is admitted); the address is carried as the remote spells it, `/`
+included, in the terms, the command and the digest; `repo` is the `O/R` that `gh repo view`
+confirmed for it; `command` is `git` and the words that a confirmation runs, the one list for the
+terms and for the run (see the guard below); `push_digest` is the sha256 of the canonical
+`{acceptance_id, commit, remote, push_url, repo, ref, command}`. More than one address is
+`push_url_ambiguous`, a login or password in the address `remote_url_has_credentials` (the
+address is never echoed), an address that is not one of
+those forms, a remote that is not there, or a repository gh names otherwise
+`push_destination_mismatch`, and an owner without ADMIN, MAINTAIN or WRITE on a repository that is
+not archived `push_not_permitted`. Failures of git and of gh are `git_failed` and `git_timed_out`,
+and gh not signed in is `gh_not_logged_in`.
+
+The confirmation recomputes the terms (another digest is `push_terms_changed`) and then looks at
+the ref on the remote BEFORE any push and AFTER every push; only the look decides. The same commit
+already there answers 201 `{"push": record}` without a push; another commit there is
+`push_rejected`; no ref lets the push go ahead: `git push --porcelain --no-follow-tags
+--recurse-submodules=no --force-with-lease=<ref>: <push_url> <commit>:<ref>`, by address, with no
+`-u`, no `--tags` and no bare `--force`. The words begin with one pair before the verb, `-c
+remote.<guard>.url=<push_url>`: a remote that exists on that command line only, with the pushed
+address and no fetch refspec, and writes no configuration, so that Git 2.56 and later, which
+update the remote-tracking ref of the one configured remote whose push address is the address
+pushed to, find two and write no ref; no ref is deleted afterwards. `<guard>` is the first of
+`conduct-no-tracking`, `conduct-no-tracking-2`, and so on, that no setting of the project uses
+(any `remote.<name>.<key>` in any scope takes the name, whatever the key and the case): a remote
+of the same name, or one with a `pushurl` of its own, would leave the project's own remote the
+only match. The terms and the run build their words with the same function, so the command the
+card shows is the command that runs: the same `git` and the same words after it, which the owner
+may paste into a terminal in the project. That is the whole promise, and it is the argv only. The
+product puts the path of the pinned git, `-C <project>` and its own `-c` read flags before those
+words, and runs them in the environment of desk redesign section 8.9 (`tool_env`): hooks are
+silenced (`core.hooksPath` is an empty folder), and `GIT_TERMINAL_PROMPT=0` with
+`GCM_INTERACTIVE=never` forbid an interactive sign-in. The owner's terminal has its own
+environment, so the same words there may run the owner's hooks and may ask to sign in; an
+identical environment is not promised. And because the digest covers the words, a name that
+became taken or free since the terms were shown is `push_terms_changed`, and the terms read next
+show the other command. After the push the ref is
+looked at again: the same commit answers 201 and writes `push.json` (with `remote_oid`), another
+commit is `push_rejected`, no ref
+is `push_rejected` when the push said it was rejected, `push_unconfirmed` when it said it was sent,
+`push_auth_failed` when git said it could not sign in, `push_timed_out` when it timed out and
+`git_failed` for any other exit with no porcelain line for the ref, and a look that does not
+answer is `push_unconfirmed` (or `push_auth_failed` when git could not sign in). A press with
+`"check":true` stops after the first look and answers 200
+`{"push": null}` when the remote has no ref; it never pushes. An exact repeat of a press that
+recorded the push answers 200 with the standing record, another digest is `push_terms_changed`
+and another actor `acceptance_exists`. One press at a time acts on a run in a process, and the
+store's transaction is held only for the write of `push.json`, never across a network call.
+
+The pull request is made for one head: the commit, the branch and the repository of `push.json`,
+against the `base` of the body. Its check BEFORE any creation changes nothing outside: the remote
+head must still be that commit (else `pr_mismatch` with `mismatch:"remote_head_moved"`), and
+`gh pr list --repo O/R --head <branch> --state all --json number,url,state,headRefName,
+headRefOid,baseRefName,isCrossRepository,isDraft` is read. A pull request with that commit, that
+base and no fork is the head's own: it is recorded and answers 200, and nothing is created.
+Another one on the branch is `pr_mismatch` (`other_head`, `other_base` or `cross_repository`) and
+nothing is created. Then `gh pr create --repo O/R --base <base> --head <branch> --title <title>
+--body-file - [--draft]` runs with the body on standard input, and the check runs again, the
+remote head and the list. The pull request found is recorded and answers 201 whether or not it
+is the head's own: when it is not, `pr.json` holds what it is in `mismatch` (`{head_oid, base,
+cross_repository}`; `null` for the head's own), the response says so and no creation is ever
+repeated. `gh` not signed in answers `gh_not_logged_in` and is the one failure that is known to
+have created nothing; any other failure of the creation (a timeout, a broken connection) is
+unknown, and the list is read before anything else: a pull request there is recorded, and none
+answers `pr_create_failed`, after which a new press starts from the check. Every failure of gh in
+this route other than not signed in is `pr_create_failed`; a remote that does not answer before
+the check is `pr_create_failed` too (`push_auth_failed` when git could not sign in). A press
+with `"check":true` stops after the check and answers 200 `{"pull_request": null}` when the
+branch has none. Every press differs in one case: when the remote head is not that commit it
+still reads the list before it refuses, because it may follow a creation whose answer was
+unknown, and a desk that reloaded, or left the run, has forgotten that the answer was unknown
+while the server has not. A pull request found there is recorded and answers 200 with its
+`mismatch` (the commit the branch holds now, the base and the fork flag; `null` if the remote has
+no such ref and the pull request is the head's own), and none found is `pr_mismatch` with
+`remote_head_moved`. A list that gh cannot give is `pr_create_failed` there too. `gh pr create`
+is never called on a moved head. The standing record answers 200 to a press that names its
+base, and `pr_mismatch` with `other_base` to any other. `pr.json` gains the field `mismatch`.
 
 Three more routes serve the materials of a run and the documents of the project.
 `POST /command/runs/<run_id>/materials` takes the closed body `{"lang", "items"}`,
@@ -1645,6 +1867,15 @@ compute or store a gate "pass" flag; the UI reads the projection.
 
 ### 6.1 `GET /command/runs/<run_id>` — replay one run read-only
 
+A successful, independently checked `implement-patch-v1` dispatch with an archived
+snapshot may also include `checked_changes`. The action ID, attempt ID, verifier ID
+and manifest digest bind this projection to its receipt. `total` counts all files
+changed against the seed; `files` contains the first 32 canonical relative paths and
+their `added`, `modified`, or `deleted` state. An unreadable or damaged sealed
+manifest yields a null total and an empty list. Unseeded, unverified, historical
+and later pending dispatches without such a seal omit the field. The read checks
+the archived manifest digest and does not open blobs, working files or Git.
+
 The UI reads run state and history here (history/replay, C/UI-1; Human Gate,
 C/HG-1). Maps to `RunStore.read`, which validates and replays without editing a
 durable byte. Response `200` binds field by field to `RecoveredRun`: `run` is a
@@ -1652,7 +1883,7 @@ durable byte. Response `200` binds field by field to `RecoveredRun`: `run` is a
 is the append-ordered journal each wrapped exactly as the store wraps it
 (`{ "record_type": <kind>, "record": <contract as_dict> }`), and `warnings` is
 the replay warning list. A fifth key, `graph`, is described in 6.1.1 and is the
-only part of this response that is not a durable record verbatim. A missing run
+projection over durable records. A missing run
 is currently `store_error` (500), because
 the planning-base store has no typed not-found branch and the endpoint may not
 infer one from prose. The record kinds and their contracts are the closed v2 vocabulary:
@@ -2353,3 +2584,13 @@ hold recorded grant/control/expiry facts; fresh execution additionally holds
 live project ownership and provider configuration. A human Resume can rearm the
 same unexpired standing grant after restart; it does not reset spent budgets,
 reactivate an ambiguous request, or change its immutable instructions.
+
+A plan that has ended, on either of its two words (`complete` or `stalled`, the states of
+`run_terminal`), frees the slot on the tick the ending wakes, and the automation read says
+`complete` with reason `plan_ended`. That reading is judged right after the grant and before the
+controls, the clock and the driver: a run that has recorded its ending takes no pause, resume,
+revoke or new authorization, the doors refuse them as before and write nothing, and no other word
+would be true of it. It says only that the plan has nothing left to run. It is not a judgment of
+the result: a plan that ended `stalled` reads `complete` too, and the two endings stay apart in
+the plan's own state, not in this word. A run that nothing was authorized to still reads
+`unconfigured` with `authorization_required` until that is settled as a task of its own.

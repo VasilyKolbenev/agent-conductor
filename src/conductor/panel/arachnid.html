@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Arachnid Studio</title>
+  <link rel="stylesheet" href="/panel/arachnid.css">
+  <link rel="stylesheet" href="/panel/arachnid-handoff.css">
+  <link rel="stylesheet" href="/panel/studio-utilities.css">
+  <script type="module" src="/panel/arachnid.js"></script>
+</head>
+<body>
+<svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M9 5v14"/></symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="icon-tool" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m7 9 3 3-3 3m6 0h4"/></symbol>
+    <symbol id="icon-limits" viewBox="0 0 24 24"><path d="M3 17a9 9 0 1 1 18 0m-9 0 4-6"/><circle cx="12" cy="17" r="1.3"/></symbol>
+    <symbol id="icon-memory" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v6c0 4 15 4 15 0v-6m-15 6v6c0 4 15 4 15 0v-6"/></symbol>
+    <symbol id="icon-classic" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="var(--rail)"/><circle cx="15" cy="17" r="2" fill="var(--rail)"/></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3m0 15v3M1.5 12h3m15 0h3M4.5 4.5l2 2m11 11 2 2m0-15-2 2m-11 11-2 2"/></symbol>
+    <symbol id="icon-workspace" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="14" rx="2"/><path d="M3.5 9.5h17"/></symbol>
+    <symbol id="icon-atlas" viewBox="0 0 24 24"><path d="m12 2 1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9L12 2Z"/><path d="m19 15 .7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z"/></symbol>
+    <symbol id="icon-up" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+    <symbol id="icon-detail" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  </defs>
+</svg>
+<a class="skip-link" href="#chat" data-ar-label="skipToChat">Go to conversation</a>
+<div id="workspace">
+  <button id="backdrop" type="button" aria-label="Close sessions" data-ar-aria="closeSessions"></button>
+  <nav id="sidebar" aria-label="Sessions" data-ar-aria="sessions">
+    <div class="brand">
+      <svg class="brandmark" viewBox="0 0 40 40" aria-hidden="true" fill="none">
+        <g stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M20 5l8 11-8 17-8-17z M12 16h16 M20 5v28"/>
+          <path d="m12 16-5-4-4 3m10 4-7 1-3 7m12-4-6 5-1 8
+                   m20-20 5-4 4 3m-10 4 7 1 3 7m-12-4 6 5 1 8"/>
+        </g>
+      </svg>
+      <strong>Arachnid<span>Studio</span></strong>
+      <button id="navClose" class="icon-btn" type="button" aria-controls="sidebar"
+              aria-label="Close sessions" data-ar-aria="closeSessions"><svg class="glyph" aria-hidden="true"><use href="#icon-close"></use></svg></button>
+    </div>
+    <button id="new" class="new" type="button"><svg class="glyph" aria-hidden="true"><use href="#icon-plus"></use></svg><span data-ar-label="newSession">New session</span></button>
+    <div class="rail-list">
+      <h2 data-ar-label="sessions">Sessions</h2><div id="sessions"></div>
+      <h2 data-ar-label="participants">Harnesses</h2><div id="harnesses"></div><div id="externalHarnesses"></div>
+      <button id="attach" class="nav-tool" type="button"><svg class="glyph" aria-hidden="true"><use href="#icon-tool"></use></svg><span data-ar-label="attach">Connect a harness</span></button>
+    </div>
+    <div class="nav-end">
+      <button id="limits" class="nav-tool" type="button" disabled><svg class="glyph" aria-hidden="true"><use href="#icon-limits"></use></svg><span data-ar-label="limits">Limits</span></button>
+      <button id="memory" class="nav-tool" type="button" disabled><svg class="glyph" aria-hidden="true"><use href="#icon-memory"></use></svg><span data-ar-label="memory">Session memory</span></button>
+      <a id="classic" class="nav-tool" href="/panel/studio.html"><svg class="glyph" aria-hidden="true"><use href="#icon-classic"></use></svg><span data-ar-label="classic">Workflow controls</span></a>
+      <div id="preferences" class="profile">
+        <svg class="glyph" aria-hidden="true"><use href="#icon-workspace"></use></svg><span data-ar-label="workspace">Workspace</span>
+        <select id="language" aria-label="Language" data-ar-aria="language">
+          <option value="en">EN</option><option value="ru">RU</option>
+        </select>
+        <button id="theme" class="icon-btn" type="button" aria-label="Change theme"
+                data-ar-aria="theme"><svg class="glyph" aria-hidden="true"><use href="#icon-sun"></use></svg></button>
+      </div>
+    </div>
+  </nav>
+  <div id="resizeSessions" class="panel-resizer" data-panel="sessions" role="separator"
+       tabindex="0" aria-controls="sidebar" aria-orientation="vertical"
+       aria-label="Resize sessions panel" data-ar-aria="resizeSessions"></div>
+  <main id="chat" tabindex="-1">
+    <header class="topline">
+      <button id="menu" class="icon-btn" type="button" aria-controls="sidebar" aria-expanded="false"
+              aria-label="Open sessions" data-ar-aria="openSessions"><svg class="glyph" aria-hidden="true"><use href="#icon-menu"></use></svg></button>
+      <svg class="glyph" aria-hidden="true"><use href="#icon-workspace"></use></svg><span>Studio</span><i aria-hidden="true">/</i><strong id="crumb"></strong>
+      <button id="paletteOpen" type="button" aria-haspopup="dialog" aria-controls="palette"
+              aria-keyshortcuts="Control+K Meta+K" data-ar-aria="paletteOpen">
+        <span data-ar-label="paletteOpen">Commands</span><kbd>Ctrl K</kbd>
+      </button>
+    </header>
+    <div class="session-head">
+      <div class="session-meta"><span id="contextLabel"></span></div>
+      <h1 id="title"></h1>
+      <a id="prepareTask" class="prepare-task" href="/panel/desk.html" hidden></a>
+    </div>
+    <div id="scroll"><div id="stream">
+      <div id="brief" class="initial-brief" hidden><span data-ar-label="you">You</span><p></p></div>
+      <div class="speaker">
+        <i class="atlas-icon"><svg class="glyph" aria-hidden="true"><use href="#icon-atlas"></use></svg></i>
+        <span data-ar-label="atlas">Kolos · AI Titan</span>
+        <label class="atlas-pick">
+          <select id="lead" aria-label="Lead harness for Kolos" data-ar-aria="lead"></select>
+        </label>
+      </div>
+      <div id="intro"></div><section id="nextAction" hidden></section>
+      <div id="orbitHere"></div><div id="resultHere"></div>
+      <div id="messages" role="log" aria-label="Conversation with Kolos" data-ar-aria="conversation"
+           aria-live="polite"></div>
+      <section id="planner" hidden></section>
+    </div></div>
+    <div class="compose-wrap">
+      <div id="scopeHere"></div>
+      <div id="quick" class="quick"></div>
+      <form id="send">
+        <input id="command" type="text" aria-label="Ask Kolos…" data-ar-aria="compose"
+               placeholder="Ask Kolos…" data-ar-placeholder="compose" autocomplete="off">
+        <button class="send" type="submit" aria-label="Send message" data-ar-aria="send"><svg class="glyph" aria-hidden="true"><use href="#icon-up"></use></svg></button>
+      </form>
+      <div class="compose-notes">
+        <span id="local" class="local-note"><i class="tiny-dot" aria-hidden="true"></i>
+          <span data-ar-label="local">Local answers from project records</span></span>
+        <span id="readStatus"><span id="notice" role="status" aria-live="polite"></span>
+          <button id="retry" type="button" hidden></button>
+        </span>
+      </div>
+    </div>
+  </main>
+  <div id="resizeInspector" class="panel-resizer" data-panel="inspector" role="separator"
+       tabindex="0" aria-controls="detail" aria-orientation="vertical"
+       aria-label="Resize inspector panel" data-ar-aria="resizeInspector"></div>
+  <aside id="detail" aria-label="Session details" data-ar-aria="details" hidden>
+    <header class="inspector-top"><svg class="glyph" aria-hidden="true"><use href="#icon-detail"></use></svg><span id="detailTitle" data-ar-label="inspector">Inspector</span>
+      <button id="close" class="icon-btn" type="button" aria-label="Close details"
+              data-ar-aria="closeDetails"><svg class="glyph" aria-hidden="true"><use href="#icon-close"></use></svg><span id="sheetCloseLabel" data-ar-label="closeDetails">Close details</span></button>
+    </header>
+    <div id="inspection"></div>
+  </aside>
+</div>
+<template id="orbital-plane">
+  <svg class="tracks" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-9 300 110)">
+      <ellipse class="outer" cx="300" cy="110" rx="264" ry="84"/>
+      <ellipse class="path" cx="300" cy="110" rx="220" ry="65"/>
+      <path class="selected-arc" pathLength="1" hidden/>
+      <ellipse class="inner" cx="300" cy="110" rx="167" ry="48"/>
+      <ellipse class="inner" cx="300" cy="110" rx="96" ry="30"/>
+    </g>
+  </svg>
+  <span class="core" aria-hidden="true"></span><span class="core-name" aria-hidden="true">Kolos</span>
+</template>
+<dialog id="studioUtilities" aria-labelledby="utilitiesTitle"></dialog>
+<dialog id="palette" aria-labelledby="paletteTitle">
+  <header class="palette-head">
+    <h2 id="paletteTitle" data-ar-label="paletteTitle">Find in workspace</h2>
+    <button id="paletteClose" type="button" aria-label="Close commands"
+            data-ar-aria="paletteClose">×</button>
+  </header>
+  <input id="paletteInput" role="combobox" aria-controls="paletteResults"
+         aria-autocomplete="list" aria-expanded="true" aria-label="Search workspace"
+         data-ar-aria="paletteSearch" data-ar-placeholder="paletteSearch" autocomplete="off">
+  <div id="paletteResults" role="listbox" aria-label="Commands" data-ar-aria="paletteResults"></div>
+  <p id="paletteEmpty" data-ar-label="paletteEmpty" role="status" hidden></p>
+</dialog>
+</body>
+</html>

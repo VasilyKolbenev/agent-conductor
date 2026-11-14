@@ -105,14 +105,16 @@ def test_a_cycle_the_product_owns_is_never_offered_like_step_x(bench, lang):
 def test_role_pickers_offer_only_reachable_harnesses_and_mark_unknown_limits_as_unknown(
         bench, lang):
     to_roles(bench, lang, reads=reads())
-    assert [row[0] for row in picks(bench, "role-analyst")] == ["claude-code", "codex"]
+    analysts = picks(bench, "role-analyst")
+    assert [row[0] for row in analysts] == ["claude-code", "codex", "grok-build"]
     doer = picks(bench, "role-doer")
-    assert [row[0] for row in doer] == ["claude-code", "codex", "grok-build", "deepseek-harness"]
+    assert [row[0] for row in doer] == ["claude-code", "codex", "deepseek-harness"]
+    assert [row[0] for row in picks(bench, "role-checker")] == ["claude-code", "codex"]
     labels = dict(doer)
     assert bench.say("wizard.quota.remaining", value="12") in labels["claude-code"]
     assert bench.say("wizard.quota.remaining", value="64") in labels["codex"]
     unknown = bench.say("wizard.quota.unknown") + " · " + bench.say("wizard.quota.no_data")
-    assert unknown in labels["grok-build"]
+    assert unknown in dict(analysts)["grok-build"]
     assert bench.say("wizard.quota.balance") in labels["deepseek-harness"]
     text = bench.root().inner_text()
     assert "kimi-code" not in text and "qwen-code" not in text
@@ -131,7 +133,7 @@ def test_an_argv_harness_shows_its_character_count_and_an_input_over_it_blocks_t
         bench, lang):
     to_roles(bench, lang, reads=reads())
     assert bench.page.locator("[data-argv]").count() == 0, "a stdin harness has no such limit"
-    bench.control("wizard:role:role-doer").select_option("grok-build")
+    bench.control("wizard:role:role-doer").select_option("deepseek-harness")
     counter = bench.page.locator('[data-instruction="do"] [data-argv]')
     expect(counter).to_have_count(1)
     assert counter.get_attribute("data-fits") == "true"

@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from playwright.sync_api import Browser, Locator, Page, expect
+from playwright.sync_api import Browser, Error as PlaywrightError, Locator, Page, Response, expect
 
 from browser_tests import desk_hold
 from browser_tests.desk_hold import Hold, close_context
@@ -23,6 +23,45 @@ from tests.test_accept_commit import prepared
 from tests.test_accept_context import RUN, TASK
 from tests import test_accept_context as accept_fixture
 from tests.test_store import write_project
+
+
+#: The one request a window keeps open for as long as it lives.
+STREAM = "/events"
+
+
+def in_flight(page: Page) -> set:
+    """The requests the window has sent and not yet seen end, the stream apart.
+
+    After the commit the card reads the project's remotes (spec 9.7), so a test that ends on the
+    commit ends beside a read that runs Git. The server is shut down at the end of the test, and
+    a request thread still inside Git holds a process loan then: `server_close` is refused
+    `owner_busy`. A window is therefore closed once this set is empty (`let_requests_end`).
+    """
+    pending: set = set()
+
+    def sent(request) -> None:
+        if urlsplit(request.url).path != STREAM:
+            pending.add(request)
+
+    def ended(request) -> None:
+        pending.discard(request)
+
+    page.on("request", sent)
+    page.on("requestfinished", ended)
+    page.on("requestfailed", ended)
+    return pending
+
+
+def let_requests_end(page: Page, pending: set) -> None:
+    """Wait, pumping the page, until everything the window asked has been answered or has failed.
+
+    A window that cannot be waited on (it is already gone) is closed as it was before; the failure
+    that put it there is the one the test reports.
+    """
+    try:
+        desk_hold.until(page, "every request the window sent is answered", lambda: not pending)
+    except (AssertionError, PlaywrightError):
+        return
 
 
 @pytest.fixture
@@ -67,9 +106,11 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
     url, root, _httpd = accept_server
     head = git("rev-parse", "HEAD", cwd=root).stdout
     context = chromium.new_context(viewport={"width": 1280, "height": 1000})
+    pending, page = set(), None
     try:
         page = context.new_page()
         page.set_default_timeout(10000)
+        pending = in_flight(page)
         requests, errors, run_answers = [], [], []
         page.on("request", lambda request: requests.append(
             (request.method, urlsplit(request.url).path)))
@@ -103,16 +144,24 @@ def test_accept_preview_then_exact_human_confirmation_creates_only_local_branch(
         expect(card.locator("pre").last).to_contain_text("+reviewed")
         card.locator('[data-focus-key="accept:detail:desk.accept.review"]').click()
         expect(card).to_contain_text("The current branch stays unchanged")
-        card.locator('[data-focus-key="accept:detail:desk.accept.commit_action"]').click()
+        # Git materializes the branch before the HTTP response can update the card.
+        with page.expect_response(_commit_answer) as heard:
+            card.locator('[data-focus-key="accept:detail:desk.accept.commit_action"]').click()
+        assert heard.value.status == 201
+        receipt = heard.value.json()["commit"]
         record = card.locator(".desk-accept__fact")
         expect(record.filter(has_text="Created commit")).to_have_count(1)
         assert ("POST", f"/command/runs/{RUN}/accept/preview") in requests
-        assert ("POST", f"/command/runs/{RUN}/accept/commit") in requests
+        assert requests.count(("POST", f"/command/runs/{RUN}/accept/commit")) == 1
         assert git("rev-parse", "HEAD", cwd=root).stdout == head
         branch = git("rev-parse", f"conduct/{RUN}", cwd=root).stdout.decode().strip()
+        assert (receipt["run_id"], receipt["requested_by"], receipt["branch"], receipt["commit"]) == (
+            RUN, "Owner", f"conduct/{RUN}", branch)
         expect(record.filter(has_text="Created commit")).to_contain_text(branch)
         assert errors == []
     finally:
+        if page is not None:
+            let_requests_end(page, pending)
         close_context(context)
 
 
@@ -137,6 +186,10 @@ CONFIRMING = "The current branch stays unchanged"
 FORCE_PRESS = "(node) => { node.disabled = false; node.click(); }"
 
 
+def _commit_answer(response: Response) -> bool:
+    return response.request.method == "POST" and urlsplit(response.url).path == COMMIT_PATH
+
+
 @dataclass
 class _Desk:
     """One window on the run, what it asked, and the answers a test may hold or rewrite."""
@@ -144,6 +197,7 @@ class _Desk:
     page: Page
     requests: list[tuple[str, str]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    pending: set = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.run_read = Hold(self.page, f"**/command/runs/{RUN}")
@@ -185,6 +239,7 @@ def _desk(chromium: Browser, url: str, language: str = "en") -> Iterator[_Desk]:
         page = context.new_page()
         page.set_default_timeout(10000)
         desk = _Desk(page)
+        desk.pending = in_flight(page)
         page.on("request", lambda request: desk.requests.append(
             (request.method, urlsplit(request.url).path)))
         page.on("pageerror", lambda error: desk.errors.append(str(error)))
@@ -201,6 +256,7 @@ def _desk(chromium: Browser, url: str, language: str = "en") -> Iterator[_Desk]:
         if desk is not None:
             for held in (desk.run_read, desk.controls_read, desk.preview_post):
                 held.abort()
+            let_requests_end(desk.page, desk.pending)
         close_context(context)
 
 
@@ -216,6 +272,44 @@ def _entries_and_preview_stand(desk: _Desk) -> None:
     expect(desk.card.locator(TITLE)).to_have_value("Chosen title")
     expect(desk.card).to_contain_text("new.txt")
     expect(desk.card).to_contain_text("conduct/chosen")
+
+
+@needs_git
+def test_a_delayed_commit_answer_is_shown_during_and_after_the_same_run_read(
+        chromium: Browser, accept_server, monkeypatch):
+    from conductor.command import accept_commit
+
+    url, root, _httpd = accept_server
+    durable, release = threading.Event(), threading.Event()
+    create = accept_commit.commit
+
+    def delayed(*args, **kwargs):
+        result = create(*args, **kwargs)
+        durable.set()
+        assert release.wait(20), "the test did not release the committed reply"
+        return result
+
+    monkeypatch.setattr(accept_commit, "commit", delayed)
+    with _desk(chromium, url) as desk:
+        _enter_and_read_preview(desk)
+        desk.card.locator(REVIEW).click()
+        created = desk.card.locator(".desk-accept__fact").filter(has_text="Created commit")
+        with desk.page.expect_response(_commit_answer) as heard:
+            desk.card.locator(COMMIT).click()
+            try:
+                assert durable.wait(10), "the real Git commit did not finish"
+                branch = git("rev-parse", "conduct/chosen", cwd=root).stdout.decode().strip()
+                refresh = desk.page.locator('#deskRun [data-focus-key="action:refreshRuns"]')
+                desk.reread(refresh.click)
+                expect(created).to_have_count(0)
+            finally:
+                release.set()
+        assert heard.value.status == 201
+        assert heard.value.json()["commit"]["commit"] == branch
+        expect(created).to_contain_text(branch)
+        desk.land()
+        expect(created).to_contain_text(branch)
+        assert desk.requests.count(("POST", COMMIT_PATH)) == 1 and desk.errors == []
 
 
 @needs_git

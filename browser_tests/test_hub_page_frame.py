@@ -28,6 +28,7 @@ from browser_tests.hub_live import (A, B, C, LivePage, line_of, live,  # noqa: F
                                     live_page, press, ready, wait_for)
 from conductor.hub import state as hub_state
 from browser_tests.desk_settled import SETTLED
+from browser_tests.desk_flag_fake import FlagServer
 from browser_tests.test_desk_rail_scene import _seed
 from tests.test_store import good_lane, write_project
 
@@ -134,6 +135,7 @@ def test_a_running_project_is_mounted_as_one_new_frame_with_the_sandbox_and_the_
     frame = desk_frame(one)
     facts = one.page.evaluate(FRAME_FACTS)
     assert (facts["count"], facts["hidden"], facts["sandbox"]) == (1, False, SANDBOX)
+    expect(one.page.locator(f'[data-focus="project:{A}"]')).to_be_focused()
     assert facts["title"] == say(one, "hub.frame.title", name="a")
     base, _, hash_text = facts["src"].partition("#")
     assert base == f"http://127.0.0.1:{one.port}/panel/desk.html"
@@ -355,6 +357,10 @@ def test_clear_the_flag_of_a_queued_project_opens_it_for_viewing_then_mounts_its
         one.page.wait_for_timeout(50)
     assert one.writes() == [f"/hub/projects/{B}/view"], "the hub opens it for viewing first"
     assert one.page.evaluate("document.querySelectorAll('#hubDesk iframe').length") == 0
+    press(one, "add-project")
+    press(one, "source-scratch")
+    name = one.page.locator('[data-focus="folder-name"]')
+    name.fill("draft")
     live_.tick()
     live_.run_project("b", port, mode="view")
     live_.tick()
@@ -363,10 +369,14 @@ def test_clear_the_flag_of_a_queued_project_opens_it_for_viewing_then_mounts_its
     src = one.page.evaluate("document.querySelector('#hubDesk iframe').getAttribute('src')")
     assert fields(src.partition("#")[2])["project"] == B
     assert fields(one.page.evaluate("location.hash"))["project"] == B
+    expect(desk_frame(one).locator("#deskPult .desk-flag")).to_have_attribute("open", "")
+    expect(name).to_be_focused()
+    expect(name).to_have_value("draft")
 
 
+@pytest.mark.parametrize("edit_during_read", [False, True])
 def test_clear_the_flag_of_a_queued_project_whose_view_runs_mounts_its_desk_at_the_flag_with_no_write(
-        live_page, tmp_path):
+        live_page, tmp_path, edit_during_read):
     one, live_ = live_page, live_page.live
     ready(one)
     run_project(one, "b", tmp_path, mode="view")
@@ -375,11 +385,32 @@ def test_clear_the_flag_of_a_queued_project_whose_view_runs_mounts_its_desk_at_t
     wait_for(one, "b to be viewed", lambda f: line_of(f, B)["working"] == "view")
     press(one, f"project:{C}")
     expect(one.page.locator(f'[data-queue] .hub-queue__entry[data-project-id="{B}"]')).to_have_count(1)
-    press(one, f"queue:{B}:clear_flag")
+    held = []
+    one.page.route("**/command/project/auto-continue", lambda route: held.append(route))
+    with one.page.expect_request("**/command/project/auto-continue"):
+        press(one, f"queue:{B}:clear_flag")
     wait_hub(one, "the desk of b at the flag", """() => document.querySelector(
       '#hubDesk iframe')?.getAttribute("src")?.includes("panel=continue") """)
     assert one.writes() == [], "its desk already runs: nothing is opened and nothing is written"
     assert fields(one.page.evaluate("location.hash"))["project"] == B
+    frame = desk_frame(one)
+    expect(one.page.locator("#hubDesk iframe")).to_be_focused()
+    if edit_during_read:
+        press(one, "add-project")
+        press(one, "source-scratch")
+        editor = one.page.locator('[data-focus="folder-name"]')
+        editor.fill("draft")
+        expect(editor).to_be_focused()
+    assert len(held) == 1 and held[0].request.method == "GET"
+    FlagServer().handle(held[0])
+    summary = frame.locator('[data-focus-key="flag:summary"]')
+    expect(frame.locator("#deskPult .desk-flag")).to_have_attribute("open", "")
+    if edit_during_read:
+        expect(editor).to_be_focused()
+        expect(editor).to_have_value("draft")
+    else:
+        expect(summary).to_be_focused()
+    assert one.writes() == []
 
 
 def test_continue_activates_the_project_and_mounts_its_new_desk_at_the_run_to_resume(

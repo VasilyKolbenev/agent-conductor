@@ -21,13 +21,15 @@ from tests import _fakeclaude
 from tests.test_command_claude_transport import a_request, run_once
 from tests.test_harness_subscription_login import (
     a_codex_harness,
+    a_codex_login_home,
     a_harness,
     a_login_home,
 )
 
 
 @pytest.mark.parametrize("method", [
-    "api_key", "quiet_key", "key_source", "vertex", "none", "stale",
+    "api_key", "quiet_key", "key_source", "env_token", "env_token_plan", "token_source",
+    "vertex", "none", "stale",
     "methodless", "scalar", "garbage",
     # A method this build has never seen, and an empty one. Neither is a known
     # refusal, and a rule written as exclusions admitted both.
@@ -86,8 +88,7 @@ def test_codex_reads_its_own_sentence_about_which_login_it_found(
     words are the only thing that separates the two, since both exit 0."""
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     adapter, _root, log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home),
         **{_fakecodex.LOGIN_METHOD: method})
@@ -155,8 +156,7 @@ def test_a_login_directory_that_also_holds_configuration_refuses_first(tmp_path)
     """
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     (home / "config.toml").write_text(
         '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
         encoding="utf-8", newline="\n")
@@ -179,8 +179,7 @@ def test_a_configuration_this_build_cannot_read_is_refused_not_admitted(tmp_path
     than the name is that unreadable must not become 'no keys found'."""
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     (home / "config.toml").write_text(
         "this is not TOML at all [[[", encoding="utf-8", newline="\n")
     adapter, _root, log = a_codex_harness(
@@ -196,6 +195,12 @@ def test_a_configuration_this_build_cannot_read_is_refused_not_admitted(tmp_path
 @pytest.mark.parametrize("body,refused", [
     ('profile = "x"\n[profiles.x]\nmodel_provider = "elsewhere"\n', True),
     ('[projects."C:\\\\work"]\ntrust_level = "trusted"\n', True),
+    # The login's bearer goes wherever these two point at the top level. The nested rows are
+    # inert at 0.164.0 and are refused all the same, by the search at any depth.
+    ('chatgpt_base_url = "https://route.invalid/backend-api/"\n', True),
+    ('openai_base_url = "https://route.invalid/v1"\n', True),
+    ('profile = "x"\n[profiles.x]\nchatgpt_base_url = "https://route.invalid/"\n', True),
+    ('profile = "x"\n[profiles.x]\nopenai_base_url = "https://route.invalid/v1"\n', True),
     ('[tui]\nnotifications = true\n[history]\npersistence = "none"\n', False),
 ])
 def test_a_configuration_is_judged_at_every_depth_it_can_hide_in(
@@ -209,8 +214,7 @@ def test_a_configuration_is_judged_at_every_depth_it_can_hide_in(
     """
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     (home / "config.toml").write_text(body, encoding="utf-8", newline="\n")
     adapter, _root, log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home))
@@ -219,6 +223,20 @@ def test_a_configuration_is_judged_at_every_depth_it_can_hide_in(
 
     assert (receipt.outcome == "failed") is refused, receipt.detail
     assert (_fakecodex.task_spawns(log) == []) is refused
+    assert "route.invalid" not in receipt.detail
+
+
+def test_both_endpoint_overrides_are_named_as_grants_wherever_they_stand(tmp_path):
+    """Asked as a set: a key added to the list later must not break the order of this one."""
+    home = a_codex_login_home(tmp_path)
+    (home / "config.toml").write_text(
+        'openai_base_url = "https://route.invalid/v1"\n'
+        '[profiles.x]\nchatgpt_base_url = "https://route.invalid/"\n',
+        encoding="utf-8", newline="\n")
+    adapter = a_codex_harness(
+        tmp_path, auth="subscription", auth_home=str(home))[0]
+
+    assert set(adapter._login_home_grants(str(home))) >= {"chatgpt_base_url", "openai_base_url"}
 
 
 def test_every_name_a_profile_declares_is_really_read(tmp_path):
@@ -228,8 +246,7 @@ def test_every_name_a_profile_declares_is_really_read(tmp_path):
 
     from conductor.command.adapters.codex_cli import CODEX_PROFILE
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     (home / "other.toml").write_text(
         '[projects."C:\\\\work"]\ntrust_level = "trusted"\n',
         encoding="utf-8", newline="\n")
@@ -303,8 +320,7 @@ def test_a_configuration_naming_nothing_dangerous_is_left_alone(tmp_path):
     refusing that name would refuse the directory this build asked for."""
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
+    home = a_codex_login_home(tmp_path)
     (home / "config.toml").write_text(
         'model = "gpt-5.3-codex"\nhide_agent_reasoning = true\n',
         encoding="utf-8", newline="\n")
@@ -457,9 +473,7 @@ def test_a_login_directory_holding_only_its_login_is_not_refused(tmp_path):
     """The positive control for the refusal above."""
     from tests import _fakecodex
 
-    home = tmp_path / "auth" / "codex"
-    home.mkdir(parents=True)
-    (home / "auth.json").write_text("{}", encoding="utf-8", newline="\n")
+    home = a_codex_login_home(tmp_path)
     adapter, _root, _log = a_codex_harness(
         tmp_path, auth="subscription", auth_home=str(home))
 

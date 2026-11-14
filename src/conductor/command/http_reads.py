@@ -28,6 +28,12 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
         return 200, api._session.session_response(host)
     if route.name == "project":
         return project_claim.read_project(api._identity)
+    if route.name == "project_utilities":
+        from .project_utilities import list_utilities
+        return 200, list_utilities(api._store.project_root)
+    if route.name == "utility_registrations":
+        from .project_utilities import list_registrations
+        return 200, list_registrations(api._store.project_root)
     if route.name == "project_git":
         return project_git_state.read_git(api)
     if route.name == "project_documents":
@@ -44,7 +50,8 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
             api._templates, api._providers, api._project(),
             registry=api._registry, offered_ids=api._offered_provider_ids)
     if route.name == "runs":
-        return studio_routes.list_runs(api._store, api._providers, computed_at=api._clock())
+        return studio_routes.list_runs(
+            api._store, api._providers, computed_at=api._clock(), registry=api._registry)
     if route.name == "tasks":
         return task_routes.list_tasks(api._tasks)
     if route.name == "task":
@@ -71,6 +78,15 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
     assert route.run_id is not None
     api._hold_route(route.run_id)
     recovered = api._store.read(route.run_id)
+    if route.name == "attempt_detail":
+        from .attempt_detail import read_attempt
+        return 200, read_attempt(api._store.project_root, recovered, route.node_id,
+                                 route.action_id, git=api._project_git)
     if route.name == "run":
-        return 200, studio_routes.recovered_payload(recovered, api._tasks, computed_at=api._clock())
+        from .checked_changes import checked_changes
+        result = studio_routes.recovered_payload(recovered, api._tasks, computed_at=api._clock())
+        changes = checked_changes(api._store.project_root, recovered)
+        if changes is not None:
+            result["checked_changes"] = changes
+        return 200, result
     return 200, api._controls(recovered.config)

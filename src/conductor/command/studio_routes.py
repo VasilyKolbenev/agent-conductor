@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from .adapters.provider import provider_projection
 from .adapters.base import AdapterContractError
+from .adapters.harness_profile import HarnessProfile
 from .policy_providers import task_channel_fact
 from .api_contracts import ApiRefusal
 from .studio_contracts import (
@@ -50,7 +51,7 @@ from .store_errors import RecordConflict, StoreError
 #: By MODULE, because `task_routes` imports this module back for `run_ids`;
 #: the name is looked up when `open_run` runs, never while either module is
 #: half built.
-from . import task_routes
+from . import demo_review, task_routes
 from .task_contracts import TaskBinding, frozen_config_task
 from .task_store import CorruptTask
 from .template_store import RouteNotOwned
@@ -111,14 +112,15 @@ def list_workflows(templates: "TemplateStore", providers,
 
 
 def _wizard_providers(providers, registry, offered_ids):
-    """Add the wizard's two facts at this route, without changing shared provider rows.
+    """Add the wizard's registered capability facts without changing shared provider rows.
 
     The offered set is the caller's reviewed V1 catalogue; the task channel
     comes only from the registered adapter class. An unresolved adapter has no
     known channel, even if its display contract names the provider.
     """
     offered = frozenset(offered_ids)
-    rows = provider_projection(providers)
+    rows = provider_projection(
+        providers, boundary=None if registry is None else registry.execution_boundary)
     for row in rows:
         row["offered"] = row["provider_id"] in offered
         adapter = None
@@ -129,7 +131,25 @@ def _wizard_providers(providers, registry, offered_ids):
                 pass
         row["task_channel"] = task_channel_fact(
             getattr(type(adapter), "profile", None)) if adapter is not None else None
+        row["model_pin_supported"] = _model_pin_supported(adapter)
     return rows
+
+
+def _model_pin_supported(adapter) -> bool | None:
+    profile = getattr(type(adapter), "profile", None)
+    return bool(profile.model_flag) if isinstance(profile, HarnessProfile) else None
+
+
+def _check_new_model_pins(asked, registry) -> None:
+    for row in asked.participants:
+        if row.model is None:
+            continue
+        try:
+            adapter = registry.resolve(row.provider_id)
+        except AdapterContractError:
+            continue  # Unknown capability, not proof this pin cannot be routed.
+        if _model_pin_supported(adapter) is False:
+            raise ApiRefusal.fixed("contract_invalid")
 
 
 def read_workflow(templates: "TemplateStore", workflow_id: str) -> Answer:
@@ -357,9 +377,9 @@ def refused_with(refused: DraftRefused) -> Answer:
         "diagnostics": [dict(row) for row in refused.diagnostics]}
 
 
-def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
+def _admitted_run_input(store: RunStore, body, hold_route, *, demo: bool) -> RunInput:
     """Check missing Windows identities before route metadata or staging."""
-    asked = parse_run(body)
+    asked = parse_run(body, demo=demo)
     if not store.run_path(asked.run_id).is_dir():
         store.admit_run_creation(asked.run_id)
     hold_route(asked.run_id)
@@ -369,7 +389,7 @@ def _admitted_run_input(store: RunStore, body, hold_route) -> RunInput:
 def open_run(
         store: "RunStore", templates: "TemplateStore", body: Mapping[str, Any],
         *, tasks: "TaskStore", clock, ids, reachable, judge_plan, publish,
-        hold_route) -> Answer:
+        hold_route, registry, demo: bool = False) -> Answer:
     """Open one run, and give it its plan in the same call.
 
     The standing run is looked for FIRST, before the task store, the clock,
@@ -389,11 +409,11 @@ def open_run(
     unrepresentable; re-reading a durable source between the gate and the
     write is the defect it was written for.
     """
-    asked = _admitted_run_input(store, body, hold_route)
+    asked = _admitted_run_input(store, body, hold_route, demo=demo)
     standing = _standing_run(store, asked.run_id)
     snapshot = _frozen_snapshot(asked, tasks, standing)
     checked = None if standing is not None else _judged_revision(
-        templates, asked, snapshot, reachable, judge_plan)
+        templates, asked, snapshot, reachable, judge_plan, registry)
     with store.transaction():
         hold_route(asked.run_id)
         standing = _standing_run(store, asked.run_id)
@@ -454,7 +474,7 @@ def _standing_binding(asked: RunInput, standing) -> TaskBinding | None:
     return bound
 
 
-def _judged_revision(templates, asked, snapshot, reachable, judge_plan):
+def _judged_revision(templates, asked, snapshot, reachable, judge_plan, registry):
     """Judge a run about to be created, and hand back the value that was judged.
 
     Only a run about to be CREATED is judged -- the caller has already looked
@@ -467,10 +487,14 @@ def _judged_revision(templates, asked, snapshot, reachable, judge_plan):
     gate and the write, which is exactly the defect this shape makes
     unrepresentable.
     """
-    _providers_are_configured(asked, reachable)
+    if asked.participants:
+        _providers_are_configured(asked, reachable)
+    _check_new_model_pins(asked, registry)
     if asked.workflow_id is None:
         return None
     checked = _workflow_revision(templates, asked)
+    if not asked.participants and checked.as_dict() != demo_review.template().as_dict():
+        raise ApiRefusal.fixed("contract_invalid")
     probe = materialize(
         checked, asked.binding, snapshot, graph_id=_PROBE_GRAPH,
         run_id=asked.run_id, created_at=_PROBE_AT)
@@ -613,16 +637,18 @@ def _task_payload(
             "unreadable": record is None}
 
 
-def list_runs(store: "RunStore", providers, *, computed_at: str) -> Answer:
+def list_runs(store: "RunStore", providers, *, computed_at: str, registry=None) -> Answer:
     """Every run in this project, and the roster this build resolved.
 
     Nothing here is stored and nothing here writes: every field of every row is
     computed from the run's own durable records, and the replay is ``read``
-    rather than ``recover``, so a listing repairs nothing either.
+    rather than ``recover``, so a listing repairs nothing either. The roster's road of
+    a task (``task_road``) is the answer of ``registry``, which fails closed when absent.
     """
     return 200, {
         "runs": [run_row(store, run_id, computed_at=computed_at) for run_id in run_ids(store)],
-        "providers": provider_projection(providers),
+        "providers": provider_projection(
+            providers, boundary=None if registry is None else registry.execution_boundary),
     }
 
 

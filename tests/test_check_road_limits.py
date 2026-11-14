@@ -8,6 +8,9 @@ provider facts a grant binds carry each adapter's channel with that bound, unit 
 """
 import hashlib
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -23,6 +26,12 @@ from tests.test_policy_driver import attach_driver, authorize
 from tests.test_policy_native_feedback import native_registry, run_state, terminal
 from tests.test_policy_runtime import NOW, Activation, propose
 from tests.test_project_ownership import activated
+
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 TEST_FILE = 19538  # MEASURED live (live-v5-8): the test file the old road could not hand a checker
 
@@ -203,31 +212,81 @@ def _edge_instruction(tmp_path):
     from tests import _fakekimi
     from tests.test_command_kimi_transport import a_request, run_once
     adapter, _root, log = _kimi(tmp_path, "cal", "Z")
-    assert run_once(adapter, a_request()).outcome == "succeeded"
-    argv = _fakekimi.prompt_spawns(log)[0]["argv"]
+    receipt = run_once(adapter, a_request())
+    assert receipt is not None and receipt.outcome == "succeeded"
+    prompts = _fakekimi.prompt_spawns(log)
+    assert len(prompts) == 1, "calibration must really run one short fixture task"
+    argv = prompts[0]["argv"]
     grow = COMMAND_LINE_LIMIT - command_line_units((*adapter._argv_prefix(), *argv))
     return "Z" * (1 + grow), command_line_units(argv[-1:]) + grow
 
 
 @pytest.mark.parametrize("over", [0, 1])
-def test_the_argv_channel_counts_its_pins_and_flags_and_refuses_one_unit_past_the_bound(tmp_path, over):
-    """Codex R1: the whole command line is bounded, not the task text; at the bound it runs, one past it
-    is refused before the claim with no task spawned and no marker left."""
-    from conductor.command.adapters._procgroup import COMMAND_LINE_LIMIT
-    from tests import _fakekimi
+def test_the_argv_channel_counts_its_pins_and_flags_and_refuses_one_unit_past_the_bound(
+        tmp_path, monkeypatch, over):
+    """At 32767 logical units the adapter reaches Popen; one more refuses before its claim.
+
+    Recording stops before the OS: the test-only Python prefix makes the physical fixture
+    command longer. The signed-Python test below independently witnesses the OS boundary.
+    """
+    from tests import _fakekimi, _fakeprocess
     from tests.test_command_kimi_transport import a_request, run_once
     edge, task_units = _edge_instruction(tmp_path)
-    adapter, root, log = _kimi(tmp_path, "run", edge + "Z" * over)  # "run" and "cal": one path length
-    receipt = run_once(adapter, a_request())
+    adapter, root, log = _kimi(tmp_path, "run", edge + "Z" * over)
+    physical = []
+
+    class TaskLaunchRecorded(Exception):
+        pass
+
+    class RecordingPhysicalPopen(subprocess.Popen):
+        def __init__(self, args, *positional, **options):
+            if "--prompt" in args:
+                physical.append(tuple(args))
+                raise TaskLaunchRecorded("task reached Popen; no OS task process was started")
+            super().__init__(args, *positional, **options)
+
+    monkeypatch.setattr(subprocess, "Popen", _fakeprocess.popen_for(
+        RecordingPhysicalPopen, windows=os.name == "nt"))
     marker = root / MARKER_DIR / "run-1" / "act-1.marker"
     if over:
-        assert receipt.detail == REFUSED and _fakekimi.prompt_spawns(log) == [] and not marker.exists()
-        assert task_units + over < COMMAND_LINE_LIMIT, "the task alone fits: the pins and flags refused it"
+        receipt = run_once(adapter, a_request())
+        assert receipt.detail == REFUSED and physical == [] and not marker.exists()
+        assert task_units + over < 32767, "the task alone fits: the pins and flags refused it"
     else:
-        # Started, not lost: CreateProcess took the command line at the bound (a launch it refused
-        # would read unknown). The Windows stand-in may still fail relaunching its own interpreter.
-        assert receipt.detail != REFUSED and marker.is_file(), "claimed and started at the bound"
-        assert receipt.outcome in ("succeeded", "failed"), (receipt.outcome, receipt.detail)
+        with pytest.raises(TaskLaunchRecorded):
+            run_once(adapter, a_request())
+        assert marker.is_file() and len(physical) == 1, "claimed and reached task Popen once"
+        logical = physical[0][1:] if os.name == "nt" else physical[0]
+        assert logical[:4] == (adapter._pin.executable, "--output-format", "text", "--prompt")
+        assert len(logical) == 5 and edge in logical[-1]
+        assert len(subprocess.list2cmdline(logical).encode("utf-16-le")) // 2 + 1 == 32767
+        expected = (sys.executable, *logical) if os.name == "nt" else logical
+        assert physical == [expected], "only the test backend adds the Python prefix"
+    assert _fakekimi.prompt_spawns(log) == [], "the boundary pair must not start a task child"
+    assert adapter._runner.active_tokens() == ()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="CreateProcess command-line boundary is Windows-only")
+@pytest.mark.parametrize("over", [0, 1])
+def test_windows_starts_signed_python_at_32767_units_and_refuses_32768(tmp_path, over):
+    """Actual CreateProcess, no fake PE or interpreter prefix added by the fixture backend.
+
+    The current Python's valid signature was checked for this environment before the run.
+    Count independently of the product helper; the child does no work beyond `pass`.
+    """
+    prefix = [sys.executable, "-I", "-S", "-B", "-c", "pass"]
+    base_units = len(subprocess.list2cmdline([*prefix, "Z"]).encode("utf-16-le")) // 2 + 1
+    argv = [*prefix, "Z" * (1 + 32767 - base_units + over)]
+    assert len(subprocess.list2cmdline(argv).encode("utf-16-le")) // 2 + 1 == 32767 + over
+    options = dict(cwd=tmp_path, env={}, capture_output=True, timeout=10,
+                   creationflags=subprocess.CREATE_NO_WINDOW)
+    if over:
+        with pytest.raises(OSError) as refused:
+            subprocess.run(argv, **options)
+        assert refused.value.winerror == 206
+    else:
+        completed = subprocess.run(argv, **options)
+        assert (completed.returncode, completed.stdout, completed.stderr) == (0, b"", b"")
 
 
 def test_a_non_bmp_task_the_old_count_admitted_is_refused_before_its_claim(tmp_path):
@@ -239,6 +298,60 @@ def test_a_non_bmp_task_the_old_count_admitted_is_refused_before_its_claim(tmp_p
     assert receipt.outcome == "failed" and receipt.detail == REFUSED
     assert _fakekimi.prompt_spawns(log) == []
     assert not (root / MARKER_DIR / "run-1" / "act-1.marker").exists()
+
+
+def _confined_dsh(tmp_path, name, instruction):
+    """A DSH harness confined for Windows over a recording entry; ``name`` keeps one path length."""
+    from conductor.command.adapters.dsh_harness import INSTRUCTION_DIR
+    from tests import test_command_dsh_harness as dsh_t
+    from tests._fakeboundary import confined
+    (tmp_path / name).mkdir()
+    adapter, root, log = dsh_t.a_harness(tmp_path / name)
+    path = root / INSTRUCTION_DIR / "instr-001.md"
+    path.write_text(instruction, encoding="utf-8", newline="\n")
+    return adapter, root, log, confined(adapter, tmp_path / name / "scratch")
+
+
+def _confined_dsh_edge(tmp_path):
+    """An instruction whose BOUNDARIED command line is exactly the bound, and that command line.
+
+    One short pass measures the argv the confined spawn really ran, the two Node flags and the
+    real path of the entry included; each further character of the instruction is one unit.
+    """
+    from conductor.command.adapters._procgroup import COMMAND_LINE_LIMIT, command_line_units
+    from tests import test_command_dsh_harness as dsh_t
+    adapter, _root, _log, runner = _confined_dsh(tmp_path, "cal", "Z")
+    assert dsh_t.run_once(adapter, dsh_t.a_request()).outcome == "succeeded"
+    assert runner.runs[-1].inside, "the calibration task did not start inside the entry"
+    argv = runner.runs[-1].argv
+    return "Z" * (1 + COMMAND_LINE_LIMIT - command_line_units(argv)), argv
+
+
+@pytest.mark.parametrize("over", [0, 1])
+def test_a_confined_dsh_task_is_sized_by_the_argv_its_boundaried_spawn_runs(tmp_path, over):
+    """The boundaried DSH argv is longer than the pins (Node flags, the entry's real path): a task
+    one unit past the bound of THAT argv is refused before its claim, with nothing started; at the
+    bound it is claimed and starts inside the entry. Sized by the plain pins, both would pass."""
+    from conductor.command.adapters._procgroup import COMMAND_LINE_LIMIT, command_line_units
+    from conductor.command.adapters.dsh_harness import MARKER_DIR as DSH_MARKER_DIR
+    from tests import _fakedsh
+    from tests import test_command_dsh_harness as dsh_t
+    edge, calibrated = _confined_dsh_edge(tmp_path)
+    adapter, root, log, runner = _confined_dsh(tmp_path, "run", edge + "Z" * over)
+    tail = calibrated[len(adapter._boundary_prefix()):]
+    plain_units = command_line_units((*adapter._argv_prefix(), *tail)) + over
+    assert plain_units < COMMAND_LINE_LIMIT, "the plain count must admit it, or this proves nothing"
+    receipt = dsh_t.run_once(adapter, dsh_t.a_request())
+    marker = root / DSH_MARKER_DIR / "run-1" / "act-1.marker"
+    if over:
+        assert (receipt.outcome, receipt.detail) == ("failed", REFUSED)
+        assert _fakedsh.task_spawns(log) == [] and not marker.exists(), "claimed past the bound"
+        assert runner.entries == [] and not any(run.inside for run in runner.runs)
+    else:
+        assert receipt.detail != REFUSED and marker.is_file(), "claimed and started at the bound"
+        assert receipt.outcome in ("succeeded", "failed"), (receipt.outcome, receipt.detail)
+        assert len(runner.entries) == 1 and runner.runs[-1].inside
+        assert command_line_units(runner.runs[-1].argv) == COMMAND_LINE_LIMIT
 
 
 def test_an_argv_providers_facts_freeze_its_command_line_bound_so_a_new_bound_needs_a_new_grant(

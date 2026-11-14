@@ -1,8 +1,10 @@
-"""A deterministic stand-in for a pinned Claude Code binary, and a REAL executable.
+"""A deterministic stand-in for a pinned Claude Code binary, run as a real child process.
 
 Claude Code installs as a native binary, so its adapter pins ONE absolute path
-and puts nothing in front of it. The executable is built by ``tests/_fakeexe.py``,
-which produces a file the operating system really runs with no shell involved.
+and puts nothing in front of it. The one file is built by ``tests/_fakeexe.py`` and no
+shell is involved. What starts it is that module's narrow statement: off Windows the
+operating system runs it; on Windows pytest's ``tests/_fakeprocess.py`` seam (522bbf0)
+starts it with the current Python, so native PE startup is not proven here.
 
 Every branch this child takes is chosen by a ``FAKECLAUDE_*`` environment knob
 rather than by timing, an install, or a network, and importing this module never
@@ -80,7 +82,7 @@ import sys
 import time
 from pathlib import Path
 
-from tests import _fakeexe
+from tests import _fakeexe, _fakehome
 
 #: Where each spawn appends its one JSON line.
 SPAWN_LOG = "FAKECLAUDE_SPAWN_LOG"
@@ -149,6 +151,21 @@ LOGIN_ANSWERS = {
     "key_source": {"loggedIn": True, "authMethod": "claude.ai",
                    "apiProvider": "firstParty", "subscriptionType": "max",
                    "apiKeySource": "ANTHROPIC_API_KEY"},
+    #: A token that came from the environment or a file descriptor. By the bytes of
+    #: the pinned 2.1.239 (read, not run) the status then answers `authMethod:
+    #: "oauth_token"` and names no plan (the plan is added for `claude.ai` only):
+    #: this is the shape the binary builds, and it is refused by the method clause.
+    "env_token": {"loggedIn": True, "authMethod": "oauth_token",
+                  "apiProvider": "firstParty"},
+    #: The same method beside a valid plan, so the method clause alone refuses it.
+    "env_token_plan": {"loggedIn": True, "authMethod": "oauth_token",
+                       "apiProvider": "firstParty", "subscriptionType": "max"},
+    #: SYNTHETIC, not measured: the status of 2.1.239 never prints `tokenSource` (it is a
+    #: key of the control channel's account object, `claude_quota._control_usage`). It is
+    #: here beside every other clause satisfied, to keep the defence-in-depth clause killed.
+    "token_source": {"loggedIn": True, "authMethod": "claude.ai",
+                     "apiProvider": "firstParty", "subscriptionType": "max",
+                     "tokenSource": "CLAUDE_CODE_OAUTH_TOKEN"},
     #: Signed OUT while still naming the method it last used.
     "stale": {"loggedIn": False, "authMethod": "claude.ai",
               "apiProvider": "firstParty", "subscriptionType": "max"},
@@ -211,6 +228,14 @@ HOME_FILE = "FAKECLAUDE_HOME_FILE"
 #: itself would put that token in the runner's own scan set -- and a test would
 #: watch the OLD scan catch it and conclude that nothing was missing.
 REFRESH_LOGIN = "FAKECLAUDE_REFRESH_LOGIN"
+#: Add the spawn's own report of what its config directory held when it began (`_fakehome`):
+#: file names and whether a refresh token stood in a credential, never a value.
+HOME_REPORT = "FAKECLAUDE_HOME_REPORT"
+#: Rewrite `accessToken` of the credential in this child's own config directory with this value
+#: (HEX, for the reason `REFRESH_LOGIN` is) and print it. Unlike `REFRESH_LOGIN` the rest of the
+#: document stays, so the file is still in the shape a relay admits: the case of a vendor that
+#: renews its own access token, which only a reading of the relay home after the spawn can see.
+ROTATE_ACCESS = "FAKECLAUDE_ROTATE_ACCESS"
 #: `name:text` written into this child's own config directory during the LOGIN
 #: STATUS spawn -- the preflight, not the task. A rule that stops a task running
 #: and a rule that refuses one that has already run are different rules, and
@@ -267,7 +292,10 @@ except ImportError:  # pragma: no cover -- never on a configured tree
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
-    """A REAL single-file executable standing in for the pinned claude binary."""
+    """The single file pinned as the claude binary, or None where none can be built.
+
+    How it starts is the narrow statement in the module docstring of ``tests/_fakeexe.py``.
+    """
     return _fakeexe.build(directory, "claude", "_fakeclaude")
 
 
@@ -429,6 +457,8 @@ def _record(argv: list[str], task: dict | None, marker: dict | None,
         "marker": marker,
         "frame": frame,
     }
+    if os.environ.get(HOME_REPORT) and os.environ.get(CLAUDE_HOME_NAME):
+        row["home_report"] = _fakehome.report(os.environ[CLAUDE_HOME_NAME])
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -475,6 +505,12 @@ def _run_prompt(checker=False, fix: str | None = None) -> int:
         (Path(env[CLAUDE_HOME_NAME]) / ".credentials.json").write_text(
             json.dumps({"claudeAiOauth": {"accessToken": fresh}}),
             encoding="utf-8", newline="\n")
+        sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
+    if env.get(ROTATE_ACCESS) and env.get(CLAUDE_HOME_NAME):
+        fresh = bytes.fromhex(env[ROTATE_ACCESS]).decode("utf-8")
+        _fakehome.rotate(env[CLAUDE_HOME_NAME], ".credentials.json",
+                         ("claudeAiOauth", "accessToken"), fresh)
         sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
     if env.get(EMIT_STDOUT):

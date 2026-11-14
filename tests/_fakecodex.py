@@ -1,9 +1,11 @@
-"""A deterministic stand-in for a pinned Codex CLI binary, and a REAL executable.
+"""A deterministic stand-in for a pinned Codex CLI binary, run as a real child process.
 
 Codex CLI installs as a native binary -- the npm package vendors one and spawns
 it through a shim -- so its adapter pins ONE absolute path and puts nothing in
-front of it. The executable is built by ``tests/_fakeexe.py``, which produces a
-file the operating system really runs with no shell involved.
+front of it. The one file is built by ``tests/_fakeexe.py`` and no shell is involved.
+What starts it is that module's narrow statement: off Windows the operating system
+runs it; on Windows pytest's ``tests/_fakeprocess.py`` seam (522bbf0) starts it with
+the current Python, so native PE startup is not proven here.
 
 Every branch this child takes is chosen by a ``FAKECODEX_*`` environment knob
 rather than by timing, an install, or a network, and importing this module never
@@ -84,7 +86,7 @@ import sys
 import time
 from pathlib import Path
 
-from tests import _fakeexe
+from tests import _fakeexe, _fakehome
 from tests._fakeenv import probe_report
 
 #: Where each spawn appends its one JSON line.
@@ -100,9 +102,9 @@ VERSION_FAILS = "FAKECODEX_VERSION_FAILS"
 #: signed-in answer, so a subscription test about something else is not forced
 #: to arrange a login first.
 LOGIN_FAILS = "FAKECODEX_LOGIN_FAILS"
-#: Which login the STATUS spawn reports, in this vendor's own words. MEASURED on
-#: 0.112.0: both of the first two exit 0, and a file holding a subscription AND
-#: a key answers with the key.
+#: Which login the STATUS spawn reports, in the measured 0.164.0 wording. Both
+#: subscription and API-key-only status exit 0; the relay checks mixed credentials
+#: separately rather than trusting the status sentence to disclose the API-key slot.
 LOGIN_METHOD = "FAKECODEX_LOGIN_METHOD"
 #: `name:text` written into this child's own `CODEX_HOME` during the LOGIN
 #: STATUS spawn -- the preflight, not the task. It exists so a road can be shown
@@ -111,7 +113,8 @@ LOGIN_METHOD = "FAKECODEX_LOGIN_METHOD"
 PREFLIGHT_HOME_FILE = "FAKECODEX_PREFLIGHT_HOME_FILE"
 LOGIN_ANSWERS = {
     "subscription": "Logged in using ChatGPT",
-    "api_key": "Logged in using an API key - sk-synth***key",
+    "api_key": "API key configured - sk-synth***key\n"
+               "Authentication is checked when you send a request.",
     "none": "Not logged in",
     #: Exits 0 and says nothing this build recognises -- a localized build, a
     #: future wording, a banner where the verdict should be. It is the only
@@ -177,6 +180,13 @@ NO_LAST_MESSAGE = "FAKECODEX_NO_LAST_MESSAGE"
 #: Put a DIRECTORY where the file should be, for the kind the adapter refuses to
 #: read as a message.
 LAST_MESSAGE_DIRECTORY = "FAKECODEX_LAST_MESSAGE_DIRECTORY"
+#: Add the spawn's own report of what its `CODEX_HOME` held when it began (`_fakehome`): file
+#: names and whether a refresh token stood in a credential, never a value.
+HOME_REPORT = "FAKECODEX_HOME_REPORT"
+#: Rewrite `tokens.access_token` of `auth.json` in this child's own `CODEX_HOME` with this value
+#: (HEX, so the value is not in the environment the runner scans) and print it: a vendor that
+#: renews its own access token, in a file that keeps the shape a relay admits.
+ROTATE_ACCESS = "FAKECODEX_ROTATE_ACCESS"
 
 #: The closed form of the leak probe token. It arrives ONLY inside the piped
 #: task, never through the environment, so the scan needs no exemption for the
@@ -220,7 +230,10 @@ except ImportError:  # pragma: no cover -- never on a configured tree
 
 
 def build_executable(directory: str | os.PathLike[str]) -> Path | None:
-    """A REAL single-file executable standing in for the pinned codex binary."""
+    """The single file pinned as the codex binary, or None where none can be built.
+
+    How it starts is the narrow statement in the module docstring of ``tests/_fakeexe.py``.
+    """
     return _fakeexe.build(directory, "codex", "_fakecodex")
 
 
@@ -380,6 +393,8 @@ def _record(argv: list[str], task: dict | None, marker: dict | None,
         "marker": marker,
         "last_message": last_message,
     }
+    if os.environ.get(HOME_REPORT) and home:
+        row["home_report"] = _fakehome.report(home)
     with open(log, "a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(row, sort_keys=True) + "\n")
 
@@ -416,6 +431,11 @@ def _run_task(checker=False) -> int:
         return _run_verdict(env)
     if env.get(WRITE_FILE):
         _write_pair(Path.cwd(), env[WRITE_FILE])
+    if env.get(ROTATE_ACCESS) and env.get(CODEX_HOME_NAME):
+        fresh = bytes.fromhex(env[ROTATE_ACCESS]).decode("utf-8")
+        _fakehome.rotate(env[CODEX_HOME_NAME], "auth.json", ("tokens", "access_token"), fresh)
+        sys.stdout.buffer.write(fresh.encode("utf-8") + b"\n")
+        sys.stdout.buffer.flush()
     if env.get(EMIT_STDOUT):
         sys.stdout.buffer.write(env[EMIT_STDOUT].encode("utf-8") + b"\n")
         sys.stdout.buffer.flush()
@@ -458,7 +478,8 @@ def main() -> int:
     checker = (task_text.startswith("conduct independent verification")
                and any(argv[index:index + 2] == ["--sandbox", "read-only"]
                        for index in range(len(argv))))
-    written = _write_last_message(argv)
+    exit_name = VERDICT_EXIT if checker and os.environ.get(EMIT_VERDICT) else EXIT
+    written = _write_last_message(argv) if int(os.environ.get(exit_name, "0")) == 0 else None
     if not task["read"]:
         _record(argv, task, None, written)
         return _run_task(checker)

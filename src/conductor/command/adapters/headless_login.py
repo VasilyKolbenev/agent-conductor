@@ -24,9 +24,17 @@ can be absent or expired, it is proved before a task is spawned, by the vendor's
 own status command -- read for the METHOD it names, because both vendors answer
 an API key with the same exit code they answer a subscription with.
 
+A harness that has a relay (``HarnessProfile.login_relay``) is the one exception
+to the second road for a TASK attempt of a confined transport: its child is
+pointed at a relay home that holds a copy of the access token and no refresh
+token, never at the pinned directory (``relay_attempt``). The questions that
+precede a task (version, login status) and a quota read still stand on the
+pinned directory, as they always did.
+
 What a mixin needs from the class it is mixed into is stated rather than
-assumed: ``profile``, ``_attempt``, ``_receipt`` and ``_login_residue``, all of
-them ``HeadlessCliTransport``'s.
+assumed: ``profile``, ``_attempt``, ``_receipt``, ``_login_residue``,
+``_relayed``, ``_route_selected`` and ``_unready``, all of them
+``HeadlessCliTransport``'s.
 """
 from __future__ import annotations
 
@@ -59,15 +67,20 @@ class LoginRoad:
         auth, auth_home = self._login()
         return auth_home if auth == SUBSCRIPTION else ""
 
-    def _home_value(self, home: Path) -> str:
+    def _home_value(self, home: Path, mode: str | None = None) -> str:
         """What the child's home environment variable is set to for this spawn.
 
         The minted, doomed directory on the API-key road; the operator's pinned
-        login directory on the subscription one. It is the same variable either
-        way -- no new name is invented for a login -- and it is the only value
-        this road changes about a spawn.
+        login directory on the subscription one -- except for a TASK attempt of
+        a harness that has a relay, which is handed its relay home instead
+        (``_relayed``; ``home`` is then that relay home, never the real login).
+        ``mode`` is the task attempt's mode and is absent for every other spawn
+        (a version print, a login status, a quota read), which stand on the real
+        login, as does any spawn of a transport that was never confined. It is
+        the same variable either way -- no new name is invented for a login --
+        and it is the only value this road changes about a spawn.
         """
-        return self._signed_in_road() or str(home)
+        return str(home) if self._relayed(mode) else self._signed_in_road() or str(home)
 
     def _login_preflight(
             self, request: ActionRequest) -> ActionResultReceipt | None:
@@ -105,6 +118,10 @@ class LoginRoad:
                 f"this build cannot establish a subscription login for the "
                 f"pinned {profile.tool_noun} build, so no task was spawned")
         outcome = self._attempt_login_status(request)
+        if outcome.status == "timed_out":
+            return self._receipt(
+                request, "failed", None,
+                f"the {profile.tool_noun} subscription login check timed out, so no task was spawned")
         answered = (outcome.status == "completed" and outcome.exit_code == 0
                     and not outcome.output_truncated)
         if answered and self._login_method_admitted(outcome.output):
@@ -154,8 +171,15 @@ class LoginRoad:
         had excluded. The names that can carry configuration or trust are
         therefore declared per provider and refused here, before the spawn that
         would read them.
+
+        On a relay road the ENVIRONMENT is judged first and for the same reason: the version
+        print and the login status are put to the real login home with it, and a name in it that
+        replaces the login or reroutes its traffic (``relay_attempt._route_selected``) must be
+        refused before either of them, not after.
         """
         profile = self.profile
+        if self._route_selected():
+            return self._unready(request, "env")
         if not self._signed_in_road() or not profile.login_forbidden:
             return None
         if not self._login_home_grants(self._signed_in_road()):
@@ -204,6 +228,16 @@ class LoginRoad:
         return login_home.credential_values(
             auth_home, self.profile.login_credentials)
 
+    def _spawn_secrets(self) -> tuple[bytes, ...]:
+        """The values the runner scans ONE spawn's output for, read as that spawn is built.
+
+        The whole login set, ``_login_secrets``, unless a transport says otherwise. A transport
+        whose spawn is a native metadata exchange overrides THIS and nothing else, because
+        ``_login_secrets`` is what publication and the checker read, in any thread, and it stays
+        whole. It is called only inside an attempt, and attempts go by turns of the workspace.
+        """
+        return self._login_secrets()
+
     def _begin_road(self) -> None:
         """Re-derive everything one ROAD may report, before it reports any of it.
 
@@ -222,6 +256,8 @@ class LoginRoad:
         self._retained = 0
         self._login_residue = 0
         self._login_seen = ()
+        self._credential_readback_untrusted = False
+        self._login_account = None
 
     def _remember_login_values(self) -> None:
         """Add the login as it stands NOW to what this road has seen.
@@ -232,6 +268,10 @@ class LoginRoad:
         from either alone looks for the wrong secret in material that carries
         the other.
         """
+        spec = self.profile.login_relay
+        required = (spec.credential,) if spec is not None else ()
+        self._credential_readback_untrusted |= not login_home.credential_readback_trusted(
+            self._signed_in_road(), self.profile.login_credentials, required)
         self._login_seen = tuple(dict.fromkeys(
             (*self._login_seen, *self._login_secrets())))
 
@@ -248,7 +288,9 @@ class LoginRoad:
         it is holding, and the contract this build makes about that directory is
         a contract about lifetime.
 
-        ONE field, deliberately. `_retained` and `_login_residue` are read by
+        ONE sample, deliberately: the values this road saw and the readiness it
+        proved for a relay attempt that did not come (`_relay_ready` holds the
+        real credential's secrets). `_retained` and `_login_residue` are read by
         receipts this road has not finished building yet, and clearing them
         here would erase what those receipts have to say. This is not the
         symmetric opposite of `_begin_road` and must not be made into one.
@@ -258,6 +300,17 @@ class LoginRoad:
         stops holding the reference when the road that took it is over.
         """
         self._login_seen = ()
+        self._relay_ready = None
+        self._credential_readback_untrusted = False
+        self._login_account = None
+
+    def _record_login_account(self, request, actor, role, proof):
+        """Persist only a proof captured under the task's own relay lease."""
+        record = getattr(getattr(self, "_handoff", None), "record_subscription_account", None)
+        if (proof is not None and callable(record)
+                and self._handoff.named_proposal(request) is not None):
+            record(request, actor_instance_id=actor, adapter_id=self.manifest.adapter_id,
+                   role=role, proof=proof)
 
     def _keep_login_values(self, relation: tuple[str, str, str, str]) -> None:
         """Hand what this road has seen to the attempt it belongs to.
@@ -313,10 +366,12 @@ class LoginRoad:
         for the same reason, it may not raise: an exception here would skip the
         attempt home's own discard and replace the outcome of the spawn.
 
-        Only what APPEARED is judged, and only what appeared is taken back.
-        Whatever the operator's own login put there before this build ever ran
-        is theirs, and a product that refused over it -- or deleted it -- would
-        be acting on the credential it was pointed at.
+        Only what APPEARED is judged, and only what appeared is taken back --
+        except a SQLite companion (`-wal`, `-shm`) beside a database that stood
+        before the spawn: it appeared, but it belongs to that database and stays
+        (`login_home.take_back`). Whatever the operator's own login put there
+        before this build ever ran is theirs, and a product that refused over it
+        -- or deleted it -- would be acting on the credential it was pointed at.
 
         A measurement this build could not take counts as residue rather than as
         a clean directory: a promise that could not be checked was not kept.

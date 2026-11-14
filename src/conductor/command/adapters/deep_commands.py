@@ -32,7 +32,9 @@ DEEP_PROTOCOL_FLAGS = MappingProxyType({
 DEEP_WORKING_DIRECTORY = "work"
 DEEP_OUTPUT_PROFILE = "bounded-jsonl-v1"
 DEEP_OUTPUT_LIMIT = 16 * 1024
-DISPATCH_PROFILES = frozenset({"implement", "review"})
+PATCH_PROFILE = "implement-patch-v1"
+PATCH_DISPATCH_PROFILES = MappingProxyType({"codex": PATCH_PROFILE})
+DISPATCH_PROFILES = frozenset({"implement", "review", PATCH_PROFILE})
 #: What each output-limit profile MEANS, in bytes a child may write.
 #:
 #: The profile has been a validated word with no consequence: every dispatch
@@ -52,6 +54,10 @@ OUTPUT_LIMIT_BYTES = MappingProxyType({"small": 4 * 1024, "normal": 16 * 1024})
 #: no byte count is a word the schema would admit and the spawn could not honour.
 OUTPUT_LIMIT_PROFILES = frozenset(OUTPUT_LIMIT_BYTES)
 REVIEW_PROFILES = frozenset({"quality", "security", "spec"})
+GROK_PROVIDER_ID = "grok-build"
+GROK_SESSION_PHASE = "session-phase-v1"
+#: A registration can restrict a known wire capability, but cannot claim another provider's wire.
+REVIEW_DIAGNOSTICS = MappingProxyType({GROK_PROVIDER_ID: GROK_SESSION_PHASE})
 #: UNREACHABLE IN THIS RELEASE, and said here rather than discovered later.
 #:
 #: This and the three below belong to the `evidence`, `stop`, `retry` and
@@ -72,6 +78,13 @@ REQUESTED_EVIDENCE_KINDS = frozenset({"result", "diff", "tests", "status"})
 STOP_REASONS = frozenset({"user", "timeout", "switch"})
 RETRY_REASONS = frozenset({
     "failed", "unknown", "verification_failed", "user"})
+
+
+def review_preview_fields(reviews):
+    """Project optional display fields from already validated (step ID, arguments) pairs."""
+    marked = [step_id for step_id, args in reviews
+              if args.get("grok_diagnostic") == GROK_SESSION_PHASE]
+    return {"grok_diagnostic_steps": marked} if marked else {}
 
 
 class _StrictArguments:
@@ -215,10 +228,12 @@ class DeepReviewArgs(_StrictArguments):
     #: The run's task, exactly as on `DeepDispatchArgs`: a review stands in the
     #: same directory the work it reviews was written to.
     work_scope: "str | _Omitted" = OMITTED
+    grok_diagnostic: "str | _Omitted" = OMITTED
     _FIELDS = frozenset({
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose", "work_scope"})
-    _OPTIONAL_FIELDS = frozenset({"result_artifact_ref", "step_purpose", "work_scope"})
+        "review_profile", "step_purpose", "work_scope", "grok_diagnostic"})
+    _OPTIONAL_FIELDS = frozenset({
+        "result_artifact_ref", "step_purpose", "work_scope", "grok_diagnostic"})
     _ARRAY_FIELDS = frozenset({"target_artifact_refs"})
 
     def __post_init__(self) -> None:
@@ -232,6 +247,8 @@ class DeepReviewArgs(_StrictArguments):
         object.__setattr__(self, "review_profile", _enum(
             "review_profile", self.review_profile,
             REVIEW_PROFILES))
+        if self.grok_diagnostic is not OMITTED:
+            _enum("grok_diagnostic", self.grok_diagnostic, frozenset({GROK_SESSION_PHASE}))
         settle_step_purpose(self)
         _settle_work_scope(self)
 

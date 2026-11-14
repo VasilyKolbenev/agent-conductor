@@ -55,7 +55,7 @@ from tests.test_command_grok_transport import (
 _COMMITS = ("abc1234", "unknown", "def0", "0123456789abcdef" * 2 + "01234567")
 _CHANNELS = ("", " [stable]", " [alpha]")
 ACCEPTED_FORMS = tuple(
-    f"grok 1.0.5 ({commit}){channel}"
+    f"grok 1.0.13 ({commit}){channel}"
     for commit in _COMMITS for channel in _CHANNELS)
 
 
@@ -68,9 +68,9 @@ def test_the_accepted_set_is_the_whole_cross_product_and_nothing_was_dropped():
     """
     assert len(ACCEPTED_FORMS) == len(_COMMITS) * len(_CHANNELS)
     assert len(ACCEPTED_FORMS) == 12
-    assert "grok 1.0.5 (abc1234)" in ACCEPTED_FORMS, "a commit with no channel"
-    assert "grok 1.0.5 (unknown)" in ACCEPTED_FORMS, "the git-less fallback"
-    assert all(form.startswith("grok 1.0.5 (") for form in ACCEPTED_FORMS), (
+    assert "grok 1.0.13 (abc1234)" in ACCEPTED_FORMS, "a commit with no channel"
+    assert "grok 1.0.13 (unknown)" in ACCEPTED_FORMS, "the git-less fallback"
+    assert all(form.startswith("grok 1.0.13 (") for form in ACCEPTED_FORMS), (
         "the program name and the commit are not optional in any published form")
 
 
@@ -103,12 +103,12 @@ def test_every_published_form_of_the_version_print_is_accepted(tmp_path, printed
 #: reachable through the binary, and a probe on `dcfd7af` found this preflight
 #: ADMITTING all four -- which is the whole reason they are written down here.
 CRATE_ONLY_FORMS = (
-    "1.0.5",
-    "grok 1.0.5",
-    "1.0.5 [alpha]",
-    "1.0.5 (abc1234)",
-    "1.0.5 (abc1234) [stable]",
-    "grok 1.0.5 [stable]",
+    "1.0.13",
+    "grok 1.0.13",
+    "1.0.13 [alpha]",
+    "1.0.13 (abc1234)",
+    "1.0.13 (abc1234) [stable]",
+    "grok 1.0.13 [stable]",
 )
 #: Commit CONTENTS no road through `build.rs` can emit. `git rev-parse --short`
 #: writes lowercase hex of 4 to 40 digits, and the one fallback writes one
@@ -124,7 +124,7 @@ CRATE_ONLY_FORMS = (
 #: length at all is what this parser accepted next, so both ends are witnessed
 #: rather than argued.
 UNPUBLISHED_COMMITS = (
-    "zzzzzzz", "ABC1234", "Unknown", "unknown2", "../../etc", "1.0.5", "abc 1234",
+    "zzzzzzz", "ABC1234", "Unknown", "unknown2", "../../etc", "1.0.13", "abc 1234",
     "",
     "a", "aaa", "a" * 41, "a" * 200,
 )
@@ -137,37 +137,37 @@ REFUSED_FORMS = (
     *(("crate-only", form) for form in CRATE_ONLY_FORMS),
     # a different version, dressed correctly in every other part
     ("version", "grok 1.0.4 (abc1234) [stable]"),
-    ("version", "grok 1.0.50 (abc1234)"),
-    ("version", "grok 1.0.5.1 (abc1234)"),
-    ("version", "grok 1.0.5-rc.1 (abc1234)"),
-    ("version", "grok 1.0.5+meta (abc1234)"),
-    ("version", "grok 01.0.5 (abc1234)"),
+    ("version", "grok 1.0.130 (abc1234)"),
+    ("version", "grok 1.0.13.1 (abc1234)"),
+    ("version", "grok 1.0.13-rc.1 (abc1234)"),
+    ("version", "grok 1.0.13+meta (abc1234)"),
+    ("version", "grok 01.0.13 (abc1234)"),
     ("version", "grok 1.0 (abc1234)"),
     # a prefix that is not the program name
-    ("prefix", "krog 1.0.5 (abc1234)"),
-    ("prefix", "grok  1.0.5 (abc1234)"),
-    ("prefix", "GROK 1.0.5 (abc1234)"),
-    ("prefix", "Grok 1.0.5 (abc1234)"),
-    ("prefix", "grok-build 1.0.5 (abc1234)"),
-    ("prefix", "the grok 1.0.5 (abc1234)"),
-    ("prefix", "grok v1.0.5 (abc1234)"),
+    ("prefix", "krog 1.0.13 (abc1234)"),
+    ("prefix", "grok  1.0.13 (abc1234)"),
+    ("prefix", "GROK 1.0.13 (abc1234)"),
+    ("prefix", "Grok 1.0.13 (abc1234)"),
+    ("prefix", "grok-build 1.0.13 (abc1234)"),
+    ("prefix", "the grok 1.0.13 (abc1234)"),
+    ("prefix", "grok v1.0.13 (abc1234)"),
     # a commit whose CONTENTS the build script cannot emit
-    *(("commit", f"grok 1.0.5 ({commit})") for commit in UNPUBLISHED_COMMITS),
+    *(("commit", f"grok 1.0.13 ({commit})") for commit in UNPUBLISHED_COMMITS),
     # a commit that is not a parenthesised token at all
-    ("commit-shape", "grok 1.0.5 abc1234"),
-    ("commit-shape", "grok 1.0.5 (abc1234"),
-    ("commit-shape", "grok 1.0.5 ((abc1234))"),
-    ("commit-shape", "grok 1.0.5(abc1234)"),
+    ("commit-shape", "grok 1.0.13 abc1234"),
+    ("commit-shape", "grok 1.0.13 (abc1234"),
+    ("commit-shape", "grok 1.0.13 ((abc1234))"),
+    ("commit-shape", "grok 1.0.13(abc1234)"),
     # a channel the sources do not publish
-    ("channel", "grok 1.0.5 (abc1234) [beta]"),
-    ("channel", "grok 1.0.5 (abc1234) [STABLE]"),
-    ("channel", "grok 1.0.5 (abc1234) stable"),
-    ("channel", "grok 1.0.5 (abc1234) [stable] [alpha]"),
-    ("channel", "grok 1.0.5 (abc1234)[stable]"),
+    ("channel", "grok 1.0.13 (abc1234) [beta]"),
+    ("channel", "grok 1.0.13 (abc1234) [STABLE]"),
+    ("channel", "grok 1.0.13 (abc1234) stable"),
+    ("channel", "grok 1.0.13 (abc1234) [stable] [alpha]"),
+    ("channel", "grok 1.0.13 (abc1234)[stable]"),
     # anything extra on the line
-    ("extra", "grok 1.0.5 (abc1234) extra"),
-    ("extra", "grok 1.0.5 (abc1234) [stable] warning"),
-    ("extra", "(1.0.5)"),
+    ("extra", "grok 1.0.13 (abc1234) extra"),
+    ("extra", "grok 1.0.13 (abc1234) [stable] warning"),
+    ("extra", "(1.0.13)"),
     ("extra", "abc1234"),
     ("extra", ""),
     ("extra", "warning: cache is stale"),
@@ -202,14 +202,14 @@ def test_no_other_shape_is_read_as_the_reviewed_version(tmp_path, category, prin
 #: still refuses for the reason its category names rather than for want of a
 #: part that the tightened pattern now requires anyway.
 REFUSED_BYTES = (
-    ("multiline", b"warning: stale\ngrok 1.0.5 (abc1234)\n"),
-    ("multiline", b"grok 1.0.4 (abc1234)\ngrok 1.0.5 (abc1234)\n"),
-    ("non-utf8", b"\xff\xfegrok 1.0.5 (abc1234)"),
-    ("non-utf8", b"grok \xc3(1.0.5)"),
-    ("non-utf8", b"\xef\xbb\xbfgrok 1.0.5 (abc1234)"),
-    ("non-utf8", "grok 1.0.5 (abc1234)".encode("utf-16-le")),
-    ("control", b"grok 1.0.5 (abc1234)\x00"),
-    ("control", b"\x1b[32mgrok 1.0.5 (abc1234)\x1b[0m"),
+    ("multiline", b"warning: stale\ngrok 1.0.13 (abc1234)\n"),
+    ("multiline", b"grok 1.0.4 (abc1234)\ngrok 1.0.13 (abc1234)\n"),
+    ("non-utf8", b"\xff\xfegrok 1.0.13 (abc1234)"),
+    ("non-utf8", b"grok \xc3(1.0.13)"),
+    ("non-utf8", b"\xef\xbb\xbfgrok 1.0.13 (abc1234)"),
+    ("non-utf8", "grok 1.0.13 (abc1234)".encode("utf-16-le")),
+    ("control", b"grok 1.0.13 (abc1234)\x00"),
+    ("control", b"\x1b[32mgrok 1.0.13 (abc1234)\x1b[0m"),
     ("digits", "grok \u0661.\u0660.\u0665 (abc1234)".encode("utf-8")),
 )
 
@@ -237,7 +237,7 @@ def test_the_one_byte_sequence_that_is_the_reviewed_version_is_accepted():
     exe_free = GrokBuildAdapter.__new__(GrokBuildAdapter)
 
     assert GrokBuildAdapter._version_matches(
-        exe_free, b"grok 1.0.5 (abc1234) [stable]\n") is True
+        exe_free, b"grok 1.0.13 (abc1234) [stable]\n") is True
 
 
 #: A correct first line FOLLOWED by other output. Accepted, and named here rather
@@ -247,9 +247,9 @@ def test_the_one_byte_sequence_that_is_the_reviewed_version_is_accepted():
 #: never fished past, which the refusal matrix holds -- and that trailing chatter
 #: from a reviewed build does not stop a dispatch it should not stop.
 TOLERATED_TRAILING = (
-    b"grok 1.0.5 (abc1234)\nsecond line\n",
-    b"\n\ngrok 1.0.5 (unknown)\nmore\n",
-    b"grok 1.0.5 (abc1234) [stable]\nwarning: cache is stale\n",
+    b"grok 1.0.13 (abc1234)\nsecond line\n",
+    b"\n\ngrok 1.0.13 (unknown)\nmore\n",
+    b"grok 1.0.13 (abc1234) [stable]\nwarning: cache is stale\n",
 )
 
 
@@ -279,14 +279,14 @@ def test_a_banner_before_the_version_is_never_fished_past(unused=None):
     unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
 
     assert GrokBuildAdapter._version_matches(
-        unbound, b"warning: cache is stale\ngrok 1.0.5 (abc1234)\n") is False
+        unbound, b"warning: cache is stale\ngrok 1.0.13 (abc1234)\n") is False
 
 
 def test_an_executable_that_prints_only_a_semver_never_clears_the_preflight():
     """The MAJOR this matrix was rebuilt for, held as one named claim.
 
     A pattern that made the program name and the commit optional accepted the
-    five bytes `1.0.5` -- which is what an arbitrary executable prints when it
+    bare semver `1.0.13` -- which is what an arbitrary executable prints when it
     is asked for a version and happens to have one, and which the vendor's entry
     point cannot produce at all. Its row still advertised itself available, so
     this single preflight was the only thing standing between a mistyped or
@@ -303,7 +303,7 @@ def test_an_executable_that_prints_only_a_semver_never_clears_the_preflight():
         assert GrokBuildAdapter._version_matches(
             unbound, printed.encode("utf-8")) is False, f"ADMITTED={printed!r}"
     assert GrokBuildAdapter._version_matches(
-        unbound, b"grok 1.0.5 (abc1234)\n") is True, "the real form must survive"
+        unbound, b"grok 1.0.13 (abc1234)\n") is True, "the real form must survive"
 
 
 def test_a_commit_the_build_script_could_not_have_written_is_not_a_version():
@@ -323,11 +323,11 @@ def test_a_commit_the_build_script_could_not_have_written_is_not_a_version():
     unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
 
     for commit in UNPUBLISHED_COMMITS:
-        printed = f"grok 1.0.5 ({commit})".encode("utf-8")
+        printed = f"grok 1.0.13 ({commit})".encode("utf-8")
         assert GrokBuildAdapter._version_matches(unbound, printed) is False, (
             f"ADMITTED_COMMIT={commit!r} (len {len(commit)})")
     for commit in _COMMITS:
-        printed = f"grok 1.0.5 ({commit})".encode("utf-8")
+        printed = f"grok 1.0.13 ({commit})".encode("utf-8")
         assert GrokBuildAdapter._version_matches(unbound, printed) is True, (
             f"REFUSED_A_PUBLISHED_COMMIT={commit!r} (len {len(commit)})")
     assert {len(commit) for commit in _COMMITS} >= {4, 40}, (
@@ -368,7 +368,7 @@ def test_a_secret_planted_where_a_version_belongs_never_reaches_a_receipt(tmp_pa
 #: A form the vendor really prints, at a version this build never reviewed. It
 #: is the ONE input that separates "read the form and declined the version" from
 #: "could not read the form at all", because both answer False.
-VALID_BUT_UNREVIEWED = "grok 9.9.9 (abc1234) [stable]"
+VALID_BUT_UNREVIEWED = "grok 1.0.5 (5115b46bc9)"
 
 
 def test_a_valid_form_at_an_unreviewed_version_is_read_and_then_refused(tmp_path):
@@ -388,7 +388,7 @@ def test_a_valid_form_at_an_unreviewed_version_is_read_and_then_refused(tmp_path
     receipt = run_once(adapter, a_request())
 
     printed = (VALID_BUT_UNREVIEWED + "\n").encode("utf-8")
-    assert adapter._parsed_version(printed) == "9.9.9", (
+    assert adapter._parsed_version(printed) == "1.0.5", (
         "the parser could not read a form the vendor really prints")
     assert adapter._version_matches(printed) is False
     assert receipt.outcome == "failed"
@@ -401,8 +401,8 @@ def test_the_parser_reads_the_published_form_into_its_semver_alone():
     unbound = GrokBuildAdapter.__new__(GrokBuildAdapter)
 
     assert GrokBuildAdapter._parsed_version(
-        unbound, b"grok 1.0.5 (abc1234) [stable]\n") == "1.0.5"
+        unbound, b"grok 1.0.13 (abc1234) [stable]\n") == "1.0.13"
     assert GrokBuildAdapter._parsed_version(
-        unbound, b"grok 1.0.5 (unknown)\n") == "1.0.5"
-    assert GrokBuildAdapter._parsed_version(unbound, b"1.0.5\n") is None
-    assert GrokBuildAdapter._parsed_version(unbound, b"grok 1.0.5\n") is None
+        unbound, b"grok 1.0.13 (unknown)\n") == "1.0.13"
+    assert GrokBuildAdapter._parsed_version(unbound, b"1.0.13\n") is None
+    assert GrokBuildAdapter._parsed_version(unbound, b"grok 1.0.13\n") is None

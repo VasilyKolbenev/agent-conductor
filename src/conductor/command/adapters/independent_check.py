@@ -21,11 +21,14 @@ from .result_manifest import marked_policy, manifest_digest
 VERDICT_ACCEPT = "VERDICT: accept"
 VERDICT_REJECT = "VERDICT: reject"
 REASONS = frozenset({
-    "verified", "homes_refused", "preflight_refused", "marker_standing",
+    "verified", "homes_refused", "preflight_refused", "marker_standing", "claim_refused",
     "no_verdict", "tree_changed", "rejected", "frame_over_limit", "frame_env_echo",
     "material_unavailable", "login_residue", "rejected_findings_refused",
     "snapshot_damaged", "object_format_changed", "base_missing", "reserved_path",
     "irregular_result", "result_too_large", "unportable_name", "case_collision",
+    "boundary_unavailable", "login_not_ready",
+    "test_report_refused", "test_execution_failed", "tests_failed", "test_runtime_changed",
+    "credential_readback_untrusted",
 })
 #: The whole serialized frame -- JSON, hex and service fields included -- the same number as
 #: process.STDIN_LIMIT, which carries it (pinned equal by a test). Codex ruling K, 23.09.2026:
@@ -49,6 +52,8 @@ class CheckFrame:
     work_tree_digest: str | None = None
     accept_manifest_digest: str | None = None
     work_modes: Mapping | None = field(default=None, repr=False)
+    test_report_status: str | None = None
+    attempt_seal: Mapping | None = field(default=None, repr=False)
 
 
 def _json(value) -> str:
@@ -130,11 +135,17 @@ def build_frame(request, material: Published, tree, contents, *, result_digest=N
                  "files": [row.as_dict() for row in accumulated.rows]}))
             sections.extend(_render_content(row.path, accumulated.blobs[row.sha256])
                             for row in accumulated.rows if row.state != "deleted")
+    from .local_test_frame import report_for, test_status
+    report = report_for(request, material, work_modes=work_modes)
+    if report is not None:
+        scan_material(report, sensitive)
+        sections.append("\nPOST-PATCH TEST EXECUTION\n" + _json(report))
     payload = "\n".join(sections).encode("utf-8")
     if len(payload) > FRAME_LIMIT or b"\x00" in payload:
         raise CheckFrameError("frame_over_limit")
     return CheckFrame(payload, digest, work_tree_digest,
-                      None if accumulated is None else accumulated.digest, work_modes)
+                      None if accumulated is None else accumulated.digest, work_modes,
+                      test_status(report))
 
 
 def _dispatch_sections(request, material, tree, contents, result_manifest, work_tree_digest):

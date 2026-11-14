@@ -230,7 +230,7 @@ def _open(chromium: Browser, bench: _Bench) -> tuple[Page, _Window]:
     page = context.new_page()
     window = _Window(page)
     page.clock.install()
-    page.goto(bench.url, wait_until="load")
+    page.goto(bench.url + "panel/studio.html", wait_until="load")
     _settle(page)
     now = page.evaluate("() => Date.now()")
     page.clock.pause_at((now + 1000) / 1000)

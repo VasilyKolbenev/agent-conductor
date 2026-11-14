@@ -76,7 +76,7 @@ export function quotaSection(quotas, handlers, state = {}) {
   button.addEventListener("click", () => handlers.refreshQuotas());
   const box = element("section", {id: "studioQuotas", className: "studio-quotas", "data-phase": quotas.phase}, [
     element("h2", {text: L(state, "agents.quota_title")}),
-    element("p", {text: L(state, "agents.quota_intro")}), button,
+    ...(state.manualQuotaRead ? [] : [element("p", {text: L(state, "agents.quota_intro")})]), button,
   ]);
   if (quotas.phase !== "ready") box.append(element("p", {role: "status", text: L(state, `agents.quota_${PHASES.includes(quotas.phase) ? quotas.phase : "failed"}`)}));
   if (!quotas.payload) return box;

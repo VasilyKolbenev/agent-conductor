@@ -7,10 +7,12 @@
 [![CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-78914f)](LICENSE)
 
-**Give your coding agents a shared workflow, a separate checker, and clear points for your decisions.**
+**Bring your coding tools into one workflow and assign each a role.**
 
-December Command runs locally and brings your AI coding tools into one Studio.
-Create a task, choose a workflow, review what may run, and follow the work through execution and checking.
+December Command runs locally. You choose the CLI tools for your subscriptions, assign an
+implementer and a separate checker, and set limits on their work. For example, one participant
+can diagnose a bug, another can fix the code, and the checker can verify the result against
+your criteria. Start with Dalio's five steps or design your own workflow in Studio without code.
 You can confirm each action or authorize a bounded sequence with a limit on its work.
 Human decision steps still wait for you.
 
@@ -60,8 +62,11 @@ python3 -m venv .venv
 </details>
 
 Open the address printed in the terminal, normally `http://127.0.0.1:7777/`.
-You should see Studio with a sample workflow and run. Try **Runs**, **Decisions**,
-the **Trace / Orbit** views, and the language and theme switches. Stop the server with **Ctrl+C**.
+In Studio choose **Start the exercise**, enter “Count the passing checks”, then **Create task**.
+Choose **Review sample result**. Checks A and C passed and B failed. Compare the reported count
+with the check marks, choose your answer, enter your name (for example, `anna`) and click
+**Record this decision**. Refresh to see the answer and author on the same task.
+Stop the server with **Ctrl+C**.
 If the port is busy, add `--port 8080` to the demo command.
 
 The demo uses a temporary copy of sample data. It needs no provider login and starts no paid model task.
@@ -84,7 +89,18 @@ The workflow decides the actual steps and return paths. The diagram shows the co
 A process finishing successfully is not the same as its work being verified.
 An uncertain result stays visible and requires resolution.
 
-Studio has five screens: **Overview, Workflow, Runs, Decisions, and Agents**.
+The project root opens Arachnid Studio with Kolos, the AI Titan, in the center chat.
+Choose a session on the left and a step on its orbit to inspect the recorded result
+on the right. **Workflow controls**
+opens **Overview, Workflow, Runs, Decisions, and Agents**.
+
+In an active project with Codex and Grok subscriptions connected, open **New session**,
+choose Codex as the lead harness for Kolos and describe the change. Review the text and limit for
+one Codex planning request. Once Codex responds, accept its suggestion to preview the
+Grok and Codex roles, source Git commit and execution limits. **Authorize this Dalio run**
+grants separate execution authority. The operator still decides before Do and at the
+result gate.
+
 It includes Russian and English, light and dark themes, task-bound runs, and quota/balance readings with their source and age.
 
 ## Bring your existing tools
@@ -100,7 +116,15 @@ December Command coordinates these applications; you keep their accounts and pay
 | Grok Build | Native subscription login | Native quota source |
 | DeepSeek Harness | Direct DeepSeek API key | Money balance and currency; reset does not apply |
 
-These are the V1 integration targets, not a claim that all five have passed live acceptance.
+On Windows, Codex 0.164.0 and Grok Build 1.0.13 completed a five-step subscription workflow
+to fix a counter. Grok diagnosed the bug, Codex patched two files, three tests passed, and a
+separate Codex checker verified the result. A person revised the plan before Do and approved
+both gates. [Accepted run](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+
+Claude Code completed a subscription Goal in isolation. Kimi Code 0.38.0 opened an offline
+session with test credentials. Its first task and quota reading on a real subscription are
+still pending, along with the clean-install check for all four harnesses using a new user's
+accounts. [Evidence and platform scope](docs/first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
 Use the [pinned versions and setup instructions](docs/first-run-v1.en.md), then check the
 [release notes](docs/release-notes-v1-alpha.md) for what has actually been verified.
 DeepSeek API credits are purchased from DeepSeek; Studio uses the configured key and displays the reported balance.
@@ -130,6 +154,7 @@ Use the executable inside your virtual environment if it is not activated.
 | `conduct providers` | Configure executable paths and allowed environment-variable names. |
 | `conduct ownership` | Activate, inspect, or explicitly recover project ownership. |
 | `conduct up` | Start local Studio for the project. |
+| `conduct utility-bridge` | Deliver an attached `stdio-v1` utility's pending text to a local executable and record its reply in Studio. |
 | `conduct prompt` | Print working instructions for an agent's reporting role. |
 | `conduct report` | Print the merged lane state as Markdown. |
 | `conduct preview` | Prepare a synthetic dispatch preview without executing it. |

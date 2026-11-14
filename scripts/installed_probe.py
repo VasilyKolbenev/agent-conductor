@@ -24,7 +24,7 @@ files = {str(path.relative_to(package)).replace("\\", "/"):
          for path in package.rglob("*") if path.is_file() and "__pycache__" not in path.parts}
 routes = {route: {"content_type": value[0], "file": value[1]}
           for route, value in server.PANEL_ASSETS.items()}
-routes["/"] = {"content_type": "text/html; charset=utf-8", "file": "studio.html"}
+routes["/"] = {"content_type": "text/html; charset=utf-8", "file": server.ENTRY_PAGE}
 # The hub serves its own files (its registry, and `GET /` for hub.html), not this server.
 hub_files = sorted({name for _, name in HUB_ASSETS.values()} | {"hub.html"})
 print(json.dumps({"python": sys.executable, "prefix": str(venv),

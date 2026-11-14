@@ -12,9 +12,20 @@ function field(label, control, extra = "") {
     element("span", {text: label}), control]);
 }
 
+export function practiceTask(state) {
+  const task = selectedTask(state);
+  return task && !task.unreadable && newestRun(state.runs, task.task_id).state === "none"
+    ? task : null;
+}
+
 export function mountTasks(mount, state, handlers) {
   const held = state.tasks, selected = selectedTask(state);
   const expanded = mount.querySelector("details[data-task-create]")?.open || false;
+  if (state.firstTask && state.screen === "overview" && !held.notice && !held.outcomes.length) {
+    mount.replaceChildren(element("div", {className: "studio-task-bar studio-task-bar--first"},
+      [creation(state, handlers, expanded)]));
+    return;
+  }
   const pick = element("select", {"aria-label": localize(state, "task.label"), "data-focus": "task-picker"}, [
     element("option", {value: "", text: localize(state, "task.all")})]);
   for (const row of held.list) {
@@ -31,6 +42,10 @@ export function mountTasks(mount, state, handlers) {
     "data-focus": "task-refresh"});
   refresh.addEventListener("click", handlers.refreshTasks);
   const disclosure = creation(state, handlers, expanded);
+  const practice = [];
+  if (state.demo && state.screen === "overview" && !held.selectedId) {
+    practice.push(element("p", {"data-demo-intro": "", text: localize(state, "demo.intro")}));
+  }
   const notice = noticeText(state, held.notice) || (selected?.unreadable
     ? localize(state, "task.unreadable_notice") : "");
   const history = held.outcomes.length ? [element("details", {
@@ -44,7 +59,8 @@ export function mountTasks(mount, state, handlers) {
     ? [cycleCard(state, detail, mount.querySelector("[data-cycle-crew]")?.open || false)] : [];
   mount.replaceChildren(element("div", {className: "studio-task-bar"}, [
     ...(state.screen === "runs" ? [taskRail(state, handlers)]
-      : [field(localize(state, "task.label"), pick, "studio-task-choice")]), refresh, disclosure, ...history,
+      : [field(localize(state, "task.label"), pick, "studio-task-choice")]), refresh, ...practice,
+    disclosure, ...history,
     element("p", {className: "studio-hint", "data-task-notice": "",
       ...(notice ? {} : {hidden: ""}), text: notice}), ...cycle]));
 }
@@ -65,7 +81,8 @@ function creation(state, handlers, expanded) {
     if (!create.disabled && form.reportValidity()) handlers.createTask();
   });
   const disclosure = element("details", {"data-task-create": ""}, [element("summary", {
-    text: localize(state, "task.new"), "data-focus": "task-new"}), form]);
+    text: localize(state, state.firstTask && state.screen === "overview" ? "entry.record_only" : "task.new"),
+    "data-focus": "task-new"}), form]);
   disclosure.open = expanded;
   return disclosure;
 }

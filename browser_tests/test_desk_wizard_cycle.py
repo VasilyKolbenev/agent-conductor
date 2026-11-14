@@ -378,9 +378,17 @@ def test_a_published_card_offers_make_project_cycle_and_it_is_disabled_with_its_
     assert bench.control("wizard:cycle:pin:desk-short").count() == 0, "not published yet"
     assert bench.control("wizard:cycle:pin:old-cycle").is_disabled()
     build = bench.control("wizard:cycle:build")
-    assert build.is_disabled()
-    assert bench.page.locator('[data-blocked="wizard:cycle:build"] small').inner_text() == \
-        bench.say("wizard.later.build_own")
+    expect(build).to_have_attribute("href", f"/panel/studio.html#screen=workflow&lang={lang}")
+    expect(build).to_have_attribute("target", "_blank")
     before = bench.wizard()
     pin.click(force=True)
     assert bench.wizard() == before
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_view_only_desk_explains_where_a_new_cycle_can_be_created(bench, lang):
+    to_step(bench, lang, "cycle", view=True, reads=reads())
+    build = bench.page.locator('[data-card-id="build"]')
+    expect(build.get_by_role("link")).to_have_count(0)
+    expect(build).to_contain_text(bench.say("wizard.cycle.active_needed"))
+    expect(bench.control("wizard:cycle:refresh-catalog")).to_be_enabled()

@@ -63,7 +63,8 @@ def _real_harness(tmp_path: Path, key_name: str = ""):
         [ProviderConfig(
             provider_id=PROVIDER_ID, executable=node, protocol=DSH_PROTOCOL,
             env_allow=names, entrypoint=entrypoint)],
-        root=root, clock=lambda: NOW, ids=_Ids())
+        root=root, clock=lambda: NOW, ids=_Ids(),
+        confine_platform=None)  # a real install, driven plain: opt-in, not the production door
     contract = next(row for row in resolution.contracts if row.provider_id == PROVIDER_ID)
     assert contract.available is True, "both pins are on disk, so this must be available"
     return resolution.registry.resolve(PROVIDER_ID), root

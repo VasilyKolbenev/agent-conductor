@@ -48,6 +48,22 @@ def test_an_untransferable_path_never_becomes_a_snapshot(path):
         build_snapshot({}, {path: FileImage(b"bad")}, object_format="sha1")
 
 
+@pytest.mark.parametrize("fmt", ["sha1", "sha256"])
+def test_historical_index_needs_only_the_sealed_manifest(tmp_path, fmt, monkeypatch):
+    snapshot = build_snapshot({"removed": FileImage(b"before")}, {"new": FileImage(b"added")},
+                              object_format=fmt)
+    digest = store.write_snapshot(tmp_path, "run-a", snapshot, object_format=fmt)
+    read = store._read
+    def manifest_only(root, path, size):
+        assert path.parent.name == "snapshots"
+        return read(root, path, size)
+    monkeypatch.setattr(store, "_read", manifest_only)
+    assert [(r.path, r.state) for r in store.read_snapshot_index(tmp_path, "run-a", digest)] == [
+        ("new", "added"), ("removed", "deleted")]
+    with pytest.raises(SnapshotRefused):
+        store.read_snapshot_index(tmp_path, "another-run", digest)
+
+
 def test_store_reuses_without_writes_and_later_reads_only_captured_bytes(tmp_path, monkeypatch):
     snapshot = build_snapshot({}, {"a.py": FileImage(b"checked")}, object_format="sha1")
     digest = store.write_snapshot(tmp_path, "run-a", snapshot, object_format="sha1")

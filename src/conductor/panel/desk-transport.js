@@ -41,11 +41,21 @@ export const LATE = "read_late";
 
 export const path = Object.freeze({
   tasks: () => "/command/tasks",
+  task: (id) => "/command/tasks/" + encodeURIComponent(id),
+  atlasAttempt: (run, node, action) => "/command/runs/" + encodeURIComponent(run)
+    + "/steps/" + encodeURIComponent(node) + "/actions/" + encodeURIComponent(action),
   preparation: (id) => `/command/tasks/${encodeURIComponent(id)}/preparation`,
   seed: (id) => `/command/tasks/${encodeURIComponent(id)}/seed`,
   project: () => "/command/project",
+  utilities: () => "/command/project/utilities",
+  utilityRegistrations: () => "/command/project/utilities/registrations",
   git: () => "/command/project/git",
+  gitSetup: () => "/command/project/git/setup",
   projectCycle: () => "/command/project/cycle",
+  // The write beside that read (spec 7.10): pin a published workflow as the project's cycle, or
+  // unpin it with a null workflow. POST only.
+  cyclePin: () => "/command/project/cycle/pin",
+  taskDraft: () => "/command/project/task-draft",
   quotas: () => "/command/quotas",
   workflows: () => "/command/workflows",
   workflow: (id) => `/command/workflows/${encodeURIComponent(id)}`,
@@ -60,6 +70,9 @@ export const path = Object.freeze({
   accept: (id) => `/command/runs/${encodeURIComponent(id)}/accept`,
   acceptPreview: (id) => `/command/runs/${encodeURIComponent(id)}/accept/preview`,
   acceptCommit: (id) => `/command/runs/${encodeURIComponent(id)}/accept/commit`,
+  // The two published steps of an accepted result (spec 9.7): the push, then the pull request.
+  acceptPush: (id) => `/command/runs/${encodeURIComponent(id)}/accept/push`,
+  acceptPullRequest: (id) => `/command/runs/${encodeURIComponent(id)}/accept/pull-request`,
   controls: (id) => `/command/runs/${encodeURIComponent(id)}/controls`,
   decisions: (id) => `/command/runs/${encodeURIComponent(id)}/decisions`,
   proposals: (id) => `/command/runs/${encodeURIComponent(id)}/proposals`,
@@ -85,11 +98,12 @@ export const path = Object.freeze({
   queueWithdraw: (id) => `/command/queue/${encodeURIComponent(id)}/withdraw`,
 });
 // Closed mutation targets share the same CSRF and refusal door.
-const WRITE_TARGETS = Object.freeze(["draft", "revisions", "runs",
+const WRITE_TARGETS = Object.freeze(["taskDraft", "draft", "revisions", "runs",
   "decisions", "proposals", "actions", "artifacts", "tasks",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
-  "autoContinue", "seed", "flow", "queue", "queueOrder", "queueWithdraw",
-  "acceptPreview", "acceptCommit"]);
+  "autoContinue", "seed", "flow", "cyclePin", "queue", "queueOrder", "queueWithdraw",
+  "acceptPush", "acceptPullRequest",
+  "acceptPreview", "acceptCommit", "gitSetup", "utilities"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

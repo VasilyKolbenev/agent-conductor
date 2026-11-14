@@ -6,11 +6,11 @@
 // slices they need from it (the held flow, the roster, the quotas, the last run, the owner's own
 // picks) and hand back values or the next state. It imports the shared base and the step modules,
 // never the model, so the model can import it.
-import {BUILT_STEPS, LIMITS, evolve, inputChars, isLanguage, taskText, utf8Bytes}
+import {BUILT_STEPS, LIMITS, evolve, inputChars, isLanguage, taskText, utf8Bytes, validModelText}
   from "./desk-wizard-base.js";
 import {factsOf} from "./desk-wizard-cycle.js";
-import {BINDING_CODES, argvFit, assignmentFrom, fieldsOf, offersFor, previousRun, quotaOf,
-  rolesOf, rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
+import {BINDING_CODES, argvFit, assignmentFrom, boundaryCause, fieldsOf, offersFor, previousRun,
+  quotaOf, rolesOf, rosterOf, rosterState, suggest} from "./desk-wizard-roles.js";
 
 export function heldFlow(state) {
   const {choice, flow, flowFor} = state.cycle;
@@ -25,6 +25,7 @@ function providersOf(state) {
 //: `ready`, `none` (no harness is offered) or `pending` (the server has not said which are): the
 //: step says which of the last two it is and cannot be left.
 export function rosterStatus(state) {
+  if (state.reads.workflows?.status !== "ok" || !Array.isArray(state.reads.workflows.payload?.providers)) return "pending";
   return rosterState(providersOf(state));
 }
 
@@ -42,10 +43,16 @@ function charsByRole(state) {
   const flow = heldFlow(state), chars = {};
   if (flow === null) return chars;
   const inputs = inputChars(state);
-  for (const field of fieldsOf(flow.flow, state.roles.instructions, taskText(state, "ru"), false)) {
+  for (const field of fieldsOf(flow.flow, state.roles.instructions, taskText(state, "ru"), false, isDalio(state))) {
     chars[field.role_id] = Math.max(chars[field.role_id] ?? 0, field.text.length + inputs);
   }
   return chars;
+}
+
+function isDalio(state) {
+  if (state.cycle.choice?.workflowId !== "dalio-v6") return false;
+  return state.cycle.choice.kind === "starter" || heldFlow(state)?.flow.steps.some((step) =>
+    step.step_id === "do" && step.role_id === "role-implementer" && step.verifier_role_id);
 }
 
 //: The last run of this cycle as role to harness, or null while it is unread or unreadable.
@@ -73,7 +80,32 @@ export function assignmentView(state) {
   return roles.map((role) => ({...role, provider: found.assignment[role.role_id],
     by: found.by[role.role_id], notes: found.notes[role.role_id],
     offers: offersFor(role, roster).map((row) => ({id: row.id, name: row.name,
-      channel: row.channel, quota: quotaOf(quotas, row.id)}))}));
+      channel: row.channel, quota: quotaOf(quotas, row.id),
+      ...(typeof row.modelPinSupported === "boolean" ? {modelPinSupported: row.modelPinSupported} : {})}))}));
+}
+
+export function canEditModels(state) {
+  return !["preparing", "unknown"].includes(state.run.phase) && !state.launch.sending
+    && state.launch.phase !== "unknown" && state.launch.result === null;
+}
+
+export function changeModel(state, event) {
+  if (!canEditModels(state) || typeof event.text !== "string" || event.text.length > 128) return state;
+  const role = assignmentView(state).find((item) => item.role_id === event.role_id);
+  if (!role?.offers.some((offer) => offer.id === role.provider && offer.modelPinSupported === true)) return state;
+  const models = {...state.roles.models};
+  if (!event.text) delete models[event.role_id];
+  else models[event.role_id] = {provider: role.provider, text: event.text};
+  return evolve(state, {roles: {...state.roles, models}});
+}
+
+export function reconcileModelPins(state) {
+  const pins = Object.entries(state.roles.models ?? {});
+  if (!pins.length || !heldFlow(state) || rosterStatus(state) !== "ready") return state;
+  const roles = assignmentView(state);
+  const kept = pins.filter(([id, pin]) => roles.some((row) => row.role_id === id && row.provider === pin.provider
+    && row.offers.some((offer) => offer.id === pin.provider && offer.modelPinSupported === true)));
+  return kept.length === pins.length ? state : evolve(state, {roles: {...state.roles, models: Object.fromEntries(kept)}});
 }
 
 //: The harness for each assigned role, and only those.
@@ -83,10 +115,16 @@ export function assignedTo(state) {
     : Object.fromEntries(rows.map((row) => [row.role_id, row.provider]));
 }
 
+//: `login` or `plain` (`boundaryCause`) for the harnesses now chosen: with which words step 5 says
+//: that the isolation could not be given.
+export function boundaryOf(state) {
+  return boundaryCause(providersOf(state), assignedTo(state));
+}
+
 //: What is sent with the flow for diagnostics once the owner has reached the roles step, and
 //: still after they step back: the roles they see are the roles the server judges.
 export function bindingNow(state) {
-  const reached = state.cycle.boundKey !== "null"
+  const reached = state.cycle.boundKey !== "null" || (state.firstRunGuide && state.step === "cycle")
     || BUILT_STEPS.indexOf(state.step) >= BUILT_STEPS.indexOf("roles");
   return reached && state.cycle.choice !== null ? assignedTo(state) : null;
 }
@@ -103,7 +141,7 @@ export function syncBinding(state) {
 export function instructionFields(state, lang) {
   const flow = heldFlow(state);
   if (flow === null) return [];
-  const owned = !state.cycle.choice.workflowId.startsWith("desk-");
+  const owned = state.cycle.choice.kind !== "starter" && !state.cycle.choice.revision;
   const given = assignedTo(state) ?? {};
   const roster = rosterOf(providersOf(state));
   const argvFor = (field) => {
@@ -111,7 +149,8 @@ export function instructionFields(state, lang) {
     return row?.channel === "argv" && field.source !== "like"
       ? argvFit(field.text, inputChars(state)) : null;
   };
-  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned)
+  return fieldsOf(flow.flow, state.roles.instructions, taskText(state, lang), owned, isDalio(state),
+    Boolean(state.cycle.choice.revision))
     .map((field) => ({...field, argv: argvFor(field)}));
 }
 
@@ -119,6 +158,7 @@ export function rolesGate(state) {
   const roster = rosterStatus(state);
   if (roster !== "ready") return roster === "pending" ? "roster_pending" : "no_providers";
   if (assignmentView(state).some((row) => row.provider === null)) return "roles_unassigned";
+  if (Object.values(state.roles.models ?? {}).some((row) => !validModelText(row.text))) return "model_id_invalid";
   const fields = instructionFields(state, "ru");
   const own = fields.filter((one) => one.source !== "like");
   if (own.some((one) => one.text.trim() === "")) return "instruction_empty";
@@ -133,7 +173,7 @@ export function rolesGate(state) {
 export function rolesPublication(state, lang) {
   const fields = instructionFields(state, lang);
   const documents = fields.filter((field) => field.source !== "like").map((field) => ({link: 5,
-    target: "artifacts", ref: `instruction-${field.step_id}`, media_type: "text/markdown",
+    target: "artifacts", ref: field.instructionRef, media_type: "text/markdown",
     content: field.text}));
   const likes = Object.fromEntries(fields.filter((field) => field.source === "like")
     .map((field) => [field.step_id, field.like]));
@@ -211,6 +251,7 @@ export function ownInstruction(state, event) {
 
 //: "As step X", or back from it: only to a step the field offers, and back to what it was.
 export function likeInstruction(state, event) {
+  if (state.cycle.choice?.revision) return state;
   const field = fieldFor(state, event.step_id);
   if (!field) return state;
   const held = state.roles.instructions[event.step_id];

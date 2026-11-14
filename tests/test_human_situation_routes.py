@@ -4,6 +4,8 @@ The native witness uses the existing bounded HTTP/T5 fixture. An actual live
 queue and a fresh durable-only reader must agree on uncertainty, without a GET
 reconciling, authorizing or releasing the queued worker.
 """
+import pytest
+
 from conductor.command import studio_routes
 from conductor.command.graph_projection import graph_payload
 from conductor.command.run_store import RunStore, snapshot_digest
@@ -11,6 +13,11 @@ from tests.test_command_http_api import api, get_headers, RUN_ID
 from tests.test_command_run_store import CONFIG, a_run
 from tests.test_server_attempt_scope import HostedAttempt, WAIT, PROBE
 from tests.test_server_command_http import _request
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: The hosted attempt runs a harness fake as a plain child; this module is not about the boundary,
+#: so the doors are told it provides one (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 READ_AT = "2026-09-21T15:00:00.123Z"
 

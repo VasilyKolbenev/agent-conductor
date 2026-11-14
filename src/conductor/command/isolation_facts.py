@@ -143,7 +143,11 @@ ISOLATION_FACTS = (
     IsolationFact(
         "login_directory_gained_state", DETECTED_AFTER_SPAWN,
         "Undeclared state appearing in the pinned login directory is measured "
-        "after the spawn, by comparing it with what was declared.",
+        "after each spawn that stands on it, by comparing it with what was "
+        "declared. A subscription task of a harness with a relay does not stand "
+        "on that directory: it works on a copy of the access token, without its "
+        "refresh token, in a relay home outside the project, which is read back "
+        "and removed when the attempt ends.",
         "conductor.command.verify_holds.CHECKER_LOGIN_RESIDUE",
         WITH_PINNED_LOGIN),
     IsolationFact(

@@ -149,6 +149,10 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("GET", "/command/quotas"),
         ("GET", "/command/project/cycle"),
         ("POST", "/command/project/cycle/pin"),
+        ("POST", "/command/project/task-draft"),
+        ("GET", "/command/project/utilities"),
+        ("POST", "/command/project/utilities"),
+        ("GET", "/command/project/utilities/registrations"),
         ("GET", "/command/project/auto-continue"),
         ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),
@@ -160,8 +164,11 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("POST", "/command/project/git/setup"),
         ("POST", "/command/runs/<run_id>/materials"),
         ("GET", "/command/runs/<run_id>/accept"),
+        ("GET", "/command/runs/<run_id>/steps/<node_id>/actions/<action_id>"),
         ("POST", "/command/runs/<run_id>/accept/preview"),
         ("POST", "/command/runs/<run_id>/accept/commit"),
+        ("POST", "/command/runs/<run_id>/accept/push"),
+        ("POST", "/command/runs/<run_id>/accept/pull-request"),
         ("GET", "/command/project/documents"),
         ("GET", "/command/project/documents/<doc_id>"),
         ("GET", "/command/queue"),
@@ -204,6 +211,11 @@ def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
     assert "<" not in target, target
     # Withdraw and acceptance preview both accept `{}`; refuse an unknown field on those doors.
     refused = post(subject, target, {"unknown": 0} if target.endswith(("/withdraw", "/accept/preview")) else {})
+    if target in {"/command/project/task-draft", "/command/project/utilities"}:
+        assert (refused.status, refused.payload["error"]["code"]) == (409, "project_mismatch")
+        assert events == []
+        assert journal.read_bytes() == before
+        return
 
     assert (refused.status, refused.payload["error"]["code"]) == (
         ERROR_STATUS["contract_invalid"], "contract_invalid")

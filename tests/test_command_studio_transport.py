@@ -45,7 +45,7 @@ from tests.test_command_workflow_routes import (
     target,
 )
 
-def test_the_new_routes_are_derived_from_the_live_table_and_are_the_thirty_two(tmp_path):
+def test_the_new_routes_are_derived_from_the_live_table(tmp_path):
     """What this file holds to the contract is what the allowlist actually says."""
     assert NEW_ROUTES == (
         ("GET", "/command/workflows"),
@@ -65,6 +65,10 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_thirty_two(t
         ("GET", "/command/quotas"),
         ("GET", "/command/project/cycle"),
         ("POST", "/command/project/cycle/pin"),
+        ("POST", "/command/project/task-draft"),
+        ("GET", "/command/project/utilities"),
+        ("POST", "/command/project/utilities"),
+        ("GET", "/command/project/utilities/registrations"),
         ("GET", "/command/project/auto-continue"),
         ("POST", "/command/project/auto-continue"),
         ("GET", "/command/runs/<run_id>/automation"),
@@ -76,8 +80,11 @@ def test_the_new_routes_are_derived_from_the_live_table_and_are_the_thirty_two(t
         ("POST", "/command/project/git/setup"),
         ("POST", "/command/runs/<run_id>/materials"),
         ("GET", "/command/runs/<run_id>/accept"),
+        ("GET", "/command/runs/<run_id>/steps/<node_id>/actions/<action_id>"),
         ("POST", "/command/runs/<run_id>/accept/preview"),
         ("POST", "/command/runs/<run_id>/accept/commit"),
+        ("POST", "/command/runs/<run_id>/accept/push"),
+        ("POST", "/command/runs/<run_id>/accept/pull-request"),
         ("GET", "/command/project/documents"),
         ("GET", "/command/project/documents/<doc_id>"),
         ("GET", "/command/queue"),
@@ -136,19 +143,20 @@ def test_every_new_route_refuses_a_verb_the_table_does_not_name(
 
 
 @pytest.mark.parametrize("method,path", NEW_TARGETS)
-def test_every_new_route_but_the_five_dual_verb_paths_refuses_the_other_verb(
+def test_every_new_route_but_the_named_dual_verb_paths_refuses_the_other_verb(
         tmp_path, method, path):
     """A read road is not a write road under another name, and the reverse.
 
     ``/command/runs``, ``/command/tasks``, the ``flow`` of a workflow, the
-    project queue and the continue-after flag are the five deliberate
-    exceptions, named here rather than skipped, so a sixth dual-verb route
-    would have to be written down.
+    project queue, utilities and continue-after flag each have read and write routes.
+    An empty write to utilities first requires the project claim.
     """
     subject, _store, _templates, events = api(tmp_path)
     if path in BOTH_VERBS:
         assert get(subject, path).status == 200
-        assert post(subject, path, {}).status == ERROR_STATUS["contract_invalid"]
+        code = "project_mismatch" if path == "/command/project/utilities" else "contract_invalid"
+        denied = post(subject, path, {})
+        assert (denied.status, code_of(denied)) == (ERROR_STATUS[code], code)
         return
     refused = (post(subject, path, {}) if method == "GET"
                else get(subject, path))

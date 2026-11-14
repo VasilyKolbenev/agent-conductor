@@ -13,6 +13,8 @@ each one really holds what it claims.
 """
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from playwright.sync_api import Browser
 
@@ -49,6 +51,10 @@ def test_a_resource_that_fails_to_load_names_itself_in_this_gates_record(
         failed = [line for line in said if line.startswith("requestfailed")]
         assert failed, said
         assert "never-listening.js" in failed[0], failed
+        # When the test process heard of it, in UTC, so a host trace can be set
+        # against it.
+        stamp = failed[0].rsplit(" at=", 1)[1]
+        assert datetime.datetime.fromisoformat(stamp).utcoffset() == datetime.timedelta(0)
         # The URL and the engine's own words, and nothing else: no header, no
         # body, no cookie. These artifacts are read by people.
         assert "cookie" not in failed[0].lower()

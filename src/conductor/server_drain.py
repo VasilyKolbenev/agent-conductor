@@ -4,7 +4,9 @@ A hub child stops when its stdin reaches end of file; a standalone `conduct up`
 stops on Ctrl+C. Both set ONE event, and the main thread, which waits for it in
 short slices so Ctrl+C can be heard on every OS, then calls `drain_and_close`
 once. `serve_forever` runs in the thread `conduct-http` and the stdin watcher is
-the thread `conduct-stdin`.
+the thread `conduct-stdin`. The URL and the hint line are announced inside the guarded
+block that leads to the drain, after `conduct-http` has started and before the first
+slice of the wait, so a Ctrl+C sent the moment either is read is a drain.
 
 The eight steps, in the order the spec gives them: the server refuses every
 command POST and the status file says `stopping`; the policy driver is told to
@@ -93,6 +95,7 @@ def _absorbing_interrupts(notice: _Notice):
 
 
 def serve_until_stopped(srv, status, stopper: Stopper, *,
+                        announce: Callable[[], object] = lambda: None,
                         clock: Callable[[], datetime] = _utcnow) -> int:
     """Serve on `conduct-http` until the stop event, then drain and close.
 
@@ -100,6 +103,10 @@ def serve_until_stopped(srv, status, stopper: Stopper, *,
         srv: The bound server.
         status: Where state changes are written (`up_status`).
         stopper: The event that end of file on stdin or Ctrl+C sets.
+        announce: Says the server is ready: it prints the URL on stdout and the
+            `serving ... Ctrl+C to stop` hint line on stderr. It runs after
+            `conduct-http` has started and inside the region where Ctrl+C becomes
+            the drain, so a Ctrl+C sent the moment either line is read drains.
         clock: The current time; a parameter so a test can move it.
 
     Returns:
@@ -109,6 +116,7 @@ def serve_until_stopped(srv, status, stopper: Stopper, *,
                             daemon=True)
     http.start()
     try:
+        announce()
         while not stopper.event.wait(WAIT_SLICE_SECONDS):
             if not http.is_alive():
                 break                       # a serve loop that ended by itself is a stop

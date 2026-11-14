@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..ownership import data_root, write_guard
 from .accept_manifest import (
-    MAX_BYTES, MAX_MANIFEST_BYTES, Snapshot, SnapshotRefused, read_manifest,
+    MAX_BYTES, MAX_MANIFEST_BYTES, Snapshot, SnapshotRefused, read_manifest, read_manifest_index,
     sha256, validate_snapshot,
 )
 from .containment import first_directory_violation
@@ -110,18 +110,34 @@ def write_snapshot(project_root: str | os.PathLike[str], run_id: str, snapshot: 
     return snapshot.digest
 
 
+def _sealed_manifest(root, folder, digest):
+    manifest = folder / "snapshots" / (_hex(digest) + ".json")
+    payload = _read(root, manifest, MAX_MANIFEST_BYTES)
+    if sha256(payload) != digest:
+        raise SnapshotRefused("snapshot_damaged")
+    return payload
+
+
+def read_snapshot_index(project_root, run_id, digest):
+    """Read only the canonical paths and states sealed by the checker, without loading blobs."""
+    root = Path(project_root).resolve()
+    folder = _folder(root, run_id)
+    try:
+        with _root_gate(root).lock:
+            return read_manifest_index(_sealed_manifest(root, folder, digest))
+    except OSError:
+        raise SnapshotRefused("snapshot_damaged") from None
+
+
 def read_snapshot(project_root: str | os.PathLike[str], run_id: str, digest: str, *,
                   object_format: str) -> Snapshot:
     """Rehash the manifest and every referenced blob, without reading the work item."""
     root = Path(project_root).resolve()
     folder = _folder(root, run_id)
-    manifest = folder / "snapshots" / (_hex(digest) + ".json")
     gate = _root_gate(root)
     try:
         with gate.lock:
-            payload = _read(root, manifest, MAX_MANIFEST_BYTES)
-            if sha256(payload) != digest:
-                raise SnapshotRefused("snapshot_damaged")
+            payload = _sealed_manifest(root, folder, digest)
             rows = read_manifest(payload, object_format=object_format)
             blobs = {}
             for row in rows:

@@ -50,6 +50,7 @@ function offers(detail) {
 export function runAction(state, detail) {
   const situation = freshSituation(state, detail);
   if (situation === null) return {key: "refresh"};
+  if (state.needsRunPermission) return {key: "setup"};
   if (situation.state === "required") {
     if (needed(situation, "gate_decision")) return {key: "decide"};
     const confirm = needed(situation, "confirmation");
@@ -76,6 +77,8 @@ export function runAction(state, detail) {
 
 function situationLine(state, detail) {
   const situation = freshSituation(state, detail);
+  if (state.needsRunPermission) return element("p", {className: "studio-runs__situation",
+    "data-run-situation": "required", text: localize(state, "runhead.permission")});
   const schedule = detail.graph?.schedule?.run_state;
   const position = situation !== null && needed(situation, "run_ended") ? "ended"
     : POSITIONS.includes(schedule) ? schedule : "position_unknown";
@@ -123,7 +126,8 @@ function focusIn(selector) {
     const target = document.querySelector(`#bodyRuns ${selector}`);
     if (!target) return;
     target.scrollIntoView({block: "center"});
-    const control = target.matches(FOCUSABLE) ? target : target.querySelector(FOCUSABLE);
+    const control = target.matches(FOCUSABLE) || target.hasAttribute("tabindex")
+      ? target : target.querySelector(FOCUSABLE);
     if (control) control.focus({preventScroll: true});
   };
 }
@@ -139,12 +143,15 @@ export function runPrimary(state, handlers, detail) {
     return element("p", {className: "studio-hint", "data-run-action": chosen.key, text});
   }
   const door = (name, argument) => typeof handlers[name] === "function" ? () => handlers[name](argument) : null;
+  const last = recordsOf(detail, "action_result").at(-1);
+  const hasDocument = last && recordsOf(detail, "artifact").some(doc => doc.source_action_id === last.action_id);
   const invoke = {
     decide: door("showDecisions", runId),
+    setup: focusIn('[data-focus="automation:run:actor"]'),
     confirm: focusIn(`[data-step="confirm:${chosen.node}"]`),
     document: focusIn('[data-section="documents"]'),
     workflow: door("onScreen", "workflow"),
-    result: focusIn(".studio-artifacts"),
+    result: focusIn(hasDocument ? `[data-output-action="${CSS.escape(last.action_id)}"]` : "[data-last-outcome]"),
     propose: focusIn(`[data-step="propose:${chosen.node}"]`),
     refresh: door("onRefreshRun"),
   }[chosen.key];

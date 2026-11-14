@@ -51,6 +51,10 @@ COMMAND_ROUTES = (
     ("GET", "/command/quotas"),
     ("GET", "/command/project/cycle"),
     ("POST", "/command/project/cycle/pin"),
+    ("POST", "/command/project/task-draft"),
+    ("GET", "/command/project/utilities"),
+    ("POST", "/command/project/utilities"),
+    ("GET", "/command/project/utilities/registrations"),
     ("GET", "/command/project/auto-continue"),
     ("POST", "/command/project/auto-continue"),
     ("GET", "/command/runs/<run_id>/automation"),
@@ -62,8 +66,11 @@ COMMAND_ROUTES = (
     ("POST", "/command/project/git/setup"),
     ("POST", "/command/runs/<run_id>/materials"),
     ("GET", "/command/runs/<run_id>/accept"),
+    ("GET", "/command/runs/<run_id>/steps/<node_id>/actions/<action_id>"),
     ("POST", "/command/runs/<run_id>/accept/preview"),
     ("POST", "/command/runs/<run_id>/accept/commit"),
+    ("POST", "/command/runs/<run_id>/accept/push"),
+    ("POST", "/command/runs/<run_id>/accept/pull-request"),
     ("GET", "/command/project/documents"),
     ("GET", "/command/project/documents/<doc_id>"),
     ("GET", "/command/queue"),
@@ -72,13 +79,16 @@ COMMAND_ROUTES = (
     ("POST", "/command/queue/<run_id>/withdraw"),
 )
 
+_SEGMENT = r"([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
+_ATTEMPT_ROUTE = re.compile(rf"/command/runs/{_SEGMENT}/steps/{_SEGMENT}/actions/{_SEGMENT}\Z")
 _RUN_ROUTE = re.compile(
     r"/command/runs/([A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The longer tail is spelled FIRST: alternation is leftmost-first, and a
     # `graph` that matched before `graph/from-template` would send every
     # materialization to the route that speaks a different document.
     r"(?:/(automation/preview|automation/authorize|automation/control|automation|"
-    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|accept/preview|accept/commit|accept|graph))?\Z")
+    r"controls|proposals|actions|decisions|graph/from-template|artifacts|materials|"
+    r"accept/pull-request|accept/push|accept/preview|accept/commit|accept|graph))?\Z")
 _WORKFLOW_ROUTE = re.compile(
     r"/command/workflows/(?P<workflow_id>[A-Za-z0-9][A-Za-z0-9._-]{0,127})"
     # The revision number is a tail of the `revisions` tail rather than a fourth
@@ -99,7 +109,7 @@ _TASK_ROUTE = re.compile(
 #: The two paths of the project's pinned cycle (spec 7.10), one verb each: the read of what is
 #: pinned, and the write that pins or unpins; and the flag of "continue after" (spec 4.3.4), which
 #: both verbs reach. The bare `project` path is `_PROJECT_PATH` below.
-_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle|auto-continue)\Z")
+_PROJECT_ROUTE = re.compile(r"/command/project/(cycle/pin|cycle|auto-continue|utilities)\Z")
 #: The documents of the project's HEAD (spec 6.2.2): the list, and one by its id. The id grammar is
 #: the one the server mints, `d-` and 32 lowercase hex, so anything else is a path no row names and
 #: never a document the reader is then asked about.
@@ -133,6 +143,8 @@ _FIXED_ROUTES = {
     _PROJECT_PATH: ("GET", "project"),
     "/command/project/git": ("GET", "project_git"),
     "/command/project/git/setup": ("POST", "git_setup"),
+    "/command/project/task-draft": ("POST", "project_task_draft"),
+    "/command/project/utilities/registrations": ("GET", "utility_registrations"),
     _TEMPLATES_PATH: ("POST", "templates"),
     _WORKFLOWS_PATH: ("GET", "workflows"),
 }
@@ -148,6 +160,8 @@ class Route:
     revision: int | None = None
     task_id: str | None = None
     doc_id: str | None = None
+    node_id: str | None = None
+    action_id: str | None = None
 
 
 def target_path(target: str) -> str:
@@ -195,6 +209,12 @@ def match_route(method: str, path: str) -> Route:
     workflow = _WORKFLOW_ROUTE.fullmatch(path)
     if workflow is not None:
         return _workflow_route(method, workflow)
+    attempt = _ATTEMPT_ROUTE.fullmatch(path)
+    if attempt is not None:
+        if method != "GET":
+            raise ApiRefusal.fixed("method_not_allowed")
+        run_id, node_id, action_id = attempt.groups()
+        return Route("attempt_detail", run_id, node_id=node_id, action_id=action_id)
     matched = _RUN_ROUTE.fullmatch(path)
     if matched is None:
         raise ApiRefusal.fixed("route_not_found")
@@ -230,6 +250,7 @@ def _known(path: str) -> bool:
     """Whether some row names this path under any method at all."""
     return (path in {*_FIXED_ROUTES, _RUNS_PATH, _TASKS_PATH, _QUEUE_PATH}
             or _RUN_ROUTE.fullmatch(path) is not None
+            or _ATTEMPT_ROUTE.fullmatch(path) is not None
             or _WORKFLOW_ROUTE.fullmatch(path) is not None
             or _TASK_ROUTE.fullmatch(path) is not None
             or _PROJECT_ROUTE.fullmatch(path) is not None
@@ -259,13 +280,11 @@ def _task_route(method: str, path: str) -> Route | None:
 
 
 def _project_route(method: str, tail: str) -> Route:
-    """Name a project route: the cycle's read under GET and its pin under POST, or the flag.
-
-    `auto-continue` is the one project path both verbs reach, for the run list's reason: reading
-    the continue-after flag and writing it are one noun asked two ways.
-    """
+    """Both verbs reach the flag and the utility registry; cycle reading and pinning use one each."""
     if tail == "auto-continue":
         return Route("project_auto_continue")
+    if tail == "utilities":
+        return Route("project_utilities")
     name, expected = ("project_cycle", "GET") if tail == "cycle" else (
         "project_cycle_pin", "POST")
     if method != expected:

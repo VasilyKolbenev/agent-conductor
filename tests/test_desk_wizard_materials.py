@@ -171,7 +171,8 @@ def test_git_reading_names_each_of_the_eight_states_with_its_text_and_exit():
       const reading = (name) => wiz.gitReading(reply(opened(), "git", d.git[name]));
       show(Object.fromEntries(Object.keys(d.git).map((name) => [name, reading(name)])));
     """, DATA)
-    none = {"params": {}, "blocks": False, "stop": None, "command": None, "exits": []}
+    none = {"params": {}, "blocks": False, "stop": None, "command": None, "exits": [],
+            "pending": None}
     assert out == {
         "repo": {**none, "state": "repo", "sentence": "repo",
                  "params": {"ref": "main", "commit": "abc1234", "dirty": 3}},
@@ -457,3 +458,62 @@ def test_materials_publish_the_composed_body_and_a_seed_request_that_waits_for_a
         {"link": 5, "target": "materials", "ref": "artifact-materials",
          "body": {"lang": "en", "items": [{"kind": "note", "title": "Idea",
                                            "content": "Try X."}]}}]}
+
+
+PENDING_READS = ("unfinished", "unfinished_unborn", "empty", "signature", "signature_sha256",
+                 "damaged")
+PENDING_DATA = {**DATA, "pending": {
+    name: fixture("wizard", f"git_pending_{name}.json") for name in PENDING_READS}}
+
+
+def test_a_first_commit_the_product_has_not_finished_is_not_read_as_done_and_offers_no_new_one():
+    out = run_js(CARDS + """
+      const reading = (name) => wiz.gitReading(reply(opened(), "git", d.pending[name]));
+      show(Object.fromEntries(Object.keys(d.pending).map((name) => [name, reading(name)])));
+    """, PENDING_DATA)
+    held = {"blocks": True, "stop": "git_unfinished", "exits": [], "command": None}
+    unborn = {**held, "state": "unborn", "sentence": "unborn", "params": {}}
+    assert out == {
+        "unfinished": {**held, "state": "repo", "sentence": "repo_pending",
+                       "pending": "unfinished",
+                       "params": {"ref": "main", "commit": "abc1234", "dirty": 2}},
+        "unfinished_unborn": {**unborn, "pending": "unfinished"},
+        "empty": {**unborn, "pending": "unfinished"},
+        "signature": {**unborn, "pending": "awaiting_signature"},
+        "signature_sha256": {**unborn, "pending": "awaiting_signature"},
+        "damaged": {"blocks": False, "stop": None, "exits": [], "command": None, "state": "repo",
+                    "sentence": "repo_damaged", "pending": "damaged",
+                    "params": {"ref": "main", "commit": "abc1234", "dirty": 0}}}
+
+
+def test_an_unfinished_or_awaiting_first_commit_holds_step_two_and_a_damaged_one_does_not():
+    out = run_js(CARDS + """
+      const gate = (name, base = started()) => wiz.canAdvance(
+        reply(opened(base), "git", d.pending[name])).reason;
+      const starter = () => run(open({starterId: "desk-starter-docs"}),
+        {type: "edit-title", value: "Notes"}, {type: "edit-idea", value: "An app."},
+        {type: "next"});
+      show({unfinished: gate("unfinished"), unborn: gate("unfinished_unborn"),
+        empty: gate("empty"), awaiting: gate("signature"),
+        awaiting256: gate("signature_sha256"), damaged: gate("damaged"),
+        starter_unborn: gate("unfinished_unborn", starter()),
+        starter_damaged: gate("damaged", starter()), reasons: wiz.REASONS});
+    """, PENDING_DATA)
+    assert out["reasons"].count("git_unfinished") == 1
+    assert [out[name] for name in ("unfinished", "unborn", "empty", "awaiting", "awaiting256",
+                                   "starter_unborn")] == ["git_unfinished"] * 6
+    assert out["damaged"] is None, "a record with no way forward holds nothing"
+    assert out["starter_damaged"] is None
+
+
+def test_a_server_older_than_the_key_reads_as_before_and_a_key_in_no_closed_shape_is_unreadable():
+    out = run_js(CARDS + """
+      const old = structuredClone(d.git.repo); delete old.git.first_commit_pending;
+      const odd = structuredClone(d.git.repo); odd.git.first_commit_pending = {state: "torn"};
+      const reading = (read) => wiz.gitReading(reply(opened(), "git", read));
+      show({old: reading(old), odd: reading(odd)});
+    """, DATA)
+    assert out["old"]["pending"] is None and out["old"]["sentence"] == "repo"
+    assert out["old"]["stop"] is None and out["old"]["exits"] == []
+    assert out["odd"]["pending"] == "unreadable" and out["odd"]["sentence"] == "repo_damaged"
+    assert out["odd"]["stop"] is None and out["odd"]["exits"] == []

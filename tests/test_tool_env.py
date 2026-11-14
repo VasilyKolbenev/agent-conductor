@@ -247,7 +247,10 @@ def _repo_with_hook(tmp_path: Path, hooks_path: str | None) -> tuple[Path, Path]
     folder = repo / (hooks_path or ".git/hooks")
     folder.mkdir(parents=True, exist_ok=True)
     hook = folder / "pre-commit"
-    hook.write_text(f"#!/bin/sh\necho ran > '{marker.as_posix()}'\n", newline="\n")
+    # UTF-8, as sh reads it: in the locale's ANSI code page a non-ASCII marker path
+    # reaches sh as another path, the hook fails and the control commit with it.
+    hook.write_text(f"#!/bin/sh\necho ran > '{marker.as_posix()}'\n", encoding="utf-8",
+                    newline="\n")
     hook.chmod(0o755)
     return repo, marker
 

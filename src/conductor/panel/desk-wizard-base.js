@@ -4,7 +4,7 @@
 // the words of the documents the wizard composes (an `artifact-brief` and the default
 // instruction), which are data for agents and live here rather than in the interface catalogue.
 import {TASK_TITLE_LIMIT} from "./studio-tasks-model.js";
-import {MATERIAL_LIMITS, composeText} from "./desk-wizard-materials.js";
+import {MATERIAL_LIMITS, composeText, documentCard, isDocumentRow, textCard} from "./desk-wizard-materials.js";
 import {ARGV_LIMIT} from "./desk-wizard-roles.js";
 
 export const STEPS = Object.freeze(["task", "materials", "cycle", "roles", "prepare", "run"]);
@@ -13,6 +13,16 @@ export const FILL_STEPS = Object.freeze(["task", "materials", "cycle", "roles"])
 //: The steps this build draws: the four the owner fills in, the preparation that writes them and
 //: the terms card the run starts or is queued from.
 export const BUILT_STEPS = Object.freeze([...FILL_STEPS, "prepare", "run"]);
+export const GUIDE_STAGES = Object.freeze([
+  ["result", "task", "materials"], ["team", "cycle", "roles"], ["review", "prepare", "run"],
+]);
+export function guideStage(step) {
+  return GUIDE_STAGES.find(([, first, last]) => step === first || step === last);
+}
+export function titleFromGoal(goal) {
+  const line = goal.split(/\r?\n/).find((part) => part.trim()) || "";
+  return [...line.replace(/[\x00-\x1f\x7f]/g, " ").trim()].slice(0, TASK_TITLE_LIMIT).join("");
+}
 export const LIMITS = Object.freeze({materials: MATERIAL_LIMITS.count,
   documentBytes: MATERIAL_LIMITS.bytes, argvChars: ARGV_LIMIT, title: TASK_TITLE_LIMIT});
 
@@ -23,6 +33,54 @@ const WORDS = Object.freeze({
     hint: "How to tell it is done (hint)", none: "—"}),
 });
 const encoder = new TextEncoder();
+const DRAFT_ID = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+export const validModelText = (value) => typeof value === "string" && (value.trim() === "" || DRAFT_ID.test(value.trim()));
+
+function draftMaterials(rows, documents) {
+  if (!Array.isArray(rows)) return [];
+  return rows.slice(0, MATERIAL_LIMITS.count).flatMap((row, i) => {
+    if (!row) return [];
+    const key = `m${i + 1}`;
+    if (["plan", "ideas", "scheme", "note"].includes(row.kind)) return [textCard(key, row)];
+    const doc = Array.isArray(documents) && documents.find((item) => isDocumentRow(item)
+      && item.doc_id === row.docId && item.git_oid === row.gitOid);
+    return doc ? [{...documentCard(key, doc), mode: row.mode === "copy" ? "copy" : "link",
+      edits: Array.isArray(row.edits) ? row.edits : []}] : [];
+  });
+}
+
+export function restoreAnswers(fresh, held, documents, offered) {
+  const items = draftMaterials(held.items, documents).map((row, at) => ({...row, key: `m${at + 1}`}));
+  const known = offered.find((row) => row.id === held.cycleId && row.kind !== "build");
+  const restored = {guided: held.guided !== false, titleEdited: held.titleEdited === true,
+    budgetDepth: ["quick", "thorough"].includes(held.budgetDepth) ? held.budgetDepth : "balanced",
+    budgetChosen: ["quick", "balanced", "thorough"].includes(held.budgetDepth),
+    draftMaterialsMissing: Array.isArray(held.items) && items.length !== held.items.length,
+    task: {...fresh.task, title: held.title, brief: held.brief, hint: held.hint},
+    materials: {...fresh.materials, items, counter: items.length, withoutGit: held.withoutGit === true,
+      includeInstructions: typeof held.includeInstructions === "boolean" ? held.includeInstructions : null}};
+  if (!known) return evolve(fresh, restored);
+  const revision = held.cycleRevision ?? (fresh.firstRunGuide ? known.revision : null);
+  restored.cycle = {...fresh.cycle, choice: {kind: known.kind, workflowId: known.workflowId,
+    ...(known.kind === "saved" && Number.isSafeInteger(revision) && revision > 0 ? {revision} : {})},
+    chosenBy: "owner", generation: 1};
+  const entries = (value) => value && typeof value === "object" && !Array.isArray(value)
+    ? Object.entries(value).filter(([id]) => DRAFT_ID.test(id)) : [];
+  const owner = entries(held.owner).filter(([, id]) => typeof id === "string" && DRAFT_ID.test(id));
+  const instructions = [];
+  for (const [id, item] of entries(held.instructions)) {
+    if (!item || !["own", "task", "like"].includes(item.source) || typeof item.text !== "string") continue;
+    if (item.source === "like" && (typeof item.like !== "string" || !DRAFT_ID.test(item.like))) continue;
+    instructions.push([id, {source: item.source, like: item.source === "like" ? item.like : null,
+      text: item.text, back: item.back === "task" ? "task" : "own"}]);
+  }
+  const models = entries(held.models).filter(([, pin]) => pin && typeof pin.provider === "string" && DRAFT_ID.test(pin.provider)
+    && typeof pin.text === "string" && pin.text.length <= 128)
+    .map(([role, pin]) => [role, {provider: pin.provider, text: pin.text}]);
+  restored.roles = {owner: Object.fromEntries(owner), instructions: Object.fromEntries(instructions),
+    models: Object.fromEntries(models)};
+  return evolve(fresh, restored);
+}
 
 export function isLanguage(lang) {
   return Object.hasOwn(WORDS, lang);

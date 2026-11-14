@@ -35,6 +35,7 @@ from .authorization_terms import human_identity
 from .contract_values import _digest, _timestamp
 from .git_setup_first_resume import LOCKED, PREPARED, REF_MOVED, STAGES
 from .git_setup_records import SetupRefused
+from .git_setup_signable import signable_ref
 from .git_setup_snapshot import MAX_FILES
 from .run_files import _fsync_dir, _replace_bytes
 
@@ -55,11 +56,6 @@ _OID = {"sha1": re.compile(r"[0-9a-f]{40}"), "sha256": re.compile(r"[0-9a-f]{64}
 _NONCE = re.compile(r"[0-9a-f]{16}")
 _INSTALL_NAME = re.compile(re.escape(INSTALL) + r"[0-9a-f]{16}")
 _HEADS = "refs/heads/"
-#: The one spelling of a branch a signature wait may name. The owner pastes two commands built
-#: from it into a terminal, and Git's own rule for a name (`check-ref-format`) lets through what a
-#: shell reads as code, as a redirect or as more than one word (review ruling); these characters
-#: mean nothing to PowerShell, cmd or a POSIX shell. Git still judges everything else about it.
-_SIGNABLE_REF = re.compile(r"refs/heads/[A-Za-z0-9._/-]+")
 _OP_KEYS = frozenset({
     "schema_version", "stage", "nonce", "mode", "paths_digest", "digest_version", "target_ref",
     "object_format", "expected_tree", "commit", "install_sha256", "message_sha256", "file_count",
@@ -118,11 +114,6 @@ def _oid(value: object, object_format: str) -> str:
     if type(value) is not str or _OID[object_format].fullmatch(value) is None:
         raise ValueError("object id")
     return value
-
-
-def signable_ref(ref: object) -> bool:
-    """True when `ref` is a branch the two commands of a signature wait may name."""
-    return type(ref) is str and _SIGNABLE_REF.fullmatch(ref) is not None
 
 
 def _utf8(value: object, limit: int = 1024) -> str:

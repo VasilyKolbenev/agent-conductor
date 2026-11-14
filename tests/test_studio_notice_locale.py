@@ -36,7 +36,8 @@ def test_the_status_line_says_a_stored_notice_in_the_language_it_is_drawn_in():
       const mounts = () => ({main: new E('main'), project: new E('p'), connection: new E('p'), primary: new E('div'),
         tabs: [], screens: {}, states: {}, translatedText: [], translatedLabels: [], title: new E('title'), status: new E('p')});
       let state = store.reduce(store.EMPTY, {type: 'status', notice: {key: 'notice.task_created', params: {title: 'Мой <b> task'}}});
-      const said = (locale) => { const m = mounts(); m.main.dataset = {}; shell.mountShell(m, {...state, locale}, {});
+      const said = (locale) => { const m = mounts(); shell.mountShell(m, {...state, locale}, {});
+        if (m.main.dataset.screen !== state.screen) throw new Error('screen was not mounted');
         return m.status.textContent; };
       const first = {en: said('en'), ru: said('ru')};
       state = store.reduce(state, {type: 'connection', state: 'closed'});

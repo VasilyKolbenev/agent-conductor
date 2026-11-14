@@ -13,13 +13,66 @@ from __future__ import annotations
 
 import re
 
-from tests.test_studio_source import BOOT, IMPORTS, MODULES, PANEL
+from tests.test_studio_source import ARACHNID_MODULES, BOOT, IMPORTS, MODULES, PANEL
 
 #: What each module MAY import -- a permission table, not an obligation. The
 #: frontend contract's own column is spelled "May import", and a module that
 #: has not yet needed one of its permitted neighbours is not a fault; a module
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
+    "arachnid.js": frozenset({
+        "./command-view.js", "./desk-hash.js", "./desk-transport.js", "./studio-model.js",
+        "./studio-situation.js", "./studio-tasks-model.js", "./studio-taskruns.js", "./studio-utilities.js",
+        "./arachnid-copy.js", "./arachnid-panels.js", "./arachnid-conversation.js",
+        "./arachnid-planning.js", "./arachnid-layout.js", "./arachnid-palette.js",
+        "./arachnid-next.js",
+        "./arachnid-review-source.js", "./arachnid-manual-review.js",
+    }),
+    "arachnid-planning.js": frozenset({"./desk-transport.js", "./arachnid-advisor.js",
+        "./arachnid-plan.js", "./arachnid-plan-model.js", "./arachnid-planner-view.js"}),
+    "arachnid-advisor.js": frozenset({"./desk-transport.js", "./desk-advice-run.js",
+        "./desk-wizard-cycle.js", "./desk-wizard-digest.js", "./desk-wizard-roles.js"}),
+    "arachnid-plan.js": frozenset({"./desk-transport.js", "./desk-wizard-digest.js",
+        "./arachnid-plan-model.js", "./desk-advice-run.js", "./arachnid-advisor.js"}),
+    "arachnid-plan-model.js": frozenset({"./desk-wizard-digest.js"}),
+    "arachnid-planner-view.js": frozenset({"./command-view.js"}),
+    "arachnid-conversation.js": frozenset({
+        "./command-view.js", "./studio-i18n.js", "./studio-scene-model.js",
+        "./studio-atlas-inspector.js", "./arachnid-orbit.js",
+        "./arachnid-handoff-data.js", "./arachnid-handoff-context.js", "./arachnid-handoff.js",
+        "./arachnid-review-draft.js",
+    }),
+    "arachnid-handoff-data.js": frozenset({"./studio-model.js", "./desk-wizard-digest.js"}),
+    "arachnid-handoff-context.js": frozenset(),
+    "arachnid-review-draft.js": frozenset({"./command-view.js"}),
+    "arachnid-manual-review.js": frozenset({"./command-view.js", "./studio-model.js"}),
+    "arachnid-review-source.js": frozenset({
+        "./arachnid-manual-review.js",
+        "./desk-transport.js", "./studio-model.js", "./studio-atlas-inspector.js",
+    }),
+    "arachnid-handoff.js": frozenset({"./command-view.js", "./studio-atlas-inspector.js"}),
+    "arachnid-orbit.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "arachnid-panels.js": frozenset({
+        "./command-view.js", "./arachnid-copy.js", "./studio-quotas.js", "./studio-quotas-model.js",
+    }),
+    "arachnid-copy.js": frozenset(),
+    "arachnid-layout.js": frozenset(),
+    "arachnid-palette.js": frozenset({"./command-view.js", "./arachnid-copy.js"}),
+    "arachnid-next.js": frozenset({
+        "./command-view.js", "./studio-runread.js", "./studio-runwrite.js",
+        "./studio-automation-flow.js", "./studio-automation-model.js", "./studio-automation.js",
+        "./studio-people.js", "./studio-focus.js", "./studio-model.js", "./arachnid-next-view.js",
+    }),
+    "arachnid-next-view.js": frozenset({
+        "./studio-scene-model.js", "./desk-summary-model.js", "./arachnid-orbit.js",
+        "./studio-i18n.js",
+    }),
+    "studio-atlas-copy.js": frozenset(),
+    "studio-utilities-copy.js": frozenset(),
+    "studio-utilities.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-atlas-inspector.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-atlas.js": frozenset({"./command-view.js", "./studio-i18n.js",
+                                  "./studio-scene-model.js", "./studio-atlas-inspector.js"}),
     "studio-runstep-copy.js": frozenset(),
     "studio-participant-copy.js": frozenset(),
     "studio-run-docs-copy.js": frozenset(),
@@ -33,11 +86,15 @@ PERMITTED_IMPORTS = {
     "studio-feedback-copy.js": frozenset(),
     "studio-notice-copy.js": frozenset(),
     "studio-agents-copy.js": frozenset(),
-    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js', './studio-model.js', './studio-automation-providers.js'}),
+    'studio-budget-guidance.js': frozenset(),
+    'studio-automation-model.js': frozenset({'./studio-taskruns.js', './command-projection.js',
+        './studio-model.js', './studio-automation-providers.js', './studio-budget-guidance.js',
+        './studio-test-preview.js'}),
+    'studio-test-preview.js': frozenset({'./command-projection.js', './studio-model.js'}),
     'studio-automation-providers.js': frozenset({'./studio-model.js'}),
     'studio-automation-flow.js': frozenset({'./studio-automation-model.js'}),
     'studio-automation-copy.js': frozenset(set()),
-    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js'}),
+    'studio-automation.js': frozenset({'./studio-i18n.js', './studio-automation-model.js', './command-view.js', './studio-budget-guidance.js'}),
     'studio-workflowwrite.js': frozenset({'./studio-model.js', './studio-store.js', './command-projection.js'}),
     'studio-draft.js': frozenset({'./studio-model.js'}),
 
@@ -46,7 +103,7 @@ PERMITTED_IMPORTS = {
     "studio-trace.js": frozenset({"./command-view.js", "./studio-scene-model.js", "./studio-i18n.js"}),
     "studio-bridge.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-taskruns.js"}),
     "studio-mounts.js": frozenset(),
-    "studio-i18n.js": frozenset({"./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
+    "studio-i18n.js": frozenset({"./studio-utilities-copy.js", "./studio-atlas-copy.js", "./studio-runstep-copy.js", "./studio-participant-copy.js", "./studio-run-docs-copy.js", "./studio-runs-copy.js", "./studio-runform-copy.js", "./studio-view-copy.js", "./studio-workflow-detail-copy.js", "./studio-workflow-copy.js", "./studio-automation-copy.js", "./studio-agents-copy.js", "./studio-feedback-copy.js", "./studio-notice-copy.js", "./desk-wizard-copy.js", "./desk-wizard-advice-copy.js", "./desk-wizard-git-copy.js", "./desk-copy.js", "./desk-status-copy.js", "./desk-flow-copy.js", "./desk-feed-copy.js", "./desk-summary-copy.js", "./desk-pult-copy.js"}),
     "studio-preferences.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                         "./desk-hash.js"}),
     "studio-shell.js": frozenset({"./command-view.js", "./studio-i18n.js", "./studio-runhead.js"}),
@@ -84,7 +141,7 @@ PERMITTED_IMPORTS = {
                           "./desk-pult-flow.js", "./desk-wizard-host.js",
                           "./desk-stream.js", "./desk-flow-host.js", "./desk-people-host.js",
                           "./desk-run-host.js", "./desk-run-binding.js", "./desk-panels.js",
-                          "./desk-toggles.js"}),
+                          "./desk-toggles.js", "./desk-motion.js"}),
     "desk-run-host.js": frozenset({"./studio-runs.js", "./studio-people.js",
       "./command-view.js", "./studio-i18n.js", "./desk-run-write-host.js",
       "./desk-accept-host.js"}),
@@ -95,12 +152,22 @@ PERMITTED_IMPORTS = {
       "./studio-runwrite.js", "./studio-runread.js", "./command-projection.js"}),
     "desk-panels.js": frozenset(),
     "desk-toggles.js": frozenset(),
+    #: The transitions (spec 5.5). The model decides which moment a render shows: it reads the
+    #: status rules and the newest-run rule the rail reads, and nothing else. The module draws
+    #: it: the view's helper that builds elements and the model, and no door, store, copy
+    #: catalogue or other screen. The boot module or the scene hands it each render's view.
+    "desk-motion-model.js": frozenset({"./desk-status.js", "./studio-taskruns.js"}),
+    "desk-motion.js": frozenset({"./command-view.js", "./desk-motion-model.js"}),
     "desk-people-host.js": frozenset({"./command-view.js", "./studio-i18n.js",
       "./desk-time.js", "./studio-model.js", "./studio-runread.js",
       "./studio-quotas-model.js", "./studio-quotaflow.js", "./studio-quotas.js",
       "./studio-people.js", "./desk-transport.js"}),
     "desk-wizard-host.js": frozenset({"./desk-transport.js", "./desk-wizard-model.js",
-                                         "./desk-wizard-run.js", "./desk-wizard.js"}),
+                                         "./desk-wizard-run.js", "./desk-wizard.js", "./desk-advice-panel.js",
+                                         "./desk-hash.js", "./studio-budget-guidance.js"}),
+    "desk-advice-run.js": frozenset({"./desk-transport.js", "./desk-wizard-cycle.js", "./desk-wizard-digest.js"}),
+    "desk-advice-panel.js": frozenset({"./command-view.js", "./studio-i18n.js", "./desk-wizard-model.js",
+        "./desk-wizard-team.js", "./desk-wizard-roles.js", "./desk-advice-run.js"}),
     #: What a press on the console's queue block means: a pure flow over the door it is handed and
     #: the queue's model. It names no route and no wire word, and imports no door itself.
     "desk-pult-flow.js": frozenset({"./desk-queue-model.js"}),
@@ -115,9 +182,10 @@ PERMITTED_IMPORTS = {
     #: The scene, drawn: `mountScene` only. It hands one frozen run read to the Studio's own
     #: participant deck (the Trace and the Orbit), which is the one module of the Studio's
     #: it reaches, and says its own sentences through the catalogue. It may import no store,
-    #: no transport and no other screen.
+    #: no transport and no other screen. It may hand each render's view to the transitions
+    #: module (`./desk-motion.js`), which draws on a layer of its own and reads nothing.
     "desk-scene.js": frozenset({"./command-view.js", "./studio-i18n.js",
-                                "./studio-participants.js"}),
+                                "./studio-participants.js", "./desk-motion.js"}),
     #: The rail, drawn: `mountRail` only. It reads the word of each row from the status
     #: rules and the newest-run rule, builds elements through the view's helper and says
     #: the words through the catalogue, and may import no store, no transport and no other
@@ -199,7 +267,9 @@ PERMITTED_IMPORTS = {
                                        "./desk-wizard-prep.js",
                                        "./desk-wizard-launch.js",
                                        "./desk-wizard-run.js",
-                                       "./desk-wizard-skip.js"}),
+                                       "./desk-wizard-skip.js",
+                                       "./desk-wizard-git.js",
+                                       "./desk-wizard-git-run.js"}),
     #: What the model and the step adapters share (the order of the steps, the limits, a frozen
     #: change, the words of the documents), so neither imports the other. It reaches the task
     #: model for the title limit and the three step modules for theirs, and nothing above it.
@@ -211,7 +281,7 @@ PERMITTED_IMPORTS = {
     "desk-wizard.js": frozenset({"./desk-wizard-model.js", "./desk-wizard-copy.js",
                                  "./command-view.js", "./studio-i18n.js",
                                  "./desk-wizard-draw.js", "./desk-wizard-prepare-view.js",
-                                 "./desk-wizard-card.js"}),
+                                 "./desk-wizard-card.js", "./desk-wizard-git-view.js"}),
     #: The controls every step of the wizard is drawn from (a keyed button, a choice, a control
     #: whose door is not open, a text field, the format of an instant and of a duration). They
     #: build elements through the view's helper and reach nothing else.
@@ -224,10 +294,16 @@ PERMITTED_IMPORTS = {
     #: allows. It draws what the model says through the shared controls, and never a store or a
     #: wire.
     "desk-wizard-card.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
-                                      "./desk-wizard-model.js"}),
+                                      "./desk-wizard-model.js", "./studio-budget-guidance.js"}),
+    #: The git block of step 2 drawn: connecting git, the first commit, the wait, the last answer.
+    #: It draws what the model's facts say through the shared controls, and never a store or a
+    #: wire.
+    "desk-wizard-git-view.js": frozenset({"./command-view.js", "./desk-wizard-draw.js",
+                                          "./desk-wizard-git.js"}),
     #: The wizard's RU/EN strings, one frozen catalogue in the shape of the other copy
     #: modules. It imports nothing: text is data, and `studio-i18n.js` spreads it in.
     "desk-wizard-copy.js": frozenset(),
+    "desk-wizard-advice-copy.js": frozenset(),
     #: Step 4 as the model sees it: the pure step functions applied to the wizard's state. It
     #: imports the base and the step modules, never the model that imports it.
     "desk-wizard-team.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
@@ -257,10 +333,22 @@ PERMITTED_IMPORTS = {
     #: Step 6's terms card and what may be pressed, as pure functions over its own slice: the
     #: preview's reading, the slot, the countdown, the authorization. It reaches only the digest
     #: that gives a key its stable bytes.
-    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js"}),
+    "desk-wizard-launch.js": frozenset({"./desk-wizard-digest.js", "./studio-budget-guidance.js",
+                                        "./studio-test-preview.js"}),
     #: «Пропустить вперёд» from the card: four idempotent writes derived from the reads, as pure
     #: functions over the card's slice. It reaches the card's own module and nothing else.
     "desk-wizard-skip.js": frozenset({"./desk-wizard-launch.js"}),
+    #: The rules of connecting git and of the first commit: the shapes of the answers, the bodies,
+    #: the two commands of a wait for a signature, the one switch. It imports nothing.
+    "desk-wizard-git.js": frozenset(),
+    #: The git block of step 2 as the wizard's state holds it: one press, one request, the
+    #: answers folded back, what the view draws. It reaches the base, the name rule, the
+    #: step's git facts and the pure rules, and never the model that imports it.
+    "desk-wizard-git-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-launch.js",
+                                         "./desk-wizard-materials.js",
+                                         "./desk-wizard-git.js"}),
+    #: The words of the git block, one frozen catalogue; `studio-i18n.js` spreads it in.
+    "desk-wizard-git-copy.js": frozenset(),
     #: The chain applied to the wizard's state, and the same after a reload: the seam the model
     #: calls. It is handed the model's judgement of the four steps and never imports the model.
     "desk-wizard-run.js": frozenset({"./desk-wizard-base.js", "./desk-wizard-cycle.js",
@@ -477,12 +565,12 @@ PERMITTED_IMPORTS = {
     #: alone -- never to `studio-runs.js`, which would put two screens in one
     #: ring.
     "studio-people.js": frozenset({"./command-view.js", "./studio-i18n.js",
-                                   "./studio-quotas.js",
+                                   "./studio-quotas.js", "./studio-participants.js",
                                    "./command-projection.js",
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),
     "studio.js": frozenset(
-        {f"./{name}" for name in MODULES if name != BOOT}
+        {f"./{name}" for name in MODULES if name != BOOT and name not in ARACHNID_MODULES}
         | {"./command-view.js", "./command-projection.js"}),
 }
 

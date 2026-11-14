@@ -33,7 +33,7 @@ def test_a_view_child_serves_from_the_hub_snapshot_never_polls_quota_and_closes_
         active.wait_serving()
         wait_until(lambda: project.quota_polls() >= 1, WAIT, "the active child to poll", active)
         active.close_stdin()
-        assert active.wait_exit(WAIT) == 0
+        active.expect_exit(0)
         _forget_the_polls(project)
         (project.home / "limits.json").write_text(json.dumps({
             "schema_version": 1, "project_id": project.project_id, "taken_at": STORED_AT,
@@ -49,7 +49,7 @@ def test_a_view_child_serves_from_the_hub_snapshot_never_polls_quota_and_closes_
         stays_true(lambda: project.quota_polls() == 0, 3.0, "the view child to poll no quota")
 
         view.close_stdin()
-        assert view.wait_exit(WAIT) == 0
+        view.expect_exit(0)
         view.wait_state("stopped")
         assert project.head_phase() == "closed"
     finally:

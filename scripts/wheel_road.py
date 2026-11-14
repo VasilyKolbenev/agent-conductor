@@ -164,7 +164,8 @@ def stdlib_bind_control(road: Road, timeout: float = 120.0) -> None:
 
 
 def http_checks(url: str, provenance: dict) -> int:
-    """Each served asset byte-equal to its installed file, the five screens, each read endpoint."""
+    """Installed bytes, the Arachnid entry, five legacy Studio screens, each read endpoint."""
+    assert {"/", "/panel/studio.html"} <= set(provenance["routes"]), "required document routes"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     checks = 0
     for route, facts in sorted(provenance["routes"].items()):
@@ -174,6 +175,10 @@ def http_checks(url: str, provenance: dict) -> int:
             assert response.headers["Content-Type"] == facts["content_type"], route
         assert sha(body) == provenance["files"]["panel/" + facts["file"]], route
         if route == "/":
+            shell = body.decode("utf-8")
+            for witness in ('id="chat"', 'id="classic"', 'href="/panel/studio.html"'):
+                assert witness in shell, witness
+        if route == "/panel/studio.html":
             shell = body.decode("utf-8")
             for screen in SCREENS:
                 assert f'id="screen{screen}"' in shell and f'id="nav{screen}"' in shell, screen

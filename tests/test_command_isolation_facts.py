@@ -236,6 +236,20 @@ def test_the_absences_are_stated_as_absences(name):
                ("does not", "no ", "not ", "cannot")), fact.sentence
 
 
+def test_the_login_directory_row_says_a_relay_task_does_not_stand_on_it():
+    """A subscription task of a harness with a relay works on a copy of the access token in a
+    relay home, so the measured promise about the pinned directory covers the spawns that DO stand
+    on it (the version and login questions), and the row says what covers the task instead."""
+    sentence = _fact("login_directory_gained_state").sentence
+
+    assert "after each spawn that stands on it" in sentence
+    assert ("A subscription task of a harness with a relay does not stand on that directory: it "
+            "works on a copy of the access token, without its refresh token, in a relay home "
+            "outside the project, which is read back and removed when the attempt ends."
+            ) in sentence
+    assert "measured after the spawn," not in sentence, "the old sentence made the promise for all"
+
+
 def test_the_vendors_own_sandbox_is_a_per_provider_fact_this_module_will_not_name():
     """Whose mechanism it is, and whose question WHICH provider is.
 

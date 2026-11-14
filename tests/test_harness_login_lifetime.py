@@ -29,6 +29,13 @@ from tests.test_command_claude_transport import a_request, run_once
 from tests.test_harness_login_leaks import SECRET, a_signed_in_home
 from tests.test_harness_subscription_login import a_harness
 
+import pytest
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: About something other than the boundary: a harness fake is served as a plain child and the
+#: doors are told it provides the boundary (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
+
 SAMPLED = SECRET.encode("utf-8")
 
 

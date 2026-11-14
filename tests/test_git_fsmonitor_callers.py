@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import dataclasses
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -227,8 +226,21 @@ def test_the_flags_and_the_environment_say_the_monitor_off_with_one_empty_value(
     assert (env["GIT_CONFIG_KEY_1"], env["GIT_CONFIG_VALUE_1"]) == ("core.fsmonitor", "")
 
 
-@pytest.mark.skipif(shutil.which("gh") is None, reason="gh is not installed")
 def test_the_pin_of_gh_reads_its_version_with_the_empty_value_in_its_environment(tmp_path):
-    pin = tool_pins.pin_tool("gh", shutil.which("gh"), folder=tmp_path,
+    """The environment pin_tool hands `gh --version` switches the file monitor off with the
+    empty value. A stand-in runner reads that environment: a real gh never reads Git's settings
+    for its version, so running it proved nothing of this, and on a cold Windows runner its first
+    start outlasted the probe's timeout and wrote its state into the checkout (CI 37603275329)."""
+    seen: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(argv: list[str], env) -> str:
+        seen.append((list(argv), dict(env)))
+        return "gh version 2.63.2 (2026-01-01)\n"
+
+    path = str(tmp_path / ("gh.exe" if os.name == "nt" else "gh"))
+    pin = tool_pins.pin_tool("gh", path, folder=tmp_path, run=run,
                              source={"HOME": str(tmp_path)})
-    assert pin.tool == "gh" and pin.version.count(".") == 2
+    assert (pin.tool, pin.version) == ("gh", "2.63.2")
+    [(argv, env)] = seen
+    assert argv == [path, "--version"]
+    assert (env["GIT_CONFIG_KEY_1"], env["GIT_CONFIG_VALUE_1"]) == ("core.fsmonitor", "")

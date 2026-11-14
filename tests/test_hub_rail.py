@@ -273,6 +273,52 @@ def test_the_menu_of_a_project_offers_view_close_and_forget_only_where_the_spec_
                    "uncertain": ["forget"], "missing": ["forget"], "activeFailed": ["forget"]}
 
 
+def test_the_menu_offers_the_profile_where_a_copy_can_be_made_and_only_while_it_is_present():
+    out = js("""
+      const items = (over, profile = "present") => rail.menuItems(row(over), {profile}).map(
+        (item) => [item.id, item.target, item.key]);
+      const states = ["stopped", "running", "failed", "starting", "stopping", "stop_overdue",
+        "stop_uncertain", "recovery_required", "busy_elsewhere", "identity_mismatch", "missing"];
+      const offered = (state) => items({state, working: "stopped"}).filter(
+        ([id]) => id === "apply_profile");
+      const named = (list) => list.map(([id]) => id);
+      const plain = row({state: "stopped", working: "stopped"});
+      show({offered: Object.fromEntries(states.map((state) => [state, offered(state)])),
+        absent: named(items({state: "stopped", working: "stopped"}, "absent")),
+        invalid: named(items({state: "stopped", working: "stopped"}, "invalid")),
+        none: [rail.menuItems(plain).map((item) => item.id),
+          rail.menuItems(plain, {profile: null}).map((item) => item.id),
+          rail.menuItems(plain, {}).map((item) => item.id)],
+        order: named(items({state: "stopped", working: "stopped"})),
+        view: named(items({state: "running", working: "view"})),
+        active: named(items({state: "running", working: "active"}))});
+    """)
+    plain = [["apply_profile", "projectProviders", "hub.act.apply_profile"]]
+    restart = [["apply_profile", "projectProviders", "hub.act.apply_profile_restart"]]
+    assert out["offered"] == {
+        "stopped": plain, "running": restart, "failed": plain, "starting": [], "stopping": [],
+        "stop_overdue": [], "stop_uncertain": [], "recovery_required": [], "busy_elsewhere": [],
+        "identity_mismatch": [], "missing": []}
+    assert out["absent"] == out["invalid"] == ["view_open", "forget"]
+    assert out["none"] == [["view_open", "forget"]] * 3
+    assert out["order"] == ["view_open", "apply_profile", "forget"]
+    assert out["view"] == ["close_view", "apply_profile"] and out["active"] == ["apply_profile"]
+
+
+def test_the_profile_is_one_entry_whose_words_name_the_restart_only_where_a_child_runs():
+    out = js("""
+      const words = (over, locale) => rail.menuItems(row(over), {profile: "present"}).filter(
+        (item) => item.id === "apply_profile").map((item) => copy.hubText(locale, item.key));
+      show(["en", "ru"].map((locale) => [words({state: "stopped", working: "stopped"}, locale),
+        words({state: "running", working: "active"}, locale),
+        words({state: "running", working: "view"}, locale)]));
+    """)
+    assert out == [[["Apply the profile"], ["Apply the profile and restart"],
+                    ["Apply the profile and restart"]],
+                   [["Применить профиль"], ["Применить профиль и перезапустить"],
+                    ["Применить профиль и перезапустить"]]]
+
+
 def test_the_tasks_under_a_project_say_the_shared_words_and_the_snapshot_they_came_from():
     out = js("""
       const [live, snap, none] = page.projects.map((one) => rail.taskRows(one, ctx()));

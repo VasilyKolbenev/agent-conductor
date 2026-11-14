@@ -232,10 +232,10 @@ def test_an_unlanded_continuation_keeps_the_dialog_and_the_next_press_only_retri
         assert served.automation(A)["control"]["action"] == "pause"
         assert (A, "resume") not in _entries(served)
         window.press("queue:skip:confirm")
-        window.until("the retried continuation", lambda: len(window.posted) >= 3)
-        served.wait("the continuation is queued", lambda: (A, "resume") in _entries(served))
+        # Keep Playwright dispatching the intercepted retry until Desk receives its answer.
         window.page.wait_for_function(
             "() => document.querySelector('#deskPult [data-pult-dialog]') === null")
+        assert (A, "resume") in _entries(served)
         paths = [path for path, _body in window.posted]
         assert paths == [CONTROL, PUT, PUT]            # the pause is written once, the put twice
         assert window.facts()["notice"] is None

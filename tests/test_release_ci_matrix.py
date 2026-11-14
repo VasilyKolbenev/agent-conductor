@@ -254,6 +254,39 @@ def test_both_orders_keep_going_and_the_second_follows_only_a_completed_first(
     assert "if: always()" in upload and "/bg" in upload and "/bgr" in upload
 
 
+def test_one_afd_trace_wraps_the_forward_order_of_one_windows_run(workflow: str) -> None:
+    """Review ruling 07.10: ONE built-in AFD trace -- a Windows push of the
+    integration branch, its first attempt, whose head commit names it -- around
+    the forward order only; the same gate command otherwise; the session stopped
+    before the reversed order may start; the raw trace never uploaded."""
+    job = _job(workflow, "browser")
+    switch = [line.strip() for line in job.splitlines() if line.strip().startswith("AFD_TRACE:")]
+    assert switch == [
+        "AFD_TRACE: ${{ matrix.os == 'windows-latest' && github.event_name == 'push' "
+        "&& github.ref == 'refs/heads/feature/v1-desk-integration' "
+        "&& github.run_attempt == '1' "
+        "&& contains(github.event.head_commit.message, '[afd-trace-1]') }}"]
+    forward = " ".join(_step(job, "Browser gate").split())
+    gate = 'python browser_tests/gate.py --keep-going --artifacts "$RUNNER_TEMP/bg"'
+    traced = ('python -m browser_tests.gate_trace --trace-dir "$RUNNER_TEMP/afd" '
+              '--record "$RUNNER_TEMP/bg/afd" --watch "$RUNNER_TEMP/bg" -- ')
+    assert f'if [ "$AFD_TRACE" = "true" ]; then {traced}{gate} else {gate} fi' in forward
+    assert "gate_trace" not in _step(job, "Browser gate, reversed")
+    stop, read = _step(job, "Stop the AFD trace"), _step(job, "Read the AFD trace")
+    for step in (stop, read):
+        assert "if: always() && env.AFD_TRACE == 'true'" in step
+    assert 'run: python -m browser_tests.gate_trace --stop --record "$RUNNER_TEMP/bg/afd"\n' in stop
+    assert ('run: python -m browser_tests.gate_trace --extract --record "$RUNNER_TEMP/bg/afd"'
+            ' --watch "$RUNNER_TEMP/bg"') in read
+    # Stopped before the reversed order may start; read only after it, and before
+    # the clean-checkout check that then covers the decoder too.
+    order = [job.index(f"- name: {name}\n") for name in (
+        "Browser gate", "Stop the AFD trace", "May the reversed order run",
+        "Browser gate, reversed", "Read the AFD trace", "The checkout is clean")]
+    assert order == sorted(order), order
+    assert "/afd" not in _step(job, "Keep the gate's records")
+
+
 def test_no_gate_writes_its_artifacts_into_the_worktree(workflow: str) -> None:
     """Engine logs and browser profiles stay in the runner's own temporary root.
 

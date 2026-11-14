@@ -77,7 +77,7 @@ def test_the_places_of_the_words_are_the_ones_the_plan_argues_for():
     for word, place in out.items():
         by_place.setdefault(place, []).append(word)
     assert {place: sorted(words) for place, words in by_place.items()} == {
-        "waiting": ["checkpoint", "expired", "queue_confirmation", "stalled", "waiting_you"],
+        "waiting": ["checkpoint", "expired", "queue_confirmation", "recovery_needed", "stalled", "waiting_you"],
         "working": ["checkpoint_inactive", "owner_missing", "paused", "revoked", "running"],
         "unclear": ["outcome_unknown", "run_unreadable", "state_unknown", "task_unreadable"],
         "left": sorted(["not_started", "queue_blocked", "queued", "queued_inactive", "ended",

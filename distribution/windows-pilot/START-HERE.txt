@@ -1,0 +1,41 @@
+ARACHNID STUDIO · ПЕРВЫЙ ЗАПУСК НА WINDOWS
+Пилот 7f6b825 · Codex + Grok · локальное демо
+
+Понадобятся обычный пользователь Windows, браузер и Python 3.12 или 3.11 с venv и pip.
+Если Python ещё не установлен: https://www.python.org/downloads/windows/
+Для показа подписки, API-ключи, Git и установленные CLI не нужны.
+
+1. В Проводнике нажмите «Извлечь всё» для ZIP. Откройте извлечённую папку,
+   в адресной строке введите powershell и нажмите Enter.
+2. В этом окне выполните:
+       .\Start.cmd
+   Скрипт сверит файлы, создаст чистое окружение и установит wheel из архива.
+   Когда появится ссылка http://127.0.0.1:.../#session=demo-codex-grok&lang=ru,
+   откройте её в своём браузере. Оставьте окно PowerShell открытым.
+3. В чате Атласа нажмите «Что Grok передал Codex?». Выберите шаг Do на орбите
+   или спросите «А что именно Codex исправил?». Справа посмотрите изменения
+   в runstats/counts.py и tests/test_counts.py, три теста и вердикт отдельного
+   проверяющего. В чате можно продолжить: «Что из этого проверили тестами?».
+   В Studio видна сводка 3/3. Имена тестов и сохранённый вывод unittest лежат
+   в project\test-output.txt внутри напечатанной Pilot folder.
+   Завершите просмотр через Ctrl+C в окне запуска. Если Windows спросит
+   Terminate batch job (Y/N)?, нажмите Y и Enter.
+
+Это учебная реконструкция одного принятого сценария: пример уже заполнен.
+Здесь Grok и Codex показаны своими ролями; нового обращения к сервисам нет.
+Отчёт о настоящем цикле на подписках и CI:
+https://github.com/VasilyKolbenev/agent-conductor/blob/7f6b825/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md
+https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43454184474
+
+Проверка wheel отдельно:
+    (Get-FileHash .\agent_conductor-0.1.0-py3-none-any.whl -Algorithm SHA256).Hash
+Ожидаемый SHA-256:
+214bf5e5beb0822f4616ded0dce44161e76e1f9d557d9c5507ec40939acd40fe
+
+Каждый запуск создаёт отдельную папку в %USERPROFILE%\ArachnidPilot.
+После Ctrl+C её можно удалить. Если на компьютере Python доступен только по
+полному пути, запустите из той же папки свой python.exe с аргументами
+-I -B -X utf8 .\pilot.py. Если корпоративная политика блокирует локальный
+запуск, согласуйте его с администратором.
+
+Хотите попробовать добавить свою утилиту? См. HARNESSES.txt.

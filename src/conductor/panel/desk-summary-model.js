@@ -41,7 +41,7 @@ export const BUCKETS = Object.freeze({
   waiting_you: "waiting", queue_confirmation: "waiting", checkpoint: "waiting",
   stalled: "waiting", expired: "waiting",
   running: "working", paused: "working", revoked: "working", checkpoint_inactive: "working",
-  owner_missing: "working",
+  owner_missing: "working", recovery_needed: "waiting",
   not_started: "left", queue_blocked: "left", queued: "left", queued_inactive: "left",
   outcome_succeeded: "left", outcome_verification_failed: "left", outcome_failed: "left",
   outcome_rejected: "left", outcome_cancelled: "left", ended: "left", no_outcome: "left",

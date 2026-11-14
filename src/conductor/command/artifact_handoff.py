@@ -54,6 +54,116 @@ class ArtifactHandoff:
         self._ids = ids
         self._accept_git = None
 
+    def record_subscription_account(
+            self, request: ActionRequest, *, actor_instance_id: str, adapter_id: str,
+            role: str, proof: object) -> EvidenceRef:
+        """Append local provenance once, outside the login lease and acceptance evidence."""
+        from .attempt_replay import action_request_for, attempt_events_for
+        from .attempts import action_request_digest
+        from .contracts import _content_digest, _id, frozen_config_bindings
+        from .graph_causality import permitted_verifier
+        from .adapters.subscription_account import require_adapter_vendor, settled_proof
+
+        safe = settled_proof(proof)
+        if not isinstance(request, ActionRequest):
+            raise ValueError("account evidence requires a validated request")
+        _id("actor_instance_id", actor_instance_id)
+        _id("adapter_id", adapter_id)
+        require_adapter_vendor(adapter_id, safe["vendor"])
+        if type(role) is not str or role not in {"doer", "checker"}:
+            raise ValueError("account evidence role must be doer or checker")
+        binding = {
+            "run_id": request.run_id, "action_id": request.action_id,
+            "attempt_id": request.attempt_id, "instance_id": request.instance_id,
+            "actor_instance_id": actor_instance_id, "adapter_id": adapter_id, "role": role}
+        extra = {"binding": binding, "request_digest": action_request_digest(request),
+                 "proof": safe}
+        digest = _content_digest(extra)
+        uri = (f"subscription-account/{request.action_id}/{request.attempt_id}/"
+               f"{role}/{actor_instance_id}")
+        with self._store.transaction():
+            recovered = self._store.read(request.run_id)
+            if recovered.warnings:
+                raise StoreError("account evidence refuses unjudged durable bytes")
+            values = tuple(row.value for row in recovered.records)
+            stored = action_request_for(values, request.action_id)
+            if stored is None or stored.as_dict() != request.as_dict():
+                raise RecordConflict("account evidence names another durable request")
+            bound = frozen_config_bindings(recovered.config).get(request.instance_id)
+            expected = ((bound, request.instance_id) if role == "doer" else
+                        permitted_verifier(recovered, request.action_id))
+            if expected != (adapter_id, actor_instance_id):
+                raise RecordConflict("account evidence names another frozen actor")
+            phase = "effect_lease" if role == "doer" else "execution_observed"
+            if not any(event.phase == phase
+                       for event in attempt_events_for(values, request.action_id)):
+                raise RecordConflict("account evidence precedes its attempt boundary")
+            anchors = [row.value for row in recovered.records
+                       if row.kind == "evidence" and row.value.uri == uri]
+            if len(anchors) > 1:
+                raise RecordConflict("attempt carries duplicate account evidence")
+            if anchors:
+                anchor = anchors[0]
+                if (anchor.kind != "subscription_account_v1" or anchor.created_by != adapter_id
+                        or anchor.verification != "unverified" or anchor.digest != digest
+                        or dict(anchor.extra) != extra):
+                    raise RecordConflict("attempt account evidence records different facts")
+            else:
+                anchor = EvidenceRef(
+                    evidence_id=self._ids(f"subscription-account-{role}-{actor_instance_id}"),
+                    run_id=request.run_id,
+                    kind="subscription_account_v1", uri=uri, label="Local account provenance",
+                    created_by=adapter_id, observed_at=self._clock(), digest=digest,
+                    verification="unverified", extra=extra)
+                self._store.append(anchor)
+            return EvidenceRef.from_dict(anchor.as_dict())
+
+    def claim_test_run(self, request, binding):
+        from .attempt_protocol import claim_test_run
+        return claim_test_run(self._store.project_root, request, binding)
+
+    def record_test_run(self, request, report):
+        from .attempt_protocol import record_test_run
+        record_test_run(self._store.project_root, request, report)
+
+    def seal_attempt(self, request, verifier, material, frame, test_report):
+        from .attempt_protocol import anchor_extra, seal_attempt
+        from .seed_record import read_seed
+        from .task_contracts import frozen_config_task
+        task = frozen_config_task(self._store.read(request.run_id).config)
+        if task is None or frame.accept_manifest_digest is None:
+            return None
+        seed = read_seed(self._store.project_root, task.task_id)
+        if seed is None:
+            return None
+        wrapped = seal_attempt(self._store.project_root, request, verifier, material,
+                               frame, seed, test_report)
+        uri = "attempt-seal/" + request.action_id
+        extra = anchor_extra(request, wrapped["seal"])
+        with self._store.transaction():
+            recovered = self._store.read(request.run_id)
+            anchors = [row.value for row in recovered.records
+                       if row.kind == "evidence" and row.value.uri == uri]
+            if len(anchors) > 1:
+                raise RecordConflict("attempt carries more than one seal anchor")
+            if anchors:
+                anchor = anchors[0]
+                if (anchor.kind != "attempt_seal" or anchor.created_by != "runtime"
+                        or anchor.verification != "unverified" or anchor.digest != wrapped["digest"]
+                        or dict(anchor.extra) != extra):
+                    raise RecordConflict("attempt seal differs from its ledger anchor")
+            else:
+                self._store.append(EvidenceRef(
+                    evidence_id=self._ids("evidence"), run_id=request.run_id,
+                    kind="attempt_seal", uri=uri, label="Prepared attempt seal",
+                    created_by="runtime", observed_at=self._clock(), digest=wrapped["digest"],
+                    verification="unverified", extra=extra))
+        return wrapped
+
+    def finish_attempt(self, request, seal, verifier, verification):
+        from .attempt_protocol import finish_attempt
+        finish_attempt(self._store.project_root, request, seal, verifier, verification)
+
     def capture_dispatch(self, request, args, workspace, *, sensitive=()):
         from .accept_capture import capture_dispatch
         from .accept_manifest import SnapshotRefused
@@ -240,7 +350,8 @@ class ArtifactHandoff:
             digest: str | None,
             verifier_instance_id: str | None = None,
             work_tree_digest: str | None = None,
-            accept_manifest_digest: str | None = None) -> EvidenceRef | None:
+            accept_manifest_digest: str | None = None,
+            attempt_seal_digest: str | None = None) -> EvidenceRef | None:
         """Publish bounded tree-change evidence, or recover its durable row."""
         with self._store.transaction():
             recovered = self._store.read(request.run_id)
@@ -251,12 +362,15 @@ class ArtifactHandoff:
                 evidence = self._verified_evidence(
                     request, adapter_id, digest,
                     verifier_instance_id=verifier_instance_id,
-                    work_tree_digest=work_tree_digest, accept_manifest_digest=accept_manifest_digest)
+                    work_tree_digest=work_tree_digest,
+                    accept_manifest_digest=accept_manifest_digest,
+                    attempt_seal_digest=attempt_seal_digest)
                 self._store.append(evidence)
             self._hold_evidence(evidence, request, adapter_id, digest,
                                 verifier_instance_id=verifier_instance_id,
                                 work_tree_digest=work_tree_digest,
-                                accept_manifest_digest=accept_manifest_digest)
+                                accept_manifest_digest=accept_manifest_digest,
+                                attempt_seal_digest=attempt_seal_digest)
             return EvidenceRef.from_dict(evidence.as_dict())
 
     def _review_artifact(
@@ -305,7 +419,8 @@ class ArtifactHandoff:
             self, request: ActionRequest, adapter_id: str, digest: str, *,
             verifier_instance_id: str | None = None,
             work_tree_digest: str | None = None,
-            accept_manifest_digest: str | None = None) -> EvidenceRef:
+            accept_manifest_digest: str | None = None,
+            attempt_seal_digest: str | None = None) -> EvidenceRef:
         extra = {}
         if work_tree_digest is not None or accept_manifest_digest is not None:
             from .contract_values import _digest
@@ -313,6 +428,10 @@ class ArtifactHandoff:
             _digest("accept_manifest_digest", accept_manifest_digest)
             extra = {"work_tree_digest": work_tree_digest,
                      "accept_manifest_digest": accept_manifest_digest}
+        if attempt_seal_digest is not None:
+            from .contract_values import _digest
+            _digest("attempt_seal_digest", attempt_seal_digest)
+            extra["attempt_seal_digest"] = attempt_seal_digest
         now = self._clock()
         return EvidenceRef(
             evidence_id=self._ids("evidence"), run_id=request.run_id,
@@ -330,7 +449,8 @@ class ArtifactHandoff:
             adapter_id: str, digest: str | None, *,
             verifier_instance_id: str | None = None,
             work_tree_digest: str | None = None,
-            accept_manifest_digest: str | None = None) -> None:
+            accept_manifest_digest: str | None = None,
+            attempt_seal_digest: str | None = None) -> None:
         if (evidence.run_id != request.run_id
                 or evidence.uri != f"verification/{request.action_id}"
                 or evidence.kind != "verification"
@@ -343,7 +463,10 @@ class ArtifactHandoff:
             raise RecordConflict("action verification evidence records different facts")
         # A read-only standing lookup passes no digest. A publication/retry must compare both
         # snapshot bindings, including None: legacy evidence cannot silently acquire a seal.
-        if (digest is not None or work_tree_digest is not None or accept_manifest_digest is not None) and (
+        comparing = (digest is not None or work_tree_digest is not None
+                     or accept_manifest_digest is not None or attempt_seal_digest is not None)
+        if comparing and (
                 evidence.extra.get("work_tree_digest") != work_tree_digest
-                or evidence.extra.get("accept_manifest_digest") != accept_manifest_digest):
+                or evidence.extra.get("accept_manifest_digest") != accept_manifest_digest
+                or evidence.extra.get("attempt_seal_digest") != attempt_seal_digest):
             raise RecordConflict("action verification evidence records another snapshot")

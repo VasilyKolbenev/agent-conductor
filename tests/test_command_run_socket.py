@@ -35,6 +35,11 @@ from tests.test_command_run_routes import (
     urllib,
     write_project,
 )
+from tests._boundary_assumed import boundary_assumed  # noqa: F401
+
+#: The socket tests open runs over a harness fake served as a plain child; this module is not about
+#: the boundary, so the doors are told it provides one (tests/_boundary_assumed.py).
+pytestmark = pytest.mark.usefixtures("boundary_assumed")
 
 #
 # Every test above calls `CommandApi` directly, which proves the route
@@ -125,7 +130,7 @@ def test_a_browser_can_draw_a_workflow_and_open_a_run_from_it_over_a_socket(
         listed = request(base, "GET", "/command/workflows")
         assert listed[0] == 200 and listed[1]["workflows"] == []
         assert [row["starter_id"] for row in listed[1]["starters"]] == \
-            ["dalio-v5", *sorted(set(SHIPPED) - {"dalio-v5"})]
+            ["dalio-v6", *sorted(SHIPPED)]
 
         assert request(base, "POST", f"/command/workflows/{WORKFLOW}/draft",
                        token=token,

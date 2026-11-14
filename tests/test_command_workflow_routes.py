@@ -91,7 +91,7 @@ NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
 #: `target()` gives them, because that is what the parametrized claims compare.
 BOTH_VERBS = frozenset({
     "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow",
-    "/command/queue", "/command/project/auto-continue"})
+    "/command/queue", "/command/project/utilities", "/command/project/auto-continue"})
 #: The task every route pattern carrying ``<task_id>`` is filled with.
 TASK = "task-studio-1"
 #: The project document every route pattern carrying ``<doc_id>`` is filled with: `d-` and 32 hex.
@@ -109,7 +109,8 @@ def target(path):
     """One route pattern with every identity a path can carry substituted."""
     filled = (path.replace("<workflow_id>", WORKFLOW).replace("<revision>", "1")
               .replace("<task_id>", TASK).replace("<run_id>", "run-studio-1")
-              .replace("<doc_id>", DOC_ID))
+              .replace("<doc_id>", DOC_ID).replace("<node_id>", "do")
+              .replace("<action_id>", "action-1"))
     assert "<" not in filled, filled
     return filled
 

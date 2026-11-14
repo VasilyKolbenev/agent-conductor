@@ -32,7 +32,8 @@ STYLE = PANEL / "hub.css"
 LINE_CAP = 800
 #: The hub's own files by name, grown by the commit that adds one (the registry is held to exactly
 #: these and the four shared modules).
-OWN = ("hub.js", "hub-add.js", "hub-onboarding.js", "hub-github.js", "hub-copy.js", "hub-rail.js", "hub-stub.js", "hub-frame.js")
+OWN = ("hub.js", "hub-add.js", "hub-onboarding.js", "hub-github.js", "hub-copy.js", "hub-rail.js",
+       "hub-stub.js", "hub-frame.js", "hub-ops.js", "hub-tools.js")
 SHARED = tuple(sorted(SHARED_MODULES))
 JS_TYPE = "text/javascript; charset=utf-8"
 CSS_TYPE = "text/css; charset=utf-8"
@@ -54,8 +55,11 @@ PERMITTED = {
     "hub-onboarding.js": set(),
     "hub-github.js": {"./hub-copy.js", "./hub-rail.js"},
     "hub-stub.js": {"./desk-time.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js"},
-    "hub.js": {"./desk-hash.js", "./hub-add.js", "./hub-onboarding.js", "./hub-copy.js", "./hub-frame.js", "./hub-rail.js",
-               "./hub-stub.js"},
+    "hub-ops.js": {"./hub-copy.js"},
+    "hub-tools.js": {"./hub-copy.js", "./hub-rail.js"},
+    "hub.js": {"./desk-hash.js", "./hub-add.js", "./hub-onboarding.js", "./hub-copy.js",
+               "./hub-frame.js", "./hub-ops.js", "./hub-rail.js", "./hub-stub.js",
+               "./hub-tools.js"},
 }
 REGIONS = (("top", "hubTop"), ("banners", "hubBanners"), ("confirm", "hubConfirm"),
            ("rail", "hubRail"), ("center", "hubCenter"), ("side", "hubSide"))
@@ -490,8 +494,34 @@ def test_the_write_targets_of_the_page_are_the_fourteen_of_the_spec_and_no_other
 def test_the_bodies_the_page_sends_name_no_path_no_root_and_no_folder():
     code = _code("hub.js")
     assert not re.search(r"""["']?\b(?:root|path|dir)["']?\s*:""",
-                         code + _code("hub-onboarding.js"))
+                         code + _code("hub-onboarding.js") + _code("hub-ops.js")
+                         + _code("hub-tools.js"))
     assert "JSON.stringify" in code and code.count("JSON.stringify") == 1
+
+
+def test_the_id_of_a_tool_candidate_is_read_by_the_tools_module_and_written_once_as_a_pin_body():
+    named = [name for name in OWN if "candidate_id" in _code(name)]
+    assert named == ["hub.js", "hub-tools.js"]
+    assert _code("hub.js").count("candidate_id") == 1
+    body = re.findall(r"write\(\"toolPin\"[^\n]*", _code("hub.js"))
+    assert len(body) == 1 and "{candidate_id: candidateId}" in body[0]
+
+
+def test_the_page_follows_the_operations_of_three_targets_and_no_other():
+    table = re.search(r"export const FOLLOWED = Object\.freeze\(\{(.*?)\}\);", _code("hub-ops.js"),
+                      re.DOTALL)
+    assert table is not None, "hub-ops.js has no table called FOLLOWED"
+    followed = dict(re.findall(r'(\w+): "(\w+)"', table.group(1)))
+    assert followed == {"projectRecover": "recover", "loginRecover": "recover_login",
+                        "projectProviders": "providers"}
+    assert set(followed) <= set(SPEC_TARGETS), "a followed operation begins at a spec target"
+
+
+def test_the_hub_never_prepares_a_restart_and_no_module_but_the_copy_names_the_command():
+    for name in OWN:
+        if name != "hub-copy.js":
+            assert "prepare-restart" not in _code(name).lower(), name
+    assert not [target for target in SPEC_TARGETS if "prepare" in target.lower()]
 
 
 def test_the_hash_the_page_writes_is_made_by_the_shared_grammar_and_nothing_else():

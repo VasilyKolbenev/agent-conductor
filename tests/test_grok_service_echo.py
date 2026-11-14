@@ -180,3 +180,251 @@ def test_dispatch_artifacts_and_environment_keep_every_protection(tmp_path):
     secrets = set(value._login_secrets())
     assert {KEY, REFRESH, EMAIL, TEAM, PRINCIPAL, ASSET} <= {item.decode() for item in secrets}
     assert value._echoed_login(b'answer ' + EMAIL.encode())
+
+
+# -- the rule of place: a value stands where an admitted sample equals it or holds it
+
+HELD = 'asset-' + PRINCIPAL + '-0123'
+ADDRESS = 'https://assets.invalid/' + PRINCIPAL + '/a.png'
+
+
+def published_row(tmp_path, value):
+    """One collector read of ``value``, as the HTTP projection shows it."""
+    from tests.test_command_quota_routes import contracts, get, quota_api
+    cache = QuotaService()
+    collector = QuotaCollector(cache, (quota_plan_for('bound', value),), clock=lambda: AT)
+    collector._collect(*collector._work[0])
+    api = quota_api(tmp_path, service=cache, providers=contracts('bound'),
+                    clock=lambda: AT.isoformat())
+    return json.dumps(get(api).payload['snapshots'][0])
+
+
+@pytest.mark.parametrize('asset, address', [
+    (HELD, 'grok-asset:///' + HELD), (HELD, 'https://assets.invalid/' + HELD + '/a.png'),
+    (ADDRESS, ADDRESS)], ids=['grok-asset-address', 'https-around-the-id', 'the-id-is-the-address'])
+def test_the_principal_id_may_stand_inside_the_image_id_it_belongs_to(asset, address, tmp_path):
+    value, runner = make(tmp_path, login(profile_image_asset_id=asset))
+    runner.info = reply(profileImageUrl=address)
+    assert value.quota_connection().read() == BILLING
+    extra = set(runner.specs[-1].sensitive_extra)
+    assert {KEY.encode(), REFRESH.encode()} <= extra
+    assert not {PRINCIPAL.encode(), asset.encode()} & extra
+    row = published_row(tmp_path, value)
+    assert '"remaining_percent": 59' in row
+    assert not any(secret in row for secret in (PRINCIPAL, asset, KEY, REFRESH))
+
+
+@pytest.mark.parametrize('address', [
+    'grok-asset:///' + HELD + '?owner=' + PRINCIPAL,
+    'https://assets.invalid/' + HELD + '/' + PRINCIPAL,
+    'grok-asset:///' + HELD + HELD, PRINCIPAL + '/grok-asset:///' + HELD],
+    ids=['query-after-the-id', 'path-after-the-id', 'the-id-twice', 'before-the-address'])
+def test_the_principal_id_outside_the_image_id_it_belongs_to_still_refuses(address, tmp_path):
+    value, runner = make(tmp_path, login(profile_image_asset_id=HELD))
+    runner.info = reply(profileImageUrl=address)
+    refused(value)
+    assert not {PRINCIPAL.encode(), HELD.encode()} & set(runner.specs[-1].sensitive_extra)
+    assert value._login_echo
+
+
+@pytest.mark.parametrize('info', [
+    reply(principalId=HELD), reply(teamId=HELD), reply(note=HELD),
+    reply(contact='grok-asset:///' + HELD)],
+    ids=['principal-field', 'team-field', 'stranger-field', 'stranger-address'])
+def test_the_image_id_holding_the_principal_id_is_no_place_for_it_in_another_field(info, tmp_path):
+    value, runner = make(tmp_path, login(profile_image_asset_id=HELD))
+    runner.info = info
+    refused(value)
+    assert value._login_echo
+
+
+# -- the profile fields `handle_info` passes through: exact equality, each in its own reply field
+
+PASSED = {
+    'first_name': ('firstName', 'Synthetic-First-Name'),
+    'last_name': ('lastName', 'Synthetic-Last-Name'),
+    'team_name': ('teamName', 'Synthetic Team Name'),
+    'team_role': ('teamRole', 'synthetic-team-role'),
+    'organization_id': ('organizationId', 'org-0123456789abcdef'),
+    'organization_name': ('organizationName', 'Synthetic Organization'),
+    'organization_role': ('organizationRole', 'synthetic-org-role'),
+    'principal_type': ('principalType', 'synthetic-principal-type'),
+    'user_blocked_reason': ('userBlockedReason', 'synthetic-blocked-reason')}
+SHORT, LONG = 'Synthetic Team Name', 'Synthetic Team Name Inc'
+
+
+@pytest.mark.parametrize('field', sorted(PASSED))
+def test_each_passed_through_profile_field_may_stand_in_its_own_reply_field(field, tmp_path):
+    name, text = PASSED[field]
+    value, runner = make(tmp_path, login(**{field: text}))
+    runner.info = reply(**{name: text})
+    assert value.quota_connection().read() == BILLING
+    assert text.encode() not in runner.specs[-1].sensitive_extra
+    assert not value._login_echo
+
+
+def test_every_passed_through_profile_field_may_stand_in_its_own_reply_field_at_once(tmp_path):
+    value, runner = make(tmp_path, login(**{field: text for field, (_, text) in PASSED.items()}))
+    runner.info = reply(**{name: text for name, text in PASSED.values()})
+    assert value.quota_connection().read() == BILLING
+    passed = {text.encode() for _, text in PASSED.values()}
+    assert not passed & set(runner.specs[-1].sensitive_extra)
+
+
+PLACES = {
+    'stranger-field': lambda name, text, other: {'note': text},
+    'own-field-but-longer': lambda name, text, other: {name: 'prefix ' + text},
+    'own-field-nested': lambda name, text, other: {name: {'inner': text}},
+    'another-passed-field': lambda name, text, other: {other: text}}
+
+
+@pytest.mark.parametrize('place', sorted(PLACES))
+@pytest.mark.parametrize('field', sorted(PASSED))
+def test_a_passed_through_value_outside_its_own_reply_field_refuses(field, place, tmp_path):
+    name, text = PASSED[field]
+    names = [reply_name for reply_name, _ in PASSED.values()]
+    other = names[(names.index(name) + 1) % len(names)]
+    value, runner = make(tmp_path, login(**{field: text}))
+    runner.info = reply(**PLACES[place](name, text, other))
+    refused(value)
+    assert text.encode() not in runner.specs[-1].sensitive_extra
+    assert value._login_echo
+
+
+def test_a_passed_through_value_inside_a_longer_one_is_judged_at_both_fields(tmp_path):
+    value, runner = make(tmp_path, login(organization_name=SHORT, team_name=LONG))
+    runner.info = reply(organizationName=SHORT, teamName=LONG)
+    assert value.quota_connection().read() == BILLING
+    assert not {SHORT.encode(), LONG.encode()} & set(runner.specs[-1].sensitive_extra)
+    assert not value._login_echo
+
+
+def test_a_passed_through_value_inside_a_longer_one_stays_refused_in_the_other_field(tmp_path):
+    value, runner = make(tmp_path, login(organization_name=SHORT, team_name=LONG))
+    runner.info = reply(organizationName=LONG, teamName=SHORT)
+    refused(value)
+    assert value._login_echo
+
+
+# -- what the agent leaves in the login home: two measured names are scratch, nothing else is
+
+SCRATCH = ('models_cache.json', 'worktrees.db')
+
+
+def leaves(runner, *names):
+    """Make the exchange's spawn write ``names`` into the login home, as the vendor's agent does."""
+    original = runner.run
+
+    def run(spec):
+        if spec.argv[-1] != '--version':
+            for name in names:
+                (runner.home / name).write_bytes(b'written by the spawn')
+        return original(spec)
+    runner.run = run
+
+
+def test_the_two_measured_scratch_names_a_spawn_writes_are_taken_back_and_the_read_goes_through(
+        tmp_path):
+    value, runner = make(tmp_path)
+    leaves(runner, *SCRATCH)
+    assert value.quota_connection().read() == BILLING
+    assert value._login_residue == 0
+    assert not any((runner.home / name).exists() for name in SCRATCH)
+    assert (runner.home / 'auth.json').exists() and (runner.home / 'config.toml').exists()
+
+
+def test_scratch_names_that_stood_before_the_spawn_are_not_touched(tmp_path):
+    value, runner = make(tmp_path)
+    for name in SCRATCH:
+        (runner.home / name).write_bytes(b"the operator's own " + name.encode())
+    assert value.quota_connection().read() == BILLING
+    for name in SCRATCH:
+        assert (runner.home / name).read_bytes() == b"the operator's own " + name.encode()
+
+
+def test_a_write_ahead_log_beside_the_scratch_database_is_residue_and_refuses(tmp_path):
+    value, runner = make(tmp_path)
+    leaves(runner, 'worktrees.db', 'worktrees.db-wal')
+    refused(value)
+    assert value._login_residue == 1
+    assert not (runner.home / 'worktrees.db').exists()
+    assert (runner.home / 'worktrees.db-wal').exists()
+
+
+# -- a member beside the `result` of the auth/info row is no place for a value
+
+def beside_result(runner, **member):
+    """Make the auth/info row of the exchange carry ``member`` beside its ``result``.
+
+    Returns the outputs the runner answers with, so a test can show the decoder accepts them.
+    """
+    original, sent = runner.run, []
+
+    def run(spec):
+        outcome = original(spec)
+        if spec.argv[-1] == '--version':
+            return outcome
+        rows = [json.loads(line) for line in outcome.output.splitlines()]
+        rows[1].update(member)
+        sent.append(b'\n'.join(json.dumps(row).encode() for row in rows) + b'\n')
+        return ProcessOutcome('completed', 0, sent[-1], False, spec.output_limit, 0, 'synthetic',
+            'delivered', output_contains_env_value=outcome.output_contains_env_value)
+    runner.run = run
+    return sent
+
+
+@pytest.mark.parametrize('member', [{'note': EMAIL}, {'email': EMAIL}, {'teamId': TEAM}],
+                         ids=['stranger-name', 'own-name-of-the-value', 'own-name-of-another'])
+def test_a_value_beside_the_result_of_its_own_row_refuses_though_the_decoder_accepts_it(
+        member, tmp_path):
+    from conductor.command.adapters.grok_build import GROK_QUOTA_RPC
+    value, runner = make(tmp_path)
+    sent = beside_result(runner, **member)
+    refused(value)
+    assert GROK_QUOTA_RPC.decode(sent[-1]) == BILLING
+    assert not {item.encode() for item in member.values()} & set(runner.specs[-1].sensitive_extra)
+    assert value._login_echo
+
+
+# -- the mask stands on the auth/info row only: the other rows of the exchange are no place
+
+ROWS = {'initialize': 0, 'billing': 2}
+MEMBERS = {'email': ('email', EMAIL), 'team': ('teamId', TEAM),
+           'principal': ('principalId', PRINCIPAL), 'passed-through': PASSED['team_name']}
+
+
+def in_row(runner, index, **member):
+    """Make row ``index`` (0-based) of the exchange carry ``member`` in its ``result``.
+
+    The runner's scan is repeated over the changed output, as the real runner makes it. Returns
+    the outputs the runner answers with, so a test can show the decoder accepts them.
+    """
+    original, sent = runner.run, []
+
+    def run(spec):
+        outcome = original(spec)
+        if spec.argv[-1] == '--version':
+            return outcome
+        rows = [json.loads(line) for line in outcome.output.splitlines()]
+        rows[index]['result'] = {**rows[index]['result'], **member}
+        sent.append(b'\n'.join(json.dumps(row).encode() for row in rows) + b'\n')
+        scanned = runner.allowed_environment_values(spec.env_allow, overrides=spec.env) + (
+            spec.sensitive_extra)
+        return ProcessOutcome('completed', 0, sent[-1], False, spec.output_limit, 0, 'synthetic',
+            'delivered', output_contains_env_value=any(item in sent[-1] for item in scanned))
+    runner.run = run
+    return sent
+
+
+@pytest.mark.parametrize('row', sorted(ROWS))
+@pytest.mark.parametrize('kind', sorted(MEMBERS))
+def test_admitted_metadata_in_a_named_field_of_another_row_than_auth_info_refuses(
+        kind, row, tmp_path):
+    from conductor.command.adapters.grok_build import GROK_QUOTA_RPC
+    name, text = MEMBERS[kind]
+    value, runner = make(tmp_path, login(team_name=PASSED['team_name'][1]))
+    sent = in_row(runner, ROWS[row], **{name: text})
+    refused(value)
+    GROK_QUOTA_RPC.decode(sent[-1])  # the decoder accepts it: the refusal is the mask's
+    assert text.encode() not in runner.specs[-1].sensitive_extra
+    assert value._login_echo

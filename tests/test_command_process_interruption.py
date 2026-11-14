@@ -7,6 +7,7 @@ platform coverage. Every test finally retires its own saved native group.
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,14 +77,17 @@ class InterruptedRun:
             # Restore before raising: cleanup must be able to reap normally.
             owned.proc.wait = original_wait
             wait_for_int(self.parent_beat)
-            wait_for_int(self.child_beat)
+            before = wait_for_int(self.child_beat)
             if self.input_bytes is not None:
                 assert owned._feeder is not None, 'control: input has its own feeder'
-            before = read_int(self.child_beat)
             deadline = time.monotonic() + 5
-            while read_int(self.child_beat) == before and time.monotonic() < deadline:
+            sample = None
+            while time.monotonic() < deadline:
+                sample = read_int(self.child_beat)
+                if sample is not None and sample > before:
+                    break
                 time.sleep(.01)
-            assert read_int(self.child_beat) > before, 'control: descendant really writes'
+            assert sample is not None and sample > before, 'control: descendant really writes'
             raise self.interruption
 
         owned.proc.wait = interrupted_wait
@@ -102,6 +106,54 @@ class InterruptedRun:
                     if stream is not None:
                         stream.close()
                 self.original_release(owned)
+
+
+@pytest.mark.parametrize('samples,progresses', [
+    ((None, 9, 10, 11, None), True),
+    ((10,), False),
+    ((None,), False),
+], ids=['unknown-then-advance', 'no-advance', 'unknown-only'])
+def test_heartbeat_observer_requires_and_keeps_a_valid_increase(
+        tmp_path, monkeypatch, samples, progresses):
+    """Drive the real wait wrapper with controlled IO and time, without a child."""
+    case = InterruptedRun(tmp_path, CancelWait, None)
+    original_wait = lambda *args, **kwargs: None
+    owned = SimpleNamespace(proc=SimpleNamespace(wait=original_wait), group=object())
+    case.original_spawn = lambda spec: owned
+    initial_reads, observed, ticks, sleeps = [], [], [], []
+
+    def initial(path):
+        initial_reads.append(path)
+        return 10
+
+    def read(path):
+        assert path == case.child_beat
+        sample = samples[min(len(observed), len(samples) - 1)]
+        observed.append(sample)
+        return sample
+
+    def monotonic():
+        tick = len(ticks)
+        ticks.append(tick)
+        return float(tick)
+
+    monkeypatch.setitem(globals(), 'wait_for_int', initial)
+    monkeypatch.setitem(globals(), 'read_int', read)
+    monkeypatch.setitem(globals(), 'time', SimpleNamespace(
+        monotonic=monotonic, sleep=sleeps.append))
+    assert case.spawn(object()) is owned
+    expected = CancelWait if progresses else AssertionError
+    with pytest.raises(expected) as caught:
+        owned.proc.wait(timeout=10)
+    if progresses:
+        assert caught.value is case.interruption
+    else:
+        assert 'control: descendant really writes' in str(caught.value)
+    assert owned.proc.wait is original_wait
+    assert initial_reads == [case.parent_beat, case.child_beat]
+    assert observed == ([None, 9, 10, 11] if progresses else [samples[0]] * 4)
+    assert ticks == list(range(5 if progresses else 6))
+    assert sleeps == [.01] * (3 if progresses else 4)
 
 
 @pytest.mark.parametrize('error_type', [CancelWait, RuntimeError])

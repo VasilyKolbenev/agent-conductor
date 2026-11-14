@@ -7,11 +7,11 @@ provider's version question is larger than Grok's was, not smaller.
 **It is larger because the source and the binary disagree, and the source is the
 one that misleads.** `codex-rs/cli/src/main.rs` declares `#[clap(author, version,
 bin_name = "codex")]`, so a parser written by reading the entry point spells
-`codex 0.112.0` -- and refuses every real install, while the catalog row goes on
+`codex 0.164.0` -- and refuses every real install, while the catalog row goes on
 advertising the provider as available and every dispatch fails the preflight
 forever. What the reviewed binary really prints is the PACKAGE name: clap renders
-the crate, the crate is `codex-cli`, and the observed print is exactly 19 bytes,
-`codex-cli 0.112.0\\r\\n`. So `codex ` is refused HERE, by name, as its own case.
+the crate, the crate is `codex-cli`, and the observed print is exactly 18 bytes,
+`codex-cli 0.164.0\\n`. So `codex ` is refused HERE, by name, as its own case.
 
 **And the reviewed number itself is an observation.** `codex-rs/Cargo.toml`
 carries `version = "0.0.0"` for the whole workspace and `CHANGELOG.md` is a line
@@ -43,35 +43,35 @@ from tests.test_command_codex_transport import a_harness, a_request, run_once
 #: against. Built from `REVIEWED_CODEX_VERSION` it would move whenever that
 #: constant moved, and the one thing this module most needs to catch would move
 #: with it. The constant is cross-checked against the spelling instead.
-ACCEPTED_FORM = "codex-cli 0.112.0"
+ACCEPTED_FORM = "codex-cli 0.164.0"
 
 #: Grouped by WHAT is wrong, so a failure names its category. Every row is one
 #: edit away from the accepted form, so each fails for the reason it is filed
 #: under and not for a second reason it happens to also have.
 REFUSED_FORMS = (
     # a different version, dressed correctly
-    ("version", "codex-cli 0.112.1"),
-    ("version", "codex-cli 0.1120"),
-    ("version", "codex-cli 0.112.0.1"),
-    ("version", "codex-cli 00.112.0"),
-    ("version", "codex-cli 0.112.0-rc.1"),
+    ("version", "codex-cli 0.164.1"),
+    ("version", "codex-cli 0.1640"),
+    ("version", "codex-cli 0.164.0.1"),
+    ("version", "codex-cli 00.164.0"),
+    ("version", "codex-cli 0.164.0-rc.1"),
     # the PROGRAM name, which the source's `bin_name` describes and the binary
     # does not print. This is the whole reason this module exists.
-    ("program", "codex 0.112.0"),
-    ("program", "Codex 0.112.0"),
-    ("program", "codex-cli-0.112.0"),
-    ("program", "codexcli 0.112.0"),
+    ("program", "codex 0.164.0"),
+    ("program", "Codex 0.164.0"),
+    ("program", "codex-cli-0.164.0"),
+    ("program", "codexcli 0.164.0"),
     ("program", "codex-cli"),
     # a bare semver, which any executable at all could print
-    ("bare", "0.112.0"),
-    ("bare", "v0.112.0"),
+    ("bare", "0.164.0"),
+    ("bare", "v0.164.0"),
     # the order, and the dressing another vendor in this roster uses
-    ("order", "0.112.0 (codex-cli)"),
-    ("order", "0.112.0 codex-cli"),
+    ("order", "0.164.0 (codex-cli)"),
+    ("order", "0.164.0 codex-cli"),
     # anything else on the line
-    ("extra", "codex-cli 0.112.0 (abc1234)"),
-    ("extra", "codex-cli  0.112.0"),
-    ("extra", "the codex-cli 0.112.0 release"),
+    ("extra", "codex-cli 0.164.0 (abc1234)"),
+    ("extra", "codex-cli  0.164.0"),
+    ("extra", "the codex-cli 0.164.0 release"),
     ("extra", ""),
     ("extra", "warning: config is stale"),
 )
@@ -191,28 +191,22 @@ def test_the_parser_reads_the_reviewed_form_into_the_reviewed_semver():
     """The positive control: reading and agreeing are still two separate steps.
 
     The three inputs are the three answers this parser can give, and the middle
-    one is the trap: `codex 0.112.0` is what the source's `bin_name` describes,
+    one is the trap: `codex 0.164.0` is what the source's `bin_name` describes,
     and reading it would mean this parser was written from the wrong statement.
     """
     unbound = CodexCliTransport.__new__(CodexCliTransport)
 
     assert CodexCliTransport._parsed_version(
-        unbound, b"codex-cli 0.112.0\r\n") == "0.112.0"
-    assert CodexCliTransport._parsed_version(unbound, b"codex 0.112.0\n") is None
-    assert CodexCliTransport._parsed_version(unbound, b"0.112.0\n") is None
+        unbound, b"codex-cli 0.164.0\r\n") == "0.164.0"
+    assert CodexCliTransport._parsed_version(unbound, b"codex 0.164.0\n") is None
+    assert CodexCliTransport._parsed_version(unbound, b"0.164.0\n") is None
 
 
 def test_the_observed_print_is_carried_whole_including_its_line_ending(tmp_path):
-    """19 bytes, CRLF and all, because that is what the binary really produced.
-
-    The version token is taken from the first non-empty LINE, so a print that
-    ends `\\r\\n` must not leave a stray carriage return inside the token. That is
-    not hypothetical for this provider: the print was observed on Windows and the
-    bytes were counted.
-    """
-    observed = b"codex-cli 0.112.0\r\n"
+    """The candidate prints 18 bytes ending in LF, measured by A P1."""
+    observed = b"codex-cli 0.164.0\n"
     unbound = CodexCliTransport.__new__(CodexCliTransport)
 
-    assert len(observed) == 19
-    assert CodexCliTransport._parsed_version(unbound, observed) == "0.112.0"
+    assert len(observed) == 18
+    assert CodexCliTransport._parsed_version(unbound, observed) == "0.164.0"
     assert CodexCliTransport._version_matches(unbound, observed) is True

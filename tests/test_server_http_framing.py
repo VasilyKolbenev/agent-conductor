@@ -30,15 +30,24 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 
 import pytest
 
-from conductor import server
+from conductor import server, server_events
 from tests.test_store import good_lane, write_project
 
 #: Long enough that a real answer always arrives, short enough that a hung read
 #: fails the test instead of the suite. Never raised to make a road pass.
 PATIENCE = 5.0
+#: The stream's wait, scaled down, and a comment on EVERY quiet wait: a heartbeat then costs one
+#: wait however coarse the runner's timer is. With the shipped count of fifteen, three heartbeats
+#: were 45 short waits, and on a loaded macOS runner those took more than PATIENCE (CI
+#: 38381468164). The shipped count and period are pinned by the last test of this group.
+FAST_WAIT = 0.02
+FAST_PING_EVERY = 1
+GREETING = 'data: {"kind":"state"}'
+PING = ": ping"
 
 
 def _serving(root_dir, idle: float | None = None):
@@ -369,3 +378,205 @@ def test_a_client_that_vanishes_mid_stream_takes_nothing_with_it(live):
             again.close()
     finally:
         after.close()
+
+
+# -- an idle stream notices a client that left, and leaves a quiet one alone ----
+
+
+def _stream_blocks(wire: Wire) -> list[str]:
+    """The whole blocks of the stream body read so far; a block still arriving is not one."""
+    _head, found, body = wire.buffer.partition(b"\r\n\r\n")
+    if not found:
+        return []
+    return body.decode("utf-8").split("\n\n")[:-1]
+
+
+def _fill_before(wire: Wire, deadline: float, failure: str, clock) -> bool:
+    """One read of the wire that waits no longer than what is left until `deadline`.
+
+    The socket's own wait is per read and a heartbeat is data: it ends a read without ending the
+    wait, so only the clock can. Fails with `failure` when the deadline falls. The socket gets
+    its own wait back afterwards.
+    """
+    remaining = deadline - clock()
+    if remaining <= 0:
+        pytest.fail(failure)
+    wire.sock.settimeout(remaining)
+    try:
+        return wire._fill()
+    except TimeoutError:
+        pytest.fail(failure)
+    finally:
+        wire.sock.settimeout(PATIENCE)
+
+
+def _read_blocks_until(wire: Wire, done, why: str, *, budget: float = PATIENCE,
+                       clock=time.monotonic) -> list[str]:
+    """Read the stream until `done(blocks)`; a stream that gives no `why` within `budget` fails.
+
+    The budget is ONE deadline for the whole call, however many heartbeats arrive inside it.
+    """
+    deadline = clock() + budget
+    while not done(_stream_blocks(wire)):
+        open_still = _fill_before(wire, deadline, f"no {why} within {budget} s", clock)
+        assert open_still, f"the stream closed before {why}"
+    return _stream_blocks(wire)
+
+
+def _read_until_closed(wire: Wire, failure: str, *, budget: float = PATIENCE,
+                       clock=time.monotonic) -> list[str]:
+    """Read until the server closes the stream; `failure` is what a stream that stays open past
+    `budget` says. One deadline for the whole call, however many heartbeats arrive inside it."""
+    deadline = clock() + budget
+    while _fill_before(wire, deadline, failure, clock):
+        pass
+    return _stream_blocks(wire)
+
+
+class _OnlyHeartbeats:
+    """A stream that says its greeting and then nothing but ": ping", and a clock that moves one
+    second per read; it ends after `closes_after` reads, or never."""
+
+    RUNAWAY = 1000
+
+    class _Socket:
+        def __init__(self) -> None:
+            self.wait = None
+
+        def settimeout(self, seconds: float | None) -> None:
+            self.wait = seconds
+
+    def __init__(self, closes_after: int | None = None) -> None:
+        self.sock = self._Socket()
+        self.buffer = b"HTTP/1.1 200 OK\r\n\r\n" + GREETING.encode() + b"\n\n"
+        self.closes_after = closes_after
+        self.now = 0.0
+        self.reads = 0
+        self.waits: list[float | None] = []
+
+    def clock(self) -> float:
+        return self.now
+
+    def _fill(self) -> bool:
+        self.reads += 1
+        if self.reads > self.RUNAWAY:
+            raise RuntimeError(f"still reading comments after {self.RUNAWAY} reads")
+        if self.closes_after is not None and self.reads > self.closes_after:
+            return False
+        self.waits.append(self.sock.wait)
+        self.now += 1.0
+        self.buffer += PING.encode() + b"\n\n"
+        return True
+
+
+def test_a_wait_for_a_signal_that_never_comes_fails_at_its_deadline_though_comments_keep_coming():
+    wire = _OnlyHeartbeats()
+    with pytest.raises(pytest.fail.Exception, match="no signal nobody published within 5.0 s"):
+        _read_blocks_until(wire, lambda blocks: blocks.count(GREETING) == 2,
+                           "signal nobody published", budget=5.0, clock=wire.clock)
+    assert wire.reads == 5, "the wait went on past the second its deadline fell"
+    assert wire.waits == [5.0, 4.0, 3.0, 2.0, 1.0], "a later read started a new, longer wait"
+    assert wire.sock.wait == PATIENCE, "the socket's own wait was not given back"
+
+
+def test_a_wait_for_the_end_of_a_stream_fails_at_its_deadline_though_comments_keep_coming():
+    wire = _OnlyHeartbeats()
+    with pytest.raises(pytest.fail.Exception, match="still open after the stop"):
+        _read_until_closed(wire, "the stream was still open after the stop", budget=5.0,
+                           clock=wire.clock)
+    assert wire.reads == 5, "the wait went on past the second its deadline fell"
+    assert wire.waits == [5.0, 4.0, 3.0, 2.0, 1.0], "a later read started a new, longer wait"
+
+
+def test_a_wait_for_the_end_of_a_stream_returns_what_came_before_the_close():
+    wire = _OnlyHeartbeats(closes_after=3)
+    blocks = _read_until_closed(wire, "never", budget=5.0, clock=wire.clock)
+    assert blocks == [GREETING, PING, PING, PING]
+
+
+def _open_stream(address) -> Wire:
+    wire = Wire(address, f"127.0.0.1:{address[1]}")
+    wire.send("GET /events HTTP/1.1")
+    _read_blocks_until(wire, lambda blocks: GREETING in blocks, "the greeting")
+    return wire
+
+
+def test_a_client_that_left_an_idle_stream_frees_its_mailbox_and_thread_by_itself(
+        live, monkeypatch):
+    """A leaver is noticed by a write, so an idle stream must write: no event, no stop.
+
+    The real socket is closed by the client after the greeting. Nothing is published and the
+    server is not stopped, which are the only two things that used to end this loop.
+    """
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
+    srv, address = live
+    before = set(threading.enumerate())
+    wire = _open_stream(address)
+    held = [thread for thread in threading.enumerate()
+            if thread not in before and "process_request_thread" in thread.name]
+    assert len(held) == 1 and len(srv.clients._mailboxes) == 1, "control: one stream is held"
+
+    wire.close()
+
+    held[0].join(PATIENCE)
+    assert not held[0].is_alive(), "the thread of the client that left was never released"
+    assert not srv.clients._mailboxes, "the mailbox of the client that left was never released"
+
+
+def test_a_quiet_live_client_hears_only_comments_and_keeps_its_stream_for_the_next_signal(
+        live, monkeypatch):
+    """Quiet is not gone: the comments change no state, and a real signal still arrives."""
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
+    srv, address = live
+    wire = _open_stream(address)
+    try:
+        quiet = _read_blocks_until(wire, lambda blocks: blocks.count(PING) >= 3,
+                                   "three heartbeats")
+        assert quiet == [GREETING] + [PING] * (len(quiet) - 1), (
+            f"a quiet client was told more than the greeting and comments: {quiet}")
+
+        srv.clients.publish_state()
+
+        after = _read_blocks_until(wire, lambda blocks: blocks.count(GREETING) == 2,
+                                   "the signal published after the quiet")
+        assert set(after) == {GREETING, PING}, after
+    finally:
+        wire.close()
+
+
+def test_a_stop_while_the_stream_sends_heartbeats_ends_it_without_a_frame_of_its_own(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(server_events, "SSE_WAIT", FAST_WAIT)
+    monkeypatch.setattr(server_events, "SSE_PING_EVERY", FAST_PING_EVERY)
+    _root, srv, thread, address = _serving(tmp_path)
+    stopped = False
+    wire = _open_stream(address)
+    try:
+        _read_blocks_until(wire, lambda blocks: PING in blocks, "a heartbeat")
+        srv.shutdown()
+        stopped = True
+        blocks = _read_until_closed(
+            wire, f"the stream was still open {PATIENCE} s after the stop")
+        assert blocks.count(GREETING) == 1 and set(blocks) <= {GREETING, PING}, blocks
+    finally:
+        wire.close()
+        if not stopped:
+            srv.shutdown()
+        srv.server_close()
+        thread.join(timeout=PATIENCE)
+
+
+def test_the_shipped_heartbeat_period_is_5_to_15_s_and_two_periods_and_one_wait_are_at_most_31_s():
+    """The shipped figures, as arithmetic: one comment per 5 to 15 s.
+
+    Two periods and one wait are the release time IF the first write after a departure is
+    accepted and the second one fails. That held on the loopback of one Windows host (15.1 s and
+    30.2 s measured) and is not promised for a client that vanishes without answering, so this
+    pins the numbers the code states, not the release. What a departure does to the mailbox and
+    the thread is shown, at a scaled wait, by the first test of this group.
+    """
+    period = server_events.SSE_PING_EVERY * server_events.SSE_WAIT
+    assert 5.0 <= period <= 15.0, period
+    assert 2 * period + server_events.SSE_WAIT <= 31.0

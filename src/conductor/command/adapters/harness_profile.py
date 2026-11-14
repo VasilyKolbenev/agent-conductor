@@ -26,6 +26,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 from ..contracts import ContractError, _id
 from .base import AdapterContractError
+from .login_relay import RelaySpec
 
 #: The one control any of these adapters carries. stop, retry and switch stay
 #: ABSENT rather than present and empty, because none is implemented and the
@@ -61,6 +62,31 @@ def uncontained_detail(tool: str) -> str:
     """
     return (f"a name on the {tool} workspace's own writable route is not locally "
             "contained, so nothing was minted, claimed or spawned")
+
+
+def boundary_detail(tool: str) -> str:
+    """A task attempt refused because the execution boundary is not provided for it (R5).
+
+    It carries no platform, no path and no vendor detail: which platform, mode or login road
+    lacked the boundary is a fact of the machine and of the plan, and the door that refuses a
+    plan names the step. A receipt only says that nothing was started.
+    """
+    return (f"the execution boundary is not provided for this {tool} attempt on this build, "
+            "so no task was spawned")
+
+
+def subscription_boundary_detail(tool: str) -> str:
+    """A task attempt refused because a subscription login for this harness has no road yet.
+
+    Said only where the login is the one fact missing: the platform has the boundary and the
+    launch would be covered (``AttemptLaunch._boundary_refusal``), and the harness has no relay
+    (``HarnessProfile.login_relay``): a task of Claude Code and Codex on a subscription login
+    runs on a relay home, and that of Grok Build and Kimi Code is not supported inside the
+    boundary yet. It names the login MODE, a word the operator's own configuration and the Agents
+    screen already show, and no directory, account or vendor detail.
+    """
+    return (f"this {tool} connection signs in with a subscription, which is not supported inside "
+            "the execution boundary for this harness yet, so no task was spawned")
 
 
 def residue_detail(tool: str) -> str:
@@ -272,12 +298,23 @@ class ExecutablePin:
         object.__setattr__(self, "auth_home", auth_home)
 
 
-#: The two channels a one-shot task may travel by, and there is no third.
+#: The three channels a one-shot task may travel by, and there is no fourth.
 #: `argv` puts the prompt in the child's command line, where any process lister
-#: on the machine can read it; `stdin` pipes it, where none can.
+#: on the machine can read it; `stdin` pipes it, where none can; `file` writes it
+#: once into the folder of the attempt itself, for a vendor whose headless mode
+#: reads its prompt only from a file path (`task_file`).
 TASK_CHANNEL_ARGV = "argv"
 TASK_CHANNEL_STDIN = "stdin"
-TASK_CHANNELS = (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN)
+TASK_CHANNEL_FILE = "file"
+TASK_CHANNELS = (TASK_CHANNEL_ARGV, TASK_CHANNEL_STDIN, TASK_CHANNEL_FILE)
+#: The channels that keep the task off the command line. A class owes the same
+#: two seams for either (`_stdin_argv`, `_task_stdin`), and every road that asks
+#: "does this task stay off the argv" asks it of this tuple, in one spelling.
+OFF_ARGV_CHANNELS = (TASK_CHANNEL_STDIN, TASK_CHANNEL_FILE)
+#: The one name the task file is given. ASCII and fixed by code: it carries no
+#: run, no action and no word of the task, and it is never `.json`, which the
+#: vendor reads as a different kind of file. No login list may carry it.
+TASK_FILE_NAME = "conduct-task.txt"
 
 
 @dataclass(frozen=True)
@@ -381,10 +418,10 @@ class HarnessProfile:
     #: the constant this pair was written from -- a declaration nobody spends is
     #: prose, and prose about a protection is what this surface exists to stop.
     vendor_sandbox: tuple[tuple[str, str], ...] | None = None
-    #: WHERE this vendor's one-shot mode takes the task. A closed choice of two,
+    #: WHERE this vendor's one-shot mode takes the task. A closed choice of three,
     #: and it is structural rather than advisory: the transport calls a
-    #: DIFFERENT argv builder for each, and the one it calls for `stdin` takes
-    #: no task argument at all.
+    #: DIFFERENT argv builder for each, and the one it calls for `stdin` or for
+    #: `file` takes no task argument at all.
     #:
     #: That is the whole point. An earlier attempt asked an argv builder twice
     #: with two probe texts and compared the answers, which proves only that
@@ -448,6 +485,11 @@ class HarnessProfile:
     #: refuses it could never match -- a policy that reads as if it were doing
     #: something.
     unstable_models: tuple[str, ...] = ()
+    #: The relay a subscription attempt of this harness works on instead of the real login home,
+    #: or None for a harness that has none (`login_relay`). Declared facts only, so the profile
+    #: stays plain data to the digest that freezes it into a grant (`policy_providers`); declaring
+    #: one opens no road by itself: whether a transport runs a task on it is the transport's.
+    login_relay: RelaySpec | None = None
 
     def __post_init__(self) -> None:
         """Prove the environment this profile forces, at construction.
@@ -493,6 +535,40 @@ class HarnessProfile:
                 f"a task travels by one of {TASK_CHANNELS}, not "
                 f"{self.task_channel!r}")
         self._hold_model_routing()
+        self._hold_relay()
+        self._hold_task_file_name()
+
+    def _hold_task_file_name(self) -> None:
+        """Prove no login list, and no relay, carries the name the task file is given.
+
+        The task file is written into the home of an attempt and taken away with it, first,
+        by name. A list that carried the name would make a file this build writes one it also
+        tolerates, reads or keeps in a login folder, and two meanings of one name is how a
+        task ends up published or deleted by a rule written for something else.
+        """
+        taken = (*self.login_scratch, *self.login_expected, *self.login_credentials,
+                 *self.login_forbidden)
+        if self.login_relay is not None:
+            taken += tuple(self.login_relay.files)
+        if TASK_FILE_NAME in taken:
+            raise HeadlessCliError(
+                f"{TASK_FILE_NAME} is the name the task file is placed under, so no login "
+                "list and no relay file may carry it")
+
+    def _hold_relay(self) -> None:
+        """Prove the relay declaration: a spec, and a credential the leak scan already reads.
+
+        A relay copies one credential file, and a child that echoed it back must not be able to
+        publish it, so the file is one of `login_credentials` (read to widen the leak scan).
+        """
+        if self.login_relay is None:
+            return
+        if not isinstance(self.login_relay, RelaySpec):
+            raise HeadlessCliError("login_relay is a relay spec, or None")
+        if self.login_relay.credential not in self.login_credentials:
+            raise HeadlessCliError(
+                "the credential a relay copies is one the leak scan reads, so it is among "
+                "login_credentials")
 
     def _reviewed_login_names(self) -> None:
         """Prove the login lists before either can be joined to a directory."""

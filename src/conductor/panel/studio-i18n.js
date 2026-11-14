@@ -1,5 +1,7 @@
 "use strict";
+import {UTILITY_COPY} from "./studio-utilities-copy.js";
 import {RUN_STEP_COPY} from "./studio-runstep-copy.js";
+import {ATLAS_COPY} from "./studio-atlas-copy.js";
 import {PARTICIPANT_COPY} from "./studio-participant-copy.js";
 import {RUN_DOCS_COPY} from "./studio-run-docs-copy.js";
 import {RUNS_COPY} from "./studio-runs-copy.js";
@@ -12,6 +14,8 @@ import {AGENTS_COPY} from "./studio-agents-copy.js";
 import {AUTOMATION_COPY} from "./studio-automation-copy.js";
 import {NOTICE_COPY} from "./studio-notice-copy.js";
 import {WIZARD_COPY} from "./desk-wizard-copy.js";
+import {ADVICE_COPY} from "./desk-wizard-advice-copy.js";
+import {WIZARD_GIT_COPY} from "./desk-wizard-git-copy.js";
 import {DESK_COPY} from "./desk-copy.js";
 import {DESK_STATUS_COPY} from "./desk-status-copy.js";
 import {FLOW_COPY} from "./desk-flow-copy.js";
@@ -21,6 +25,7 @@ import {DESK_PULT_COPY} from "./desk-pult-copy.js";
 // Interface messages only. User text, identifiers and durable records are data.
 // Each entry carries both locales; parameters are exact named string values.
 const TEXT = {
+  ...UTILITY_COPY,
   "bridge.no_outcome": ["No outcome recorded", "Исход ещё не записан"],
   "scene.attention_unconfirmed": ["Attention unconfirmed", "Участие не подтверждено"],
   "scene.trace": ["Trace", "Трасса"],
@@ -128,11 +133,11 @@ const TEXT = {
   "settings.light": ["Light", "Светлая"],
   "settings.dark": ["Dark", "Тёмная"],
   "shell.classic": ["Map, findings, feed and handoffs — classic panel", "Карта, замечания, события и передачи работы — прежняя панель"],
-  "shell.overview": ["This screen answers what the project is, whether it is ready to run, what is blocked, and what needs you.", "Здесь видно, что представляет собой проект, готов ли он к запуску, что заблокировано и где нужно ваше участие."],
+  "shell.map": ["Project map and history", "Карта и история проекта"],
   "shell.workflow": ["A workflow names roles and steps. It never names a provider, a model or a run — a run binds those when it starts.", "Процесс задаёт роли и шаги. Провайдеры и модели связываются с ними при создании запуска."],
   "shell.runs": ["About runs", "О запусках"],
   "shell.verification": ["A process that exits 0 has finished, which is not the same as having been verified. Both words are shown.", "Код выхода 0 означает завершение процесса. Проверка результата — отдельный факт. Здесь показаны оба."],
-  "shell.decisions": ["A decision is a durable receipt. This screen says why one is needed, what each choice causes, and what it unblocks.", "Решение сохраняется в журнале. Здесь видно, зачем оно нужно, что означает каждый выбор и какие шаги он открывает."],
+  "shell.decisions": ["Review the step and record your decision.", "Проверьте шаг и запишите своё решение."],
   "shell.agents": ["A participant binds one instance to one configured provider. Providers are operator-written and read at startup.", "Каждый участник связан с одним настроенным провайдером. Настройки провайдеров задаются оператором и читаются при запуске."],
   "connection.open": ["Connected. Live changes reach this window.", "Подключено. Изменения поступают в это окно."],
   "connection.connecting": ["Connecting to this project's live stream.", "Подключение к событиям проекта."],
@@ -144,7 +149,13 @@ const TEXT = {
   "phase.refused": ["This read was refused. Nothing below is newer than the refusal.", "В чтении отказано. Данные ниже не обновлялись после отказа."],
   "phase.failed": ["This read failed. Nothing below is newer than the failure.", "Чтение не удалось. Данные ниже не обновлялись после ошибки."],
   "phase.disconnected": ["The live connection is down, so nothing here updates.", "Связь прервана; данные не обновляются."],
-  "primary.overview": ["Edit the workflow", "Изменить процесс"],
+  "entry.own": ["Start your own task", "Поставить свою задачу"],
+  "entry.pending": ["Review the run awaiting your decision", "Открыть запуск, ожидающий решения"],
+  "entry.checked": ["Verified changes", "Проверенные изменения"],
+  "entry.first": ["What would you like to get done?", "Какой результат вам нужен?"],
+  "entry.record_only": ["Create a task record only", "Создать запись без запуска"],
+  "entry.next": ["Describe the result in the task wizard. Then choose a workflow and its participants and review the launch conditions.",
+    "Опишите результат в мастере задачи. Затем выберите процесс и участников и проверьте условия запуска."],
   "primary.workflow": ["Save draft", "Сохранить черновик"],
   "primary.runs": ["Read runs again", "Обновить запуски"],
   "primary.decisions": ["Read this run again", "Обновить запуск"],
@@ -161,6 +172,10 @@ const TEXT = {
   "task.refresh": ["Read tasks again", "Обновить задачи"],
   "task.name": ["Task name", "Название задачи"],
   "task.new": ["New task", "Новая задача"],
+  "demo.intro": ["Choose Start the exercise to review a sample counter without a model. Name the task, for example “Count the passing checks”.", "Нажмите «Начать упражнение», чтобы проверить учебный счётчик без модели. Назовите задачу, например «Посчитать успешные проверки»."],
+  "demo.ready": ["This exercise uses three sample checks. Compare the reported count with the check marks, then record your decision.", "В упражнении три проверки. Сверьте число успешных с отметками, затем запишите своё решение."],
+  "demo.review": ["Review sample result", "Проверить учебный результат"],
+  "demo.start": ["Start the exercise", "Начать упражнение"],
   "task.create": ["Create task", "Создать задачу"],
   "task.creating": ["Creating task…", "Создание задачи…"],
   "task.history": ["Task creation history", "История создания задач"],
@@ -173,7 +188,7 @@ const TEXT = {
 };
 
 export const LOCALES = Object.freeze(["en", "ru"]);
-export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY, ...WIZARD_COPY, ...DESK_COPY, ...DESK_STATUS_COPY, ...FLOW_COPY, ...FEED_COPY, ...SUMMARY_COPY, ...DESK_PULT_COPY})
+export const MESSAGES = Object.freeze(Object.fromEntries(Object.entries({...ATLAS_COPY, ...TEXT, ...AUTOMATION_COPY, ...AGENTS_COPY, ...WORKFLOW_COPY, ...WORKFLOW_DETAIL_COPY, ...VIEW_COPY, ...RUNFORM_COPY, ...RUNS_COPY, ...RUN_DOCS_COPY, ...PARTICIPANT_COPY, ...RUN_STEP_COPY, ...FEEDBACK_COPY, ...NOTICE_COPY, ...ADVICE_COPY, ...WIZARD_COPY, ...WIZARD_GIT_COPY, ...DESK_COPY, ...DESK_STATUS_COPY, ...FLOW_COPY, ...FEED_COPY, ...SUMMARY_COPY, ...DESK_PULT_COPY})
   .map(([key, values]) => [key, Object.freeze({en: values[0], ru: values[1]})])));
 
 function parameters(text) {

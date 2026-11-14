@@ -178,7 +178,7 @@ function wireProviders(value) {
   return Object.freeze(projectProviders(value).map((row) => Object.freeze({
     provider_id: row.providerId, display_name: row.displayName,
     availability: row.availability, implementation: row.implementation,
-    auth: row.auth, controls: row.controls,
+    auth: row.auth, task_road: row.taskRoad, controls: row.controls,
     vendor_sandbox: row.vendorSandbox,
   })));
 }
@@ -500,6 +500,9 @@ function keptDrafts(state, detail) {
 
 function runMoved(state, phase, detail, said) {
   const kept = keptDrafts(state, detail);
+  const list = detail === null ? Object.freeze([]) : decisionRows(detail);
+  const draft = state.screen === "decisions" && state.connection === "open" && phase === "ready"
+    ? pendingDecision(kept.draft, list) : kept.draft;
   return Object.freeze({...state,
     // A run read carries the run's warnings and says nothing about the
     // project's name, so the name already read is kept rather than cleared:
@@ -509,8 +512,7 @@ function runMoved(state, phase, detail, said) {
     runs: Object.freeze({...state.runs, phase, detail, step: kept.step,
       document: kept.document,
       selectedId: detail === null ? state.runs.selectedId : detail.run.run_id}),
-    decisions: Object.freeze({...state.decisions, phase, draft: kept.draft,
-      list: detail === null ? Object.freeze([]) : decisionRows(detail)}),
+    decisions: Object.freeze({...state.decisions, phase, draft, list}),
     agents: Object.freeze({...state.agents, phase,
       participants: detail === null
         ? Object.freeze([]) : participantsOf(detail)}),
@@ -677,10 +679,29 @@ function phaseMoved(state, screen, event) {
 }
 
 // -- the one way to move --------------------------------------------------
+function pendingDecision(draft, list, prefer = false) {
+  if (draft.key && (!prefer || draft.actor || draft.reason || draft.action !== "approve")) return draft;
+  const unanswered = list.filter((row) => row.needs_answer);
+  const row = unanswered.length === 1 ? unanswered[0]
+    : list.length === 1 && list[0].receipt && list[0].ended ? list[0] : null;
+  if (!row) return draft;
+  const key = `${row.run_id}/${row.gate_id}`;
+  return draft.key === key ? draft : Object.freeze({...NO_DRAFT, key});
+}
+function screenMoved(state, event) {
+  if (!SCREENS.includes(event.screen)) return state;
+  const decisions = state.decisions;
+  const draft = event.screen === "decisions" && state.connection === "open" && decisions.phase === "ready"
+    ? pendingDecision(decisions.draft, decisions.list, event.pendingRun === state.runs.selectedId)
+    : decisions.draft;
+  return Object.freeze({...state, screen: event.screen, decisions: Object.freeze({...decisions, draft})});
+}
 function decisionChosen(state, event) {
+  if (event.recordedKey && state.decisions.draft.key !== event.recordedKey) return state;
+  const recorded = state.screen === "decisions" && event.recordedKey;
   return Object.freeze({...state, decisions: Object.freeze({...state.decisions,
     draft: Object.freeze({...NO_DRAFT,
-      key: typeof event.key === "string" ? event.key : null})})});
+      key: recorded || (typeof event.key === "string" ? event.key : null)})})});
 }
 
 // The save door answers in every phase: a refusal that arrived after the
@@ -719,8 +740,7 @@ const ARMS = Object.freeze({
       reviewing: event.open === true && state.workflows.publishable
         && state.workflows.writeReady})}),
   save: saveMoved,
-  screen: (state, event) => SCREENS.includes(event.screen)
-    ? Object.freeze({...state, screen: event.screen}) : state,
+  screen: screenMoved,
   seed: seeded,
   "starter-edit": (state, event) => starterEdited(state, event.patch),
   status: (state, event) => spoken(state, noticeOf(event.notice)),

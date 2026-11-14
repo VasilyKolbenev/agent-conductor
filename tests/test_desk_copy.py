@@ -88,3 +88,12 @@ def test_the_catalogue_says_the_regions_the_spec_names_in_russian():
                    "desk.feed.label": "Ход работы"})
     assert out == {"desk.classic": "Прежняя панель", "desk.pult.label": "Ваш пульт",
                    "desk.feed.label": "Ход работы"}
+
+
+def test_the_english_actor_hint_names_latin_letters_as_the_russian_hint_does():
+    hint = run_js("""
+      console.log(JSON.stringify(i18n.MESSAGES["desk.pult.actor_hint"]));
+    """, MODULES)
+    assert hint["en"] == ("Use Latin letters and digits, then dots, hyphens or underscores; "
+                          "up to 128 characters.")
+    assert hint["ru"].startswith("Латинские буквы и цифры"), hint["ru"]

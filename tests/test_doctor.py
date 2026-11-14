@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from conductor import doctor, harnesses, prompts, store, templates, validate
 from conductor.__main__ import main
+from tests.doctor_printed import printed_argv
 from tests.test_store import write_project
 
 # A map about a real project: node ids and labels no built-in template writes,
@@ -137,8 +138,12 @@ def outcomes(out):
 
 
 def commands(out):
-    """Every command line of a report, as the argv `main` would be given."""
-    return [line[len(doctor.COMMAND_PREFIX):].split(" ")[1:]
+    """Every command line of a report, as the argv `main` would be given.
+
+    Each line is read by `tests/doctor_printed.py`, which refuses one that
+    `doctor.spell` would not have written for the argv it reads out of it.
+    """
+    return [printed_argv(line[len(doctor.COMMAND_PREFIX):])
             for line in out.splitlines()
             if line.startswith(doctor.COMMAND_PREFIX)]
 
@@ -162,7 +167,7 @@ def ran(argv):
 #: `SHELL_SYNTAX` below is: a guard that asks the code under test which
 #: characters are safe agrees with it by construction, and would have gone on
 #: agreeing while the rule was "quote if it holds a space".
-BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.:/+")
 
 
 def needs_quoting(token):
@@ -709,10 +714,12 @@ def test_the_only_shell_syntax_a_printed_command_carries_is_the_readers_own_path
 #: forbids `< > : " / \ | ? *` and not one of these holds one. The first group
 #: needs the quotes and, apart from the last two rows, holds no space; the
 #: second group needs none. A rule that quoted on a space alone would agree
-#: with the last two rows of the first group and disagree with the other six.
-NEEDING_QUOTES = ["p&q", "p;q", "p$(id)", "p`q", "p!q", "p^q", "p q",
+#: with the last two rows of the first group and disagree with the other eight.
+#: On Windows every root holds a backslash and is quoted whatever its last
+#: name is, so the second group tells the rules apart on POSIX only.
+NEEDING_QUOTES = ["p&q", "p;q", "p$(id)", "p`q", "p!q", "p^q", "p,q", "p=q", "p q",
                   "Program Files (x86)"]
-NEEDING_NONE = ["plain", "p-q", "p_q", "p.q", "p+q", "p,q", "p=q"]
+NEEDING_NONE = ["plain", "p-q", "p_q", "p.q", "p+q"]
 
 
 @pytest.mark.parametrize("name", NEEDING_QUOTES + NEEDING_NONE)

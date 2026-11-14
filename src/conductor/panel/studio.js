@@ -19,21 +19,24 @@
 // write ASKED FOR. Anything else is outcome-unknown, and never a guess.
 import {ERROR_LABELS, canonicalJson} from "./command-projection.js";
 import {LATE, createTransport, path} from "./desk-transport.js";
+import {deskHash, readDeskHash} from "./desk-hash.js";
 import {mountCanvas} from "./studio-canvas.js";
 import {focusTarget, restoreFocus, restoreTyped, typedValues} from "./studio-focus.js";
 import {mountInspector} from "./studio-inspector.js";
 import {mountAgents, mountDecisions} from "./studio-people.js";
+import {utilityDrawer} from "./studio-utilities.js";
 import {mountRuns} from "./studio-runs.js";
+import {atlasScene} from "./studio-atlas.js";
 import {workflowWriters} from "./studio-workflowwrite.js";
 import {automationFlow} from "./studio-automation-flow.js";
 import {mountAutomation} from "./studio-automation.js";
 import {mountBridge} from "./studio-bridge.js";
-import {mountTasks} from "./studio-tasks.js";
+import {mountTasks, practiceTask} from "./studio-tasks.js";
 import {studioMounts} from "./studio-mounts.js";
 import {mountShell, wireScreenKeys} from "./studio-shell.js";
 import {preferences, preferenceHash} from "./studio-preferences.js";
 import {quotaFlow} from "./studio-quotaflow.js";
-import {navigation, navigationHash, taskFlow} from "./studio-taskflow.js";
+import {DEMO_REVIEW, navigation, navigationHash, taskFlow} from "./studio-taskflow.js";
 //: What a Human's press on a step control MEANS. The wire stays HERE: that
 //: module is handed this one's `write` and reaches no socket of its own.
 import {decisionWriters, documentWriters, stepWriters}
@@ -82,6 +85,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   });
 
   let state = EMPTY;
+  const demo = document.documentElement.hasAttribute("data-demo");
   let streamOpen = false;
   // Which write is the current one. A dropped stream retires the write in
   // flight along with the session that authorized it.
@@ -101,11 +105,23 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   // because only a read showing that same thing confirms anything about it.
   let pendingCarry = null;
   const resume = navigation(location.hash);
+  const entry = history.state?.deskLimitEditor;
+  const desk = entry && typeof entry.project === "string" && /^[0-9a-f]{32}$/.test(entry.project) && resume.screen === "runs"
+    && resume.taskId && resume.runId && entry.task === resume.taskId && entry.run === resume.runId ? entry : null;
+  const projectClaim = desk?.project ?? readDeskHash(location.hash).project;
+  let focusDeskLimits = Boolean(desk);
+  const deskHistory = desk ? {deskLimitEditor: desk} : null;
+  if (desk) window.addEventListener("popstate", () => {
+    // The editor's entry was pushed by the Desk. On Back its URL changes
+    // before the browser replaces the Studio document.
+    if (location.pathname === "/panel/desk.html") location.reload();
+  });
+  const fromDesk = (detail) => desk && detail?.run?.run_id === desk.run && detail.config?.task?.id === desk.task;
   let readLocale = null;
   const appearance = preferences({root: document.documentElement,
     mount: byId("studioPreferences"), hash: location.hash, language: navigator.language,
     media: window.matchMedia("(prefers-color-scheme: dark)"), change: () => {
-      history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
+      syncAddress();
       render();
       if (readLocale !== appearance.value.locale) {
         readLocale = appearance.value.locale;
@@ -118,13 +134,50 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   window.addEventListener("pagehide", () => appearance.dispose());
   //: The doors to the wire live in the transport module; the language they ask
   //: in is this window's, read at each request.
-  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale);
+  const {readJson, submit, dropSession, openStream} = createTransport(() => appearance.value.locale, () => projectClaim);
+  let utilityProject = projectClaim;
+  const utilityDoor = createTransport(() => appearance.value.locale, () => utilityProject);
+  const utilities = utilityDrawer(byId("studioUtilities"), {
+    project: () => utilityDoor.readJson(path.project()), read: () => utilityDoor.readJson(path.utilities()),
+    bind: (id) => {
+      if (utilityProject && utilityProject !== id) return false;
+      utilityProject = id; return true;
+    },
+    post: (body) => utilityDoor.submit("utilities", null, body),
+    connected: () => streamOpen, locale: () => appearance.value.locale,
+    origin: "http://127.0.0.1:" + (location.port || "80"), newId: () => "x-" + crypto.randomUUID(),
+    copy: (text) => navigator.clipboard.writeText(text),
+    question: () => byId("studioAtlas")?.querySelector("[data-atlas-field]")?.value || "",
+  });
+  byId("utilityRuns").addEventListener("click", () => utilities.open(true));
+  byId("utilityAgents").addEventListener("click", () => utilities.open(false));
+  const atlas = atlasScene(byId("studioAtlas"), {
+    read: (run, node, action, stop) => readJson(path.atlasAttempt(run, node, action), stop),
+    stop: () => new AbortController(),
+  });
+
+  function syncAddress() {
+    const editor = new URLSearchParams(navigationHash(state).slice(1));
+    const home = new URLSearchParams();
+    if (state.runs.selectedId) home.set("session", state.runs.selectedId);
+    else if (state.tasks.selectedId) home.set("task", state.tasks.selectedId);
+    if (projectClaim) {
+      editor.set("project", projectClaim);
+      home.set("project", projectClaim);
+    }
+    history.replaceState(deskHistory, "", preferenceHash(`#${editor}`, appearance.value));
+    byId("studioHome").href = "/" + preferenceHash(`#${home}`, appearance.value);
+  }
 
   function dispatch(event, redraw = true) {
     const next = reduce(state, event);
     if (next === state) return;
+    if (demo && event.type === "task-spent" && next.tasks.draft !== state.tasks.draft) {
+      const finished = byId("studioTasks").querySelector("details[data-task-create]");
+      if (finished) finished.open = false;
+    }
     state = next;
-    history.replaceState(null, "", preferenceHash(navigationHash(state), appearance.value));
+    syncAddress();
     if (redraw) render();
   }
 
@@ -133,7 +186,21 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   // Every mount redraws from the state. What a person had focused, typed and
   // selected is carried across the pass by the net in `studio-focus.js`.
   function render() {
-    const key = focusTarget(), typed = typedValues(shell), presentation = {...state, locale: appearance.value.locale};
+    const key = focusTarget(), typed = typedValues(shell);
+    const held = automation.snapshot(), detail = state.runs.detail;
+    const needsRunPermission = state.connection === "open" && state.runs.phase === "ready"
+      && held.phase === "ready" && held.view?.run_id === state.runs.selectedId
+      && detail?.run?.run_id === state.runs.selectedId && detail?.graph?.schedule?.run_state === "open"
+      && detail.graph.situation?.state === "not_required" && held.view?.owner_present
+      && held.view.state === "unconfigured" && held.view.reason_code === "authorization_required"
+      && Boolean(held.view.next_node_id);
+    const demoTask = demo ? practiceTask(state) : null;
+    const firstTask = !demo && state.connection === "open" && state.tasks.phase === "ready"
+      && !state.tasks.selectedId && !state.tasks.list.length && state.runs.phase === "ready" && !state.runs.list.length
+      && state.workflows.phase === "ready" && !state.workflows.list.length && !state.workflows.selectedId;
+    const ownTaskUrl = "/panel/desk.html" + preferenceHash(deskHash({new: "task"}), appearance.value);
+    const presentation = {...state, locale: appearance.value.locale, needsRunPermission, demo, demoTask,
+      firstTask, ownTaskUrl};
     mountShell(mounts, presentation, handlers);
     mountTasks(byId("studioTasks"), presentation, handlers);
     mountOverview(mounts.bodyOverview, presentation, handlers);
@@ -142,12 +209,24 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     mountCanvas(mounts.nodes, mounts.edges, presentation, handlers);
     mountInspector(mounts.inspector, presentation, handlers);
     mountRuns(mounts.bodyRuns, presentation, handlers);
+    atlas.sync(presentation);
     mountBridge(mounts.bridge, presentation, handlers);
-    mountAutomation(mounts.bodyRuns, presentation, automation.snapshot(), automation);
+    const back = fromDesk(detail) ? "/panel/desk.html" + preferenceHash(deskHash({
+      project: desk.project, embed: desk.embed, task: desk.task, run: desk.run}), appearance.value) : null;
+    mountAutomation(mounts.bodyRuns, presentation, held, automation, handlers.showDecisions, back);
     mountDecisions(mounts.bodyDecisions, presentation, handlers);
     mountAgents(mounts.bodyAgents, presentation, handlers);
+    utilities.sync();
     restoreTyped(shell, typed);
     restoreFocus(shell, key);
+    if (focusDeskLimits && back && state.screen === "runs" && held.expanded && held.phase === "ready") {
+      const input = mounts.bodyRuns.querySelector('[data-focus="automation:run:max_actions"]');
+      if (input) {
+        focusDeskLimits = false;
+        input.focus();
+        input.scrollIntoView({block: "center"});
+      }
+    }
   }
 
   // -- reads ---------------------------------------------------------------
@@ -323,7 +402,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
         return;
       }
       dispatch({type: "run-loaded", read, controls});
-      automation.sync(state.runs.detail);
+      automation.sync(state.runs.detail, fromDesk(state.runs.detail) ? desk.bounds : null);
     } catch (error) {
       if (asked !== runEpoch && !stillNews(runId === chosenRun, stop)) return;
       const heard = unread(error);
@@ -394,10 +473,12 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   //: printed it would leave a person looking at a review of a document that no
   //: longer exists, with no control that does anything but fail again.
   async function write(target, subject, body, carry, recover = null) {
-    const ready = RUN_SCOPED.includes(target)
-      ? streamOpen : state.workflows.writeReady;
+    const demoReview = demo && target === "runs" && body.workflow_id === DEMO_REVIEW;
+    const scoped = demoReview || RUN_SCOPED.includes(target);
+    const ready = scoped ? streamOpen : state.workflows.writeReady;
+    const channel = demoReview ? "tasks" : target;
     if (!ready) {
-      say(target, "refused", STREAM_DOWN);
+      say(channel, "refused", STREAM_DOWN);
       if (recover) recover({status: "refused", code: LATE});
       return;
     }
@@ -407,16 +488,16 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     // through the session it was authorized under (`submit`). The counter is
     // the workflow doors' rule -- one workflow write at a time -- and over
     // both it retired alpha's refusal the moment omega's write began.
-    const mine = RUN_SCOPED.includes(target) ? null : ++writeGeneration;
+    const mine = scoped ? null : ++writeGeneration;
     // A run-scoped refusal is spoken only where it was asked: a person who has
     // since chosen another task or run is not told about a run they left.
     const asked = mine === null && target !== "tasks" ? subject : null;
-    say(target, "submitting", WRITING);
+    say(channel, "submitting", WRITING);
     const result = await submit(target, subject, body);
     if (mine !== null && mine !== writeGeneration) return;
     if (result.status !== "accepted") {
       const refusal = refusalOf(result);
-      if (asked === null || asked === chosenRun) say(target, refusal.phase, refusal.notice);
+      if (asked === null || asked === chosenRun) say(channel, refusal.phase, refusal.notice);
       else if (noticeHas(state.notice, WRITING.key) && !Object.entries(state.runs.writes).some(([key, word]) =>
         key.startsWith(`${chosenRun}/`) && word === "writing")) dispatch({type: "status", notice: ""});
       if (recover) recover(result);
@@ -450,7 +531,12 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   const decisions = decisionWriters({chosenRun: () => chosenRun, dispatch,
     draft: () => state.decisions.draft, isId, refreshRun, write});
   const tasks = taskFlow({state: () => state, read: readJson, write, dispatch,
-    clearRun, loadRuns, refreshRun, runSelection: () => runNavigation});
+    clearRun, loadRuns, refreshRun, runSelection: () => runNavigation,
+    isDemo: () => demo, focusDecisions: () => {
+      const panel = byId("screenDecisions");
+      panel.focus({preventScroll: true});
+      panel.scrollIntoView({block: "start"});
+    }});
   const automation = automationFlow({changed: render, selected: () => chosenRun,
     ready: () => streamOpen && state.runs.phase === "ready" && state.runs.detail?.run.run_id === chosenRun,
     read: (id, stop) => readJson(path.automation(id), stop), stop: () => new AbortController(),
@@ -475,6 +561,11 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     },
     ...workflow, onOpenRun: tasks.openRun,
     chooseTask: tasks.chooseTask, createTask: tasks.createTask,
+    openDemoReview: tasks.openDemoReview,
+    showTaskForm: () => {
+      const form = byId("studioTasks").querySelector("details[data-task-create]");
+      if (form) { form.open = true; form.querySelector("input")?.focus(); }
+    },
     refreshTasks: tasks.refreshTasks,
     refreshQuotas: quotas.refreshQuotas,
     editTask: tasks.editTask,
@@ -504,7 +595,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     selectRun: (runId) => refreshRun(runId, true),
     refreshRuns: () => loadRuns(),
     showDecisions: (runId) => {
-      dispatch({type: "screen", screen: "decisions"});
+      dispatch({type: "screen", screen: "decisions", pendingRun: runId});
       if (isId(runId)) refreshRun(runId, true);
     },
     chooseStep: step.chooseStep,
@@ -513,7 +604,14 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     confirmStep: step.confirmStep,
     editDocument: docs.editDocument,
     publishDocument: docs.publishDocument,
-    selectDecision: (key) => dispatch({type: "decision-chosen", key}),
+    selectDecision: (key) => {
+      dispatch({type: "decision-chosen", key});
+      const title = mounts.bodyDecisions.querySelector(".studio-decisions__detail h3");
+      if (title?.dataset.focusKey === `decision-title:${key}` && window.matchMedia("(max-width:899px)").matches) {
+        title.focus({preventScroll: true});
+        title.scrollIntoView({block: "start"});
+      }
+    },
     editDecision: (patch) => dispatch({type: "decision-edit", patch}),
     submitDecision: decisions.submitDecision,
     refreshAgents: () => {
@@ -578,6 +676,7 @@ const noticeHas = (notice, key) => Array.isArray(notice)
     workflowEpoch += 1;
     runEpoch += 1;
     dropSession();
+    utilityDoor.dropSession();
     writeGeneration += 1;
     pendingCarry = null;
     quotas.disconnectQuotas();

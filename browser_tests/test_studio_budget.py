@@ -181,7 +181,7 @@ def bench(chromium: Browser, project: _Project) -> Iterator[_Bench]:
     page = context.new_page()
     problems = _watch(page)
     recorder = _Recorder(page)
-    page.goto(project.url, wait_until="load")
+    page.goto(project.url + "panel/studio.html", wait_until="load")
     _settle(page)
     _open_the_workflow(page)
     try:

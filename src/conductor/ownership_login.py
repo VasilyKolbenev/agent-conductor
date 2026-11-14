@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
 import re
 import secrets
 import threading
+from typing import Callable
 
 from . import boot_witness, ownership_boot
 from .boot_witness import BootRefused
@@ -115,6 +117,21 @@ def _standing(box, bound):
     return value
 
 
+@dataclass(frozen=True)
+class LeasedLogin:
+    """The login folder one standing lease holds: where it is, which folder it is, and a hold.
+
+    `identity` is the native identity of the folder (volume and file id) as the lease itself
+    recorded and re-measured it, so a caller proves that a folder is the leased one by its
+    identity and not by the spelling of its path. `hold` counts one loan against closing the
+    lease and returns the callable that retires it; None for a value made without a lease.
+    """
+
+    home: Path
+    identity: tuple[int, int]
+    hold: Callable[[], Callable[[bool], None]] | None = None
+
+
 class LoginLease:
     def __init__(self, auth_home):
         self.stack, self._lock = ExitStack(), threading.RLock()
@@ -168,6 +185,35 @@ class LoginLease:
 
         return ProcessLease((handle,), retire)
 
+    def subject(self) -> LeasedLogin:
+        """The folder this standing lease holds, named by the identity the lease recorded."""
+        with self._lock:
+            self.check()
+            return LeasedLogin(self.home, tuple(identity(self.home)), self.hold)
+
+    def hold(self):
+        """One more loan against closing this lease, with no handle: a grant on its home.
+
+        Returns the callable that retires it. Retired as proven, the lease may close; retired as
+        unproven, or never retired, the lease cannot be released as clean (`close`), so the rights
+        the grant gave are returned before the lease ends or the lease says it was not.
+        """
+        with self._lock:
+            self.check()
+            self.loans += 1
+        standing = [True]
+
+        def retire(proven):
+            with self._lock:
+                if not standing[0]:
+                    return
+                standing[0] = False
+                self.loans -= 1
+                if proven is not True:
+                    self.uncertain = True
+
+        return retire
+
     def check(self):
         self.anchor.check()
         self.active.check()
@@ -215,6 +261,18 @@ class LoginScopes:
     def claim(self):
         lease = getattr(self.local, "lease", None)
         return None if lease is None else lease.claim()
+
+    def held(self) -> LeasedLogin | None:
+        """The login folder the calling thread's standing lease holds, or None.
+
+        The lease is bound to the thread that took it: the lease of another attempt is not this
+        thread's, and a thread that holds none answers None.
+
+        Raises:
+            OwnerRefused: `login_recovery_required` when the lease is uncertain or lost its subject.
+        """
+        lease = getattr(self.local, "lease", None)
+        return None if lease is None else lease.subject()
 
 
 def _hold_standing(stack, auth_home):

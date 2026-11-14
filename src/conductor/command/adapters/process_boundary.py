@@ -1,9 +1,10 @@
 """Trusted native policy, supplied by an owned attempt, never by HTTP arguments.
 
-This value does not create a profile or grant access. The attempt must own those
+These values do not create a profile or grant access. The attempt must own those
 resources before it can request this launch. Vendor integration remains separate.
 """
 from dataclasses import dataclass
+from pathlib import Path, PurePath
 import re
 
 
@@ -11,6 +12,9 @@ import re
 class WindowsContainer:
     sid: str
     internet_client: bool = False
+    #: The install folder loaned to this attempt (`process_loans`), absolute; None for an attempt
+    #: that loans none. A spawn on a container that names one starts a program standing in it.
+    install: str | None = None
 
     def __post_init__(self):
         if (type(self.sid) is not str
@@ -19,3 +23,114 @@ class WindowsContainer:
             raise ValueError("a full AppContainer profile SID is required")
         if type(self.internet_client) is not bool:
             raise ValueError("internet_client must be a boolean")
+        if self.install is not None and (type(self.install) is not str or not self.install
+                                         or not Path(self.install).is_absolute()):
+            raise ValueError("install must be an absolute folder, or None")
+
+
+_DRIVE = re.compile(r"[A-Za-z]:")
+#: The product keeps one login home per harness in `<anything>/DecemberCommand/logins/<name>`, case
+#: folded. The boundary grants a login home of this shape and no other folder.
+LOGIN_PARENTS = ("decembercommand", "logins")
+LOGIN_SHAPE = "DecemberCommand/logins/<name>"
+#: Whether the runner loans a leased login home to a confined attempt at all. It does not, as
+#: shipped. The rights of a credential refresh let the attempt create files in that home and
+#: overwrite every file beneath it, and the vendor's executable configuration (hooks, tool servers,
+#: user instructions, a notify command) lives there and is run again with the person's rights by
+#: spawns that stand outside the boundary: a status read, a quota read, a sign-in. It stays closed.
+#: It is the runner's own gate and opens no road: a subscription task of Claude Code and Codex
+#: runs on a relay home that holds a copy of the access token (`relay_home`), and whether a
+#: transport may start one is answered by the transport (`AttemptLaunch._login_road_covered`). No
+#: transport names a login home, so only the loan's own tests reach this gate
+#: (`tests/login_gate.py`).
+LOGIN_LOAN_OPEN = False
+
+
+def login_loan_provided() -> bool:
+    """Whether the runner loans a leased login home: the runner's own gate, and no door's.
+
+    Only the boolean True counts as open. The runner refuses a login home with this answer `False`
+    (`ProfileRefused`, before any profile, journal record or change exists). No door asks it and
+    no transport names a login home (`harness_attempt.AttemptFolders` has no `login`), so it is
+    not a second answer about the subscription road: that answer is the transport's alone, and a
+    subscription task works on a relay home and never on the login home.
+    """
+    return LOGIN_LOAN_OPEN is True
+
+
+def login_home_named(path: object) -> bool:
+    """Whether `path` is written as a login home of the product (`DecemberCommand/logins/<name>`).
+
+    A fact about the written place only (its names, case folded), so a door can ask it before an
+    attempt is claimed. It does not say that the folder exists or that the attempt holds the lease
+    on it: the runner checks both before it grants anything.
+
+    Args:
+        path: A path string or path-like; anything else is not a login home.
+    """
+    text = str(path) if isinstance(path, PurePath) else path
+    if type(text) is not str or "\x00" in text:
+        return False
+    parts = [part for part in re.split(r"[\\/]+", text) if part]
+    return (len(parts) >= 3 and not any(part in (".", "..") for part in parts)
+            and tuple(part.casefold() for part in parts[-3:-1]) == LOGIN_PARENTS)
+
+
+def _route(name: str, value: object) -> None:
+    """A route written as a string, relative to the project root, with no way out of it."""
+    if type(value) is not str or not value or "\x00" in value:
+        raise ValueError(f"{name} must be a route written as a string")
+    if (value[0] in "\\/" or _DRIVE.match(value) is not None
+            or any(part in ("", ".", "..") for part in re.split(r"[\\/]", value))):
+        raise ValueError(f"{name} must be a route beneath the project root")
+
+
+def _home(value: object) -> None:
+    """A home: a route beneath the project, or an absolute path (a relay home, `relay_home`)."""
+    if type(value) is str and "\x00" not in value and Path(value).is_absolute():
+        if any(part in (".", "..") for part in re.split(r"[\\/]", value)):
+            raise ValueError("home must be an absolute path with no '.' or '..' in it")
+        return
+    _route("home", value)
+
+
+@dataclass(frozen=True)
+class AttemptFolders:
+    """The existing folders an attempt works on, which the runner loans to its AppContainer.
+
+    `work` and `home` are routes relative to the project root (`work/<id>`, the per-spawn home);
+    `home` is None on the login road, and may instead be the ABSOLUTE relay home of the attempt
+    (`relay_home`), which the loan judges by its shape and takes as written; an absolute path means
+    a relay home and nothing else, so one that lies in the project is refused. `install` is the
+    ABSOLUTE folder that holds the pinned executable and what it loads. `login` is the ABSOLUTE
+    login home the attempt holds under the shared login lease, and None otherwise; no transport
+    names one (a subscription task works on a relay home, never on the login home). Nothing here
+    grants anything: the runner checks each folder, takes the login home only if the attempt's own
+    lease names it, and its journal grants and returns it (`process_loans`). A `login` is refused
+    while `login_loan_provided()` is False, and it is, as shipped.
+    """
+
+    work: str
+    home: str | None
+    install: str
+    login: str | None = None
+    #: Supplied by a trusted creator, never from a user request. Binds a read-only home.
+    readonly_home_identity: tuple[int, int] | None = None
+
+    def __post_init__(self):
+        _route("work", self.work)
+        if self.home is not None:
+            _home(self.home)
+        if (type(self.install) is not str or "\x00" in self.install
+                or not Path(self.install).is_absolute()):
+            raise ValueError("install must be the absolute folder of the pinned executable")
+        if self.login is not None and (type(self.login) is not str or "\x00" in self.login
+                                       or not Path(self.login).is_absolute()):
+            raise ValueError("login must be the absolute login home the attempt's lease names")
+        if self.login is not None and self.home is not None:
+            raise ValueError("a per-spawn home and a login home are never both loaned")
+        ident = self.readonly_home_identity
+        if ident is not None and (self.home is None or type(ident) is not tuple or len(ident) != 2
+                or any(type(word) is not int for word in ident)
+                or not 0 <= ident[0] < 2**64 or not 0 < ident[1] < 2**128):
+            raise ValueError("a read-only home requires its valid native identity")

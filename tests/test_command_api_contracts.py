@@ -50,23 +50,15 @@ _BOUNDARY = json.loads((
 ).read_text(encoding="utf-8"))
 _SPEC = (_ROOT / "docs" / "specs" / "2026-08-13-cockpit-command-api.md")
 
-#: `step_purpose` stands LAST on the review road, and the order is part of what
-#: is pinned: `ARGUMENT_SCHEMAS` is built from `fields()`, so a field carrying a
-#: default has to come last, and moving one that does not would slide values
-#: between positional arguments at every construction site.
-#:
-#: The dispatch road carries one more behind it. `instruction_digest` is the
-#: promise about the instruction's BYTES, and it is the only road that resolves
-#: an instruction at all -- so it is the only road where the question exists.
-#: Omittable, like the purpose in front of it: a payload written before the
-#: field existed still reads, and promises nothing about those bytes.
+#: ARGUMENT_SCHEMAS follows dataclass field order. Append optional fields so
+#: older positional callers and serialized arguments retain their meanings.
 EXPECTED_DEEP_ARGUMENTS = {
     "dispatch": (DeepDispatchArgs, (
         "work_item_id", "instruction_ref", "profile", "artifact_refs",
         "output_limit_profile", "step_purpose", "instruction_digest", "work_scope")),
     "review": (DeepReviewArgs, (
         "work_item_id", "target_artifact_refs", "result_artifact_ref",
-        "review_profile", "step_purpose", "work_scope")),
+        "review_profile", "step_purpose", "work_scope", "grok_diagnostic")),
     "evidence": (DeepEvidenceArgs, ("target_action_id", "kinds")),
     "stop": (DeepStopArgs, ("target_attempt_id", "reason")),
     "retry": (DeepRetryArgs, ("prior_action_id", "reason")),

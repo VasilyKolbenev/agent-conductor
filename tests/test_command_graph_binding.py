@@ -230,10 +230,16 @@ def test_an_unbound_proposal_is_left_alone_even_when_a_graph_stands(tmp_path):
 def a_runtime(store):
     from conductor.command.adapters import AdapterRegistry
     from conductor.command.runtime import ControlRuntime
+    from tests.test_command_adapters import FakeAdapter
 
+    # The plan binds its steps to these two adapters. Neither starts an agent here (the double says
+    # so), and an adapter the registry does not hold is refused for the boundary before any other
+    # hold speaks, which these suites are not about.
+    registry = AdapterRegistry([
+        FakeAdapter(name, ("observe", "dispatch", "review")) for name in ("claude-code", "codex")])
     minted = iter(f"minted-{index}" for index in range(1, 50))
     return ControlRuntime(
-        store, AdapterRegistry(), clock=lambda: NOW,
+        store, registry, clock=lambda: NOW,
         ids=lambda prefix: f"{prefix}-{next(minted)}")
 
 

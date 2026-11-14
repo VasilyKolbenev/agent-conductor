@@ -19,10 +19,10 @@ it is, and the credential is not read in order to decide whether it moved.
 
 Two roads DO read, and both read for a reason the residue half does not have.
 ``config_grants`` reads a vendor's own configuration file to find out whether it
-gives the isolation away, because refusing that file by NAME would refuse the
-directory the vendor's own login command produced. ``credential_values`` reads
-the credential itself for the opposite reason again: to protect it rather than
-to judge it. The leak
+gives the isolation or the login's route away, because refusing that file by
+NAME would refuse the directory the vendor's own login command produced.
+``credential_values`` reads the credential itself for the opposite reason
+again: to protect it rather than to judge it. The leak
 scan was built from the values of allowlisted environment names, because that is
 where every credential this build ever handed a child came from. A vendor's own
 login does not arrive that way -- it lives in a file -- so a child that echoed it
@@ -59,7 +59,12 @@ from __future__ import annotations
 import json
 import os
 import stat
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
+
+from ...ownership_native import NativeHold
+from ..long_path import extended
+from .quota_connection import NativeQuotaReadError
 
 
 def entries(home: str) -> frozenset[str] | None:
@@ -110,8 +115,9 @@ def config_grants(home: str, name: str, keys: tuple[str, ...]) -> tuple[str, ...
     the vendor wrote.
 
     What is refused is the CONTENT that gives something away: the trust map that
-    re-admits a work tree's own configuration, and a provider override. Anything
-    else in that file is the operator's business.
+    re-admits a work tree's own configuration, a provider override, and an
+    endpoint override that sends the login's bearer elsewhere. Anything else in
+    that file is the operator's business.
 
     A file this build cannot read or parse answers with every key it was asked
     about: a configuration whose contents cannot be established is not one this
@@ -188,7 +194,7 @@ def credential_values(home: str, names: tuple[str, ...]) -> tuple[bytes, ...]:
     for name in names:
         for value in _strings(_read_json(Path(home) / name)):
             if len(value) >= 12:
-                found.append(value.encode("utf-8"))
+                found.append(value.encode("utf-8", errors="surrogatepass"))
     return tuple(dict.fromkeys(found))
 
 
@@ -207,6 +213,27 @@ def quota_metadata(home: str, name: str, field: str) -> object:
         return None
     value = _read_json(target)
     return value.get(field) if type(value) is dict else None
+
+
+def credential_readback_trusted(home: str, names: tuple[str, ...], required=()) -> bool:
+    """Read declared JSON credentials; optional absent leaves may remain absent."""
+    if not names or not home:
+        return True
+    if not _pinned(home):
+        return False
+    for name in names:
+        target = Path(home) / name
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            if name in required:
+                return False
+            continue
+        except OSError:
+            return False
+        if _is_portal(target) or type(_read_json(target)) is not dict:
+            return False
+    return True
 
 
 def credential_document(home: str, name: str) -> object:
@@ -235,14 +262,17 @@ def _read_json(target: Path) -> object:
 
 
 def _strings(value: object) -> list[str]:
-    """Every string inside a JSON value, in no particular order."""
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, dict):
-        return [row for item in value.values() for row in _strings(item)]
-    if isinstance(value, list):
-        return [row for item in value for row in _strings(item)]
-    return []
+    """Every JSON string value, in the original depth-first traversal order."""
+    found, pending = [], [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            found.append(item)
+        elif isinstance(item, dict):
+            pending.extend(reversed(tuple(item.values())))
+        elif isinstance(item, list):
+            pending.extend(reversed(item))
+    return found
 
 
 def _pinned(home: str) -> bool:
@@ -341,7 +371,7 @@ def _walk(target: Path, prefix: str, room: "int | None" = None) -> "list[str | N
     # one that stood when this file was read.
     room = MEASURE_LIMIT if room is None else room
     rows: list[str | None] = []
-    stack = [(target, prefix)]
+    stack = [(Path(extended(target)), prefix)]  # a spawn's tree may be past 260 characters
     while stack:
         here, said = stack.pop()
         try:
@@ -468,20 +498,80 @@ def take_back(home: str, scratch: tuple[str, ...],
     What it could not remove is RETURNED rather than swallowed. A cleanup that
     failed silently is a promise reported as kept because nothing checked it,
     and the caller has to be able to say so.
+
+    A SQLite companion (`-wal`, `-shm`) is judged with its database, never
+    alone. Beside a database that STOOD before the spawn it is left standing and
+    is not residue: a write-ahead log removed by itself can leave a checkpoint a
+    kill cut short with a half-written database file, and it is what a session an
+    operator keeps open in the same directory writes through. Beside a database
+    this build could not remove it stays too, and it counts, as its database
+    does. It does the same beside a database this build could not measure: a
+    measurement not taken is residue, not a database that stood. A companion
+    with no database at all is an orphan and goes like any other scratch name.
+    The companion kept beside a database that stood is not looked at: the portal
+    rule above does not reach it. Only the pinned CLI could put a non-file there,
+    and SQLite writes plain files.
     """
     if not _pinned(home) or not added:
         return ()
-    wanted = [name for name in sorted(added)
-              if name.split("/", 1)[0] in scratch]
-    return tuple(name for name in wanted if _take_one(Path(home) / name))
+    left: list[str] = []
+    for name in sorted(added):  # `x.sqlite` sorts before its `-shm` and `-wal`
+        if name.split("/", 1)[0] not in scratch:
+            continue
+        base = _database_of(name, scratch)
+        if base is not None and base in left:
+            left.append(name)  # its database stays as residue: never orphan the companion
+            continue
+        stood = _stood_before(home, base, added)
+        if stood is None:
+            left.append(name)  # its database could not be measured: kept, and it counts
+        elif stood:
+            continue  # beside a database that stood before the spawn: kept, not residue
+        elif _take_one(home, name):
+            left.append(name)
+    return tuple(left)
 
 
-def _take_one(target: Path) -> bool:
-    """Remove one name, following nothing; True if it is still standing after."""
+#: SQLite's write-ahead companions of a database file.
+_COMPANIONS = ("-wal", "-shm")
+
+
+def _database_of(name: str, scratch: tuple[str, ...]) -> str | None:
+    """The declared top-level database a companion name belongs to, or None."""
+    for suffix in _COMPANIONS:
+        base = name[:-len(suffix)]
+        if "/" not in name and name.endswith(suffix) and base in scratch:
+            return base
+    return None
+
+
+def _stood_before(home: str, base: str | None, added: frozenset[str]) -> bool | None:
+    """Whether this database stood before the spawn: None when it cannot be measured.
+
+    False for a name that is no companion (no database), for a database the spawn added and
+    for one that is not there (an orphan's companion). A stat that fails otherwise than as
+    absent is None: an answer this build did not take is neither "stood" nor "gone".
+    """
+    from .harness_workspace import _leaf
+
+    if base is None or base in added:
+        return False
+    try:
+        return _leaf(Path(extended(home)) / base) is not None
+    except Exception:  # noqa: BLE001 -- `_leaf` refuses an unreadable name with a RuntimeError
+        return None
+
+
+def _take_one(home: str, name: str) -> bool:
+    """Remove one name of a login directory, following nothing; True if it is still standing."""
     from ..containment import portal_violation
     from .harness_workspace import _leaf, _remove_portal, _remove_tree
 
     try:
+        # The home is named in the extended-length form (the spawn's names may be past 260
+        # characters) and the measured name is joined to it as it is: asked of the system alone,
+        # `a ` and `a.` are `a`, and `...` is the folder above.
+        target = Path(extended(home)) / name
         found = _leaf(target)
         if found is None:
             return False
@@ -529,6 +619,50 @@ def profile_document(home: str, name: str) -> dict | None:
         return tomllib.loads(target.read_text(encoding="utf-8"))
     except (OSError, ValueError, UnicodeError):
         return None
+
+
+def _hold_quota_directory(path, holds):
+    try:
+        path.lstat()  # distinguish a missing directory from a refused native hold
+        holds.callback(NativeHold(path, directory=True).close)
+    except FileNotFoundError:
+        raise NativeQuotaReadError("not_authenticated") from None
+    except OSError:
+        raise NativeQuotaReadError("not_supported") from None
+
+
+@contextmanager
+def held_quota_credential(home, directory, select_name, check_document):
+    """Pin the login home before the provider selects a credential using its managed profile.
+
+    The selected leaf must be the only name in the nested directory. The file closes before the
+    CLI runs so its token can rotate while both directory identities remain pinned.
+    """
+    from .login_relay import Refused, _bare, read_leaf
+
+    if not _pinned(home) or not _bare(directory):
+        raise NativeQuotaReadError("not_supported")
+    root = Path(home)
+    with ExitStack() as holds:
+        _hold_quota_directory(root, holds)
+        name = select_name()
+        if not _bare(name):
+            raise NativeQuotaReadError("not_supported")
+        parent = root / directory
+        _hold_quota_directory(parent, holds)
+        try:
+            with os.scandir(parent) as entries:
+                if any(entry.name != name for entry in entries):
+                    raise NativeQuotaReadError("not_supported")
+            leaf = read_leaf(parent / name)
+        except OSError:
+            raise NativeQuotaReadError("not_supported") from None
+        if isinstance(leaf, Refused):
+            reason = "not_authenticated" if leaf.code == "leaf_absent" else "not_supported"
+            raise NativeQuotaReadError(reason)
+        check_document(leaf.doc)
+        del leaf
+        yield
 
 
 def nested_credentials(home: str, directory: str, names: tuple[str, ...]) -> tuple[bytes, ...]:

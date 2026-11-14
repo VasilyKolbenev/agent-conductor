@@ -104,7 +104,7 @@ _GUARD = "_spellable"
 #: bare. Owned here rather than imported from `doctor`: a guard that asks the
 #: code under test which characters are safe agrees with it by construction,
 #: and would go on agreeing while that set was widened.
-BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.,:/@+=~\\")
+BARE_ENOUGH = set(string.ascii_letters + string.digits + "-_.:/+")
 
 
 def _shape(node):

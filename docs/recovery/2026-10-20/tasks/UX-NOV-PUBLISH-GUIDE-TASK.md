@@ -1,0 +1,3 @@
+# First subscription setup on another Windows PC
+
+Align both first-run guides, READMEs and the harness section of owner acceptance with the tested pin, protected installation, and recorded subscription results. A fresh user can identify the wheel and Windows x64 harness files, check them before starting, create their own separate login and tell a supported operation from a proved model result. Keep demo, editing and unrelated acceptance instructions intact. Name the Codex exe in its 0.164.0 layout, Grok review-only scope and the exact remaining live gaps. Check the guides and their commands offline; no account access, provider call or publication.

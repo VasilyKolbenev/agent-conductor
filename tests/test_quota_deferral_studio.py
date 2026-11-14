@@ -14,7 +14,7 @@ def test_a_deferred_card_keeps_its_reading_and_hides_the_figures_of_a_reset_wind
       const window=(id,used,freshness)=>({limit_id:'codex',window_id:id,used_percent:used,
         remaining_percent:100-used,resets_at:'2026-09-21T17:00:00Z',starts_at:null,duration_minutes:300,freshness});
       const snapshot={binding_ids:['my-id'],account:null,account_status:'unknown',
-        source:{kind:'codex-app-server',version:'0.112.0'},observed_at:'2026-09-21T16:00:00Z',
+        source:{kind:'codex-app-server',version:'0.164.0'},observed_at:'2026-09-21T16:00:00Z',
         state:'observed',reason:null,freshness:'stale',deferred_at:'2026-09-21T16:01:00Z',
         windows:[window('primary',27,'reset_passed'),window('secondary',41,'stale')]};
       const state={locale:LOCALE,providers:[{provider_id:'my-id',display_name:'Codex',

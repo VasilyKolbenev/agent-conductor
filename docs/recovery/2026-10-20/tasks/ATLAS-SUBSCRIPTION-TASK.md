@@ -1,0 +1,5 @@
+# Atlas prepares a Dalio cycle from the operator's brief
+
+Owner request, 2026-11-09. From the Arachnid root, choose subscription Codex as Atlas and describe a change in a new session. Atlas obtains one real Codex advisor suggestion, proposes a bounded five-step Dalio cycle with Grok Diagnose and an independent Codex checker for Do. The operator can inspect the roles, source revision, approval points and limits, and explicitly authorize the main run from the conversation. The operator should not need to fill out workflow, seed, role or budget forms.
+
+Use the documented advisor path and project-scoped command API. Show where a model call is required, preserve distinct authority for the advisor and the main job, and keep a main job inert before the operator confirms it. Reconcile interrupted commands through stored evidence. Retain the existing local archive chat, attempt inspector and legacy links. Verify with a reproducible real-server browser test and stage a separate active local project with the two installed subscriptions. The current owner's main acceptance and launch are reserved for the owner. Stop at 30 percent remaining.

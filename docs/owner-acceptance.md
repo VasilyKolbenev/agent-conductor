@@ -1,5 +1,7 @@
 # Owner acceptance — can a person operate this without a developer?
 
+Russian version: [owner-acceptance.ru.md](owner-acceptance.ru.md).
+
 `docs/release-smoke.md` asks whether the artifact installs and answers. This asks a different
 question, and it is the one that decides an alpha: **can somebody who did not build this open it
 and get work done?**
@@ -25,24 +27,32 @@ commands are identical on every platform.
 
 ## 1. Install a clean wheel
 
+Open your own PowerShell and clear `$env:PYTHONPATH`. Install the identified wheel in a fresh protected product directory as in [first-run step 1](first-run-v1.en.md#1-install-the-identified-build). Keep this window open. The install block defines `$conduct`; Windows PowerShell accepts the `$CONDUCT` spelling below.
+
 ```powershell
-$ACC = Join-Path ([System.IO.Path]::GetTempPath()) ("conduct-acceptance-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $ACC | Out-Null
-python -m venv "$ACC\venv"
-$env:PYTHONPATH = ""
-$PY = "$ACC\venv\Scripts\python.exe"
-$CONDUCT = "$ACC\venv\Scripts\conduct.exe"
-& $PY -m pip install <the release candidate>
 & $CONDUCT --help
 ```
 
-**You must see** the fifteen subcommands, including `init`, `ownership`, `providers`, `projects`, and `up`, and no traceback. Nothing on `PYTHONPATH`: an editable
+**You must see** the sixteen subcommands, including `init`, `ownership`, `providers`, `projects`, `up`, and `utility-bridge`, and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
+
+Use Python 3.11 or newer and retain the exact wheel SHA256 in your acceptance record.
+
+**Keep the project path short: not in the temp folder.** Step 4 has you choose a workflow
+identifier of 128 characters. Saving that draft writes
+`<project>\conductor.v3\templates\<identifier>\draft.json` and a staging file beside it, and this
+build budgets Windows paths at 259 characters: the project path plus 49 plus the identifier must
+fit. A project path longer than 82 characters therefore makes that save fail with
+`windows_path_too_long` (*shorten the identifier or move the project to a shorter path*), while
+`init`, activation and `up` succeed at any length. A project inside the temp folder is about 100
+characters long (more under a long profile name), so step 2 puts it in
+`%USERPROFILE%\DecemberTrial`, which is typically 30 to 40. If your profile path is long, choose
+a shorter folder, such as `C:\DecemberTrial`.
 
 ## 2. Create a project
 
 ```powershell
-$PROJ = "$ACC\project"
+$PROJ = Join-Path $env:USERPROFILE "DecemberTrial"     # 82 characters at most: see step 1
 New-Item -ItemType Directory -Force -Path $PROJ | Out-Null
 & $CONDUCT init --template default-orbit --dir $PROJ
 ```
@@ -58,17 +68,40 @@ scaffold is not yet an owned project. Activate it before opening Studio:
 **You must see** `active`. Activation creates `conductor.v3/` and the legacy-writer
 fence; do not edit those paths by hand. The flag confirms that legacy writers have
 stopped. In this newly created project none have been started. See
-[first-run instructions](first-run-v1.md) for provider setup and existing-data limits.
+[first-run instructions](first-run-v1.en.md) for provider setup and existing-data limits.
 
 ## 3. Open the application
 
+`conduct up` occupies the window it runs in until you stop it with Ctrl+C (step 16), so give it
+a window of its own. Open a **second** Windows PowerShell window, from the Start menu as in step 1,
+and leave it for the server; keep this first window for commands. The variables do not carry over,
+so in the second window set them again (with the folder names you chose in steps 1 and 2), clear
+`PYTHONPATH` there too, exactly as step 1 does, and start the server:
+
 ```powershell
-$APP = Start-Process -FilePath $CONDUCT -ArgumentList @("up","--dir",$PROJ,"--port","7801") -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 2
+$env:PYTHONPATH = ""
+$source = Read-Host 'Source commit from window A (40 hex digits)'
+if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$CONDUCT = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv\Scripts\conduct.exe")
+$PROJ = Join-Path $env:USERPROFILE "DecemberTrial"
+& $CONDUCT up --dir $PROJ --port 7801
+```
+
+Wait until that window prints `http://127.0.0.1:7801/` and then `serving ... — Ctrl+C to stop`;
+Ctrl+C is an orderly stop only from that point on. Then, in the first window:
+
+```powershell
 Start-Process "http://127.0.0.1:7801/"
 ```
 
-**You must see** the Workflow Studio: a project name, a connection state, and five screens —
+**Do not start the server in the background**, as an earlier version of this step did with
+`Start-Process ... -WindowStyle Hidden`. A hidden server owns a hidden console, so Ctrl+C in your
+window does not reach it (measured: the server kept answering and stayed `opened`), and the only
+way left to end it, `Stop-Process`, leaves the project `opened` as well (step 16).
+
+The project root must show Arachnid Studio with its session list and the chat with Kolos.
+For the following acceptance steps open **Workflow controls** (`/panel/studio.html`).
+**You must see** a project name, a connection state, and five screens —
 Overview, Workflow, Runs, Decisions, Agents. **Overview must answer, without you clicking
 anything:** what this project is, whether it is ready to run, what is blocked, what needs you,
 the most recent run, and a route to the thing that is blocking.
@@ -150,12 +183,28 @@ harness, but binding both roles to the same participant must be refused.
 Go to **Agents**.
 
 On a fresh machine you will see the providers this build knows about, each marked
-**unconfigured** — the product ships no credentials and discovers nothing. The screen must tell
-you exactly what to do about it, and what it must name is a COMMAND:
+**unconfigured** — the product ships no credentials and discovers nothing. The Agents screen of a
+running server lists these rows and says what each fact means; it does not print the setup command
+for a row that is not set up (it prints one only for an empty list, which a running server never
+shows). The command comes from this document; note in your verdict that the screen did not name it.
+When no harness is configured, the Desk roles step directs you to stop the project server
+and open the setup wizard from the project folder. Use the command below.
+What you run is a COMMAND:
 
 ```powershell
 & $CONDUCT providers --dir $PROJ
 ```
+
+Run it with the server stopped: first Ctrl+C in the server's window, as in step 16. While
+`conduct up` holds the project the command refuses with `owner_busy` before its first question.
+For Claude Code, Codex or Grok Build choose `1` at the login question and give the folder
+`%USERPROFILE%\DecemberCommand\logins\<id>` as a full path: the wizard refuses a folder named
+otherwise, and prints the two lines that sign in (the variable pointed at that folder, then the
+tool's own sign-in); run them in your own PowerShell, not in the wizard. The wizard does not
+create that folder, and Codex stops with an error when its home folder does not exist: first run
+`New-Item -ItemType Directory -Force -Path <that folder> | Out-Null`, then the two lines. The
+[first-run instructions](first-run-v1.en.md#where-to-get-the-pinned-builds) say where the pinned
+builds come from.
 
 It asks which harness you have, where it is on this disk, and which environment variables it
 may read. Whether it asks a fourth question — the entrypoint — depends on the harness, and it
@@ -164,8 +213,9 @@ script that interpreter runs and will not take an empty answer; the others are a
 executable, so no entrypoint is asked for and the screen says why.
 
 Then it shows you what it will write, **including the availability that pin will resolve to**,
-and asks before writing it. If it says `availability available`, restarting `conduct up` must
-show that provider as available. If it says anything else, it names the file that is missing.
+and asks before writing it. When you are done with this step, start the server again with the
+step-3 command whatever it said. If it said `availability available`, that server must show the
+provider as available. If it says anything else, it names the file that is missing.
 A wizard that reported only "wrote providers.json" is what this replaced.
 
 **Three things you must try, because they are the reason this is a command and not an editor:**
@@ -188,14 +238,35 @@ The browser writes none of this: a provider pins an absolute path on your machin
 reviewed position is that no browser should be able to write one. The command is how that
 position stops costing you a text editor.
 
-Restart `conduct up`, and the same Agents screen must now show that provider as **available** —
-providers are read once at startup, and the command says so when it finishes.
+Restart `conduct up` the way step 16 does (Ctrl+C in the server's window, then the step-3
+command; never `Stop-Process`), and the same Agents screen must now show that provider as
+**available** — providers are read once at startup, and the command says so when it finishes.
 
-Without a compatible reviewed installation and explicitly authorized credentials, continue
-the editing checks but record the real-execution steps as blocked, never passed. Each user
-supplies their own credentials; the product distributes neither the owner's key nor its value.
-Configure names in the wizard, keep values in the environment of the launched server, and
-never paste a real key into the document form, terminal command history or a report.
+Without a compatible reviewed installation and your own sign-in to the tool, continue the editing
+checks but record the real-execution steps as blocked, never passed. Facts of this build:
+
+- A task runs only on Windows, inside the execution boundary, with the pinned build installed under
+  a folder shaped `...\harnesses\<name>\<version>\` (the protected place is
+  `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`); see the
+  [first-run instructions](first-run-v1.en.md).
+- Record the harness, pinned version, model if selected, task role, outcome and evidence. Claude Code 2.1.239 completed one subscription Goal. Codex 0.164.0 produced a Goal artifact on `gpt-6.1-sol`; its content did not meet the acceptance criterion. Both ran inside the Windows boundary with an access-only copy of the dedicated login.
+- Grok Build 1.0.5 supports read-only review. Its authenticated quota check worked, but the live diagnosis exited 1 without a verified result. Editing/dispatch and the independent checker are unavailable. A live Kimi Code 0.38.0 task remains unverified. Record blocked or failed steps as observed. [First-run evidence](first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
+- The same refusal comes on every platform but Windows (the boundary exists only there).
+
+Record a refusal as blocked, in the product's own words. The plan's door words it *step '…' demands
+sandbox route 'execution-boundary' that this build does not provide*; in the desk wizard the step
+reads *This step needs the isolation (execution boundary), and this computer cannot give it to the
+agent chosen, so nothing was started…* (message key `wizard.chain.boundary`, or
+`wizard.chain.boundary_login` when a chosen agent signs in by subscription and its task road is
+refused). The Agents screen shows the chip `boundary` or `refused` on every row of a tool this
+machine can start. A row where this computer cannot start the tool (its availability is not
+`available`: `unconfigured`, `executable_absent` or `version_mismatch`) shows no road. A
+subscription row also says why. One caveat for a subscription connection: the version check, the
+login status and the quota request launch the vendor's CLI outside the boundary, with the real
+login directory.
+Each user supplies their own sign-in and keys; the product distributes neither the owner's key nor
+its value. Configure names in the wizard, keep values in the environment of the launched server,
+and never paste a real key into the document form, terminal command history or a report.
 
 ## 8. Walk every field of the inspector
 
@@ -403,7 +474,7 @@ run from step 10 still following the revision it started with.
 
 ## 16. Reload and reconnect
 
-Reload the page. Then stop `conduct up`, watch the screen, and start it again.
+Reload the page. Then stop `conduct up` with Ctrl+C, watch the screen, and start it again.
 
 **You must see**: the same published revision and the same draft after a reload — the draft is
 stored on the server, not in your browser; **every step you moved still where you left it**, for
@@ -415,12 +486,39 @@ you had not saved.
 returns, the controls must come back without throwing you out of the field you were typing in,
 and without moving your cursor to the end of what you had typed.
 
+**How to stop it.** Press Ctrl+C in the second window, the one where `conduct up` runs, after it
+has printed the URL. The server drains: nothing new starts, a task that is still running
+finishes, and the prompt comes back. (A second Ctrl+C only prints the drain's deadline; it does
+not interrupt the drain.) Then, in the first window:
+
 ```powershell
-Stop-Process -Id $APP.Id
+& $CONDUCT ownership status --dir $PROJ
 ```
 
-Restart with the same step-3 command, retaining the new `$APP` id. Do not stop other
-`conduct` processes by name: they may belong to another project.
+**You must see** `closed`. Start the server again with the step-3 command in the second window;
+while it runs, the same command reads `opened`, and the next stop must read `closed` again.
+
+**Never stop it any other way, and above all not with `Stop-Process`.** Measured on this build:
+`Stop-Process` ends the whole process tree at once, with no drain, and the project stays
+`opened`. `ownership status` then reads `opened` whether the server is alive or dead, and
+`conduct doctor` says nothing about ownership. The next `conduct up` refuses, and
+`conduct ownership recover` refuses until the OS has restarted:
+
+```
+conduct up: refused recovery_required: previous owner did not close; recover explicitly after OS restart
+recovery_required: restart the OS before recovering an uncertain writer session (do a full Restart, not a shutdown)
+```
+
+Those refusals name the way back: a full Windows **Restart** from the Start menu, not Shut
+down, and then
+
+```powershell
+& $CONDUCT ownership recover --dir $PROJ
+```
+
+`ownership recover --prepare-restart` is not needed for a record this build wrote; it says so.
+Write down any forced stop in your verdict, delete nothing under the project's service folders,
+and do not stop other `conduct` processes by name: they may belong to another project.
 
 ## 17. Understand every failure without opening a terminal log
 
@@ -475,9 +573,10 @@ whose plan is merely `complete` must not count. Empty input must yield zero.
   remains visible with its source outcome, but a downstream `block` step cannot consume it.
   A failure after a proposal selected its input requires a new proposal; silently falling back
   to an older document is a finding.
-- Reload and restart. The prior revision, decisions, checker attribution and evidence must
-  remain. Recovery must not spend a second checker call. Only explicitly accept/apply the
-  result to the original repository after review; creating it and verifying it do not apply it.
+- Reload and restart (stop with Ctrl+C and start again, as in step 16). The prior revision,
+  decisions, checker attribution and evidence must remain. Recovery must not spend a second
+  checker call. Only explicitly accept/apply the result to the original repository after
+  review; creating it and verifying it do not apply it.
 
 Record the developer's rehearsal and the owner's own acceptance separately. A synthetic demo,
 fake transport, successful wheel installation or green local suite cannot fill either result.

@@ -63,6 +63,56 @@ def to_card(bench, lang, *, queue="queue_free", preview=None, actor="vasily", cl
     bench.tick(clock)
 
 
+@pytest.mark.parametrize("surface", ["desk", "studio"])
+@pytest.mark.parametrize("lang", LANGS)
+def test_grant_names_the_diagnostic_format_only_for_its_frozen_step(
+        bench, monkeypatch, surface, lang):
+    plan = fixture("wizard", "run_detail.json")
+    nodes = plan["graph"]["definition"]["nodes"]
+    for node in nodes[:2]:
+        node.update(instance_id="grok", capability="review", arguments={})
+    nodes[0]["arguments"]["grok_diagnostic"] = "session-phase-v1"
+    plan["config"]["instances"] = [{"id": "grok", "adapter": "grok-build"}]
+    monkeypatch.setattr(queue_door, "fixture", lambda *parts:
+                        plan if parts[-1] == "run_detail.json" else fixture(*parts))
+    preview = {**STANDARD, "grok_diagnostic_steps": ["analyst"]}
+    plan["graph"]["definition_digest"] = preview["terms"]["graph_digest"]
+    to_card(bench, lang, preview=preview)
+    if surface == "studio":
+        bench.page.evaluate("""async () => {
+          const {mountAutomation} = await import("/panel/studio-automation.js");
+          const {launch} = host.state.wizard;
+          const detail = structuredClone(launch.reads.run.payload);
+          detail.run.mode = "policy"; detail.config.automation_contract = "bounded-run-v1";
+          detail.graph.definition.edges = [];
+          const runId = launch.preview.terms.run_id;
+          const mount = document.createElement("main");
+          document.body.replaceChildren(mount);
+          mountAutomation(mount, {runs: {detail, selectedId: runId}, locale: host.state.locale},
+            {runId, draft: {actor: "owner"}, preview: launch.preview}, {});
+        }""")
+    preview = bench.page.locator("[data-terms]" if surface == "desk"
+                                 else "[data-automation-preview]")
+    label = preview.get_by_text("streaming-messages-json", exact=False)
+    expect(label).to_have_count(1)
+    expect(label).to_be_visible()
+    assert "analyst" in label.inner_text()
+    assert ("permission" if lang == "en" else "разрешение") in label.inner_text().lower()
+    assert bench.problems == []
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_patch_permission_is_visible_at_the_do_step_before_start(bench, lang):
+    preview = {**STANDARD, "patch_steps": ["do"]}
+    to_card(bench, lang, preview=preview)
+    text = "Этим же действием" if lang == "ru" else "This one action"
+    label = bench.page.locator("[data-terms]").get_by_text(text, exact=False)
+    expect(label).to_have_count(1)
+    expect(label).to_be_visible()
+    assert "do" in label.locator("..").inner_text().lower()
+    assert bench.problems == []
+
+
 def hm(bench, seconds):
     minutes = seconds // 60
     return bench.say("wizard.time.hm", hours=str(minutes // 60), minutes=str(minutes % 60))
@@ -485,6 +535,13 @@ def test_the_owners_name_is_held_to_the_id_grammar_and_survives_the_redraws_of_t
         bench, lang):
     to_card(bench, lang)
     field = bench.control("wizard:launch:actor")
+    hint = bench.page.get_by_text("colleague-demo", exact=False)
+    expect(hint).to_be_visible()
+    expect(hint).to_contain_text("A–Z")
+    field.fill("коллега-демо")
+    expect(field).to_have_value("коллега-демо")
+    expect(bench.control(START)).to_be_disabled()
+    expect(hint).to_be_visible()
     field.fill("bad name")
     assert bench.control(START).is_disabled()
     assert why(bench, START) == bench.say("wizard.launch.why.actor_invalid")

@@ -96,12 +96,14 @@ def test_the_process_a_confined_child_starts_is_confined_like_its_parent(
         require_child_shell(box)
     before = box.snapshot("source")
     box.write_inner_script(_INNER)
-    box.run_nested(confined=confined)
+    nested = box.run_nested(confined=confined)
     if confined:
-        assert (box.layout.tmp / "inner_ran.txt").exists(), "the descendant never ran"
+        assert (box.layout.tmp / "inner_ran.txt").exists(), (
+            f"the descendant never ran; the shell around it printed:\n{nested.output}")
         assert box.snapshot("source") == before
     else:
-        assert box.snapshot("source") != before, "the nested script is not a probe"
+        assert box.snapshot("source") != before, (
+            f"the nested script is not a probe; the shell around it printed:\n{nested.output}")
 
 
 @pytest.mark.parametrize("operation", WORK_OPS, ids=_ids)

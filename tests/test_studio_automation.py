@@ -20,6 +20,7 @@ def js(body, payload):
     if node is None:
         pytest.skip("Node is required for the real Studio modules")
     modules = {"model": "studio-automation-model.js", "flow": "studio-automation-flow.js",
+               "desk": "desk-wizard-launch.js",
                "boundary": "studio-situation.js", "draft": "studio-draft.js", "copy": "studio-i18n.js"}
     imports = "\n".join(f"import * as {key} from {json.dumps((PANEL / name).as_uri())};"
                         for key, name in modules.items())
@@ -45,6 +46,67 @@ def wire(root):
             "paused": automation_view(f.policy, "run"), "body": body}
 
 
+def test_desk_suggestions_are_only_numeric_inputs_for_matching_run_steps(tmp_path):
+    payload = wire(tmp_path)
+    projected = js("""
+      const terms = p.preview.terms, detail = p.read, bounds = model.limitFields(terms);
+      const suggested = model.draftFromDesk(detail, bounds);
+      const invalid = [null, {...bounds, digest: p.preview.preview_digest}, {...bounds, max_actions: 0},
+        {...bounds, node_limits: []},
+        {...bounds, node_limits: bounds.node_limits.map(row => ({...row, node_id: "other-step"}))}];
+      console.log(JSON.stringify({body: model.previewRequest(suggested), actor: suggested.actor,
+        invalid: invalid.map(one => model.draftFromDesk(detail, one))}));
+    """, payload)
+    assert projected["body"] == {key: payload["preview"]["terms"][key] for key in (
+        "max_actions", "max_action_seconds", "max_total_task_seconds", "duration_seconds", "node_limits")}
+    assert projected["actor"] == ""
+    assert projected["invalid"] == [None] * 5
+
+
+def test_diagnostic_steps_match_the_reviewed_grant(tmp_path):
+    from tests.desk_wizard_node import fixture
+    payload = wire(tmp_path)
+    payload["desk"] = fixture("wizard", "preview_standard.json")
+    result = js("""
+      const detail = p.read;
+      const node = detail.graph.definition.nodes.find(n => n.capability);
+      node.capability = "review";
+      node.arguments.grok_diagnostic = "session-phase-v1";
+      const accepted = (project, packet, id) => [
+        [id], [], [id, id], ["absent"], null, id
+      ].map(ids => Boolean(project({...packet, grok_diagnostic_steps: ids})));
+      const packet = {...p.desk, grok_diagnostic_steps: ["analyst"]};
+      const stale = {graph: {definition_digest: "stale", definition: {nodes: [
+        {node_id: "analyst", instance_id: "obsolete"}
+      ]}}, config: {instances: [{id: "obsolete", adapter: "wrong-recipient"}]}};
+      const card = run => desk.cardFacts({preview: packet, reads: {run}}, {roles: {}});
+      console.log(JSON.stringify([
+        accepted(v => desk.projectPreview(v, p.desk.terms.run_id), p.desk, "analyst"),
+        accepted(v => model.projectAutomationPreview(v, detail), p.preview, node.node_id),
+        Boolean(model.projectAutomationPreview(p.preview, detail)),
+        ...[null, {status: "failed"}, {status: "ok", payload: stale}].map(read =>
+          card(read).steps.map(n => [n.step, n.grokDiagnostic, n.harness]))
+      ]));
+    """, payload)
+    assert result[:3] == [[True, False, False, False, False, False]] * 2 + [False]
+    assert result[3:] == [[["analyst", True, None], ["do", False, None]]] * 3
+
+
+def test_patch_preview_cannot_hide_or_invent_the_second_phase_in_studio(tmp_path):
+    result = js("""
+      const detail = p.read;
+      const node = detail.graph.definition.nodes.find(n => n.capability);
+      node.capability = "dispatch";
+      node.arguments.profile = "implement-patch-v1";
+      const allowed = packet => Boolean(model.projectAutomationPreview(packet, detail));
+      const reviewed = {...p.preview, patch_steps: [node.node_id]};
+      console.log(JSON.stringify([allowed(reviewed), allowed(p.preview),
+        allowed({...reviewed, patch_steps: ["other"]}),
+        allowed({...reviewed, terms: {...reviewed.terms, graph_digest: "stale"}})]));
+    """, wire(tmp_path))
+    assert result == [True, False, False, False]
+
+
 def test_actual_marked_run_preview_and_paused_authority_are_admitted_without_mutating_frozen_config(tmp_path):
     result = js("""
       const before=JSON.stringify(p.read);
@@ -54,6 +116,43 @@ def test_actual_marked_run_preview_and_paused_authority_are_admitted_without_mut
         admitted?.config.automationContract]));
     """, wire(tmp_path))
     assert result == [True, True, True, True, "bounded-run-v1"]
+
+
+@pytest.mark.parametrize("replacing", [False, True])
+def test_default_studio_and_desk_review_the_same_real_server_terms(tmp_path, replacing):
+    from tests.test_policy_driver import authorize
+    from tests.test_policy_runtime import propose
+
+    f = setup(tmp_path, two_steps=True, checker=True)
+    if replacing:
+        previous = authorize(f)
+        propose(f)
+        f.runtime.execute(f.runtime.authorize_policy("run", "proposal", previous.authorization_id))
+        f.policy.control("run", {"control_id": "stop", "authorization_id": previous.authorization_id,
+            "authorization_digest": previous.authorization_digest, "action": "revoke",
+            "actor": "owner", "expected_control_id": None})
+    api = CommandApi(f.store, f.registry, session=CommandSession(PORT, TOKEN),
+                     budget=f.policy.budget, clock=f.policy.clock, ids=f.runtime._ids,
+                     publish_run=lambda run: None)
+    read = api.handle("GET", "/command/runs/run", get_headers()).payload
+    response = f.policy.preview("run", {})
+    desk_response = f.policy.preview("run", {})
+    result = js("""
+      const writes=[];
+      const studio=flow.automationFlow({selected:()=>"run",ready:()=>true,changed:()=>{},
+        stop:()=>({abort(){}}),read:async()=>p.view,write:async(target,run,body,ok)=>{
+          writes.push([target,body]);ok({status:"accepted",payload:p.response});}});
+      await studio.sync(p.read);
+      await studio.preview();
+      const actual=studio.snapshot().preview, other=desk.projectPreview(p.desk,"run");
+      console.log(JSON.stringify([writes,actual?.terms,other?.terms,actual?.preview_digest,
+        other?.preview_digest,studio.snapshot().recommendation?.spent]));
+    """, {"read": read, "view": automation_view(f.policy, "run"), "response": response, "desk": desk_response})
+    assert result[0] == [["automationPreview", {}]]
+    assert result[1] == result[2] == response["terms"]
+    assert result[3] == result[4] == response["preview_digest"]
+    assert result[5] == ({"actions": 1, "seconds": 60,
+                          "attempts": [{"step_id": "do", "attempts": 1}]} if replacing else None)
 
 
 @pytest.mark.parametrize("mutation", [
@@ -101,7 +200,13 @@ def test_unknown_authorization_is_confirmed_only_by_matching_durable_terms(tmp_p
         write:async(target,id,body,carry,recover)=>{writes.push({target,body});
           if(target==='automationPreview')carry({status:'accepted',payload:p.preview});
           else {replies=p.paused;recover({status:'unknown'});}}});
-      await f.sync(p.read);f.edit('actor','owner');await f.preview();await f.authorize();
+      await f.sync(p.read);f.edit('actor','owner');
+      const terms=p.preview.terms;
+      for(const key of ['max_actions','max_action_seconds','max_total_task_seconds','duration_seconds'])
+        f.edit(key,String(terms[key]));
+      for(const row of terms.node_limits) for(const key of ['timeout_seconds','max_attempts'])
+        f.edit(key,String(row[key]),row.node_id);
+      await f.preview();await f.authorize();
       console.log(JSON.stringify({request:f.snapshot().request,notice:f.snapshot().notice,
         body:writes[1].body,targets:writes.map(row=>row.target)}));
     """, payload)
@@ -190,45 +295,54 @@ def test_a_task_channel_fact_is_admitted_only_with_its_own_unit_scope_and_declar
     assert result == [True, True, True, True, False, False, False, False, False, False, False]
 
 
-def _drafted(definition):
-    return js("console.log(JSON.stringify(model.automationDraft({graph: {definition: p}})));", definition)
+def test_unreviewed_plan_has_no_invented_limits_and_emits_only_an_empty_default(tmp_path):
+    result = js("""
+      const initial=model.automationDraft(p.read);
+      console.log(JSON.stringify([initial.max_action_seconds,initial.node_limits,model.previewRequest(initial)]));
+    """, wire(tmp_path))
+    assert result == ["", [{"node_id": "do", "timeout_seconds": "", "max_attempts": ""}], {}]
 
 
-def _limits(draft):
-    return {row["node_id"]: (row["timeout_seconds"], row["max_attempts"]) for row in draft["node_limits"]}
+def test_manual_limits_survive_failed_reset_then_follow_a_fresh_server_recommendation(tmp_path):
+    p = wire(tmp_path)
+    f = setup(tmp_path / "new")
+    p["recommended"] = f.policy.preview("run", {})
+    result = js("""
+      let online=true,writes=[];
+      const f=flow.automationFlow({selected:()=>"run",ready:()=>true,changed:()=>{},stop:()=>({abort(){}}),
+        read:async()=>p.initial,write:async(t,id,body,ok)=>{
+          writes.push(body); if (!online) throw Error("offline");
+          ok({status:"accepted",payload:p.recommended});}});
+      await f.sync(p.read); await f.toggleLimits();
+      const starting=f.snapshot().draft.max_actions;
+      f.edit("max_actions","5"); online=false; await f.preview("edit");
+      const failed=[f.snapshot().notice,f.snapshot().preview,f.snapshot().draft.max_actions,
+        f.snapshot().recommendation,f.snapshot().draft.custom];
+      online=true; await f.preview("edit");
+      const reset=[f.snapshot().draft.max_actions,f.snapshot().draft.custom,f.snapshot().preview];
+      console.log(JSON.stringify([writes,starting,failed,reset]));
+    """, p)
+    proposed = str(p["recommended"]["terms"]["max_actions"])
+    assert result == [[{}, {}, {}], proposed, ["recommendation_failed", None, "5", None, True],
+                      [proposed, False, None]]
 
 
-def test_the_standard_draft_reserves_the_checker_and_shows_its_planned_correction_before_any_grant():
-    from tests.test_command_graph_dalio import shipped
-
-    draft = _drafted(shipped("dalio-v5").as_dict())
-    assert _limits(draft) == {"goal": ("300", "1"), "identify": ("300", "1"), "diagnose": ("300", "1"),
-                              "design": ("300", "1"), "do": ("300", "2")}
-    # `do` and its checker reserve 2 x 300; five planned steps plus the one correction.
-    assert (draft["max_actions"], draft["max_action_seconds"], draft["max_total_task_seconds"]) == (
-        "6", "600", "2400")
-    assert draft["duration_seconds"] == "3600" and draft["actor"] == ""
-
-
-def test_a_plain_plan_is_drafted_without_a_checker_reservation_or_a_correction():
-    from tests.test_command_graph_dalio import shipped
-
-    draft = _drafted(shipped("dalio-v3").as_dict())
-    assert set(_limits(draft).values()) == {("300", "1")}
-    assert (draft["max_actions"], draft["max_action_seconds"], draft["max_total_task_seconds"]) == (
-        "5", "300", "1500")
-
-
-def test_the_draft_never_exceeds_a_frozen_timeout_or_attempt_bound():
-    definition = {"nodes": [
-        {"node_id": "do", "kind": "task", "capability": "dispatch", "instance_id": "doer",
-         "verifier_instance_id": "checker", "timeout_seconds": 120, "attempt_bound": 1},
-        {"node_id": "again", "kind": "loop", "loop": {"bound": 3, "back_to": "do"}}],
-        "edges": [{"from_node": "do", "to_node": "again", "condition": "on_failed"}]}
-    draft = _drafted(definition)
-    assert _limits(draft) == {"do": ("120", "1")}
-    assert (draft["max_actions"], draft["max_action_seconds"], draft["max_total_task_seconds"]) == (
-        "1", "240", "240")
+def test_a_pending_default_cannot_reappear_after_the_grant_changes(tmp_path):
+    p = wire(tmp_path)
+    f = setup(tmp_path / "new")
+    p["recommended"] = f.policy.preview("run", {})
+    result = js("""
+      let reply=p.initial, release, posted=[];
+      const f=flow.automationFlow({selected:()=>"run",ready:()=>true,changed:()=>{},stop:()=>({abort(){}}),
+        read:async()=>reply,write:(target,id,body,ok)=>new Promise(resolve=>{
+          posted.push(body);release=()=>{ok({status:"accepted",payload:p.recommended});resolve();};})});
+      await f.sync(p.read);
+      const pending=f.preview();
+      reply=p.paused;await f.refresh();release();await pending;
+      console.log(JSON.stringify([posted,f.snapshot().preview,f.snapshot().recommendation,
+        f.snapshot().pending,f.snapshot().notice]));
+    """, p)
+    assert result == [[{}], None, None, False, "preview_stale"]
 
 
 def test_a_persons_edited_budget_survives_a_reread_and_a_trip_to_another_run(tmp_path):

@@ -63,15 +63,16 @@ GLOBALS = frozenset({
     "if", "for", "while", "switch", "catch", "return", "typeof", "function",
     "await", "new", "else", "do", "of", "in", "case", "throw", "async",
 })
-# Native layout observation is needed by the two modules that draw against a
-# measured box: the orbit, and the participants strip that now sizes itself the
-# same way. Keep this narrower than GLOBALS: a name admitted here is admitted
+# Native layout observation follows measured boxes and shell state. Keep this
+# narrower than GLOBALS: a name admitted here is admitted
 # for the module that argued for it and for no other, so a third module
 # reaching for an observer has to come here and be written down. It is a name
 # per module, never a wildcard and never a module-wide forgiveness -- a typo
 # or any other foreign global is still reported in these modules too.
 # Browser witnesses exercise construction, redraw, resizing and teardown.
 MODULE_GLOBALS = {
+    # Numeric column preferences follow their box and the shell's open/closed state.
+    "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
     "studio-trace.js": frozenset({"ResizeObserver"}),
     "studio-orbit.js": frozenset({"ResizeObserver"}),
     "studio-participants.js": frozenset({"ResizeObserver"}),
@@ -129,12 +130,11 @@ def _names_in_scope(source: str) -> set[str]:
     return found
 
 
-#: A regular-expression literal, in the only positions this codebase writes one:
-#: after `=`, `(`, `,`, `[`, `:` or `return`. Blanked before names are read,
-#: because `/(\d{2})T(\d{2})/` contains `T(` and nothing else in this module can
-#: tell that from a call.
+#: At these operand starts a slash introduces a literal. The last character
+#: of && or || is sufficient: bitwise & and | also require a right operand.
+#: A slash after an identifier or a closing parenthesis can be division.
 _REGEX_LITERAL = re.compile(
-    r"(?<=[=(,\[:])\s*/(?![/*])(?:\\.|\[[^\]]*\]|[^/\n\\])+/[gimsuy]*")
+    r"(?<=[=(,\[:&|])\s*/(?![/*])(?:\\.|\[[^\]]*\]|[^/\n\\])+/[gimsuy]*")
 
 
 def _scannable(source: str) -> str:
@@ -185,11 +185,12 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
     One identical source, read as each module in turn: the two that argued for
     an observer reach it, every other module does not, and in the admitted
     modules a typo of the same name and an absent helper are both still
-    reported. The table itself is held to one name per module, so the next
-    entry cannot quietly be a wildcard or a module-wide forgiveness.
+    reported. The explicit table prevents wildcard or module-wide forgiveness;
+    only the panel layout may also observe the shell's class and language.
     """
     source = "function watch() { new ResizeObserver(() => 0); missingHelper(); }"
-    for observer in ("studio-orbit.js", "studio-participants.js", "studio-trace.js"):
+    for observer in ("studio-orbit.js", "studio-participants.js", "studio-trace.js",
+                     "arachnid-layout.js"):
         assert _unreachable(source, observer) == ["missingHelper"], observer
         assert _unreachable(source.replace("ResizeObserver", "ResizeObserverTypo"),
                             observer) == ["ResizeObserverTypo", "missingHelper"]
@@ -199,12 +200,18 @@ def test_resize_observer_is_admitted_module_by_module_and_forgives_no_unknown_na
         assert _unreachable(source, module) == [
             "ResizeObserver", "missingHelper"], module
     assert MODULE_GLOBALS == {
+        "arachnid-layout.js": frozenset({"ResizeObserver", "MutationObserver"}),
         "studio-trace.js": frozenset({"ResizeObserver"}),
         "studio-orbit.js": frozenset({"ResizeObserver"}),
         "studio-participants.js": frozenset({"ResizeObserver"}),
         "desk-time.js": frozenset({"Intl"}),
         "desk-flow-host.js": frozenset({"AbortController"}),
         "desk-wizard-host.js": frozenset({"setInterval", "clearInterval", "queueMicrotask"})}, MODULE_GLOBALS
+    mutation = source.replace("ResizeObserver", "MutationObserver")
+    for module in MODULES:
+        expected = ["missingHelper"] if module == "arachnid-layout.js" else [
+            "MutationObserver", "missingHelper"]
+        assert _unreachable(mutation, module) == expected, module
     # And every admission is SPENT: a module listed here that never calls the
     # name it was admitted for is a forgiveness nobody argued for, which is the
     # one widening the rest of this test cannot see -- each of its claims holds
@@ -272,6 +279,16 @@ def test_the_scanner_reads_no_call_out_of_a_regular_expression():
     assert "T" not in _called(_scannable(pattern))
 
 
+@pytest.mark.parametrize("operator", ["||", "&&"])
+def test_boolean_operand_regex_is_text_but_divisors_and_real_calls_still_resolve(operator):
+    source = rf"""
+    const quiet = ready {operator} /^(?:Ran|OK(?: \(.*\))?)$/.test(line);
+    const quotient = total / missingDivisor() / scale;
+    """
+    assert _unreachable(source, "arachnid-handoff.js") == ["missingDivisor"]
+    assert _unreachable(source + "OK(line);", "arachnid-handoff.js") == ["OK", "missingDivisor"]
+
+
 def test_this_guard_forgives_what_a_module_really_can_reach():
     """The over-correction control: it must not red on an honest module.
 
@@ -325,8 +342,13 @@ def test_the_deadline_globals_are_reached_by_the_boot_and_transport_modules_alon
         reached = sorted(set(DEADLINE.findall(_scannable(_code(PANEL / name)))))
         if name in ("studio.js", "desk-transport.js", "desk-people-host.js"):
             assert reached == ["AbortController", "clearTimeout", "setTimeout"]
+        elif name == "arachnid.js":
+            assert reached == ["AbortController"]
         elif name == "desk-flow-host.js":
             assert reached == ["AbortController"]
+        elif name == "desk-motion.js":
+            # The plaque's one clock (the motion guard holds it to a single function).
+            assert reached == ["setTimeout"]
         else:
             assert reached == [], (name, reached)
 

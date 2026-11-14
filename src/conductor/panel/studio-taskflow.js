@@ -5,6 +5,7 @@ import {canOpenTask, isTaskId, taskTitle} from "./studio-tasks-model.js";
 import {newestRun} from "./studio-taskruns.js";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+export const DEMO_REVIEW = "demo-counter-review";
 const SCREENS = ["overview", "workflow", "runs", "decisions", "agents"];
 
 export function navigation(hash) {
@@ -32,6 +33,7 @@ const typedDrafts = (state) => [state.runs.step, state.runs.document, state.deci
 const untouched = (typed, state) => typedDrafts(state).every((draft, at) => draft === typed[at]);
 
 class TaskFlow {
+  openingReviews = new Set();
   constructor(door) { this.door = door; this.reads = 0; this.landed = 0; this.selection = 0; }
   editTask(patch) {
     const held = this.door.state().tasks.draft;
@@ -70,7 +72,8 @@ class TaskFlow {
     if (newest.state === "unknown") {
       this.door.dispatch({type: "screen", screen: "runs"});
       this.door.dispatch({type: "task-notice", notice: {key: "notice.newest_run_unknown"}});
-    } else if (newest.state === "none") this.door.dispatch({type: "screen", screen: "workflow"});
+    } else if (newest.state === "none") this.door.dispatch({type: "screen",
+      screen: this.door.isDemo?.() ? "overview" : "workflow"});
     else {
       this.door.dispatch({type: "screen", screen: "runs"});
       this.door.refreshRun(newest.row.run_id, true);
@@ -113,6 +116,30 @@ class TaskFlow {
     }
   }
 
+  async openDemoReview(taskId) {
+    const state = this.door.state();
+    if (this.openingReviews.has(taskId) || taskId !== state.tasks.selectedId || !canOpenTask(state)) return;
+    const runId = `practice-${taskId}`, asked = this.selection;
+    const navigation = this.door.runSelection();
+    const typed = typedDrafts(state);
+    this.openingReviews.add(taskId);
+    try {
+      await this.door.write("runs", null, {
+        task_id: taskId, workflow_id: DEMO_REVIEW, revision: 1, run_id: runId,
+        cycle_id: DEMO_REVIEW, mode: "confirm", participants: [], assignments: {},
+      }, () => {
+        this.door.loadRuns();
+        if (asked !== this.selection || navigation !== this.door.runSelection()
+            || !untouched(typed, this.door.state())) return;
+        this.door.dispatch({type: "screen", screen: "decisions"});
+        this.door.focusDecisions();
+        this.door.refreshRun(runId);
+      });
+    } finally {
+      this.openingReviews.delete(taskId);
+    }
+  }
+
   openRun(request) {
     const state = this.door.state(), taskId = state.tasks.selectedId;
     if (![request.runId, request.cycleId, state.workflows.selectedId]
@@ -145,6 +172,6 @@ class TaskFlow {
 
 export function taskFlow(door) {
   const flow = new TaskFlow(door);
-  return Object.fromEntries(["refreshTasks", "chooseTask", "createTask", "openRun", "editTask"]
+  return Object.fromEntries(["refreshTasks", "chooseTask", "createTask", "openRun", "editTask", "openDemoReview"]
     .map((name) => [name, flow[name].bind(flow)]));
 }

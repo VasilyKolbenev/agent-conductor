@@ -1,10 +1,13 @@
 """The KUSER_SHARED_DATA.BootId reader: the layout, the typed refusals, and the real read."""
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import os
 import struct
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -33,6 +36,13 @@ DOCUMENTED = (
 #: written at its real place (0x2D0) is inside the buffer whatever the reader chooses to read.
 PAGE_WITH_MASK = 0x2E0
 SUITE_OFFSET = 0x2D0
+
+MEM_COMMIT, MEM_RESERVE, MEM_FREE, MEM_RELEASE = 0x1000, 0x2000, 0x10000, 0x8000
+PAGE_READWRITE = 0x04
+ERROR_PARTIAL_COPY = 299
+#: Where the fake kernel32 is asked to read and what it hands back (the address is never touched).
+FAKE_ADDRESS = 0x10000000
+FAKE_BYTES = bytes(range(64))
 
 
 def documented_offsets():
@@ -200,11 +210,154 @@ def test_independent_processes_of_one_boot_read_the_same_witness():
     assert first == second == boot_kuser.current_witness()
 
 
+@contextlib.contextmanager
+def page_before_a_hole():
+    """Yield `(end, written)`: a readable page of this process, with nothing mapped behind it.
+
+    `end` is the first address after the page and `written` the 16 bytes stored at its tail. The
+    page is a whole one-page VirtualAlloc, and Windows allocates in granules larger than a page
+    (64 KiB), so the pages behind it stay unmapped while it lives: nobody can allocate there. The
+    granularity and both facts about the layout are asked of the system before the page is handed
+    out, so a layout that is not this one fails here, by name, and not as a wrong answer from the
+    read.
+    """
+    from ctypes import wintypes
+
+    class SystemInfo(ctypes.Structure):
+        _fields_ = [("architecture", wintypes.WORD), ("reserved", wintypes.WORD),
+                    ("page_size", wintypes.DWORD), ("lowest", ctypes.c_void_p),
+                    ("highest", ctypes.c_void_p), ("mask", ctypes.c_size_t),
+                    ("processors", wintypes.DWORD), ("kind", wintypes.DWORD),
+                    ("granularity", wintypes.DWORD), ("level", wintypes.WORD),
+                    ("revision", wintypes.WORD)]
+
+    # MEMORY_BASIC_INFORMATION; `PartitionId` is a member of the 64-bit layout only (winnt.h).
+    members = [("base", ctypes.c_void_p), ("allocation", ctypes.c_void_p),
+               ("allocation_protect", wintypes.DWORD)]
+    members += [("partition", wintypes.WORD)] if ctypes.sizeof(ctypes.c_void_p) == 8 else []
+    members += [("region", ctypes.c_size_t), ("state", wintypes.DWORD),
+                ("protect", wintypes.DWORD), ("kind", wintypes.DWORD)]
+
+    class Memory(ctypes.Structure):
+        _fields_ = members
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.GetSystemInfo.argtypes, k32.GetSystemInfo.restype = [ctypes.POINTER(SystemInfo)], None
+    k32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD, wintypes.DWORD]
+    k32.VirtualAlloc.restype = ctypes.c_void_p
+    k32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wintypes.DWORD]
+    k32.VirtualFree.restype = wintypes.BOOL
+    k32.VirtualQuery.argtypes = [ctypes.c_void_p, ctypes.POINTER(Memory), ctypes.c_size_t]
+    k32.VirtualQuery.restype = ctypes.c_size_t
+
+    def query(address):
+        found = Memory()
+        if not k32.VirtualQuery(address, ctypes.byref(found), ctypes.sizeof(found)):
+            raise OSError(ctypes.get_last_error(), "VirtualQuery failed")
+        return found
+
+    system = SystemInfo()
+    k32.GetSystemInfo(ctypes.byref(system))
+    page = system.page_size
+    assert system.granularity > page, (
+        f"the allocation granularity {system.granularity:#x} is not larger than the page {page:#x}")
+    base = k32.VirtualAlloc(None, page, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)
+    if not base:
+        raise OSError(ctypes.get_last_error(), "VirtualAlloc failed")
+    try:
+        written = bytes(range(0xA0, 0xB0))
+        ctypes.memmove(base + page - 16, written, 16)
+        own, behind = query(base), query(base + page)
+        assert (own.state, own.protect) == (MEM_COMMIT, PAGE_READWRITE), (
+            f"the page is not committed and readable: state {own.state:#x}, "
+            f"protection {own.protect:#x}")
+        assert behind.state == MEM_FREE, (
+            f"the page behind the boundary is not unmapped: state {behind.state:#x}")
+        yield base + page, written
+    finally:
+        k32.VirtualFree(base, 0, MEM_RELEASE)
+
+
 @needs_windows
 def test_a_read_that_runs_off_the_end_of_the_page_is_reported_as_partial_not_a_crash():
-    with pytest.raises(BootRefused) as caught:
-        boot_kuser.read_page(address=boot_kuser.KUSER_ADDRESS + 0x1000 - 16, size=64)
+    """The kernel reads the 16 bytes up to a real boundary and says so: 16 of 64.
+
+    The boundary is built here and proven unmapped before the read. 0x7FFE1000, the page after
+    the shared page, is not used: what lies behind it is not the test's to control.
+    """
+    with page_before_a_hole() as (end, written):
+        assert boot_kuser.read_page(address=end - 16, size=16) == written
+        with pytest.raises(BootRefused) as caught:
+            boot_kuser.read_page(address=end - 16, size=64)
     assert caught.value.code == "partial_read"
+    assert caught.value.detail == "only 16 of 64 bytes were read"
+
+
+needs_fake_kernel = pytest.mark.skipif(
+    not WINDOWS, reason="the fake replaces ctypes.WinDLL, which exists only on Windows")
+
+
+def fake_kernel(monkeypatch, *, done, got, error=0):
+    """Put a kernel32 whose ReadProcessMemory answers as told where `read_page` will load it.
+
+    The answer is what the API gives back: a return value, the count stored through the pointer
+    and the last error; the first `got` bytes of FAKE_BYTES land in the buffer. Returns the list
+    of (address, size) the reader asked for.
+    """
+    asked = []
+
+    def read_process_memory(process, address, buffer, size, count):
+        asked.append((address, size))
+        ctypes.memmove(buffer, FAKE_BYTES, got)
+        count._obj.value = got
+        ctypes.set_last_error(error)
+        return done
+
+    kernel = types.SimpleNamespace(GetCurrentProcess=lambda: -1,
+                                   ReadProcessMemory=read_process_memory)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **options: kernel)
+    return asked
+
+
+@needs_fake_kernel
+@pytest.mark.parametrize("done", [False, True])
+@pytest.mark.parametrize("got", [1, 16, 63])
+def test_a_count_between_nothing_and_everything_is_a_partial_read_whatever_the_api_returned(
+        monkeypatch, done, got):
+    asked = fake_kernel(monkeypatch, done=done, got=got, error=ERROR_PARTIAL_COPY)
+    with pytest.raises(BootRefused) as caught:
+        boot_kuser.read_page(address=FAKE_ADDRESS, size=64)
+    assert caught.value.code == "partial_read"
+    assert caught.value.detail == f"only {got} of 64 bytes were read"
+    assert asked == [(FAKE_ADDRESS, 64)]
+
+
+@needs_fake_kernel
+@pytest.mark.parametrize("done", [False, True])
+def test_a_read_that_stored_no_bytes_is_unavailable_and_names_the_windows_error(monkeypatch, done):
+    asked = fake_kernel(monkeypatch, done=done, got=0, error=ERROR_PARTIAL_COPY)
+    with pytest.raises(BootRefused) as caught:
+        boot_kuser.read_page(address=FAKE_ADDRESS, size=64)
+    assert caught.value.code == "native_unavailable"
+    assert caught.value.detail == f"the read failed with Windows error {ERROR_PARTIAL_COPY}"
+    assert asked == [(FAKE_ADDRESS, 64)]
+
+
+@needs_fake_kernel
+def test_a_read_the_api_calls_failed_is_not_accepted_even_when_the_count_looks_full(monkeypatch):
+    asked = fake_kernel(monkeypatch, done=False, got=64, error=5)
+    with pytest.raises(BootRefused) as caught:
+        boot_kuser.read_page(address=FAKE_ADDRESS, size=64)
+    assert caught.value.code == "native_unavailable"
+    assert caught.value.detail == "the read failed with Windows error 5"
+    assert asked == [(FAKE_ADDRESS, 64)]
+
+
+@needs_fake_kernel
+def test_a_complete_read_returns_exactly_the_bytes_the_kernel_stored(monkeypatch):
+    asked = fake_kernel(monkeypatch, done=True, got=64)
+    assert boot_kuser.read_page(address=FAKE_ADDRESS, size=64) == FAKE_BYTES
+    assert asked == [(FAKE_ADDRESS, 64)]
 
 
 @needs_windows

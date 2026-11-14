@@ -12,11 +12,19 @@ def test_reconnect_waits_for_the_selected_read_then_confirms_a_fresh_answer(chro
     page = context.new_page()
     errors, held = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
+    # The server's first frame (`state`) asks for a second full read, which starts after the
+    # shell already says "open"; on a slow host it reaches the holds before the reconnect does.
+    # Muted from the start, the only reads after boot are the ones this test causes.
     page.add_init_script("""(() => {
       const Native = window.EventSource;
       window.__streamCount = 0;
       window.EventSource = class extends Native {
-        constructor(...args) { super(...args); window.__stream = this; window.__streamCount += 1; }
+        constructor(...args) {
+          super(...args);
+          window.__stream = this;
+          window.__streamCount += 1;
+          this.addEventListener("message", (event) => event.stopImmediatePropagation());
+        }
       };
       window.__held = [];
     })();""")

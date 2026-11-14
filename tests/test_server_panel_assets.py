@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import importlib.resources
+import threading
 import urllib.error
 import urllib.request
 import zipfile
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from conductor import server, server_assets
+from conductor.command.project_claim import Launch
 from conductor.command.http_transport import MAX_COMMAND_BODY_BYTES
 from conductor.hub.assets import HUB_ASSETS
 from tests.test_server import start
@@ -20,6 +22,29 @@ from tests.test_store import good_lane, write_project
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
+    "/panel/arachnid.css": "text/css; charset=utf-8",
+    "/panel/arachnid-handoff.css": "text/css; charset=utf-8",
+    "/panel/arachnid-handoff.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-handoff-context.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-handoff-data.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-review-source.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-manual-review.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-review-draft.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-layout.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-next.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-next-view.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-palette.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-planning.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-advisor.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-plan.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-plan-model.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-planner-view.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-conversation.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-orbit.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-copy.js": "text/javascript; charset=utf-8",
+    "/panel/arachnid-panels.js": "text/javascript; charset=utf-8",
+    "/panel/studio.html": "text/html; charset=utf-8",
     "/panel/command.css": "text/css; charset=utf-8",
     "/panel/command.js": "text/javascript; charset=utf-8",
     "/panel/command-projection.js": "text/javascript; charset=utf-8",
@@ -32,16 +57,22 @@ ASSETS = {
     "/panel/graph-view.js": "text/javascript; charset=utf-8",
     "/panel/graph-adapter.js": "text/javascript; charset=utf-8",
     "/panel/graph-default.js": "text/javascript; charset=utf-8",
-    # The Workflow Studio's stylesheet and boundary module. Its SHELL is not
-    # here: studio.html is what `GET /` answers with, and a document with two
-    # routes is a document a reader can reach by two names.
+    # The legacy Workflow Studio remains reachable at its own allowlisted document path.
     "/panel/studio.css": "text/css; charset=utf-8",
+    "/panel/studio-atlas.css": "text/css; charset=utf-8",
+    "/panel/studio-atlas.js": "text/javascript; charset=utf-8",
+    "/panel/studio-atlas-copy.js": "text/javascript; charset=utf-8",
+    "/panel/studio-atlas-inspector.js": "text/javascript; charset=utf-8",
+    "/panel/studio-utilities.css": "text/css; charset=utf-8",
+    "/panel/studio-utilities.js": "text/javascript; charset=utf-8",
+    "/panel/studio-utilities-copy.js": "text/javascript; charset=utf-8",
     "/panel/studio-model.js": "text/javascript; charset=utf-8",
     "/panel/studio-situation.js": "text/javascript; charset=utf-8",
     "/panel/studio-i18n.js": "text/javascript; charset=utf-8",
     "/panel/studio-preferences.js": "text/javascript; charset=utf-8",
     "/panel/studio-shell.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-model.js": "text/javascript; charset=utf-8",
+    "/panel/studio-test-preview.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-providers.js": "text/javascript; charset=utf-8",
     "/panel/studio-automation-flow.js": "text/javascript; charset=utf-8",
     "/panel/studio-workflow-copy.js": "text/javascript; charset=utf-8",
@@ -115,6 +146,8 @@ ASSETS = {
     "/panel/desk-run.css": "text/css; charset=utf-8",
     "/panel/desk.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-host.js": "text/javascript; charset=utf-8",
+    "/panel/desk-advice-panel.js": "text/javascript; charset=utf-8",
+    "/panel/desk-advice-run.js": "text/javascript; charset=utf-8",
     "/panel/desk-people-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-run-host.js": "text/javascript; charset=utf-8",
     "/panel/desk-accept-host.js": "text/javascript; charset=utf-8",
@@ -162,6 +195,9 @@ ASSETS = {
     "/panel/desk-feed.js": "text/javascript; charset=utf-8",
     "/panel/desk-summary.js": "text/javascript; charset=utf-8",
     "/panel/desk-pult.js": "text/javascript; charset=utf-8",
+    # The transitions: when the desk may play one, and the layer that plays it.
+    "/panel/desk-motion-model.js": "text/javascript; charset=utf-8",
+    "/panel/desk-motion.js": "text/javascript; charset=utf-8",
     # The wizard's pure model: the lane that writes the wizard registers its own rows.
     "/panel/desk-wizard-model.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-materials.js": "text/javascript; charset=utf-8",
@@ -173,12 +209,18 @@ ASSETS = {
     "/panel/desk-wizard-input.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-prep.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-launch.js": "text/javascript; charset=utf-8",
+    "/panel/studio-budget-guidance.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-skip.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-git.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-git-run.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-git-copy.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-run.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-draw.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-prepare-view.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-card.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-git-view.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard-copy.js": "text/javascript; charset=utf-8",
+    "/panel/desk-wizard-advice-copy.js": "text/javascript; charset=utf-8",
     "/panel/desk-wizard.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-shape.js": "text/javascript; charset=utf-8",
     "/panel/desk-flow-loops.js": "text/javascript; charset=utf-8",
@@ -228,11 +270,10 @@ REFUSED = (
     "/panel/index.html.map", "/panel/../index.html",
     "/panel/%2e%2e/index.html", "/panel/INDEX.HTML", "/panel/Index.html",
     "/panel/index.html/", "/panel/index.html%00.txt",
-    # The Studio's shell is the entry `GET /` serves and has no /panel/ route
-    # at all, so every spelling of it under this prefix is a 404 -- including
-    # the correct one. A document reachable by two names is a document whose
-    # relative links resolve differently depending on which one was used.
-    "/panel/studio.html", "/panel/studio.htm", "/panel/studio.html?v=1",
+    # The Arachnid entry has one route; the legacy Studio has its exact asset route.
+    "/panel/arachnid.html", "/panel/arachnid.htm", "/panel/arachnid.html/",
+    "/panel/arachnid.js?v=1", "/panel/../arachnid.css", "/panel/ARACHNID.JS",
+    "/panel/studio.htm", "/panel/studio.html?v=1",
     "/panel/STUDIO.HTML", "/panel/Studio.html", "/panel/studio.html/",
     # The Studio's stylesheet and boundary module.
     "/panel/studio.json", "/panel/studio.css?v=1", "/panel/studio.css.map",
@@ -421,11 +462,8 @@ REFUSED = (
 #: served here too and are not listed.
 UNSERVED: tuple[str, ...] = tuple(sorted(
     {name for _, name in HUB_ASSETS.values() if name.startswith("hub")} | {"hub.html"}))
-#: studio.html is neither: `GET /` serves it through `_serve_panel`, not
-#: through the asset allowlist, which is why it is refused under /panel/. The
-#: file that used to hold this position, index.html, joined the allowlist in
-#: the same commit — the entry moved, and one name still fills the slot.
-PANEL_ROUTE_ENTRY = "studio.html"
+#: The primary document has one route; Studio and the classic panel keep their own addresses.
+PANEL_ROUTE_ENTRY = "arachnid.html"
 
 
 def _status(url, *, data=None):
@@ -598,7 +636,7 @@ def test_every_packaged_panel_resource_is_served_named_unserved_or_the_entry():
 
 def test_the_panel_route_answers_with_the_entry_and_with_no_other_document(
         tmp_path):
-    """`GET /` serves the Studio's shell, byte for byte, and says which it is.
+    """`GET /` serves the Arachnid shell, byte for byte, and says which it is.
 
     Naming the entry in `PANEL_ROUTE_ENTRY` and partitioning the directory
     against it proves that some file is the entry; it does not prove which file
@@ -623,32 +661,49 @@ def test_the_panel_route_answers_with_the_entry_and_with_no_other_document(
         server_.server_close()
 
 
-def test_the_desk_page_is_served_at_its_own_address_while_the_front_door_still_answers_the_studio(
+def test_arachnid_studio_and_desk_have_distinct_served_documents(
         tmp_path):
-    """Two documents, two routes: the desk is reachable and `GET /` has not moved.
-
-    The hub mounts `/panel/desk.html` from the first day, before the entry page
-    switches to the desk. Serving the desk page proves nothing about the front
-    door, and the front door still answering the Studio's shell proves nothing
-    about the desk, so both are read off the wire in one place and compared to
-    the packaged bytes, and to each other -- a route table that pointed both at
-    one file would satisfy each half alone.
-    """
+    """The project front door, existing authoring surface and hub-embedded Desk are independent."""
     root = write_project(tmp_path, lanes={"claude": good_lane()})
     server_, base = start(root)
     panel = importlib.resources.files("conductor") / "panel"
     try:
         desk_status, desk_body, desk_headers = _status(base + "/panel/desk.html")
         entry_status, entry_body, _ = _status(base + "/")
+        studio_status, studio_body, studio_headers = _status(base + "/panel/studio.html")
     finally:
         server_.shutdown()
         server_.server_close()
-    assert desk_status == 200 and entry_status == 200
+    assert desk_status == entry_status == studio_status == 200
     assert desk_body == (panel / "desk.html").read_bytes()
     assert desk_headers["Content-Type"] == "text/html; charset=utf-8"
-    assert entry_body == (panel / "studio.html").read_bytes()
-    assert entry_body != desk_body
-    assert server_assets.ENTRY_PAGE == "studio.html"
+    assert studio_headers["Content-Type"] == "text/html; charset=utf-8"
+    assert studio_body == (panel / "studio.html").read_bytes()
+    assert entry_body == (panel / "arachnid.html").read_bytes()
+    assert len({entry_body, studio_body, desk_body}) == 3
+    assert server_assets.ENTRY_PAGE == "arachnid.html"
+
+
+def test_demo_marks_both_project_shells_and_preserves_other_packaged_html(tmp_path):
+    root = write_project(tmp_path, lanes={"claude": good_lane()})
+    subject = server.build(root, 0, launch=Launch(mode="view", demo=True))
+    worker = threading.Thread(target=subject.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{subject.server_port}"
+    panel = importlib.resources.files("conductor") / "panel"
+    try:
+        for url, name in (("/", "arachnid.html"), ("/panel/studio.html", "studio.html")):
+            status, body, _ = _status(base + url)
+            assert status == 200
+            assert body == (panel / name).read_bytes().replace(
+                b'<html lang="en">', b'<html lang="en" data-demo>', 1)
+            assert b"<html lang=\"en\" data-demo>" in body
+        assert _status(base + "/panel/desk.html")[1] == (panel / "desk.html").read_bytes()
+    finally:
+        subject.shutdown()
+        subject.server_close()
+        worker.join(5)
+    assert not worker.is_alive()
 
 
 def _module_level_literal(source: str, name: str):

@@ -48,12 +48,18 @@ ROOT = Path(__file__).resolve().parents[1]
 PANEL = ROOT / "src" / "conductor" / "panel"
 HTML = PANEL / "studio.html"
 STYLE = PANEL / "studio.css"
+ATLAS_STYLE = PANEL / "studio-atlas.css"
+UTILITY_STYLE = PANEL / "studio-utilities.css"
 MODEL = PANEL / "studio-model.js"
 #: Every module of the Studio, spelled out so a new one cannot arrive without
 #: passing every guard below. The partition test underneath holds this list to
 #: the packaged directory in both directions.
 MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-docs-copy.js", "studio-runs-copy.js", "studio-runform-copy.js", "studio-view-copy.js", "studio-workflow-detail-copy.js", "studio-workflow-copy.js", "studio-feedback.js", "studio-feedback-model.js", "studio-feedback-copy.js", "studio-notice-copy.js", "studio-agents-copy.js", 'studio-automation-model.js', 'studio-automation-providers.js', 'studio-automation-flow.js', 'studio-automation-copy.js', 'studio-automation.js', 'studio-workflowwrite.js', 'studio-draft.js',
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
+           "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js",
+           "studio-utilities.js", "studio-utilities-copy.js",
+           "studio-budget-guidance.js",
+           "studio-test-preview.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
            "studio-canvas.js", "studio-inspector.js", "studio-runs.js",
            "studio-canvas-edges.js", "studio-canvas-flow.js",
@@ -79,20 +85,35 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "desk-wizard-roles.js", "desk-wizard-base.js", "desk-wizard-team.js",
            "desk-wizard-digest.js", "desk-wizard-input.js", "desk-wizard-prep.js",
            "desk-wizard-launch.js", "desk-wizard-skip.js", "desk-wizard-run.js",
-           "desk-wizard-copy.js",
+           "desk-wizard-git.js", "desk-wizard-git-run.js", "desk-wizard-git-copy.js",
+           "desk-wizard-copy.js", "desk-wizard-advice-copy.js",
            "desk-wizard-draw.js",
-           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard.js",
+           "desk-wizard-prepare-view.js", "desk-wizard-card.js", "desk-wizard-git-view.js",
+           "desk-wizard.js",
            "desk-wizard-host.js",
+           "desk-advice-run.js", "desk-advice-panel.js",
            "desk-flow-shape.js", "desk-flow-loops.js", "desk-flow-branches.js",
            "desk-flow-edits.js", "desk-flowwrite.js", "desk-quickcycle.js", "desk-flow-graph.js",
            "desk-flow-fields.js", "desk-flow-model.js", "desk-flow-copy.js",
            "desk-flow-draw.js", "desk-flow-diag.js", "desk-flow-inspector.js", "desk-flow.js",
            "desk-flow-host.js", "desk-people-host.js", "desk-run-host.js",
            "desk-accept-host.js", "desk-run-binding.js", "desk-run-write-host.js",
-           "desk-panels.js", "desk-toggles.js")
+           "desk-panels.js", "desk-toggles.js", "desk-motion-model.js", "desk-motion.js")
 #: The boot module: what each frame and each read MEANS, and the screen router.
 #: It reaches the wire only through the transport module below.
 BOOT = "studio.js"
+ARACHNID_MODULES = (
+    "arachnid-handoff.js", "arachnid-handoff-context.js", "arachnid-handoff-data.js",
+    "arachnid-review-source.js", "arachnid-review-draft.js",
+    "arachnid-manual-review.js",
+    "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",
+    "arachnid-panels.js", "arachnid-copy.js", "arachnid-layout.js",
+    "arachnid-next.js", "arachnid-next-view.js", "arachnid-palette.js",
+    "arachnid-planning.js", "arachnid-advisor.js", "arachnid-plan.js",
+    "arachnid-plan-model.js", "arachnid-planner-view.js",
+)
+MODULES += ARACHNID_MODULES
+ARACHNID_DOCUMENTS = (PANEL / "arachnid.html", PANEL / "arachnid.css", PANEL / "arachnid-handoff.css")
 #: The one transport module: every `fetch(`, the one stream and the session
 #: token, moved out of the boot module so the desk can be built on the same
 #: doors. `graph.js` holds the same position in its window, and the sealed-API
@@ -100,8 +121,9 @@ BOOT = "studio.js"
 TRANSPORT_MODULE = "desk-transport.js"
 IMPORTS = r'from "(\./[a-z-]+\.js)";'
 
-#: Forbidden in every Studio file, markup included. Lowercased before the
-#: search, so a case fold cannot walk one past.
+#: Forbidden in every Studio file, markup included. The layout module alone may
+#: keep numeric panel widths in localStorage (UI-ASTRYX-STUDIO-DESIGN); all other
+#: entries remain forbidden there too. Lowercasing prevents a case-fold bypass.
 SEALED = ("innerhtml", "outerhtml", "insertadjacenthtml", "localstorage",
           "sessionstorage", "document.cookie", "console.", "eval(",
           "new function(", "import(", "importscripts", "xmlhttprequest",
@@ -136,7 +158,8 @@ LINE_CAP = 800
 
 
 def _paths() -> tuple[Path, ...]:
-    return (HTML, STYLE) + tuple(PANEL / name for name in MODULES)
+    sheets = (HTML, STYLE, ATLAS_STYLE, UTILITY_STYLE) + ARACHNID_DOCUMENTS
+    return sheets + tuple(PANEL / name for name in MODULES)
 
 
 def test_the_contract_modules_resolve_inside_this_tree():
@@ -145,6 +168,18 @@ def test_the_contract_modules_resolve_inside_this_tree():
                    provider):
         resolved = Path(module.__file__).resolve()
         assert ROOT in resolved.parents, f"resolved outside this tree: {resolved}"
+
+
+def test_arachnid_only_loads_packaged_code_and_uses_the_canonical_editor():
+    html = ARACHNID_DOCUMENTS[0].read_text(encoding="utf-8")
+    refs = re.findall(r'(?:href|src)="([^"]*)"', html)
+    assert '<script type="module" src="/panel/arachnid.js"></script>' in html
+    assert html.count("<script") == 1 and "<style" not in html
+    assert not re.search(r"\son[a-z]+=", html)
+    assert set(ref for ref in refs if not ref.startswith("#")) == {
+        "/panel/arachnid.css", "/panel/studio-utilities.css", "/panel/arachnid.js",
+        "/panel/studio.html", "/panel/desk.html", "/panel/arachnid-handoff.css",
+    }
 
 
 def test_the_comment_stripper_keeps_the_studio_code_and_drops_its_prose():
@@ -225,14 +260,22 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
     """
     everything = (_code(*(PANEL / name for name in MODULES))
                   + "\n" + HTML.read_text(encoding="utf-8")
-                  + "\n" + STYLE.read_text(encoding="utf-8")).lower()
+                  + "\n" + STYLE.read_text(encoding="utf-8")
+                  + "\n" + ATLAS_STYLE.read_text(encoding="utf-8")
+                  + "\n" + UTILITY_STYLE.read_text(encoding="utf-8")
+                  + "\n" + "\n".join(p.read_text(encoding="utf-8") for p in ARACHNID_DOCUMENTS)).lower()
     for forbidden in SEALED:
-        assert forbidden not in everything, forbidden
-    homes = (BOOT, TRANSPORT_MODULE)
+        if forbidden == "localstorage":
+            for path in _paths():
+                if path.name != "arachnid-layout.js":
+                    assert forbidden not in _code(path).lower(), (path.name, forbidden)
+        else:
+            assert forbidden not in everything, forbidden
+    homes = (BOOT, "arachnid.js", TRANSPORT_MODULE)
     quiet = _code(*(PANEL / name for name in MODULES if name not in homes)).lower()
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
-    boot = _code(PANEL / BOOT).lower()
+    boot = _code(PANEL / BOOT, PANEL / "arachnid.js").lower()
     door = _code(PANEL / TRANSPORT_MODULE).lower()
     for forbidden in ("fetch(", "eventsource"):
         assert forbidden not in boot, forbidden
@@ -240,34 +283,28 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
 
 
 def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
-    """One module, one stylesheet, no inline anything, no foreign origin.
+    """One module and its three packaged stylesheets, no inline code or foreign origin.
 
-    Every reference is root-relative under /panel/: no scheme, no `//`, no
-    traversal, so the served document reaches this origin's own packaged
-    directory and nothing else. It cannot be document-relative -- the shell is
-    served at `/` -- and the substitute is asserted rather than assumed.
-
-    The list is exact as well as constrained, so a third reference has to be
-    argued for here. Two of them are what this document LOADS; the third is
-    where it SENDS a person, and that one is on the list because the Protocol
-    v1 surfaces -- the map, the findings, the feed, the handoffs -- have not
-    moved into this application and a route to them that only a `<noscript>`
-    block carried was not a route anybody could take.
+    This editor loads four packaged assets. Its two navigation links lead to Arachnid's
+    project root and the classic panel. All six references belong to this origin.
     """
     html = HTML.read_text(encoding="utf-8")
     assert html.count("<script") == 1
     assert "<style" not in html
     assert not re.search(r"\son[a-z]+=", html), "an inline handler is a script"
     refs = re.findall(r'(?:href|src)="([^"]*)"', html)
-    assert refs == ["/panel/studio.css", "/panel/studio.js", "/panel/index.html"]
+    assert refs == ["/panel/studio.css", "/panel/studio-atlas.css", "/panel/studio-utilities.css",
+                    "/panel/studio.js", "/", "/panel/index.html"]
     for ref in refs:
-        assert ref.startswith("/panel/")
+        assert ref == "/" or ref.startswith("/panel/")
         assert "//" not in ref and ".." not in ref and ":" not in ref
     # And every one of them is a route this server actually serves, so the
     # shell cannot send a person at a 404.
     from conductor.server import PANEL_ASSETS
-    assert set(refs) <= set(PANEL_ASSETS), sorted(set(refs) - set(PANEL_ASSETS))
+    assert set(refs) <= set(PANEL_ASSETS) | {"/"}, sorted(set(refs) - set(PANEL_ASSETS) - {"/"})
     assert '<link rel="stylesheet" href="/panel/studio.css">' in html
+    assert '<link rel="stylesheet" href="/panel/studio-atlas.css">' in html
+    assert '<link rel="stylesheet" href="/panel/studio-utilities.css">' in html
     assert '<script src="/panel/studio.js" type="module"></script>' in html
 
 
@@ -509,7 +546,9 @@ def test_the_arms_that_drop_a_row_are_counted_apart_from_the_ones_that_refuse():
     # || ... PROVIDER_AUTH` condition) where it used two statements. The same rows are
     # dropped and the arm is still a DROP; tests/test_studio_provider_arms.py runs the
     # module against the two statements it replaced.
-    assert source.count("continue;") == 13
+    # The optional model-pin capability distinguishes a non-object, a bad flag and
+    # an unknown row shape. Previously row type and keys shared one drop statement.
+    assert source.count("continue;") == 15
     # The draft's third answer, so "no draft" and "unreadable draft" can never
     # be the same value -- and now the workflow reference's third answer too,
     # for the same reason: a run that froze none and a run whose reference is

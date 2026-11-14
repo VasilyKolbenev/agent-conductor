@@ -500,6 +500,10 @@ def _add_ownership(sub):
     parser.add_argument("--prepare-restart", action="store_true",
                         help="the recover operations only: record the boot a later recovery "
                              "must be newer than; releases and cleans nothing")
+    parser.add_argument("--abandon-loans", action="store_true",
+                        help="recover-containers only: a loan whose folder is no longer the one "
+                             "it granted is given up instead of failing every recovery; the "
+                             "folders that can be returned are returned")
     _add_dir_and_func(parser, _cmd_ownership)
 
 
@@ -549,6 +553,19 @@ def _add_hub(sub) -> None:
     parser.add_argument("--port", type=int, default=HUB_PORT,
                         help=f"TCP port on 127.0.0.1 (default: {HUB_PORT}; 0 lets the OS choose)")
     parser.set_defaults(func=_cmd_hub)
+
+
+def _cmd_utility_bridge(args):
+    from conductor.utility_bridge import command
+    return command(args)
+
+
+def _add_utility_bridge(sub):
+    p = sub.add_parser("utility-bridge", help="exchange tasks with a local stdio-v1 utility")
+    p.add_argument("--server", required=True, metavar="ORIGIN")
+    p.add_argument("--utility", required=True, metavar="ID")
+    p.add_argument("--once", action="store_true", help="poll once and exit")
+    p.set_defaults(func=_cmd_utility_bridge)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -607,6 +624,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_demo)
 
     _add_tools(sub)
+    _add_utility_bridge(sub)
     _add_projects(sub)
     _add_hub(sub)
     return parser

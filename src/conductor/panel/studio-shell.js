@@ -15,7 +15,7 @@ export const PHASE_SENTENCES = Object.freeze({
 });
 const PHASE_ORDER = ["failed", "refused", "loading", "stale", "empty", "ready"];
 const PRIMARY = Object.freeze({
-  overview: ["onScreen", "workflow"], workflow: ["onSaveDraft", null],
+  workflow: ["onSaveDraft", null],
   runs: ["onRefreshRuns", null], decisions: ["onRefreshRun", null],
   agents: ["onRefreshAgents", null],
 });
@@ -39,12 +39,35 @@ export function saveRefusal(held, state) {
 }
 
 function primaryAction(state, handlers) {
+  if (state.demoTask && state.screen === "overview") {
+    const review = element("button", {className: "studio-btn", type: "button",
+      "data-focus": "demo-review", text: localize(state, "demo.review")});
+    review.disabled = state.connection !== "open" || state.tasks.phase !== "ready";
+    review.addEventListener("click", () => handlers.openDemoReview(state.demoTask.task_id));
+    return review;
+  }
+  if (state.demo && state.screen === "overview" && !state.tasks.selectedId) {
+    const start = element("button", {className: "studio-btn", type: "button",
+      "data-focus": "demo-start", text: localize(state, "demo.start")});
+    start.addEventListener("click", handlers.showTaskForm);
+    return start;
+  }
+  if (!Object.hasOwn(PRIMARY, state.screen)) {
+    const waiting = state.connection === "open" && state.runs.phase === "ready"
+      ? state.runs.list.filter((row) => row.human_state === "required"
+        && (!state.tasks.selectedId || row.task_id === state.tasks.selectedId)) : [];
+    if (waiting.length !== 1) return ownTaskLink(state, true);
+    const open = element("button", {type: "button", className: "studio-btn",
+      "data-focus": "overview:pending-run", text: localize(state, "entry.pending")});
+    open.addEventListener("click", () => handlers.onSelectRun(waiting[0].run_id));
+    return open;
+  }
   // A chosen run's main action is the one its own read calls for; with no run chosen, the list is read again.
   const detail = state.runs.detail;
   if (state.screen === "runs" && detail?.run?.run_id && detail.run.run_id === state.runs.selectedId) {
     return runPrimary(state, handlers, detail);
   }
-  const screen = Object.hasOwn(PRIMARY, state.screen) ? state.screen : "overview";
+  const screen = state.screen;
   const [name, argument] = PRIMARY[screen];
   const call = handlers[name];
   // The Workflow toolbar draws its own Save beside this one, so here the main button keeps a
@@ -62,6 +85,11 @@ function primaryAction(state, handlers) {
   return control;
 }
 
+export function ownTaskLink(state, primary) {
+  return element("a", {className: primary ? "studio-btn studio-task-link" : "studio-elsewhere studio-task-link",
+    "data-focus": "overview:own-task", href: state.ownTaskUrl || null, text: localize(state, "entry.own")});
+}
+
 function tab(node, state, handlers) {
   const screen = node.getAttribute("data-screen"), current = screen === state.screen;
   node.textContent = localize(state, `nav.${screen}`);
@@ -75,19 +103,30 @@ function tab(node, state, handlers) {
 
 export function mountShell(mounts, state, handlers) {
   mounts.main.dataset.screen = state.screen;
+  mounts.main.classList.toggle("studio-main--first-task", state.screen === "overview" && Boolean(state.firstTask));
   const workflow = state.workflows.list.find((row) => row.workflow_id === state.workflows.selectedId);
   mounts.project.textContent = state.project.name !== null ? state.project.name
     : workflow ? (workflow.title || workflow.workflow_id) : localize(state, "app.name");
   const connection = ["open", "connecting"].includes(state.connection) ? state.connection : "closed";
   mounts.connection.textContent = localize(state, `connection.${connection}`);
   mounts.connection.setAttribute("data-connection", state.connection);
-  mounts.primary.replaceChildren(primaryAction(state, handlers));
+  const firstOverview = state.screen === "overview" && state.firstTask;
+  mounts.primary.hidden = Boolean(firstOverview);
+  if (firstOverview) mounts.primary.replaceChildren();
+  else {
+    const action = primaryAction(state, handlers);
+    mounts.primary.replaceChildren(action);
+    if (state.screen === "overview" && action.getAttribute("data-focus") !== "overview:own-task") {
+      mounts.primary.append(ownTaskLink(state, false));
+    }
+  }
   for (const node of mounts.tabs) tab(node, state, handlers);
   for (const [screen, node] of Object.entries(mounts.screens)) {
     const phase = screenPhase(state, screen);
     node.setAttribute("data-state", phase);
     node.hidden = screen !== state.screen;
     mounts.states[screen].textContent = localize(state, `phase.${phase}`);
+    mounts.states[screen].hidden = screen === "overview" && firstOverview && phase === "ready";
   }
   for (const node of mounts.translatedText) node.textContent = localize(state, node.dataset.i18n);
   for (const node of mounts.translatedLabels) node.setAttribute("aria-label", localize(state, node.dataset.i18nLabel));

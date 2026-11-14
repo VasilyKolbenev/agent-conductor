@@ -2,7 +2,7 @@
 
 Every gate the Studio has passed so far reads SOURCE TEXT. This module is the
 first that runs the thing: Chromium resolves the shipped module graph from the
-production entry route ``/``, the real ``server.build`` answers every request,
+authoring route ``/panel/studio.html``, the real ``server.build`` answers every request,
 and what is asserted is what a person would see -- rendered tabs, computed
 styles, the state word on each screen container and the sentence beside it.
 
@@ -85,6 +85,10 @@ PHASES = ("empty", "loading", "ready", "stale", "refused", "failed",
 #: allowlist would only agree with itself, while a name the allowlist does not
 #: carry answers 404 and would be invisible in a test that read the markup.
 BOOT_ASSETS = {
+    "studio.html": 200,
+    "studio-atlas.css": 200, "studio-atlas.js": 200,
+    "studio-atlas-copy.js": 200, "studio-atlas-inspector.js": 200,
+    "studio-utilities.css": 200, "studio-utilities.js": 200, "studio-utilities-copy.js": 200,
     "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
     "studio-tasks-model.js": 200, "studio-tasks.js": 200, "studio-taskflow.js": 200,
     "studio-model.js": 200, "studio-view.js": 200,
@@ -131,20 +135,23 @@ BOOT_ASSETS = {
     "studio-workflow-detail-copy.js": 200, "studio-notice-copy.js": 200,
     # The wizard's catalogue and the desk's own words, spread into the shared table, so the
     # entry route fetches them too.
-    "desk-wizard-copy.js": 200, "desk-copy.js": 200, "desk-status-copy.js": 200,
+    "desk-wizard-copy.js": 200, "desk-wizard-git-copy.js": 200, "desk-copy.js": 200,
+    "desk-wizard-advice-copy.js": 200, "studio-budget-guidance.js": 200,
+    "desk-status-copy.js": 200,
     "desk-flow-copy.js": 200, "desk-feed-copy.js": 200, "desk-summary-copy.js": 200,
     "desk-pult-copy.js": 200,
     # Readings, bounded automation and typed checker findings.
     "studio-quotaflow.js": 200, "studio-quotas-model.js": 200, "studio-quotas.js": 200,
     "studio-automation.js": 200, "studio-automation-flow.js": 200,
     "studio-automation-model.js": 200, "studio-automation-providers.js": 200,
+    "studio-test-preview.js": 200,
     "studio-feedback.js": 200, "studio-feedback-model.js": 200,
 }
 
 
 @pytest.fixture(scope="session")
 def studio_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    """The Studio at its production entry route, over a real seeded server."""
+    """The workflow editor at its canonical document path, over a real seeded server."""
     root = write_project(tmp_path_factory.mktemp("studio-shell"),
                          lanes={"claude": good_lane()})
     TemplateStore(root).save(GraphTemplate.from_dict(PUBLISHED))
@@ -153,7 +160,7 @@ def studio_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     thread.start()
     host, port = httpd.server_address[:2]
     try:
-        yield f"http://{host}:{port}/"
+        yield f"http://{host}:{port}/panel/studio.html"
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
@@ -274,8 +281,7 @@ def test_the_studio_boots_from_the_entry_route_with_no_error_at_all(
         chromium: Browser, studio_url: str) -> None:
     """Chromium resolves the shipped module graph and every file answers 200.
 
-    The entry route is ``/`` -- ``studio.html`` is deliberately NOT on the
-    asset allowlist -- and every asset it names is root-relative under
+    The authoring surface opens at ``/panel/studio.html``. Every asset it names is under
     ``/panel/``. This counts the responses rather than trusting the markup:
     a name the allowlist does not carry answers 404 and would be invisible in
     a test that only looked at what rendered.
@@ -557,9 +563,10 @@ def test_the_classic_surfaces_are_reachable_from_every_screen_of_the_studio(
     than on one, pointing at a route this server serves.
     """
     page, problems = studio
-    link = page.locator("header .studio-elsewhere")
+    link = page.locator('header a[href="/panel/index.html"]')
     assert link.get_attribute("href") == "/panel/index.html"
-    said = link.inner_text()
+    assert link.inner_text() == "Project map and history"
+    said = link.get_attribute("aria-label")
     for word in ("Map", "findings", "feed", "handoffs"):
         assert word in said, said
     for _screen, tab, _container, _state in SCREENS:
@@ -582,7 +589,7 @@ def test_the_classic_route_the_studio_offers_is_answered_by_the_server(
     renders nothing.
     """
     page, problems = studio
-    page.locator("header .studio-elsewhere").click()
+    page.locator('header a[href="/panel/index.html"]').click()
     page.wait_for_load_state("load")
     assert page.url.endswith("/panel/index.html")
     assert page.locator("h2", has_text="Map").count() >= 1

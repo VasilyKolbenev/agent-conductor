@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Arachnid Studio — Атлас</title>
+  <link rel="stylesheet" href="atlas-studio.css">
+  <script defer src="atlas-evidence.js"></script>
+  <script defer src="atlas-studio.js"></script>
+</head>
+<body>
+<div id="workspace">
+  <nav id="sidebar" aria-label="Студия">
+    <div class="brand">
+      <svg class="brandmark" viewBox="0 0 40 40" aria-hidden="true" fill="none">
+        <g stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M20 5l8 11-8 17-8-17z M12 16h16 M20 5v28"/>
+          <path d="m12 16-5-4-4 3m10 4-7 1-3 7m12-4-6 5-1 8
+                   m20-20 5-4 4 3m-10 4 7 1 3 7m-12-4 6 5 1 8"/>
+        </g>
+      </svg>
+      <strong>Arachnid<span>Studio</span></strong>
+      <button id="navClose" class="icon-btn" aria-label="Закрыть сессии" data-icon="close"></button>
+    </div>
+    <button id="new" class="new"><i data-icon="plus"></i>Новая сессия</button>
+    <h2>Сессии</h2><div id="sessions"></div>
+    <h2>Участники записи</h2>
+    <button class="harness" data-tool="Codex"><i class="vendor codex" data-icon="terminal"></i>
+      <span>Codex<small>Исполнение и проверка</small></span></button>
+    <button class="harness" data-tool="Grok"><i class="vendor grok" data-icon="grok"></i>
+      <span>Grok<small>Диагностика</small></span></button>
+    <div class="nav-end">
+      <button class="nav-tool" data-tool="Лимиты"><i data-icon="meter"></i>Лимиты</button>
+      <button class="nav-tool" data-tool="Память"><i data-icon="memory"></i>Память сессии</button>
+      <div class="profile"><i class="avatar">В</i>
+        <span>Василий<small>Рабочее пространство</small></span>
+        <button id="theme" class="icon-btn" aria-label="Сменить тему" data-icon="sun"></button>
+      </div>
+    </div>
+  </nav>
+  <main id="chat">
+    <header class="topline">
+      <button id="menu" class="icon-btn" aria-label="Сессии" aria-controls="sidebar"
+              aria-expanded="false" data-icon="menu"></button>
+      <span data-icon="workspace"></span><span>Studio</span><i>/</i><strong id="crumb"></strong>
+    </header>
+    <div class="session-head"><div class="session-meta"><span class="pin-dot"></span>
+      <span id="contextLabel"></span></div>
+      <h1 id="title"></h1>
+    </div>
+    <div id="scroll"><div id="stream">
+      <div class="initial-brief" id="brief"><span>Вы</span><p></p></div>
+      <div class="speaker"><i class="atlas-icon" data-icon="atlas"></i>
+        <span>Атлас</span><label class="atlas-pick">
+          <select id="lead" aria-label="Ведущий харнесс Атласа">
+            <option>Codex</option><option>Grok</option>
+          </select></label>
+      </div>
+      <div id="intro"></div><div id="orbitHere"></div><div id="resultHere"></div>
+      <div id="messages" role="log" aria-label="Разговор с Атласом" aria-live="polite"></div>
+    </div></div>
+    <div class="compose-wrap">
+      <div id="quick" class="quick"></div>
+      <form id="send">
+        <input id="command" aria-label="Сообщение Атласу" placeholder="Написать Атласу…"
+               autocomplete="off">
+        <button class="send" aria-label="Отправить сообщение" data-icon="up"></button>
+      </form>
+      <div class="local-note"><span class="tiny-dot"></span>
+        Учебный чат · без вызовов моделей
+      </div>
+    </div>
+  </main>
+  <aside id="detail" aria-label="Детали сессии" hidden>
+    <header class="inspector-top"><span data-icon="sidebar"></span><span>Инспектор</span>
+      <button id="close" class="icon-btn" aria-label="Закрыть детали" data-icon="close"></button>
+    </header>
+    <div id="inspection"></div>
+  </aside>
+</div>
+<template id="orbital-plane">
+  <svg class="tracks" viewBox="0 0 600 220" preserveAspectRatio="none" aria-hidden="true">
+    <g transform="rotate(-9 300 110)">
+      <ellipse class="outer" cx="300" cy="110" rx="264" ry="84"/>
+      <ellipse class="path" cx="300" cy="110" rx="220" ry="65"/>
+      <path class="selected-arc" pathLength="1" hidden/>
+      <ellipse class="inner" cx="300" cy="110" rx="167" ry="48"/>
+      <ellipse class="inner" cx="300" cy="110" rx="96" ry="30"/>
+    </g>
+  </svg>
+  <span class="core" aria-hidden="true"></span><span class="core-name">АТЛАС</span>
+</template>
+</body>
+</html>

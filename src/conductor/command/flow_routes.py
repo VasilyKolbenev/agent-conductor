@@ -94,6 +94,26 @@ def _source_of(source: object) -> tuple[str, Any]:
     raise ApiRefusal.fixed("contract_invalid")
 
 
+def _inspect_revision(templates, workflow_id, body, limits, facts_of):
+    """Read only the requested immutable revision, even with an unfinished draft beside it."""
+    if set(body) != {"inspect_revision", "binding"}:
+        raise ApiRefusal.fixed("contract_invalid")
+    revision = _revision_number(body["inspect_revision"], required=True)
+    binding = _binding(body["binding"])
+    stored = _latest_document(templates, workflow_id, revision)
+    if stored is None:
+        raise ApiRefusal.missing_revision(workflow_id, revision)
+    flow = _flow_or_none(stored)
+    facts = facts_of(binding) if binding is not None and facts_of is not None else None
+    _, rows, budget = _judge(flow, workflow_id, facts, limits)
+    latest = templates.revisions(workflow_id)[-1]
+    return 200, {"workflow_id": workflow_id, "source": "published", "draft_digest": None,
+                 "flow": flow, "revision_flow": flow, "diagnostics": rows, "budget": budget,
+                 "publishable": flow is not None and not _errors(rows),
+                 "latest_revision": latest, "next_revision": latest + 1,
+                 "published": {"revision": revision, "created": False}}
+
+
 def _expectation(body: Mapping[str, Any]) -> str | None:
     """The digest of the draft the client read, or None for `expected_absent: true`."""
     if ("expected_absent" in body) == ("expected_digest" in body):
@@ -224,6 +244,8 @@ def write_flow(templates: Any, workflow_id: str, body: Mapping[str, Any], clock:
     expectation the client held still stands. `201` when this call made a draft that stands
     or a revision, `200` when nothing is new.
     """
+    if isinstance(body, Mapping) and "inspect_revision" in body:
+        return _inspect_revision(templates, workflow_id, body, limits, facts_of)
     asked = parse_flow_write(body)
     if workflow_id.startswith(RESERVED_PREFIX) and (
             asked.source != "starter_id" or asked.value != workflow_id):

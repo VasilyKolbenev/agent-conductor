@@ -57,10 +57,11 @@ you are shipping.
 & $CONDUCT --help
 ```
 
-Expect exit 0, and this list of subcommands — no more, no fewer:
+Expect exit 0, and this set of subcommands — no more, no fewer. Compare the set, not the text:
+argparse wraps this usage line and prints the names in an order of its own:
 
 ```
-usage: conduct [-h] {validate,init,doctor,prompt,report,preview,integration-smoke,reconcile,providers,ownership,up,demo,tools,hub,projects} ...
+usage: conduct [-h] {validate,init,doctor,prompt,report,ownership,preview,integration-smoke,reconcile,providers,up,demo,tools,utility-bridge,projects,hub} ...
 ```
 
 If a subcommand you expected is missing, the wheel is not built from what you think it is.
@@ -109,12 +110,14 @@ serving ...\conduct-demo-rup_x8pc — Ctrl+C to stop
 The ids are the demo's own and will match what `conduct demo` prints; what must be there is the
 line, with a workflow, a revision, a run and a waiting gate named.
 
-## 5. The Studio, the panel and the state document answer
+## 5. Arachnid, the workflow editor and the state document answer
 
 ```powershell
 $r = Invoke-WebRequest -Uri "http://127.0.0.1:7801/" -UseBasicParsing
 "$($r.StatusCode) $($r.Headers['Content-Type']) $($r.RawContentLength) bytes"
 [regex]::Match($r.Content, '<title>[^<]*</title>').Value
+$editor = Invoke-WebRequest -Uri "http://127.0.0.1:7801/panel/studio.html" -UseBasicParsing
+[regex]::Match($editor.Content, '<title[^>]*>[^<]*</title>').Value
 $j = (Invoke-WebRequest -Uri "http://127.0.0.1:7801/state.json" -UseBasicParsing).Content |
      ConvertFrom-Json
 "project=$($j.project) state=$($j.project_status.state) reason=$($j.project_status.reason)"
@@ -124,11 +127,10 @@ $handoff = Invoke-WebRequest -Uri "http://127.0.0.1:7801/handoff/claude.md" -Use
 ($handoff.Content -split "`n")[0]
 ```
 
-Expect `200 text/html; charset=utf-8` and a page with `December` in its `<title>` — a served
-page of only a few hundred bytes means the packaged panel did not make it into the wheel. `GET /`
-answers the Workflow Studio shell; the classic panel is at `/panel/index.html` and is the tens-of-
-kilobytes document. Expect the state document to describe the bundled scenario, which the README's
-quickstart sets out:
+Expect HTTP 200 and the title `Arachnid Studio` at `/`. The editor at `/panel/studio.html`
+must also return HTTP 200 and a title containing `Workflow Studio`. The classic panel lives at
+`/panel/index.html`. The state document should describe the bundled scenario from the README's
+quickstart.
 
 ```
 project=web-app state=blocked reason=human_decision
@@ -157,7 +159,7 @@ the second is what a machine on the same network can actually reach.
 
 ## 7. Nothing it serves asks anything of the network
 
-`/` serves the Workflow Studio, which is a shell that loads a directory of ES modules. Fetching
+`/` serves Arachnid, which loads its ES modules from `/panel/`. Fetching
 `/` would therefore scan a document with almost no code in it, and fetching a hand-typed list of
 module URLs would go stale the first time a module is added — a scan that silently misses a file
 is worse than no scan. So scan **the whole panel directory of the installed wheel**, which is
@@ -338,6 +340,11 @@ The message names its own answer: rerun with `--port`. The operating system's ha
 is whatever your platform says about a busy socket, and it is localized — read past it to the
 sentence Conduct adds. If that sentence is missing, this build is older than it claims to be.
 
+`Stop-Process -Force` ends this server, and that is harmless only because `$PROJ` is a scaffold
+that step 8 deliberately did not activate, so the server takes no owner (read from
+`server_policy.py`, not measured here). It is not a pattern for an activated project: see the
+known gap on stopping one by force.
+
 ## 11. `conduct preview` proposes one dispatch and inspects it without executing
 
 ```powershell
@@ -454,13 +461,25 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   at all, and their argument vocabularies are exercised only by the contract tests and the fake
   harness. `adapters/deep_commands.py` says so at the vocabularies themselves.
 - **A plan naming a sandbox route this build cannot provide no longer opens a run.** This is the
-  deliberate live-authority tightening. `project-root` is the
-  only route this build provides; a step attaching any other `sandbox` row is now refused twice —
-  when a run is opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that
-  this build does not provide*), and again when an attempt is authorized, for runs that were
-  opened before the rule existed. **What it costs:** a workflow drawn against an earlier build
-  that named such a route must be edited before a run will open against it — remove or change
-  that attachment in the inspector's **Route and policy attachments** and publish a new revision.
+  deliberate live-authority tightening. `project-root` is the only route this build provides
+  unconditionally; a step attaching any other `sandbox` row is now refused twice — when a run is
+  opened, naming the step and the route (*step 'X' demands sandbox route 'Y' that this build does
+  not provide*), and again when an attempt is authorized, for runs that were opened before the rule
+  existed. One route is judged by fact and not by name: `execution-boundary`, which every step that
+  starts an agent implies, is provided only on Windows, and there to a connection on an API key and
+  to a subscription login of Claude Code and Codex kept in
+  `%USERPROFILE%\DecemberCommand\logins\<id>` (their task works on a relay copy of the access token,
+  never the login itself). A subscription login of Grok Build and Kimi Code is not supported inside
+  the boundary yet. Where the boundary is not provided, the plan's door uses the sentence above, and
+  the desk wizard's run step reads *This step needs the isolation (execution boundary), and this
+  computer cannot give it to the agent chosen, so nothing was started…* (message key
+  `wizard.chain.boundary`, or `wizard.chain.boundary_login` when a chosen agent signs in by
+  subscription and its road is refused). The Agents screen already says so beforehand: every
+  row of a provider this machine can start carries the chip `boundary` or `refused`, and a
+  subscription row says why.
+  **What it costs:** a workflow drawn against an earlier build that named such a route must be
+  edited before a run will open against it — remove or change that attachment in the inspector's
+  **Route and policy attachments** and publish a new revision.
   Nothing about the stored document changes: publishing one is still allowed, every shipped
   revision digest is untouched, and a journal already carrying such a route still replays — it
   simply authorizes nothing. **Why it is a gain and not a regression:** the earlier build accepted
@@ -521,9 +540,62 @@ here is one somebody will meet; a gap nobody named is one they meet alone.
   in which a re-render landed between finding the cards and measuring them. **What it costs:**
   record the failed command, socket state and exact timeout before any repeat. A green repeat
   alone proves neither a host diagnosis nor that the original failure was harmless; final
-  normal and reverse gates must still pass.
+  normal and reverse gates must still pass. Later measurement (four events in eight Windows
+  orders) put it at about one refused loopback connect per 1,900 browser contexts, an estimated
+  0.5 per order, so a fully green pair of Windows orders is expected in only about 37 % of runs.
+  Since the gate counts these events passively (task R1.3-E1), every browser module leaves
+  `netfail/<module>.jsonl` in the gate's artifacts directory: keep those files with the failed
+  command.
+- **Stopping the server of an activated project by force leaves it `opened`.** Step 10 ends
+  `conduct up` with `Stop-Process -Force`, which is harmless there only because `$PROJ` is a
+  scaffold that step 8 does not activate. On an ACTIVATED project (the first-run guide,
+  `docs/owner-acceptance.md`) the same stop kills the whole process tree with no drain. Measured
+  at `04641ca`: `conduct ownership status` reads `opened` whether the server is alive or dead;
+  `conduct doctor` says nothing about ownership; the next `conduct up` refuses with
+  `recovery_required: previous owner did not close; recover explicitly after OS restart`;
+  `conduct ownership recover` refuses until the OS has restarted (a full Restart, not a
+  shutdown); and `--prepare-restart` answers that no preparation is needed. **What it costs:**
+  the project is unusable until a full OS restart, and nothing before that tells a live server
+  from a killed one. Start `conduct up` in its own visible window, not `-WindowStyle Hidden`
+  (a hidden server keeps a console that Ctrl+C from your window never reaches), and stop it with
+  Ctrl+C there.
 
 ## Additional release gates — not filled by the twelve checks above
+
+### Round-trip a local text utility
+
+Use an empty throwaway project with an active Studio server and the installed wheel from
+step 1. Follow steps 2–3 of [owner acceptance](owner-acceptance.md) to create the project
+and start the server. Set `$origin` to the address it prints. This check sends `ping`
+to a local Python executable and reads its reply from Studio.
+
+```powershell
+$origin = 'http://127.0.0.1:7801'
+$route = "$origin/command/project/utilities"
+$headers = @{
+    Origin = $origin
+    'X-Conduct-CSRF' = (Invoke-RestMethod "$origin/command/session").csrf_token
+    'X-Conduct-Project' = (Invoke-RestMethod "$origin/command/project").project_id
+}
+function Send-SmokeUtility($packet) {
+    Invoke-RestMethod $route -Method Post -Headers $headers -ContentType 'application/json' `
+        -Body (ConvertTo-Json -InputObject $packet -Compress) | Out-Null
+}
+Send-SmokeUtility @{op='attach'; utility_id='smoke'; label='Local echo'; mode='stdio-v1'}
+Send-SmokeUtility @{op='send'; utility_id='smoke'; exchange_id='smoke-1'; text='ping'}
+$peer = "import json,sys; r=json.loads(sys.stdin.readline()); assert r['text']=='ping'; r['text']='pong'; print(json.dumps(r))"
+$arguments = ConvertTo-Json -InputObject @('-I', '-c', $peer) -Compress
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@($PY, $arguments) | & $PY -X utf8 -m conductor utility-bridge --server $origin --utility smoke --once
+if ($LASTEXITCODE -ne 0) { throw 'Utility bridge failed' }
+$reply = (Invoke-RestMethod $route).exchanges | Where-Object exchange_id -eq 'smoke-1'
+if ($reply.state -ne 'answered' -or $reply.reply -ne 'pong') { throw 'Unexpected utility reply' }
+```
+
+Expect `Reply recorded.` from `conduct utility-bridge`. Close the server with Ctrl+C in its
+window after checking the reply.
+
+### Candidate and provider checks
 
 - Record one exact candidate SHA for complete fast, complete Python 3.11 floor, browser normal
   and reverse, applicable mutation batteries, structural limits, frozen bytes and payload parity.
@@ -589,8 +661,8 @@ Named so that passing it is not read as more than it is.
 - **Anything in a browser.** Steps 5 to 7 check what the server sends. Nobody has looked at
   what a browser draws from it, and the live update is checked only as far as the page opening
   an `EventSource`. For the classic panel: open `/panel/index.html`, edit a lane file in the
-  printed fixture directory, and watch it move. For the Workflow Studio, which is what `/`
-  serves and where every write in this product is made, this procedure checks nothing at all —
+  printed fixture directory, and watch it move. Open `/` for Arachnid and `/panel/studio.html`
+  for the workflow editor. This HTTP check does not exercise those screens —
   no step here opens a screen, publishes a revision, confirms a gate or reads a receipt. That
   is `docs/owner-acceptance.md`, seventeen steps, done by a person.
 - **Every `/command/*` route.** The Studio's whole API — proposals, action requests, decisions,
@@ -605,7 +677,18 @@ Named so that passing it is not read as more than it is.
   `tests/test_init.py::test_init_non_tty_uses_the_default_template_and_never_reads_stdin`,
   and by nothing in this procedure.
 - **Ctrl-C.** The steps above stop the servers with `Stop-Process`, which is not the interrupt
-  a person sends. Stop one by hand once.
+  a person sends. Stop one by hand once, on an activated project: start `conduct up` in its own
+  visible PowerShell window (a server started with `-WindowStyle Hidden` has a console that
+  Ctrl+C from your window never reaches), press Ctrl+C there after the URL is printed, and read
+  `conduct ownership status`, which must say `closed`. **Not on `$PROJ`:** step 8 scaffolds it and
+  deliberately leaves it unactivated, so `conduct up` takes no owner there (the server takes one
+  only for an activated project) and `ownership status` reads the fresh legacy state, not
+  `closed`. Take a separate disposable project instead: a new folder scaffolded as in step 8
+  (`conduct init --template default-orbit --dir <new folder>`) and then activated with
+  `conduct ownership activate --legacy-writers-stopped --dir <new folder>` (the flag confirms
+  that legacy writers have stopped; a new scaffold has none), or the trial project of the
+  [first-run instructions](first-run-v1.md), which activates it in its step 2. Do not activate
+  `$PROJ` itself: step 8 deliberately does not migrate the release fixture.
 - **`conduct tools`.** `conduct tools pin git --path <absolute path>` writes the pin of the git a
   child may run into `~/.december-command/tools.json` (or under `CONDUCT_HOME`), which this
   procedure would leave on the machine it ran on; it is held by `tests/test_tool_pins.py`.
@@ -623,8 +706,12 @@ Named so that passing it is not read as more than it is.
   suite and the browser gate on Linux, Windows and macOS (nine jobs), builds one wheel, and walks
   the installed-wheel road (`scripts/wheel_road.py`: a clean venv, init, ownership activate, two
   `conduct up` lifetimes stopped by SIGINT, `closed`) on Linux and macOS. A configuration is not
-  evidence: no CI run exists on the current candidate. The installed road has been walked locally
-  on Windows and on Linux (WSL); macOS has not been walked at all yet.
+  evidence: only a CI run on the exact candidate SHA is, recorded with the candidate. The
+  installed road runs in CI on Linux and macOS only: `scripts/wheel_road.py` exits on a non-POSIX
+  host and the repository holds no Windows runner for it. On Windows the road is walked by hand
+  (a venv from the one candidate wheel, init, activation, two `conduct up` lifetimes each stopped
+  with Ctrl+C in the server's own console, `conduct ownership status` reading `closed` after
+  each), and its output is kept with the candidate.
 - **A skip that does not name what it could not get.** The mutation-harness suites carry exactly
   two skips and each names its primitive: `tests/test_mutate_harness.py:676` skips under
   `os.geteuid() == 0` saying "root ignores the read-only bit" — the test makes a file read-only

@@ -187,6 +187,7 @@ from .deep_adapters import _DeepAdapter
 from .deep_codecs import FakeClaudeCodec
 from .deep_contracts import DeepProtocol
 from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
+from .claude_relay import CLAUDE_RELAY
 from .harness_workspace import INSTRUCTION_DIR, WORK_DIR
 from .headless_cli import (
     DISPATCH_CAPABILITY,
@@ -245,9 +246,14 @@ CONSTANT_PROMPT = "Execute the complete task supplied on standard input."
 #: write a plan file, and one review replied only with a pointer to `plans/<slug>.md` -- 227 bytes
 #: that became the artifact the next step reads, while the file was taken back as per-run state.
 #: So both prompts say where the deliverable goes: into the reply, whole.
-REVIEW_PROMPT = ("Produce the complete review artifact supplied on standard input. Your final reply is "
-                 "that artifact: write the whole document in it, not a summary of it or a pointer to "
-                 "a file or plan.")
+#: The review sentence names the OUTPUT the piped task asks for, in the frame's own words
+#: (`artifact_transport._review_task`: "output document", "not an input to find or review"):
+#: it was worded to agree with the frame of fd6b1bb, not to cure a failure anyone reproduced --
+#: on 52f3d50 the goal step of Claude, with the old text, wrote about 22 KB (B2/B3). The first
+#: live Goal v6 on Claude measures the new frame and this argv together.
+REVIEW_PROMPT = ("Read the task supplied on standard input and produce the complete output "
+                 "document it asks for. Your final reply is that document: write the whole "
+                 "document in it, not a summary of it or a pointer to a file or plan.")
 VERDICT_PROMPT = ("Independently judge the supplied result and return the requested verdict. Your final "
                   "reply carries the verdict itself, never a pointer to a file or plan.")
 INPUT_FORMAT_ARGV = ("--input-format", "text")
@@ -417,7 +423,8 @@ CLAUDE_PROFILE = HarnessProfile(
     # reviewed build ships no sandbox flag, so this integration says there is
     # none rather than saying nothing. `None` would mean nobody looked.
     vendor_sandbox=(),
-    model_flag=MODEL_FLAG, unstable_models=CLAUDE_UNSTABLE_MODELS)
+    model_flag=MODEL_FLAG, unstable_models=CLAUDE_UNSTABLE_MODELS,
+    login_relay=CLAUDE_RELAY)
 
 
 class ClaudeCodeError(HeadlessCliError):
@@ -482,13 +489,24 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
         "firstParty", "apiKeySource": "ANTHROPIC_API_KEY"}` and exits 0. The
         second is what an exit-code test admitted as a subscription.
 
-        Five clauses, each grounded in measurement: it must say it is signed in;
+        Six clauses: it must say it is signed in;
         the billing plane must be the vendor's own first party, so a cloud
         reseller's plane is refused rather than assumed; the method must be one
         this build has SEEN a subscription answer with; it may not name a key
         SOURCE at all, because a login that can name one is a login being paid
-        for by an API account; and the PLAN must be present and must not be the
-        one that means API usage.
+        for by an API account; it may not name a TOKEN source either; and the
+        PLAN must be present and must not be the one that means API usage.
+
+        The token-source clause is defence in depth, not a measured refusal. By
+        the bytes of the pinned 2.1.239 (read, not run) `auth status --json`
+        builds its object from `loggedIn`, `authMethod` and `apiProvider` and
+        adds a key SOURCE, the email, the organisation and the plan; it never
+        prints `tokenSource`. A token supplied from the environment or a
+        descriptor already makes `authMethod` read `oauth_token`, which the
+        method clause refuses (the witness `env_token`). `tokenSource` is a key
+        of the control channel's account object (`claude_quota._control_usage`
+        refuses it there); the clause keeps a status that ever grew it from
+        being admitted, and its witness (`token_source`) is SYNTHETIC.
 
         The plan clause is not redundant with the method. Measured: a
         console-shaped credential answers with the same method, the same plane
@@ -518,7 +536,7 @@ class ClaudeCodeTransport(ArtifactAwareTransport):
             isinstance(said, dict) and said.get("loggedIn") is True
             and said.get("apiProvider") == FIRST_PARTY
             and said.get("authMethod") in ADMITTED_LOGIN_METHODS
-            and "apiKeySource" not in said
+            and "apiKeySource" not in said and "tokenSource" not in said
             and isinstance(plan, str) and plan.strip()
             and plan_value(plan) != API_BILLING_PLAN)
 

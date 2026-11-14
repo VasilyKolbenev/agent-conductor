@@ -147,12 +147,21 @@ def test_review_reads_exact_artifact_bytes_and_records_one_causal_output(tmp_pat
 
     prompt = _fakeclaude.prompt_spawns(log)
     assert len(prompt) == 1
+    # The sentence is SPELLED, as in test_command_claude_transport: reading REVIEW_PROMPT here
+    # would put one value on both sides, and an edit of the sentence would move both.
     expected_argv = [
-        *BARE_ARGV, PRINT_FLAG, REVIEW_PROMPT,
+        *BARE_ARGV, PRINT_FLAG,
+        "Read the task supplied on standard input and produce the complete output document "
+        "it asks for. Your final reply is that document: write the whole document in it, "
+        "not a summary of it or a pointer to a file or plan.",
         *INPUT_FORMAT_ARGV, *OUTPUT_FORMAT_ARGV,
         *NO_SESSION_ARGV, *REVIEW_PERMISSION_MODE_ARGV,
     ]
     assert prompt[0]["argv"] == expected_argv
+    assert REVIEW_PROMPT == prompt[0]["argv"][2]
+    # The frame calls the result an output document and says its name is not an input to
+    # find or review, so the sentence beside it must not name a "review" to produce.
+    assert "review" not in prompt[0]["argv"][2].lower()
     assert "acceptEdits" not in prompt[0]["argv"]
     assert prompt[0]["marker"] == {
         "in_stdin": True, "in_argv": False,

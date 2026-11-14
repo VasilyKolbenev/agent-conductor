@@ -38,7 +38,7 @@ from typing import Callable
 #: file, so the desk registry accounts for it, and each is served by the hub too.
 SHARED_MODULES = frozenset({"desk-hash.js", "desk-status.js", "desk-status-copy.js",
                             "desk-time.js"})
-PREFIXES = ("studio", "desk", "hub")
+PREFIXES = ("arachnid", "studio", "desk", "hub")
 SUFFIXES = (".js", ".css", ".html")
 HUB_REGISTRY_MODULE = "conductor.hub.assets"
 #: The document the hub answers `GET /` with (spec 4.6.3): packaged, and never a
@@ -129,7 +129,7 @@ def partition_faults(*, packaged: frozenset[str], modules: frozenset[str],
         One sentence per fault; empty when every file is accounted for.
     """
     scripts = {name for name in packaged
-               if name.endswith(".js") and name.startswith(("studio", "desk"))}
+               if name.endswith(".js") and name.startswith(("studio", "desk", "arachnid"))}
     desk_files = {name for name in packaged if name.startswith("desk")}
     faults = [f"js module guarded by no MODULES row: {name}"
               for name in sorted(scripts - modules)]

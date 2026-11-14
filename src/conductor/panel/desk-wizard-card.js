@@ -8,6 +8,7 @@
 // desk at the slot to free, or at the flag block) goes through `ctx.leave`. The explanations behind
 // an ⓘ are open or closed in the model, so the redraw of a ticking clock keeps them as they are.
 import {element} from "./command-view.js";
+import {DEPTH, guidanceHeadline, guidanceText} from "./studio-budget-guidance.js";
 import {action, choice, instantText, textField, timeText} from "./desk-wizard-draw.js";
 import {LAUNCH_REFUSALS, LAUNCH_STAGES, LAUNCH_WHY, SKIP_STOPS, launchFacts, roleKind}
   from "./desk-wizard-model.js";
@@ -51,18 +52,22 @@ function warningRow(ctx, one) {
     text: ctx.t(`wizard.launch.warn.${one.code}`, params)});
 }
 
-function actionsLine(ctx, facts) {
+function scenarios(ctx, card) {
+  const pass = (name, key, row) => element("p", {[name]: "", text: ctx.t(key,
+    {actions: String(row.actions), time: timeText(ctx, row.seconds)})});
+  return [pass("data-terms-clean", "wizard.budget.clean", card.clean),
+    pass("data-terms-worst", "wizard.budget.worst", card.worst)];
+}
+
+function actionsLine(ctx, facts, compact = false) {
   const {card} = facts, params = {max: String(card.actions.max), of: String(card.actions.of)};
   const text = card.spent === null ? ctx.t("wizard.launch.actions", params)
     : ctx.t("wizard.launch.actions_spent", {...params, spent: String(card.spent.actions)});
-  const pass = (name, key, row) => element("p", {[name]: "", text: ctx.t(key,
-    {actions: String(row.actions), time: timeText(ctx, row.seconds)})});
   const exhausted = card.exhausted ? [element("p", {role: "alert", "data-exhausted": "",
     text: ctx.t("wizard.launch.exhausted", {spent: String(card.spent?.actions ?? 0),
       of: String(card.actions.of)})})] : [];
   return line(facts, "actions", [element("p", {"data-terms-actions": "", text}),
-    pass("data-terms-clean", "wizard.budget.clean", card.clean),
-    pass("data-terms-worst", "wizard.budget.worst", card.worst),
+    ...(compact ? [] : scenarios(ctx, card)),
     ...card.warnings.map((one) => warningRow(ctx, one)), ...exhausted]);
 }
 
@@ -82,12 +87,33 @@ function windowLine(ctx, facts) {
 
 function stepRow(ctx, row) {
   const who = row.role === null ? row.step : `${roleWords(ctx, row.role)} · ${row.step}`;
-  const parts = [who, row.harness ?? ctx.t("wizard.launch.step_no_harness"),
+  const parts = [who, recipientName(ctx, row, "harness"),
     ctx.t("wizard.launch.step_timeout", {time: timeText(ctx, row.timeout)}),
     ctx.t("wizard.launch.step_attempts", {count: String(row.attempts)}),
     ...(row.clamped ? [ctx.t("wizard.launch.step_clamped")] : [])];
-  return element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
+  const item = element("li", {"data-plan-step": row.step, "data-clamped": row.clamped ? "true" : null,
     text: parts.join(" · ")});
+  if (row.grokDiagnostic) item.append(element("p", {
+    text: ctx.t("automation.grok_session_diagnostic", {step: row.step})}));
+  if (row.patch) item.append(element("p", {text: ctx.t("automation.patch_step")}));
+  if (row.tests) {
+    const plan = row.tests;
+    item.append(element("p", {text: ctx.t("automation.local_tests", {runner: plan.runner,
+      start: plan.start, pattern: plan.pattern,
+      seconds: String(Math.min(plan.timeout_seconds, row.timeout))})}),
+    element("details", {}, [element("summary", {text: ctx.t("automation.test_pin")}),
+      element("pre", {text: JSON.stringify(plan.toolchain, null, 2)})]));
+  } else if (row.testsUnavailable) item.append(element("p", {
+    text: ctx.t("automation.test_preview_unavailable")}));
+  if (row.checked) item.append(element("span", {"data-checker": "", text: ctx.t("wizard.launch.checked_by",
+    {name: recipientName(ctx, row, "checker")})}));
+  return item;
+}
+
+function recipientName(ctx, row, key) {
+  const name = row[key] ?? ctx.t("wizard.launch.step_no_harness");
+  const model = key === "checker" ? row.checkerModel : row.model;
+  return model ? `${name} (${model})` : name;
 }
 
 function stepsLine(ctx, facts) {
@@ -100,7 +126,7 @@ function harnessesLine(ctx, facts) {
     text: one.version === null ? one.name : ctx.t("wizard.launch.harness_version",
       {name: one.name, version: one.version})}));
   return line(facts, "harnesses", [element("h4", {text: ctx.t("wizard.launch.harnesses")}),
-    element("ul", {}, rows)]);
+    rows.length ? element("ul", {}, rows) : element("p", {text: ctx.t("wizard.launch.team_unavailable")})]);
 }
 
 function receiveRow(ctx, facts, name, label, digest) {
@@ -127,10 +153,49 @@ function receivesLine(ctx, facts) {
     element("ul", {}, [...inputs, ...steps]), ...seedLine(ctx, receives.seed)]);
 }
 
+function ownerGates(ctx, gates) {
+  if (gates === null) return [element("p", {"data-owner-gates": "unknown", text: ctx.t("wizard.guide.gates_unknown")})];
+  if (!gates.length) return [];
+  return [element("section", {"data-owner-gates": "read"}, [
+    element("h4", {text: ctx.t("wizard.guide.gates")}),
+    element("p", {text: ctx.t("wizard.guide.gates_note")}),
+    element("ul", {}, gates.map((gate) => element("li", {},
+      [element("strong", {text: gate.title}), ...(gate.after.length ? [element("span",
+        {text: ctx.t("wizard.guide.gate_after", {steps: gate.after.join(", ")})})] : [])])))])];
+}
+
 function termsCard(ctx, facts) {
+  if (ctx.wizard.guided) return [guideTerms(ctx, facts)];
   return [element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
     actionsLine(ctx, facts), timeLine(ctx, facts), windowLine(ctx, facts),
-    stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)])];
+    ...ownerGates(ctx, facts.card.gates), stepsLine(ctx, facts), harnessesLine(ctx, facts), receivesLine(ctx, facts)])];
+}
+
+function guideTerms(ctx, facts) {
+  const {card} = facts;
+  const diagnostics = card.steps.some((row) => row.grokDiagnostic || row.patch);
+  const names = (rows, key) => [...new Set(rows.map((row) => recipientName(ctx, row, key)))].join(", ");
+  const title = (key) => element("strong", {text: ctx.t(key)});
+  const team = element("p", {"data-guide-executors": ""}, [title("wizard.guide.executor"), " · ",
+    names(card.steps, "harness") || ctx.t("wizard.launch.step_no_harness")]);
+  const checkers = names(card.steps.filter((row) => row.checked), "checker");
+  const reviewers = element("p", {"data-guide-checkers": ""}, [title("wizard.guide.checker"), " · ",
+    checkers || ctx.t(card.gates === null ? "wizard.launch.step_no_harness" : "wizard.guide.no_checker")]);
+  const more = element("details", {className: "desk-wizard__options", "data-guide-details": "terms",
+    open: facts.changed.length || ctx.expanded.has("terms") ? "" : null}, [
+    element("summary", {text: ctx.t("wizard.guide.exact_terms")}), ...scenarios(ctx, card),
+    element("p", {text: ctx.t("wizard.budget.note")}),
+    ...(diagnostics ? [] : [stepsLine(ctx, facts)]),
+    harnessesLine(ctx, facts), receivesLine(ctx, facts)]);
+  return element("div", {className: "desk-wizard__terms", "data-terms": ""}, [
+    ...seedLine(ctx, card.receives.seed), team, reviewers, actionsLine(ctx, facts, true),
+    element("p", {"data-guide-time": "", text: ctx.t("wizard.guide.reserves",
+      {action: timeText(ctx, card.actionTime), total: timeText(ctx, card.time)})}),
+    windowLine(ctx, facts),
+    ...(ctx.editLimits && !facts.viewing && facts.phase === "review" && !facts.skip
+      ? [action("wizard:launch:edit-limits", ctx.t("wizard.guide.edit_limits"), ctx.editLimits)] : []),
+    ...ownerGates(ctx, card.gates),
+    ...(diagnostics ? [stepsLine(ctx, facts)] : []), more]);
 }
 
 // -- what surrounds the card -------------------------------------------------------------
@@ -180,7 +245,7 @@ function actorField(ctx, facts) {
     label: ctx.t("wizard.launch.actor"), value: facts.actor,
     locked: facts.result !== null || facts.skip !== null,
     onValue: (value) => ctx.send({type: "actor-edit", value}),
-    extra: [element("small", {text: ctx.t("wizard.launch.actor_hint")})]});
+    extra: [element("small", {text: ctx.t("wizard.launch.actor_hint") + " " + ctx.t("agents.actor_hint")})]});
 }
 
 // -- what may be pressed -----------------------------------------------------------------
@@ -365,13 +430,37 @@ function resultBlock(ctx, facts) {
   return [element("p", {"data-launch-result": "queued", text}), ...flag];
 }
 
+/** The guided reserve stays editable until the owner grants the run. */
+function budgetOptions(ctx) {
+  const launch = ctx.wizard.launch, info = launch.preview?.recommendation;
+  if (!info || launch.phase !== "review" || launch.reads.automation?.payload?.authorization) return [];
+  const selected = launch.depth ?? info.depth;
+  const switches = DEPTH.map((depth) =>
+    choice(`wizard:budget:${depth}`, ctx.t(`wizard.budget.${depth}`), "radio", selected === depth,
+      () => ctx.send({type: "launch-budget", depth})));
+  const lines = [element("p", {text: guidanceHeadline(info, ctx.t)})];
+  const expanded = launch.infos.includes("budget");
+  const explain = action("wizard:budget:why", ctx.t("wizard.budget.why"),
+    () => ctx.send({type: "launch-info", name: "budget"}));
+  explain.setAttribute("aria-expanded", String(expanded));
+  lines.push(explain);
+  if (expanded) lines.push(...guidanceText(info, ctx.t, (n) => timeText(ctx, n))
+    .map((text) => element("p", {text})));
+  if (selected !== info.depth) lines.push(element("p", {role: "status",
+    text: ctx.t("wizard.budget.updating")}));
+  return [element("fieldset", {className: "desk-wizard__budget", "data-budget-guidance": info.depth}, [
+    element("legend", {text: ctx.t("wizard.budget.heading")}),
+    element("div", {role: "radiogroup", "aria-label": ctx.t("wizard.budget.heading")}, switches),
+    ...lines])];
+}
+
 /** The body of step 6. */
 export function runBody(ctx) {
   const facts = launchFacts(ctx.wizard), done = facts.result !== null;
   return [element("section", {className: "desk-wizard__launch", "data-launch": facts.phase,
     "data-viewing": facts.viewing ? "true" : "false"}, [
     element("h3", {text: ctx.t("wizard.launch.heading")}),
-    ...(facts.card === null ? [] : termsCard(ctx, facts)), ...errorLine(ctx, facts),
+    ...budgetOptions(ctx), ...(facts.card === null ? [] : termsCard(ctx, facts)), ...errorLine(ctx, facts),
     ...countdownBlock(ctx, facts), ...refreshButton(ctx, facts), ...changedBlock(ctx, facts),
     actorField(ctx, facts), ...progressLine(ctx, facts), ...answerLines(ctx, facts),
     ...(done ? resultBlock(ctx, facts) : facts.skip === null ? buttons(ctx, facts)
