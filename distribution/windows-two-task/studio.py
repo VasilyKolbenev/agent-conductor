@@ -28,6 +28,8 @@ def main():
         return 0
     demo = args.action == "demo"
     if demo:
+        unpack = runpy.run_path(str(Path(__file__).with_name("pilot.py")))["unpack_demo"]
+        unpack(project)
         location = {"session": "demo-codex-grok", "lang": "ru"}
     else:
         ids = json.loads(metadata.read_text(encoding="utf-8"))

@@ -93,12 +93,16 @@ def child_env(work):
 
 
 def unpack_demo(project):
+    # The installed Studio calls this helper so it can use the product's long-path handling.
+    from conductor.command.long_path import extended
+
     data = (HERE / "demo.zip").read_bytes()
     if hashlib.sha256(data).hexdigest() != DEMO_SHA256:
         raise ValueError("Unexpected offline example: demo.zip")
-    project.mkdir()
+    destination = Path(extended(project))
+    destination.mkdir()
     with ZipFile(BytesIO(data)) as archive:
-        archive.extractall(project)
+        archive.extractall(destination)
 
 
 def install_runtime(work):
@@ -166,7 +170,6 @@ def main():
         base.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="demo-", dir=base) as directory:
             work = Path(directory)
-            unpack_demo(work / "project")
             install_runtime(work)
             return open_studio(work, work, "demo", options)
     if mode == "new" or not latest.exists():

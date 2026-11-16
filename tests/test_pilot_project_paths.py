@@ -35,7 +35,10 @@ def test_windows_archive_verifies_the_same_offline_example_it_opens(tmp_path):
         package.extractall(extracted)
     launcher = run_path(str(extracted / "pilot.py"))
     assert launcher["verify"]() == digest
-    project = tmp_path / "project"
+    # A Windows member exceeds MAX_PATH even when pytest uses a short temporary root.
+    parent_units = len(str(tmp_path.resolve()).encode("utf-16-le")) // 2
+    project = tmp_path / ("p" + "x" * max(0, 198 - parent_units))
+    assert len(str(project).encode("utf-16-le")) // 2 >= 200
     launcher["unpack_demo"](project)
     assert RunStore(project).read("demo-codex-grok").envelope.run_id == "demo-codex-grok"
     assert (project / "test-output.txt").is_file()
