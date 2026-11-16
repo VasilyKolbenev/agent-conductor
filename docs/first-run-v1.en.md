@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
-To try the interface on Windows first, download a pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) and follow `START-HERE.txt` in its ZIP. In [Pilot 2](../distribution/windows-two-task/START-HERE.txt), Kolos recalls the checks you recorded on your first task. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) includes the accepted Codex + Grok example. Both work offline.
+To try the interface on Windows first, download a pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) and follow `START-HERE.txt` in its ZIP. In [Pilot 2](../distribution/windows-two-task/START-HERE.txt), Colossus recalls the checks you recorded on your first task. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) includes the accepted Codex + Grok example. Both work offline.
 
 The project root opens Arachnid. In an empty active project, choose **Prepare task**.
 In an existing project, you can also use **Desk → New task**. You can answer one
@@ -177,8 +177,8 @@ Run the interactive wizard, once for each needed connection:
 
 | Tool | Version pinned by this candidate | Supply to the wizard | Task road in V1 |
 | --- | --- | --- | --- |
-| Claude Code | 2.1.239 | Native `claude.exe`; set `CLAUDE_CONFIG_DIR` to the dedicated login folder. | Windows subscription tasks; a live Goal completed. |
-| Codex | 0.164.0 | The native Windows x64 executable in the layout below; set `CODEX_HOME` to the dedicated login folder. | Windows subscription tasks; the recorded Goal used `gpt-6.1-sol`. |
+| Claude Code | 2.1.239 | Native `claude.exe` with a dedicated `CLAUDE_CONFIG_DIR`. | The owner completed one Goal on Windows. The sign-in path for the public alpha is under review. |
+| Codex | 0.164.0 | Native Windows x64 CLI with a dedicated `CODEX_HOME`. | The owner accepted a subscription cycle with Goal, Identify, Design and Do. A separate Codex instance checked the patch and three tests. |
 | Kimi Code | 0.38.0 | Native Kimi CLI; dedicated `KIMI_CODE_HOME` and subscription sign-in. | The current pin supports the subscription usage source. Its subscription task is refused before spawn in this build; no live task result is verified. |
 | Grok Build | 1.0.13 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. A live subscription diagnosis completed and passed the rehearsal gate. |
 | DeepSeek Harness | 0.1.0-rc.7 | Node executable **and** DSH script entrypoint; API-key mode; allowed name `DEEPSEEK_API_KEY`. | The same API-key mode. |
@@ -332,9 +332,15 @@ stop the server with Ctrl+C and start it again from an environment that contains
 
 ## 4. Open Studio
 
-In the Arachnid sidebar choose **Connect a harness**, then Claude Code, Codex, Grok Build or
-Kimi Code to see the instructions for its CLI and dedicated sign-in. Available roles
-depend on the configured adapter. The Kimi option requires the Kimi Code CLI.
+In the Arachnid sidebar choose **Connect a harness**. In an active project open Codex
+or Grok Build. The card shows the installation, sign-in mode, any available quota source,
+and role eligibility. Prepare the reviewed CLI described in step 3. Copy the card's command.
+In the PowerShell window that started Studio with `$conduct` and `$project`, press Ctrl+C
+and run the command. In a fresh terminal, first set these variables to the installed
+`conduct.exe` and this project directory as in steps 1 and 2. Complete the owner sign-in
+and restart Studio for this project. Grok supports read-only
+diagnosis. The public sign-in path for Claude is under review. Kimi has a local session
+check, with a live subscription role pending.
 
 **Custom utility** adds a named tool to this project. For a manual exchange, send
 text in Studio, copy it to the regular CLI and record the reply. For automatic
@@ -350,7 +356,7 @@ in the displayed command with `python -m conductor` using the Studio environment
 
 In **Sessions**, select the run and click **Do** on the Dalio orbit. When the step has
 several attempts, pick one in the right panel. **Changes**, **Tests** and **Verdict**
-describe that action. Ask Kolos in the center which files changed or what the checker
+describe that action. Ask Colossus in the center which files changed or what the checker
 concluded. These answers use the recorded evidence. The Tests tab distinguishes the
 external execution summary from definitions found in the verified source files.
 
@@ -368,7 +374,11 @@ Use the installation and project locations you chose above if you changed the ex
 
 ```powershell
 # Windows
-$conduct = Join-Path $env:LOCALAPPDATA 'DecemberCommand\app-v1\Scripts\conduct.exe'
+$source = Read-Host 'Source commit of the installed wheel (40 hex digits)'
+if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+$conduct = Join-Path $install 'Scripts\conduct.exe'
+if (-not (Test-Path -LiteralPath $conduct -PathType Leaf)) { throw 'Installed build not found' }
 $project = Join-Path $env:USERPROFILE 'DecemberTrial'
 & $conduct up --dir $project --port 7777
 ```
@@ -390,7 +400,7 @@ not reach it. A forced end (for example `Stop-Process`) leaves ownership `opened
 refuses with `recovery_required`, and `ownership status` cannot tell a live server from a killed
 one. Recovery on Windows is in the table below.
 
-The home screen shows project sessions and harnesses on the left and your chat with Kolos in the
+The home screen shows project sessions and harnesses on the left and your chat with Colossus in the
 center. When a saved run is available, the latest readable run opens immediately.
 Selecting Do opens its changes, tests and verdict on the right. The editor, decisions
 and run permissions are under **Workflow controls** (`/panel/studio.html`).
@@ -420,7 +430,9 @@ For what has actually passed live checks, consult the [candidate notes](release-
 
 Policy does not bypass human gates. Pause, revoke, and explicit resume are different actions.
 A rejected result can be corrected only within the plan and permission; an uncertain result is not silently retried as success.
-To exercise a task, use Windows and choose an available harness with the capability needed by that step. Grok is eligible only for a read-only review. Choose Claude Code or Codex for a role that must edit files. If no eligible harness appears, stop the server and run `conduct providers` as in step 3.
+For the verified Windows subscription path, assign Grok to read-only Diagnose, Codex to Do,
+and a separate Codex instance as the checker. Check each role in its participant card.
+If a connection is missing, use the setup command on that card.
 
 A task that ends with `unknown` is never repeated: do not run it again, and start no other
 attempt. Two signs say to stop the server (Ctrl+C) first:

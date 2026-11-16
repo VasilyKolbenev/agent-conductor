@@ -301,6 +301,17 @@ def test_pilot_manual_handoff_instruction_uses_the_button_label():
     assert f"нажмите «{handoff[1]}»" in guide.read_text(encoding="utf-8")
 
 
+def test_reopened_windows_terminal_uses_the_same_build_as_the_install():
+    for lang in ("en.", ""):
+        guide = ROOT / "docs" / f"first-run-v1.{lang}md"
+        blocks = re.findall(r"```powershell\n(.*?)```", guide.read_text(encoding="utf-8"), re.S)
+        install = next(block for block in blocks if "py -3 -m venv" in block)
+        start = next(block for block in blocks if "& $conduct up --dir $project" in block)
+        for setting in ("$install =", "$conduct ="):
+            chosen = next(line for line in install.splitlines() if line.startswith(setting))
+            assert chosen in start.splitlines(), guide
+
+
 def test_a_dated_record_is_not_held_to_todays_count():
     """The other half of the ruling, so nobody later "fixes" the evidence.
 

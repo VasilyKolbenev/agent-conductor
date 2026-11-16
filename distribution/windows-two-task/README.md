@@ -1,7 +1,7 @@
-# Windows Pilot 2 · Two tasks with Kolos
+# Windows Pilot 2 · Two tasks with Colossus
 
 Choose a completed task and one that needs similar checks. Record the first task's checks
-and observed results, review the summary and confirm it. In the second task, ask Kolos
+and observed results, review the summary and confirm it. In the second task, ask Colossus
 to find that procedure. Open its source, change a step and choose a reviewer in chat.
 The pilot runs on loopback with the wheel in the ZIP. Both tasks stay on the colleague's
 computer. Draft edits last for the browser tab.
@@ -11,6 +11,8 @@ For Windows with Python 3.11 or 3.12, extract the ZIP and open `START.cmd`. Foll
 [Releases list](https://github.com/VasilyKolbenev/agent-conductor/releases) shows which
 pilots are public. The [first pilot](../windows-pilot/README.md) includes the Codex + Grok
 walkthrough and separate utility exercises. Pilot 2 uses operator-confirmed checks.
+To connect your own CLI subscriptions, follow the first-run guide for your wheel to open
+a separate active project. [First-run guide](../../docs/first-run-v1.en.md).
 
 ## Rebuild a candidate archive
 
