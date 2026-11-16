@@ -132,7 +132,7 @@ def plan_for(bound_document, instruction=None):
         raise _bad() from None
 
 
-def inventory_digest(install, *, deadline=None):
+def inventory_digest(install, *, deadline=None, max_file=MAX_RUNTIME_FILE):
     """Hash every regular singly named file and directory; follow no portals or links."""
     root = Path(install)
     if (not root.is_absolute() or not root.is_dir()
@@ -159,7 +159,7 @@ def inventory_digest(install, *, deadline=None):
                 pending.append(path)
                 continue
             if (not stat.S_ISREG(found.st_mode) or found.st_nlink != 1
-                    or found.st_size > MAX_RUNTIME_FILE
+                    or found.st_size > max_file
                     or total + found.st_size > MAX_RUNTIME_BYTES):
                 raise PatchRefused("test runtime inventory is not plain and bounded")
             image = hashlib.sha256()

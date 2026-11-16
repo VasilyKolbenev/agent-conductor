@@ -293,11 +293,16 @@ def test_the_providers_command_takes_no_setting_as_a_flag():
                for action in chooser.choices["providers"]._actions
                for option in action.option_strings}
 
-    assert options <= {"-h", "--help", "--dir", "--profile", "--from-profile"}, sorted(options)
+    known = {"-h", "--help", "--dir", "--profile", "--from-profile", "--subscription"}
+    assert options <= known, sorted(options)
     # Profile switches select a source/target; they cannot carry configuration values.
     for action in chooser.choices["providers"]._actions:
         if set(action.option_strings) & {"--profile", "--from-profile"}:
             assert action.nargs == 0
+        if "--subscription" in action.option_strings:
+            assert set(action.choices) == {"codex", "grok-build"}
+            with pytest.raises(argparse.ArgumentTypeError):
+                action.type("unreviewed/name")
 
 
 def test_a_non_terminal_is_refused_rather_than_defaulted(project, capsys):

@@ -576,6 +576,10 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
         0 when the file was written, 1 for every refusal.
     """
     profile = getattr(args, "profile", False)
+    subscription = getattr(args, "subscription", None)
+    if subscription and (profile or getattr(args, "from_profile", False)):
+        _say("--subscription connects one project and cannot be combined with profile options.")
+        return 1
     if getattr(args, "from_profile", False):
         return _from_profile(args.dir, profile)
     if ask is None:
@@ -588,6 +592,9 @@ def run(args: argparse.Namespace, ask: Callable[[str], str] | None = None) -> in
     if opened is None:
         return 1
     path, standing = opened
+    if subscription:
+        from .provider_subscription_setup import connect
+        return connect(args.dir, path, standing, subscription, ask)
     _say(_PREAMBLE)
     _say(f"\nConfigured now: "
          f"{', '.join(row.provider_id for row in standing) or '(none)'}")

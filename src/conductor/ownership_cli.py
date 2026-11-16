@@ -16,7 +16,7 @@ def dispatch(args):
     from .ownership import acquire_owner, OwnerRefused
     from .ownership_records import state
     try:
-        root, head = state(args.dir)
+        root, head = state(args.dir or ".")
         if head is None or head["phase"] == "rolled_back":
             return args.func(args)
         with acquire_owner(root):

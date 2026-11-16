@@ -95,6 +95,20 @@ def _profile_sid(pointer):
         _kernel.LocalFree(result)
 
 
+def current_user_sid():
+    """The actual caller's token-user SID, for the owner's protected install check."""
+    token, size = w.HANDLE(), w.DWORD()
+    if not _adv.OpenProcessToken(w.HANDLE(-1), 8, ctypes.byref(token)):
+        raise _error("OpenProcessToken")
+    try:
+        buffer = ctypes.create_string_buffer(512)
+        if not _adv.GetTokenInformation(token, 1, buffer, len(buffer), ctypes.byref(size)):
+            raise _error("TokenUser")
+        return _profile_sid(ctypes.c_void_p.from_buffer(buffer).value)
+    finally:
+        _kernel.CloseHandle(token)
+
+
 def derive_profile_sid(moniker):
     sid = ctypes.c_void_p()
     result = _userenv.DeriveAppContainerSidFromAppContainerName(moniker, ctypes.byref(sid))

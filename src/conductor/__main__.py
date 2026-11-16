@@ -568,6 +568,15 @@ def _add_utility_bridge(sub):
     p.set_defaults(func=_cmd_utility_bridge)
 
 
+_SUBSCRIPTION_CARDS = ("codex", "grok-build")
+
+
+def _subscription_card(value):
+    if value not in _SUBSCRIPTION_CARDS:
+        raise argparse.ArgumentTypeError("select a reviewed subscription card: codex or grok-build")
+    return value
+
+
 def _build_parser() -> argparse.ArgumentParser:
     """Build the `conduct` argument parser: one explicit block per subcommand."""
     parser = argparse.ArgumentParser(
@@ -608,6 +617,8 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="configure the shared harness profile once in this terminal")
     p.add_argument("--from-profile", action="store_true",
                    help="copy the shared profile into the project without asking questions")
+    p.add_argument("--subscription", choices=_SUBSCRIPTION_CARDS, type=_subscription_card,
+                   help="connect the reviewed Windows installation and its dedicated vendor login")
     p.set_defaults(func=_cmd_providers)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")
