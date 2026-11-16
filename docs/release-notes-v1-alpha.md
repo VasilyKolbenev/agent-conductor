@@ -1,6 +1,6 @@
 # December Command — V1 alpha, release notes (candidate draft, 8 November 2026)
 
-**Public Windows downloads.** This document records the November candidate. For the available pilot archives and per-version installation notes, use [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases). The [current Studio overview](../README.md) describes the colleague walkthroughs and harness status.
+**Current Windows pilot.** [Download Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) for the two-task offline walkthrough. See the [current Studio overview](../README.md) for startup instructions on Windows, Linux and macOS and for live harness results. The candidate notes below record the November 8 build.
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 

@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Чтобы сначала посмотреть интерфейс на Windows, скачайте пилот из [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) и откройте `START-HERE.txt` из ZIP. В [Pilot 2](../distribution/windows-two-task/START-HERE.txt) Колосс восстановит порядок записанных вами проверок первой задачи. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно изучить принятый пример Codex + Grok. Оба пилота работают офлайн.
+Для знакомства со Studio на Windows скачайте [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) и откройте [инструкцию к архиву](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt). Запишите порядок проверки первой задачи. Во второй попросите Колосса найти эти проверки. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно открыть переносимый пример принятого цикла Codex + Grok. Оба сценария работают офлайн.
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
@@ -59,7 +59,10 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Возьмите wheel и SHA256 кандидата у сопровождающего проекта или из указанного им запуска CI.
+Для [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) скачайте wheel
+и возьмите SHA-256 этого файла на странице выпуска. Коммит исходников сборки —
+`646139b7b656c3eca93adf7900a14688c0672dd3`. Для другого кандидата возьмите оба значения
+со страницы соответствующего выпуска или из его CI.
 Установка основной ветки или совпадение номера `0.1.0` ещё не означает, что это тот же кандидат.
 Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
 

@@ -39,7 +39,7 @@ Start with the [architecture guide](docs/architecture.md), then read nearby code
 - `src/conductor/panel/` contains the browser UI, including the Workflow Studio.
 - `tests/` checks Python behavior and source contracts; `browser_tests/` checks the rendered application in Chromium.
 
-The root page loads `arachnid.js` for the session list, Kolos chat and inspector.
+The root page loads `arachnid.js` for the session list, Colossus chat and inspector.
 The workflow editor has its own entry point in `studio.js`. Shared read and write requests go
 through `desk-transport.js`. Read the relevant checks before moving a module.
 [Studio imports](tests/test_studio_module_graph.py) · [Source limits](tests/test_studio_source.py)

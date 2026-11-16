@@ -7,7 +7,7 @@
 
 ## Хочу пользоваться
 
-1. [Пройти две свои задачи в Windows Pilot 2](../distribution/windows-two-task/START-HERE.txt). Запишите выполненные проверки первой задачи. Во второй попросите Колоса восстановить порядок, откройте источник и поправьте план в чате. Оба пилота работают офлайн. Опубликованные ZIP доступны в [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases).
+1. [Пройти две свои задачи в Windows Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3). Запишите выполненные проверки первой задачи. Во второй попросите Колосса восстановить порядок, откройте источник и поправьте план в чате. [Скачивание и установка](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 2. [Посмотреть пример Codex + Grok в Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Выберите Do и откройте изменения, тесты и вердикт отдельного проверяющего в учебной записи.
 3. [Настроить настоящий проект](first-run-v1.md): установка, подключение инструментов, Studio и первый запуск.
 4. [Прочитать заметки к кандидату V1](release-notes-v1-alpha.ru.md): реализованная функция и пройденная приёмка — разные факты.
