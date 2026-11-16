@@ -135,7 +135,6 @@ twice, and verification that reads only independent workspace evidence.
 from __future__ import annotations
 
 from . import login_home, task_file
-from .harness_profile import WindowsSubscriptionInstall
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
@@ -162,6 +161,7 @@ from .headless_cli import (
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
+    WindowsSubscriptionInstall,
     _version_token,
 )
 from .process import ProcessRunner

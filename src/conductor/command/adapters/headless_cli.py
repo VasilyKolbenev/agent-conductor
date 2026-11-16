@@ -86,6 +86,8 @@ from .harness_profile import (
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
+    WindowsMachinePolicy,
+    WindowsSubscriptionInstall,
     bounded_output,
     is_absolute,
     reviewed_env_allow,
