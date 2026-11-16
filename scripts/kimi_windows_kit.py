@@ -13,6 +13,7 @@ import stat
 import sys
 from zipfile import BadZipFile, ZipFile
 
+from conductor.command.contracts import canonical_json
 from conductor.ownership_native import NativeHold
 
 ZIP = (56242443, "80e4de3f2bd7c33ba10cfe3c2282492b0758fae9887537f4ff79ec2022957004")
@@ -106,6 +107,20 @@ def inspect(root):
         return receipt
 
 
+def install_manifest(root):
+    """Describe verified files independently of the machine where the kit was staged."""
+    with verified_bundle(root) as receipt:
+        manifest = {
+            "schema_version": 1, "harness": "kimi-code", "version": receipt["version"],
+            "platform": "windows-x64",
+            "executable": Path(receipt["executable"]).relative_to(root).as_posix(),
+            "shell": Path(receipt["shell"]).relative_to(root).as_posix(),
+            "files": receipt["files"],
+        }
+        digest = hashlib.sha256(canonical_json(manifest).encode("utf-8")).hexdigest()
+        return {"manifest": manifest, "sha256": digest}
+
+
 def _scratch_destination(dest):
     protected = Path.home() / "DecemberCommand"
     if dest == protected or protected in dest.parents:
@@ -174,10 +189,15 @@ def main(argv=None):
     build.add_argument("destination", type=Path)
     check = subs.add_parser("verify")
     check.add_argument("root", type=Path)
+    subs.add_parser("manifest").add_argument("root", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = (inspect(args.root) if args.operation == "verify"
-                  else stage(args.archive, args.git_bin, args.destination))
+        if args.operation == "stage":
+            result = stage(args.archive, args.git_bin, args.destination)
+        elif args.operation == "verify":
+            result = inspect(args.root)
+        else:
+            result = install_manifest(args.root)
     except (OSError, BadZipFile, KitRefused) as error:
         print(f"Kit refused: {error}", file=sys.stderr)
         return 2

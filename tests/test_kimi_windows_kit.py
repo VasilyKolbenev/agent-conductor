@@ -1,7 +1,9 @@
 """Check the standalone pinned file set without starting a vendor or installing a product."""
 import hashlib
+import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from zipfile import ZipFile
 
@@ -35,6 +37,30 @@ def prepared(kit):
     for name, data in contents.items():
         (dest / name).write_bytes(data)
     return tool, dest
+
+
+def test_manifest_identifies_the_verified_layout_after_relocation(kit, capsys):
+    tool, root = prepared(kit)
+    moved = root.parent / "Другая копия"
+    shutil.copytree(root, moved)
+    assert tool.main(["manifest", str(root)]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert tool.main(["manifest", str(moved)]) == 0
+    assert json.loads(capsys.readouterr().out) == first
+    contents = kit[-1]
+    expected = {
+        "schema_version": 1, "harness": "kimi-code", "version": "0.38.0",
+        "platform": "windows-x64", "executable": "kimi.exe", "shell": "shell/sh.exe",
+        "files": {name: {"size": len(value), "sha256": hashlib.sha256(value).hexdigest()}
+                  for name, value in contents.items()},
+    }
+    expected_digest = hashlib.sha256(
+        json.dumps(expected, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    assert first == {"manifest": expected, "sha256": expected_digest}
+    (moved / "shell/sh.exe").write_bytes(b"X" * len(contents["shell/sh.exe"]))
+    assert tool.main(["manifest", str(moved)]) == 2
+    output = capsys.readouterr()
+    assert output.out == "" and "digest" in output.err
 
 
 @pytest.mark.parametrize("name", ["kimi.exe", "shell/sh.exe", "shell/msys-2.0.dll"])
