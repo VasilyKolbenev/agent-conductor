@@ -1,35 +1,34 @@
-# Windows Pilot 3 · Two tasks with Colossus
+# Arachnid Studio for Windows
 
-Choose a completed task and one that needs similar checks. Record the first task's checks
-and observed results, review the summary and confirm it. In the second task, ask Colossus
-to find that procedure. Open its source, change a step and choose a reviewer in chat.
-The pilot runs on loopback with the wheel in the ZIP. Both tasks stay on the colleague's
-computer. Draft edits last for the browser tab.
+Download `Arachnid-Studio-Windows.zip` and its SHA-256 from the current release.
+Extract the whole ZIP and open `START.cmd` with Python 3.11 or 3.12 installed.
+The launcher verifies the packaged files and installs its wheel offline.
+[Release downloads](https://github.com/VasilyKolbenev/agent-conductor/releases)
+· [English and Russian walkthrough](START-HERE.txt)
 
-For Windows with Python 3.11 or 3.12, extract the ZIP and open `START.cmd`. Follow the
-[colleague walkthrough in Russian](START-HERE.txt). For the published [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3),
-use the [download instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt)
-to verify the ZIP. The copy inside that archive still names the Pilot 2 ZIP.
-The [first pilot](../windows-pilot/README.md) includes the recorded Codex + Grok
-walkthrough and separate utility exercises. The two-task pilot uses operator-confirmed checks.
-To connect your own CLI subscriptions, follow the first-run guide for your wheel to open
-a separate active project. [First-run guide](../../docs/first-run-v1.en.md).
+The first launch opens a read-only reconstruction of a completed Codex + Grok run.
+Select **Do** to inspect the changes, the three tests and the independent review.
 
-## Rebuild a candidate archive
+| Command | What opens |
+| --- | --- |
+| `START.cmd` | The latest saved task pair, or the Codex + Grok example on first launch. |
+| `START.cmd demo` | The Codex + Grok example. |
+| `START.cmd new` | Two personal tasks. Record accepted checks from the first, then recall and edit the plan in the second. |
+| `START.cmd verify` | File integrity verification. |
 
-Use the packaging directory from the candidate source revision and the `candidate-wheel`
-artifact from its CI run. The hash expected by the installed-wheel job identifies the wheel
-inside the artifact. The digest on GitHub's artifact page identifies the surrounding ZIP.
-Set `$wheel` to the extracted wheel path and `$expectedWheelSha` to the wheel SHA-256.
-From the repository root:
+New task pairs are stored in `%USERPROFILE%\ArachnidStudio`. Studio can read the
+previous launcher's last pair from `%USERPROFILE%\ArachnidPilot2`. The example uses
+a temporary workspace. To connect your own subscriptions, create an active project
+using the [first-run guide](../../docs/first-run-v1.en.md).
+
+## Build the Windows ZIP
+
+Use the source and the CI wheel from the same commit. Supply the wheel digest
+reported by the CI build job.
 
 ```powershell
 py -3.12 -I -B distribution/windows-two-task/build.py --wheel $wheel --wheel-sha256 $expectedWheelSha --output-dir dist
 ```
 
-On this branch the builder writes `Arachnid-Windows-Pilot-3.zip` and its `.zip.sha256` sidecar.
-Changes to the packaged guide change the archive digest even with the same wheel.
-To reproduce the published archives, use the matching release tag and its wheel.
-The original Pilot 3 builder wrote the published ZIP bytes under the Pilot 2 filename.
-After extraction, `START.cmd verify` checks the manifest. Running `START.cmd` again
-opens the same task pair. Use `START.cmd new` to create another pair.
+The builder writes `Arachnid-Studio-Windows.zip` and its `.zip.sha256` file.
+It checks the packaged example against the approved fixture digest.

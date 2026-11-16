@@ -1,6 +1,6 @@
 # December Command — V1 alpha, release notes (candidate draft, 8 November 2026)
 
-**Current Windows pilot.** [Download Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) for the two-task offline walkthrough. See the [current Studio overview](../README.md) for startup instructions on Windows, Linux and macOS and for live harness results. The candidate notes below record the November 8 build.
+For installation and the current harness support table, see [Arachnid Studio](../README.md). The notes below document the November 8 candidate.
 
 Russian version: [release-notes-v1-alpha.ru.md](release-notes-v1-alpha.ru.md).
 

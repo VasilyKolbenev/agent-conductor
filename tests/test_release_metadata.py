@@ -19,9 +19,10 @@ def test_distribution_runtime_and_release_prose_name_the_same_version():
     project = _project()
     version = project["version"]
     assert version == conductor.__version__
-    assert f"December Command v{version} alpha" in (
-        ROOT / "README.md"
-    ).read_text(encoding="utf-8")
+    for name in ("README.md", "README.ru.md"):
+        readme = (ROOT / name).read_text(encoding="utf-8")
+        assert readme.startswith("# Arachnid Studio\n")
+        assert f"agent_conductor-{version}-py3-none-any.whl" in readme
     assert f"`{version}`" in (
         ROOT / "docs" / "release-smoke.md"
     ).read_text(encoding="utf-8")

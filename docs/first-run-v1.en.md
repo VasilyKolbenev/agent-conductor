@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
-For an offline walkthrough on Windows, download [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) and follow its [installation instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt). Record how you checked the first of your two tasks, then ask Colossus to find those checks in the second. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) also includes a portable example of the accepted Codex + Grok cycle.
+Download the [Arachnid Studio Windows ZIP](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) and extract it. On first use, `START.cmd` opens the Codex + Grok training example. Run `.\START.cmd new` for two tasks of your own. [Installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
 
 The project root opens Arachnid. In an empty active project, choose **Prepare task**.
 In an existing project, you can also use **Desk → New task**. You can answer one
@@ -60,11 +60,7 @@ For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## 1. Install the identified build
 
-For [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3), download the wheel
-and use the SHA-256 shown for that wheel on the release page. Its source commit is
-`646139b7b656c3eca93adf7900a14688c0672dd3`. For a different candidate, take both values
-from its own release or CI run.
-Do not assume that a default-branch install or a package named `0.1.0` is the same candidate.
+Download the wheel from the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Use the wheel SHA-256 and the full source commit listed on that release.
 The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this tutorial is not a platform-certification claim.
 
 <details open>
@@ -74,7 +70,7 @@ On a fresh PC, first create an empty `%USERPROFILE%\DecemberCommand` folder. In 
 
 ```powershell
 $env:PYTHONPATH = ''
-$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.0-py3-none-any.whl'
+$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
 $expected = Read-Host 'Candidate wheel SHA256'
 if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
 $source = Read-Host 'Source commit of this wheel (40 hex digits)'
@@ -103,7 +99,7 @@ Use a fresh installation directory and the actual wheel path. Compare its hash w
 Keep this terminal open for the next steps.
 
 ```sh
-wheel="$HOME/Downloads/agent_conductor-0.1.0-py3-none-any.whl"
+wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
 python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
 install_dir="$HOME/.local/share/december-command/app-v1"
 python3 -m venv "$install_dir"

@@ -37,6 +37,9 @@ def test_archive_offers_its_reviewed_do_inside_atlas(chromium, tmp_path):
     with identified_server(root, PROJECT, mode="view") as origin:
         with operator(chromium, origin, "run-closed") as (page, posted):
             expect(page.locator('#orbitHere [data-step="do"]')).to_be_visible()
+            guardian = page.locator("#orbitHere .core-name")
+            expect(guardian).to_contain_text("Colossus")
+            expect(guardian).to_contain_text("Result received")
             atlas = page.locator("#chat")
             expect(atlas.get_by_text("Result accepted", exact=True)).to_be_visible()
             atlas.get_by_role("button", name="View Do result", exact=True).click()
@@ -44,6 +47,8 @@ def test_archive_offers_its_reviewed_do_inside_atlas(chromium, tmp_path):
             page.goto(f"{origin}/#project={PROJECT}&session=run-working&lang=en")
             next_card = atlas.locator("#nextAction")
             expect(next_card).to_contain_text("Waiting for claude-code · Do the work")
+            expect(guardian).to_contain_text("Task sent")
+            expect(guardian).not_to_contain_text("Result received")
             expect(next_card.locator("button:visible")).to_have_count(0)
             assert posted == []
 

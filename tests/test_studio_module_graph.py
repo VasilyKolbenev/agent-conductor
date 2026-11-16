@@ -56,7 +56,9 @@ PERMITTED_IMPORTS = {
         "./desk-transport.js", "./studio-model.js", "./studio-atlas-inspector.js",
     }),
     "arachnid-handoff.js": frozenset({"./command-view.js", "./studio-atlas-inspector.js"}),
-    "arachnid-orbit.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "arachnid-orbit.js": frozenset({
+        "./command-view.js", "./studio-i18n.js", "./arachnid-copy.js", "./desk-wizard-cycle.js",
+    }),
     "arachnid-panels.js": frozenset({
         "./command-view.js", "./arachnid-copy.js", "./studio-quotas.js", "./studio-quotas-model.js",
     }),

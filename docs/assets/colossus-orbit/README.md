@@ -1,6 +1,6 @@
 # Colossus orbit · Орбита Колосса
 
-**Design preview / Утверждённый макет, 16 ноября 2026.** The artwork depicts the next Studio orbit. Текущую орбиту и сводку принятого запуска можно увидеть на [скриншоте Pilot 3](../colossus-pilot3-recap.png).
+**Original artwork / Исходный макет, 16 ноября 2026.** [See the orbit in the installed Studio / Орбита в установленной Studio](../studio-orbit-ru.png).
 
 ![Colossus with the five harness roles / Колосс и пять стадий цикла](kolos-balanced-guardian.png)
 

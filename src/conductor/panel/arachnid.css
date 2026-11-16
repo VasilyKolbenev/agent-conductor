@@ -179,13 +179,14 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .orbit-header { color:var(--ink); border-bottom:1px solid var(--line); background:var(--card) }
 .orbit-header h2 { color:var(--text); font-size:15px; margin:0; font-weight:600 }
 .orbit-header .mono { margin-left:auto; color:var(--dim) }
-.stage { position:relative; height:clamp(190px,23vh,252px); overflow:hidden;
+.stage { position:relative; height:clamp(208px,25vh,280px); overflow:hidden;
   background-color:var(--chart);
-  background-image:radial-gradient(var(--grid) .8px,transparent .9px),
+  background-image:radial-gradient(circle at 9px 6px,var(--star) .65px,transparent 1px),
+    radial-gradient(circle at 28px 18px,var(--grid) 1px,transparent 1.2px),
     radial-gradient(ellipse 61% 116% at 9% -28%,color-mix(in srgb,var(--aurora-tide) 52%,transparent),transparent 87%),
     radial-gradient(ellipse 60% 125% at 105% 107%,color-mix(in srgb,var(--aurora-sky) 43%,transparent),transparent 83%),
     radial-gradient(ellipse at 49% 49%,color-mix(in srgb,var(--node) 13%,transparent),transparent 66%);
-  background-size:13px 13px,auto,auto,auto; isolation:isolate }
+  background-size:41px 37px,67px 53px,auto,auto,auto; isolation:isolate }
 .stage::before { content:""; position:absolute; pointer-events:none; inset:0;
   background:radial-gradient(ellipse 69% 28% at 31% 2%,transparent 60%,
     color-mix(in srgb,var(--aurora-tide) 18%,transparent) 80%,transparent 100%);
@@ -197,30 +198,59 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .tracks .outer { opacity:.19 } .tracks .path { stroke:var(--node); opacity:.72 }
 .selected-arc { stroke:var(--ink); fill:none; stroke-width:2; vector-effect:non-scaling-stroke;
   filter:drop-shadow(0 0 3px var(--node)); stroke-linecap:round }
-.core { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-  width:46px; height:46px; border-radius:50%; border:1px solid var(--aurora-peak);
-  background:radial-gradient(circle at 32% 22%,var(--aurora-peak),#a5d6e3 18%,#718ec1 38%,#5c5889 61%,#2c354e 83%);
-  box-shadow:0 0 24px 6px color-mix(in srgb,var(--aurora-sky) 24%,transparent) }
-.core::after { content:""; position:absolute; inset:6px -8px;
-  border:1px solid color-mix(in srgb,var(--aurora-peak) 80%,var(--node));
-  border-radius:50%; transform:rotate(-29deg) scaleY(.41) }
-.core::before { content:""; position:absolute; inset:1px; border-radius:50%;
-  background:repeating-radial-gradient(ellipse at 75% 12%,transparent 0 3px,#dec8ff29
-    4px,transparent 5px);
-  box-shadow:inset -5px -5px 9px #251b4b75 }
-.core-name { position:absolute; left:50%; top:calc(50% + 25px); transform:translateX(-50%);
-  font:10px Consolas,monospace; color:var(--dim); letter-spacing:.12em }
+.core { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%);
+  width:clamp(82px,24%,174px); height:35%; pointer-events:none;
+  background:url("/panel/orbit-colossus.webp") center / contain no-repeat;
+  filter:drop-shadow(0 4px 9px #464a984a) }
+.core-name { position:absolute; left:50%; top:64%; transform:translateX(-50%);
+  color:var(--text); font-size:clamp(12px,2cqi,15px); font-weight:650; line-height:1.2;
+  text-align:center; pointer-events:none }
+.core-name small { display:block; width:max-content; margin:3px auto 0; color:var(--dim);
+  font:500 10px/1.25 "Segoe UI",sans-serif }
+.stage[data-guardian=thinking] .core { filter:drop-shadow(0 0 12px #9c85ff99) }
+.stage[data-guardian=sending] .core-name small,.stage[data-guardian=receiving] .core-name small {
+  color:var(--ink) }
+.stage[data-guardian=sending] .core::after,.stage[data-guardian=receiving] .core::after {
+  content:""; position:absolute; width:6px; height:6px; top:65%; right:4%; border-radius:50%;
+  background:#c8ffef; box-shadow:0 0 8px 2px #91eedb }
+@media(prefers-reduced-motion:no-preference) {
+  .stage[data-guardian=sending] .core::after { animation:orbit-handoff 1.8s ease-out 2 }
+  .stage[data-guardian=thinking] .core { animation:orbit-think 2s ease-in-out 2 }
+}
+@keyframes orbit-handoff { to { transform:translate(18px,-8px); opacity:0 } }
+@keyframes orbit-think { 50% { transform:translate(-50%,-53%) } }
 .node { position:absolute; width:max-content; min-width:42px; height:38px; padding:0;
   transform:translate(-50%,-50%); display:grid; place-items:center; border-radius:8px; z-index:1 }
 .node:hover { background:transparent } .node:hover .node-label { color:var(--ink) }
-.planet { width:12px; height:12px; border-radius:50%; border:2px solid var(--node);
-  background:var(--chart); box-shadow:0 0 0 3px var(--chart),0 0 0 4px var(--track) }
-.node[data-effect][aria-pressed="false"] .planet { width:14px; height:14px;
-  border-color:var(--ink) }
-.node[aria-pressed="true"] .planet { width:17px; height:17px;
-  background:var(--ink); border:3px solid var(--node);
-  box-shadow:0 0 0 4px var(--chart),0 0 0 6px var(--ink) }
-.node-label { position:absolute; top:calc(50% + 14px); background:var(--chart); border-radius:4px;
+.planet { --lit:#eee5ff; --rock:#9984d6; --shade:#514078;
+  position:relative; display:inline-block; width:clamp(22px,4.6cqi,35px); aspect-ratio:1;
+  flex:none; border-radius:50%; border:1px solid var(--lit);
+  background:radial-gradient(ellipse at 30% 19%,#fff9 0 7%,transparent 9%),
+    radial-gradient(ellipse at 74% 23%,#33225844 0 8%,transparent 10%),
+    radial-gradient(ellipse at 16% 60%,#493b6b44 0 8%,transparent 10%),
+    radial-gradient(circle at 33% 25%,var(--lit),var(--rock) 45%,var(--shade) 85%);
+  box-shadow:inset -1px -2px 4px #2814425c,0 1px 7px #70659470 }
+.node[data-stage=identify] .planet,.node[data-stage=do] .planet {
+  --lit:#d3fff2; --rock:#8dc6ca; --shade:#38667b }
+.planet::before { content:""; position:absolute; left:31%; top:38%; width:13%; height:22%;
+  border-radius:55%; background:#272437; box-shadow:0.58em -0.03em #272437; font-size:1em }
+.planet-detail { position:absolute; left:52%; top:65%; width:15%; height:8%;
+  border-bottom:1.5px solid #302940; border-radius:0 0 65% 60% }
+.node[data-stage=goal] .planet::after { content:"✦"; position:absolute; left:-18%; top:-36%;
+  color:#fff0ba; font:17px/1 Georgia,serif; text-shadow:0 0 5px #ffd98d }
+.node[data-stage=identify] .planet::after,.node[data-stage=diagnose] .planet::after {
+  content:""; position:absolute; top:7%; right:-30%; width:36%; height:36%; border-radius:50%;
+  background:#a7f0e845; border:1.5px solid #d8f7ff; box-shadow:0 0 0 2px #8793bd99 }
+.node[data-stage=identify] .planet::after { background:radial-gradient(at 30% 25%,#f3fffd,#739cb2);
+  width:26%; height:26%; top:-8% }
+.node[data-stage=design] .planet::after { content:""; position:absolute; inset:38% -26% 22%;
+  border:2px solid #e3d7ff; border-top-color:#b7a1df66; border-radius:50%; transform:rotate(-19deg) }
+.node[data-stage=do] .planet::after { content:""; position:absolute; left:90%; top:49%;
+  width:62%; height:24%; z-index:-1; border-radius:30% 90% 90% 30%;
+  background:linear-gradient(90deg,#fff7c6,#ffbb78 52%,transparent); transform:rotate(9deg) }
+.node:hover .planet,.node:focus-visible .planet { filter:brightness(1.12) }
+.node[aria-pressed=true] .planet { outline:2px solid var(--ink); outline-offset:4px }
+.node-label { position:absolute; top:calc(50% + clamp(16px,2.9cqi,22px)); background:var(--chart); border-radius:4px;
   white-space:nowrap; font-size:12px; font-weight:550; color:var(--dim); padding:0 3px }
 .node[aria-pressed="true"] .node-label { color:var(--ink); text-decoration:underline;
   text-underline-offset:3px }
@@ -437,6 +467,7 @@ button:disabled,select:disabled { opacity:.6; cursor:default }
   .session-head h1 { font-size:clamp(24px,6.8cqi,29px) }
   .node-label { width:max-content; max-width:21cqi; white-space:normal; font-size:11px;
     text-align:center; line-height:1.25 }
+  .stage:not(.stage-list) .node-role { line-height:1.2 }
   .stage-list .node-label { max-width:100%; width:auto }
   .orbit-footer { gap:4px var(--space-2); flex-wrap:wrap }
 }
@@ -464,7 +495,7 @@ button:disabled,select:disabled { opacity:.6; cursor:default }
   .session-head,#stream,.compose-wrap { padding-inline:16px }
   .session-head { padding-top:15px; padding-bottom:7px }
   .orbit-header,.orbit-footer { padding:10px 11px }
-  .stage { height:176px }
+  .stage { height:216px }
   .node-label { font-size:10px }
   .result-summary { gap:8px; padding:8px 10px }
   .initial-brief { margin-bottom:12px }

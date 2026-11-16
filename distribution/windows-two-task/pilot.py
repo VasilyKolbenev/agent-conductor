@@ -1,8 +1,9 @@
-"""Install or reopen the local two-task Arachnid pilot on Windows."""
+"""Open Arachnid Studio on Windows with the sample run or your saved tasks."""
 from __future__ import annotations
 
 import argparse
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -10,11 +11,14 @@ import re
 import subprocess
 import sys
 import tempfile
+from zipfile import ZipFile
 
 
 HERE = Path(__file__).resolve().parent
-WHEEL = "agent_conductor-0.1.0-py3-none-any.whl"
-MEMBERS = (WHEEL, "pilot.py", "first_task.py", "studio.py", "START.cmd", "START-HERE.txt")
+WHEEL = "agent_conductor-0.1.1-py3-none-any.whl"
+DEMO_SHA256 = "812aebdae11ac0114a24b7e94e04fa1ae1bc8097889643d18647276a2a2c6941"
+MEMBERS = (WHEEL, "demo.zip", "pilot.py", "first_task.py", "studio.py", "START.cmd",
+           "START-HERE.txt")
 FLAGS = ("-I", "-B", "-X", "utf8")
 
 
@@ -27,6 +31,8 @@ def verify():
         entries[name] = digest
     if set(entries) != set(MEMBERS):
         raise ValueError("Incomplete SHA256SUMS.txt")
+    if entries["demo.zip"] != DEMO_SHA256:
+        raise ValueError("Unexpected offline example: demo.zip")
     for name, expected in entries.items():
         if hashlib.sha256((HERE / name).read_bytes()).hexdigest() != expected:
             raise ValueError("SHA-256 mismatch: " + name)
@@ -86,19 +92,33 @@ def child_env(work):
     return env
 
 
-def install_pair(base, record, wheel_sha):
-    base.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="p-", dir=base))
+def unpack_demo(project):
+    data = (HERE / "demo.zip").read_bytes()
+    if hashlib.sha256(data).hexdigest() != DEMO_SHA256:
+        raise ValueError("Unexpected offline example: demo.zip")
+    project.mkdir()
+    with ZipFile(BytesIO(data)) as archive:
+        archive.extractall(project)
+
+
+def install_runtime(work):
     env = child_env(work)
-    print("Папка пилота:", work, flush=True)
     venv = work / "venv"
     subprocess.run([sys.executable, *FLAGS, "-m", "venv", str(venv)], env=env, cwd=work, check=True)
     python = str(venv / "Scripts/python.exe")
     subprocess.run([python, *FLAGS, "-m", "pip", "--isolated", "--disable-pip-version-check",
                     "install", "--no-index", "--no-deps", "--no-cache-dir", str(HERE / WHEEL)],
                    env=env, cwd=work, check=True)
+    return python
+
+
+def install_pair(base, record, wheel_sha):
+    base.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix="p-", dir=base))
+    print("Папка задач:", work, flush=True)
+    python = install_runtime(work)
     subprocess.run([python, *FLAGS, str(HERE / "studio.py"), "create", str(work)],
-                   env=env, cwd=work, input=json.dumps(record).encode("ascii"), check=True)
+                   env=child_env(work), cwd=work, input=json.dumps(record).encode("ascii"), check=True)
     (work / "wheel.sha256").write_text(wheel_sha, encoding="ascii")
     with tempfile.NamedTemporaryFile(dir=base, delete=False) as pointer:
         pointer.write(work.name.encode("ascii"))
@@ -106,14 +126,28 @@ def install_pair(base, record, wheel_sha):
     return work
 
 
+def open_studio(runtime, data, action, options):
+    cmd = [str(runtime / "venv/Scripts/python.exe"), *FLAGS, str(HERE / "studio.py"),
+           action, str(data), "--port", str(options.port)]
+    if options.no_browser:
+        cmd.append("--no-browser")
+    if options.stop_on_stdin_eof:
+        cmd.append("--stop-on-stdin-eof")
+    process = subprocess.Popen(cmd, env=child_env(runtime), cwd=runtime)
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        return process.wait()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("open", "new", "verify"), nargs="?", default="open")
+    parser.add_argument("mode", choices=("open", "new", "demo", "verify"), nargs="?")
     parser.add_argument("--port", type=int, choices=range(65536), default=0, metavar="0..65535")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--stop-on-stdin-eof", action="store_true",
                         help="close Studio normally when the controlling input pipe closes")
-    parser.add_argument("--work-parent", type=Path, default=Path.home() / "ArachnidPilot2")
+    parser.add_argument("--work-parent", type=Path)
     options = parser.parse_args()
     wheel_sha = verify()
     print("Wheel SHA-256:", wheel_sha, flush=True)
@@ -121,9 +155,21 @@ def main():
         return 0
     if os.name != "nt" or sys.version_info[:2] not in ((3, 11), (3, 12)):
         raise ValueError("Use Python 3.11 or 3.12 on Windows.")
-    base = options.work_parent.resolve()
+    base = (options.work_parent or Path.home() / "ArachnidStudio").resolve()
     latest = base / "latest.txt"
-    if options.mode == "new" or not latest.exists():
+    if options.work_parent is None and not latest.exists():
+        legacy = Path.home() / "ArachnidPilot2" / "latest.txt"
+        if legacy.is_file():
+            latest = legacy
+    mode = options.mode or ("open" if latest.exists() else "demo")
+    if mode == "demo":
+        base.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="demo-", dir=base) as directory:
+            work = Path(directory)
+            unpack_demo(work / "project")
+            install_runtime(work)
+            return open_studio(work, work, "demo", options)
+    if mode == "new" or not latest.exists():
         record = collect_record()
         if record is None:
             print("Создание пары отменено.")
@@ -133,26 +179,24 @@ def main():
         name = latest.read_text(encoding="ascii").strip()
         if not re.fullmatch(r"p-[a-z0-9_]+", name):
             raise ValueError("Invalid latest.txt. Use START.cmd new to start a separate pair.")
-        work = base / name
-        if (work / "wheel.sha256").read_text(encoding="ascii") != wheel_sha:
-            raise ValueError("Open this pair with its original pilot or use START.cmd new.")
+        work = latest.parent / name
+        saved_sha = (work / "wheel.sha256").read_text(encoding="ascii")
+        if not re.fullmatch("[0-9a-f]{64}", saved_sha):
+            raise ValueError("Invalid saved wheel SHA-256. Check the saved task folder.")
+        if saved_sha != wheel_sha or latest.parent != base:
+            # Serve the existing records with the downloaded wheel in a separate environment.
+            base.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="view-", dir=base) as directory:
+                runtime = Path(directory)
+                install_runtime(runtime)
+                return open_studio(runtime, work, "open", options)
     print("Открываем сохранённую пару:", work, flush=True)
-    cmd = [str(work / "venv/Scripts/python.exe"), *FLAGS, str(HERE / "studio.py"),
-           "open", str(work), "--port", str(options.port)]
-    if options.no_browser:
-        cmd.append("--no-browser")
-    if options.stop_on_stdin_eof:
-        cmd.append("--stop-on-stdin-eof")
-    process = subprocess.Popen(cmd, env=child_env(work), cwd=work)
-    try:
-        return process.wait()
-    except KeyboardInterrupt:
-        return process.wait()
+    return open_studio(work, work, "open", options)
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (EOFError, OSError, ValueError, subprocess.CalledProcessError) as exc:
-        print("Pilot:", exc, file=sys.stderr)
+        print("Arachnid Studio:", exc, file=sys.stderr)
         raise SystemExit(1)

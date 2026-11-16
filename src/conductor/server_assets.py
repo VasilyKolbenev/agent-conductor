@@ -169,6 +169,7 @@ DESK_ASSETS = {
 
 # Exact package resources, never a path derived from the request target.
 PANEL_ASSETS = {
+    "/panel/orbit-colossus.webp": ("image/webp", "orbit-colossus.webp"),
     "/panel/command.css": ("text/css; charset=utf-8", "command.css"),
     "/panel/command.js": ("text/javascript; charset=utf-8", "command.js"),
     "/panel/command-projection.js": (

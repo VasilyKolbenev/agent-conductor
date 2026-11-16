@@ -1,11 +1,11 @@
 "use strict";
 // Read-only run evidence, including explicitly absent historical facts.
 export const ATLAS_COPY = Object.freeze({
-  "atlas.title": ["Kolos", "Колос"],
+  "atlas.title": ["Colossus", "Колосс"],
   "atlas.scope": ["Run evidence · local answers", "Разбор запуска · локальные ответы"],
   "atlas.orbit": ["Cycle orbit", "Орбита цикла"],
   "atlas.inspect": ["Step inspector", "Инспектор шага"],
-  "atlas.conversation": ["Conversation with Kolos", "Разговор с Колосом"],
+  "atlas.conversation": ["Conversation with Colossus", "Разговор с Колоссом"],
   "atlas.message": ["Ask about the selected attempt", "Спросить о выбранной попытке"],
   "atlas.send": ["Send", "Отправить"],
   "atlas.close": ["Close details", "Закрыть детали"],

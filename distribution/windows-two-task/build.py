@@ -1,4 +1,4 @@
-"""Build a portable two-task pilot from a wheel and its independently verified SHA-256."""
+"""Package Arachnid Studio for Windows from a wheel and its verified SHA-256."""
 import argparse
 import hashlib
 from io import BytesIO
@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 SOURCE = Path(__file__).resolve().parent
 launcher = runpy.run_path(str(SOURCE / "pilot.py"))
 WHEEL, MEMBERS = launcher["WHEEL"], launcher["MEMBERS"]
-FILENAME = "Arachnid-Windows-Pilot-3.zip"
+FILENAME = "Arachnid-Studio-Windows.zip"
 
 
 def atomic_write(target, data):
@@ -35,6 +35,10 @@ def build(wheel: Path, expected: str, output_dir: Path) -> Path:
     for name in MEMBERS:
         if name == WHEEL:
             data = wheel_bytes
+        elif name == "demo.zip":
+            data = (SOURCE.parent / "windows-pilot" / name).read_bytes()
+            if hashlib.sha256(data).hexdigest() != launcher["DEMO_SHA256"]:
+                raise ValueError("Unexpected offline example: demo.zip")
         else:
             data = (SOURCE / name).read_bytes().replace(b"\r\n", b"\n")
         if name.endswith((".cmd", ".txt")):

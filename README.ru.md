@@ -8,11 +8,9 @@
 | --- | --- | --- |
 | ZIP с двумя задачами, Studio и CLI. Живой цикл Codex + Grok по личным подпискам. | Studio и CLI из Python-пакета. Локальное демо. | Studio и CLI из того же пакета. Локальное демо. |
 
-**Орбита Колосса · дизайн следующей версии**
+**Орбита принятого запуска Codex + Grok**
 
-![В центре Колосс, вокруг него пять этапов. За диагностику отвечает Grok, за остальные четыре этапа — Codex.](docs/assets/colossus-orbit/kolos-balanced-guardian.png)
-
-[Посмотреть завершённый запуск Codex + Grok в текущей Studio (скриншот)](docs/assets/colossus-pilot3-recap.png).
+![Орбита в Arachnid Studio. Шаг Do выбран, справа открыты результаты этой попытки.](docs/assets/studio-orbit-ru.png)
 
 В реальном запуске на Windows Grok изучил реализацию счётчика и тесты и нашёл, почему сбои попадали в число успешных запусков. Codex исправил `count_succeeded`. Три теста прошли, затем другой экземпляр Codex проверил правку. Оператор одобрил исполнение и принял результат. [Отчёт о запуске](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
@@ -20,13 +18,13 @@
 
 Понадобится **Python 3.11 или 3.12** с `venv` и `pip`. Оба сценария ниже работают локально, без входа в аккаунты и вызовов моделей.
 
-**Windows · две ваши задачи.** Скачайте [архив для Windows][zip] и [файл с контрольной суммой SHA-256][checksum]. Полностью распакуйте архив и откройте **`START.cmd`**. Вспомните завершённую задачу и запишите, что проверили. Во второй попросите Колосса найти этот порядок, откройте источник и поправьте план проверки в чате. Обе задачи и принятые наблюдения сохраняются на компьютере. Черновик изменённого плана можно скопировать до закрытия вкладки. [Пошаговая инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
+**Windows.** Скачайте [архив Studio][zip] и [контрольную сумму SHA-256][checksum]. Распакуйте архив целиком и откройте **`START.cmd`**. При первом запуске откроется учебный пример Codex + Grok. Выберите **Do**, чтобы увидеть изменения, тесты и вердикт. Для своих двух задач запустите `.\START.cmd new` в папке приложения. Запишите проверки первой задачи и попросите Колосса найти их для второй. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
 
 **Linux и macOS · знакомство со Studio.** Скачайте [Python-пакет wheel][wheel]. В папке со скачанным файлом выполните команды для Python 3.12. Если установлен Python 3.11, в первой строке используйте `python3.11`.
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.0-py3-none-any.whl
+.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.1-py3-none-any.whl
 .venv/bin/conduct demo
 ```
 
@@ -34,7 +32,7 @@ python3.12 -m venv .venv
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.0-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.1-py3-none-any.whl
 .\.venv\Scripts\python.exe -m conductor demo
 ```
 
@@ -59,22 +57,18 @@ py -3.12 -m venv .venv
 | DeepSeek Harness | Адаптер с API-ключом прошёл локальные тесты. Сервис использует баланс API. |
 | Своя CLI | Ручная передача или двусторонний обмен текстом через совместимый локальный мост. Автономная роль и работа по подписке зависят от адаптера. |
 
-Например, в Pilot 1 для ручной передачи регистрировали GitHub Copilot CLI и Cursor Agent. Обмен через мост можно попробовать с локальной эхо-утилитой. [Примеры подключения](distribution/windows-pilot/HARNESSES.txt).
+GitHub Copilot CLI и Cursor Agent можно добавить для ручной передачи задачи. [Как подключить свою утилиту](docs/first-run-v1.md).
 
 ## О проекте
 
-В дизайне орбиты видно, когда Колосс ждёт, думает, передаёт задачу и получает результат. [Посмотреть четыре состояния](docs/assets/colossus-orbit/README.md).
-
 [Архитектура](docs/architecture.ru.md) · [Планы V2](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Участие в разработке](CONTRIBUTING.ru.md) · [Лицензия MIT](LICENSE)
 
-Прежнее название проекта — December Command. Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление документации для локального просмотра находится в `docs/index.ru.md`. [Состояние приёмки](docs/release-notes-v1-alpha.ru.md) · [Проверки сборки](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
+Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление для локального просмотра находится в `docs/index.ru.md`. [Документация](docs/index.ru.md).
 
-Предыдущие выпуски позволяют [разобрать офлайн-пример Codex + Grok в Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) и [открыть первый пилот с двумя своими задачами](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
-
-[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3
-[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip
-[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip.sha256
-[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/agent_conductor-0.1.0-py3-none-any.whl
+[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip.sha256
+[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
 
 <details>
 <summary><strong>Команды · пригодятся после демо</strong></summary>

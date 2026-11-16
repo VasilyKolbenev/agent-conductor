@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Для знакомства со Studio на Windows скачайте [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) и откройте [инструкцию к архиву](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt). Запишите порядок проверки первой задачи. Во второй попросите Колосса найти эти проверки. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно открыть переносимый пример принятого цикла Codex + Grok. Оба сценария работают офлайн.
+Скачайте [Arachnid Studio для Windows](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) и распакуйте архив. Команда `START.cmd` при первом запуске откроет учебный цикл Codex + Grok. Команда `.\START.cmd new` создаёт пару ваших задач для работы с Колоссом. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
@@ -59,11 +59,7 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Для [Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) скачайте wheel
-и возьмите SHA-256 этого файла на странице выпуска. Коммит исходников сборки —
-`646139b7b656c3eca93adf7900a14688c0672dd3`. Для другого кандидата возьмите оба значения
-со страницы соответствующего выпуска или из его CI.
-Установка основной ветки или совпадение номера `0.1.0` ещё не означает, что это тот же кандидат.
+Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Для проверки возьмите SHA-256 wheel и полный коммит исходников из описания этого выпуска.
 Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
 
 <details open>
@@ -73,7 +69,7 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ```powershell
 $env:PYTHONPATH = ''
-$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.0-py3-none-any.whl'
+$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
 $expected = Read-Host 'Candidate wheel SHA256'
 if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
 $source = Read-Host 'Source commit of this wheel (40 hex digits)'
@@ -102,7 +98,7 @@ if ($LASTEXITCODE) { throw 'wheel installation failed' }
 Оставьте этот терминал открытым для следующих шагов.
 
 ```sh
-wheel="$HOME/Downloads/agent_conductor-0.1.0-py3-none-any.whl"
+wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
 python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
 install_dir="$HOME/.local/share/december-command/app-v1"
 python3 -m venv "$install_dir"

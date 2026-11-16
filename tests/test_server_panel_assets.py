@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
     "/panel/arachnid-recap.js": "text/javascript; charset=utf-8",
     "/panel/arachnid.css": "text/css; charset=utf-8",
+    "/panel/orbit-colossus.webp": "image/webp",
     "/panel/arachnid-handoff.css": "text/css; charset=utf-8",
     "/panel/arachnid-handoff.js": "text/javascript; charset=utf-8",
     "/panel/arachnid-handoff-context.js": "text/javascript; charset=utf-8",
@@ -632,7 +633,7 @@ def test_every_packaged_panel_resource_is_served_named_unserved_or_the_entry():
     assert PANEL_ROUTE_ENTRY in names and PANEL_ROUTE_ENTRY not in served
     packaged = {
         entry.name for entry in panel.iterdir()
-        if entry.name.endswith((".js", ".css", ".html"))}
+        if entry.name.endswith((".js", ".css", ".html", ".webp"))}
     assert packaged == served | set(UNSERVED) | {PANEL_ROUTE_ENTRY}
 
 

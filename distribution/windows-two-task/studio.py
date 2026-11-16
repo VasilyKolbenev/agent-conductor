@@ -13,7 +13,7 @@ from conductor.command.project_claim import Launch
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("create", "open"))
+    parser.add_argument("action", choices=("create", "open", "demo"))
     parser.add_argument("work", type=Path)
     parser.add_argument("--port", default=0, type=int)
     parser.add_argument("--no-browser", action="store_true")
@@ -26,25 +26,34 @@ def main():
         with metadata.open("x", encoding="utf-8") as out:
             json.dump({"first": first, "second": second}, out)
         return 0
-    ids = json.loads(metadata.read_text(encoding="utf-8"))
+    demo = args.action == "demo"
+    if demo:
+        location = {"session": "demo-codex-grok", "lang": "ru"}
+    else:
+        ids = json.loads(metadata.read_text(encoding="utf-8"))
+        location = {"task": ids["second"], "lang": "ru"}
     server_drain.enable_ctrl_c()
     stopper = server_drain.Stopper()
     if args.stop_on_stdin_eof:
         stopper.watch_stdin(sys.stdin.fileno())
     http = server.build(project, args.port, launch=Launch(mode="view"))
     origin = f"http://127.0.0.1:{http.server_port}/#"
-    second_url = origin + urlencode({"task": ids["second"], "lang": "ru"})
-    first_url = origin + urlencode({"session": ids["first"], "lang": "ru"})
+    url = origin + urlencode(location)
 
     def announce():
-        print("Вторая задача:", second_url, flush=True)
-        print("Источник первой задачи:", first_url, flush=True)
-        print("Для закрытия пилота нажмите Ctrl+C в этом окне.", flush=True)
+        if demo:
+            print("Учебная реконструкция Codex + Grok:", url, flush=True)
+            print("Для двух своих задач выполните START.cmd new.", flush=True)
+        else:
+            print("Вторая задача:", url, flush=True)
+            print("Источник первой задачи:", origin + urlencode({"session": ids["first"],
+                                                                 "lang": "ru"}), flush=True)
+        print("Для закрытия Studio нажмите Ctrl+C в этом окне.", flush=True)
         if not args.no_browser:
             try:
-                os.startfile(second_url)
+                os.startfile(url)
             except OSError:
-                print("Откройте адрес второй задачи в браузере.", flush=True)
+                print("Откройте адрес Studio в браузере.", flush=True)
 
     return server_drain.serve_until_stopped(http, up_status.NullStatus(), stopper, announce=announce)
 

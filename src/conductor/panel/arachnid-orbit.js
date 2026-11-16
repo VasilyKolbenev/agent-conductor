@@ -1,6 +1,8 @@
 "use strict";
 import {element} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
+import {word as shellWord} from "./arachnid-copy.js";
+import {ADVICE_WORKFLOW} from "./desk-wizard-cycle.js";
 
 export function patchStep(step) {
   return step?.kind === "task" && step.node.capability === "dispatch"
@@ -9,10 +11,20 @@ export function patchStep(step) {
 
 // The track and its buttons share the prototype's 600 × 220 coordinate system.
 function angle(index, count) {
-  return (count === 1 ? -45 : -162 + (229 * index / (count - 1))) * Math.PI / 180;
+  return (count === 1 ? -45 : -178 + (238 * index / (count - 1))) * Math.PI / 180;
 }
 function point(theta) {
   return [300 + 220 * Math.cos(theta), 110 + 65 * Math.sin(theta)];
+}
+
+function guardianState(view, scene) {
+  if (!scene.ending.ended && scene.steps.some(step => step.word === "awaiting_result")) {
+    return view.detail?.config?.workflow?.id === ADVICE_WORKFLOW ? "thinking" : "sending";
+  }
+  if (!scene.ending.ended && scene.steps.some(step => step.word === "needs_decision")) return "waiting";
+  const latest = view.detail?.records?.findLast(row =>
+    row.record_type === "action_result" || row.record_type === "action_request");
+  return latest?.record_type === "action_result" ? "receiving" : "waiting";
 }
 
 export function renderOrbit(host, view, scene, chosen, select) {
@@ -43,7 +55,12 @@ export function renderOrbit(host, view, scene, chosen, select) {
       + " A 220 65 0 0 1 " + point(angle(selectedIndex, steps.length)).join(" "));
   }
   const core = stage.querySelector(".core-name");
-  if (core) core.textContent = localize(view, "atlas.title");
+  if (core) {
+    const pose = guardianState(view, scene);
+    stage.dataset.guardian = pose;
+    core.textContent = shellWord(view.locale, "assistantHeading");
+    core.append(element("small", {text: shellWord(view.locale, "orbit." + pose)}));
+  }
   const tilt = -9 * Math.PI / 180;
   steps.forEach((row, index) => {
     const theta = angle(index, steps.length), x = 220 * Math.cos(theta), y = 65 * Math.sin(theta);
@@ -55,12 +72,15 @@ export function renderOrbit(host, view, scene, chosen, select) {
       "aria-description": [state, actor?.adapter || row.ownerId].filter(Boolean).join(" · "),
       title: label + " · " + state});
     if (patchStep(row)) button.dataset.effect = "patch";
+    button.dataset.stage = row.node.stage || (patchStep(row) ? "do" : "custom");
     button.style.left = (300 + x * Math.cos(tilt) - y * Math.sin(tilt)) / 6 + "%";
     button.style.top = (110 + x * Math.sin(tilt) + y * Math.cos(tilt)) / 2.2 + "%";
     const name = element("span", {className: "node-label", text: label});
     if (row.ownerId) name.append(element("small", {className: "node-role",
       text: actor?.adapter || row.ownerId}));
-    button.append(element("i", {className: "planet", "aria-hidden": "true"}), name);
+    const planet = element("i", {className: "planet", "aria-hidden": "true"},
+      [element("i", {className: "planet-detail"})]);
+    button.append(planet, name);
     button.addEventListener("click", () => select(row));
     button.addEventListener("keydown", event => {
       const count = steps.length;

@@ -147,21 +147,21 @@ export async function observeAdvice(door, request) {
   return {phase: "ready"};
 }
 
-async function ensureTask(door, id, title, previousTitle) {
+async function ensureTask(door, id, title, previousTitles) {
   const answer = await door.write("tasks", null, {task_id: id, title});
   if (answer.status === "accepted") return;
-  if (previousTitle && answer.status === "refused" && answer.code === "record_conflict") {
+  if (previousTitles.length && answer.status === "refused" && answer.code === "record_conflict") {
     const {task} = await door.readJson(path.task(id));
     if (task?.schema_version === 1 && task.task_id === id && task.work_scope === id
-        && task.title === previousTitle) return;
+        && previousTitles.includes(task.title)) return;
   }
   throw new Error(answer.code || answer.status);
 }
 
-export async function prepareAdvice(door, request, title, previousTitle) {
+export async function prepareAdvice(door, request, title, previousTitles = []) {
   requireFact(new TextEncoder().encode(request.content).length <= 32768, "input_too_large");
   await ensureTemplate(door);
-  await ensureTask(door, request.id, title, previousTitle);
+  await ensureTask(door, request.id, title, previousTitles);
   const participant = {instance_id: INSTANCE, provider_id: request.provider, model: request.model || null};
   await write(door, "runs", null, {run_id: request.id, cycle_id: request.id, task_id: request.id,
     mode: "policy", automation_contract: "bounded-run-v1", workflow_id: FLOW, revision: 1,

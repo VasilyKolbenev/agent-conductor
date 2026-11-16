@@ -143,14 +143,16 @@ console.log(JSON.stringify({stages,zero:[zero.phase,zero.issue],done:done.issue,
 """
 
 
-def test_new_plans_use_kolos_and_only_the_exact_old_task_can_resume_after_a_conflict():
+def test_new_plans_use_colossus_and_only_known_legacy_tasks_can_resume_after_a_conflict():
     result = run_js(STORE + """
       const post = io.write, get = io.readJson, observed = [];
-      const cases = ["new", "legacy", "foreignTitle", "foreignId", "foreignScope", "unknown"];
+      const cases = ["new", "atlas", "kolos", "foreignTitle", "foreignId",
+        "foreignScope", "unknown"];
       for (const kind of cases) {
         run = undefined; auth = undefined;
         const ru = kind !== "new";
-        const expected = ru ? "План Колоса" : "Kolos plan", old = "План Атласа";
+        const expected = ru ? "План Колосса" : "Colossus plan";
+        const old = kind === "kolos" ? "План Колоса" : "План Атласа";
         const a = atlas.createArachnidAdvisor(io);
         const own = a.open({...args, input:{...args.input, language:ru?"ru":"en"}}).runId;
         const titles = []; let applied = 0, reads = 0;
@@ -179,7 +181,7 @@ def test_new_plans_use_kolos_and_only_the_exact_old_task_can_resume_after_a_conf
       console.log(JSON.stringify(observed));
     """, modules=MODULES)
     assert result == [
-        [True, "preview", None, 1, 0], [True, "preview", None, 1, 1],
+        [True, "preview", None, 1, 0], *[[True, "preview", None, 1, 1]] * 2,
         *[[True, "recover", "record_conflict", 0, 1]] * 3,
         [True, "recover", "timeout", 0, 0],
     ]

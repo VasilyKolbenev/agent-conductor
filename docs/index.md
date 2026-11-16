@@ -7,8 +7,8 @@ Pick the path that matches what you want to do.
 
 ## I want to use it
 
-1. [Try two of your own tasks in Windows Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3). Record the checks you performed on the first task. In the second, ask Colossus for the order, open its source and edit the plan in chat. [Download and installation instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
-2. [Explore the Codex + Grok example in Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Select Do to inspect the patch, tests and independent verdict in the packaged sample.
+1. [Download Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). On Windows, extract the ZIP and open `START.cmd` to explore the offline Codex + Grok example.
+2. Run `.\START.cmd new` in the same folder to record how you checked your first task and reuse those checks on your second.
 3. [Set up a real project](first-run-v1.en.md): install, connect tools, open Studio, and understand the first run.
 4. [Read the V1 candidate notes](release-notes-v1-alpha.md): implemented features and actual acceptance evidence are separate.
 5. [Run the task isolation acceptance check](acceptance-two-tasks.md): a guided check that work from two tasks stays separate.

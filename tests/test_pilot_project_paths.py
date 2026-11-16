@@ -1,10 +1,12 @@
 """The two-task pilot publishes the operator's receipt and can replay the original source."""
+import hashlib
 import json
 import os
 from contextlib import contextmanager
 from pathlib import Path
 from runpy import run_path
 from tempfile import TemporaryDirectory, gettempdir
+from zipfile import ZipFile
 
 import pytest
 
@@ -17,6 +19,35 @@ from tests.test_command_run_store import CONFIG, a_decision, a_run
 
 
 CREATE = Path(__file__).resolve().parents[1] / "distribution/windows-two-task/first_task.py"
+
+
+def test_windows_archive_verifies_the_same_offline_example_it_opens(tmp_path):
+    builder = run_path(str(CREATE.with_name("build.py")))
+    wheel = tmp_path / builder["WHEEL"]
+    wheel.write_bytes(b"sample wheel bytes")
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    archive = builder["build"](wheel, digest, tmp_path)
+    assert archive.name == "Arachnid-Studio-Windows.zip"
+    assert archive.with_suffix(".zip.sha256").read_text().split() == [
+        hashlib.sha256(archive.read_bytes()).hexdigest(), archive.name]
+    extracted = tmp_path / "extracted"
+    with ZipFile(archive) as package:
+        package.extractall(extracted)
+    launcher = run_path(str(extracted / "pilot.py"))
+    assert launcher["verify"]() == digest
+    project = tmp_path / "project"
+    launcher["unpack_demo"](project)
+    assert RunStore(project).read("demo-codex-grok").envelope.run_id == "demo-codex-grok"
+    assert (project / "test-output.txt").is_file()
+    (extracted / "demo.zip").write_bytes(b"unexpected demo")
+    with pytest.raises(ValueError, match="demo.zip"):
+        launcher["verify"]()
+    manifest = extracted / "SHA256SUMS.txt"
+    changed = hashlib.sha256(b"unexpected demo").hexdigest()
+    manifest.write_text(manifest.read_text("ascii").replace(launcher["DEMO_SHA256"], changed),
+                        encoding="ascii")
+    with pytest.raises(ValueError, match="demo.zip"):
+        launcher["verify"]()
 
 
 @contextmanager
