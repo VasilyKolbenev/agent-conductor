@@ -45,7 +45,7 @@ Open the local URL printed in the terminal. Press Ctrl+C there to stop the demo.
 | “What changed while I was away?” | The latest recorded outcome, any decision waiting for you, and links to the evidence. |
 | “Find the review procedure from the previous task.” | A proposed sequence and reviewer, linked to the accepted record you can inspect. |
 
-Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the cause, design a plan and carry it out. You can also build and publish your own cycle. Use **Connect harness** in the sidebar to add tools, then assign roles in the workflow. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
+Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the cause, design a plan and carry it out. You can also build and publish your own cycle. Use **Connect a harness** in the sidebar to add tools, then assign roles in the workflow. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
 
 | Harness | What has been verified |
 | --- | --- |
