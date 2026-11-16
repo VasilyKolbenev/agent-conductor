@@ -2,7 +2,7 @@
 
 **A local workspace where coding tools can hand a task to each other and show you how they solved it.** Give Colossus a goal, review the roles and limits, and follow the run on its orbit. Open any attempt to inspect its changes, tests and review while the conversation stays in view.
 
-[**Download Pilot 3**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
+[**Download Arachnid Studio**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
 
 | Windows | Linux (tested on Ubuntu) | macOS |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-**Windows · try two of your own tasks.** Download the `Arachnid-Windows-Pilot-3.zip` and the SHA-256 file from [Pilot 3][release]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
+**Windows · try two of your own tasks.** Download the [Windows ZIP][zip] and its [SHA-256 checksum][checksum]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
@@ -59,11 +59,13 @@ Start with the five-step Dalio cycle or publish a workflow of your own. Choose r
 
 [Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-Arachnid grew out of **December Command v0.1.0 alpha**. The Python package is `agent-conductor` and its command is `conduct`. For local reading, the documentation index is `docs/index.md`. [Release evidence](docs/release-notes-v1-alpha.md) · [Pilot build checks](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
+Arachnid grew out of **December Command v0.1.0 alpha**. The Python package is `agent-conductor` and its command is `conduct`. For local reading, the documentation index is `docs/index.md`. [Release evidence](docs/release-notes-v1-alpha.md) · [Build checks](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
 
 Earlier releases include the [offline Codex + Grok example in Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) and the [original two-task pilot](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
 
 [release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip.sha256
 [wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/agent_conductor-0.1.0-py3-none-any.whl
 
 <details>
