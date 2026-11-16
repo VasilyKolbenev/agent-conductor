@@ -55,6 +55,8 @@ Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
 
+For example, Pilot 1 registered GitHub Copilot CLI and Cursor Agent for manual handoff. Its local echo utility demonstrates the bridge protocol. [Try a custom utility](distribution/windows-pilot/README.md#what-the-utility-exercises-demonstrate).
+
 ## Explore the project
 
 **Orbit design preview.** The screenshot above shows the shipped Pilot 3. The next design gives Colossus four visible states and the harness roles distinct planets. The artwork is available for review ahead of implementation. [View the proposed orbit and its four states](docs/assets/colossus-orbit/README.md).
