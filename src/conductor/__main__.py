@@ -568,13 +568,18 @@ def _add_utility_bridge(sub):
     p.set_defaults(func=_cmd_utility_bridge)
 
 
-_SUBSCRIPTION_CARDS = ("codex", "grok-build")
+class _SubscriptionCards:
+    """Look up the card menu only when someone selects a card or reads provider help."""
 
+    def __iter__(self):
+        from conductor.command.providers import reviewed_subscription_cards
+        return iter(reviewed_subscription_cards())
 
-def _subscription_card(value):
-    if value not in _SUBSCRIPTION_CARDS:
-        raise argparse.ArgumentTypeError("select a reviewed subscription card: codex or grok-build")
-    return value
+    def __call__(self, value):
+        if value not in self:
+            raise argparse.ArgumentTypeError("select a reviewed subscription card: " +
+                                             " or ".join(self))
+        return value
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -617,8 +622,9 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="configure the shared harness profile once in this terminal")
     p.add_argument("--from-profile", action="store_true",
                    help="copy the shared profile into the project without asking questions")
-    p.add_argument("--subscription", choices=_SUBSCRIPTION_CARDS, type=_subscription_card,
-                   help="connect the reviewed Windows installation and its dedicated vendor login")
+    cards = _SubscriptionCards()
+    p.add_argument("--subscription", choices=cards, type=cards, metavar="CARD",
+                   help="connect a reviewed Windows install and its vendor login (%(choices)s)")
     p.set_defaults(func=_cmd_providers)
 
     p = sub.add_parser("up", help="serve the panel on loopback HTTP with live updates")

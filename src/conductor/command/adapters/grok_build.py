@@ -135,6 +135,7 @@ twice, and verification that reads only independent workspace evidence.
 from __future__ import annotations
 
 from . import login_home, task_file
+from .harness_profile import WindowsSubscriptionInstall
 from .quota_connection import NativeQuotaReadError
 from .service_metadata import ServiceMetadata
 from .jsonl_completion import decode_line
@@ -322,10 +323,23 @@ def grok_pin(executable: str, env_allow: tuple[str, ...] = (), *,
         auth=auth, auth_home=auth_home)
 
 
+# Measured on the dedicated 1.0.5 login. The official marketplace registration installs
+# nothing by itself. Other sources, endpoint overrides and installed plugins remain refused.
+LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": True}}, {
+    "marketplace": {"default_skills_installs_purged": True,
+                    "official_marketplace_auto_installed": True,
+                    "sources": [{"name": "xAI Official",
+                                 "git": "https://github.com/xai-org/plugin-marketplace.git"}]}})
+
+
 class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
     """Run one read-only Grok review; dispatch and independent checking remain closed."""
 
     profile = GROK_PROFILE
+    windows_subscription = WindowsSubscriptionInstall(
+        executable="grok.exe",
+        inventory="sha256:48375b63bb5a40cce8bf9fc11c8ab8a85e3b2ba665b1f3a148984011853da625",
+        config_forms=LOGIN_CONFIG_FORMS, extra_login_entries=("auth.json.lock", "memtrace"))
     error = GrokBuildError
     review_enabled = True
     review_output_format = "json"
@@ -590,17 +604,6 @@ def _native_quota(payload):
 
 
 QUOTA_POLICY = QuotaPolicy("xai", "grok-account", "grok-acp", "quota", "rfc3339", _native_quota)
-
-#: The bootstrap configuration a dedicated login profile may hold, compared as decoded values.
-#: MEASURED on a real subscription login (1.0.5, 28.09.2026): the vendor's own login registers its
-#: official marketplace as a source. A source installs nothing by itself; installed skills,
-#: plugins, hooks and MCP stay forbidden in the login home (`login_forbidden`), so this exact
-#: official form is admitted -- another source, or another address, is not.
-LOGIN_CONFIG_FORMS = ({}, {"marketplace": {"default_skills_installs_purged": True}}, {
-    "marketplace": {"default_skills_installs_purged": True,
-                    "official_marketplace_auto_installed": True,
-                    "sources": [{"name": "xAI Official",
-                                 "git": "https://github.com/xai-org/plugin-marketplace.git"}]}})
 
 # Native 1.0.5 ACP calibration: these metadata requests do not create a session
 # or send a model prompt. Billing requires the native xAI session auth gate.

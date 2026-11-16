@@ -318,6 +318,26 @@ TASK_FILE_NAME = "conduct-task.txt"
 
 
 @dataclass(frozen=True)
+class WindowsMachinePolicy:
+    """Machine inputs a reviewed installation must refuse before signing in."""
+
+    program_data_files: tuple[str, ...]
+    registry_key: str
+    refusal: str
+
+
+@dataclass(frozen=True)
+class WindowsSubscriptionInstall:
+    """The reviewed full package and login forms for the terminal setup card."""
+
+    executable: str
+    inventory: str
+    config_forms: tuple[dict, ...]
+    extra_login_entries: tuple[str, ...] = ()
+    machine_policy: WindowsMachinePolicy | None = None
+
+
+@dataclass(frozen=True)
 class HarnessProfile:
     """Every vendor fact one headless CLI transport differs by, and nothing else.
 

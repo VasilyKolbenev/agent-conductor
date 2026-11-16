@@ -13,9 +13,7 @@ from pathlib import Path
 from . import provider_setup as wizard
 from . import provider_install_security
 from .command.adapters import login_home, login_relay
-from .command.adapters.codex_cli import REVIEWED_CODEX_VERSION
 from .command.adapters.codex_patch import PatchRefused
-from .command.adapters.grok_build import LOGIN_CONFIG_FORMS, REVIEWED_GROK_VERSION
 from .command.adapters.local_test_plan import inventory_digest
 from .command.adapters.provider import ProviderConfig, SUBSCRIPTION_AUTH
 from .command.containment import first_directory_violation
@@ -24,15 +22,6 @@ from .ownership import OwnerRefused, require_owner
 from .ownership_login import LoginScopes
 
 WINDOWS = os.name == "nt"
-# Tree digests include directory names, file lengths and each file's SHA-256. The
-# Codex inventory is H5-CODEX-COMPAT-A-INVENTORY; Grok is the G6 1.0.13 WinGet pin.
-INSTALLS = {
-    "codex": (REVIEWED_CODEX_VERSION,
-              "node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
-              "sha256:3acf81c6a8973c3eec29bafdda4cd9dd7b06f7721bb7db2ade6604b3a9b516dd"),
-    "grok-build": (REVIEWED_GROK_VERSION, "grok.exe",
-                   "sha256:48375b63bb5a40cce8bf9fc11c8ab8a85e3b2ba665b1f3a148984011853da625"),
-}
 
 
 def _product():
@@ -53,20 +42,22 @@ def _login_acl(path):
 
 
 def _installation(product, kind):
-    version, entry, expected = INSTALLS[kind]
+    adapter = PROVIDER_CATALOG[kind].adapter_class
+    version = adapter.profile.reviewed_version
+    reviewed = adapter.windows_subscription
     install = product / "harnesses" / kind / version
     if install.is_dir():
-        provider_install_security.verify_install(product, install, kind)
+        provider_install_security.verify_install(product, install, reviewed.machine_policy)
     try:
         actual = inventory_digest(install, max_file=354558768)
     except (OSError, PatchRefused):
         actual = None
-    if actual != expected:
+    if actual != reviewed.inventory:
         raise wizard.SetupError(
             f"Install the reviewed {kind} {version} in {install}. The installation does not "
             "match the complete Windows package. See 'Where to get the pinned builds' "
             "in the first-run guide.")
-    return install / entry
+    return install / reviewed.executable
 
 
 def _login_folder(product, kind):
@@ -83,16 +74,16 @@ def _subscription(scope, kind):
     reason = _login_acl(home)
     if reason:
         raise wizard.SetupError(f"Cannot use the dedicated login: {reason}.")
-    profile = PROVIDER_CATALOG[kind].adapter_class.profile
+    adapter = PROVIDER_CATALOG[kind].adapter_class
+    profile = adapter.profile
+    reviewed = adapter.windows_subscription
     spec = profile.login_relay
-    expected = {*profile.login_scratch, *profile.login_expected, spec.credential, "config.toml"}
-    if kind == "grok-build":
-        expected.update(("auth.json.lock", "memtrace"))
+    expected = {*profile.login_scratch, *profile.login_expected, spec.credential,
+                "config.toml", *reviewed.extra_login_entries}
     names = login_home.entries(str(home))
     if names is None or not names <= expected:
         raise wizard.SetupError("The dedicated login contains unreviewed files.")
-    forms = LOGIN_CONFIG_FORMS if kind == "grok-build" else ({},)
-    if not login_home.plain_config(str(home), "config.toml", forms):
+    if not login_home.plain_config(str(home), "config.toml", reviewed.config_forms):
         raise wizard.SetupError("The dedicated login contains an unreviewed vendor configuration.")
     result = login_relay.ready(home, spec, _now(), timedelta(seconds=login_relay.MARGIN_SECONDS))
     return result if isinstance(result, login_relay.Refused) else None
