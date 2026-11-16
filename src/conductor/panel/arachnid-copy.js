@@ -17,6 +17,7 @@ const labels = {
   language: ["Language", "Язык"], workspace: ["Workspace", "Рабочая область"],
   closeSessions: ["Close sessions", "Закрыть сессии"], openSessions: ["Open sessions", "Открыть сессии"],
   atlas: ["Kolos · AI Titan", "Колос · Титан ИИ"],
+  assistantHeading: ["Colossus", "Колосс"],
   lead: ["Lead harness for Kolos", "Ведущий харнесс Колоса"],
   subscriptionPlan: ["Codex subscription · planning", "Codex по подписке · подготовка плана"],
   returnToPlan: ["Return to Kolos plan", "Вернуться к плану Колоса"],
