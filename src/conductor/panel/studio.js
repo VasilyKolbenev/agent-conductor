@@ -139,6 +139,8 @@ const noticeHas = (notice, key) => Array.isArray(notice)
   const utilityDoor = createTransport(() => appearance.value.locale, () => utilityProject);
   const utilities = utilityDrawer(byId("studioUtilities"), {
     project: () => utilityDoor.readJson(path.project()), read: () => utilityDoor.readJson(path.utilities()),
+    catalog: () => utilityDoor.readJson(path.workflows()),
+    quotas: () => utilityDoor.readJson(path.quotas()),
     bind: (id) => {
       if (utilityProject && utilityProject !== id) return false;
       utilityProject = id; return true;

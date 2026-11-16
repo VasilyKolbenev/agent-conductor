@@ -46,7 +46,7 @@ function balanceCard(row, state, stale) {
   ]);
 }
 
-function snapshotCard(row, providers, state) {
+export function snapshotCard(row, providers, state) {
   const names = row.binding_ids.map((id) => `${providers.get(id)} (${id})`).join(", ");
   const box = element("article", {className: "studio-quota", "data-quota-bindings": row.binding_ids.join(" ")}, [
     element("h3", {text: names}),

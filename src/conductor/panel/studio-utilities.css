@@ -23,6 +23,12 @@
   width: 100%; max-width: 100%; box-sizing: border-box; }
 .utility-exchange { margin: 12px 0; padding: 8px 0; border-top: 1px solid var(--line); }
 .utility-mode, .utility-exchange small { color: var(--muted); }
+.utility-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px 16px; margin: 14px 0; }
+.utility-facts > div { border-top: 1px solid var(--line); padding-top: 6px; }
+.utility-facts dt { font-size: .8em; color: var(--muted); }
+.utility-facts dd { margin: 3px 0 0; }
+.utility-workspace summary { cursor: pointer; }
 #studioUtilities footer { border-top: 1px solid var(--line); min-height: 42px; }
 @media(max-width: 620px) {
   .utility-layout { display: block; }

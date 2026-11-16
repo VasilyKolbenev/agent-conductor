@@ -74,7 +74,12 @@ PERMITTED_IMPORTS = {
     }),
     "studio-atlas-copy.js": frozenset(),
     "studio-utilities-copy.js": frozenset(),
-    "studio-utilities.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
+    "studio-utilities.js": frozenset({
+        "./command-view.js", "./studio-i18n.js", "./studio-provider-card.js",
+    }),
+    "studio-provider-card.js": frozenset({
+        "./command-view.js", "./studio-model.js", "./studio-quotas-model.js", "./studio-quotas.js",
+    }),
     "studio-atlas-inspector.js": frozenset({"./command-view.js", "./studio-i18n.js"}),
     "studio-atlas.js": frozenset({"./command-view.js", "./studio-i18n.js",
                                   "./studio-scene-model.js", "./studio-atlas-inspector.js"}),

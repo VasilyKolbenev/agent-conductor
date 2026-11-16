@@ -58,6 +58,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
            "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js",
            "studio-utilities.js", "studio-utilities-copy.js",
+           "studio-provider-card.js",
            "studio-budget-guidance.js",
            "studio-test-preview.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",

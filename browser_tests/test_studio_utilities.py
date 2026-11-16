@@ -3,6 +3,7 @@ import re
 from contextlib import contextmanager
 from threading import Thread
 
+import pytest
 from playwright.sync_api import expect
 
 from browser_tests.desk_hold import close_context
@@ -59,7 +60,7 @@ def test_saved_exchange_is_readable_when_the_same_project_reopens_read_only(chro
             opener.click()
             panel = page.get_by_role("dialog")
             panel.get_by_role("button", name="Kimi Code", exact=True).click()
-            expect(panel).to_contain_text("conduct providers")
+            expect(panel).to_contain_text("Local adapter tests only")
             expect(panel).to_contain_text("Kimi Desktop")
             attach(panel, "My local CLI", "my-cli", "manual")
             panel.get_by_label("Task text").fill("Inspect the counter")
@@ -111,6 +112,9 @@ def test_saved_exchange_is_readable_when_the_same_project_reopens_read_only(chro
             page.locator("#utilityRuns").click()
             panel = page.get_by_role("dialog")
             expect(panel).to_contain_text("только для просмотра")
+            panel.get_by_role("button", name="Codex", exact=True).click()
+            expect(panel).to_contain_text("откройте свой проект в активном режиме")
+            expect(panel.locator("code")).to_have_count(0)
             panel.get_by_role("button", name="My local CLI", exact=True).click()
             expect(panel).to_contain_text("Counter verified")
             expect(panel.get_by_role("heading", name="Ответ записал оператор")).to_be_visible()
@@ -217,5 +221,103 @@ def test_deepseek_chat_does_not_relabel_an_existing_bridge(chromium, tmp_path):
             expect(panel).to_contain_text("utility-bridge")
             expect(panel.get_by_role("link", name="Open DeepSeek Chat")).to_have_count(0)
             assert client.get("/command/project/utilities")["utilities"] == [bridge]
+        finally:
+            close_context(context)
+
+
+def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_path):
+    root = demo.materialize(tmp_path / "project")
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    with studio(root, "active") as (url, _):
+        context = chromium.new_context()
+        page = context.new_page()
+        posted = []
+        try:
+            page.goto(url + "/#lang=en")
+            providers = [
+                dict(provider_id="codex", display_name="Codex", availability="executable_absent",
+                     implementation="real_experimental", auth="subscription", task_road="refused",
+                     controls=[], vendor_sandbox=None),
+                dict(provider_id="grok-build", display_name="Grok", availability="available",
+                     implementation="real_experimental", auth="subscription",
+                     task_road="review_only", controls=["review"], vendor_sandbox=None),
+            ]
+            at = "2026-11-16T11:00:00Z"
+            base = dict(account=None, account_status="unknown", deferred_at=None)
+            rows = [
+                dict(base, binding_ids=["codex"], source=dict(kind="codex-cli", version="0.164"),
+                     state="unavailable", reason="not_authenticated", observed_at=at,
+                     freshness="current", windows=[]),
+                dict(base, binding_ids=["grok-build"], source=dict(kind="grok-cli", version="1.0"),
+                     state="observed", reason=None, observed_at=at, freshness="current",
+                     windows=[dict(limit_id="subscription", window_id="weekly", used_percent=17,
+                                   remaining_percent=83, resets_at=None, starts_at=None,
+                                   duration_minutes=10080, freshness="current")]),
+            ]
+            page.route("**/command/workflows",
+                       lambda route: route.fulfill(json={"providers": providers}))
+            cache_providers = [dict(row, task_road="refused") for row in providers]
+            page.route("**/command/quotas", lambda route: route.fulfill(json=dict(
+                as_of=at, max_age_seconds=300, providers=cache_providers, snapshots=rows)))
+            page.on("request", lambda req: posted.append(req.url) if req.method == "POST" else None)
+            page.locator("#attach").click()
+            panel = page.get_by_role("dialog")
+            panel.get_by_role("button", name="Codex", exact=True).click()
+            expect(panel.locator("code")).to_have_text(
+                "conduct providers --dir . --subscription codex")
+            guide = panel.get_by_role("link", name="Install Codex 0.164.0 for Windows")
+            expect(guide).to_have_attribute("href", re.compile(
+                r"/245e8f04b8a0bc4c65c1ada705cf5d4c92c2364f/docs/first-run-v1\.en\.md#"))
+            expect(panel.get_by_text("Configured CLI file missing", exact=True)).to_be_visible()
+            login = panel.get_by_text("Last quota check requires sign-in", exact=True)
+            expect(login).to_be_visible()
+            expect(panel.get_by_text("No quota reading", exact=True)).to_be_visible()
+            expect(panel.get_by_text("No task role available", exact=True)).to_be_visible()
+            panel.get_by_role("button", name="Grok Build", exact=True).click()
+            expect(panel.get_by_text("Read-only review", exact=True)).to_be_visible()
+            expect(panel.get_by_text("Subscription selected", exact=True)).to_be_visible()
+            details = panel.locator("details").filter(has_text="Quota details")
+            details.locator("summary").click()
+            expect(details).to_contain_text("83%")
+            expect(details).to_contain_text("grok-cli")
+            expect(panel.locator("code")).to_have_text(
+                "conduct providers --dir . --subscription grok-build")
+            # A cached reading for a different auth mode is not a subscription allowance.
+            cache_providers[1]["auth"] = "api_key"
+            panel.get_by_role("button", name="Refresh status").click()
+            expect(panel.get_by_text("No quota reading", exact=True)).to_be_visible()
+            expect(panel.get_by_text("Read-only review", exact=True)).to_be_visible()
+            expect(panel.locator("details")).to_have_count(0)
+            panel.get_by_role("button", name="Kimi Code", exact=True).click()
+            expect(panel).to_contain_text("Local adapter tests only")
+            panel.get_by_role("button", name="Claude Code", exact=True).click()
+            expect(panel).to_contain_text("Public subscription setup is on hold")
+            expect(panel.locator("code")).to_have_count(0)
+            assert not posted
+        finally:
+            close_context(context)
+
+
+@pytest.mark.parametrize(("entry", "opener"), [("/#lang=ru", "#attach"),
+                          ("/#screen=agents&lang=ru", "#utilityAgents")])
+def test_unavailable_provider_read_preserves_manual_setup(chromium, tmp_path, entry, opener):
+    root = demo.materialize(tmp_path / "project")
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    with studio(root, "active") as (url, _):
+        context = chromium.new_context()
+        page = context.new_page()
+        try:
+            page.goto(url + entry)
+            page.locator(opener).click()
+            page.route("**/command/workflows", lambda route: route.fulfill(status=503))
+            page.route("**/command/quotas", lambda route: route.fulfill(status=503))
+            panel = page.get_by_role("dialog")
+            panel.get_by_role("button", name="Codex", exact=True).click()
+            expect(panel).to_contain_text("Нет данных о состоянии харнесса")
+            expect(panel).to_contain_text("Кеш квот недоступен")
+            expect(panel).not_to_contain_text("Файл CLI найден")
+            expect(panel.get_by_role("button", name="Обновить состояние")).to_be_visible()
+            panel.get_by_role("button", name="Своя утилита", exact=True).click()
+            expect(panel.get_by_role("button", name="Подключить утилиту")).to_be_enabled()
         finally:
             close_context(context)

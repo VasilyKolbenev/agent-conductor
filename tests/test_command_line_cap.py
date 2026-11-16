@@ -11,6 +11,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/panel/studio-provider-card.js",
     "tests/test_pilot_project_paths.py",
     "src/conductor/panel/arachnid-recap.js",
     "browser_tests/test_colossus_recap.py",

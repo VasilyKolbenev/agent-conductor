@@ -1,6 +1,7 @@
 "use strict";
 import {element, field} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
+import {hasSubscriptionSetup, readProviderFacts, subscriptionCard} from "./studio-provider-card.js";
 
 const builtin = [
   ["claude-code", "Claude Code"], ["codex", "Codex"], ["grok-build", "Grok Build"], ["kimi-code", "Kimi Code"],
@@ -45,16 +46,25 @@ function validRead(data) {
 export function utilityDrawer(dialog, door) {
   let projectMode = null, read = null, phase = "ready", selected = "", message = "", writing = false;
   let reading = 0, pending = null, fromRuns = false, renderedState = "", lastConnected = false;
+  let providerFacts = null, factsEpoch = 0;
   const attachment = {label: "", id: "", mode: "manual"};
   const drafts = new Map();
   const tr = (key, args) => localize({locale: door.locale()}, "utility." + key, args);
   const writable = () => !writing && door.connected() && projectMode === "active" && phase === "ready" && !!read;
   const tell = (key) => { message = key; const status = dialog.querySelector("[role=status]");
     if (status) status.textContent = key ? tr(key) : ""; };
-  function choose(value) { selected = value; message = ""; draw(); }
+  function choose(value) { selected = value; message = ""; draw(); loadFacts(); }
+  async function loadFacts() {
+    const stamp = ++factsEpoch;
+    if (providerFacts || !hasSubscriptionSetup(selected) || !writable()) return;
+    const result = await readProviderFacts(door);
+    if (stamp !== factsEpoch || !dialog.open || !writable()) return;
+    providerFacts = result; draw();
+  }
 
   async function refresh() {
     const stamp = ++reading;
+    ++factsEpoch; providerFacts = null;
     phase = "loading"; message = ""; read = null; draw();
     try {
       const identity = await door.project();
@@ -80,7 +90,7 @@ export function utilityDrawer(dialog, door) {
       if (stamp !== reading || !dialog.open) return;
       phase = "error";
     }
-    draw();
+    draw(); loadFacts();
   }
   function confirmed(data, cmd) {
     if (cmd.op === "attach") return data.utilities.some(u => u.utility_id === cmd.utility_id
@@ -105,6 +115,16 @@ export function utilityDrawer(dialog, door) {
   }
   function builtinSetup(main, id, name) {
     main.append(heading(name));
+    if (hasSubscriptionSetup(id)) {
+      if (phase === "ready") subscriptionCard(main, id, providerFacts, tr, door.locale(),
+        writable(), copy);
+      return;
+    }
+    if (id === "claude-code" || id === "kimi-code") {
+      main.append(element("p", {text: tr(id === "claude-code" ? "claude_status" : "kimi_status")}));
+      if (id === "kimi-code") main.append(element("p", {text: tr("kimi")}));
+      return;
+    }
     if (id === "deepseek-harness") {
       const existing = read?.utilities.find(u => u.utility_id === deepseekChat.utility_id);
       main.append(element("h4", {text: deepseekChat.label}), element("p", {text: tr("deepseek_manual")}));
@@ -112,10 +132,9 @@ export function utilityDrawer(dialog, door) {
       else if (existing) main.append(element("p", {text: tr("deepseek_conflict")}));
       else main.append(btn(tr("deepseek_attach"), () => save({op: "attach", ...deepseekChat}), !writable()));
     }
-    main.append(element("h4", {text: tr(id === "deepseek-harness" ? "deepseek_api" : "setup")}),
+    main.append(element("h4", {text: tr("deepseek_api")}),
       element("p", {text: tr("stopped")}), element("code", {text: "conduct providers --dir ."}),
-      element("p", {text: tr(id === "deepseek-harness" ? "deepseek_provider" : "provider", {id})}));
-    if (id === "kimi-code") main.append(element("p", {text: tr("kimi")}));
+      element("p", {text: tr("deepseek_provider", {id})}));
   }
   function connect(main) {
     main.append(heading(tr("custom")));
@@ -217,9 +236,10 @@ export function utilityDrawer(dialog, door) {
       btn(tr("close"), () => dialog.close()),
     ]);
     if (info) main.prepend(element("small", {className: "utility-mode", text: tr(info)}));
+    const refreshLabel = hasSubscriptionSetup(selected) ? "refresh_status" : "refresh";
     dialog.replaceChildren(top, element("div", {className: "utility-layout"}, [nav, main]),
       element("footer", {}, [element("span", {role: "status", text: message ? tr(message) : ""}),
-        btn(tr("refresh"), refresh, writing || phase === "loading")]));
+        btn(tr(refreshLabel), refresh, writing || phase === "loading")]));
     lastConnected = door.connected();
     renderedState = door.locale() + "|" + lastConnected;
   }

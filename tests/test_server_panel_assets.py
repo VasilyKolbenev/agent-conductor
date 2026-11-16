@@ -67,6 +67,7 @@ ASSETS = {
     "/panel/studio-utilities.css": "text/css; charset=utf-8",
     "/panel/studio-utilities.js": "text/javascript; charset=utf-8",
     "/panel/studio-utilities-copy.js": "text/javascript; charset=utf-8",
+    "/panel/studio-provider-card.js": "text/javascript; charset=utf-8",
     "/panel/studio-model.js": "text/javascript; charset=utf-8",
     "/panel/studio-situation.js": "text/javascript; charset=utf-8",
     "/panel/studio-i18n.js": "text/javascript; charset=utf-8",

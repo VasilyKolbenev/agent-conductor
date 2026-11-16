@@ -41,6 +41,8 @@ function boot() {
   const transport = createTransport(() => locale, () => identity?.project_id ?? claimed());
   const utility = utilityDrawer($("studioUtilities"), {
     project: () => transport.readJson(path.project()), read: () => transport.readJson(path.utilities()),
+    catalog: () => transport.readJson(path.workflows()),
+    quotas: () => transport.readJson(path.quotas()),
     bind: id => identity !== null && identity !== undefined && id === identity.project_id && !foreign(),
     post: body => transport.submit("utilities", null, body),
     connected: () => connected && listState === "ready" && !foreign(),
