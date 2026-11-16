@@ -72,13 +72,15 @@ export function subscriptionCard(main, id, facts, tr, locale, active, copy) {
   } else {
     main.append(element("p", {text: tr("reading_facts")}));
   }
-  const command = "conduct providers --dir . --subscription " + id;
+  const command = "& $conduct providers --dir $project --subscription " + id;
   const guide = locale === "ru" ? "first-run-v1.md#где-взять-закреплённые-сборки"
     : "first-run-v1.en.md#where-to-get-the-pinned-builds";
   const version = id === "codex" ? "Codex 0.164.0" : "Grok Build 1.0.13";
   main.append(element("h4", {text: tr("setup_subscription")}),
     element("a", {href: guideRoot + guide, target: "_blank", rel: "noopener noreferrer",
       text: tr("install_guide", {version})}),
-    element("p", {text: tr("stopped")}), element("code", {text: command}), copy(command),
+    element("p", {text: tr("setup_terminal")}), element("code", {text: command}), copy(command),
+    element("details", {}, [element("summary", {text: tr("another_terminal")}),
+      element("p", {text: tr("setup_paths")})]),
     element("p", {text: tr("setup_finish")}));
 }

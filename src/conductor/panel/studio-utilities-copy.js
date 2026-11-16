@@ -37,6 +37,15 @@ export const UTILITY_COPY = Object.freeze({
   "utility.setup_active": ["Open your own project in active mode to set up this subscription.",
     "Для подключения подписки откройте свой проект в активном режиме."],
   "utility.setup_subscription": ["Connect your subscription", "Подключить свою подписку"],
+  "utility.setup_terminal": [
+    "Stop this project with Ctrl+C in the PowerShell window from the setup guide. Run this there.",
+    "В окне PowerShell, где вы запустили проект, нажмите Ctrl+C и выполните команду."],
+  "utility.another_terminal": ["Started Studio another way?", "Запускали Studio иначе?"],
+  "utility.setup_paths": [
+    "Set $conduct to the full path of this install’s conduct.exe and $project to this project’s "
+      + "directory. With Python, use & $python -m conductor instead of & $conduct in the same venv.",
+    "Задайте в $conduct полный путь к conduct.exe этой установки, а в $project — папку проекта. "
+      + "Для запуска через Python замените & $conduct на & $python -m conductor из того же venv."],
   "utility.install_guide": ["Install {version} for Windows", "Установить {version} для Windows"],
   "utility.setup_finish": [
     "PowerShell guides you through official CLI sign-in if needed. After saving, restart Studio.",

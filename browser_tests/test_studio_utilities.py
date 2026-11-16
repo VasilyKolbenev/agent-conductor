@@ -1,5 +1,8 @@
 """Connect to two real project utilities and reopen the saved exchange in view mode."""
+import json
+import os
 import re
+import subprocess
 from contextlib import contextmanager
 from threading import Thread
 
@@ -12,6 +15,7 @@ from conductor import demo, ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.project_claim import Launch
 from conductor.utility_bridge import LocalStudio, exchange
+from tests._ps1 import child_text, write_ps1
 
 
 @contextmanager
@@ -225,6 +229,36 @@ def test_deepseek_chat_does_not_relabel_an_existing_bridge(chromium, tmp_path):
             close_context(context)
 
 
+def check_card_command(panel, kind, tmp_path):
+    snippet = panel.locator("code")
+    expected = "& $conduct providers --dir $project --subscription " + kind
+    expect(snippet).to_have_text(expected)
+    if os.name != "nt":
+        return
+    # Use the exact text from the card, after checking it against the closed command above.
+    command = snippet.inner_text()
+    assert command == expected
+    stub = write_ps1(tmp_path / "учебный conduct.ps1", """
+[IO.File]::WriteAllText($env:CARD_ARGS, (ConvertTo-Json -InputObject $args -Compress))
+""")
+    project = tmp_path / "проект с пробелом"
+    project.mkdir(exist_ok=True)
+    captured = tmp_path / (kind + ".json")
+    wrapper = write_ps1(tmp_path / "card.ps1", """
+$ErrorActionPreference = 'Stop'
+$conduct = $env:CARD_CLI
+$project = $env:CARD_PROJECT
+""" + command)
+    env = dict(os.environ, CARD_CLI=str(stub), CARD_PROJECT=str(project), CARD_ARGS=str(captured))
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
+         "-File", str(wrapper)], cwd=tmp_path, env=env,
+        capture_output=True, timeout=15)
+    assert result.returncode == 0, child_text(result.stderr)
+    assert json.loads(captured.read_text(encoding="utf-8-sig")) == [
+        "providers", "--dir", str(project), "--subscription", kind]
+
+
 def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_path):
     root = demo.materialize(tmp_path / "project")
     ownership_transition.activate(root, legacy_writers_stopped=True)
@@ -263,8 +297,7 @@ def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_
             page.locator("#attach").click()
             panel = page.get_by_role("dialog")
             panel.get_by_role("button", name="Codex", exact=True).click()
-            expect(panel.locator("code")).to_have_text(
-                "conduct providers --dir . --subscription codex")
+            check_card_command(panel, "codex", tmp_path)
             guide = panel.get_by_role("link", name="Install Codex 0.164.0 for Windows")
             expect(guide).to_have_attribute("href", re.compile(
                 r"/245e8f04b8a0bc4c65c1ada705cf5d4c92c2364f/docs/first-run-v1\.en\.md#"))
@@ -280,14 +313,13 @@ def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_
             details.locator("summary").click()
             expect(details).to_contain_text("83%")
             expect(details).to_contain_text("grok-cli")
-            expect(panel.locator("code")).to_have_text(
-                "conduct providers --dir . --subscription grok-build")
+            check_card_command(panel, "grok-build", tmp_path)
             # A cached reading for a different auth mode is not a subscription allowance.
             cache_providers[1]["auth"] = "api_key"
             panel.get_by_role("button", name="Refresh status").click()
             expect(panel.get_by_text("No quota reading", exact=True)).to_be_visible()
             expect(panel.get_by_text("Read-only review", exact=True)).to_be_visible()
-            expect(panel.locator("details")).to_have_count(0)
+            expect(panel.get_by_text("Quota details and source", exact=True)).to_have_count(0)
             panel.get_by_role("button", name="Kimi Code", exact=True).click()
             expect(panel).to_contain_text("Local adapter tests only")
             panel.get_by_role("button", name="Claude Code", exact=True).click()
