@@ -104,6 +104,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
 BOOT = "studio.js"
 ARACHNID_MODULES = (
     "arachnid-handoff.js", "arachnid-handoff-context.js", "arachnid-handoff-data.js",
+    "arachnid-recap.js",
     "arachnid-review-source.js", "arachnid-review-draft.js",
     "arachnid-manual-review.js",
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js",

@@ -22,6 +22,7 @@ from tests.test_store import good_lane, write_project
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = {
+    "/panel/arachnid-recap.js": "text/javascript; charset=utf-8",
     "/panel/arachnid.css": "text/css; charset=utf-8",
     "/panel/arachnid-handoff.css": "text/css; charset=utf-8",
     "/panel/arachnid-handoff.js": "text/javascript; charset=utf-8",

@@ -6,6 +6,7 @@ import {
   answerFor, atlasInspector, atlasTestSummary, matchesAtlasAttempt,
 } from "./studio-atlas-inspector.js";
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
+import {recapAnswer, recapIntent, recapStatus, recapTitle, renderRecap} from "./arachnid-recap.js";
 import {handoffData} from "./arachnid-handoff-data.js";
 import {editReview, newReview, reviewCard, reviewHelp, reviewIntent} from "./arachnid-review-draft.js";
 import {
@@ -52,6 +53,7 @@ export function arachnidConversation(center, inspector, door) {
   let model = null, state = null, scene = null, open = false, read = null, controller = null;
   let signature = null, generation = 0, paintedMessages = null, disposed = false, lookup = null;
   let handoffPanel = false, projection = null, projectionDetail = null, pair = null;
+  let recap = null;
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
   const step = () => scene?.steps.find(row => row.nodeId === state?.scope?.nodeId);
@@ -64,7 +66,8 @@ export function arachnidConversation(center, inspector, door) {
   function selected(s) {
     const scope = state?.scope;
     if (!scope || scope.nodeId !== s?.nodeId) return null;
-    return actions(s).find(a => a.action_id === scope.actionId && a.attempt_id === scope.attemptId);
+    return actions(s).find(a => a.action_id === scope.actionId && a.attempt_id === scope.attemptId
+      && (!recap || a.instance_id === s.ownerId));
   }
   function pin(s, action, options) {
     state.scope = {nodeId: s.nodeId, title: s.title || s.nodeId, actionId: action?.action_id,
@@ -132,7 +135,9 @@ export function arachnidConversation(center, inspector, door) {
     let changed = false;
     for (const row of state?.messages || []) {
       if (row.wait !== epoch) continue;
-      row.text = evidence ? evidenceAnswer(row.topic, evidence) : tr("unavailable");
+      row.text = row.topic === "recap"
+        ? recapAnswer(model, row.status, evidence, tr("unavailable"))
+        : evidence ? evidenceAnswer(row.topic, evidence) : tr("unavailable");
       delete row.wait; changed = true;
     }
     if (changed) transcript();
@@ -171,6 +176,7 @@ export function arachnidConversation(center, inspector, door) {
   }
   function choose(s, focus = false) {
     if (!s || !model.ready) return;
+    recap = null;
     handoffPanel = false; state.handoff = null;
     if (state.scope?.nodeId !== s.nodeId) {
       const options = actions(s);
@@ -182,15 +188,15 @@ export function arachnidConversation(center, inspector, door) {
   }
   function close() {
     if (!open) return;
-    const wasHandoff = handoffPanel;
-    handoffPanel = false;
+    const wasChat = handoffPanel || recap;
+    handoffPanel = false; recap = null;
     const last = state.scope?.nodeId;
     revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     drawOrbit(); summary();
     const orbitNode = [...fields.orbitHere.querySelectorAll("[data-step]")]
       .find(n => n.dataset.step === last);
-    (wasHandoff ? fields.command : orbitNode || fields.scopeHere.querySelector("select") || fields.command)
-      .focus({preventScroll: true});
+    const focus = wasChat ? fields.command : orbitNode || fields.scopeHere.querySelector("select");
+    (focus || fields.command).focus({preventScroll: true});
   }
   function paletteSteps() {
     return !model?.ready || !scene ? [] : scene.steps.map(s =>
@@ -264,6 +270,7 @@ export function arachnidConversation(center, inspector, door) {
     return element("section", {className: "atlas-attempt-summary"}, [heading, table]);
   }
   function populateInspector() {
+    if (open && recap) { drawRecap(); return; }
     if (open && handoffPanel) { drawHandoff(); return; }
     const s = step();
     if (!open || !s) return;
@@ -407,6 +414,7 @@ export function arachnidConversation(center, inspector, door) {
       ". Протокол относится к попытке Do. Связи отдельных выводов с тестами не записаны.");
   }
   function readHandoff(intent, reply) {
+    recap = null;
     if (intent.kind === "other-author") {
       if (handoffPanel) close();
       reply.text = words("This handoff leads to a different harness. Select the requested step.",
@@ -521,6 +529,46 @@ export function arachnidConversation(center, inspector, door) {
     });
     return true;
   }
+  function recapNote(action) {
+    if (!model.ready || !scene) return tr("offline");
+    if (!action) return tr(state.scope?.actionId ? "attempt_missing" : "no_attempt");
+    return tr(read?.phase === "loading" ? "loading" : "unavailable");
+  }
+  function drawRecap() {
+    const a = selected(step());
+    renderRecap(inspector, model, {next: door.nextStatus(model.runId, model.detail),
+      action: a, scope: state.scope ? scopeName(state.scope) : null, latest: recap.latest,
+      read: model.ready && a ? read : null, tab: recap.tab, choice: a ? held(a) : null,
+      note: recapNote(a)}, change => {
+      if (!recap || !model.ready || selected(step()) !== a || !a) return;
+      if (change.tab) recap.tab = change.tab;
+      Object.assign(held(a), change); drawInspector();
+    });
+  }
+  function readRecap(reply) {
+    handoffPanel = false; state.handoff = null;
+    // A vanished selection is still a selection; never substitute another step's evidence.
+    const current = step();
+    const latest = !patchStep(current) && (Boolean(current) || !state.scope);
+    if (latest && scene && model.ready) {
+      const patches = new Map(scene.steps.filter(patchStep).map(s => [s.nodeId, s]));
+      const last = rows(model.detail.records).findLast(({record_type, record}) =>
+        record_type === "action_request" && record?.run_id === model.runId
+        && patches.has(record.node_id)
+        && patches.get(record.node_id).ownerId === record.instance_id);
+      const s = last ? patches.get(last.record.node_id) : null;
+      state.scope = null;
+      if (s) pin(s, last.record, actions(s));
+    }
+    recap = {latest, tab: null}; open = true; door.inspect(true); load();
+    const a = selected(step());
+    const status = recapStatus(model, door.nextStatus(model.runId, model.detail));
+    reply.origin = state.scope;
+    reply.text = recapAnswer(model, status, a && read?.value, recapNote(a));
+    if (a && read?.phase === "loading") {
+      Object.assign(reply, {wait: generation, topic: "recap", status});
+    }
+  }
   function ask(text) {
     const message = text.trim();
     if (!state || !message) return;
@@ -531,6 +579,10 @@ export function arachnidConversation(center, inspector, door) {
     const panel = planning || reviewing ? directPanel(message) : commandOf(controls, message);
     const topic = commandOf(topics, message);
     const reply = {role: "atlas", text: ""};
+    if (model.runId && recapIntent(message)) {
+      readRecap(reply); state.messages.push(reply); paint();
+      fields.messages.lastElementChild?.scrollIntoView({block: "nearest"}); return;
+    }
     const intent = model.runId ? handoffIntent(message, state.handoff) : null;
     if (intent && !(panel && ["changes", "other-author", "verdict"].includes(intent.kind))) {
       readHandoff(intent, reply); state.messages.push(reply); paint();
@@ -576,6 +628,11 @@ export function arachnidConversation(center, inspector, door) {
       : model.runId && !scene ? words("No cycle is available for this run.",
         "Для этого запуска пока нет схемы цикла.") : "";
     fields.quick.replaceChildren();
+    if (scene && model.ready) {
+      const question = words("What changed while I was away and where am I needed?",
+        "Пока меня не было, что изменилось и где нужен я?");
+      fields.quick.append(button(recapTitle(model), () => ask(question)));
+    }
     if (reviewChat()) {
       const q = state.review ? words("Close draft", "Закрыть черновик")
         : words("Find the review order from the previous task", "Найди порядок проверки из прошлой задачи");
@@ -611,7 +668,7 @@ export function arachnidConversation(center, inspector, door) {
       }
       if (state) state.draft = fields.command.value;
       revoke();
-      handoffPanel = false; projectionDetail = null; projection = null;
+      handoffPanel = false; recap = null; projectionDetail = null; projection = null;
       if (open) { open = false; inspector.replaceChildren(); door.inspect(false); }
     }
     model = next;
@@ -628,7 +685,7 @@ export function arachnidConversation(center, inspector, door) {
       fields.command.value = ""; return;
     }
     if (switching) fields.command.value = state.draft;
-    if (open && !handoffPanel && !step()) {
+    if (open && !handoffPanel && !recap && !step()) {
       revoke(); open = false; inspector.replaceChildren(); door.inspect(false);
     }
     if (open && handoffPanel && state.handoff?.view !== "handoff") selectProof();
@@ -642,6 +699,7 @@ export function arachnidConversation(center, inspector, door) {
     e.preventDefault(); ask(fields.command.value);
   }, {signal: events.signal});
   return {sync, close, paletteSteps, openStep, openAttempt,
+    refreshRecap() { if (open && recap) drawInspector(); },
     history: () => (state?.messages || []).map(({role, text, origin}) =>
       ({role, text: origin ? scopeName(origin) + " · " + text : text})),
     dispose() { disposed = true; lookup?.pending.abort(); lookup = null;

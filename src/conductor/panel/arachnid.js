@@ -91,6 +91,7 @@ function boot() {
       return {session, attempt: "/#" + q};
     },
     planMessage: (sessionId, text) => planning.message(sessionId, text),
+    nextStatus: (run, detail) => nextAction.status(run, detail),
     stop: () => new AbortController(),
     readAttempt: (run, node, action, controller) =>
       transport.readJson(path.atlasAttempt(run, node, action), controller),
@@ -112,6 +113,7 @@ function boot() {
     refreshRun: run => { if (current?.kind === "run" && current.id === run) readRun(current); },
     id: kind => kind + "-" + crypto.randomUUID(),
     openStep: node => scene.openStep(current?.id, node),
+    statusChanged: () => scene.refreshRecap(),
   });
   const palette = attachPalette($("palette"), {
     catalog: paletteCatalog, choose: chooseCommand, locale: () => locale,

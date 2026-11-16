@@ -197,6 +197,10 @@ export function atlasInspector(body, view, data, choice, select) {
   const panel = element("div", {role: "tabpanel", id: "atlas-tab-panel",
     className: "atlas-artifacts", "aria-labelledby": "atlas-tab-" + choice.tab});
   body.append(bar, panel);
+  atlasEvidence(panel, view, data, choice, select);
+}
+
+export function atlasEvidence(panel, view, data, choice, select) {
   if (choice.tab === "diff") atlasDiff(panel, view, data, choice, select);
   else if (choice.tab === "tests") tests(panel, view, data, choice, select);
   else {

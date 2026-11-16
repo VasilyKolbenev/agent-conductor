@@ -11,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 LIMIT = 100
 CAPPED = (
+    "src/conductor/panel/arachnid-recap.js",
+    "browser_tests/test_colossus_recap.py",
     "src/conductor/panel/arachnid-handoff.js",
     "src/conductor/panel/arachnid-handoff.css",
     "src/conductor/panel/arachnid-handoff-context.js",

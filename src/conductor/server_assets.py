@@ -45,6 +45,7 @@ _ARACHNID_FILES = (
     "arachnid.js", "arachnid-conversation.js", "arachnid-orbit.js", "arachnid-panels.js",
     "arachnid-layout.js",
     "arachnid-handoff.js", "arachnid-handoff-data.js", "arachnid-handoff-context.js",
+    "arachnid-recap.js",
     "arachnid-review-source.js", "arachnid-review-draft.js",
     "arachnid-manual-review.js",
     "arachnid-handoff.css",

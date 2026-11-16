@@ -40,10 +40,15 @@ PERMITTED_IMPORTS = {
         "./command-view.js", "./studio-i18n.js", "./studio-scene-model.js",
         "./studio-atlas-inspector.js", "./arachnid-orbit.js",
         "./arachnid-handoff-data.js", "./arachnid-handoff-context.js", "./arachnid-handoff.js",
+        "./arachnid-recap.js",
         "./arachnid-review-draft.js",
     }),
     "arachnid-handoff-data.js": frozenset({"./studio-model.js", "./desk-wizard-digest.js"}),
     "arachnid-handoff-context.js": frozenset(),
+    "arachnid-recap.js": frozenset({
+        "./command-view.js", "./studio-atlas-inspector.js", "./studio-i18n.js",
+        "./arachnid-next-view.js",
+    }),
     "arachnid-review-draft.js": frozenset({"./command-view.js"}),
     "arachnid-manual-review.js": frozenset({"./command-view.js", "./studio-model.js"}),
     "arachnid-review-source.js": frozenset({

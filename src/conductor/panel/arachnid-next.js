@@ -37,6 +37,7 @@ export function createNextAction(host, door) {
   let ctx = null, selected = "", rows = [], opened = null, draft = freshDraft(), last = [];
   let flow = makeFlow(), flowProject = null, reading = null, disposed = false;
   let generation = 0, formIntent = null;
+  let reported = null;
   function permitted() {
     return !disposed && ctx?.ready && ctx.detail?.run?.run_id === ctx.runId &&
       ctx.detail.task?.id === ctx.taskId && ctx.detail.config?.task?.id === ctx.taskId &&
@@ -159,8 +160,15 @@ export function createNextAction(host, door) {
   function render() {
     if (disposed) return;
     host.hidden = !ctx?.runId;
-    if (host.hidden) { surface.hidden = true; card.replaceChildren(); last = []; return; }
+    if (host.hidden) {
+      reported = null; surface.hidden = true; card.replaceChildren(); last = []; return;
+    }
     const next = show(), held = flow.snapshot();
+    if (!reported || reported.detail !== ctx.detail || reported.next.kind !== next.kind
+        || reported.next.name !== next.name || reported.next.why !== next.why) {
+      reported = {detail: ctx.detail, next};
+      door.statusChanged?.();
+    }
     const text = key => nextText(ctx.locale, key, next.name);
     const key = next.gate ? gateKey(next.gate) : next.kind;
     const previouslyInside = surface.contains(host.ownerDocument.activeElement);
@@ -224,5 +232,9 @@ export function createNextAction(host, door) {
   function dispose() {
     disposed = true; flow.clear(); receipts.clear(); host.replaceChildren(); ctx = null;
   }
-  return {sync, close, dispose};
+  function status(runId, detail) {
+    return ctx?.runId === runId && reported?.detail === detail && permitted()
+      ? reported.next : null;
+  }
+  return {sync, close, dispose, status};
 }
