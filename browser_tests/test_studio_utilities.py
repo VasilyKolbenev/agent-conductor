@@ -353,3 +353,96 @@ def test_unavailable_provider_read_preserves_manual_setup(chromium, tmp_path, en
             expect(panel.get_by_role("button", name="Подключить утилиту")).to_be_enabled()
         finally:
             close_context(context)
+
+
+@pytest.mark.parametrize("lang", ["ru", "en"])
+def test_custom_connection_invalid_field_is_visible_and_fixable_on_mobile(chromium, tmp_path, lang):
+    root = demo.materialize(tmp_path / "project")
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    with studio(root, "active") as (url, _):
+        context = chromium.new_context(viewport={"width": 375, "height": 740}, locale=lang)
+        page = context.new_page()
+        sent = []
+        def record(req):
+            if req.method == "POST":
+                sent.append((req.url.removeprefix(url), req.post_data_json["op"]))
+        page.on("request", record)
+        ru = lang == "ru"
+        try:
+            page.goto(url + "/#lang=" + lang)
+            page.locator("#menu").click()
+            page.locator("#attach").click()
+            panel = page.get_by_role("dialog")
+            panel.get_by_role("button", name="Своя утилита" if ru else "Custom utility").click()
+            name = panel.get_by_label("Название" if ru else "Name", exact=True)
+            identifier = panel.get_by_label("Идентификатор" if ru else "Identifier", exact=True)
+            action = "Подключить утилиту" if ru else "Connect utility"
+            add = panel.get_by_role("button", name=action)
+            identifier.fill("!?")
+            checks = [(name, "Введите название утилиты." if ru else "Enter a utility name."),
+                      (identifier, "Начните с" if ru else "Start with"),
+                      (identifier, "зарезервирован" if ru else "reserved")]
+            for field, expected in checks:
+                add.click()
+                expect(field).to_be_focused()
+                expect(field).to_have_attribute("aria-invalid", "true")
+                expect(field).to_have_accessible_description(re.compile(expected))
+                note = panel.locator("#" + field.get_attribute("aria-describedby"))
+                expect(note).to_be_in_viewport(ratio=1)
+                assert note.evaluate("""n => {
+                  const r = n.getBoundingClientRect();
+                  const d = n.closest('dialog').getBoundingClientRect();
+                  return r.top >= d.top && r.bottom <= d.bottom;
+                }""")
+                assert not sent
+                if field is name:
+                    name.fill("Чтение кода")
+                else:
+                    identifier.fill("con" if identifier.input_value() == "!?" else "review-cli")
+            expect(name).not_to_have_attribute("aria-invalid", "true")
+            expect(identifier).not_to_have_attribute("aria-invalid", "true")
+            expect(identifier).to_have_accessible_description("")
+            add.dblclick()
+            expect(panel.get_by_role("heading", name="Чтение кода", exact=True)).to_be_visible()
+            assert sent == [("/command/project/utilities", "attach")]
+        finally:
+            close_context(context)
+
+
+def test_catalog_keyboard_focus_survives_selection_and_pending_reads(chromium, tmp_path):
+    root = demo.materialize(tmp_path / "project")
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    with studio(root, "active") as (url, _):
+        context = chromium.new_context(viewport={"width": 375, "height": 740})
+        page = context.new_page()
+        try:
+            page.goto(url + "/#lang=en")
+            page.locator("#menu").click()
+            page.locator("#attach").click()
+            panel = page.get_by_role("dialog")
+            custom = panel.get_by_role("button", name="Custom utility", exact=True)
+            custom.click()
+            expect(panel.get_by_role("button", name="Connect utility")).to_be_enabled()
+            reads = []
+            page.route("**/command/quotas", lambda route: reads.append(route))
+            codex = panel.get_by_role("button", name="Codex", exact=True)
+            codex.focus()
+            with page.expect_request("**/command/quotas"):
+                codex.press("Enter")
+            expect(codex).to_be_focused()
+            page.wait_for_function("() => !!document.querySelector('#studioUtilities code')")
+            assert len(reads) == 1
+            reads.pop().fulfill(status=503)
+            expect(panel).to_contain_text("Quota cache unavailable")
+            expect(codex).to_be_focused()
+            with page.expect_request("**/command/quotas"):
+                panel.get_by_role("button", name="Refresh status").click()
+            custom.click()
+            field = panel.get_by_label("Name", exact=True)
+            field.fill("Unfinished name")
+            with page.expect_response("**/command/quotas"):
+                reads.pop().fulfill(status=503)
+            expect(field).to_be_focused()
+            expect(field).to_have_value("Unfinished name")
+        finally:
+            close_context(context)

@@ -102,7 +102,13 @@ export const UTILITY_COPY = Object.freeze({
   "utility.offline": ["The server connection is unavailable.", "Нет соединения с сервером."],
   "utility.loading": ["Reading connections…", "Читаю подключения…"],
   "utility.error": ["Could not confirm these project connections.", "Не удалось подтвердить подключения проекта."],
-  "utility.invalid": ["Use a short lowercase identifier and a name.", "Введите короткий идентификатор латиницей в нижнем регистре и название."],
+  "utility.name_required": ["Enter a utility name.", "Введите название утилиты."],
+  "utility.id_format": [
+    "Start with a–z or 0–9. Use up to 48 characters from a–z, 0–9, - and _.",
+    "Начните с a–z или 0–9. Допустимо до 48 символов из a–z, 0–9, - и _."],
+  "utility.id_reserved": [
+    "This identifier is reserved. Try a different one, such as review-cli.",
+    "Этот идентификатор зарезервирован. Выберите другой, например review-cli."],
   "utility.write_error": ["The change was not confirmed. Refresh exchanges before continuing.", "Изменение не подтверждено. Обновите список обменов."],
   "utility.pending_write": ["Saving…", "Сохраняю…"],
   "utility.refresh": ["Refresh exchanges", "Обновить обмены"],

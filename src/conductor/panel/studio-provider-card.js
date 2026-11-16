@@ -50,15 +50,12 @@ function roleState(row) {
   return "role_refused";
 }
 
-export function subscriptionCard(main, id, facts, tr, locale, active, copy) {
-  if (!active) {
-    main.append(element("p", {text: tr("setup_active")}));
-    return;
-  }
+export function providerEvidence(id, facts, tr, locale) {
+  const area = element("div", {className: "utility-provider-evidence"});
   if (facts) {
     const row = facts.providers.find(p => p.providerId === id);
     const snapshot = subscriptionSnapshot(facts.quotas, row);
-    main.append(element("dl", {className: "utility-facts"}, [
+    area.append(element("dl", {className: "utility-facts"}, [
       fact(tr("install"), tr(row ? "install_" + row.availability : "no_catalog")),
       fact(tr("login"), tr(row ? loginState(row, snapshot) : "no_catalog")),
       fact(tr("quota"), tr(facts.quotas ? quotaState(snapshot) : "cache_unavailable")),
@@ -66,12 +63,21 @@ export function subscriptionCard(main, id, facts, tr, locale, active, copy) {
     ]));
     if (snapshot?.source) {
       const names = new Map(facts.quotas.providers.map(p => [p.provider_id, p.display_name]));
-      main.append(element("details", {}, [element("summary", {text: tr("quota_details")}),
+      area.append(element("details", {}, [element("summary", {text: tr("quota_details")}),
         snapshotCard(snapshot, names, {locale, hideStaleQuotas: true})]));
     }
   } else {
-    main.append(element("p", {text: tr("reading_facts")}));
+    area.append(element("p", {text: tr("reading_facts")}));
   }
+  return area;
+}
+
+export function subscriptionCard(main, id, facts, tr, locale, active, copy) {
+  if (!active) {
+    main.append(element("p", {text: tr("setup_active")}));
+    return;
+  }
+  main.append(providerEvidence(id, facts, tr, locale));
   const command = "& $conduct providers --dir $project --subscription " + id;
   const guide = locale === "ru" ? "first-run-v1.md#где-взять-закреплённые-сборки"
     : "first-run-v1.en.md#where-to-get-the-pinned-builds";

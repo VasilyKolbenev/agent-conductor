@@ -1,7 +1,8 @@
 "use strict";
 import {element, field} from "./command-view.js";
 import {localize} from "./studio-i18n.js";
-import {hasSubscriptionSetup, readProviderFacts, subscriptionCard} from "./studio-provider-card.js";
+import {hasSubscriptionSetup, providerEvidence, readProviderFacts,
+  subscriptionCard} from "./studio-provider-card.js";
 
 const builtin = [
   ["claude-code", "Claude Code"], ["codex", "Codex"], ["grok-build", "Grok Build"], ["kimi-code", "Kimi Code"],
@@ -12,7 +13,11 @@ const isDeepseekChat = u => u?.utility_id === deepseekChat.utility_id
   && u.label === deepseekChat.label && u.mode === deepseekChat.mode;
 const idPattern = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
-const validId = value => typeof value === "string" && idPattern.test(value) && !reserved.test(value);
+function idProblem(value) {
+  if (typeof value !== "string" || !idPattern.test(value)) return "id_format";
+  return reserved.test(value) ? "id_reserved" : "";
+}
+const validId = value => !idProblem(value);
 const fits = value => new TextEncoder().encode(value).length <= 8192;
 const modes = ["manual", "stdio-v1"];
 const states = ["pending", "claimed", "answered", "unknown"];
@@ -59,7 +64,9 @@ export function utilityDrawer(dialog, door) {
     if (providerFacts || !hasSubscriptionSetup(selected) || !writable()) return;
     const result = await readProviderFacts(door);
     if (stamp !== factsEpoch || !dialog.open || !writable()) return;
-    providerFacts = result; draw();
+    providerFacts = result;
+    dialog.querySelector(".utility-provider-evidence")?.replaceWith(
+      providerEvidence(selected, result, tr, door.locale()));
   }
 
   async function refresh() {
@@ -136,9 +143,34 @@ export function utilityDrawer(dialog, door) {
       element("p", {text: tr("stopped")}), element("code", {text: "conduct providers --dir ."}),
       element("p", {text: tr("deepseek_provider", {id})}));
   }
+  function checkedField(form, key, control, issue) {
+    const note = element("small", {className: "utility-error", id: "utility-error-" + key,
+      hidden: ""});
+    form.append(field(tr(key), control), note);
+    function update() {
+      const reason = issue();
+      note.textContent = reason ? tr(reason) : "";
+      note.hidden = !reason;
+      if (reason) {
+        control.setAttribute("aria-invalid", "true");
+        control.setAttribute("aria-describedby", note.id);
+      } else {
+        control.removeAttribute("aria-invalid");
+        control.removeAttribute("aria-describedby");
+      }
+      return !reason;
+    }
+    control.addEventListener("input", () => { if (!note.hidden) update(); });
+    return () => {
+      if (update()) return true;
+      control.focus();
+      note.scrollIntoView({block: "nearest"});
+      return false;
+    };
+  }
   function connect(main) {
     main.append(heading(tr("custom")));
-    const form = element("form", {className: "utility-form"});
+    const form = element("form", {className: "utility-form", novalidate: ""});
     const name = input("input", attachment.label, value => { attachment.label = value; }, {maxlength: "80", required: ""});
     const id = input("input", attachment.id, value => { attachment.id = value; },
       {maxlength: "48", required: "", placeholder: "my-cli"});
@@ -153,10 +185,13 @@ export function utilityDrawer(dialog, door) {
     });
     const add = element("button", {type: "submit", text: tr("attach")});
     add.disabled = !writable();
-    form.append(field(tr("name"), name), field(tr("id"), id), field(tr("mode"), mode), hint, add);
+    const nameValid = checkedField(form, "name", name,
+      () => name.value.trim() ? "" : "name_required");
+    const idValid = checkedField(form, "id", id, () => idProblem(id.value));
+    form.append(field(tr("mode"), mode), hint, add);
     form.addEventListener("submit", event => {
       event.preventDefault();
-      if (!validId(attachment.id) || !attachment.label.trim()) { tell("invalid"); return; }
+      if (!nameValid() || !idValid()) return;
       save({op: "attach", utility_id: attachment.id, label: attachment.label.trim(), mode: attachment.mode});
     });
     main.append(form);
@@ -212,10 +247,15 @@ export function utilityDrawer(dialog, door) {
   }
   function draw() {
     if (!dialog.open) return;
+    const focusedOption = dialog.contains(document.activeElement)
+      ? document.activeElement.dataset.utilityOption : null;
+    let restoreOption;
     const nav = element("nav", {className: "utility-options", "aria-label": tr("title")});
     const main = element("section", {className: "utility-workspace"});
     function option(key, label) {
       const b = btn(label, () => choose(key));
+      b.dataset.utilityOption = key;
+      if (key === focusedOption) restoreOption = b;
       b.setAttribute("aria-pressed", String(key === selected)); nav.append(b);
     }
     nav.append(element("h3", {text: tr("builtin")}));
@@ -240,6 +280,7 @@ export function utilityDrawer(dialog, door) {
     dialog.replaceChildren(top, element("div", {className: "utility-layout"}, [nav, main]),
       element("footer", {}, [element("span", {role: "status", text: message ? tr(message) : ""}),
         btn(tr(refreshLabel), refresh, writing || phase === "loading")]));
+    restoreOption?.focus({preventScroll: true});
     lastConnected = door.connected();
     renderedState = door.locale() + "|" + lastConnected;
   }

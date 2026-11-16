@@ -18,6 +18,8 @@
   padding: 7px 9px; background: var(--sunk); font: 12px/1.5 var(--mono);
   white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .utility-form, .utility-workspace label { display: grid; gap: 6px; }
+.utility-error { color: var(--ink); font-weight: 600; }
+.utility-form [aria-invalid="true"] { outline: 2px solid currentColor; outline-offset: 1px; }
 .utility-workspace label { margin: 9px 0; }
 .utility-workspace textarea, .utility-workspace input, .utility-workspace select {
   width: 100%; max-width: 100%; box-sizing: border-box; }
