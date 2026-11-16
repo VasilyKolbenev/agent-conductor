@@ -11,6 +11,7 @@ from pathlib import Path
 from conductor.command.artifacts import ArtifactDocument
 from conductor.command.contracts import DecisionReceipt, RunEnvelope
 from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.long_path import extended
 from conductor.command.run_closing import close_if_terminal
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.task_contracts import TaskRecord
@@ -69,8 +70,9 @@ def create(project: Path, first: str, second: str, checks: list[tuple[str, str]]
     project = Path(project).absolute()
     if os.path.lexists(project):
         raise FileExistsError(f"Проект уже существует: {project}")
-    with tempfile.TemporaryDirectory(prefix=".pilot-", dir=project.parent) as stage:
-        root = Path(stage) / project.name
+    with tempfile.TemporaryDirectory(prefix=".pilot-", dir=extended(project.parent)) as stage:
+        # Cleanup addresses deep receipts. Admission still measures the ordinary project path.
+        root = project.parent / Path(stage).name / project.name
         scaffold_default(root)
         for task in tasks:
             TaskStore(root).create_task(task)

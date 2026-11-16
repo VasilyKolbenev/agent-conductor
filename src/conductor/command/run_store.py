@@ -54,6 +54,7 @@ from .graph_causality import (
     standing_terminal,
 )
 from .graph_definition import GraphDefinition
+from .long_path import extended
 from .run_files import (  # noqa: F401 -- re-exported under their old names
     _append_bytes,
     _canonical_bytes,
@@ -74,7 +75,7 @@ from .store_errors import (  # noqa: F401 -- re-exported under their old names
     StoreError,
 )
 from ..ownership import data_root, owned_write
-from .path_admission import admit_directory
+from .path_admission import admit_directory, admit_name
 from .contracts import (
     ActionProposal,
     ActionRequest,
@@ -657,7 +658,10 @@ class RunStore:
 
     def _ensure_decision_file(
             self, decision: DecisionReceipt, wrapper: Mapping[str, Any]) -> None:
-        path = self.run_path(decision.run_id) / "decisions" / f"{decision.receipt_id}.json"
+        name = f"{decision.receipt_id}.json"
+        if os.name == "nt":
+            admit_name(name, "decision receipt")
+        path = Path(extended(self.run_path(decision.run_id) / "decisions")) / name
         payload = _canonical_bytes(wrapper)
         try:
             _exclusive_bytes(path, payload)
@@ -690,7 +694,7 @@ class RunStore:
             self, root: Path, run_id: str,
             records: list[StoredRecord]) -> tuple[list[DecisionReceipt], set[str]]:
         """Validate every exclusive receipt file and return the ones with no journal line."""
-        decisions = root / "decisions"
+        decisions = Path(extended(root / "decisions"))
         if not decisions.is_dir():
             raise CorruptRun("decisions directory is missing")
         by_id = {

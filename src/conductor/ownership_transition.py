@@ -8,6 +8,7 @@ import secrets
 
 from . import boot_witness, ownership_boot
 from .boot_witness import BootRefused
+from .command.long_path import extended
 from .ownership_records import (ACTIVE, ANCHOR, HOME, LEGACY, RECORDS, TREE,
     OwnerRefused, canonical, chain, digest, exclusive, fence_bytes, identity,
     plain, publish, state, validate_live)
@@ -27,6 +28,7 @@ def _hold(stack, path, **options):
 
 def _inventory(directory):
     """A bounded exact default-stream inventory, not proof that no writer exists."""
+    directory = Path(extended(directory))
     found, size = [], 0
     for parent, directories, files in os.walk(directory, followlinks=False):
         for name in sorted(directories):
