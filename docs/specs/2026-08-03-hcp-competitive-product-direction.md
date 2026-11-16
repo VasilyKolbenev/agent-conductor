@@ -555,7 +555,7 @@ complete the wow path in §4.11. Speed comes from parallel delivery, a narrow
 Policy mode, two deep adapters before breadth, and cutting polish before
 safety. It is not permission to replace verified behavior with decorative
 controls, fake integrations, or unreviewed autonomy. The binding execution
-plan is `docs/plans/2026-08-11-december-command-v2-four-day-strike.md`.
+plan is preserved in the [four-day implementation plan](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/plans/2026-08-11-december-command-v2-four-day-strike.md).
 
 The strike is successful only if it ships one end-to-end system containing:
 

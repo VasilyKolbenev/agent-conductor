@@ -253,7 +253,7 @@ checks but record the real-execution steps as blocked, never passed. Facts of th
   accepted Windows subscription run, Grok Build 1.0.13 read both files on Diagnose. Codex
   0.164.0 completed Goal, Identify, Design and Do. Three unittest cases passed before a
   separate Codex instance reviewed the patch. The owner accepted the result.
-  [Accepted run and evidence](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+  [Accepted run and evidence](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 - Grok has a read-only role. Claude Code 2.1.239 completed one subscription Goal. The public
   sign-in path for Claude is under review. Kimi Code 0.38.0 has an offline session check;
   a live subscription task is still outstanding.

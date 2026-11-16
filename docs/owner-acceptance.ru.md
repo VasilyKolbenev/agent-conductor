@@ -266,7 +266,7 @@ Desk предлагает остановить сервер проекта и о
   В принятом цикле на Windows по подпискам Grok Build 1.0.13 прочитал оба файла на Diagnose.
   Codex 0.164.0 выполнил Goal, Identify, Design и Do. Три теста unittest прошли до передачи
   правки отдельному проверяющему Codex. Владелец принял результат.
-  [Отчёт и доказательства](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+  [Отчёт и доказательства](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 - Grok доступен для чтения. Claude Code 2.1.239 завершил один Goal по подписке; способ
   подключения Claude для публичного выпуска ещё проверяется. Для Kimi Code 0.38.0
   подтверждена офлайн-сессия. Живая задача по подписке остаётся открытой.

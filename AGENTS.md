@@ -1,20 +1,17 @@
-# December Command: working context
+# Working on Arachnid Studio
 
-For every task, read `docs/recovery/2026-10-20/WORKING-STANDARD.md`.
-It is the single source for roles, task workflow, evidence, review, Windows setup,
-safety, reporting and release rules, adopted by the owner on 2026-10-23.
+Read the [working standard](docs/recovery/2026-10-20/WORKING-STANDARD.md) for every task.
+It governs roles, changes, evidence, independent review, safety and release.
 
-Before planning product work, read `docs/v1-v2-scope.md` and its 2026-10-21 owner
-clarification. This is required before H5, R5, provider or acceptance work.
+Before editing, check the current branch and working tree. Preserve other contributors’ changes.
+Read the [contributor guide](CONTRIBUTING.md) ([русский](CONTRIBUTING.ru.md)), the code and tests
+for the behavior you are changing, and the task’s approved design and decisions.
+Use the standard’s process for recording new decisions, tests and handoffs.
 
-Before changing behavior, read `CONTRIBUTING.md` or `CONTRIBUTING.ru.md`, then the
-relevant code and tests. For the assigned task, read its TASK, DESIGN, REPORT and
-handoff under `docs/recovery/2026-10-20/tasks/`; consult `OPEN-DECISIONS.md` beside it.
+For provider, workflow and acceptance work, use the [product contract](docs/v1-v2-scope.md)
+and [first-run guide](docs/first-run-v1.en.md). For a release, follow the
+[release checks](docs/release-smoke.md) and [owner acceptance](docs/owner-acceptance.md).
 
-When starting or recovering a session, read `LOCAL-SETUP.md`, `BASELINE.md`,
-`CONTINUATION-PLAN.md` and `CI-BASELINE-NOTES.md` under `docs/recovery/2026-10-20/`.
-These reconstruct evidence after laptop loss; they are not the missing original chats.
-Check dated claims against current Git state and later task reports.
-
-For Claude Code handoff context, read `CLAUDE.md` and
-`docs/recovery/2026-10-20/CLAUDE-CODE-HANDOFF.md` with the current task and plan.
+When reconstructing an earlier decision or test run, consult the
+[archived task records and handoffs](https://github.com/VasilyKolbenev/agent-conductor/tree/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20).
+Check dated findings against the current code and release evidence.

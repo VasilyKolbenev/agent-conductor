@@ -13,5 +13,7 @@ history above comes from the separate Studio demo builder.
 [Packaged fixture](../src/conductor/_demo/conductor) ·
 [Studio demo](../src/conductor/command/demo_scenario.py)
 
-For the Windows download that lets a colleague supply two tasks and reuse a review
-procedure in Colossus chat, see the [two-task pilot](../distribution/windows-two-task/README.md).
+The Windows ZIP opens the Codex + Grok example on first launch. Run `.\START.cmd new` for a second walkthrough. You record the checks from
+a finished task, then ask Colossus to recall them for the next one. You can inspect the
+source and edit the proposed plan in chat. [Download Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) ·
+[Two-task instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).

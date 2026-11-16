@@ -12,7 +12,7 @@
 
 ![The orbit in Arachnid Studio with Do selected and the attempt’s evidence open on the right.](docs/assets/studio-orbit-en.png)
 
-On a real Windows run, Grok read the counter and its tests to diagnose why failed runs were counted as successes. Codex fixed `count_succeeded`. Three unit tests passed before a separate Codex instance reviewed the patch. The operator approved implementation and accepted the result. [Run record](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+On a real Windows run, Grok read the counter and its tests to diagnose why failed runs were counted as successes. Codex fixed `count_succeeded`. Three unit tests passed before a separate Codex instance reviewed the patch. The operator approved implementation and accepted the result. [Run record](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
 ## Run Arachnid
 
@@ -52,7 +52,7 @@ Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the
 | Harness | What has been verified |
 | --- | --- |
 | **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
-| Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The setup guide covers manual handoff to the official CLI. [Run record](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
+| Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The setup guide covers manual handoff to the official CLI. [Run record](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
 | Kimi Code CLI | An offline session opened. A live subscription task is pending. |
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
@@ -61,7 +61,7 @@ You can add GitHub Copilot CLI or Cursor Agent for manual handoff. [Connect your
 
 ## Explore the project
 
-[Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
+[Architecture](docs/architecture.md) · [Documentation](docs/index.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
 The Python package is `agent-conductor` and the command is `conduct`. For local reading, see `docs/index.md`. [Documentation](docs/index.md).
 

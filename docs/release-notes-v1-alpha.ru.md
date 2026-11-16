@@ -23,7 +23,7 @@ English version: [release-notes-v1-alpha.md](release-notes-v1-alpha.md).
 В частном офлайн-демо коллега может открыть завершённый Далио и увидеть два файла,
 которые получил проверяющий. Имена взяты из зафиксированного результата, поэтому
 последующая правка рабочей папки не меняет список. Учебные ответы заранее записаны.
-[Проверка результата в интерфейсе](recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
+[Проверка результата в интерфейсе](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
 
 | Харнесс | Что подтверждено для текущего подписочного пути |
 | --- | --- |
@@ -32,7 +32,7 @@ English version: [release-notes-v1-alpha.md](release-notes-v1-alpha.md).
 | Grok Build 1.0.13 | Диагноз по подписке прошёл учебную приёмку G6. В совместном цикле Diagnose также вернул результат. Доступен review только для чтения. |
 | Kimi Code 0.38.0 | В Windows AppContainer нативный CLI открыл сессию с тестовым входом без сети. Проверка квоты реального аккаунта и задача по подписке ещё предстоят. |
 
-[Принятый цикл Codex и Grok](recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Приёмка Grok](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Офлайн-проверка Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
+[Принятый цикл Codex и Grok](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Приёмка Grok](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Офлайн-проверка Do](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
 
 Для публикации остаются приёмка четырёх подписочных путей на чистой установке,
 wheel финального CI и приёмка владельца. Ниже сохранены сентябрьские измерения
