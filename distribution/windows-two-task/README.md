@@ -6,7 +6,9 @@ to find that procedure. Open its source, change a step and choose a reviewer in 
 The pilot runs on loopback with the wheel in the ZIP. Both tasks stay on the colleague's
 computer. Draft edits last for the browser tab.
 
-For Windows with Python 3.11 or 3.12, extract the ZIP and open `START.cmd`. Follow the
+On Windows with Python 3.11 or 3.12, extract the ZIP. On a first installation, open `START.cmd`.
+If you used Pilot 2, open PowerShell in the extracted folder and use
+`.\START.cmd --work-parent "$env:USERPROFILE\ArachnidPilot3"` each time to open this release’s task pair. Follow the
 [colleague walkthrough in Russian](START-HERE.txt). For the published [Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3),
 use the [download instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt)
 to verify the ZIP. The copy inside that archive still names the Pilot 2 ZIP.

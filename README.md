@@ -20,7 +20,7 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-**Windows · try two of your own tasks.** Download the [Windows ZIP][zip] and its [SHA-256 checksum][checksum]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
+**Windows · try two of your own tasks.** Download the [Windows ZIP][zip] and its [SHA-256 checksum][checksum]. Extract the entire ZIP. On a first installation, double-click **`START.cmd`**. If you used Pilot 2, open PowerShell in the extracted folder and use `.\START.cmd --work-parent "$env:USERPROFILE\ArachnidPilot3"` each time to keep the two releases’ tasks separate. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
