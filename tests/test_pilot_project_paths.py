@@ -10,7 +10,7 @@ import pytest
 
 from conductor.command import run_store
 from conductor.command.long_path import extended
-from conductor.command.path_admission import WindowsNameError
+from conductor.command.path_admission import WindowsNameError, WindowsPathError
 from conductor.command.run_store import RunStore
 from conductor.command.task_store import TaskStore
 from tests.test_command_run_store import CONFIG, a_decision, a_run
@@ -20,23 +20,30 @@ CREATE = Path(__file__).resolve().parents[1] / "distribution/windows-two-task/fi
 
 
 @contextmanager
-def personal_project(deep):
-    with TemporaryDirectory(dir=extended(gettempdir())) as temporary:
-        parent = Path(gettempdir()) / Path(temporary).name
-        if deep:
-            prefix = "Проверка "
-            width = 142 - len(str(parent).encode("utf-16-le")) // 2 - 1
-            if width < len(prefix):
-                pytest.skip("temporary base exceeds the controlled Windows admission boundary")
-            parent = parent / (prefix + "я" * (width - len(prefix)))
-            assert len(str(parent).encode("utf-16-le")) == 142 * 2
-            parent.mkdir()
-        yield parent / "personal"
+def personal_project(deep, pytest_base):
+    # A runner may export RUNNER~1 as TEMP. Admission measures the expanded path.
+    for base in dict.fromkeys((Path(gettempdir()).resolve(), pytest_base.resolve())):
+        with TemporaryDirectory(dir=extended(base)) as temporary:
+            parent = base / Path(temporary).name
+            parent_units = len(str(parent).encode("utf-16-le")) // 2
+            if parent_units >= 142:
+                continue
+            if deep:
+                prefix = "Проверка "
+                width = 142 - parent_units - 1
+                if width < len(prefix):
+                    continue
+                parent = parent / (prefix + "я" * (width - len(prefix)))
+                parent.mkdir()
+                assert len(str(parent.resolve()).encode("utf-16-le")) == 142 * 2
+            yield parent / "personal"
+            return
+    pytest.fail("The path fixture needs a shorter pytest --basetemp for its 142-unit parent.")
 
 
 @pytest.mark.parametrize("deep", [False, True], ids=["short", "long"])
-def test_pilot_reopens_both_tasks_and_the_same_accepted_procedure(deep):
-    with personal_project(deep) as project:
+def test_pilot_reopens_both_tasks_and_the_same_accepted_procedure(deep, tmp_path_factory):
+    with personal_project(deep, tmp_path_factory.getbasetemp()) as project:
         run, second = run_path(str(CREATE))["create"](
             project, "Первая", "Вторая", [("Сверить сумму", "Итого 20")], "Василий", accepted=True)
         store = RunStore(project)
@@ -56,9 +63,10 @@ def test_pilot_reopens_both_tasks_and_the_same_accepted_procedure(deep):
         assert RunStore(project).read(run) == saved
 
 
-def test_interrupted_publish_keeps_the_winning_project_and_removes_its_private_stage(monkeypatch):
+def test_interrupted_publish_keeps_the_winning_project_and_removes_its_private_stage(
+        monkeypatch, tmp_path_factory):
     rename = Path.rename
-    with personal_project(True) as project:
+    with personal_project(True, tmp_path_factory.getbasetemp()) as project:
         def another_publisher_wins(source, target):
             if target == project:
                 target.mkdir()
@@ -72,6 +80,18 @@ def test_interrupted_publish_keeps_the_winning_project_and_removes_its_private_s
         assert list(project.parent.iterdir()) == [project]
         assert [p.name for p in project.iterdir()] == ["winner.txt"]
         assert (project / "winner.txt").read_bytes() == b"existing project"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows creation budgets")
+def test_pilot_refuses_a_genuinely_over_budget_root_and_removes_its_stage(tmp_path_factory):
+    with personal_project(True, tmp_path_factory.getbasetemp()) as admitted:
+        parent = admitted.parent / "ЯЯ"
+        parent.mkdir()
+        assert len(str(parent.resolve()).encode("utf-16-le")) == 145 * 2
+        with pytest.raises(WindowsPathError, match="run_id exceeds the Windows path budget"):
+            run_path(str(CREATE))["create"](
+                parent / "personal", "One", "Two", [("Check", "Seen")], "Owner", accepted=True)
+        assert list(parent.iterdir()) == []
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows device-name semantics")
