@@ -8,7 +8,11 @@
 | --- | --- | --- |
 | Two-task ZIP, Studio and CLI. Live Codex + Grok on personal subscriptions. | Studio and CLI from the Python wheel. Local demo. | Studio and CLI from the same wheel. Local demo. |
 
-![A completed five-step orbit: Grok diagnosed the problem, Codex implemented the fix, and the inspector links the two changed files, three tests and independent verdict.](docs/assets/colossus-pilot3-recap.png)
+**The Colossus orbit · design preview**
+
+![Colossus at the center, surrounded by five stages. Grok handles diagnosis and Codex handles the other four stages.](docs/assets/colossus-orbit/kolos-balanced-guardian.png)
+
+[View the completed Codex + Grok run in the current Studio (screenshot)](docs/assets/colossus-pilot3-recap.png).
 
 On a real Windows run, Grok read the counter and its tests to diagnose why failed runs were counted as successes. Codex fixed `count_succeeded`. Three unit tests passed before a separate Codex instance reviewed the patch. The operator approved implementation and accepted the result. [Run record](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
@@ -59,7 +63,7 @@ For example, Pilot 1 registered GitHub Copilot CLI and Cursor Agent for manual h
 
 ## Explore the project
 
-**Orbit design preview.** The screenshot above shows the current Arachnid Studio release. The next design gives Colossus four visible states and the harness roles distinct planets. The artwork is available for review ahead of implementation. [View the proposed orbit and its four states](docs/assets/colossus-orbit/README.md).
+In the orbit design, Colossus can wait, think, hand off a task and receive a result. [See the four states](docs/assets/colossus-orbit/README.md).
 
 [Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
