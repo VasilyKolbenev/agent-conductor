@@ -213,12 +213,8 @@ h1 { font-size:clamp(25px,2.5vw,38px); line-height:1.14; font-weight:590;
 .stage[data-guardian=sending] .core::after,.stage[data-guardian=receiving] .core::after {
   content:""; position:absolute; width:6px; height:6px; top:65%; right:4%; border-radius:50%;
   background:#c8ffef; box-shadow:0 0 8px 2px #91eedb }
-@media(prefers-reduced-motion:no-preference) {
-  .stage[data-guardian=sending] .core::after { animation:orbit-handoff 1.8s ease-out 2 }
-  .stage[data-guardian=thinking] .core { animation:orbit-think 2s ease-in-out 2 }
-}
-@keyframes orbit-handoff { to { transform:translate(18px,-8px); opacity:0 } }
-@keyframes orbit-think { 50% { transform:translate(-50%,-53%) } }
+.stage[data-guardian=sending] .core::after { width:15px; height:4px; right:-3%; top:58%;
+  border-radius:80%; transform:rotate(-22deg); background:linear-gradient(90deg,transparent,#c8ffef) }
 .node { position:absolute; width:max-content; min-width:42px; height:38px; padding:0;
   transform:translate(-50%,-50%); display:grid; place-items:center; border-radius:8px; z-index:1 }
 .node:hover { background:transparent } .node:hover .node-label { color:var(--ink) }
