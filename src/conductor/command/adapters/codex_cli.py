@@ -209,6 +209,7 @@ from .deep_commands import PATCH_PROFILE
 from .deep_contracts import DeepProtocol
 from .codex_relay import AUTH_STORE_ARGV, CODEX_MCP_CREDENTIALS, CODEX_RELAY
 from .relay_env import CODEX_ACCESS_ONLY_ENV
+from .harness_profile import WindowsMachinePolicy, WindowsSubscriptionInstall
 from .harness_workspace import (
     HOME_LEAF_ABSENT,
     HOME_LEAF_EMPTY,
@@ -505,19 +506,7 @@ class CodexCliError(HeadlessCliError):
 
 def codex_pin(executable: str, env_allow: tuple[str, ...] = (), *,
               auth: str = "api_key", auth_home: str = "") -> ExecutablePin:
-    """Codex CLI's pin: ONE absolute path, and Codex CLI's own refusal type.
-
-    The login pair is carried here as well as by the factory next door, so the
-    two ways of building this provider's pin cannot disagree about which login
-    it was given.
-
-    One, not two. The npm package installs a Node shim that spawns a vendored
-    native `codex.exe`, and an operator may pin either that binary or one from a
-    release archive; both are a single executable this build puts nothing in
-    front of. The shim is a JavaScript file and pinning IT would be pinning the
-    interpreter shape, which this provider is not -- so what an operator pins is
-    the binary the shim would have run.
-    """
+    """Pin the native executable from npm or a release and its dedicated login."""
     return ExecutablePin(
         executable=executable, error=CodexCliError, env_allow=env_allow,
         auth=auth, auth_home=auth_home)
@@ -527,6 +516,14 @@ class CodexCliTransport(ServiceMetadata, PatchDispatch, ArtifactAwareTransport):
     """Run one Codex CLI task per authorized action, and prove nothing more."""
 
     profile = CODEX_PROFILE
+    windows_subscription = WindowsSubscriptionInstall(
+        executable=("node_modules/@openai/codex-win32-x64/vendor/"
+                    "x86_64-pc-windows-msvc/bin/codex.exe"),
+        inventory="sha256:3acf81c6a8973c3eec29bafdda4cd9dd7b06f7721bb7db2ade6604b3a9b516dd",
+        config_forms=({},),
+        machine_policy=WindowsMachinePolicy(
+            ("OpenAI/Codex/config.toml", "OpenAI/Codex/requirements.toml"),
+            r"SOFTWARE\Policies\OpenAI\Codex", "External Codex machine configuration is present."))
     error = CodexCliError
     review_enabled = True
     #: MEASURED live (28.09.2026): the stderr progress log passed 16 KiB; the answer is stdout.

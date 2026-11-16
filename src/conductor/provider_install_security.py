@@ -61,19 +61,19 @@ def acl_allows(facts, allowed, *, ancestor=False, private=False):
     return True
 
 
-def _external_codex():
+def _external_machine_configuration(policy):
     import winreg
     program_data = Path(os.environ.get("ProgramData", ""))
     if not program_data.is_absolute():
         raise OSError("The machine's ProgramData directory could not be established.")
-    for name in ("config.toml", "requirements.toml"):
+    for relative in policy.program_data_files:
         try:
-            (program_data / "OpenAI" / "Codex" / name).lstat()
+            (program_data / relative).lstat()
         except FileNotFoundError:
             continue
         return True
     try:
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Policies\OpenAI\Codex",
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, policy.registry_key,
                             access=winreg.KEY_READ | winreg.KEY_WOW64_64KEY):
             return True
     except FileNotFoundError:
@@ -103,7 +103,7 @@ def verify_login_directory(home):
                 raise OSError("An entry in the dedicated login has unverified ownership or access.")
 
 
-def verify_install(product, install, kind):
+def verify_install(product, install, machine_policy):
     from .command.adapters import _winlaunch
     allowed = _allowed(_winlaunch)
     protected = False
@@ -131,5 +131,5 @@ def verify_install(product, install, kind):
                     raise OSError("Unverified ownership or write access inside the installation.")
                 if folder:
                     pending.append(path)
-    if kind == "codex" and _external_codex():
-        raise OSError("External Codex machine configuration is present.")
+    if machine_policy is not None and _external_machine_configuration(machine_policy):
+        raise OSError(machine_policy.refusal)

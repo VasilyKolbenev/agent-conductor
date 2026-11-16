@@ -269,6 +269,12 @@ def login_hint(protocol: str) -> tuple[str, tuple[str, ...]] | None:
     return None
 
 
+def reviewed_subscription_cards() -> tuple[str, ...]:
+    """Selectable Windows setup cards, in catalog order."""
+    return tuple(entry.provider_id for entry in PROVIDER_CATALOG.values()
+                 if getattr(entry.adapter_class, "windows_subscription", None) is not None)
+
+
 def has_login_relay(provider_id: str) -> bool:
     """Whether a catalogued harness runs a task on a subscription login by a relay.
 
