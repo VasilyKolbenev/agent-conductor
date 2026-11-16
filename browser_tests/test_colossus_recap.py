@@ -155,3 +155,38 @@ def test_recap_refuses_proof_returned_for_a_different_attempt(chromium, archived
         assert intercepted == ["another-attempt"]
     finally:
         close_context(context)
+
+
+def test_switching_session_discards_a_late_recap_read(chromium, atlas_url):
+    context = chromium.new_context(viewport={"width": 1280, "height": 850})
+    try:
+        page = context.new_page()
+        # A response can arrive after abort. Hold only the first read at the network boundary.
+        page.add_init_script("""const read = window.fetch.bind(window);
+            window.fetch = (url, options) => String(url).endsWith('/actions/action-first-2')
+              ? new Promise(done => { window.finishFirst = data =>
+                done(new Response(JSON.stringify(data),
+                  {headers: {'Content-Type':'application/json'}})); })
+              : read(url, options);""")
+        page.route("**/actions/action-second-2", lambda route: route.fulfill(
+            json=evidence("action-second-2", run="second")))
+        page.goto(atlas_url + "/#session=first&lang=en")
+        expect(page.locator('#orbitHere [data-step="repair-counter"]')).to_be_visible()
+        ask(page, "While I was away, what changed?")
+        page.wait_for_function("typeof window.finishFirst === 'function'")
+        page.locator('[data-session="run/second"]').click()
+        expect(page.locator("#messages .msg.user")).to_have_count(0)
+        expect(page.locator('#orbitHere [data-step="repair-counter"]')).to_be_visible()
+        ask(page, "Catch me up")
+        panel = page.locator("#inspection")
+        panel.locator('[data-recap-open="diff"]').click()
+        expect(panel).to_contain_text("+new-action-second-2")
+        page.evaluate("data => window.finishFirst(data)", evidence("action-first-2"))
+        page.evaluate("() => new Promise(requestAnimationFrame)")
+        expect(panel.locator("[data-recap]")).to_have_attribute(
+            "data-recap-attempt", "attempt-action-second-2")
+        expect(panel).to_contain_text("+new-action-second-2")
+        expect(panel).not_to_contain_text("action-first-2")
+        expect(page.locator("#messages")).not_to_contain_text("action-first-2")
+    finally:
+        close_context(context)
