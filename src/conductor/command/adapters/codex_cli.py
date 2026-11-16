@@ -209,7 +209,6 @@ from .deep_commands import PATCH_PROFILE
 from .deep_contracts import DeepProtocol
 from .codex_relay import AUTH_STORE_ARGV, CODEX_MCP_CREDENTIALS, CODEX_RELAY
 from .relay_env import CODEX_ACCESS_ONLY_ENV
-from .harness_profile import WindowsMachinePolicy, WindowsSubscriptionInstall
 from .harness_workspace import (
     HOME_LEAF_ABSENT,
     HOME_LEAF_EMPTY,
@@ -225,6 +224,8 @@ from .headless_cli import (
     ExecutablePin,
     HarnessProfile,
     HeadlessCliError,
+    WindowsMachinePolicy,
+    WindowsSubscriptionInstall,
     _version_token,
 )
 from .artifact_transport import ArtifactAwareTransport, REVIEW_CAPABILITY
