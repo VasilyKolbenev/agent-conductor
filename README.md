@@ -2,7 +2,7 @@
 
 **Give Colossus one goal and put a team of coding harnesses to work on it.** In Arachnid Studio, one tool can investigate a problem, another can change the code, and a separate instance can review the result. Agree on roles, a budget and approval points in the local Studio. Once you start the workflow, the team passes results between steps until it reaches a decision or a limit.
 
-[**Download Pilot 3**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
+[**Download Arachnid Studio**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
 
 | Windows | Linux (tested on Ubuntu) | macOS |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-**Windows · try two of your own tasks.** Download the `Arachnid-Windows-Pilot-3.zip` and the SHA-256 file from [Pilot 3][release]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
+**Windows · try two of your own tasks.** Download the [Windows ZIP][zip] and its [SHA-256 checksum][checksum]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
@@ -50,7 +50,7 @@ Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the
 | Harness | What has been verified |
 | --- | --- |
 | **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
-| Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The pilot walkthrough supports manual handoff to the official CLI. [Run record](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
+| Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The setup guide covers manual handoff to the official CLI. [Run record](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
 | Kimi Code CLI | An offline session opened. A live subscription task is pending. |
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
@@ -59,15 +59,17 @@ For example, Pilot 1 registered GitHub Copilot CLI and Cursor Agent for manual h
 
 ## Explore the project
 
-**Orbit design preview.** The screenshot above shows the shipped Pilot 3. The next design gives Colossus four visible states and the harness roles distinct planets. The artwork is available for review ahead of implementation. [View the proposed orbit and its four states](docs/assets/colossus-orbit/README.md).
+**Orbit design preview.** The screenshot above shows the current Arachnid Studio release. The next design gives Colossus four visible states and the harness roles distinct planets. The artwork is available for review ahead of implementation. [View the proposed orbit and its four states](docs/assets/colossus-orbit/README.md).
 
 [Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-Arachnid grew out of **December Command v0.1.0 alpha**. The Python package is `agent-conductor` and its command is `conduct`. For local reading, the documentation index is `docs/index.md`. [Release evidence](docs/release-notes-v1-alpha.md) · [Pilot build checks](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
+Arachnid grew out of **December Command v0.1.0 alpha**. The Python package is `agent-conductor` and its command is `conduct`. For local reading, the documentation index is `docs/index.md`. [Release evidence](docs/release-notes-v1-alpha.md) · [Build checks](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
 
 Earlier releases include the [offline Codex + Grok example in Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) and the [original two-task pilot](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
 
 [release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip.sha256
 [wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/agent_conductor-0.1.0-py3-none-any.whl
 
 <details>

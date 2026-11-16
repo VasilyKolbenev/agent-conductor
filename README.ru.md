@@ -2,7 +2,7 @@
 
 **Поставьте одну цель Колоссу и соберите для неё команду ИИ-харнессов.** В Arachnid Studio один инструмент может исследовать проблему, другой — исправить код, а отдельный экземпляр — проверить результат. Вы согласуете роли, бюджет и этапы, где нужно ваше решение. После старта команда сама передаёт результаты между шагами, пока не дойдёт до такого этапа или до лимита.
 
-[**Скачать Pilot 3**][release] · [Подключить свои инструменты](docs/first-run-v1.md) · [English](README.md)
+[**Скачать Arachnid Studio**][release] · [Подключить свои инструменты](docs/first-run-v1.md) · [English](README.md)
 
 | Windows | Linux (проверено на Ubuntu) | macOS |
 | --- | --- | --- |
@@ -16,7 +16,7 @@
 
 Понадобится **Python 3.11 или 3.12** с `venv` и `pip`. Оба сценария ниже работают локально, без входа в аккаунты и вызовов моделей.
 
-**Windows · две ваши задачи.** Скачайте `Arachnid-Windows-Pilot-3.zip` и файл SHA-256 со [страницы Pilot 3][release]. Полностью распакуйте архив и откройте **`START.cmd`**. Вспомните завершённую задачу и запишите, что проверили. Во второй попросите Колосса найти этот порядок, откройте источник и поправьте план проверки в чате. Обе задачи и принятые наблюдения сохраняются на компьютере. Черновик изменённого плана можно скопировать до закрытия вкладки. [Пошаговая инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
+**Windows · две ваши задачи.** Скачайте [архив для Windows][zip] и [файл с контрольной суммой SHA-256][checksum]. Полностью распакуйте архив и откройте **`START.cmd`**. Вспомните завершённую задачу и запишите, что проверили. Во второй попросите Колосса найти этот порядок, откройте источник и поправьте план проверки в чате. Обе задачи и принятые наблюдения сохраняются на компьютере. Черновик изменённого плана можно скопировать до закрытия вкладки. [Пошаговая инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 
 **Linux и macOS · знакомство со Studio.** Скачайте [Python-пакет wheel][wheel]. В папке со скачанным файлом выполните команды для Python 3.12. Если установлен Python 3.11, в первой строке используйте `python3.11`.
 
@@ -50,7 +50,7 @@ py -3.12 -m venv .venv
 | Харнесс | Что проверено |
 | --- | --- |
 | **Codex CLI + Grok Build** | Полный цикл из пяти шагов на Windows по подпискам владельца, без API-ключей. Исполнение и независимая проверка прошли в разных экземплярах Codex. |
-| Claude Code | В изоляции по подписке выполнен Goal и сохранён результат. Identify остановился по таймауту. Для коллег в пилоте описана ручная передача в официальный CLI. [Отчёт запуска](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
+| Claude Code | В изоляции по подписке выполнен Goal и сохранён результат. Identify остановился по таймауту. В инструкции описана ручная передача в официальный CLI. [Отчёт запуска](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
 | Kimi Code CLI | Проверено открытие сессии в офлайн-тесте. Предстоит живая задача по подписке. |
 | DeepSeek Harness | Адаптер с API-ключом прошёл локальные тесты. Сервис использует баланс API. |
 | Своя CLI | Ручная передача или двусторонний обмен текстом через совместимый локальный мост. Автономная роль и работа по подписке зависят от адаптера. |
@@ -59,15 +59,17 @@ py -3.12 -m venv .venv
 
 ## О проекте
 
-**Следующая версия орбиты.** На скриншоте выше — опубликованный Pilot 3. В утверждённом дизайне роли харнессов различаются по виду планет, а у Колосса четыре состояния. Эти изображения пока доступны как макет. [Открыть будущую орбиту и четыре состояния](docs/assets/colossus-orbit/README.md).
+**Следующая версия орбиты.** На скриншоте выше — орбита из текущего релиза Arachnid Studio. В утверждённом дизайне роли харнессов различаются по виду планет, а у Колосса четыре состояния. Эти изображения пока доступны как макет. [Открыть будущую орбиту и четыре состояния](docs/assets/colossus-orbit/README.md).
 
 [Архитектура](docs/architecture.ru.md) · [Планы V2](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Участие в разработке](CONTRIBUTING.ru.md) · [Лицензия MIT](LICENSE)
 
-Прежнее название проекта — December Command. Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление документации для локального просмотра находится в `docs/index.ru.md`. [Состояние приёмки](docs/release-notes-v1-alpha.ru.md) · [Проверки сборки пилота](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
+Прежнее название проекта — December Command. Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление документации для локального просмотра находится в `docs/index.ru.md`. [Состояние приёмки](docs/release-notes-v1-alpha.ru.md) · [Проверки сборки](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
 
 Предыдущие выпуски позволяют [разобрать офлайн-пример Codex + Grok в Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) и [открыть первый пилот с двумя своими задачами](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
 
 [release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/Arachnid-Windows-Pilot-3.zip.sha256
 [wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/agent_conductor-0.1.0-py3-none-any.whl
 
 <details>
