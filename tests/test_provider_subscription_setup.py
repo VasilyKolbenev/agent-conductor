@@ -232,23 +232,30 @@ def test_native_leaf_cannot_grant_another_user_read_on_a_private_profile(tmp_pat
     from conductor import provider_install_security as security
     from conductor.command.adapters import _winlaunch as native
     from conductor.ownership_native import NativeHold
-    logins = tmp_path / "logins"
-    logins.mkdir()
+    from tests.os_boundary_windows import _icacls
+
+    home = tmp_path / "logins" / "codex"
+    credential = fake.put(home, "auth.json", {"local-test": True})
     owner = native.current_user_sid()
-    acl = f"O:{owner}D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;{owner})"
-    handle = NativeHold(logins, directory=True, grants=True)
-    try:
-        native.acl_set(handle, acl, protected=True)
-    finally:
-        handle.close()
-    home = logins / "codex"
-    fake.put(home, "auth.json", {"local-test": True})
+    private = "D:P(A;;FA;;;SY)(A;;FA;;;OW)"
+
+    def set_dacl(path, expected):
+        handle = NativeHold(path, directory=path != credential, grants=True)
+        try:
+            native.acl_set(handle, expected, protected=True)
+            sddl, protected, actual_owner = native.acl_snapshot(handle)
+            assert actual_owner == owner, (path, actual_owner)
+            assert protected and native.acl_equal(sddl, expected), (path, sddl)
+        finally:
+            handle.close()
+
+    # Protect each child before Windows propagates the parent's new access list.
+    for path in (credential, home, home.parent):
+        _icacls(str(path), "/setowner", "*" + owner)
+        _icacls(str(path), "/grant:r", f"*{owner}:F")
+        set_dacl(path, private)
     security.verify_login_directory(home)
-    handle = NativeHold(home / "auth.json", grants=True)
-    try:
-        native.acl_set(handle, acl + "(A;;FR;;;BU)", protected=True)
-    finally:
-        handle.close()
+    set_dacl(credential, private + "(A;;FR;;;BU)")
     with pytest.raises(OSError, match="entry in the dedicated login"):
         security.verify_login_directory(home)
 
