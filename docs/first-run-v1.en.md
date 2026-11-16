@@ -40,7 +40,7 @@ Pin the installed Git in Hub, restart the project on the same port and click
 **Check source files again**. Once the commit appears, continue with the same task
 and materials. In a project without a repository, you can choose **Use an empty working folder**.
 
-You need Python 3.11+, a V1 candidate build, and the native coding tools you intend to use.
+Use Python 3.11 or 3.12, the versions tested with this release, and the native coding tools you intend to connect.
 A **wheel** is a Python installation file ending in `.whl`; a **virtual environment** is a folder that keeps this installation separate.
 
 If you already have a local project folder, use it after installing the build. First configure the
@@ -66,6 +66,8 @@ The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this 
 <details open>
 <summary><strong>Windows · PowerShell</strong></summary>
 
+Run `py -3 --version` first. If it selects a different Python version, use `py -3.12` or `py -3.11` in the `venv` command below.
+
 On a fresh PC, first create an empty `%USERPROFILE%\DecemberCommand` folder. In Explorer, open its Properties → Security → Advanced. Disable inheritance and keep Full control for your account, SYSTEM and local Administrators only, applied to this folder, subfolders and files. Check these entries before putting programs or logins here. If the folder already contains an installation, check its existing permissions and build with the maintainer. Obtain the wheel and its SHA256 from the same identified release. Run the following in your own PowerShell, changing `$wheel` if the file is elsewhere.
 
 ```powershell
@@ -86,7 +88,7 @@ if ($LASTEXITCODE) { throw 'wheel installation failed' }
 & $conduct --help
 ```
 
-If `py` is not installed, use the full path to a Python 3.11+ `python.exe` instead of `py -3`.
+If `py` is unavailable, use the full path to the `python.exe` for Python 3.11 or 3.12.
 
 Use this protected product directory for subscription tasks and its sibling `harnesses` directory for the pinned Windows binaries.
 

@@ -148,7 +148,7 @@
 
 Источник: [unclebob/ub-mode](https://github.com/unclebob/ub-mode/blob/master/SKILL.md),
 прочитан 27.10.2026. Применять вместе с §1–9; уточнения Codex и основания —
-`tasks/PROC-UB-REPORT.md`. Это дополнение общего стандарта Codex/Claude Code,
+[отчёт об этих правилах](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/PROC-UB-REPORT.md). Это дополнение общего стандарта Codex/Claude Code,
 а не автоматическое исполнение команд внешнего скилла.
 
 1. **Работает.** Наименьшая достаточная правка с проверяемым результатом; одно решение — в одном
