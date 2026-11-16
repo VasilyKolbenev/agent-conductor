@@ -249,8 +249,15 @@ checks but record the real-execution steps as blocked, never passed. Facts of th
   a folder shaped `...\harnesses\<name>\<version>\` (the protected place is
   `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`); see the
   [first-run instructions](first-run-v1.en.md).
-- Record the harness, pinned version, model if selected, task role, outcome and evidence. Claude Code 2.1.239 completed one subscription Goal. Codex 0.164.0 produced a Goal artifact on `gpt-6.1-sol`; its content did not meet the acceptance criterion. Both ran inside the Windows boundary with an access-only copy of the dedicated login.
-- Grok Build 1.0.5 supports read-only review. Its authenticated quota check worked, but the live diagnosis exited 1 without a verified result. Editing/dispatch and the independent checker are unavailable. A live Kimi Code 0.38.0 task remains unverified. Record blocked or failed steps as observed. [First-run evidence](first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
+- Record the harness, pinned version, model if selected, role, outcome and evidence. In the
+  accepted Windows subscription run, Grok Build 1.0.13 read both files on Diagnose. Codex
+  0.164.0 completed Goal, Identify, Design and Do. Three unittest cases passed before a
+  separate Codex instance reviewed the patch. The owner accepted the result.
+  [Accepted run and evidence](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+- Grok has a read-only role. Claude Code 2.1.239 completed one subscription Goal. The public
+  sign-in path for Claude is under review. Kimi Code 0.38.0 has an offline session check;
+  a live subscription task is still outstanding.
+  [First-run evidence](first-run-v1.en.md#what-has-been-checked-with-the-real-vendor).
 - The same refusal comes on every platform but Windows (the boundary exists only there).
 
 Record a refusal as blocked, in the product's own words. The plan's door words it *step '…' demands

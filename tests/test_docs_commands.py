@@ -283,6 +283,24 @@ def test_the_acceptance_script_names_the_authority_a_driven_run_needs():
     assert "on the row the plan offers" in step_ten.group(1)
 
 
+def test_both_acceptance_guides_identify_the_reviewed_grok_and_accepted_run():
+    from conductor.command.adapters.grok_build import REVIEWED_GROK_VERSION
+
+    for guide in (ACCEPTANCE, ACCEPTANCE.with_name("owner-acceptance.ru.md")):
+        content = guide.read_text(encoding="utf-8")
+        assert f"Grok Build {REVIEWED_GROK_VERSION}" in content, guide
+        assert "DALIO-FIRST-COMPLETE-REPORT.md" in content, guide
+
+
+def test_pilot_manual_handoff_instruction_uses_the_button_label():
+    panel = ROOT / "src" / "conductor" / "panel"
+    labels = (panel / "studio-utilities-copy.js").read_text(encoding="utf-8")
+    handoff = re.search(r'"utility\.handoff": \["[^"]+", "([^"]+)"\]', labels)
+    assert handoff
+    guide = ROOT / "distribution" / "windows-pilot" / "HARNESSES.txt"
+    assert f"нажмите «{handoff[1]}»" in guide.read_text(encoding="utf-8")
+
+
 def test_a_dated_record_is_not_held_to_todays_count():
     """The other half of the ruling, so nobody later "fixes" the evidence.
 
