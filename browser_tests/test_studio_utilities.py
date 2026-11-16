@@ -229,6 +229,14 @@ def test_deepseek_chat_does_not_relabel_an_existing_bridge(chromium, tmp_path):
             close_context(context)
 
 
+def check_alternate_shell(panel, title):
+    disclosure = panel.locator("details").filter(has_text=title)
+    disclosure.locator("summary").click()
+    expect(disclosure).to_contain_text(re.compile(r"\$conduct.*conduct\.exe.*\$project", re.S))
+    expect(disclosure).to_contain_text(re.compile(r"& \$conduct.*& \$python -m conductor", re.S))
+    expect(disclosure).to_contain_text("venv")
+
+
 def check_card_command(panel, kind, tmp_path):
     snippet = panel.locator("code")
     expected = "& $conduct providers --dir $project --subscription " + kind
@@ -306,6 +314,7 @@ def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_
             expect(login).to_be_visible()
             expect(panel.get_by_text("No quota reading", exact=True)).to_be_visible()
             expect(panel.get_by_text("No task role available", exact=True)).to_be_visible()
+            check_alternate_shell(panel, "Started Studio another way?")
             panel.get_by_role("button", name="Grok Build", exact=True).click()
             expect(panel.get_by_text("Read-only review", exact=True)).to_be_visible()
             expect(panel.get_by_text("Subscription selected", exact=True)).to_be_visible()
@@ -349,6 +358,7 @@ def test_unavailable_provider_read_preserves_manual_setup(chromium, tmp_path, en
             expect(panel).to_contain_text("Кеш квот недоступен")
             expect(panel).not_to_contain_text("Файл CLI найден")
             expect(panel.get_by_role("button", name="Обновить состояние")).to_be_visible()
+            check_alternate_shell(panel, "Запускали Studio иначе?")
             panel.get_by_role("button", name="Своя утилита", exact=True).click()
             expect(panel.get_by_role("button", name="Подключить утилиту")).to_be_enabled()
         finally:

@@ -87,6 +87,6 @@ export function subscriptionCard(main, id, facts, tr, locale, active, copy) {
       text: tr("install_guide", {version})}),
     element("p", {text: tr("setup_terminal")}), element("code", {text: command}), copy(command),
     element("details", {}, [element("summary", {text: tr("another_terminal")}),
-      element("p", {text: tr("setup_paths")})]),
+      element("p", {text: tr("setup_paths")}), element("p", {text: tr("setup_python")})]),
     element("p", {text: tr("setup_finish")}));
 }
