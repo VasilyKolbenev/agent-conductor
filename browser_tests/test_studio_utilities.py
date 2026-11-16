@@ -17,6 +17,9 @@ from conductor.command.project_claim import Launch
 from conductor.utility_bridge import LocalStudio, exchange
 from tests._ps1 import child_text, write_ps1
 
+GUIDE = ("https://github.com/VasilyKolbenev/agent-conductor/blob/"
+         "8ab4f0f980db1b0626c56ffc5e2995516d7d35ec/docs/")
+
 
 @contextmanager
 def studio(root, mode):
@@ -267,6 +270,30 @@ $project = $env:CARD_PROJECT
         "providers", "--dir", str(project), "--subscription", kind]
 
 
+@pytest.mark.parametrize(("language", "target"), [
+    ("en", "first-run-v1.en.md#where-to-get-the-pinned-builds"),
+    ("ru", "first-run-v1.md#где-взять-закреплённые-сборки"),
+])
+def test_subscription_cards_link_to_the_reviewed_guide(chromium, tmp_path, language, target):
+    root = demo.materialize(tmp_path / "project")
+    ownership_transition.activate(root, legacy_writers_stopped=True)
+    with studio(root, "active") as (url, _):
+        context = chromium.new_context()
+        try:
+            page = context.new_page()
+            page.goto(url + "/#lang=" + language)
+            page.locator("#attach").click()
+            panel = page.get_by_role("dialog")
+            for tool, version in (("Codex", "0.164.0"), ("Grok Build", "1.0.13")):
+                panel.get_by_role("button", name=tool, exact=True).click()
+                label = (f"Install {tool} {version} for Windows" if language == "en"
+                         else f"Установить {tool} {version} для Windows")
+                expect(panel.get_by_role("link", name=label, exact=True)).to_have_attribute(
+                    "href", GUIDE + target)
+        finally:
+            close_context(context)
+
+
 def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_path):
     root = demo.materialize(tmp_path / "project")
     ownership_transition.activate(root, legacy_writers_stopped=True)
@@ -307,8 +334,8 @@ def test_subscription_cards_separate_install_login_quota_and_role(chromium, tmp_
             panel.get_by_role("button", name="Codex", exact=True).click()
             check_card_command(panel, "codex", tmp_path)
             guide = panel.get_by_role("link", name="Install Codex 0.164.0 for Windows")
-            expect(guide).to_have_attribute("href", re.compile(
-                r"/245e8f04b8a0bc4c65c1ada705cf5d4c92c2364f/docs/first-run-v1\.en\.md#"))
+            expect(guide).to_have_attribute(
+                "href", GUIDE + "first-run-v1.en.md#where-to-get-the-pinned-builds")
             expect(panel.get_by_text("Configured CLI file missing", exact=True)).to_be_visible()
             login = panel.get_by_text("Last quota check requires sign-in", exact=True)
             expect(login).to_be_visible()

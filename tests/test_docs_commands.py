@@ -24,6 +24,8 @@ import argparse
 import re
 from pathlib import Path
 
+import pytest
+
 from conductor import prompts, templates
 from conductor.__main__ import _build_parser
 
@@ -299,6 +301,28 @@ def test_pilot_manual_handoff_instruction_uses_the_button_label():
     assert handoff
     guide = ROOT / "distribution" / "windows-pilot" / "HARNESSES.txt"
     assert f"нажмите «{handoff[1]}»" in guide.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("locale, suffix", [(0, ".en"), (1, "")], ids=["en", "ru"])
+def test_first_project_guide_keeps_claude_handoff_in_the_official_app(locale, suffix):
+    guide = ROOT / "docs" / f"first-run-v1{suffix}.md"
+    text = guide.read_text(encoding="utf-8")
+    # A new user following the runnable examples must never prepare a Claude relay.
+    commands = "\n".join(re.findall(r"```(?:powershell|sh|text)\n(.*?)```", text, re.S))
+    for relay_input in ("CLAUDE_CONFIG_DIR", "logins\\claude-code", "--subscription claude-code"):
+        assert relay_input not in commands, guide
+    assert "& $codex --%" in commands and "& $grok --no-auto-update login" in commands, guide
+    login_setup = next(p for p in text.split("\n\n") if "logins\\<id>" in p)
+    assert "Codex" in login_setup and "Grok" in login_setup and "Claude" not in login_setup, guide
+
+    section = re.search(r"^### Claude Code [^\n]+\n(.*?)(?=^#|\Z)", text, re.M | re.S)
+    assert section, guide
+    manual = section[1]
+    labels = (ROOT / "src/conductor/panel/studio-utilities-copy.js").read_text(encoding="utf-8")
+    for key in ("custom", "manual", "attach", "handoff", "copy", "reply", "save", "operator_reply"):
+        pair = re.search(rf'"utility\.{key}": \["([^"]+)", "([^"]+)"\]', labels)
+        assert pair and pair.groups()[locale] in manual, (guide, key)
+    assert "https://code.claude.com/docs/en/authentication" in manual, guide
 
 
 def test_reopened_windows_terminal_uses_the_same_build_as_the_install():

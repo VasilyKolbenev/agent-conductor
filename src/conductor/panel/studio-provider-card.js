@@ -6,7 +6,7 @@ import {snapshotCard} from "./studio-quotas.js";
 
 export const hasSubscriptionSetup = id => id === "codex" || id === "grok-build";
 const guideRoot = "https://github.com/VasilyKolbenev/agent-conductor/blob/"
-  + "245e8f04b8a0bc4c65c1ada705cf5d4c92c2364f/docs/";
+  + "8ab4f0f980db1b0626c56ffc5e2995516d7d35ec/docs/";
 
 export async function readProviderFacts(door) {
   const [catalog, cache] = await Promise.allSettled([door.catalog(), door.quotas()]);

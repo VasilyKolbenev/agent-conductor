@@ -163,7 +163,7 @@ This is a new-project tutorial, not a migration procedure for existing runs.
 A **provider** is a configured connection to a harness: its executable, login profile, and allowed environment.
 You do not have to connect all five just to explore; executing a chosen workflow requires all participants it uses to be ready.
 
-Run the interactive wizard, once for each needed connection:
+For Claude Code, use the [manual handoff](#claude-code-manual-handoff). For Codex and Grok on Windows, use the subscription setup in their Studio cards (step 4). To configure a provider in the interactive wizard, run the command for your system.
 
 ```powershell
 # Windows
@@ -177,7 +177,7 @@ Run the interactive wizard, once for each needed connection:
 
 | Tool | Version pinned by this candidate | Supply to the wizard | Task road in V1 |
 | --- | --- | --- | --- |
-| Claude Code | 2.1.239 | Native `claude.exe` with a dedicated `CLAUDE_CONFIG_DIR`. | The owner completed one Goal on Windows. The sign-in path for the public alpha is under review. |
+| Claude Code | Operator’s official CLI | [Manual handoff](#claude-code-manual-handoff) in Studio. | The operator brings the reply back to the project. |
 | Codex | 0.164.0 | Native Windows x64 CLI with a dedicated `CODEX_HOME`. | The owner accepted a subscription cycle with Goal, Identify, Design and Do. A separate Codex instance checked the patch and three tests. |
 | Kimi Code | 0.38.0 | Native Kimi CLI; dedicated `KIMI_CODE_HOME` and subscription sign-in. | The current pin supports the subscription usage source. Its subscription task is refused before spawn in this build; no live task result is verified. |
 | Grok Build | 1.0.13 | Native `grok.exe`; dedicated `GROK_HOME` and subscription sign-in. | Read-only review on Windows. A live subscription diagnosis completed and passed the rehearsal gate. |
@@ -185,20 +185,24 @@ Run the interactive wizard, once for each needed connection:
 
 A configured connection does not mean a task will run: see [Where tasks run in this build](#where-tasks-run-in-this-build).
 
+### Claude Code manual handoff
+
+Open your active project in Studio as described in step 4. In a supported region, run `claude`
+in your terminal and sign in to the official CLI with your own subscription.
+[Official sign-in](https://code.claude.com/docs/en/authentication#log-in-to-claude-code) · [Supported regions](https://www.anthropic.com/legal/supported-regions).
+
+1. In Studio choose **Connect a harness → Custom utility**. Set **Name** to `Claude Code (manual)`,
+   **Identifier** to `claude-manual` and **Connection** to **Manual handoff**. Choose **Connect utility**.
+2. Enter the **Task text**. Choose **Prepare handoff**, then **Copy**, and paste the task into Claude Code.
+3. Paste Claude Code’s answer into **Utility reply** and choose **Save reply**. Reopen the utility
+   to see the saved exchange under **Reply recorded by the operator**.
+
+The built-in Claude Code card shows the status of autonomous subscription roles. Their public setup is on hold.
+
 ### Where to get the pinned builds
 
 Install each pinned tool under `%USERPROFILE%\DecemberCommand\harnesses\<name>\<version>\`. Use the protected root from step 1. The wheel does not install the vendor tools. Use trusted release files matching the reviewed hashes.
 
-- **Claude Code 2.1.239.** Take `claude.exe` of that version from the release store that the
-  vendor's own installer reads, and compare its sha256 with `platforms.win32-x64.checksum` in the
-  `manifest.json` of the same version there:
-
-  ```text
-  https://downloads.claude.ai/claude-code-releases/2.1.239/win32-x64/claude.exe
-  https://downloads.claude.ai/claude-code-releases/2.1.239/manifest.json
-  ```
-
-  Place the file in `...\harnesses\claude-code\2.1.239\`.
 - **Codex 0.164.0, Windows x64.** Get `@openai/codex@0.164.0` and `@openai/codex@0.164.0-win32-x64` from the npm registry. Compare their SHA256 with the GitHub release assets before extraction. The main tarball is `afb117ec0d382744583dd13154ba0ca6b0f1980f8ed6a23bffb3aaadb6226e30`; the Windows tarball is `4fbd23473a2fc223396cdd8490d3f658d368438134c12a3f1dac9d1e2041a65b`. Extract the contents of each `package/` into `...\harnesses\codex\0.164.0\node_modules\@openai\codex` and `...\harnesses\codex\0.164.0\node_modules\@openai\codex-win32-x64` respectively. Keep the complete packages, including resources beside `vendor\x86_64-pc-windows-msvc\bin\codex.exe`. [Reviewed files and hashes](recovery/2026-10-20/tasks/H5-CODEX-COMPAT-A-INVENTORY.json).
 - **Grok Build 1.0.13, Windows x64.** Check the vendor's pinned `grok.exe` against SHA256 `bf43dc75f5478a106eab1e86d422c963e4dbe9666cf14dab363733d27bf1e672` before copying it to `...\harnesses\grok-build\1.0.13\grok.exe`. [WinGet manifest](https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/x/xAI/GrokBuild/1.0.13/xAI.GrokBuild.installer.yaml).
 - **Kimi Code 0.38.0, Windows x64.** For subscription quota reads, download `kimi-code-win32-x64.zip` from the CLI release. Verify the archive SHA-256, `80e4de3f2bd7c33ba10cfe3c2282492b0758fae9887537f4ff79ec2022957004`. Extract `kimi.exe` and check its SHA-256, `b7e658d06176284384d1e9eb627d11e5a26627b3964bf8787f197915d1484b1e`. Supply `...\harnesses\kimi-code\0.38.0\kimi.exe` to the wizard. [MoonshotAI release](https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai%2Fkimi-code%400.38.0).
@@ -212,7 +216,7 @@ In the wizard the question about the login reads: `1` is the tool's own subscrip
 credential read from the environment. Under it the wizard prints a note (English only) that says
 what `1` does for this tool:
 
-Choose `1` for your subscription. For Claude Code, Codex and Grok Build, enter `%USERPROFILE%\DecemberCommand\logins\<id>` as an expanded full path. For example, enter the path returned by `Join-Path $env:USERPROFILE "DecemberCommand\logins\codex"`. The tool signs in there. During an admitted Windows task the isolated process receives a temporary copy without the refresh token. The Agents screen shows which roles you can assign. For Kimi, check the capability of your wheel and treat execution as pending until the live test passes.
+Choose `1` for your subscription. For Codex and Grok Build, enter `%USERPROFILE%\DecemberCommand\logins\<id>` as an expanded full path. For example, enter the path returned by `Join-Path $env:USERPROFILE "DecemberCommand\logins\codex"`. The tool signs in there. During an admitted Windows task the isolated process receives a temporary copy without the refresh token. The Agents screen shows which roles you can assign. For Kimi, check the capability of your wheel and treat execution as pending until the live test passes.
 
 `env_allow` is the list of allowed environment variable names (never values).
 
@@ -235,23 +239,14 @@ place; credentials and login files are not copied. A malformed profile refuses
 the whole operation and leaves the project file unchanged. You can still use
 the project-specific wizard above for an individual project.
 
-For the four subscription tools, use the native executable, not a `.cmd` or PowerShell wrapper.
+For Codex, Grok and Kimi, use the native executable, not a `.cmd` or PowerShell wrapper.
 The wizard checks paths; the native call checks the pinned version. A newer release is not automatically interchangeable.
 The DSH desktop application is not a substitute for the CLI entrypoint in this configuration.
 
-For a subscription, use a dedicated login folder of the product, never your own profile of the tool.
+For these provider connections, use a dedicated login folder of the product, never your own profile of the tool.
 Create the login folder with `New-Item` and run the wizard's commands **in a separate PowerShell window**.
 They set the login directory and call the vendor's sign-in command. For Kimi, one additional line
 disables CLI updates in that window. For example:
-
-```powershell
-# Claude Code
-$login = Join-Path $env:USERPROFILE 'DecemberCommand\logins\claude-code'
-New-Item -ItemType Directory -Force -Path $login | Out-Null
-$env:CLAUDE_CONFIG_DIR = $login
-$claude = Join-Path $env:USERPROFILE 'DecemberCommand\harnesses\claude-code\2.1.239\claude.exe'
-& $claude auth login --claudeai
-```
 
 ```powershell
 # Codex (the pair -c ... keeps the login in a file, which the product can copy)
@@ -339,7 +334,7 @@ In the PowerShell window that started Studio with `$conduct` and `$project`, pre
 and run the command. In a fresh terminal, first set these variables to the installed
 `conduct.exe` and this project directory as in steps 1 and 2. Complete the owner sign-in
 and restart Studio for this project. Grok supports read-only
-diagnosis. The public sign-in path for Claude is under review. Kimi has a local session
+diagnosis. For Claude Code, follow the [manual handoff](#claude-code-manual-handoff). Kimi has a local session
 check, with a live subscription role pending.
 
 **Custom utility** adds a named tool to this project. For a manual exchange, send
@@ -463,7 +458,7 @@ For a guided, observable sequence use [owner acceptance](owner-acceptance.md) or
 | Provider cannot start | Check its native path and pinned version; `available` alone is not proof of login. |
 | Port 7777 is busy | Stop the other server or use another port, such as `--port 8080`. |
 | A step is refused: `demands sandbox route 'execution-boundary'` | Check Windows, the pinned executable, the product login folder and whether this harness supports the role requested by the step. Read the reason in Runs. [Where tasks run](#where-tasks-run-in-this-build). |
-| The Runs screen says `adapter reported failed: the pinned login expires before the attempt would end; sign in again` (or `…: when the pinned login expires is not known; sign in again`) | The access token of the Claude Code or Codex login does not outlast the step's timeout by ten minutes, or its expiry cannot be read. Nothing was started. Sign in again with the two lines `conduct providers` prints (step 3: the variable that points at the login folder, then the tool's own sign-in), then retry. Signed in without the variable, the tool fills your own profile and the folder stays as it was. |
+| The Runs screen says `adapter reported failed: the pinned login expires before the attempt would end; sign in again` (or `…: when the pinned login expires is not known; sign in again`) | The access token of the Codex login does not outlast the step's timeout by ten minutes, or its expiry cannot be read. Nothing was started. Sign in again with the two lines `conduct providers` prints (step 3: the variable that points at the login folder, then the tool's own sign-in), then retry. Signed in without the variable, the tool fills your own profile and the folder stays as it was. |
 | The Runs screen says `adapter reported failed: the pinned login has no credential file to copy`, `…'s credential file is damaged` (or `is not an ordinary file`, `is too large`, `is in a shape this build does not know`), `…holds no access token`, `…holds an API key, which is not a subscription`, `…is on the API-billing plan` or `…does not say which plan it is on` | Nothing was started. The login folder holds no plain subscription login this build can copy. No file or a damaged one: sign in again in that folder (step 3). An API key or a console plan: sign in in that folder with a subscription account; a task on an API key is the other road (choice `2` in `conduct providers`). Any other sentence about the pinned login or its relay (`the pinned login …`, `the account of the pinned login …`, `the login lease of the attempt does not name the pinned login`, and the like) names a fact of the login, of its folders or of the attempt's lease: nothing was started, and the words are what a bug report needs. After a sentence that begins `the pinned login`, sign in again in the folder first (step 3). |
 | The Runs screen says `adapter reported failed: the environment of the attempt replaces the pinned login or reroutes its traffic` | Nothing was started. The server's environment, or the names allowed for this provider, carries a name that replaces the login or reroutes its traffic (a token, a proxy, a base URL, certificates). Remove it: stop the server, run `conduct providers` again without it, and start the server from an environment that does not have it. |
 | The Runs screen says `adapter reported failed: the relay folder of the pinned login is not usable` | Nothing was started, and the login is not the cause: do not sign in again. The folder `...\DecemberCommand\relay` is not as the product needs it (for example it has an extra entry in its access list). That folder is shared by every project and every login of this `DecemberCommand` folder: stop every server and the hub that work through these logins, remove the folder, start the server: the product makes it again. Do not protect it by hand. |
