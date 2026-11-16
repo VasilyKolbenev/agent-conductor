@@ -14,4 +14,4 @@ history above comes from the separate Studio demo builder.
 [Studio demo](../src/conductor/command/demo_scenario.py)
 
 For the Windows download that lets a colleague supply two tasks and reuse a review
-procedure in Kolos chat, see the [two-task pilot](../distribution/windows-two-task/README.md).
+procedure in Colossus chat, see the [two-task pilot](../distribution/windows-two-task/README.md).

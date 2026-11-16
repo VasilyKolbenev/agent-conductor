@@ -2,7 +2,7 @@
 
 [Русская версия](architecture.ru.md) · [First run](first-run-v1.en.md) · [Contributing](../CONTRIBUTING.md)
 
-Arachnid Studio runs locally on Python 3.11+ with no runtime dependencies. Its browser UI uses JavaScript, HTML and CSS, served without a build step. At `/`, the operator selects a session on the left, speaks to Kolos in the center and inspects evidence on the right. The workflow controls are at `/panel/studio.html`, task preparation is at `/panel/desk.html`, and the classic reporting panel is at `/panel/index.html`.
+Arachnid Studio runs locally on Python 3.11+ with no runtime dependencies. Its browser UI uses JavaScript, HTML and CSS, served without a build step. At `/`, the operator selects a session on the left, speaks to Colossus in the center and inspects evidence on the right. The workflow controls are at `/panel/studio.html`, task preparation is at `/panel/desk.html`, and the classic reporting panel is at `/panel/index.html`.
 
 The Python server owns validation, storage and execution authorization. The browser presents those facts and sends explicit requests; rendering a button or opening a page does not authorize model work. Execution goes through configured native harness adapters for Claude Code, Codex, Kimi Code, Grok Build and DSH. Each needs its own supported configuration and access; being listed is not proof that it is ready on this machine.
 

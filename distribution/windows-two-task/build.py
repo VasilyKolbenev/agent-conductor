@@ -11,7 +11,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 SOURCE = Path(__file__).resolve().parent
 launcher = runpy.run_path(str(SOURCE / "pilot.py"))
 WHEEL, MEMBERS = launcher["WHEEL"], launcher["MEMBERS"]
-FILENAME = "Arachnid-Windows-Pilot-2.zip"
+FILENAME = "Arachnid-Windows-Pilot-3.zip"
 
 
 def atomic_write(target, data):

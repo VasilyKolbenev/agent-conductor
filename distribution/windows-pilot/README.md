@@ -5,8 +5,8 @@ follow [START-HERE.txt](START-HERE.txt) for the offline Codex + Grok walkthrough
 manual utility or local echo example.
 [Windows Pilot 1 release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1)
 
-To use two of your own tasks and adapt the first task's checks in Kolos chat, see the
-[Windows Pilot 2 walkthrough](../windows-two-task/README.md).
+To use two of your own tasks and adapt the first task's checks in the Colossus chat, see the
+[Windows Pilot 3 walkthrough](../windows-two-task/README.md).
 
 ## What the utility exercises demonstrate
 

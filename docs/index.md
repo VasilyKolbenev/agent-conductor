@@ -7,7 +7,7 @@ Pick the path that matches what you want to do.
 
 ## I want to use it
 
-1. [Try two of your own tasks in Windows Pilot 2](../distribution/windows-two-task/START-HERE.txt). Record the checks you performed on the first task. In the second, ask Kolos for the order, open its source and edit the plan in chat. Both pilots work offline. Download published ZIPs from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases).
+1. [Try two of your own tasks in Windows Pilot 3](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3). Record the checks you performed on the first task. In the second, ask Colossus for the order, open its source and edit the plan in chat. [Download and installation instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 2. [Explore the Codex + Grok example in Windows Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Select Do to inspect the patch, tests and independent verdict in the packaged sample.
 3. [Set up a real project](first-run-v1.en.md): install, connect tools, open Studio, and understand the first run.
 4. [Read the V1 candidate notes](release-notes-v1-alpha.md): implemented features and actual acceptance evidence are separate.
