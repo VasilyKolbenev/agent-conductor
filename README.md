@@ -1,6 +1,6 @@
 # Arachnid Studio
 
-**A local workspace where coding tools can hand a task to each other and show you how they solved it.** Give Colossus a goal, review the roles and limits, and follow the run on its orbit. Open any attempt to inspect its changes, tests and review while the conversation stays in view.
+**Give Colossus one goal and put a team of coding harnesses to work on it.** In Arachnid Studio, one tool can investigate a problem, another can change the code, and a separate instance can review the result. Agree on roles, a budget and approval points in the local Studio. Once you start the workflow, the team passes results between steps until it reaches a decision or a limit.
 
 [**Download Pilot 3**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
 
@@ -45,17 +45,19 @@ Open the local URL printed in the terminal. Press Ctrl+C there to stop the demo.
 | “What changed while I was away?” | The latest recorded outcome, any decision waiting for you, and links to the evidence. |
 | “Find the review procedure from the previous task.” | A proposed sequence and reviewer, linked to the accepted record you can inspect. |
 
-Start with the five-step Dalio cycle or publish a workflow of your own. Choose roles, review the proposed budget and decide where the team needs your approval. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
+Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the cause, design a plan and carry it out. You can also build and publish your own cycle. Use **Connect harness** in the sidebar to add tools, then assign roles in the workflow. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
 
 | Harness | What has been verified |
 | --- | --- |
 | **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
-| Claude Code | One Goal completed in isolation on a subscription. Full-role acceptance is pending. |
+| Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The pilot walkthrough supports manual handoff to the official CLI. [Run record](docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
 | Kimi Code CLI | An offline session opened. A live subscription task is pending. |
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
 
 ## Explore the project
+
+**Orbit design preview.** The screenshot above shows the shipped Pilot 3. The next design gives Colossus four visible states and the harness roles distinct planets. The artwork is available for review ahead of implementation. [View the proposed orbit and its four states](docs/assets/colossus-orbit/README.md).
 
 [Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
