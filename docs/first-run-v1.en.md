@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
-To try the interface on Windows first, download a pilot from [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) and follow `START-HERE.txt` in its ZIP. In [Pilot 2](../distribution/windows-two-task/START-HERE.txt), Colossus recalls the checks you recorded on your first task. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) includes the accepted Codex + Grok example. Both work offline.
+For an offline walkthrough on Windows, download [Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) and follow its [installation instructions](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt). Record how you checked the first of your two tasks, then ask Colossus to find those checks in the second. [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) also includes a portable example of the accepted Codex + Grok cycle.
 
 The project root opens Arachnid. In an empty active project, choose **Prepare task**.
 In an existing project, you can also use **Desk → New task**. You can answer one
@@ -60,7 +60,10 @@ For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## 1. Install the identified build
 
-Use the wheel and SHA256 published for the candidate by the maintainer or its linked CI run.
+For [Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3), download the wheel
+and use the SHA-256 shown for that wheel on the release page. Its source commit is
+`646139b7b656c3eca93adf7900a14688c0672dd3`. For a different candidate, take both values
+from its own release or CI run.
 Do not assume that a default-branch install or a package named `0.1.0` is the same candidate.
 The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this tutorial is not a platform-certification claim.
 
@@ -305,10 +308,10 @@ On Windows the pinned executable, its login directory and the requested role mus
 
 ### What has been checked with the real vendor
 
-- **Claude Code 2.1.239.** A real subscription Goal ran inside AppContainer, produced `artifact-goal` and cleaned up. Identify then timed out. [Run report](recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
-- **Codex 0.164.0.** In the accepted `count_succeeded` rehearsal, Codex completed Goal, Identify, Design and Do on subscription. At Do it patched the implementation and tests in the task copy. Three unittest tests passed, then a separate Codex instance checked the changes and the test report. [Accepted run](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
-- **Grok Build 1.0.13.** In the same cycle Grok completed Diagnose with read-only access to two source files. Its subscription diagnosis had also passed a separate G6 rehearsal gate. A quota response can omit usage percentages. [G6 report](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md).
-- **Kimi Code 0.38.0.** The native CLI accepted synthetic credentials offline in isolation. Quota reads from a real account still need verification. The product refuses subscription tasks before spawn while isolation of writable CLI state is under development. [Native check](recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Execution boundary](recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
+- **Claude Code 2.1.239.** A real subscription Goal ran inside AppContainer, produced `artifact-goal` and cleaned up. Identify then timed out. [Run report](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
+- **Codex 0.164.0.** In the accepted `count_succeeded` rehearsal, Codex completed Goal, Identify, Design and Do on subscription. At Do it patched the implementation and tests in the task copy. Three unittest tests passed, then a separate Codex instance checked the changes and the test report. [Accepted run](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+- **Grok Build 1.0.13.** In the same cycle Grok completed Diagnose with read-only access to two source files. Its subscription diagnosis had also passed a separate G6 rehearsal gate. A quota response can omit usage percentages. [G6 report](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md).
+- **Kimi Code 0.38.0.** The native CLI accepted synthetic credentials offline in isolation. Quota reads from a real account still need verification. The product refuses subscription tasks before spawn while isolation of writable CLI state is under development. [Native check](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Execution boundary](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
 
 This cycle ran for one iteration on Windows. A person aligned the plan with the test command before
 Do, and the owner approved execution and accepted the result. Public alpha acceptance still requires

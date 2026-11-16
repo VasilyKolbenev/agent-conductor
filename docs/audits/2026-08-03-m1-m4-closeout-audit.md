@@ -130,7 +130,7 @@ is precisely the shape of guard that the four earlier crash defects taught us to
 
 ## 3. Deviations from the approved plan
 
-Plan of record: `docs/plans/2026-07-30-m1-m4-implementation.md`. Its three up-front
+Plan of record: [M1–M4 implementation](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/plans/2026-07-30-m1-m4-implementation.md). Its three up-front
 `[plan decisions]` (`store.py` added to the module list, demo fixtures inside the package,
 panel inside the package) are the plan's own text and are not repeated as deviations.
 

@@ -1,12 +1,13 @@
 # Rebuild Arachnid Studio Windows Pilot 1
 
-Download **Arachnid-Windows-Pilot-7f6b825.zip** from the public release, extract it and
-follow [START-HERE.txt](START-HERE.txt) for the offline Codex + Grok walkthrough and the
-manual utility or local echo example.
-[Windows Pilot 1 release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1)
+For the current Windows download, use the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3).
+Its [two-task walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt)
+shows how to recall checks from a previous task and edit the plan in Colossus chat.
 
-To use two of your own tasks and adapt the first task's checks in Kolos chat, see the
-[Windows Pilot 2 walkthrough](../windows-two-task/README.md).
+This directory reproduces the **archived first Windows pilot**. To explore that
+recorded Codex + Grok task, download `Arachnid-Windows-Pilot-7f6b825.zip` from the
+[original release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1),
+extract it and follow [START-HERE.txt](START-HERE.txt).
 
 ## What the utility exercises demonstrate
 
@@ -16,11 +17,9 @@ records the reply. `Start.cmd echo` demonstrates automatic exchange with a local
 that speaks `arachnid.utility.v1`. A separate adapter is needed to run a utility as an
 autonomous worker or checker with quota reporting. [Walkthrough in Russian](HARNESSES.txt)
 
-Codex and Grok completed a subscription workflow on Windows. Claude Code completed the
-Goal step, and Kimi Code CLI opened an offline test session. The DeepSeek Harness adapter
-uses a DeepSeek API key. The Qwen Code, GLM/ZCode and Antigravity investigation records
-which options have been examined for future integration. [Windows pilot evidence](../../docs/recovery/2026-10-20/tasks/COLLEAGUE-WINDOWS-PACK-REPORT.md)
-· [Additional harnesses](../../docs/plans/2026-11-13-v2-alpha-review.ru.md#четыре-дополнительных-варианта)
+For the CLI versions, subscription sign-in and isolation used in an active project,
+see the [setup guide](../../docs/first-run-v1.en.md). The original build and
+installation checks are recorded in the [Windows pilot report](https://github.com/VasilyKolbenev/agent-conductor/blob/a755627cc242c5edd35935ba49f89246c0933c9b/docs/recovery/2026-10-20/tasks/COLLEAGUE-WINDOWS-PACK-REPORT.md).
 
 ## Reproduce the release asset
 

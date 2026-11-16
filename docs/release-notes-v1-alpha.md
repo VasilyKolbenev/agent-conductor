@@ -22,7 +22,7 @@ have been exercised locally in Chromium in Russian and English, including at 375
 In the private offline demo, a colleague can open a completed Dalio run and see
 the two files examined by its checker. The list comes from the archived result
 and survives later edits to the working folder. The demo uses recorded test responses.
-[Result walkthrough](recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
+[Result walkthrough](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/UX-CHECKED-FILES-REPORT.md).
 
 | Harness | Evidence for the current subscription workflow |
 | --- | --- |
@@ -31,7 +31,7 @@ and survives later edits to the working folder. The demo uses recorded test resp
 | Grok Build 1.0.13 | A subscription diagnosis passed the G6 rehearsal gate; Diagnose in the shared cycle also returned a result. The role is read-only review. |
 | Kimi Code 0.38.0 | The native CLI opened a session with a synthetic login in a networkless Windows AppContainer. A real account quota reading and a subscription task remain outstanding. |
 
-[Accepted Codex and Grok cycle](recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Grok acceptance](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
+[Accepted Codex and Grok cycle](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-PATCH-LIVE-REPORT.md) · [Grok acceptance](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md) · [Offline Do](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DO-PATCH-V1-REPORT.md).
 
 The public alpha still needs clean-install acceptance of all four subscription
 paths, the final CI wheel and owner acceptance. The September evidence below is

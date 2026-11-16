@@ -142,14 +142,14 @@ specific version and steps. **Arachnid** is the owner's proposed product name.
 Five task steps, a real patch, three native unittest tests and a separate Codex checker
 passed. A human plan revision and two human approvals were involved. This closes this
 rehearsal item, not ALPHA-FOUR, clean-user onboarding or autonomous correction loops.
-See [the accepted-cycle report](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+See [the accepted-cycle report](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
 **Обновление доказательств, 11.11.2026:** учебный Windows-цикл Codex + Grok
 `counter-src-19956c8-r1` принят владельцем, terminal complete. Пять рабочих шагов,
 реальный патч, три native unittest и отдельный checker прошли. План уточнялся человеком,
 оба human gate приняты владельцем. Закрыт этот сценарий; ALPHA-FOUR, подключения новых
 пользователей и автономные correction loops остаются отдельными критериями.
-Доказательства — в [отчёте принятого цикла](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+Доказательства — в [отчёте принятого цикла](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
 ### Arachnid Studio: рабочее место оператора
 
@@ -204,7 +204,7 @@ See [the accepted-cycle report](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-R
 
 В исследовании от 13 ноября сопоставлены восемь интерфейсных референсов, роли
 четырёх харнессов, ручная CLI и примеры выбора панели из разговора.
-[Рабочие панели Атласа и харнессов](recovery/2026-10-20/ATLAS-PANELS-RESEARCH.ru.md).
+[Рабочие панели Атласа и харнессов](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/ATLAS-PANELS-RESEARCH.ru.md).
 
 **Открытый набор представлений — уточнение владельца 11 ноября.** Перечень ниже —
 примеры начальной сводки. Через чат Колоса оператор может запросить другие срезы:
@@ -273,16 +273,16 @@ diff. Выбор шага, файла или теста сам по себе н�
 проекта, чат Атласа и орбиту выбранного запуска. На принятом цикле Codex + Grok
 проверены обе стороны diff, результаты тестов и независимый вердикт именно выбранной
 попытки Do. Разбор Атласа использует сохранённые данные. Участники, лимиты и история
-открываются по запросу. [Проверка сборки](recovery/2026-10-20/tasks/ARACHNID-SHELL-REPORT.md).
+открываются по запросу. [Проверка сборки](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/ARACHNID-SHELL-REPORT.md).
 
 Дальнейшая цель — диалоговый запуск и персональная память. Проверенный альфа-мастер уже даёт подготовку задачи,
 предпросмотр, разрешение и приёмку. Приоритет следующего изменения Studio — связать
 эти возможности основным чатом и проверить этот сценарий целиком.
-В [макете от 9 ноября](prototypes/arachnid-studio.html) оператор выбирает шаг на орбите
-или переходит [сразу к Do](prototypes/arachnid-studio.html#do). Справа видны изменения
+В [макете от 9 ноября](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/prototypes/arachnid-studio.html) оператор выбирает шаг на орбите
+или переходит [сразу к Do](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/prototypes/arachnid-studio.html#do). Справа видны изменения
 двух файлов, семь проверенных тестов и вердикт по снимку принятого запуска `dalio-patch`.
 Ответы Атласа демонстрационные. Сессии, участники, память и лимиты открываются локально.
-Данные и границы проверки перечислены в [отчёте сцены](recovery/2026-10-20/tasks/UX-ATLAS-ORBIT-REPORT.md).
+Данные и границы проверки перечислены в [отчёте сцены](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/UX-ATLAS-ORBIT-REPORT.md).
 Референс владельца — [пост New World AI о Biotech Studio](https://t.me/newworld2080/8800).
 В присланной записи около 0:49 видны узкая история слева, свободное место в
 центре и ввод внизу. В 1:21 справа открывается широкая рабочая область, а разговор
@@ -292,7 +292,7 @@ diff. Выбор шага, файла или теста сам по себе н�
 
 ### Other V2 commitments
 
-The [November alpha review](plans/2026-11-13-v2-alpha-review.ru.md) compares the Windows
+The [November alpha review](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/plans/2026-11-13-v2-alpha-review.ru.md) compares the Windows
 pilot with the proposed 2.0 scope and records the access paths for additional harnesses.
 
 - **Stage two: up to three concurrent runs per project** (owner decision, 2026-11-02).

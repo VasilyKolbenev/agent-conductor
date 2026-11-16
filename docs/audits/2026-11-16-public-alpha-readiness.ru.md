@@ -5,7 +5,7 @@
 Самая полезная внешняя проверка сейчас — пройдёт ли коллега путь по инструкции сам.
 
 Последующие исправления, результаты проверки и открытые условия массовой выдачи
-записаны в [отчёте кандидата](../recovery/2026-10-20/tasks/ALPHA-LANDING-REPORT.md).
+записаны в [отчёте кандидата](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/ALPHA-LANDING-REPORT.md).
 
 ## Какие версии проверены
 
@@ -45,7 +45,7 @@ v2-checks.xml и v2-standard.xml.
    затем реальный результат по каждому из четырёх харнессов. Codex + Grok уже дали один
    принятый совместный результат; для Claude есть изолированный Goal, для Kimi — офлайн-сессия.
    [Пользовательский путь](../first-run-v1.md) ·
-   [Результат настоящего цикла](../recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+   [Результат настоящего цикла](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
    Для Claude есть отдельный вопрос модели интеграции. Anthropic допускает личный вход
    в официальный неизменённый Claude Code при своих условиях и отдельно ограничивает
@@ -91,7 +91,7 @@ v2-checks.xml и v2-standard.xml.
 | Автономная доработка | Код одного заранее разрешённого возврата Do после замечания входит в исходники поставки. Исполнитель получил замечание, вторая попытка и отдельный протокол проверены на двойниках. | Сложный живой цикл с реальным отказом, исправлением и возобновлением на подписках. |
 | Опыт и масштаб | История отдельных запусков и фактические передачи документов доступны для чтения. | Подбор команды по накопленному опыту (Experience Ledger, Harness Graph), до трёх активных задач, эксперименты Dream-RSI и SoL-Pi. |
 
-Основания для таблицы: [утверждённое направление V2](../plans/2026-11-13-v2-alpha-review.ru.md),
-[вторая задача](../recovery/2026-10-20/tasks/REPO-PILOT-TWO-TASKS-REPORT.md),
-[одна коррекция](../recovery/2026-10-20/tasks/ATLAS-ONE-CORRECTION-REPORT.md) и
-[сводка Колосса](../recovery/2026-10-20/tasks/COLOSSUS-RECAP-REPORT.md).
+Основания для таблицы: [утверждённое направление V2](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/plans/2026-11-13-v2-alpha-review.ru.md),
+[вторая задача](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/REPO-PILOT-TWO-TASKS-REPORT.md),
+[одна коррекция](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/ATLAS-ONE-CORRECTION-REPORT.md) и
+[сводка Колосса](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/COLOSSUS-RECAP-REPORT.md).

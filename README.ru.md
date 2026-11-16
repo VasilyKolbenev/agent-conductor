@@ -14,7 +14,7 @@
 
 [Посмотреть завершённый запуск Codex + Grok в текущей Studio (скриншот)](docs/assets/colossus-pilot3-recap.png).
 
-В реальном запуске на Windows Grok изучил реализацию счётчика и тесты и нашёл, почему сбои попадали в число успешных запусков. Codex исправил `count_succeeded`. Три теста прошли, затем другой экземпляр Codex проверил правку. Оператор одобрил исполнение и принял результат. [Отчёт о запуске](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+В реальном запуске на Windows Grok изучил реализацию счётчика и тесты и нашёл, почему сбои попадали в число успешных запусков. Codex исправил `count_succeeded`. Три теста прошли, затем другой экземпляр Codex проверил правку. Оператор одобрил исполнение и принял результат. [Отчёт о запуске](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
 ## Запустить Arachnid
 
@@ -61,7 +61,7 @@ py -3.12 -m venv .venv
 
 ## О проекте
 
-[Архитектура](docs/architecture.ru.md) · [Планы V2](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Участие в разработке](CONTRIBUTING.ru.md) · [Лицензия MIT](LICENSE)
+[Архитектура](docs/architecture.ru.md) · [Документация](docs/index.ru.md) · [Участие в разработке](CONTRIBUTING.ru.md) · [Лицензия MIT](LICENSE)
 
 Прежнее название проекта — December Command. Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление документации для локального просмотра находится в `docs/index.ru.md`. [Состояние приёмки](docs/release-notes-v1-alpha.ru.md) · [Проверки сборки](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
 

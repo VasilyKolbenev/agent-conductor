@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Чтобы сначала посмотреть интерфейс на Windows, скачайте пилот из [GitHub Releases](https://github.com/VasilyKolbenev/agent-conductor/releases) и откройте `START-HERE.txt` из ZIP. В [Pilot 2](../distribution/windows-two-task/START-HERE.txt) Колосс восстановит порядок записанных вами проверок первой задачи. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно изучить принятый пример Codex + Grok. Оба пилота работают офлайн.
+Для знакомства со Studio на Windows скачайте [Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) и откройте [инструкцию к архиву](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt). Запишите порядок проверки первой задачи. Во второй попросите Колосса найти эти проверки. В [Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) можно открыть переносимый пример принятого цикла Codex + Grok. Оба сценария работают офлайн.
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
@@ -59,7 +59,10 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Возьмите wheel и SHA256 кандидата у сопровождающего проекта или из указанного им запуска CI.
+Для [Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3) скачайте wheel
+и возьмите SHA-256 этого файла на странице выпуска. Коммит исходников сборки —
+`646139b7b656c3eca93adf7900a14688c0672dd3`. Для другого кандидата возьмите оба значения
+со страницы соответствующего выпуска или из его CI.
 Установка основной ветки или совпадение номера `0.1.0` ещё не означает, что это тот же кандидат.
 Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
 
@@ -303,10 +306,10 @@ access-токена ограниченный срок: перед каждой �
 
 ### Что проверено с настоящим вендором
 
-- **Claude Code 2.1.239.** Шаг Goal по подписке прошёл внутри AppContainer, создал `artifact-goal`, уборка завершилась. Identify остановлен по таймауту. [Отчёт запуска](recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
-- **Codex 0.164.0.** В принятом учебном цикле по `count_succeeded` Codex выполнил Goal, Identify, Design и Do по подписке. На Do он исправил реализацию и тесты в копии задачи. Три теста unittest прошли, затем отдельный экземпляр Codex проверил изменения и протокол. [Принятый цикл](recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
-- **Grok Build 1.0.13.** В том же цикле Grok выполнил Diagnose по двум исходным файлам в режиме чтения. Ранее его диагноз по подписке прошёл отдельную учебную приёмку G6. Источник квоты может вернуть сведения без процента использования. [Отчёт G6](recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md).
-- **Kimi Code 0.38.0.** Нативный CLI принял фиктивный вход в изоляции без сети. Чтение квоты с настоящего аккаунта ещё предстоит подтвердить. Продукт останавливает подписочные задачи до запуска; изоляция изменяемого состояния CLI ещё в разработке. [Проверка CLI](recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Границы запуска](recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
+- **Claude Code 2.1.239.** Шаг Goal по подписке прошёл внутри AppContainer, создал `artifact-goal`, уборка завершилась. Identify остановлен по таймауту. [Отчёт запуска](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md).
+- **Codex 0.164.0.** В принятом учебном цикле по `count_succeeded` Codex выполнил Goal, Identify, Design и Do по подписке. На Do он исправил реализацию и тесты в копии задачи. Три теста unittest прошли, затем отдельный экземпляр Codex проверил изменения и протокол. [Принятый цикл](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
+- **Grok Build 1.0.13.** В том же цикле Grok выполнил Diagnose по двум исходным файлам в режиме чтения. Ранее его диагноз по подписке прошёл отдельную учебную приёмку G6. Источник квоты может вернуть сведения без процента использования. [Отчёт G6](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/G6-GROK-1013-REPORT.md).
+- **Kimi Code 0.38.0.** Нативный CLI принял фиктивный вход в изоляции без сети. Чтение квоты с настоящего аккаунта ещё предстоит подтвердить. Продукт останавливает подписочные задачи до запуска; изоляция изменяемого состояния CLI ещё в разработке. [Проверка CLI](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-KIMI-NATIVE-BASELINE.md) · [Границы запуска](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-KIMI-PROMPT-OFFLINE-REPORT.md).
 
 Этот цикл прошёл на Windows за одну итерацию. Перед Do человек согласовал план с командой
 тестов, владелец одобрил исполнение и принял результат. Для публичной альфы предстоит проверить,
