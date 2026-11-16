@@ -8,7 +8,11 @@
 | --- | --- | --- |
 | Two-task ZIP, Studio and CLI. Live Codex + Grok on personal subscriptions. | Studio and CLI from the Python wheel. Local demo. | Studio and CLI from the same wheel. Local demo. |
 
-![A completed five-step orbit: Grok diagnosed the problem, Codex implemented the fix, and the inspector links the two changed files, three tests and independent verdict.](docs/assets/colossus-pilot3-recap.png)
+**The Colossus orbit · design preview**
+
+![Colossus at the center, surrounded by five stages. Grok handles diagnosis and Codex handles the other four stages.](docs/assets/colossus-orbit/kolos-balanced-guardian.png)
+
+[View the completed Codex + Grok run in the current Studio (screenshot)](docs/assets/colossus-pilot3-recap.png).
 
 On a real Windows run, Grok read the counter and its tests to diagnose why failed runs were counted as successes. Codex fixed `count_succeeded`. Three unit tests passed before a separate Codex instance reviewed the patch. The operator approved implementation and accepted the result. [Run record](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
