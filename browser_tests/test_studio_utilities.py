@@ -9,7 +9,7 @@ from threading import Thread
 import pytest
 from playwright.sync_api import expect
 
-from browser_tests.desk_hold import close_context
+from browser_tests.desk_hold import Hold, close_context, until
 from browser_tests.test_studio_rendered import studio_url
 from conductor import demo, ownership_transition, server
 from conductor.command.adapters import AdapterRegistry
@@ -177,15 +177,24 @@ def test_deepseek_chat_records_manual_handoff_and_keeps_api_setup_separate(chrom
 
         context.route("**/*", local_only)
         try:
+            tasks = Hold(page, "**/command/tasks")
+            tasks.hold()
             page.goto(url + "/#lang=ru")
-            page.locator("#attach").click()
+            until(page, "initial task list is held", tasks.reached)
+            with page.expect_response("**/command/project/utilities"):
+                page.locator("#attach").click()
             panel = page.get_by_role("dialog")
             panel.get_by_role("button", name="DeepSeek Harness", exact=True).click(timeout=3000)
             expect(panel).to_contain_text("DEEPSEEK_API_KEY")
             expect(panel).to_contain_text("баланс API")
             expect(panel).not_to_contain_text("вход по подписке")
             assert not posts
-            panel.get_by_role("button", name="Подключить чат вручную").click()
+            connect = panel.get_by_role("button", name="Подключить чат вручную")
+            expect(connect).to_be_disabled()
+            tasks.land()
+            expect(page.locator("#new")).to_be_enabled()
+            expect(connect).to_be_enabled()
+            connect.click()
             expect(panel.get_by_role("heading", name="DeepSeek Chat", exact=True)).to_be_visible()
             link = panel.get_by_role("link", name="Открыть DeepSeek Chat")
             expect(link).to_have_attribute("href", "https://chat.deepseek.com/")

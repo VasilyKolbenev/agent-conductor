@@ -543,6 +543,7 @@ function boot() {
       checking = false;
       if (again && connected && listState !== "foreign") refresh();
     }
+    utility.sync();
   }
   async function start() {
     const epoch = ++identityEpoch;
