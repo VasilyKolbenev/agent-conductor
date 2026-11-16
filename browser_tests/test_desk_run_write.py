@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 from playwright.sync_api import Browser, Locator, Page, expect
 
-from browser_tests.desk_hold import Hold, land_read, read_again
+from browser_tests.desk_hold import Hold, close_context, land_read, read_again, until
 from conductor import server
 from conductor.command.adapters import ProviderConfig
 from conductor.command.providers import resolve_providers
@@ -108,11 +108,21 @@ def test_document_and_manual_step_are_written_for_the_selected_task_run(
         form.locator('[name="content"]').press("Tab")
         _the_control_follows_a_re_read(
             page, httpd, controls, form.locator('[data-focus-key="document:publish"]'))
+        # The server may commit and publish SSE before the browser receives the POST ACK.
+        accepted = []
+        page.route("**/command/runs/run-fix-old/artifacts",
+                   lambda route: accepted.append((route, route.fetch())))
+        form.locator('[data-focus-key="document:publish"]').click()
+        until(page, "the project has answered the document write", lambda: accepted)
+        route, answer = accepted.pop()
+        assert answer.status == 201
+        read_again(page, controls, httpd.clients.publish_state)
         with page.expect_response(lambda response: response.url.endswith("/artifacts")) as sent:
-            form.locator('[data-focus-key="document:publish"]').click()
+            route.fulfill(response=answer)
         assert sent.value.status == 201, sent.value.json()
-        page.wait_for_function("() => document.querySelector('#deskRun [data-step=\"document\"] "
-                               "[name=\"content\"]')?.value === ''")
+        expect(form.locator('[name="content"]')).to_have_value("")
+        land_read(page, controls)
+        expect(form.locator('[name="content"]')).to_have_value("")
         assert any(row.kind == "artifact" and row.value.artifact_ref == ref
                    for row in RunStore(root).read("run-fix-old").records)
 
@@ -146,4 +156,4 @@ def test_document_and_manual_step_are_written_for_the_selected_task_run(
         expect(panel.locator('[data-subject="run:run-fix-old"]')).to_be_visible()
         assert errors == []
     finally:
-        context.close()
+        close_context(context)

@@ -32,11 +32,14 @@ export function createRunWriteHost({door, binding, refreshRun, onChange, onForei
     }
     onChange();
   }
-  function current() {
-    const now = binding();
+  function selectedHere(now) {
     return !disposed && !now.foreign && now.mode === "active"
       && now.connection === "open" && now.runId === selected
-      && now.taskId === detail?.config?.task?.id && now.ready;
+      && now.taskId === detail?.config?.task?.id;
+  }
+  function current() {
+    const now = binding();
+    return now.ready && selectedHere(now);
   }
   function sync(desk) {
     if (disposed) return state;
@@ -133,7 +136,8 @@ export function createRunWriteHost({door, binding, refreshRun, onChange, onForei
       }
     }
   }
-  const adapter = {chosenRun: () => current() ? selected : null,
+  // A reread closes the write door while its accepted acknowledgement still names this run.
+  const adapter = {chosenRun: () => selectedHere(binding()) ? selected : null,
     dispatch, isId: (value) => typeof value === "string" && ID.test(value),
     said: errorNotice, state: () => state, write,
     refreshRun: (runId) => refreshRun(runId)};
