@@ -1,56 +1,70 @@
 # Arachnid Studio
 
-[Русский](README.ru.md) · [Windows downloads](https://github.com/VasilyKolbenev/agent-conductor/releases) · [Getting started](docs/first-run-v1.en.md) · [Architecture](docs/architecture.md)
+**A local workspace where coding tools can hand a task to each other and show you how they solved it.** Give Colossus a goal, review the roles and limits, and follow the run on its orbit. Open any attempt to inspect its changes, tests and review while the conversation stays in view.
 
-Arachnid is a local workspace for coding harnesses. Describe a task to **Kolos**, choose the tools and their roles, and review the proposed limits before work begins. Follow the workflow on an orbit. Select a step to see what that participant actually produced while the conversation stays in the middle.
+[**Download Pilot 3**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
 
-![Kolos in the second task with the first task’s checks, their source and the proposed reviewer](docs/assets/kolos-second-task.png)
+| Windows | Linux (tested on Ubuntu) | macOS |
+| --- | --- | --- |
+| Two-task ZIP, Studio and CLI. Live Codex + Grok on personal subscriptions. | Studio and CLI from the Python wheel. Local demo. | Studio and CLI from the same wheel. Local demo. |
 
-## Try it on Windows
+![A completed five-step orbit: Grok diagnosed the problem, Codex implemented the fix, and the inspector links the two changed files, three tests and independent verdict.](docs/assets/colossus-pilot3-recap.png)
 
-The [Releases page](https://github.com/VasilyKolbenev/agent-conductor/releases) lists downloadable pilots. Open a release, download its ZIP and checksum, extract the ZIP and run the included Windows launcher. Python 3.11 or 3.12 with venv and pip is required. The notes for each pilot describe exactly what you can try offline.
+On a real Windows run, Grok read the counter and its tests to diagnose why failed runs were counted as successes. Codex fixed `count_succeeded`. Three unit tests passed before a separate Codex instance reviewed the patch. The operator approved implementation and accepted the result. [Run record](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
 
-| Which experience do you want? | What to open |
-| --- | --- |
-| Inspect a worked example with Codex and Grok | [Windows Pilot 1 and its installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1). Its bundled project contains a teaching example you can inspect without signing in. |
-| Carry a review procedure from one of your tasks to the next | [Download Windows Pilot 2](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2) · [Quick start](distribution/windows-two-task/START-HERE.txt). The first task records the checks and observations you confirm. In the second, ask Kolos for that procedure, open the cited record or edit the proposed plan in chat. |
-| Connect your own harnesses | [First-run and account setup](docs/first-run-v1.en.md). Check the supported CLI version, sign into your own account and preview the scope before granting a run. |
+## Run Arachnid
 
-The two-task pilot stores both tasks and the accepted observations locally. The edited plan stays in the open tab. Copy the plan from the task brief if you want to keep that revision. These pilot walkthroughs make no model calls.
+Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-[View the source record with both observations and the operator who accepted them](docs/assets/kolos-task-evidence.png).
+**Windows · try two of your own tasks.** Download the `Arachnid-Windows-Pilot-3.zip` and the SHA-256 file from [Pilot 3][release]. Extract the entire ZIP and double-click **`START.cmd`**. Record the checks you performed on a finished task. In the second task, ask Colossus to find that procedure, open the source and edit the proposed review plan in chat. The two tasks and accepted observations stay on your machine. Copy the edited draft before you close the tab. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/START-HERE.txt).
 
-## What a completed run looks like
-
-In the accepted Windows run, Grok diagnosed a bug in `count_succeeded`. Codex patched two files. Three unittest cases ran before a separate Codex instance reviewed the result. The operator confirmed Do and accepted the final result. The inspector binds the diff, test protocol and verdict to the selected attempt. [Run report](docs/recovery/2026-10-20/tasks/DALIO-FIRST-COMPLETE-REPORT.md).
-
-![Do in the offline Codex and Grok example. The inspector shows the counter diff, three tests and a separate checker.](docs/assets/pilot1-codex-grok-do.png)
-
-| Harness | Evidence available today |
-| --- | --- |
-| Codex CLI and Grok Build | Together completed the five-step subscription workflow above on Windows. |
-| Claude Code | Completed a subscription Goal in isolation. Full-role acceptance remains open. |
-| Kimi Code CLI | Opened a session in an offline test. A live subscription task is pending. |
-| DeepSeek Harness | API-key adapter with a local test. The service uses an API balance. |
-| Additional utilities | Manual CLI handoff or a compatible protocol bridge. Each utility needs its own check for automation and subscription support. |
-
-Start with the five-step Dalio workflow or build a custom workflow in Studio. The operator grants a bounded run and takes the decisions assigned to them. [Workflow and harness setup](docs/first-run-v1.en.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md).
-
-## Build and explore
-
-The runtime originated as **December Command v0.1.0 alpha**. Its Python distribution is `agent-conductor` and its command is `conduct`. CI covers Windows, Linux and macOS. The downloadable colleague pilots target Windows. Use the tag next to a release to inspect the source corresponding to that ZIP. [Release evidence](docs/release-notes-v1-alpha.md) · [CI](https://github.com/VasilyKolbenev/agent-conductor/actions/workflows/ci.yml) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE).
-
-For a source checkout:
+**Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
 ```sh
-git clone https://github.com/VasilyKolbenev/agent-conductor.git
-cd agent-conductor
-python -m venv .venv
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.0-py3-none-any.whl
+.venv/bin/conduct demo
 ```
 
-On Windows, run `.\.venv\Scripts\python.exe -m pip install -e .` and then `.\.venv\Scripts\conduct.exe demo`. On Linux and macOS, use `.venv/bin/python -m pip install -e .` and `.venv/bin/conduct demo`. Open the local URL printed in your terminal. Ctrl+C stops the demo.
+On Windows, the same wheel also runs the CLI demo from PowerShell. For Python 3.11, use `py -3.11` on the first line.
 
-Developers can find the versioned workflow contracts under the documentation index, `docs/index.md`.
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.0-py3-none-any.whl
+.\.venv\Scripts\python.exe -m conductor demo
+```
+
+Open the local URL printed in the terminal. Press Ctrl+C there to stop the demo. For a real project, the setup guide covers supported CLI versions, account sign-in, isolation and the preview you approve before execution. [First real project](docs/first-run-v1.en.md).
+
+## Work with a team of harnesses
+
+| Ask Colossus or choose a step | What Studio shows |
+| --- | --- |
+| “What did Grok hand to Codex?” | The diagnosis and its supporting material from the run. |
+| Select **Do**, then an attempt | The actual diff, test results and independent verdict for that attempt. |
+| “What changed while I was away?” | The latest recorded outcome, any decision waiting for you, and links to the evidence. |
+| “Find the review procedure from the previous task.” | A proposed sequence and reviewer, linked to the accepted record you can inspect. |
+
+Start with the five-step Dalio cycle or publish a workflow of your own. Choose roles, review the proposed budget and decide where the team needs your approval. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
+
+| Harness | What has been verified |
+| --- | --- |
+| **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
+| Claude Code | One Goal completed in isolation on a subscription. Full-role acceptance is pending. |
+| Kimi Code CLI | An offline session opened. A live subscription task is pending. |
+| DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
+| Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
+
+## Explore the project
+
+[Architecture](docs/architecture.md) · [V2 roadmap](docs/plans/2026-11-13-v2-alpha-review.ru.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
+
+Arachnid grew out of **December Command v0.1.0 alpha**. The Python package is `agent-conductor` and its command is `conduct`. For local reading, the documentation index is `docs/index.md`. [Release evidence](docs/release-notes-v1-alpha.md) · [Pilot build checks](https://github.com/VasilyKolbenev/agent-conductor/actions/runs/43869073662).
+
+Earlier releases include the [offline Codex + Grok example in Pilot 1](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.1) and the [original two-task pilot](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.2).
+
+[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.0-pilot.3
+[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.0-pilot.3/agent_conductor-0.1.0-py3-none-any.whl
 
 <details>
 <summary><strong>CLI reference · useful once you leave the demo</strong></summary>
