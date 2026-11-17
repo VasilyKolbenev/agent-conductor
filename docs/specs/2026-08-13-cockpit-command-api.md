@@ -197,6 +197,14 @@ scope, not permission for C/API-1 to invent a generic file-write endpoint.
     "mutation": false, "csrf": false
   },
   {
+    "method": "GET", "path": "/command/tasks/<task_id>/review-plan",
+    "mutation": false, "csrf": false
+  },
+  {
+    "method": "POST", "path": "/command/tasks/<task_id>/review-plan",
+    "mutation": true, "csrf": true
+  },
+  {
     "method": "GET", "path": "/command/tasks/<task_id>/preparation",
     "mutation": false, "csrf": false
   },

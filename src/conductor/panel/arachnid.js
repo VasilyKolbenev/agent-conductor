@@ -68,6 +68,10 @@ function boot() {
     openRun: (run, task) => { address({kind: "run", id: run, task}); refresh(); },
   });
   const scene = arachnidConversation($("chat"), $("inspection"), {
+    readPlan: (project, task, stop) => validPlanTask(project, task)
+      ? transport.readJson(path.reviewPlan(task), stop) : Promise.reject(Error("project_mismatch")),
+    writePlan: (project, task, body) => validPlanTask(project, task) && identity.mode === "active"
+      ? transport.submit("reviewPlan", task, body) : Promise.resolve({status: "refused"}),
     reviewSource: (sessionId, controller) => {
       const epoch = linkEpoch, projectId = identity?.project_id;
       const valid = () => !controller.signal.aborted && connected && epoch === linkEpoch
@@ -138,6 +142,11 @@ function boot() {
       && selected?.kind === "run" && selected.id === run && selected.task === task
       && current.id === run && current.task === task && detail?.run?.run_id === run
       && detail?.config?.task?.id === task && detail?.task?.id === task;
+  }
+  function validPlanTask(project, task) {
+    return connected && listState === "ready" && !foreign() && identity?.project_id === project
+      && current?.kind === "task" && !current.bad && current.id === task
+      && key(addressedSelection()) === key(current);
   }
   function paletteCatalog() {
     if (!identity || foreign() || !connected || listState !== "ready"
@@ -440,6 +449,8 @@ function boot() {
       run: current?.kind === "run" ? current.id : null, task: current?.task});
     paintRail(rows); paintPeople();
     scene.sync({locale, sessionId: connected && listState === "ready" && current ? key(current) : null,
+      taskId: current?.kind === "task" ? current.id : null, projectId: identity?.project_id,
+      writable: identity?.mode === "active",
       runId: current?.kind === "run" ? current.id : null,
       detail, title, ready: connected && listState === "ready" && !detailState && !!current && !current.bad});
     nextAction.sync(identity && current?.kind === "run" ? {

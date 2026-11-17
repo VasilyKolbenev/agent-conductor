@@ -267,7 +267,7 @@ class CommandApi:
                 return self._localized(self._get(route, host), pairs)
             body = self._session.validate_mutation(pairs, raw_body)
             self._identity.check(pairs, required=route.name in {
-                "project_task_draft", "project_utilities"})
+                "project_task_draft", "project_utilities", "task_review_plan"})
             return self._localized(self._post(route, body), pairs)
         except ApiRefusal as refusal:
             return CommandResponse(refusal.status, refusal.as_dict())

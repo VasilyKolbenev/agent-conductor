@@ -54,6 +54,9 @@ def read_route(api: CommandApi, route: Route, host: str) -> tuple[int, dict[str,
             api._store, api._providers, computed_at=api._clock(), registry=api._registry)
     if route.name == "tasks":
         return task_routes.list_tasks(api._tasks)
+    if route.name == "task_review_plan":
+        from .task_review_plan import read_plan
+        return 200, read_plan(api._tasks, api._store, route.task_id)
     if route.name == "task":
         assert route.task_id is not None
         return task_routes.read_task(api._tasks, api._store, route.task_id)

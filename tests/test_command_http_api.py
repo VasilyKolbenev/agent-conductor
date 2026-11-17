@@ -144,6 +144,8 @@ def test_exact_route_allowlist_and_wrong_method_or_path_are_closed(tmp_path):
         ("GET", "/command/tasks"),
         ("POST", "/command/tasks"),
         ("GET", "/command/tasks/<task_id>"),
+        ("GET", "/command/tasks/<task_id>/review-plan"),
+        ("POST", "/command/tasks/<task_id>/review-plan"),
         ("GET", "/command/tasks/<task_id>/preparation"),
         ("POST", "/command/tasks/<task_id>/seed"),
         ("GET", "/command/quotas"),
@@ -211,7 +213,8 @@ def test_no_mutating_route_signals_anything_it_was_refused(tmp_path, path):
     assert "<" not in target, target
     # Withdraw and acceptance preview both accept `{}`; refuse an unknown field on those doors.
     refused = post(subject, target, {"unknown": 0} if target.endswith(("/withdraw", "/accept/preview")) else {})
-    if target in {"/command/project/task-draft", "/command/project/utilities"}:
+    if target in {"/command/project/task-draft", "/command/project/utilities",
+                  "/command/tasks/task-001/review-plan"}:
         assert (refused.status, refused.payload["error"]["code"]) == (409, "project_mismatch")
         assert events == []
         assert journal.read_bytes() == before

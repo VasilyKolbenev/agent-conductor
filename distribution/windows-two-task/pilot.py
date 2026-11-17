@@ -146,7 +146,7 @@ def open_studio(runtime, data, action, options):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("open", "new", "demo", "verify"), nargs="?")
+    parser.add_argument("mode", choices=("open", "edit", "new", "demo", "verify"), nargs="?")
     parser.add_argument("--port", type=int, choices=range(65536), default=0, metavar="0..65535")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--stop-on-stdin-eof", action="store_true",
@@ -166,6 +166,9 @@ def main():
         if legacy.is_file():
             latest = legacy
     mode = options.mode or ("open" if latest.exists() else "demo")
+    if mode == "edit" and not latest.is_file():
+        raise ValueError("No saved pair to edit. Create one with START.cmd new.")
+    action = "edit" if mode == "edit" else "open"
     if mode == "demo":
         base.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="demo-", dir=base) as directory:
@@ -192,9 +195,9 @@ def main():
             with tempfile.TemporaryDirectory(prefix="view-", dir=base) as directory:
                 runtime = Path(directory)
                 install_runtime(runtime)
-                return open_studio(runtime, work, "open", options)
+                return open_studio(runtime, work, action, options)
     print("Открываем сохранённую пару:", work, flush=True)
-    return open_studio(work, work, "open", options)
+    return open_studio(work, work, action, options)
 
 
 if __name__ == "__main__":

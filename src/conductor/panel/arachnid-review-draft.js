@@ -25,6 +25,70 @@ export function newReview(source) {
     : source.steps.map(id => ({id}));
   return {source, version: 1, steps};
 }
+export function planRecord(plan) {
+  const s = plan.source;
+  return {version: plan.version, steps: plan.steps.map(row => row.custom),
+    reviewer: plan.nominee || s.author, source: {task_id: s.taskId, run_id: s.runId,
+      artifact_id: s.documentId, receipt_id: s.receiptId}};
+}
+export function savedReview(record, projectId) {
+  if (!record || !Number.isSafeInteger(record.revision) || record.revision < 0) throw Error();
+  const p = record.plan;
+  if (record.revision === 0 && p === null) return null;
+  const s = p?.source;
+  if (!record.revision || !Number.isSafeInteger(p?.version) || p.version < 1
+      || !Array.isArray(p.steps) || !p.steps.length || !p.steps.every(v => typeof v === "string")
+      || ![p.reviewer, s?.task_id, s?.run_id, s?.artifact_id, s?.receipt_id]
+        .every(v => typeof v === "string" && v.length)) throw Error();
+  return {version: p.version, nominee: p.reviewer, steps: p.steps.map(custom => ({custom})),
+    source: {kind: "operator", projectId, taskTitle: s.task_id, taskId: s.task_id,
+      runId: s.run_id, documentId: s.artifact_id, receiptId: s.receipt_id}};
+}
+export function taskPlanStore(door, repaint) {
+  let current = null;
+  async function read(record) {
+    record.phase = "loading";
+    try {
+      const data = await door.readPlan(record.project, record.task, record.stop);
+      if (current !== record) return;
+      record.saved = savedReview(data, record.project);
+      record.revision = data.revision; record.phase = "ready";
+    } catch (_) {
+      if (current !== record) return;
+      record.phase = "failed";
+    }
+    repaint();
+  }
+  function sync(model) {
+    const task = model?.ready && model.taskId;
+    if (current && current.task === task && current.project === model.projectId) return;
+    current?.stop.abort(); current = null;
+    if (!task) return;
+    current = {task, project: model.projectId, stop: door.stop(), saved: null, revision: null};
+    read(current);
+  }
+  async function save(record, draft, base) {
+    if (record !== current || record.phase !== "ready" || base !== record.revision) return false;
+    record.phase = "saving"; repaint();
+    try {
+      const answer = await door.writePlan(record.project, record.task,
+        {expected_revision: base, plan: planRecord(draft)});
+      if (record !== current) return false;
+      if (answer.status === "accepted") {
+        const saved = savedReview(answer.payload, record.project);
+        if (!saved || ![base, base + 1].includes(answer.payload.revision)
+            || JSON.stringify(planRecord(saved)) !== JSON.stringify(planRecord(draft)))
+          throw Error();
+        record.saved = saved; record.revision = answer.payload.revision; record.phase = "ready";
+        return true;
+      }
+      record.phase = ["record_conflict", "draft_conflict"].includes(answer.code) ? "conflict"
+        : answer.status === "unknown" ? "unknown" : "refused";
+    } catch (_) { if (record === current) record.phase = "unknown"; }
+    return false;
+  }
+  return {sync, current: () => current, save, reload: () => current && read(current)};
+}
 export function editReview(plan, raw, locale) {
   const text = raw.trim();
   const message = (en, ru) => ({plan, text: pick([en, ru], locale)});
@@ -78,7 +142,7 @@ export function editReview(plan, raw, locale) {
     text: pick(["Updated your proposal.", "Обновил твой план."], locale)};
 }
 
-export function reviewCard(plan, locale, href, use) {
+export function reviewCard(plan, locale, href, use, saved = false) {
   const tr = (en, ru) => pick([en, ru], locale);
   const s = plan.source, list = plan.steps.map(row => line(row, locale));
   const manual = s.kind === "operator";
@@ -92,7 +156,8 @@ export function reviewCard(plan, locale, href, use) {
   const proof = element("a", {href: href.attempt, target: "_blank", rel: "noopener",
     text: manual ? tr("Accepted check record", "Принятая запись проверок")
       : tr("Do attempt and protocol", "Попытка Do и протокол")});
-  const summary = manual ? tr("Suggested reviewer: ", "Предлагаю проверяющего: ")
+  const summary = saved ? tr("Reviewer: ", "Проверяющий: ")
+    : manual ? tr("Suggested reviewer: ", "Предлагаю проверяющего: ")
     : tr("Independent checker proposed: ", "Предлагаю независимого проверяющего: ");
   const reason = manual ? tr("The operator confirmed the first task: ",
     "Проверки первой задачи подтвердил(а) ") + previous
@@ -102,17 +167,20 @@ export function reviewCard(plan, locale, href, use) {
     tr("Source: ", "Источник: ") + (manual ? s.taskTitle + " / " + s.runId + " / " + s.documentId
       : s.runId + " / " + s.nodeId + " / " + s.attemptId)].join("\n");
   const card = element("section", {
-    className: "review-proposal", "data-revision": String(plan.version)}, [
-    element("h3", {text: title}), steps, element("p", {text: summary + reviewer}),
-    element("p", {className: "review-meta", text: reason}),
-    ...(plan.nominee ? [element("small", {text: tr("Operator nomination; availability not checked.",
+    className: "review-proposal", "data-revision": String(plan.version),
+    "data-saved": saved ? "true" : null}, [
+    element("h3", {text: title}), steps,
+    element("p", {className: "review-reviewer", text: summary + reviewer}),
+    ...(previous ? [element("p", {className: "review-meta", text: reason})] : []),
+    ...(plan.nominee && !saved ? [element("small", {text: tr("Nomination; availability unchecked.",
       "Кандидат оператора; доступность для этой роли ещё не проверена.")})] : []),
     element("div", {}, [element("span", {text: tr("Source: ", "Источник: ")}), source,
       element("span", {text: " · "}), proof]),
     element("details", {}, [element("summary", {
       text: tr("Plan text to copy", "Текст плана для копирования")}),
       element("pre", {text: plain})]),
-    element("small", {text: tr("Draft in this tab. Nothing has been scheduled.",
+    element("small", {text: saved ? tr("Saved in this task.", "Сохранён в этой задаче.")
+      : tr("Draft in this tab. Nothing has been scheduled.",
       "Черновик в этой вкладке. Ничего не запущено.")}),
   ]);
   if (use) {

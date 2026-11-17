@@ -158,3 +158,51 @@ def test_saved_colleague_task_quotes_and_edits_the_first_tasks_actual_checks(chr
         http.shutdown()
         thread.join(5)
         http.server_close()
+
+
+def test_explicit_save_restores_the_plan_and_a_second_tab_cannot_overwrite_it(chromium, tmp_path):
+    setup = Path(__file__).resolve().parents[1] / "distribution/windows-two-task/first_task.py"
+    root = tmp_path / "personal"
+    run, task = run_path(str(setup))["create"](
+        root, "Проверить ZIP", "Разослать ZIP", [("Сверить SHA", "Совпал")], "Ольга",
+        accepted=True)
+    http = server.build(root, 0, registry=AdapterRegistry([]), launch=Launch(mode="active"))
+    thread = Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    context = chromium.new_context()
+    posts = []
+    context.on("request", lambda r: posts.append(r) if r.method == "POST" else None)
+    try:
+        url = f"http://127.0.0.1:{http.server_port}/#task={task}&lang=ru"
+        first, stale = context.new_page(), context.new_page()
+        for page, check in [(first, "Проверить ZIP на Windows"), (stale, "Старый вариант")]:
+            page.goto(url)
+            page.get_by_role("button", name="Найди порядок проверки из прошлой задачи").click()
+            expect(page.locator(".review-steps li")).to_have_text(["Сверить SHA"])
+            ask(page, "Измени шаг 1: " + check)
+            expect(page.locator('[data-revision="2"] li')).to_have_text(check)
+        assert posts == []
+        save = "Сохранить план в задаче"
+        first.get_by_role("button", name=save).click(timeout=3000)
+        saved = '.review-proposal[data-saved="true"][data-revision="2"]'
+        expect(first.locator(saved + " li")).to_have_text("Проверить ZIP на Windows")
+        stale.get_by_role("button", name=save).click()
+        expect(stale.locator('#messages [role="status"]')).to_contain_text("изменился")
+        assert len(posts) == 2
+        assert all(r.url.endswith(f"/command/tasks/{task}/review-plan") for r in posts)
+        assert all(r.post_data_json["expected_revision"] == 0 for r in posts)
+        fresh = context.new_page()
+        fresh.goto(url)
+        card = fresh.locator(saved)
+        expect(card.locator("li")).to_have_text("Проверить ZIP на Windows")
+        expect(card.locator(".review-reviewer")).to_contain_text("Ольга")
+        link = card.locator('a[href*="reviewEvidence"]').get_attribute("href")
+        source = posts[0].post_data_json["plan"]["source"]
+        assert parse_qs(urlsplit(link).fragment)["session"] == [run]
+        assert parse_qs(urlsplit(link).fragment)["reviewEvidence"] == [source["artifact_id"]]
+        assert len(posts) == 2
+    finally:
+        close_context(context)
+        http.shutdown()
+        thread.join(5)
+        http.server_close()

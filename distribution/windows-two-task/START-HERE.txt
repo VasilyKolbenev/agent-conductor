@@ -30,8 +30,10 @@ Windows · Быстрый старт
 В чате второй задачи спросите «Найди порядок проверки из прошлой задачи».
 Откройте источник и сверьте автора и наблюдения. Вернитесь в чат и напишите,
 например, «Измени шаг 1: Сверить даты с итоговым отчётом» и «Проверяющий: Анна».
-«Перенести в текст задачи» скопирует план в поле сообщения. Если план нужен
-после закрытия вкладки, скопируйте текст отдельно.
+«Перенести в текст задачи» копирует текст в поле сообщения. Для сохранения на диске
+остановите просмотр нажатием Ctrl+C и откройте сохранённую пару командой .\START.cmd edit.
+Попросите порядок проверки, внесите правку и нажмите «Сохранить план в задаче».
+Следующее открытие пары покажет сохранённые шаги, проверяющего и ссылку на источник.
 
 Следующий START.cmd откроет сохранённую пару. Новые пары хранятся
 в %USERPROFILE%\ArachnidStudio. Если вы работали с предыдущей версией,
@@ -55,6 +57,9 @@ For your own tasks, run .\START.cmd new in PowerShell from the extracted folder.
 Enter two task titles, the checks and observations from the first, and the name
 of the person confirming the record. Type ACCEPT to save. In the second task,
 ask Colossus to find the previous checks, open the source and edit the review plan.
+To keep the plan on disk, stop the viewer with Ctrl+C and use .\START.cmd edit.
+Recall the checks, edit your plan and choose Save plan to task. Reopening the pair
+shows the saved steps, reviewer and source. Copy to task text only fills the composer.
 START.cmd reopens the latest pair. Use .\START.cmd demo to revisit the example.
 For real tasks, connect your own CLI subscriptions in an active project:
 https://github.com/VasilyKolbenev/agent-conductor/blob/main/docs/first-run-v1.en.md

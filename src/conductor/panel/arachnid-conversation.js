@@ -8,7 +8,7 @@ import {
 import {patchStep, renderOrbit} from "./arachnid-orbit.js";
 import {recapAnswer, recapIntent, recapStatus, recapTitle, renderRecap} from "./arachnid-recap.js";
 import {handoffData} from "./arachnid-handoff-data.js";
-import {editReview, newReview, reviewCard, reviewHelp, reviewIntent} from "./arachnid-review-draft.js";
+import {editReview, newReview, reviewCard, reviewHelp, reviewIntent, taskPlanStore} from "./arachnid-review-draft.js";
 import {
   handoffCasesAnswer, handoffOldAnswer, handoffVerdictAnswer, renderHandoff,
 } from "./arachnid-handoff.js";
@@ -54,6 +54,7 @@ export function arachnidConversation(center, inspector, door) {
   let signature = null, generation = 0, paintedMessages = null, disposed = false, lookup = null;
   let handoffPanel = false, projection = null, projectionDetail = null, pair = null;
   let recap = null;
+  const plans = taskPlanStore(door, () => { paintedMessages = null; if (state) paint(); });
   const tr = (key, params) => localize(model, "atlas." + key, params);
   const words = (en, ru) => model.locale === "ru" ? ru : en;
   const step = () => scene?.steps.find(row => row.nodeId === state?.scope?.nodeId);
@@ -109,7 +110,9 @@ export function arachnidConversation(center, inspector, door) {
     return state.choices.get(action.action_id);
   }
   function transcript() {
-    const content = JSON.stringify([model.sessionId, model.locale,
+    const rec = plans.current();
+    const content = JSON.stringify([model.sessionId, model.locale, model.writable,
+      rec?.phase, rec?.revision, state.review?.version,
       state.messages.map(row => [row.role, row.text])]);
     if (paintedMessages === content) return;
     paintedMessages = content;
@@ -117,19 +120,57 @@ export function arachnidConversation(center, inspector, door) {
       const who = tr(row.role === "user" ? "you" : "title");
       const msg = element("div", {className: "msg " + row.role},
         [element("b", {text: who}), element("p", {text: row.text})]);
-      if (row.review) msg.append(reviewCard(row.review, model.locale, door.reviewLinks(row.review.source),
+      if (row.review) {
+        const card = reviewCard(row.review, model.locale, door.reviewLinks(row.review.source),
         state.review === row.review ? text => {
           const savedTitle = model.sessionId?.startsWith("task/") ? model.title : "";
           const brief = fields.command.value.trimEnd() || savedTitle || words("Task:", "Задача:");
           state.review = null; state.draft = brief + " · " + text.split("\n").join(" · ");
           fields.command.value = state.draft;
           paintedMessages = null; paint(); fields.command.focus();
-        } : null));
+        } : null);
+        if (rec?.phase === "ready" && model.writable && row.review === state.review
+            && row.review.source.kind === "operator" && row.review.steps.length
+            && (state.reviewBase ?? 0) === rec.revision) {
+          const draft = row.review, target = state;
+          card.append(button(words("Save plan in task", "Сохранить план в задаче"), async () => {
+            const ok = await plans.save(rec, draft, target.reviewBase ?? 0);
+            if (plans.current() !== rec || target !== state) return;
+            if (ok) {
+              if (state.review === draft) state.review = null;
+              delete row.review;
+              row.text = words("Saved the review plan.", "Сохранил план проверки в задаче.");
+            }
+            paint();
+          }, "atlas-refresh"));
+        }
+        msg.append(card);
+      }
       if (row.origin) msg.append(element("small", {className: "atlas-origin",
         title: [row.origin.nodeId, row.origin.actionId, row.origin.attemptId].join(" · "),
         text: scopeName(row.origin)}));
       return msg;
     }));
+    if (rec?.saved) fields.messages.prepend(reviewCard(rec.saved, model.locale,
+      door.reviewLinks(rec.saved.source), null, true));
+    if (rec) planStatus(rec);
+  }
+  function planStatus(rec) {
+    const notices = {
+      failed: ["Could not read the saved plan.", "Не удалось прочитать сохранённый план."],
+      refused: ["The server declined to save the plan.", "Сервер отклонил сохранение плана."],
+      unknown: ["Save outcome unknown.", "Результат сохранения неизвестен."],
+      conflict: ["The plan changed in another window.", "План изменился в другом окне."],
+      saving: ["Saving the plan…", "Сохраняю план…"],
+    };
+    const mismatch = rec.phase === "ready" && state.review?.source.kind === "operator"
+      && (state.reviewBase ?? 0) !== rec.revision;
+    const note = mismatch ? notices.conflict : notices[rec.phase];
+    if (!note) return;
+    const status = element("div", {role: "status", text: words(...note)});
+    if (rec.phase !== "saving") status.append(button(words("Read saved plan", "Прочитать сохранённый план"),
+      () => { state.review = null; plans.reload(); paint(); }, "atlas-refresh"));
+    fields.messages.append(status);
   }
   function settle(epoch, evidence) {
     let changed = false;
@@ -502,6 +543,11 @@ export function arachnidConversation(center, inspector, door) {
     if (state.review && /^(?:закрыть черновик|close draft)[.!]?$/iu.test(message)) {
       state.review = null; save(words("Draft closed.", "Черновик закрыт.")); return true;
     }
+    const rec = plans.current();
+    if (!state.review && rec?.saved
+        && /^(?:добав|удал|убери|измени|замени|проверяющ|reviewer|checker|add|insert|edit|replace|remove|delete)/iu.test(message)) {
+      state.review = rec.saved; state.reviewBase = rec.revision;
+    }
     if (state.review) {
       const result = editReview(state.review, message, model.locale);
       const changed = result.plan !== state.review;
@@ -516,6 +562,7 @@ export function arachnidConversation(center, inspector, door) {
       if (disposed || pending.signal.aborted || target !== state || !model.ready) return;
       if (source) {
         target.review = newReview(source); row.review = target.review;
+        target.reviewBase = plans.current()?.revision ?? 0;
         row.text = words("The last qualifying task used this order. ",
           "В последней подходящей задаче проверяли так. ") + reviewHelp(model.locale);
       } else row.text = words("No accepted review record or verified Do attempt was found.",
@@ -675,6 +722,7 @@ export function arachnidConversation(center, inspector, door) {
     const sessionId = typeof next.sessionId === "string" ? next.sessionId : null;
     if (sessionId !== null && !sessions.has(sessionId)) sessions.set(sessionId, newSession());
     state = sessions.get(sessionId) || null;
+    plans.sync(next);
     fields.command.disabled = !state;
     fields.send.querySelector("button[type=submit]").disabled = !state;
     scene = next.detail?.run?.run_id === next.runId && next.runId ? sceneOf(next.detail) : null;
@@ -702,6 +750,6 @@ export function arachnidConversation(center, inspector, door) {
     refreshRecap() { if (open && recap) drawInspector(); },
     history: () => (state?.messages || []).map(({role, text, origin}) =>
       ({role, text: origin ? scopeName(origin) + " · " + text : text})),
-    dispose() { disposed = true; lookup?.pending.abort(); lookup = null;
+    dispose() { disposed = true; lookup?.pending.abort(); lookup = null; plans.sync(null);
       revoke(); events.abort(); sessions.clear(); }};
 }

@@ -89,11 +89,11 @@ NEW_POSTS = tuple(row for row in NEW_ROUTES if row[0] == "POST")
 #: two ways. They are excluded from the
 #: verb-swap claim by NAME rather than by silence. The values are filled paths, as
 #: `target()` gives them, because that is what the parametrized claims compare.
+TASK = "task-studio-1"
 BOTH_VERBS = frozenset({
     "/command/runs", "/command/tasks", f"/command/workflows/{WORKFLOW}/flow",
+    f"/command/tasks/{TASK}/review-plan",
     "/command/queue", "/command/project/utilities", "/command/project/auto-continue"})
-#: The task every route pattern carrying ``<task_id>`` is filled with.
-TASK = "task-studio-1"
 #: The project document every route pattern carrying ``<doc_id>`` is filled with: `d-` and 32 hex.
 DOC_ID = "d-" + "0" * 32
 #: The two shipped files this module publishes documents derived from. Nothing

@@ -60,6 +60,8 @@ def test_the_new_routes_are_derived_from_the_live_table(tmp_path):
         ("GET", "/command/tasks"),
         ("POST", "/command/tasks"),
         ("GET", "/command/tasks/<task_id>"),
+        ("GET", "/command/tasks/<task_id>/review-plan"),
+        ("POST", "/command/tasks/<task_id>/review-plan"),
         ("GET", "/command/tasks/<task_id>/preparation"),
         ("POST", "/command/tasks/<task_id>/seed"),
         ("GET", "/command/quotas"),
@@ -152,6 +154,10 @@ def test_every_new_route_but_the_named_dual_verb_paths_refuses_the_other_verb(
     An empty write to utilities first requires the project claim.
     """
     subject, _store, _templates, events = api(tmp_path)
+    if path.endswith("/review-plan"):
+        assert code_of(get(subject, path)) == "service_refused"  # This fixture has no task yet.
+        assert code_of(post(subject, path, {})) == "project_mismatch"
+        return
     if path in BOTH_VERBS:
         assert get(subject, path).status == 200
         code = "project_mismatch" if path == "/command/project/utilities" else "contract_invalid"

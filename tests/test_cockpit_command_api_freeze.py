@@ -193,6 +193,8 @@ EXPECTED_ROUTES = (
     ("GET", "/command/tasks", False, False),
     ("POST", "/command/tasks", True, True),
     ("GET", "/command/tasks/<task_id>", False, False),
+    ("GET", "/command/tasks/<task_id>/review-plan", False, False),
+    ("POST", "/command/tasks/<task_id>/review-plan", True, True),
     ("GET", "/command/tasks/<task_id>/preparation", False, False),
     ("POST", "/command/tasks/<task_id>/seed", True, True),
     ("GET", "/command/quotas", False, False),

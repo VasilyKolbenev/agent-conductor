@@ -42,6 +42,7 @@ export const LATE = "read_late";
 export const path = Object.freeze({
   tasks: () => "/command/tasks",
   task: (id) => "/command/tasks/" + encodeURIComponent(id),
+  reviewPlan: (id) => "/command/tasks/" + encodeURIComponent(id) + "/review-plan",
   atlasAttempt: (run, node, action) => "/command/runs/" + encodeURIComponent(run)
     + "/steps/" + encodeURIComponent(node) + "/actions/" + encodeURIComponent(action),
   preparation: (id) => `/command/tasks/${encodeURIComponent(id)}/preparation`,
@@ -103,7 +104,7 @@ const WRITE_TARGETS = Object.freeze(["taskDraft", "draft", "revisions", "runs",
   "automationPreview", "automationAuthorize", "automationControl", "materials",
   "autoContinue", "seed", "flow", "cyclePin", "queue", "queueOrder", "queueWithdraw",
   "acceptPush", "acceptPullRequest",
-  "acceptPreview", "acceptCommit", "gitSetup", "utilities"]);
+  "acceptPreview", "acceptCommit", "gitSetup", "utilities", "reviewPlan"]);
 
 // -- the doors that hold no state ----------------------------------------------
 //

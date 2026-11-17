@@ -13,7 +13,7 @@ from conductor.command.project_claim import Launch
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("create", "open", "demo"))
+    parser.add_argument("action", choices=("create", "open", "edit", "demo"))
     parser.add_argument("work", type=Path)
     parser.add_argument("--port", default=0, type=int)
     parser.add_argument("--no-browser", action="store_true")
@@ -38,7 +38,8 @@ def main():
     stopper = server_drain.Stopper()
     if args.stop_on_stdin_eof:
         stopper.watch_stdin(sys.stdin.fileno())
-    http = server.build(project, args.port, launch=Launch(mode="view"))
+    mode = "active" if args.action == "edit" else "view"
+    http = server.build(project, args.port, launch=Launch(mode=mode))
     origin = f"http://127.0.0.1:{http.server_port}/#"
     url = origin + urlencode(location)
 

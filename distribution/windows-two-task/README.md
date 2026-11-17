@@ -15,6 +15,7 @@ Select **Do** to inspect the changes, the three tests and the independent review
 | `START.cmd demo` | The Codex + Grok example. |
 | `START.cmd new` | Two personal tasks. Record accepted checks from the first, then recall and edit the plan in the second. |
 | `START.cmd verify` | File integrity verification. |
+| `START.cmd edit` | Open the saved pair as an active project to save a review plan in its task. |
 
 New task pairs are stored in `%USERPROFILE%\ArachnidStudio`. Studio can read the
 previous launcher's last pair from `%USERPROFILE%\ArachnidPilot2`. The example uses
