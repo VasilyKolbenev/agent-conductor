@@ -15,10 +15,8 @@ that the copied targeted tests are green. A red baseline cannot kill mutants.
 The requested module is read and copied but never imported or executed.
 
 Inside the disposable copy, every ordinary restore is still retried and proved
-by content hash. Failure is fatal and names the scratch file. This closes the
-first backlog item in
-docs/plans/2026-08-03-p0-control-loop-and-december-ui.md §10 by removing the
-working source from the mutation/restore round trip altogether.
+by content hash. Failure is fatal and names the scratch file. See
+docs/merge-mutation-check.md §1 for the workspace and restore guarantees.
 
 Exit codes. The code describes whether the mode that was REQUESTED succeeded;
 it is not in every mode a mutation score.
