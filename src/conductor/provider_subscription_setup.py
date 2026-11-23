@@ -6,6 +6,7 @@ Only a verified local subscription file may become a new project connection.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ from .ownership import OwnerRefused, require_owner
 from .ownership_login import LoginScopes
 
 WINDOWS = os.name == "nt"
+_WINDOWS_DNS_CARDS = frozenset({"codex", "grok-build"})
 
 
 def _product():
@@ -127,6 +129,13 @@ def connect(directory, path, standing, kind, ask):
         home = _login_folder(product, kind)
         config = ProviderConfig(provider_id=kind, protocol=PROVIDER_CATALOG[kind].protocol,
                                 executable=str(exe), auth=SUBSCRIPTION_AUTH, auth_home=str(home))
+        if kind in _WINDOWS_DNS_CARDS:
+            # The reviewed Windows clients need SYSTEMROOT to reach their services.
+            # Preserve other names only when reconnecting this same reviewed pin.
+            names = next((row.env_allow for row in standing
+                          if row.provider_id == kind and replace(row, env_allow=()) == config), ())
+            allowed = ["SYSTEMROOT" if name.upper() == "SYSTEMROOT" else name for name in names]
+            config = replace(config, env_allow=tuple(dict.fromkeys([*allowed, "SYSTEMROOT"])))
         scopes = LoginScopes()
         with scopes.borrow(str(home)):
             try:
@@ -138,6 +147,9 @@ def connect(directory, path, standing, kind, ask):
                 return 1
             wizard._say("Verified the local subscription file. Restart Studio after saving to see "
                         "available roles and the provider's quota readings.")
+            if kind in _WINDOWS_DNS_CARDS:
+                wizard._say("This Windows CLI uses SYSTEMROOT for DNS. Check this name in env_allow "
+                            "before confirming the project connection.")
             wizard._summarise(config, path, [row.provider_id for row in standing])
             if not wizard._confirmed(ask):
                 return 1

@@ -122,9 +122,47 @@ def test_real_cli_takes_vendor_handoff_checks_file_saves_only_pin_and_preserves_
     assert set(rows) == {"deepseek-harness", kind}
     assert rows[kind]["auth"] == "subscription" and rows[kind]["auth_home"] == str(login)
     assert rows[kind]["executable"] == str(executable)
+    assert rows[kind].get("env_allow", []) == ["SYSTEMROOT"]
     assert len(prompts) == 2
     assert "fake-grok-access" not in said + provider_file
     assert fake.CODEX_REFRESH not in said + provider_file
+
+
+@pytest.mark.parametrize("kind", ["codex", "grok-build"])
+@pytest.mark.parametrize("previous_names,auth,expected", [
+    ([], "subscription", ["SYSTEMROOT"]),
+    (["EXAMPLE_LOCALE"], "subscription", ["EXAMPLE_LOCALE", "SYSTEMROOT"]),
+    (["SystemRoot"], "subscription", ["SYSTEMROOT"]),
+    (["OPENAI_API_KEY"], "api_key", ["SYSTEMROOT"]),
+])
+def test_reconnect_confirms_the_dns_environment_before_replacing_the_pin(
+        machine, project, monkeypatch, capsys, kind, previous_names, auth, expected):
+    _, product = machine
+    _, executable = fixture_install(machine, kind, monkeypatch)
+    home = product / "logins" / kind
+    home.mkdir(parents=True)
+    fake.put(home, "auth.json", fake.codex_leaf() if kind == "codex" else _document())
+    config = store.conductor_dir(project) / "providers.json"
+    row = {"provider_id": kind, "protocol": PROVIDER_CATALOG[kind].protocol,
+           "executable": str(executable), "auth": auth,
+           "auth_home": str(home) if auth == "subscription" else "",
+           "env_allow": previous_names}
+    original = json.dumps({"schema_version": 1, "providers": [row]}).encode()
+    config.write_bytes(original)
+    for answer in ("n", "y"):
+        shown = []
+        def confirm(prompt):
+            shown.append((prompt, capsys.readouterr().err))
+            return answer
+        monkeypatch.setattr(provider_setup, "_console_ask", confirm)
+        assert card(project, kind) == (1 if answer == "n" else 0)
+        if answer == "n":
+            assert config.read_bytes() == original
+        [(prompt, summary)] = shown
+        assert "finished" not in prompt and "SYSTEMROOT" in summary
+    [saved] = json.loads(config.read_bytes())["providers"]
+    assert saved["env_allow"] == expected
+    assert saved["auth_home"] == str(home) and saved["executable"] == str(executable)
 
 
 def test_edited_package_refused_before_signin_and_write(machine, project, monkeypatch, capsys):

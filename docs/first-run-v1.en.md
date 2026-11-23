@@ -347,6 +347,8 @@ and restart Studio for this project. Grok supports read-only
 diagnosis. For Claude Code, follow the [manual handoff](#claude-code-manual-handoff). Kimi has a local session
 check, with a live subscription role pending.
 
+On Windows, the Codex and Grok Build cards include `SYSTEMROOT` in the proposed `env_allow` so the CLI can resolve service hostnames. If an older project connection has an empty list, use the updated Studio build, stop that project's server and rerun the command from the corresponding card. Check `SYSTEMROOT` in the summary, confirm and restart Studio. The wizard checks the existing dedicated sign-in.
+
 **Custom utility** adds a named tool to this project. For a manual exchange, send
 text in Studio, copy it to the regular CLI and record the reply. For automatic
 exchange, select the compatible mode for a tool that implements

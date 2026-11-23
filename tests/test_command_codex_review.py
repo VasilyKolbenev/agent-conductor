@@ -18,6 +18,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from conductor.command.adapters import AdapterRegistry
 from conductor.command.adapters.codex_cli import (
     COLOR_ARGV,
@@ -36,6 +38,9 @@ from conductor.command.contracts import (
     ActionRequest,
     RunEnvelope,
 )
+from conductor.command.graph_definition import GraphDefinition, GraphNode
+from conductor.command.http_api import CommandApi, PRODUCT_COMMAND_BUDGET
+from conductor.command.http_transport import CommandSession
 from conductor.command.run_store import RunStore, snapshot_digest
 from conductor.command.runtime import (
     AttemptState,
@@ -45,7 +50,9 @@ from conductor.command.runtime import (
 )
 
 from tests import _fakecodex
+from tests._fakeboundary import confined
 from tests.test_command_codex_transport import NOW, a_harness
+from tests.test_command_http_api import PORT, TOKEN, get_headers, ids
 
 RUN_ID = "run-codex-review"
 INSTANCE_ID = "codex-reviewer"
@@ -75,12 +82,12 @@ class _Ids:
         return f"{kind}-{self._counts[kind]}"
 
 
-def _proposal(arguments=ARGUMENTS) -> ActionProposal:
+def _proposal(arguments=ARGUMENTS, *, node_id=None) -> ActionProposal:
     # A newly authorized real transport request, not a frozen historical proposal.
     return ActionProposal(
         proposal_id="proposal-review", run_id=RUN_ID,
         attempt_id="attempt-review", instance_id=INSTANCE_ID,
-        capability="review", arguments=arguments, scope=("work",),
+        capability="review", arguments=arguments, scope=("work",), node_id=node_id,
         proposed_by="lane", proposed_at=NOW, timeout_seconds=60,
         rationale="review the durable role handoff",
         config_digest=snapshot_digest(CONFIG), input_binding="proposal-v1")
@@ -95,7 +102,7 @@ def _confirmation(proposal: ActionProposal) -> Confirmation:
         confirmed_by="release-owner", confirmed_at=NOW)
 
 
-def _run(tmp_path, *, arguments=ARGUMENTS, **knobs: str):
+def _run(tmp_path, *, arguments=ARGUMENTS, node_id=None, **knobs: str):
     values = {
         _fakecodex.EMIT_REVIEW: "enabled-review-output",
         _fakecodex.LEAK_CHECK: "enabled-review-leak-check",
@@ -114,7 +121,12 @@ def _run(tmp_path, *, arguments=ARGUMENTS, **knobs: str):
         run_id=RUN_ID, created_at=NOW, media_type="text/markdown",
         content=f"# Candidate\n\nReview this exact proposal. {PROBE}")
     store.append(seed)
-    proposal = _proposal(arguments)
+    if node_id is not None:
+        confined(adapter, tmp_path / "boundary", platform="win32")
+        node = GraphNode(node_id, "task", "Goal", instance_id=INSTANCE_ID, capability="review",
+                         arguments=arguments, timeout_seconds=60)
+        store.append(GraphDefinition("review-graph", RUN_ID, NOW, (node,)))
+    proposal = _proposal(arguments, node_id=node_id)
     store.append(proposal)
     runtime = ControlRuntime(
         store, AdapterRegistry([adapter]), clock=lambda: NOW, ids=_Ids())
@@ -128,6 +140,34 @@ def _run(tmp_path, *, arguments=ARGUMENTS, **knobs: str):
 
 def _records(store: RunStore):
     return store.read(RUN_ID).records
+
+
+@pytest.mark.parametrize("diagnostic", ["model unavailable", "unknown problem"], ids=["model", "unknown"])
+def test_failed_goal_carries_the_exit_code_without_exposing_child_diagnostics(tmp_path, diagnostic):
+    stderr = diagnostic + " PRIVATE-CHILD-DETAIL " + API_KEY
+    attempt, store, _, _, log, _ = _run(tmp_path, node_id="goal", **{
+        _fakecodex.EXIT: "1", _fakecodex.EMIT_STDERR: stderr, _fakecodex.NO_LAST_MESSAGE: "1",
+        _fakecodex.EMIT_REVIEW: "", _fakecodex.EMIT_STDOUT: "PRIVATE-FAILED-STDOUT",
+    })
+    [child] = _fakecodex.task_spawns(log)
+    assert child["argv"][0] == "exec" and "read-only" in child["argv"]
+    assert attempt.receipt.outcome == "failed" and attempt.receipt.exit_code == 1
+    assert attempt.receipt.detail == "adapter reported failed: the process exited non-zero"
+    assert attempt.receipt.evidence_refs == ()
+    assert not any(row.value.source_action_id for row in _records(store) if row.kind == "artifact")
+
+    api = CommandApi(store, AdapterRegistry([]), session=CommandSession(PORT, TOKEN),
+                     budget=PRODUCT_COMMAND_BUDGET, clock=lambda: NOW, ids=ids(),
+                     publish_run=lambda _: None)
+    route = f"/command/runs/{RUN_ID}"
+    detail = api.handle("GET", f"{route}/steps/goal/actions/{attempt.request.action_id}", get_headers())
+    journal = api.handle("GET", route, get_headers())
+    assert (detail.status, journal.status) == (200, 200)
+    assert detail.payload["outcome"] == "failed" and detail.payload["verdict"] is None
+    stored = (store.run_path(RUN_ID) / "records.jsonl").read_bytes()
+    exposed = stored + json.dumps([detail.payload, journal.payload]).encode()
+    for private in (diagnostic, "PRIVATE-CHILD-DETAIL", API_KEY, "PRIVATE-FAILED-STDOUT"):
+        assert private.encode() not in exposed
 
 
 def test_codex_review_reads_exact_artifact_bytes_and_records_one_output(tmp_path):
