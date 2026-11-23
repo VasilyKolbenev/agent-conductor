@@ -77,7 +77,10 @@ Open the built-in **Codex** or **Grok Build** card. Install the indicated CLI ve
 **Reconnecting an existing profile in 0.1.1.** The setup wizard can stop before sign-in
 with `The dedicated login contains unreviewed files.` We reproduced this with a `plugins`
 directory in the dedicated Codex profile and a `bundled` directory in the dedicated Grok
-profile. At that point the project has no new connection. The manual handoff above still works.
+profile. At that point the project has no new connection. On the audited Windows machine the
+owner archived both expired profiles in the protected directory with all clients stopped.
+Both wizards then accepted a fresh official sign-in and saved the connections. These profiles
+are shared across projects. The manual handoff above also remains available.
 
 </details>
 
