@@ -85,8 +85,7 @@ New-Item -ItemType Directory -Path $PROJ -ErrorAction Stop | Out-Null
 
 ```powershell
 $env:PYTHONPATH = ""
-$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
-$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+$install = Join-Path $env:USERPROFILE 'DecemberCommand\product\v0.1.2\venv'
 $python = Join-Path $install 'Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Installed build not found' }
 $CONDUCT = { & $python -I -m conductor @args }

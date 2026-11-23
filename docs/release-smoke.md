@@ -72,7 +72,7 @@ If a subcommand you expected is missing, the wheel is not built from what you th
 & $PY -c "import conductor; print(conductor.__version__)"
 ```
 
-Expect the version string of this release: `0.1.1`.
+Expect the version string of this release: `0.1.2`.
 
 Checked by eye, not by command: that this string and the version in `pyproject.toml` agree.
 The CLI has no `--version` flag — `conduct --version` is an argparse usage error, exit 2 —

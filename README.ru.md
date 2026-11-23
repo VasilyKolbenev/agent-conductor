@@ -18,13 +18,13 @@
 
 Понадобится **Python 3.11 или 3.12** с `venv` и `pip`. Оба сценария ниже работают локально, без входа в аккаунты и вызовов моделей.
 
-**Windows.** Скачайте [архив Studio][zip] и [контрольную сумму SHA-256][checksum]. Распакуйте архив целиком и откройте **`START.cmd`**. При первом запуске откроется учебный пример Codex + Grok. Выберите **Do**, чтобы увидеть изменения, тесты и вердикт. Для своих двух задач запустите `.\START.cmd new` в папке приложения. Запишите проверки первой задачи и попросите Колосса найти их для второй. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+**Windows.** Скачайте [архив Studio][zip] и [контрольную сумму SHA-256][checksum]. Распакуйте архив целиком и откройте **`START.cmd`**. При первом запуске откроется учебный пример Codex + Grok. Выберите **Do**, чтобы увидеть изменения, тесты и вердикт. Для своих двух задач запустите `.\START.cmd new` в папке приложения. Запишите проверки первой задачи и попросите Колосса найти их для второй. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/START-HERE.txt).
 
 **Linux и macOS · знакомство со Studio.** Скачайте [Python-пакет wheel][wheel]. В папке со скачанным файлом выполните команды для Python 3.12. Если установлен Python 3.11, в первой строке используйте `python3.11`.
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.1-py3-none-any.whl
+.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.2-py3-none-any.whl
 .venv/bin/conduct demo
 ```
 
@@ -32,7 +32,7 @@ python3.12 -m venv .venv
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.1-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.2-py3-none-any.whl
 .\.venv\Scripts\python.exe -m conductor demo
 ```
 
@@ -53,7 +53,7 @@ py -3.12 -m venv .venv
 | --- | --- |
 | **Codex CLI + Grok Build** | Полный цикл из пяти шагов на Windows по подпискам владельца, без API-ключей. Исполнение и независимая проверка прошли в разных экземплярах Codex. |
 | Claude Code | В изоляции по подписке выполнен Goal и сохранён результат. Identify остановился по таймауту. В инструкции описана ручная передача в официальный CLI. [Отчёт запуска](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
-| Kimi Code CLI | Есть источник показаний квоты. Сессия проверена локально. Подписочные задачи в 0.1.1 отключены. |
+| Kimi Code CLI | Есть источник показаний квоты. Сессия проверена локально. Подписочные задачи в 0.1.2 отключены. |
 | DeepSeek Harness | Адаптер с API-ключом прошёл локальные тесты. Сервис использует баланс API. |
 | Своя CLI | Ручная передача или двусторонний обмен текстом через совместимый локальный мост. Автономная роль и работа по подписке зависят от адаптера. |
 
@@ -105,10 +105,10 @@ py -3.12 -m venv .venv
 
 Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление для локального просмотра находится в `docs/index.ru.md`. [Документация](docs/index.ru.md).
 
-[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
-[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip
-[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip.sha256
-[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
+[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.2
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/Arachnid-Studio-Windows.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/Arachnid-Studio-Windows.zip.sha256
+[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/agent_conductor-0.1.2-py3-none-any.whl
 
 <details>
 <summary><strong>Команды · пригодятся после демо</strong></summary>

@@ -15,7 +15,7 @@ from zipfile import ZipFile
 
 
 HERE = Path(__file__).resolve().parent
-WHEEL = "agent_conductor-0.1.1-py3-none-any.whl"
+WHEEL = "agent_conductor-0.1.2-py3-none-any.whl"
 DEMO_SHA256 = "812aebdae11ac0114a24b7e94e04fa1ae1bc8097889643d18647276a2a2c6941"
 MEMBERS = (WHEEL, "demo.zip", "pilot.py", "first_task.py", "studio.py", "START.cmd",
            "START-HERE.txt")

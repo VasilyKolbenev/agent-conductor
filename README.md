@@ -18,13 +18,13 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-**Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. The Studio demo opens in Russian. Select **EN** at the bottom of the sidebar, then **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Its terminal prompts are in Russian and accept `ACCEPT` to confirm. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+**Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. The Studio demo opens in Russian. Select **EN** at the bottom of the sidebar, then **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Its terminal prompts are in Russian and accept `ACCEPT` to confirm. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/START-HERE.txt).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
 ```sh
 python3.12 -m venv .venv
-.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.1-py3-none-any.whl
+.venv/bin/python -m pip install --no-index ./agent_conductor-0.1.2-py3-none-any.whl
 .venv/bin/conduct demo
 ```
 
@@ -32,7 +32,7 @@ On Windows, the same wheel also runs the CLI demo from PowerShell. For Python 3.
 
 ```powershell
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.1-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-index .\agent_conductor-0.1.2-py3-none-any.whl
 .\.venv\Scripts\python.exe -m conductor demo
 ```
 
@@ -53,7 +53,7 @@ The default workflow follows Ray Dalio’s five steps. Set a goal, identify prob
 | --- | --- |
 | **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
 | Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The setup guide covers manual handoff to the official CLI. [Run record](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
-| Kimi Code CLI | Has a quota source and passed a local session check. Subscription task execution is disabled in 0.1.1. |
+| Kimi Code CLI | Has a quota source and passed a local session check. Subscription task execution is disabled in 0.1.2. |
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
 
@@ -106,10 +106,10 @@ provider adapter.
 
 The Python package is `agent-conductor` and the command is `conduct`. For local reading, see `docs/index.md`. [Documentation](docs/index.md).
 
-[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
-[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip
-[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip.sha256
-[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
+[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.2
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/Arachnid-Studio-Windows.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/Arachnid-Studio-Windows.zip.sha256
+[wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/agent_conductor-0.1.2-py3-none-any.whl
 
 <details>
 <summary><strong>CLI reference · useful once you leave the demo</strong></summary>

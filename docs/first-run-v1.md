@@ -3,7 +3,7 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Скачайте [Arachnid Studio для Windows](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) и распакуйте архив. Команда `START.cmd` при первом запуске откроет учебный цикл Codex + Grok. Команда `.\START.cmd new` создаёт пару ваших задач для работы с Колоссом. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+Скачайте [Arachnid Studio для Windows](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.2) и распакуйте архив. Команда `START.cmd` при первом запуске откроет учебный цикл Codex + Grok. Команда `.\START.cmd new` создаёт пару ваших задач для работы с Колоссом. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/START-HERE.txt).
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
@@ -59,7 +59,7 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). В командах ниже указаны SHA-256 его wheel и коммит исходников, на который ссылается выпуск.
+Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.2). Рядом с wheel сохраните его контрольную сумму из того же релиза (файл с окончанием .whl.sha256). Команды ниже сверят wheel перед установкой.
 Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
 
 <details open>
@@ -71,11 +71,11 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ```powershell
 $env:PYTHONPATH = ''
-$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
-$expected = '80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
-if ((Get-FileHash -LiteralPath $wheel -ErrorAction Stop).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
-$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
-$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+$wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.2-py3-none-any.whl'
+$record = (Get-Content -LiteralPath ($wheel + '.sha256') -Raw -ErrorAction Stop).TrimEnd()
+$digest = (Get-FileHash -LiteralPath $wheel -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+if ($record -cne "$digest  $([IO.Path]::GetFileName($wheel))") { throw 'Wheel SHA256 mismatch' }
+$install = Join-Path $env:USERPROFILE 'DecemberCommand\product\v0.1.2\venv'
 if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
 if ($LASTEXITCODE) { throw 'venv failed' }
@@ -99,18 +99,19 @@ if ($LASTEXITCODE) { throw 'wheel installation failed' }
 Оставьте этот терминал открытым для следующих шагов.
 
 ```sh
-wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
-expected="80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74"
+wheel="$HOME/Downloads/agent_conductor-0.1.2-py3-none-any.whl"
 python_cmd=python3.12
-install_dir="$HOME/.local/share/december-command/app-v1"
+install_dir="$HOME/.local/share/december-command/app-0.1.2"
 python_bin="$install_dir/bin/python"
 conduct="$install_dir/bin/conduct"
 (
   set -e
   "$python_cmd" -I -c 'import hashlib, pathlib, sys
 with pathlib.Path(sys.argv[1]).open("rb") as wheel:
-    if hashlib.file_digest(wheel, "sha256").hexdigest() != sys.argv[2]:
-        sys.exit("Wheel SHA256 mismatch")' "$wheel" "$expected"
+    digest = hashlib.file_digest(wheel, "sha256").hexdigest()
+    expected = pathlib.Path(sys.argv[1] + ".sha256").read_text(encoding="ascii").split()
+    if expected != [digest, pathlib.Path(sys.argv[1]).name]:
+        sys.exit("Wheel SHA256 mismatch")' "$wheel"
   mkdir -p "$(dirname "$install_dir")"
   mkdir "$install_dir"
   "$python_cmd" -I -m venv "$install_dir"
@@ -377,8 +378,7 @@ Codex или Grok Build. Карточка показывает установк�
 
 ```powershell
 # Windows
-$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
-$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+$install = Join-Path $env:USERPROFILE 'DecemberCommand\product\v0.1.2\venv'
 $python = Join-Path $install 'Scripts\python.exe'
 $conduct = { & $python -I -m conductor @args }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Installed build not found' }
@@ -388,7 +388,7 @@ $project = Join-Path $env:USERPROFILE 'DecemberTrial'
 
 ```sh
 # macOS / Linux
-conduct="$HOME/.local/share/december-command/app-v1/bin/conduct"
+conduct="$HOME/.local/share/december-command/app-0.1.2/bin/conduct"
 project="$HOME/DecemberTrial"
 "$conduct" up --dir "$project" --port 7777
 ```

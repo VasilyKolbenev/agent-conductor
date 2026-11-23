@@ -1,7 +1,7 @@
 # Rebuild Arachnid Studio Windows Pilot 1
 
-For the current Windows download, use the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1).
-Its [two-task walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt)
+For the current Windows download, use the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.2).
+Its [two-task walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/START-HERE.txt)
 shows how to recall checks from a previous task and edit the plan in Colossus chat.
 
 This directory reproduces the **archived first Windows pilot**. To explore that
