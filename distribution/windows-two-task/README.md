@@ -30,5 +30,6 @@ reported by the CI build job.
 py -3.12 -I -B distribution/windows-two-task/build.py --wheel $wheel --wheel-sha256 $expectedWheelSha --output-dir dist
 ```
 
-The builder writes `Arachnid-Studio-Windows.zip` and its `.zip.sha256` file.
+The builder writes `Arachnid-Studio-Windows.zip`, its `.zip.sha256` checksum,
+and a `.whl.sha256` checksum for the standalone wheel.
 It checks the packaged example against the approved fixture digest.

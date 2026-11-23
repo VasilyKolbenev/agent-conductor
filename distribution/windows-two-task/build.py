@@ -62,6 +62,8 @@ def build(wheel: Path, expected: str, output_dir: Path) -> Path:
     atomic_write(target, data)
     digest = hashlib.sha256(data).hexdigest()
     atomic_write(target.with_suffix(".zip.sha256"), f"{digest}  {FILENAME}\r\n".encode("ascii"))
+    wheel_checksum = f"{expected.lower()}  {WHEEL}\r\n".encode("ascii")
+    atomic_write(output_dir / (WHEEL + ".sha256"), wheel_checksum)
     return target
 
 

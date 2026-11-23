@@ -30,6 +30,7 @@ def test_windows_archive_verifies_the_same_offline_example_it_opens(tmp_path):
     assert archive.name == "Arachnid-Studio-Windows.zip"
     assert archive.with_suffix(".zip.sha256").read_text().split() == [
         hashlib.sha256(archive.read_bytes()).hexdigest(), archive.name]
+    assert (archive.parent / (wheel.name + ".sha256")).read_text().split() == [digest, wheel.name]
     extracted = tmp_path / "extracted"
     with ZipFile(archive) as package:
         package.extractall(extracted)
