@@ -1,4 +1,5 @@
 """The return-to-session summary opens evidence for the archived Do without running a task."""
+from contextlib import closing
 import json
 import re
 import runpy
@@ -41,6 +42,33 @@ def archived_pilot(archived_project):
         finally:
             http.shutdown()
             thread.join(5)
+
+
+def test_stopped_goal_has_the_same_attempt_outcome_in_the_banner_and_chat(chromium, tmp_path):
+    from tests.flow_driver_bench import FlowCycle
+    from tests.test_command_flow_driver import fork
+
+    flow = fork()
+    flow["steps"][1]["title"] = "Goal"
+    with closing(FlowCycle(tmp_path / "project", flow, through_doors=True, task="task-goal",
+                           outcomes={"left": ["failed"]})) as run:
+        run.start()
+        reason = run.until("the failed Goal", lambda: run.outcomes("left") == ["failed"])
+        assert reason == "feedback_required"
+        context = chromium.new_context()
+        try:
+            for lang, question, status in [
+                ("en", "What did I miss?", "The run has stopped · Goal · Failed"),
+                ("ru", QUESTION, "Запуск остановлен · Goal · Ошибка"),
+            ]:
+                page = context.new_page()
+                page.goto(f"http://127.0.0.1:{run.subject.server_port}/#session=run&lang={lang}")
+                expect(page.locator("#nextAction .next-label")).to_have_text(status)
+                ask(page, question)
+                expect(page.locator("#messages .msg.atlas").last).to_contain_text(status)
+                page.close()
+        finally:
+            close_context(context)
 
 
 @pytest.mark.parametrize("width", [1440, 375])

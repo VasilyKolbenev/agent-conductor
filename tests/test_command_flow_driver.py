@@ -250,6 +250,55 @@ def test_a_failed_branch_leaves_the_other_branch_feedback_required(cycle):
     assert run.settle() == 2 and not run.terminal()
 
 
+@pytest.mark.parametrize(("case", "outcome", "shown"), [
+    ("executor", "failed", ["Goal · Failed", "Goal · Ошибка"]),
+    ("unavailable", "verification_failed",
+     ["Goal · Verification failed", "Goal · Проверка не пройдена"]),
+    ("checker", "verification_failed",
+     ["Goal · The checker rejected the result.", "Goal · Проверяющий отклонил результат."]),
+])
+def test_colossus_explains_the_recorded_attempt_when_the_driver_needs_feedback(
+        cycle, monkeypatch, case, outcome, shown):
+    from tests.desk_node import run_js
+    from tests.flow_driver_bench import ScriptedChecker
+
+    flow = fork()
+    flow["steps"][1] = (review("left", title="Goal") if case == "executor" else
+                        step("left", "agent", title="Goal", verifier_role_id="role-checker"))
+    if case == "unavailable":
+        def unavailable(*args):
+            raise RuntimeError("fixture checker is unavailable")
+        monkeypatch.setattr(ScriptedChecker, "verify_for", unavailable)
+    run = cycle(flow, verdicts=[("left", "plain")] if case == "checker" else [],
+                outcomes={"left": ["failed"]} if case == "executor" else {})
+    run.start()
+    reason = run.until("the feedback stop", lambda: run.outcomes("left") == [outcome])
+    assert reason == "feedback_required"
+    assert run.checker.checked == ([("left", "plain")] if case == "checker" else [])
+    status, detail, _ = _request(run.subject, "GET", "/command/runs/run")
+    assert status == 200
+    status, policy, _ = _request(run.subject, "GET", "/command/runs/run/automation")
+    assert status == 200 and (policy["state"], policy["reason_code"]) == (
+        "stalled", "feedback_required")
+    observed = run_js("""
+        const [detail, policy] = d;
+        const held = {phase: "ready", runId: "run", view: policy};
+        const summarize = locale => {
+          const ctx = {runId: "run", mode: "active", locale, detail};
+          const status = next.nextOf(ctx, read.decisionRows(detail), held);
+          return recap.recapStatus(ctx, status);
+        };
+        const status = ["en", "ru"].map(summarize);
+        // The permission read can arrive before the corresponding run journal.
+        held.view.authorization.authorization_digest = "sha256:" + "f".repeat(64);
+        console.log(JSON.stringify([status, ["en", "ru"].map(summarize)]));
+    """, {"next": "arachnid-next-view.js", "read": "studio-runread.js",
+          "recap": "arachnid-recap.js"}, [detail, policy])
+    assert observed[0] == ["The run has stopped · " + shown[0], "Запуск остановлен · " + shown[1]]
+    assert observed[1] == ["The run has stopped · Review the attempt before continuing.",
+                           "Запуск остановлен · Просмотрите попытку перед продолжением."]
+
+
 def rework_cycle(rework_first):
     """A checked doer with a correction loop and a rework loop that goes back to the analyst.
 

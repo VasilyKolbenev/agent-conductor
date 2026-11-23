@@ -12,6 +12,7 @@ const words = {
   review: ["Review {name}", "Рассмотреть: {name}"],
   viewGate: ["Waiting for a decision on {name}", "Ожидается решение: {name}"],
   stalled: ["The run has stopped", "Запуск остановлен"],
+  checkerRejected: ["The checker rejected the result.", "Проверяющий отклонил результат."],
   permission: ["Waiting for your permission", "Ожидается ваше разрешение"],
   limits: ["Review run limits", "Посмотреть условия запуска"],
   applying: ["Recording your decision…", "Записывается ваше решение…"],
@@ -37,9 +38,37 @@ export function nextText(locale, key, name = "") {
   return words[key][locale === "ru" ? 1 : 0].replace("{name}", () => name);
 }
 
+// The runtime records both of these verdicts even when no actionable findings were saved.
+// Other verification failures, including an unavailable checker, do not establish a rejection.
+const checkerRejections = new Set([
+  "the independent checker rejected the doer's result",
+  "the independent checker rejected the doer's result, but the typed feedback protocol refused " +
+    "its findings, so no correction can carry them",
+]);
+
+function feedbackReason(ctx, scene, grant) {
+  const records = ctx.detail.records;
+  const request = records.findLast(row => row.record_type === "action_request")?.record;
+  if (!request || !grant || request.run_id !== ctx.runId
+      || request.run_authorization_id !== grant.authorization_id
+      || request.run_authorization_digest !== grant.authorization_digest) return null;
+  const result = records.find(row => row.record_type === "action_result"
+    && row.record.action_id === request.action_id && row.record.attempt_id === request.attempt_id
+    && row.record.run_id === ctx.runId && row.record.instance_id === request.instance_id)?.record;
+  const step = scene.steps.find(s => s.nodeId === request.node_id);
+  if (!result || !step || step.outcome !== result.outcome || result.outcome === "succeeded")
+    return null;
+  const why = step.verifierId && result.outcome === "verification_failed"
+    && checkerRejections.has(result.detail) ? nextText(ctx.locale, "checkerRejected")
+    : localize(ctx, "scene.outcome_" + result.outcome);
+  return step.title + " · " + why;
+}
+
 function stopped(ctx, scene, held) {
-  if (held?.phase === "ready" && held.view?.state === "stalled") {
+  if (held?.runId === ctx.runId && held.phase === "ready" && held.view?.state === "stalled") {
     const reason = "automation." + held.view.reason_code;
+    if (held.view.reason_code === "feedback_required") return {kind: "stalled",
+      why: feedbackReason(ctx, scene, held.view.authorization) || localize(ctx, reason)};
     if (Object.hasOwn(MESSAGES, reason)) return {kind: "stalled", why: localize(ctx, reason)};
   }
   const failed = scene.steps.find(s => s.kind === "task" && (s.word === "spent" ||
