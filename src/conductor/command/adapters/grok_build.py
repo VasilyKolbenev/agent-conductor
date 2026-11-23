@@ -339,7 +339,8 @@ class GrokBuildAdapter(ServiceMetadata, ArtifactAwareTransport):
     windows_subscription = WindowsSubscriptionInstall(
         executable="grok.exe",
         inventory="sha256:48375b63bb5a40cce8bf9fc11c8ab8a85e3b2ba665b1f3a148984011853da625",
-        config_forms=LOGIN_CONFIG_FORMS, extra_login_entries=("auth.json.lock", "memtrace"))
+        config_forms=LOGIN_CONFIG_FORMS, extra_login_entries=("auth.json.lock", "memtrace"),
+        requires_systemroot_for_dns=True)
     error = GrokBuildError
     review_enabled = True
     review_output_format = "json"

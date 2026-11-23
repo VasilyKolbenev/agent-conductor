@@ -522,6 +522,7 @@ class CodexCliTransport(ServiceMetadata, PatchDispatch, ArtifactAwareTransport):
                     "x86_64-pc-windows-msvc/bin/codex.exe"),
         inventory="sha256:3acf81c6a8973c3eec29bafdda4cd9dd7b06f7721bb7db2ade6604b3a9b516dd",
         config_forms=({},),
+        requires_systemroot_for_dns=True,
         machine_policy=WindowsMachinePolicy(
             ("OpenAI/Codex/config.toml", "OpenAI/Codex/requirements.toml"),
             r"SOFTWARE\Policies\OpenAI\Codex", "External Codex machine configuration is present."))

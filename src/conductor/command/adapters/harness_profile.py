@@ -335,6 +335,7 @@ class WindowsSubscriptionInstall:
     config_forms: tuple[dict, ...]
     extra_login_entries: tuple[str, ...] = ()
     machine_policy: WindowsMachinePolicy | None = None
+    requires_systemroot_for_dns: bool = False
 
 
 @dataclass(frozen=True)

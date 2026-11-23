@@ -23,7 +23,6 @@ from .ownership import OwnerRefused, require_owner
 from .ownership_login import LoginScopes
 
 WINDOWS = os.name == "nt"
-_WINDOWS_DNS_CARDS = frozenset({"codex", "grok-build"})
 
 
 def _product():
@@ -127,9 +126,11 @@ def connect(directory, path, standing, kind, ask):
         product = _product()
         exe = _installation(product, kind)
         home = _login_folder(product, kind)
-        config = ProviderConfig(provider_id=kind, protocol=PROVIDER_CATALOG[kind].protocol,
+        entry = PROVIDER_CATALOG[kind]
+        requires_dns_env = entry.adapter_class.windows_subscription.requires_systemroot_for_dns
+        config = ProviderConfig(provider_id=kind, protocol=entry.protocol,
                                 executable=str(exe), auth=SUBSCRIPTION_AUTH, auth_home=str(home))
-        if kind in _WINDOWS_DNS_CARDS:
+        if requires_dns_env:
             # The reviewed Windows clients need SYSTEMROOT to reach their services.
             # Preserve other names only when reconnecting this same reviewed pin.
             names = next((row.env_allow for row in standing
@@ -147,7 +148,7 @@ def connect(directory, path, standing, kind, ask):
                 return 1
             wizard._say("Verified the local subscription file. Restart Studio after saving to see "
                         "available roles and the provider's quota readings.")
-            if kind in _WINDOWS_DNS_CARDS:
+            if requires_dns_env:
                 wizard._say("This Windows CLI uses SYSTEMROOT for DNS. Check this name in "
                             "env_allow before confirming the project connection.")
             wizard._summarise(config, path, [row.provider_id for row in standing])

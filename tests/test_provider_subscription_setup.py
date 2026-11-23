@@ -165,6 +165,23 @@ def test_reconnect_confirms_the_dns_environment_before_replacing_the_pin(
     assert saved["auth_home"] == str(home) and saved["executable"] == str(executable)
 
 
+def test_card_without_a_declared_windows_dns_requirement_keeps_the_allowlist_empty(
+        machine, project, monkeypatch, capsys):
+    _, product = machine
+    fixture_install(machine, "codex", monkeypatch)
+    adapter = PROVIDER_CATALOG["codex"].adapter_class
+    monkeypatch.setattr(adapter, "windows_subscription",
+                        replace(adapter.windows_subscription, requires_systemroot_for_dns=False))
+    home = product / "logins" / "codex"
+    home.mkdir(parents=True)
+    fake.put(home, "auth.json", fake.codex_leaf())
+    monkeypatch.setattr(provider_setup, "_console_ask", lambda prompt: "y")
+    assert card(project, "codex") == 0
+    [row] = json.loads((store.conductor_dir(project) / "providers.json").read_bytes())["providers"]
+    assert row.get("env_allow", []) == []
+    assert "SYSTEMROOT" not in capsys.readouterr().err
+
+
 def test_edited_package_refused_before_signin_and_write(machine, project, monkeypatch, capsys):
     setup, _ = machine
     install, _ = fixture_install(machine, "grok-build", monkeypatch)
