@@ -14,7 +14,8 @@ used only to install and start the product, exactly as in [first-run-v1.en.md](f
 ## 1. Start with a clean project and an open Studio
 
 Follow [first-run-v1.en.md](first-run-v1.en.md) through `conduct up`: a new project, `ownership status`
-reporting `active`, providers configured, the Studio open in a browser.
+reporting `active`, providers configured, and Studio open in a browser. From the project home, open
+**Workflow controls** (`/panel/studio.html`).
 
 **You must see** the five screens across the top: "Overview" (Обзор), "Workflow" (Процесс), "Runs" (Запуски),
 "Decisions" (Решения), "Agents" (Участники), and the "Theme" and "Language" selectors beside each other in the
@@ -22,7 +23,7 @@ header. Switch the language to Russian and back once: every screen label changes
 
 ## 2. Publish one workflow revision
 
-On "Workflow" (Процесс), start from the offered standard cycle («Стандартный цикл», revision 5) and publish it
+On "Workflow" (Процесс), start from the offered standard cycle (`dalio-v6`, revision 6) and publish it
 with "Publish revision" (Опубликовать версию) without changing it. If you have already published a revision in
 this project, use that one; the test needs one immutable revision that both runs will share.
 

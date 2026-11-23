@@ -2,7 +2,7 @@
 
 **Give Colossus one goal and put a team of coding harnesses to work on it.** In Arachnid Studio, one tool can investigate a problem, another can change the code, and a separate instance can review the result. Agree on roles, a budget and approval points in the local Studio. Once you start the workflow, the team passes results between steps until it reaches a decision or a limit.
 
-[**Download Arachnid Studio**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
+[**Download Arachnid Studio**][release] · [Connect your own harness](#connect-your-own-harness) · [Русский](README.ru.md)
 
 | Windows | Linux (tested on Ubuntu) | macOS |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
 
-**Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. On first use, Studio opens a Codex + Grok training example. Choose **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+**Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. The Studio demo opens in Russian. Select **EN** at the bottom of the sidebar, then **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Its terminal prompts are in Russian and accept `ACCEPT` to confirm. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
@@ -28,7 +28,7 @@ python3.12 -m venv .venv
 .venv/bin/conduct demo
 ```
 
-On Windows, the same wheel also runs the CLI demo from PowerShell. For Python 3.11, use `py -3.11` on the first line.
+On Windows, the same wheel also runs the CLI demo from PowerShell. For Python 3.11, use `py -3.11` on the first line. If the `py` launcher is missing, use `python` there after checking that `python --version` reports 3.11 or 3.12.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -47,17 +47,58 @@ Open the local URL printed in the terminal. Press Ctrl+C there to stop the demo.
 | “What changed while I was away?” | The latest recorded outcome, any decision waiting for you, and links to the evidence. |
 | “Find the review procedure from the previous task.” | A proposed sequence and reviewer, linked to the accepted record you can inspect. |
 
-Start with Ray Dalio’s five steps: set a goal, identify problems, diagnose the cause, design a plan and carry it out. You can also build and publish your own cycle. Use **Connect a harness** in the sidebar to add tools, then assign roles in the workflow. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
+The default workflow follows Ray Dalio’s five steps. Set a goal, identify problems, diagnose the cause, design a plan and carry it out. You can also build and publish your own cycle. The roles a harness can take depend on its adapter. [Workflow setup](docs/first-run-v1.en.md) · [Evidence behind a recalled procedure](docs/assets/kolos-task-evidence.png).
 
 | Harness | What has been verified |
 | --- | --- |
 | **Codex CLI + Grok Build** | A complete five-step run on Windows with the owner's subscriptions, without API keys. Codex implemented and reviewed in separate instances. |
 | Claude Code | A subscription Goal produced a saved result in isolation. Identify timed out. The setup guide covers manual handoff to the official CLI. [Run record](https://github.com/VasilyKolbenev/agent-conductor/blob/3304810f645b0e515b95934328009f1456139c58/docs/recovery/2026-10-20/tasks/H5-B-RUN2-REPORT.md). |
-| Kimi Code CLI | An offline session opened. A live subscription task is pending. |
+| Kimi Code CLI | Has a quota source and passed a local session check. Subscription task execution is disabled in 0.1.1. |
 | DeepSeek Harness | An API-key adapter passed local tests. The provider uses an API balance. |
 | Your own CLI | Manual handoff, or two-way text exchange through a compatible local bridge. Autonomous roles and subscription support depend on the adapter. |
 
-You can add GitHub Copilot CLI or Cursor Agent for manual handoff. [Connect your own tool](docs/first-run-v1.en.md).
+## Connect your own harness
+
+Open an **active project** and choose **Connect a harness** in the left sidebar. If you opened the ZIP demo, follow the [first-project guide](docs/first-run-v1.en.md) to create a project of your own.
+
+**Use a tool with your subscription.** Sign in to its official CLI. Choose **Custom utility → Manual handoff**, enter a name and identifier, then select **Connect utility**. The screenshot shows Claude Code. You can use the same steps with GitHub Copilot CLI or Cursor Agent if your plan includes CLI access.
+
+![Connecting Claude Code manually. The form shows the name, the claude-manual identifier and the Connect utility button.](docs/assets/connect-manual-en.png)
+
+Enter a task, choose **Prepare handoff → Copy**, and paste the text into the CLI. Paste its answer into **Utility reply** and select **Save reply**. Studio keeps the exchange with the project. The provider handles sign-in and usage. [Copilot CLI sign-in](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli) · [Cursor CLI sign-in](https://cursor.com/docs/cli/reference/authentication).
+
+<details>
+<summary><strong>Give Codex or Grok Build an autonomous role on Windows x64</strong></summary>
+
+Open the built-in **Codex** or **Grok Build** card. Install the indicated CLI version and copy the setup command from the card. In the project’s PowerShell window, press Ctrl+C, run the command, complete the official sign-in and save the settings. Restart Studio and check **Available task role**. In the accepted run Grok investigated the source, Codex changed it, and a separate Codex instance reviewed the patch.
+
+![Codex before setup. The card shows sign-in, subscription quota, available task role and the PowerShell setup command.](docs/assets/connect-codex-en.png)
+
+**Reconnecting an existing profile in 0.1.1.** The setup wizard can stop before sign-in
+with `The dedicated login contains unreviewed files.` We reproduced this with a `plugins`
+directory in the dedicated Codex profile and a `bundled` directory in the dedicated Grok
+profile. At that point the project has no new connection. On the audited Windows machine the
+owner archived both expired profiles in the protected directory with all clients stopped.
+Both wizards then accepted a fresh official sign-in and saved the connections. These profiles
+are shared across projects. The manual handoff above also remains available.
+
+</details>
+
+<details>
+<summary><strong>Exchange text automatically with a compatible CLI</strong></summary>
+
+If the tool speaks `arachnid.utility.v1`, select **Compatible CLI bridge**. Copy the
+`conduct utility-bridge` command from its card. In a separate PowerShell window, set
+`$python` and `$conduct` as shown in the [setup guide](docs/first-run-v1.en.md#4-open-studio)
+and replace the leading `conduct` with `& $conduct`. On Linux or macOS, use the path to
+`bin/conduct` in your environment. Keep the address and ID from the card, run the command and
+supply the tool’s executable and arguments. Select **Send task**, then **Refresh exchanges** to
+see the reply. The bridge carries text. Assigning workflow roles and reading quotas require a
+provider adapter.
+
+![A connected CLI showing the bridge command for this project and the task entry field.](docs/assets/connect-bridge-en.png)
+
+</details>
 
 ## Explore the project
 

@@ -59,7 +59,7 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Для проверки возьмите SHA-256 wheel и полный коммит исходников из описания этого выпуска.
+Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). В командах ниже указаны SHA-256 его wheel и коммит исходников, на который ссылается выпуск.
 Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
 
 <details open>
@@ -72,22 +72,21 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 ```powershell
 $env:PYTHONPATH = ''
 $wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
-$expected = Read-Host 'Candidate wheel SHA256'
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
-$source = Read-Host 'Source commit of this wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$expected = '80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+if ((Get-FileHash -LiteralPath $wheel -ErrorAction Stop).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
 if ($LASTEXITCODE) { throw 'venv failed' }
 $python = Join-Path $install 'Scripts\python.exe'
-$conduct = Join-Path $install 'Scripts\conduct.exe'
-& $python -m pip install --no-index --no-deps $wheel
+$conduct = { & $python -I -m conductor @args }
+& $python -I -m pip install --no-index --no-deps $wheel
 if ($LASTEXITCODE) { throw 'wheel installation failed' }
 & $conduct --help
 ```
 
-Если команды `py` нет, укажите полный путь к `python.exe` для Python 3.11 или 3.12.
+Если команды `py` нет, создайте окружение с помощью полного пути к Python 3.11 или 3.12. В примерах ниже команда `& $conduct` запускает установленный модуль через Python этого окружения. Она работает в том числе на Windows, где заблокирован созданный pip файл запуска.
 
 Для задач по подписке используйте эту защищённую папку продукта и каталог `harnesses` рядом с `product` для закреплённых программ Windows.
 
@@ -96,26 +95,34 @@ if ($LASTEXITCODE) { throw 'wheel installation failed' }
 <details>
 <summary><strong>macOS / Linux · терминал</strong></summary>
 
-Используйте новую папку установки и настоящий путь к wheel. Сравните его хеш с выданным SHA256.
+Укажите новую папку установки и путь к скачанному wheel. Для Python 3.11 замените `python_cmd=python3.12` на `python_cmd=python3.11`.
 Оставьте этот терминал открытым для следующих шагов.
 
 ```sh
 wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
-python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
+expected="80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74"
+python_cmd=python3.12
 install_dir="$HOME/.local/share/december-command/app-v1"
-python3 -m venv "$install_dir"
 python_bin="$install_dir/bin/python"
 conduct="$install_dir/bin/conduct"
-"$python_bin" -m pip install "$wheel"
-"$conduct" --help
+(
+  set -e
+  "$python_cmd" -I -c 'import hashlib, pathlib, sys
+with pathlib.Path(sys.argv[1]).open("rb") as wheel:
+    if hashlib.file_digest(wheel, "sha256").hexdigest() != sys.argv[2]:
+        sys.exit("Wheel SHA256 mismatch")' "$wheel" "$expected"
+  mkdir -p "$(dirname "$install_dir")"
+  mkdir "$install_dir"
+  "$python_cmd" -I -m venv "$install_dir"
+  "$python_bin" -I -m pip install --no-index --no-deps "$wheel"
+  "$conduct" --help
+)
 ```
 
 </details>
 
 **Вы должны увидеть:** справку с командами `ownership`, `providers` и `up`.
 Если их нет, проверьте путь к исполняемому файлу и сборку, прежде чем продолжать.
-
-Уточните у сопровождающего SHA256 конкретного wheel и список поддерживаемых им действий. Сентябрьские заметки о выпуске описывают более старую сборку, выпущенную до появления изоляции Windows.
 
 ## 2. Создайте новый пробный проект
 
@@ -132,9 +139,11 @@ conduct="$install_dir/bin/conduct"
 
 ```powershell
 $project = Join-Path $env:USERPROFILE 'DecemberTrial'
-New-Item -ItemType Directory -Path $project | Out-Null
+New-Item -ItemType Directory -Path $project -ErrorAction Stop | Out-Null
 & $conduct init --template default-orbit --dir $project
+if ($LASTEXITCODE) { throw 'Project initialization failed' }
 & $conduct ownership activate --legacy-writers-stopped --dir $project
+if ($LASTEXITCODE) { throw 'Project activation failed' }
 & $conduct ownership status --dir $project
 ```
 
@@ -142,10 +151,10 @@ New-Item -ItemType Directory -Path $project | Out-Null
 
 ```sh
 project="$HOME/DecemberTrial"
-mkdir "$project"
-"$conduct" init --template default-orbit --dir "$project"
-"$conduct" ownership activate --legacy-writers-stopped --dir "$project"
-"$conduct" ownership status --dir "$project"
+mkdir "$project" &&
+  "$conduct" init --template default-orbit --dir "$project" &&
+  "$conduct" ownership activate --legacy-writers-stopped --dir "$project" &&
+  "$conduct" ownership status --dir "$project"
 ```
 
 **Вы должны увидеть:** начальную инструкцию после `init` и состояние владения `active` после активации.
@@ -331,8 +340,7 @@ Codex или Grok Build. Карточка показывает установк�
 показаний квоты и пригодность роли. Для подключения подготовьте проверенную версию CLI
 из шага 3. Скопируйте команду из карточки. В окне PowerShell, из которого запустили Studio
 с переменными `$conduct` и `$project`, нажмите Ctrl+C и выполните команду. Если открыли
-новое окно, сначала задайте полный путь к установленному `conduct.exe` и папке этого проекта
-как в шагах 1 и 2. Пройдите вход владельца и снова запустите Studio для этого проекта.
+новое окно, сначала восстановите `$python`, `$conduct` и `$project` из блока для Windows ниже. Пройдите вход владельца и снова запустите Studio для этого проекта.
 Для Grok доступна диагностика с чтением. Для Claude Code доступна [ручная передача](#claude-code-вручную). У Kimi есть локальная проверка сессии, живая роль по подписке остаётся открытой.
 
 **Своя утилита** добавляет в этот проект инструмент с вашим названием. В ручном режиме
@@ -344,8 +352,7 @@ Codex или Grok Build. Карточка показывает установк�
 кнопки отправки и ждёт один ответ до 120 секунд. Если процесс завершится с неизвестным
 исходом, состояние обмена сохранится. Обновите список обменов, чтобы увидеть ответ.
 Переписка остаётся в проекте. Исполнителя и проверяющего шага назначают в самом цикле.
-Если Windows блокирует созданный pip файл `conduct.exe`, в показанной команде
-замените `conduct` на `python -m conductor`. Используйте Python из окружения Studio.
+В отдельном окне PowerShell задайте `$python` и `$conduct` как в блоке ниже. Начальное `conduct` в команде моста замените на `& $conduct`. Адрес сервера и идентификатор утилиты возьмите из показанной команды.
 
 В **Сессиях** выберите запуск и нажмите **Do** на орбите Далио. При нескольких
 попытках выберите нужную в правой панели. Разделы **Изменения**, **Тесты** и
@@ -370,11 +377,11 @@ Codex или Grok Build. Карточка показывает установк�
 
 ```powershell
 # Windows
-$source = Read-Host 'Source commit of the installed wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
-$conduct = Join-Path $install 'Scripts\conduct.exe'
-if (-not (Test-Path -LiteralPath $conduct -PathType Leaf)) { throw 'Installed build not found' }
+$python = Join-Path $install 'Scripts\python.exe'
+$conduct = { & $python -I -m conductor @args }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Installed build not found' }
 $project = Join-Path $env:USERPROFILE 'DecemberTrial'
 & $conduct up --dir $project --port 7777
 ```
@@ -418,7 +425,7 @@ project="$HOME/DecemberTrial"
 ## 5. Разберитесь с первой настоящей задачей
 
 1. Создайте небольшую задачу с наблюдаемым результатом, например короткий документ для пробного проекта.
-2. На экране «Процесс» выберите **«Стандартный цикл»** (`dalio-v5`) и назначьте участников, включая отдельного проверяющего.
+2. На экране «Процесс» выберите **«Стандартный цикл»** (`dalio-v6`) и назначьте участников, включая отдельного проверяющего.
 3. Опубликуйте версию процесса и откройте запуск для нужной задачи. Проверьте задачу и место выполнения работы.
 4. Добавьте инструкцию и необходимые входные документы. Перед разрешением исполнения прочитайте предложение и предпросмотр.
 5. Начните с режима **Confirm**, чтобы решать по каждому действию. Для **Policy** отдельно просмотрите бюджеты и разрешите ограниченный запуск.

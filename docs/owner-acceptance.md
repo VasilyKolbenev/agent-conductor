@@ -36,7 +36,7 @@ Open your own PowerShell and clear `$env:PYTHONPATH`. Install the identified whe
 **You must see** the sixteen subcommands, including `init`, `ownership`, `providers`, `projects`, `up`, and `utility-bridge`, and no traceback. Nothing on `PYTHONPATH`: an editable
 working tree would answer every command below and prove nothing.
 
-Use Python 3.11 or newer and retain the exact wheel SHA256 in your acceptance record.
+Use Python 3.11 or 3.12 and retain the exact wheel SHA256 in your acceptance record.
 
 **Keep the project path short: not in the temp folder.** Step 4 has you choose a workflow
 identifier of 128 characters. Saving that draft writes
@@ -53,7 +53,7 @@ a shorter folder, such as `C:\DecemberTrial`.
 
 ```powershell
 $PROJ = Join-Path $env:USERPROFILE "DecemberTrial"     # 82 characters at most: see step 1
-New-Item -ItemType Directory -Force -Path $PROJ | Out-Null
+New-Item -ItemType Directory -Path $PROJ -ErrorAction Stop | Out-Null
 & $CONDUCT init --template default-orbit --dir $PROJ
 ```
 
@@ -80,9 +80,11 @@ so in the second window set them again (with the folder names you chose in steps
 
 ```powershell
 $env:PYTHONPATH = ""
-$source = Read-Host 'Source commit from window A (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
-$CONDUCT = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv\Scripts\conduct.exe")
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
+$install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
+$python = Join-Path $install 'Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Installed build not found' }
+$CONDUCT = { & $python -I -m conductor @args }
 $PROJ = Join-Path $env:USERPROFILE "DecemberTrial"
 & $CONDUCT up --dir $PROJ --port 7801
 ```
@@ -111,15 +113,15 @@ the screen must say it in words. A blank area is a finding. A spinner with no ex
 
 ## 4. Create a workflow, from blank or from a starting point
 
-Go to **Workflow**. Create one, either empty or from a bundled starting point (five starters,
-`dalio-v1` … `dalio-v5`, ship with the product and need no network; the default is `dalio-v5`,
-titled *Стандартный цикл* — Standard cycle).
+Go to **Workflow**. Create an empty workflow or choose a bundled starter. The first Dalio
+starter is **Standard cycle**, revision 6 (`dalio-v6`). Earlier Dalio revisions remain
+available by name. The bundled starters work offline.
 
-**Five starters ship, and they must not look alike.** Each row names its revision and says
+**Compare the Dalio revisions.** Each row names its revision and says
 either *ready to run* or *see the note*; the note itself is the readable text under the control,
 for the starter you have chosen, and it changes with your choice. One note says that four of
-that starter's review steps name no result artifact, so those steps cannot succeed. Three
-starters (`dalio-v3`, `dalio-v4` and `dalio-v5`) draw the routed cycle: their connections carry
+that starter's review steps name no result artifact, so those steps cannot succeed. Revisions 3 through 6
+draw the routed cycle: their connections carry
 conditions, so approving the confirm gate opens the effecting step and asking for changes at the
 result gate sends the run round again. If the
 rows read identically you cannot choose between them, and that is a finding — they are not
@@ -397,7 +399,7 @@ beside the first, and whatever is proposed afterwards binds the newest one stand
 ## 13. Drive the cycle and read the plan's own word
 
 Use `dalio-v3` for this step: its roads carry conditions and its `do` needs no independent
-checker. `dalio-v4` and the default `dalio-v5` route too, but their `do` requires a second
+checker. Revisions 4 through 6 also route between steps. Their `do` requires a second
 participant as independent checker, and in `dalio-v5` a rejected result takes its correction road
 instead of the result gate; that road is exercised in the real-result acceptance below, so this
 step keeps to the gates alone.
@@ -565,8 +567,8 @@ whose plan is merely `complete` must not count. Empty input must yield zero.
   The independent check must inspect that exact result and the documents the doer consumed;
   its evidence must name the checker instance and the checked digest. Explanatory checker
   stdout is not a durable review report in V1.
-- If the real check finds a defect, record its real finding. The standard cycle (revision 5)
-  corrects it on its own road. Under bounded Policy, and only there, the checker's typed finding
+- If the real check finds a defect, record its real finding. For this correction exercise select the bundled
+  `dalio-v5` starter. It routes the rejected result back to `do`. Under bounded Policy, and only there, the checker's typed finding
   is recorded as correction feedback and carried automatically, within the same authorization,
   into one more pass of `do` with the original instruction, followed by a fresh independent check.
   Under Confirm the same road opens, but nothing carries the finding: a person proposing `do` again
