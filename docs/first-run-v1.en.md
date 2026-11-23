@@ -60,7 +60,7 @@ For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## 1. Install the identified build
 
-Download the wheel from the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Use the wheel SHA-256 and the full source commit listed on that release.
+Download the wheel from the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). The commands below use the SHA-256 of its wheel and the source commit linked on that release.
 The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this tutorial is not a platform-certification claim.
 
 <details open>
@@ -73,22 +73,21 @@ On a fresh PC, first create an empty `%USERPROFILE%\DecemberCommand` folder. In 
 ```powershell
 $env:PYTHONPATH = ''
 $wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
-$expected = Read-Host 'Candidate wheel SHA256'
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
-$source = Read-Host 'Source commit of this wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$expected = '80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+if ((Get-FileHash -LiteralPath $wheel -ErrorAction Stop).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
 if ($LASTEXITCODE) { throw 'venv failed' }
 $python = Join-Path $install 'Scripts\python.exe'
-$conduct = Join-Path $install 'Scripts\conduct.exe'
-& $python -m pip install --no-index --no-deps $wheel
+$conduct = { & $python -I -m conductor @args }
+& $python -I -m pip install --no-index --no-deps $wheel
 if ($LASTEXITCODE) { throw 'wheel installation failed' }
 & $conduct --help
 ```
 
-If `py` is unavailable, use the full path to the `python.exe` for Python 3.11 or 3.12.
+If `py` is unavailable, create the environment with the full path to Python 3.11 or 3.12. In the commands below, `& $conduct` runs the installed module with that environment’s Python, including on Windows machines that block the launcher created by pip.
 
 Use this protected product directory for subscription tasks and its sibling `harnesses` directory for the pinned Windows binaries.
 
@@ -97,26 +96,34 @@ Use this protected product directory for subscription tasks and its sibling `har
 <details>
 <summary><strong>macOS / Linux · terminal</strong></summary>
 
-Use a fresh installation directory and the actual wheel path. Compare its hash with the supplied SHA256.
+Use a fresh installation directory and the actual wheel path. For Python 3.11, set `python_cmd=python3.11` in the block below.
 Keep this terminal open for the next steps.
 
 ```sh
 wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
-python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
+expected="80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74"
+python_cmd=python3.12
 install_dir="$HOME/.local/share/december-command/app-v1"
-python3 -m venv "$install_dir"
 python_bin="$install_dir/bin/python"
 conduct="$install_dir/bin/conduct"
-"$python_bin" -m pip install "$wheel"
-"$conduct" --help
+(
+  set -e
+  "$python_cmd" -I -c 'import hashlib, pathlib, sys
+with pathlib.Path(sys.argv[1]).open("rb") as wheel:
+    if hashlib.file_digest(wheel, "sha256").hexdigest() != sys.argv[2]:
+        sys.exit("Wheel SHA256 mismatch")' "$wheel" "$expected"
+  mkdir -p "$(dirname "$install_dir")"
+  mkdir "$install_dir"
+  "$python_cmd" -I -m venv "$install_dir"
+  "$python_bin" -I -m pip install --no-index --no-deps "$wheel"
+  "$conduct" --help
+)
 ```
 
 </details>
 
 **You should see:** CLI help containing `ownership`, `providers`, and `up`.
 If they are missing, check the executable path and build before continuing.
-
-Check that the maintainer identifies the wheel, its hash and its supported operations together. The older build described by the September release notes predates this Windows isolation.
 
 ## 2. Create a fresh trial project
 
@@ -134,9 +141,11 @@ project path must not exceed 100 characters; it does not affect `init`, activati
 
 ```powershell
 $project = Join-Path $env:USERPROFILE 'DecemberTrial'
-New-Item -ItemType Directory -Path $project | Out-Null
+New-Item -ItemType Directory -Path $project -ErrorAction Stop | Out-Null
 & $conduct init --template default-orbit --dir $project
+if ($LASTEXITCODE) { throw 'Project initialization failed' }
 & $conduct ownership activate --legacy-writers-stopped --dir $project
+if ($LASTEXITCODE) { throw 'Project activation failed' }
 & $conduct ownership status --dir $project
 ```
 
@@ -144,10 +153,10 @@ New-Item -ItemType Directory -Path $project | Out-Null
 
 ```sh
 project="$HOME/DecemberTrial"
-mkdir "$project"
-"$conduct" init --template default-orbit --dir "$project"
-"$conduct" ownership activate --legacy-writers-stopped --dir "$project"
-"$conduct" ownership status --dir "$project"
+mkdir "$project" &&
+  "$conduct" init --template default-orbit --dir "$project" &&
+  "$conduct" ownership activate --legacy-writers-stopped --dir "$project" &&
+  "$conduct" ownership status --dir "$project"
 ```
 
 **You should see:** a bootstrap instruction after `init`, then ownership state `active` after activation.
@@ -332,8 +341,7 @@ In the Arachnid sidebar choose **Connect a harness**. In an active project open 
 or Grok Build. The card shows the installation, sign-in mode, any available quota source,
 and role eligibility. Prepare the reviewed CLI described in step 3. Copy the card's command.
 In the PowerShell window that started Studio with `$conduct` and `$project`, press Ctrl+C
-and run the command. In a fresh terminal, first set these variables to the installed
-`conduct.exe` and this project directory as in steps 1 and 2. Complete the owner sign-in
+and run the command. In a fresh terminal, first restore `$python`, `$conduct` and `$project` with the Windows block below. Complete the owner sign-in
 and restart Studio for this project. Grok supports read-only
 diagnosis. For Claude Code, follow the [manual handoff](#claude-code-manual-handoff). Kimi has a local session
 check, with a live subscription role pending.
@@ -347,8 +355,7 @@ arguments. Sending a task in Studio delivers that text to the tool. The bridge
 waits up to 120 seconds for one reply and records an indeterminate outcome if the
 peer fails. Refresh the exchanges to read its reply. The project retains this
 conversation. Assign an executor or independent checker in the cycle configuration.
-If Windows blocks the `conduct.exe` launcher generated by pip, replace `conduct`
-in the displayed command with `python -m conductor` using the Studio environment’s Python.
+In the separate Windows terminal, restore `$python` and `$conduct` using the assignments below, then replace the leading `conduct` in the bridge command with `& $conduct`. Leave the displayed server address and utility ID in place.
 
 In **Sessions**, select the run and click **Do** on the Dalio orbit. When the step has
 several attempts, pick one in the right panel. **Changes**, **Tests** and **Verdict**
@@ -370,11 +377,11 @@ Use the installation and project locations you chose above if you changed the ex
 
 ```powershell
 # Windows
-$source = Read-Host 'Source commit of the installed wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
-$conduct = Join-Path $install 'Scripts\conduct.exe'
-if (-not (Test-Path -LiteralPath $conduct -PathType Leaf)) { throw 'Installed build not found' }
+$python = Join-Path $install 'Scripts\python.exe'
+$conduct = { & $python -I -m conductor @args }
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw 'Installed build not found' }
 $project = Join-Path $env:USERPROFILE 'DecemberTrial'
 & $conduct up --dir $project --port 7777
 ```
@@ -418,7 +425,7 @@ For what has actually passed live checks, consult the [candidate notes](release-
 ## 5. Understand the first real task
 
 1. Create a small task with an observable result, for example a short document for the trial project.
-2. In Workflow, start with **Standard cycle** (`dalio-v5`) and assign its participants, including a separate checker.
+2. In Workflow, start with **Standard cycle** (`dalio-v6`) and assign its participants, including a separate checker.
 3. Publish the workflow revision and open a run bound to the intended task. Check the task identity and working location.
 4. Supply the task instruction and any required input documents. Inspect the proposal and preview before authorizing execution.
 5. Start in **Confirm** mode to decide on each action. For **Policy**, review the concrete budgets and grant a bounded run separately.
