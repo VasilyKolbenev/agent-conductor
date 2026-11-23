@@ -20,6 +20,10 @@ Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run l
 
 **Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. The Studio demo opens in Russian. Select **EN** at the bottom of the sidebar, then **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Its terminal prompts are in Russian and accept `ACCEPT` to confirm. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.2/START-HERE.txt).
 
+To keep a revised plan, close the viewer with Ctrl+C and open the same pair with `.\START.cmd edit`.
+Ask Colossus to recall the checks, edit the plan in chat and choose **Save plan to task**.
+The saved order, reviewer and link to the accepted source appear when you reopen the pair.
+
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
 ```sh
@@ -74,7 +78,12 @@ Open the built-in **Codex** or **Grok Build** card. Install the indicated CLI ve
 
 ![Codex before setup. The card shows sign-in, subscription quota, available task role and the PowerShell setup command.](docs/assets/connect-codex-en.png)
 
-**Reconnecting an existing profile in 0.1.1.** The setup wizard can stop before sign-in
+**Upgrading an existing 0.1.1 connection.** Run the setup command again for each of Codex and
+Grok Build. Check that the proposed Windows environment includes `SYSTEMROOT` and confirm
+the change. It points the CLI to the Windows system directory for network name resolution.
+Existing projects keep their saved connections until you confirm the update.
+
+The setup wizard can stop before sign-in
 with `The dedicated login contains unreviewed files.` We reproduced this with a `plugins`
 directory in the dedicated Codex profile and a `bundled` directory in the dedicated Grok
 profile. At that point the project has no new connection. On the audited Windows machine the
