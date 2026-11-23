@@ -60,7 +60,7 @@ from ..dispatch import DispatchArgumentError, validate_dispatch_arguments
 from ..work_layout import WORK_DIR
 from . import _procgroup
 from .process_ownership_values import OwnershipScopes, ProcessLease, LoginBorrow
-from .jsonl_completion import JsonlCompletion
+from .jsonl_completion import JsonlCompletion, valid_completion_marker
 from .process_values import validated_argv, validated_stdin
 from .process_boundary import WindowsContainer
 from .process_env_rules import INJECTING_ENV
@@ -222,8 +222,8 @@ class CommandSpec:
     #: ones: the road a vendor login takes, since it lives in a file rather than
     #: the environment (``adapters/login_home.py``). CODE-OWNED like ``env``.
     sensitive_extra: tuple[bytes, ...] = field(default=(), repr=False)
-    # A finite RPC batch keeps stdin open until this stdout response arrives.
-    stdin_completion_id: int | None = None
+    # A finite RPC batch keeps stdin open until all selected stdout responses arrive.
+    stdin_completion_id: int | tuple[int, ...] | None = None
     boundary: WindowsContainer | None = field(default=None, repr=False)
     # Fixed arg0 selects stdin mode in the pinned executable. No caller-chosen alias.
     codex_patch_stdin: bool = False
@@ -252,7 +252,7 @@ class CommandSpec:
         if self.boundary is not None and type(self.boundary) is not WindowsContainer:
             raise CommandSpecError("boundary must be a trusted native policy")
         if self.stdin_completion_id is not None and (
-                type(self.stdin_completion_id) is not int or self.stdin_completion_id < 0
+                not valid_completion_marker(self.stdin_completion_id)
                 or self.stdin_bytes is None or not self.separate_stderr
                 or self.timeout_seconds is None or self.timeout_seconds > 60):
             raise CommandSpecError("RPC completion requires bounded separated stdout and input")
@@ -313,7 +313,7 @@ class _Owned:
                  group: _procgroup.ProcessGroup,
                  stdin_bytes: bytes | None = None,
                  sensitive_values: tuple[bytes, ...] = (),
-                 completion_id: int | None = None) -> None:
+                 completion_id: int | tuple[int, ...] | None = None) -> None:
         self.proc = proc
         self.token = token
         self.pid = proc.pid

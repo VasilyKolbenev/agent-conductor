@@ -63,7 +63,7 @@ def test_supplier_does_not_spawn_and_read_uses_dispatch_pin_environment_and_home
         assert env['CODEX_HOME'] == str(home)
         assert env['VISIBLE'] == 'synthetic-selected' and 'HIDDEN' not in env
         assert spec.argv[0] == str(tmp_path/'native.exe')
-    assert runner.specs[-1].stdin_completion_id == 3
+    assert runner.specs[-1].stdin_completion_id == (1, 2, 3)
     assert runner.specs[-1].separate_stderr and runner.specs[-1].timeout_seconds == 15
     assert value._login_seen == ()
 
@@ -130,6 +130,15 @@ def test_read_still_refuses_a_notification_that_arrives_despite_opt_out(tmp_path
 def test_protocol_refuses_missing_duplicate_malformed_or_ambiguous_replies(raw):
     with pytest.raises(NativeQuotaReadError):
         QUOTA_RPC.decode(raw)
+
+
+def test_out_of_order_rate_limit_error_is_refused_after_the_account_reply(tmp_path):
+    value, runner, _ = adapter(tmp_path)
+    init, account, _ = transcript().splitlines(keepends=True)
+    runner.payload = init + b'{"id":3,"error":{"code":-32603}}\n' + account
+    with pytest.raises(NativeQuotaReadError) as refused:
+        quota_plan_for('codex', value).request.read()
+    assert refused.value.reason == 'source_error'
 
 
 def test_auth_refusal_does_not_echo_email_error_or_claim_zero(tmp_path):

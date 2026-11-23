@@ -24,10 +24,11 @@ class SubscriptionRpc:
     notifications: tuple[str, ...] = ()
     #: As on ControlRpc: names this protocol's own spawn runs without. None here.
     unset_env: tuple[str, ...] = ()
+    wait_for_all_responses: bool = False
 
     @property
     def completion_id(self):
-        return self.response_ids[-1]
+        return self.response_ids if self.wait_for_all_responses else self.response_ids[-1]
 
     def decode(self, output: bytes) -> dict:
         seen = {}

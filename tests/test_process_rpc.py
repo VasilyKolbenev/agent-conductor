@@ -1,11 +1,14 @@
 """Actual children must answer before EOF; each exit retires both I/O threads."""
 from dataclasses import replace
+from itertools import permutations
 import sys
 
 import pytest
 
 from conductor.command.adapters.process import CommandSpec, CommandSpecError, ProcessRunner
 from conductor.command.adapters import process
+from conductor.command.adapters.codex_quota import QUOTA_RPC
+from conductor.command.adapters.jsonl_completion import JsonlCompletion
 
 
 CHILD = '''import sys,time
@@ -48,6 +51,23 @@ def retired(runner, held):
     child = held[0]
     assert child.proc.poll() is not None
     assert not child._pump.is_alive() and not child._feeder.is_alive()
+
+
+@pytest.mark.parametrize('order', tuple(permutations((1, 2, 3))))
+def test_codex_batch_keeps_stdin_open_for_every_response_in_any_order(order):
+    marker = JsonlCompletion(QUOTA_RPC.completion_id, 1024)
+    for index, identity in enumerate(order):
+        marker.observe(('{"id":%d,"result":{}}\n' % identity).encode())
+        assert marker.finished == (index == 2)
+        assert marker.complete == (index == 2)
+
+
+def test_incomplete_codex_batch_is_retired_at_its_original_deadline(tmp_path):
+    runner, spec, held = setup(tmp_path, 'valid', 2)
+    outcome = runner.run(replace(spec, stdin_completion_id=QUOTA_RPC.completion_id))
+    assert b'{"id":3,"result":{}}' in outcome.output, 'the child answered before the deadline'
+    assert (outcome.status, outcome.stdin_state) == ('timed_out', 'incomplete')
+    retired(runner, held)
 
 
 @pytest.mark.parametrize('mode', ['valid', 'error'])
@@ -100,7 +120,9 @@ def test_interrupted_wait_retires_waiting_rpc_feeder(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('change', [{'stdin_completion_id':True}, {'stdin_completion_id':-1},
-    {'stdin_bytes':None}, {'separate_stderr':False}, {'timeout_seconds':None}, {'timeout_seconds':61}])
+    {'stdin_completion_id':()}, {'stdin_completion_id':(1, False)}, {'stdin_completion_id':(1, 1)},
+    {'stdin_bytes':None}, {'separate_stderr':False}, {'timeout_seconds':None},
+    {'timeout_seconds':61}])
 def test_rpc_requires_literal_id_finite_timeout_and_stdout_separation(change):
     base = CommandSpec(('not-started',), 'work', stdin_bytes=b'{}\n',
         separate_stderr=True, stdin_completion_id=3, timeout_seconds=1)

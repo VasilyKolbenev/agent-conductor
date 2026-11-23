@@ -48,7 +48,7 @@ QUOTA_RPC = SubscriptionRpc(
     b'{"method":"initialized","params":{}}\n'
     b'{"id":2,"method":"account/read","params":{"refreshToken":false}}\n'
     b'{"id":3,"method":"account/rateLimits/read"}\n',
-    (1, 2, 3), ("account", "type"), "chatgpt")
+    (1, 2, 3), ("account", "type"), "chatgpt", wait_for_all_responses=True)
 
 #: The login field the reply may repeat: where `tokens.account_id` stands in `auth.json`.
 ACCOUNT_FIELD = "tokens.account_id"

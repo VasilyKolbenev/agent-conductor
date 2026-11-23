@@ -136,7 +136,7 @@ def exchange(value):
     """One quota exchange through ``_attempt``, as the quota read puts it; a raise fails."""
     value._workspace.work_root()
     return value._attempt(QUOTA_RPC.argv, 'work', timeout=15, stdin_bytes=QUOTA_RPC.payload,
-                          separate_stderr=True, stdin_completion_id=3)
+                          separate_stderr=True, stdin_completion_id=QUOTA_RPC.completion_id)
 
 
 def refused(value):

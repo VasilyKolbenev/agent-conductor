@@ -9,6 +9,16 @@ from __future__ import annotations
 import json
 
 
+def _response_ids(marker: int | tuple[int, ...]) -> tuple[int, ...]:
+    return marker if type(marker) is tuple else (marker,)
+
+
+def valid_completion_marker(marker: int | tuple[int, ...]) -> bool:
+    ids = _response_ids(marker)
+    return (bool(ids) and all(type(value) is int and value >= 0 for value in ids)
+            and len(set(ids)) == len(ids))
+
+
 def _object(pairs):
     result = {}
     for key, value in pairs:
@@ -27,10 +37,11 @@ def decode_line(line: bytes) -> dict:
 
 
 class JsonlCompletion:
-    """A complete final response, malformed line, overflow or EOF ends waiting."""
+    """Release stdin once every required response arrives, in any order."""
 
-    def __init__(self, response_id: int, limit: int) -> None:
-        self.response_id, self.limit = response_id, min(limit, 65536)
+    def __init__(self, marker: int | tuple[int, ...], limit: int) -> None:
+        self.pending = set(_response_ids(marker))
+        self.limit = min(limit, 65536)
         self.buffer = bytearray()
         self.complete = self.finished = False
         self.total = 0
@@ -48,10 +59,15 @@ class JsonlCompletion:
             self.buffer[:] = remaining
             try:
                 row = decode_line(bytes(line))
-                if type(row.get('id')) is int and row['id'] == self.response_id:
-                    self.complete = ('result' in row) != ('error' in row) and 'method' not in row
-                    self.finished = True
-                    return
+                identity = row.get('id')
+                if type(identity) is int and identity in self.pending:
+                    if ('result' in row) == ('error' in row) or 'method' in row:
+                        self.finished = True
+                        return
+                    self.pending.remove(identity)
+                    if not self.pending:
+                        self.complete = self.finished = True
+                        return
             except (ValueError, UnicodeError, RecursionError):
                 self.finished = True
                 return
