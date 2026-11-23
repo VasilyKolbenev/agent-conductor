@@ -185,7 +185,8 @@ WRITE_TARGETS = frozenset({"taskDraft", "draft", "revisions", "runs", "decisions
                            "automationPreview", "automationAuthorize", "automationControl",
                            "materials", "autoContinue", "seed", "flow", "cyclePin", "queue",
                            "queueOrder", "queueWithdraw", "acceptPreview", "acceptCommit",
-                           "gitSetup", "acceptPush", "acceptPullRequest", "utilities"})
+                           "gitSetup", "acceptPush", "acceptPullRequest", "utilities",
+                           "reviewPlan"})
 #: Which of them are about a RUN and are therefore gated on the STREAM rather
 #: than on a workflow's readiness. Held as a subset of the targets above, so a
 #: word can never be gated by a list that does not name it.
@@ -486,6 +487,7 @@ def test_the_mutation_door_names_exactly_its_reviewed_write_targets():
     door = _code(TRANSPORT_MODULE)
     named = set(_frozen_list(door, "WRITE_TARGETS"))
     assert named == WRITE_TARGETS, sorted(named ^ WRITE_TARGETS)
+    assert 'reviewPlan: (id) => "/command/tasks/" + encodeURIComponent(id) + "/review-plan"' in door
     for target in named:
         assert re.search(rf"^\s+{target}: \(", door, re.MULTILINE), target
     assert door.count("WRITE_TARGETS.includes(") == 1
