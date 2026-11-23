@@ -63,8 +63,17 @@ def test_stopped_goal_has_the_same_attempt_outcome_in_the_banner_and_chat(chromi
             ]:
                 page = context.new_page()
                 page.goto(f"http://127.0.0.1:{run.subject.server_port}/#session=run&lang={lang}")
-                expect(page.locator("#nextAction .next-label")).to_have_text(status)
-                ask(page, question)
+                page.locator("#command").fill(question)
+                label = page.locator("#nextAction .next-label")
+                expect(label).to_have_text(status)
+                # The recap answers from the very moment of submission. A background read may
+                # show "Reading run limits…" between two separate Playwright actions.
+                page.wait_for_function("""expected => {
+                    if (document.querySelector("#nextAction .next-label").textContent !== expected)
+                        return false;
+                    document.querySelector("#send").requestSubmit();
+                    return true;
+                }""", arg=status)
                 expect(page.locator("#messages .msg.atlas").last).to_contain_text(status)
                 page.close()
         finally:
