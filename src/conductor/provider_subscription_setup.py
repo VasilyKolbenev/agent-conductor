@@ -148,8 +148,8 @@ def connect(directory, path, standing, kind, ask):
             wizard._say("Verified the local subscription file. Restart Studio after saving to see "
                         "available roles and the provider's quota readings.")
             if kind in _WINDOWS_DNS_CARDS:
-                wizard._say("This Windows CLI uses SYSTEMROOT for DNS. Check this name in env_allow "
-                            "before confirming the project connection.")
+                wizard._say("This Windows CLI uses SYSTEMROOT for DNS. Check this name in "
+                            "env_allow before confirming the project connection.")
             wizard._summarise(config, path, [row.provider_id for row in standing])
             if not wizard._confirmed(ask):
                 return 1
