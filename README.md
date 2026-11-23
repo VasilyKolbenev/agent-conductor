@@ -74,6 +74,11 @@ Open the built-in **Codex** or **Grok Build** card. Install the indicated CLI ve
 
 ![Codex before setup. The card shows sign-in, subscription quota, available task role and the PowerShell setup command.](docs/assets/connect-codex-en.png)
 
+**Reconnecting an existing profile in 0.1.1.** The setup wizard can stop before sign-in
+with `The dedicated login contains unreviewed files.` We reproduced this with a `plugins`
+directory in the dedicated Codex profile and a `bundled` directory in the dedicated Grok
+profile. At that point the project has no new connection. The manual handoff above still works.
+
 </details>
 
 <details>
