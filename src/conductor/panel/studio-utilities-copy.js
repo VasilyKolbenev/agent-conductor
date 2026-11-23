@@ -49,10 +49,8 @@ export const UTILITY_COPY = Object.freeze({
     "В том же venv вместо & $conduct укажите & $python -m conductor."],
   "utility.install_guide": ["Install {version} for Windows", "Установить {version} для Windows"],
   "utility.setup_finish": [
-    "PowerShell guides you through sign-in if needed. To update an existing connection, use the same command. "
-      + "Check SYSTEMROOT in the env_allow summary, confirm and restart Studio.",
-    "PowerShell подскажет, как войти, если это требуется. Для обновления прежнего подключения повторите эту команду. "
-      + "Проверьте SYSTEMROOT в списке env_allow, подтвердите запись и перезапустите Studio."],
+    "To connect or update, run the command, confirm SYSTEMROOT in env_allow and restart Studio.",
+    "Для подключения или обновления выполните команду, подтвердите SYSTEMROOT в env_allow и перезапустите Studio."],
   "utility.kimi_status": ["Local adapter tests only. A live subscription task is pending.",
     "Адаптер проверен на локальных тестах. Предстоит проверка живой задачи по подписке."],
   "utility.claude_status": [
