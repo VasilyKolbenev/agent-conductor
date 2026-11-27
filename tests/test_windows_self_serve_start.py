@@ -39,6 +39,13 @@ def cmd():
     return Path(os.environ["SystemRoot"]) / "System32/cmd.exe"
 
 
+def stop_test_console(process):
+    if process.poll() is None:
+        # A failed assertion can leave cmd and choice holding the fixture's working directory.
+        subprocess.run([str(cmd().with_name("taskkill.exe")), "/pid", str(process.pid), "/t", "/f"],
+                       stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
+
+
 @pytest.mark.parametrize("args", [[], ["verify"]])
 def test_missing_python_returns_an_official_route_without_blocking(bundle, args):
     supply_manager(bundle, "qbz5n2kfra8p0", 1)
@@ -71,8 +78,7 @@ def test_explicit_command_in_a_real_console_returns_without_requesting_a_key(bun
         try:
             process.wait(10)
         finally:
-            if process.poll() is None:
-                process.kill()
+            stop_test_console(process)
         output = process.stdout.read()
     assert (bundle / "status.txt").read_text().strip() == "1"
     assert b"pymanager install 3.12" in output
@@ -151,8 +157,7 @@ def test_interactive_setup_requires_a_choice_and_continues_or_stops(bundle, key,
                 process.stdin.flush()
             process.wait(15)
         finally:
-            if process.poll() is None:
-                process.kill()
+            stop_test_console(process)
             reader.join(5)
     did_launch = key == "R" or install_status == 0
     assert (bundle / "status.txt").read_text().strip() == ("0" if did_launch else "1")
