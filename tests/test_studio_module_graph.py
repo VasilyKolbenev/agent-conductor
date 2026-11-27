@@ -20,6 +20,7 @@ from tests.test_studio_source import ARACHNID_MODULES, BOOT, IMPORTS, MODULES, P
 #: has not yet needed one of its permitted neighbours is not a fault; a module
 #: reaching for one it was never granted is.
 PERMITTED_IMPORTS = {
+    "studio-boot.js": frozenset(),
     "arachnid.js": frozenset({
         "./command-view.js", "./desk-hash.js", "./desk-transport.js", "./studio-model.js",
         "./studio-situation.js", "./studio-tasks-model.js", "./studio-taskruns.js", "./studio-utilities.js",
@@ -582,7 +583,8 @@ PERMITTED_IMPORTS = {
                                    "./studio-model.js",
                                    "./studio-runwords.js"}),
     "studio.js": frozenset(
-        {f"./{name}" for name in MODULES if name != BOOT and name not in ARACHNID_MODULES}
+        {f"./{name}" for name in MODULES
+         if name not in {BOOT, "studio-boot.js"} and name not in ARACHNID_MODULES}
         | {"./command-view.js", "./command-projection.js"}),
 }
 

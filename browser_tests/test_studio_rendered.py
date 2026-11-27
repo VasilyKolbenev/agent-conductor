@@ -37,9 +37,10 @@ import json
 import re
 import threading
 from collections.abc import Iterator
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from playwright.sync_api import Browser, Page, Route
+from playwright.sync_api import Browser, Page, Request, Route
 
 from conductor import server
 from conductor.command.graph_template import GraphTemplate
@@ -90,6 +91,7 @@ BOOT_ASSETS = {
     "studio-atlas-copy.js": 200, "studio-atlas-inspector.js": 200,
     "studio-utilities.css": 200, "studio-utilities.js": 200, "studio-utilities-copy.js": 200,
     "studio-provider-card.js": 200,
+    "studio-boot.js": 200,
     "studio.css": 200, "studio.js": 200, "studio-store.js": 200,
     "studio-tasks-model.js": 200, "studio-tasks.js": 200, "studio-taskflow.js": 200,
     "studio-model.js": 200, "studio-view.js": 200,
@@ -206,6 +208,72 @@ def studio(chromium: Browser, studio_url: str) -> Iterator[tuple[Page, list[str]
     _connected(page)
     try:
         yield page, problems
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("persistent", [False, True], ids=["transient", "persistent"])
+def test_interrupted_editor_import_recovers_without_writing(
+        chromium: Browser, studio_url: str, persistent: bool) -> None:
+    """Interrupt the same static import lost during the macOS reverse gate."""
+    context = chromium.new_context(locale="en-US")
+    page = context.new_page()
+    documents, writes, attempts = [], [], []
+    block_import = True
+
+    def observe(request: Request) -> None:
+        if request.resource_type == "document":
+            documents.append(request.url.split("#", 1)[0])
+        if request.method != "GET":
+            writes.append((request.method, request.url))
+
+    def interrupt(route: Route) -> None:
+        nonlocal block_import
+        attempts.append(route.request.url)
+        if block_import:
+            block_import = persistent
+            route.abort("connectionreset")
+        else:
+            route.continue_()
+
+    page.on("request", observe)
+    page.route("**/panel/studio-tasks.js", interrupt)
+    try:
+        page.goto(studio_url + "#screen=agents&lang=ru", wait_until="commit")
+        if persistent:
+            page.locator("#studioBootFailure").wait_for(state="visible")
+            assert documents == [studio_url] * 2
+            assert len(attempts) == 2
+            assert writes == []
+            block_import = False
+            page.locator("#studioBootRetry").click()
+        page.locator("#studioPrimary > *").first.wait_for(state="attached")
+        _connected(page)
+        assert documents == [studio_url] * (3 if persistent else 2)
+        assert len(attempts) == len(documents)
+        fields = parse_qs(urlsplit(page.url).fragment)
+        assert fields["screen"] == ["agents"] and fields["lang"] == ["ru"]
+        assert page.locator("html").get_attribute("lang") == "ru"
+        assert page.locator("#navAgents").get_attribute("aria-selected") == "true"
+        assert writes == []
+    finally:
+        context.close()
+
+
+def test_editor_runtime_error_is_reported_without_automatic_navigation(
+        chromium: Browser, studio_url: str) -> None:
+    context = chromium.new_context()
+    page = context.new_page()
+    documents = []
+    page.on("request", lambda req: documents.append(req.url)
+            if req.resource_type == "document" else None)
+    page.route("**/panel/studio.js", lambda route: route.fulfill(
+        content_type="text/javascript", body="throw new TypeError('editor evaluation failed');"))
+    try:
+        with page.expect_event("pageerror") as failure:
+            page.goto(studio_url, wait_until="load")
+        assert "editor evaluation failed" in str(failure.value)
+        assert documents == [studio_url]
     finally:
         context.close()
 

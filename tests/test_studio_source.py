@@ -58,7 +58,7 @@ MODULES = ("studio-runstep-copy.js", "studio-participant-copy.js", "studio-run-d
            "studio-scene-model.js", "studio-trace.js", "studio-taskruns.js", "studio-bridge.js",
            "studio-atlas.js", "studio-atlas-inspector.js", "studio-atlas-copy.js",
            "studio-utilities.js", "studio-utilities-copy.js",
-           "studio-provider-card.js",
+           "studio-provider-card.js", "studio-boot.js",
            "studio-budget-guidance.js",
            "studio-test-preview.js",
            "studio.js", "studio-store.js", "studio-view.js", "studio-model.js",
@@ -255,10 +255,9 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
     honest answer: an empty file opens no door. It stops being trivial the
     moment the module is written, and that is when this guard starts paying.
 
-    The boot module is the one other file that may carry a word of the list --
-    it asks the platform for the reader's language -- and it may not carry a
-    door: `fetch(` and the stream belong to the transport module alone, which
-    is checked to HOLD them so an emptied transport cannot pass for a clean one.
+    Each shell may read the browser language at startup. The guard preceding
+    the editor's module may read only navigator.language. Fetch and the event
+    stream belong to the transport module alone.
     """
     everything = (_code(*(PANEL / name for name in MODULES))
                   + "\n" + HTML.read_text(encoding="utf-8")
@@ -273,8 +272,11 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
                     assert forbidden not in _code(path).lower(), (path.name, forbidden)
         else:
             assert forbidden not in everything, forbidden
-    homes = (BOOT, "arachnid.js", TRANSPORT_MODULE)
+    homes = (BOOT, "arachnid.js", TRANSPORT_MODULE, "studio-boot.js")
     quiet = _code(*(PANEL / name for name in MODULES if name not in homes)).lower()
+    guard = _code(PANEL / "studio-boot.js")
+    quiet += re.sub(r"\bnavigator\.language\b", "", guard).lower()
+    assert not re.search(r"\b(?:import|export)\b", guard)
     for forbidden in TRANSPORT:
         assert forbidden not in quiet, forbidden
     boot = _code(PANEL / BOOT, PANEL / "arachnid.js").lower()
@@ -284,19 +286,20 @@ def test_the_wire_door_opens_in_the_transport_module_and_nowhere_else():
         assert forbidden in door, forbidden
 
 
-def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
-    """One module and its three packaged stylesheets, no inline code or foreign origin.
-
-    This editor loads four packaged assets. Its two navigation links lead to Arachnid's
-    project root and the classic panel. All six references belong to this origin.
-    """
+def test_the_shell_loads_the_boot_guard_before_the_editor_from_this_origin():
+    """Both scripts load from the packaged head, with no inline or foreign code."""
     html = HTML.read_text(encoding="utf-8")
-    assert html.count("<script") == 1
+    assert html.count("<script") == 2
+    head = html.split("</head>", 1)[0]
+    assert re.findall(r"<script\b[^>]*>.*?</script>", head, re.DOTALL) == [
+        '<script src="/panel/studio-boot.js"></script>',
+        '<script id="studioEntry" src="/panel/studio.js" type="module"></script>',
+    ]
     assert "<style" not in html
     assert not re.search(r"\son[a-z]+=", html), "an inline handler is a script"
     refs = re.findall(r'(?:href|src)="([^"]*)"', html)
     assert refs == ["/panel/studio.css", "/panel/studio-atlas.css", "/panel/studio-utilities.css",
-                    "/panel/studio.js", "/", "/panel/index.html"]
+                    "/panel/studio-boot.js", "/panel/studio.js", "/", "/panel/index.html"]
     for ref in refs:
         assert ref == "/" or ref.startswith("/panel/")
         assert "//" not in ref and ".." not in ref and ":" not in ref
@@ -307,7 +310,6 @@ def test_the_shell_names_one_script_and_only_this_origin_s_packaged_files():
     assert '<link rel="stylesheet" href="/panel/studio.css">' in html
     assert '<link rel="stylesheet" href="/panel/studio-atlas.css">' in html
     assert '<link rel="stylesheet" href="/panel/studio-utilities.css">' in html
-    assert '<script src="/panel/studio.js" type="module"></script>' in html
 
 
 def test_the_shell_carries_the_ids_and_the_states_the_contract_froze():

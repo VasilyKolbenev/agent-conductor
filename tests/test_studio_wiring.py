@@ -443,7 +443,10 @@ def test_every_id_the_boot_module_mounts_into_is_one_the_shell_declares():
     assert TABLIST_QUERY in boot
     nav = {name for name in declared if name.startswith("nav")}
     assert len(nav) == 5, sorted(nav)
-    accounted = mounted | nav | STRUCTURAL_IDS
+    guard = _code(PANEL / "studio-boot.js")
+    guarded = set(re.findall(r'getElementById\("([A-Za-z0-9_-]+)"\)', guard))
+    assert "studioEntry" in guarded
+    accounted = mounted | nav | STRUCTURAL_IDS | guarded
     assert declared == accounted, sorted(declared ^ accounted)
 
 
