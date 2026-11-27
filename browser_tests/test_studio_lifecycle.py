@@ -286,8 +286,30 @@ def _open(chromium: Browser, project: _Project, *,
         context.add_init_script(_STREAM_DOUBLE)
     page = context.new_page()
     window = _Window(page)
+    from time import monotonic
+    import os
+    began = monotonic()
+    events = []
+    for topic in ("request", "response", "requestfinished", "requestfailed"):
+        page.on(topic, lambda event, topic=topic: events.append((
+            round(monotonic() - began, 3), topic, event.url.split("?")[0],
+            event.status if topic == "response" else
+            event.failure if topic == "requestfailed" else None
+        )))
     page.goto(project.url + "panel/studio.html", wait_until="load")
-    _settle(page)
+    try:
+        _settle(page)
+    except Exception:
+        capture = {"events": events, "errors": window.problems}
+        capture["performance"] = page.evaluate("""() => ({
+          url: location.pathname, ready: document.readyState, time: performance.now(),
+          text: document.body.innerText.slice(0, 8000), tree: document.querySelector("#studioPrimary")?.innerHTML,
+          resources: performance.getEntriesByType('resource').map(r =>
+            [new URL(r.name).pathname,r.startTime,r.responseStart,r.responseEnd,r.transferSize])
+        })""")
+        dst = Path(os.environ["CONDUCT_GATE_ARTIFACTS"]) / "boot-forensic.json"
+        dst.write_text(json.dumps(capture), encoding="utf-8")
+        raise
     return page, window
 
 
