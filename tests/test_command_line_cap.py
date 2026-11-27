@@ -16,6 +16,7 @@ CAPPED = (
     "src/conductor/provider_install_security.py",
     "tests/test_provider_subscription_setup.py",
     "tests/test_pilot_project_paths.py",
+    "tests/test_windows_self_serve_start.py",
     "src/conductor/panel/arachnid-recap.js",
     "browser_tests/test_colossus_recap.py",
     "src/conductor/panel/arachnid-handoff.js",

@@ -45,7 +45,8 @@ def main():
     def announce():
         if demo:
             print("Учебная реконструкция Codex + Grok:", url, flush=True)
-            print("Для двух своих задач выполните START.cmd new.", flush=True)
+            print("Упражнение «Память двух задач»: START.cmd new.", flush=True)
+            print("Чтобы подключить агентов к своему проекту, откройте START-HERE.txt.", flush=True)
         else:
             print("Вторая задача:", url, flush=True)
             print("Источник первой задачи:", origin + urlencode({"session": ids["first"],
