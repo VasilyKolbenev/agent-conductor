@@ -1,4 +1,5 @@
 """Run the Windows ZIP entry point with and without an installed Python runtime."""
+import ctypes
 import hashlib
 import os
 import shutil
@@ -44,6 +45,19 @@ def stop_test_console(process):
         # A failed assertion can leave cmd and choice holding the fixture's working directory.
         subprocess.run([str(cmd().with_name("taskkill.exe")), "/pid", str(process.pid), "/t", "/f"],
                        stdin=subprocess.DEVNULL, capture_output=True, timeout=10)
+
+
+def press_key(process, output, key):
+    # ConPTY negotiates Win32 keyboard records with its terminal using DEC private mode 9001.
+    # CHOICE reads console key events. In this mode a literal byte need not carry a virtual key.
+    data = key.encode("ascii")
+    if output.rfind(b"\x1b[?9001h") > output.rfind(b"\x1b[?9001l"):
+        vk = ord(key.upper())
+        scan = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+        char = ord(key.lower())
+        data = b"".join(f"\x1b[{vk};{scan};{char};{down};0;1_".encode() for down in (1, 0))
+    process.stdin.write(data)
+    process.stdin.flush()
 
 
 @pytest.mark.parametrize("args", [[], ["verify"]])
@@ -147,14 +161,12 @@ def test_interactive_setup_requires_a_choice_and_continues_or_stops(bundle, key,
             assert (b"[I]" in output) == bool(family)
             if key == "R":
                 (bundle / "standby").rename(bundle / "runtime")
-            process.stdin.write(key.encode())
-            process.stdin.flush()
+            press_key(process, output, key)
             if install_status == 1 or key == "H":
                 assert returned.wait(15), bytes(output)
                 detail = b"Installation did not complete" if key == "I" else b"START.cmd new"
                 assert detail in output, bytes(output)
-                process.stdin.write(b"Q")
-                process.stdin.flush()
+                press_key(process, output, "Q")
             process.wait(15)
         finally:
             stop_test_console(process)
