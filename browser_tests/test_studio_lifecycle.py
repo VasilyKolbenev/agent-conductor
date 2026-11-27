@@ -290,6 +290,20 @@ def _open(chromium: Browser, project: _Project, *,
     import os
     began = monotonic()
     events = []
+    # The captured macOS process saw ERR_NETWORK_CHANGED on this dependency. CDP's
+    # ErrorReason enum can inject ConnectionReset but has no NetworkChanged member.
+    # Both halt this single module fetch; the original error code is separately recorded.
+    exercise = "test_a_created_and_read_back_task_finishes_its_writing_status" in os.environ.get(
+        "PYTEST_CURRENT_TEST", "")
+    attempts = []
+    if exercise:
+        def first_import(route):
+            attempts.append(route.request.url)
+            if len(attempts) == 1:
+                route.abort("connectionreset")
+            else:
+                route.continue_()
+        page.route("**/panel/studio-tasks.js*", first_import)
     for topic in ("request", "response", "requestfinished", "requestfailed"):
         page.on(topic, lambda event, topic=topic: events.append((
             round(monotonic() - began, 3), topic, event.url.split("?")[0],
@@ -310,6 +324,13 @@ def _open(chromium: Browser, project: _Project, *,
         dst = Path(os.environ["CONDUCT_GATE_ARTIFACTS"]) / "boot-forensic.json"
         dst.write_text(json.dumps(capture), encoding="utf-8")
         raise
+    finally:
+        if exercise:
+            failed = [row for row in events if row[1] == "requestfailed"]
+            path = Path(os.environ["CONDUCT_GATE_ARTIFACTS"]) / "module-response.json"
+            path.write_text(json.dumps({"attempts": attempts, "failed": failed,
+                                       "elapsed": monotonic() - began}), encoding="utf-8")
+            assert attempts and any("ERR_CONNECTION_RESET" in str(row) for row in failed)
     return page, window
 
 
