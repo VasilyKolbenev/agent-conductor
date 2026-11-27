@@ -8,19 +8,20 @@
      to Arachnid on this project's origin. All assets come from the absolute
      allowlisted /panel/ path, which tests/test_studio_source.py checks.
 
-     One script, three stylesheets, and no inline code: a Content-Security
-     rule that forbids inline script is the shape this surface already has, and
-     the structure below stands without either of them. With scripting off, or
-     before /panel/studio.js has run, every screen still says in plain language
-     that nothing has been read yet -- never a blank area, and never a spinner
-     with no exit. -->
+     The external startup guard listens before the editor's module graph loads.
+     The markup remains readable with scripting off. -->
 <link rel="stylesheet" href="/panel/studio.css">
 <link rel="stylesheet" href="/panel/studio-atlas.css">
 <link rel="stylesheet" href="/panel/studio-utilities.css">
-<script src="/panel/studio.js" type="module"></script>
+<script src="/panel/studio-boot.js"></script>
+<script id="studioEntry" src="/panel/studio.js" type="module"></script>
 </head>
 <body>
 <div class="studio-shell" id="studioShell">
+  <div id="studioBootFailure" role="alert" hidden>
+    <span id="studioBootMessage">The editor could not load.</span>
+    <button type="button" class="studio-btn" id="studioBootRetry">Try loading again</button>
+  </div>
 
   <!-- Header: what this project is, whether the window is connected, and the
        one primary action of the screen now showing. The three slots are empty
