@@ -4,7 +4,7 @@
 
 ## Try Studio
 
-- **Try the example or bring two tasks on Windows.** Extract the ZIP and open `START.cmd` to explore the completed Codex + Grok example. Run `.\START.cmd new` to record the checks from a finished task, recall them in the next one and edit the plan in chat. Both walkthroughs work offline. [Download Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) · [Installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+- **Try the example or bring two tasks on Windows.** Extract the ZIP and open `START.cmd` to explore the completed Codex + Grok example. Run `.\START.cmd new` to record the checks from a finished task, recall them in the next one and edit the plan in chat. Both walkthroughs work offline. [Download Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1-windows.2) · [Installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1-windows.2/START-HERE.txt).
 - **Explore on Windows, Linux or macOS.** Install the release wheel and run `conduct demo` to open a local sample with a recorded attempt and a pending decision. No subscription is required. [Installation commands](../README.md#run-arachnid) · [What the demo contains](../demo/README.md).
 - **Run a real project.** Connect your tools, assign the roles, inspect the limits and approve execution in Studio. Codex and Grok completed the live subscription workflow on Windows. [First real project](first-run-v1.en.md).
 

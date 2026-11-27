@@ -29,7 +29,7 @@ Grok исследовал причину, Codex исправил код, а от
 
 На Windows x64 создайте активный проект, подключите подписки, задайте цель и согласуйте
 участников, лимиты и этапы, где Studio должна ждать вашего решения. Пошаговая настройка:
-https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1/docs/first-run-v1.md
+https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1-windows.2/docs/first-run-v1.md
 Полный коммит и SHA-256 wheel опубликованы в выпуске. Откройте его при проверке загрузки:
 https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
 
@@ -77,7 +77,7 @@ Run a live task on Windows x64
 
 Create an active project, connect your CLI subscriptions, describe the task and approve the
 participants, limits and points where Studio should wait for you. Follow the project setup guide:
-https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1/docs/first-run-v1.en.md
+https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1-windows.2/docs/first-run-v1.en.md
 The published release identifies the source commit and wheel SHA-256. Check your download here:
 https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
 

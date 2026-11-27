@@ -33,9 +33,10 @@ Arachnid Studio — локальная студия для разработчи�
 
 1. Скачайте [архив Studio][zip] и его [контрольную сумму SHA-256][checksum].
 2. Сверьте контрольную сумму и выберите **Извлечь все**. Команда PowerShell есть
-   в [инструкции к архиву][zip-guide]. Если Python ещё не установлен, скачайте с официального сайта
-   [Python Install Manager][python] и в новом окне PowerShell выполните `pymanager install 3.12`.
+   в [инструкции к архиву][zip-guide].
 3. Дважды щёлкните **`START.cmd`** в распакованной папке и оставьте окно открытым.
+   Если Python отсутствует и в окне есть **I**, эта клавиша разрешает установку Python 3.12.
+   Клавиша **O** открывает [официальный установщик][python], **R** повторяет проверку.
    При первом старте откроется учебная орбита. Выберите **Do** — справа увидите правку,
    три теста и заключение проверяющего. Для выхода нажмите Ctrl+C в окне запуска.
    Если открылась ранее сохранённая пара задач, вернитесь к примеру командой `.\START.cmd demo`.
@@ -90,10 +91,10 @@ GitHub Copilot CLI и Cursor Agent можно добавить для ручно
 
 Python-пакет называется `agent-conductor`, команда — `conduct`. Оглавление для локального просмотра находится в `docs/index.ru.md`. [Документация](docs/index.ru.md).
 
-[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
-[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip
-[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip.sha256
-[zip-guide]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt
+[release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1-windows.2
+[zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1-windows.2/Arachnid-Studio-Windows.zip
+[checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1-windows.2/Arachnid-Studio-Windows.zip.sha256
+[zip-guide]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1-windows.2/START-HERE.txt
 [python]: https://www.python.org/downloads/windows/
 [wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
 
