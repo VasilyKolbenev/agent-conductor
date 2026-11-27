@@ -3,7 +3,9 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Documentation](index.md)
 
 **Goal:** open Studio for a new project, connect a coding tool, and understand how to start work deliberately.
-Download the [Arachnid Studio Windows ZIP](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) and extract it. On first use, `START.cmd` opens the Codex + Grok training example. Run `.\START.cmd new` for two tasks of your own. [Installation guide](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+For your own task, start with [project installation](#1-install-the-identified-build).
+To explore a completed run first, open the [example in your browser](run-example.en.md).
+The optional `START.cmd new` exercise recalls checks from an earlier task.
 
 The project root opens Arachnid. In an empty active project, choose **Prepare task**.
 In an existing project, you can also use **Desk → New task**. You can answer one
@@ -60,23 +62,33 @@ For development from source, use [CONTRIBUTING](../CONTRIBUTING.md).
 
 ## 1. Install the identified build
 
-Download the wheel from the [Arachnid Studio release](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Use the wheel SHA-256 and the full source commit listed on that release.
-The [release notes](release-notes-v1-alpha.md) record acceptance evidence; this tutorial is not a platform-certification claim.
+Download the [0.1.1 wheel][wheel-011] to your Downloads folder. The commands below use this
+release's SHA-256 and source commit. You can check both on the [GitHub release][release-011],
+where the wheel's digest is listed under **Assets**.
+
+[wheel-011]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
+[release-011]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
 
 <details open>
 <summary><strong>Windows · PowerShell</strong></summary>
 
 Run `py -3 --version` first. If it selects a different Python version, use `py -3.12` or `py -3.11` in the `venv` command below.
 
-On a fresh PC, first create an empty `%USERPROFILE%\DecemberCommand` folder. In Explorer, open its Properties → Security → Advanced. Disable inheritance and keep Full control for your account, SYSTEM and local Administrators only, applied to this folder, subfolders and files. Check these entries before putting programs or logins here. If the folder already contains an installation, check its existing permissions and build with the maintainer. Obtain the wheel and its SHA256 from the same identified release. Run the following in your own PowerShell, changing `$wheel` if the file is elsewhere.
+On a fresh PC, create an empty `%USERPROFILE%\DecemberCommand` folder. In Explorer, open
+**Properties → Security → Advanced**. Disable inheritance. Keep Full control for your account,
+SYSTEM and local Administrators only, applying those entries to this folder, subfolders and files.
+Verify all three entries before putting programs or logins here. For an existing installation,
+inspect its permissions first. If additional accounts have access, stop before adding this wheel
+or any logins. The commands below use a new build directory. Adjust `$wheel` if needed.
 
 ```powershell
 $env:PYTHONPATH = ''
 $wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
-$expected = Read-Host 'Candidate wheel SHA256'
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
-$source = Read-Host 'Source commit of this wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$expected = '80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
+if ((Get-FileHash -LiteralPath $wheel -Algorithm SHA256 -ErrorAction Stop).Hash -ne $expected) {
+    throw 'Wheel SHA256 mismatch'
+}
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
@@ -97,26 +109,32 @@ Use this protected product directory for subscription tasks and its sibling `har
 <details>
 <summary><strong>macOS / Linux · terminal</strong></summary>
 
-Use a fresh installation directory and the actual wheel path. Compare its hash with the supplied SHA256.
-Keep this terminal open for the next steps.
+Use a fresh installation directory and the actual wheel path. Check the download before installation.
+Use `python3.11` below if that is your supported interpreter. Keep this terminal open.
 
 ```sh
 wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
-python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
+expected='80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+runtime=python3.12
 install_dir="$HOME/.local/share/december-command/app-v1"
-python3 -m venv "$install_dir"
-python_bin="$install_dir/bin/python"
 conduct="$install_dir/bin/conduct"
-"$python_bin" -m pip install "$wheel"
-"$conduct" --help
+if [ -e "$install_dir" ] || [ -L "$install_dir" ]; then
+    echo 'This folder already exists. If you verified this installation, continue to step 2.' >&2
+    echo 'Otherwise choose a new folder in install_dir and run this block again.' >&2
+elif "$runtime" -I -c 'import hashlib,pathlib,sys
+sys.exit(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2])' \
+    "$wheel" "$expected"; then
+    "$runtime" -m venv "$install_dir" &&
+        "$install_dir/bin/python" -m pip install --no-index --no-deps "$wheel" && "$conduct" --help
+else
+    echo 'Could not verify the 0.1.1 wheel. Check the file and the Python version.' >&2
+fi
 ```
 
 </details>
 
 **You should see:** CLI help containing `ownership`, `providers`, and `up`.
 If they are missing, check the executable path and build before continuing.
-
-Check that the maintainer identifies the wheel, its hash and its supported operations together. The older build described by the September release notes predates this Windows isolation.
 
 ## 2. Create a fresh trial project
 
@@ -370,8 +388,7 @@ Use the installation and project locations you chose above if you changed the ex
 
 ```powershell
 # Windows
-$source = Read-Host 'Source commit of the installed wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 $conduct = Join-Path $install 'Scripts\conduct.exe'
 if (-not (Test-Path -LiteralPath $conduct -PathType Leaf)) { throw 'Installed build not found' }

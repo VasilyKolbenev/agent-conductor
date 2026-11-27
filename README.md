@@ -1,12 +1,17 @@
 # Arachnid Studio
 
-**Give Colossus one goal and put a team of coding harnesses to work on it.** In Arachnid Studio, one tool can investigate a problem, another can change the code, and a separate instance can review the result. Agree on roles, a budget and approval points in the local Studio. Once you start the workflow, the team passes results between steps until it reaches a decision or a limit.
+Arachnid Studio is a local workspace for developers who delegate code changes to AI agents
+and maintainers who decide whether to ship them. Give Colossus, your chosen lead agent, a task
+in chat. Agree on who investigates, who edits, who checks the patch and when to pause for you.
+When you return, open the diff, test results and review for the same attempt.
 
-[**Download Arachnid Studio**][release] · [Connect your tools](docs/first-run-v1.en.md) · [Русский](README.ru.md)
+- [See a completed run on GitHub](docs/run-example.en.md) — follow a bug from diagnosis to
+  acceptance. You can read the example in your browser without installing anything.
+- [Open Studio on your computer](#run-arachnid) — explore the local demo without a subscription.
+- [Run your own task on Windows](docs/first-run-v1.en.md#1-install-the-identified-build) —
+  set up a project and connect Codex and Grok with your subscriptions.
 
-| Windows | Linux (tested on Ubuntu) | macOS |
-| --- | --- | --- |
-| Two-task ZIP, Studio and CLI. Live Codex + Grok on personal subscriptions. | Studio and CLI from the Python wheel. Local demo. | Studio and CLI from the same wheel. Local demo. |
+[Русский](README.ru.md)
 
 **Inside the accepted Codex + Grok run**
 
@@ -16,9 +21,27 @@ On a real Windows run, Grok read the counter and its tests to diagnose why faile
 
 ## Run Arachnid
 
-Use **Python 3.11 or 3.12** with `venv` and `pip`. Both walkthroughs below run locally without signing in or calling a model.
+The local demos use **Python 3.11 or 3.12** with `venv` and `pip`. They run without a vendor
+login or model calls. [Release downloads][release].
 
-**Windows.** Download the [Studio ZIP][zip] and [SHA-256 checksum][checksum]. Extract the whole ZIP and open **`START.cmd`**. On first use, Studio opens a Codex + Grok training example. Choose **Do** to see the changes, tests and review. To work through two tasks of your own, run `.\START.cmd new` from the extracted folder. Record your checks on the first task and ask Colossus to find them for the second. [Walkthrough](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+| Windows | Linux (tested on Ubuntu) | macOS |
+| --- | --- | --- |
+| Windows ZIP with a reconstruction of the Codex + Grok run. Live tasks on Windows x64 use your personal subscriptions. | Python wheel with a local release-review demo. | The same wheel and local release-review demo. |
+
+**Windows ZIP**
+
+1. Download the [Studio ZIP][zip] and its [SHA-256 checksum][checksum].
+2. Verify the download, then choose **Extract All**. The [ZIP guide][zip-guide] shows the
+   PowerShell command. If this PC needs Python, get the [official Python Install Manager][python]
+   and run `pymanager install 3.12` in a new PowerShell window.
+3. Double-click **`START.cmd`** in the extracted folder and leave its window open.
+   The first launch opens the example. Select **Do** to see the patch, three tests and checker
+   verdict. Stop Studio with Ctrl+C in the launcher window. If Studio opened a saved task pair,
+   return to the example with `.\START.cmd demo`.
+
+**Optional memory exercise.** After closing the demo, run `.\START.cmd new` in PowerShell from
+the extracted folder. It asks you about two tasks so Colossus can recall the first task's checks
+for the second. For a live agent task, follow the [project setup guide](docs/first-run-v1.en.md).
 
 **Linux or macOS · explore Studio.** Download the [Python wheel][wheel]. In the folder containing that file, run the following with Python 3.12 (substitute `python3.11` if needed).
 
@@ -68,6 +91,8 @@ The Python package is `agent-conductor` and the command is `conduct`. For local 
 [release]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
 [zip]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip
 [checksum]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/Arachnid-Studio-Windows.zip.sha256
+[zip-guide]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt
+[python]: https://www.python.org/downloads/windows/
 [wheel]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
 
 <details>

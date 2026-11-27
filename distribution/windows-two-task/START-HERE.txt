@@ -1,24 +1,41 @@
 Arachnid Studio
 
-Windows · Быстрый старт
+Локальное демо для Windows
 
-1. Установите Python 3.11 или 3.12 с venv и pip. Скачайте Arachnid-Studio-Windows.zip
-   и файл Arachnid-Studio-Windows.zip.sha256 со страницы релиза.
-   В папке загрузок выполните в PowerShell:
+Архив открывает в браузере учебную реконструкцию работы двух ИИ-инструментов над одной ошибкой.
+Grok исследовал причину, Codex исправил код, а отдельный проверяющий изучил результат.
+Чтобы посмотреть изменения и тесты, вам не нужны подписки. English instructions are below.
+
+1. Сохраните ZIP и соответствующий файл .zip.sha256 в одной папке. Имя архива в выпуске —
+   Arachnid-Studio-Windows.zip. В PowerShell из этой папки выполните команду ниже. Если архив
+   назван иначе, подставьте его имя.
 
        Get-FileHash -LiteralPath .\Arachnid-Studio-Windows.zip -Algorithm SHA256
 
-   Сравните Hash с первым значением из .zip.sha256. Выберите «Извлечь все».
-2. В распакованной папке откройте START.cmd. Окно должно оставаться открытым.
-   При первом запуске браузер покажет учебную реконструкцию цикла Codex + Grok.
-   Колосс и орбита работают локально. Ключи и подписки для примера не требуются.
-3. Выберите Do или спросите Колосса «А что именно Codex исправил?». Справа
-   откроются изменения, тесты и вердикт этой попытки. В консоли напечатан
-   адрес для открытия вручную. Для завершения нажмите Ctrl+C в этом окне.
+   Сравните Hash с первым значением из файла .zip.sha256. При совпадении выберите
+   «Извлечь все» и откройте распакованную папку.
+2. Дважды щёлкните START.cmd. Для запуска нужен Python 3.12 или 3.11 с venv и pip.
+   Если в окне есть [I], нажмите I, чтобы официальный менеджер установил Python 3.12 для вас.
+   Иначе нажмите O и скачайте Python Install Manager с https://www.python.org/downloads/windows/.
+   Затем выберите R для повторной проверки. Если I всё ещё нет, выполните pymanager install 3.12
+   в новом PowerShell и вернитесь к повторной проверке. Клавиша H показывает эту инструкцию.
+   Если окно уже закрылось, откройте START.cmd ещё раз.
+3. Оставьте окно запуска открытым. При первом старте в браузере появится орбита Codex + Grok.
+   Выберите Do. Справа появятся правка, три теста и вердикт той же попытки. Можно спросить
+   Колосса «А что именно Codex исправил?». Если браузер не открылся, перейдите по адресу,
+   напечатанному в окне запуска. Для выхода нажмите там Ctrl+C.
 
-Ваши задачи
+Запустить агента на своей задаче
 
-После закрытия примера введите в PowerShell из распакованной папки:
+На Windows x64 создайте активный проект, подключите подписки, задайте цель и согласуйте
+участников, лимиты и этапы, где Studio должна ждать вашего решения. Пошаговая настройка:
+https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1/docs/first-run-v1.md
+Полный коммит и SHA-256 wheel опубликованы в выпуске. Откройте его при проверке загрузки:
+https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
+
+Дополнительно — проверить память между двумя задачами
+
+После закрытия демо введите в PowerShell из распакованной папки:
 
     .\START.cmd new
 
@@ -39,22 +56,35 @@ Studio может открыть прежнюю пару в %USERPROFILE%\Arachn
 Вернуться к учебной орбите можно командой .\START.cmd demo.
 Проверить все файлы комплекта можно командой .\START.cmd verify.
 
-Чтобы выполнять реальные задачи по своим подпискам, создайте активный проект
-и подключите CLI по инструкции:
-https://github.com/VasilyKolbenev/agent-conductor/blob/main/docs/first-run-v1.md
+Local demo for Windows
 
-Windows · Quick start
+This ZIP opens a reconstruction of a bug fix in your browser. Grok diagnosed the problem,
+Codex made the change, and a separate checker reviewed it. Explore it without signing in.
 
-Install Python 3.11 or 3.12 with venv and pip. Verify the Windows ZIP against
-its .zip.sha256 as shown above, extract it and open START.cmd. The first launch
-opens a local reconstruction of a Codex + Grok run. Select Do to inspect the
-changes, tests and independent verdict. No provider account is needed to explore.
-Press Ctrl+C in the launcher window to close Studio.
+1. Save the ZIP and its matching .zip.sha256 file together. From that folder, run the PowerShell
+   Get-FileHash command above with the ZIP's filename. If the hash matches the first value in
+   .zip.sha256, choose Extract All and open the extracted folder.
+2. Double-click START.cmd. Studio needs Python 3.12 or 3.11 with venv and pip.
+   If you see [I], press I to let Python Install Manager install Python 3.12 for your account.
+   Otherwise press O to get Python Install Manager from https://www.python.org/downloads/windows/.
+   Press R to check again. If I still does not appear, run pymanager install 3.12 in a new
+   PowerShell window and retry. H shows this guide. If the window has closed, reopen START.cmd.
+3. Keep the launcher window open. On first use, the Codex + Grok orbit opens in your browser.
+   Select Do to see the patch, three tests and independent verdict for that attempt. If the browser
+   did not open, visit the address printed in the launcher window. Press Ctrl+C there to exit.
 
-For your own tasks, run .\START.cmd new in PowerShell from the extracted folder.
-Enter two task titles, the checks and observations from the first, and the name
-of the person confirming the record. Type ACCEPT to save. In the second task,
-ask Colossus to find the previous checks, open the source and edit the review plan.
+Run a live task on Windows x64
+
+Create an active project, connect your CLI subscriptions, describe the task and approve the
+participants, limits and points where Studio should wait for you. Follow the project setup guide:
+https://github.com/VasilyKolbenev/agent-conductor/blob/v0.1.1/docs/first-run-v1.en.md
+The published release identifies the source commit and wheel SHA-256. Check your download here:
+https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
+
+Optional exercise — recall the checks from a previous task
+
+After closing the demo, run .\START.cmd new in PowerShell from the extracted folder. Enter two
+task titles, the checks and observations from the first, and the name of the person confirming
+the record. Type ACCEPT to save. In the second task, ask Colossus to find the previous checks,
+open the source and edit the review plan. To keep your edits after closing the tab, copy them first.
 START.cmd reopens the latest pair. Use .\START.cmd demo to revisit the example.
-For real tasks, connect your own CLI subscriptions in an active project:
-https://github.com/VasilyKolbenev/agent-conductor/blob/main/docs/first-run-v1.en.md

@@ -3,7 +3,9 @@
 [English](first-run-v1.en.md) · [Русский](first-run-v1.md) · [Документация](index.ru.md)
 
 **Цель:** открыть Studio для нового проекта, подключить инструмент и понять, как осознанно запустить работу.
-Скачайте [Arachnid Studio для Windows](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1) и распакуйте архив. Команда `START.cmd` при первом запуске откроет учебный цикл Codex + Grok. Команда `.\START.cmd new` создаёт пару ваших задач для работы с Колоссом. [Инструкция](https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/START-HERE.txt).
+Для собственной задачи начните с [установки для проекта](#1-установите-конкретную-сборку).
+Посмотреть завершённый запуск можно [прямо в браузере](run-example.ru.md).
+Дополнительное упражнение `START.cmd new` показывает, как вспомнить проверки из прошлой задачи.
 
 Корневой адрес проекта открывает Arachnid. В пустом активном проекте нажмите
 **Подготовить задачу**. В действующем проекте можно также открыть **Desk → Новая задача**. Можно отвечать по одному
@@ -59,23 +61,33 @@ conduct projects add --dir "<абсолютный путь к папке>" --leg
 
 ## 1. Установите конкретную сборку
 
-Скачайте wheel со [страницы Arachnid Studio](https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1). Для проверки возьмите SHA-256 wheel и полный коммит исходников из описания этого выпуска.
-Результаты приёмки записаны в [заметках к кандидату](release-notes-v1-alpha.ru.md); эта инструкция не подтверждает проверку платформ.
+Скачайте [wheel версии 0.1.1][wheel-011] в папку загрузок. В командах ниже уже указаны
+SHA-256 и коммит этого выпуска. Их можно сверить на [странице релиза GitHub][release-011].
+SHA-256 файла `.whl` указан в разделе **Assets**.
+
+[wheel-011]: https://github.com/VasilyKolbenev/agent-conductor/releases/download/v0.1.1/agent_conductor-0.1.1-py3-none-any.whl
+[release-011]: https://github.com/VasilyKolbenev/agent-conductor/releases/tag/v0.1.1
 
 <details open>
 <summary><strong>Windows · PowerShell</strong></summary>
 
 Проверьте версию командой `py -3 --version`. Если выбрана другая версия Python, в команде создания `venv` ниже укажите `py -3.12` или `py -3.11`.
 
-Для нового компьютера сначала создайте пустую папку `%USERPROFILE%\DecemberCommand`. В Проводнике откройте её свойства → «Безопасность» → «Дополнительно». Отключите наследование и оставьте полный доступ только своей учётной записи, SYSTEM и локальным администраторам; правила должны применяться к папке, подпапкам и файлам. Проверьте эти три записи перед тем, как поместить сюда программы или входы. Если папка уже содержит установку, проверьте её существующие права и сборку с сопровождающим. Возьмите wheel и его SHA256 из одного подтверждённого выпуска, затем в обычном PowerShell выполните блок ниже. Если колесо скачано в другое место, измените `$wheel`.
+На новом компьютере создайте пустую папку `%USERPROFILE%\DecemberCommand`. В Проводнике откройте
+**Свойства → Безопасность → Дополнительно**. Отключите наследование. Оставьте полный доступ только
+своей учётной записи, SYSTEM и локальным администраторам с применением к папке, подпапкам и файлам.
+Проверьте эти три записи до добавления программ и входов. Для существующей установки сначала
+проверьте её права. Если доступ есть у других учётных записей, остановитесь до добавления wheel
+или входов. Команды ниже используют отдельную новую папку сборки. При необходимости измените `$wheel`.
 
 ```powershell
 $env:PYTHONPATH = ''
 $wheel = Join-Path $env:USERPROFILE 'Downloads\agent_conductor-0.1.1-py3-none-any.whl'
-$expected = Read-Host 'Candidate wheel SHA256'
-if ($expected -notmatch '^[0-9a-fA-F]{64}$' -or (Get-FileHash -LiteralPath $wheel).Hash -ne $expected) { throw 'Wheel SHA256 mismatch' }
-$source = Read-Host 'Source commit of this wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$expected = '80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
+if ((Get-FileHash -LiteralPath $wheel -Algorithm SHA256 -ErrorAction Stop).Hash -ne $expected) {
+    throw 'Wheel SHA256 mismatch'
+}
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 if (Test-Path -LiteralPath $install) { throw 'This build directory already exists' }
 py -3 -m venv $install
@@ -96,26 +108,32 @@ if ($LASTEXITCODE) { throw 'wheel installation failed' }
 <details>
 <summary><strong>macOS / Linux · терминал</strong></summary>
 
-Используйте новую папку установки и настоящий путь к wheel. Сравните его хеш с выданным SHA256.
-Оставьте этот терминал открытым для следующих шагов.
+Используйте новую папку установки и настоящий путь к wheel. Команда сверит хеш файла до установки.
+Если у вас Python 3.11, укажите ниже `python3.11`. Оставьте терминал открытым для следующих шагов.
 
 ```sh
 wheel="$HOME/Downloads/agent_conductor-0.1.1-py3-none-any.whl"
-python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$wheel"
+expected='80c1b80e1c1c17516c406d6c315b8b17ff8b7ff318a159c2d594d14c3d6fbc74'
+runtime=python3.12
 install_dir="$HOME/.local/share/december-command/app-v1"
-python3 -m venv "$install_dir"
-python_bin="$install_dir/bin/python"
 conduct="$install_dir/bin/conduct"
-"$python_bin" -m pip install "$wheel"
-"$conduct" --help
+if [ -e "$install_dir" ] || [ -L "$install_dir" ]; then
+    echo 'Эта папка уже существует. Если вы проверили эту установку, переходите к шагу 2.' >&2
+    echo 'Иначе укажите новую папку в install_dir и повторите этот блок.' >&2
+elif "$runtime" -I -c 'import hashlib,pathlib,sys
+sys.exit(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != sys.argv[2])' \
+    "$wheel" "$expected"; then
+    "$runtime" -m venv "$install_dir" &&
+        "$install_dir/bin/python" -m pip install --no-index --no-deps "$wheel" && "$conduct" --help
+else
+    echo 'Could not verify the 0.1.1 wheel. Check the file and the Python version.' >&2
+fi
 ```
 
 </details>
 
 **Вы должны увидеть:** справку с командами `ownership`, `providers` и `up`.
 Если их нет, проверьте путь к исполняемому файлу и сборку, прежде чем продолжать.
-
-Уточните у сопровождающего SHA256 конкретного wheel и список поддерживаемых им действий. Сентябрьские заметки о выпуске описывают более старую сборку, выпущенную до появления изоляции Windows.
 
 ## 2. Создайте новый пробный проект
 
@@ -370,8 +388,7 @@ Codex или Grok Build. Карточка показывает установк�
 
 ```powershell
 # Windows
-$source = Read-Host 'Source commit of the installed wheel (40 hex digits)'
-if ($source -notmatch '^[0-9a-fA-F]{40}$') { throw 'Invalid source commit' }
+$source = '4582a0250b63d29d953130ac6e720b5e5c254728'
 $install = Join-Path $env:USERPROFILE ("DecemberCommand\product\" + $source.Substring(0,12) + "\venv")
 $conduct = Join-Path $install 'Scripts\conduct.exe'
 if (-not (Test-Path -LiteralPath $conduct -PathType Leaf)) { throw 'Installed build not found' }
